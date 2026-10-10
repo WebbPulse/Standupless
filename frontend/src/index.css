@@ -19,6 +19,7 @@
 :root {
   color-scheme: light;
   --bg: #ffffff;
+  --app: #f4f4f6;
   --surface: #f7f7f8;
   --raised: #efeff2;
   --overlay: #ffffff;
@@ -46,6 +47,7 @@
 :root[data-theme='dark'] {
   color-scheme: dark;
   --bg: #141518;
+  --app: #0e0f11;
   --surface: #1b1c20;
   --raised: #232429;
   --overlay: #26272c;
@@ -74,6 +76,7 @@
   :root:not([data-theme='light']) {
     color-scheme: dark;
     --bg: #141518;
+    --app: #0e0f11;
     --surface: #1b1c20;
     --raised: #232429;
     --overlay: #26272c;
@@ -125,6 +128,7 @@
 
 @theme inline {
   --color-bg: var(--bg);
+  --color-app: var(--app);
   --color-surface: var(--surface);
   --color-raised: var(--raised);
   --color-overlay: var(--overlay);
@@ -181,7 +185,7 @@
   --spacing-sidebar: 232px;
   --spacing-rail: 272px;
   --spacing-peek: 440px;
-  --spacing-topbar: 44px;
+  --spacing-topbar: 40px;
   --spacing-row: 36px;
 }
 

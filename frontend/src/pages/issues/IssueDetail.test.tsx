@@ -372,6 +372,17 @@ describe('editing the fields', () => {
     return trigger;
   };
 
+  /** Adds a property the panel hides while empty, which opens its picker. */
+  const revealPicker = async (
+    user: ReturnType<typeof userEvent.setup>,
+    item: string
+  ) => {
+    await user.click(
+      await screen.findByRole('button', { name: 'Add property' })
+    );
+    await user.click(await screen.findByRole('menuitem', { name: item }));
+  };
+
   it('saves a status change on its own and shows it at once', async () => {
     let finish: (value: IssueRead) => void = () => undefined;
     updateIssue.mockImplementation(
@@ -445,8 +456,10 @@ describe('editing the fields', () => {
     const user = userEvent.setup();
     renderPage();
 
-    await openPicker(user, /^Estimate:/);
-    const values = within(screen.getByRole('listbox', { name: 'Estimate' }))
+    await revealPicker(user, 'Estimate');
+    const values = within(
+      await screen.findByRole('listbox', { name: 'Estimate' })
+    )
       .getAllByRole('option')
       .map((option) => option.textContent);
     expect(values).toHaveLength(8);
@@ -476,6 +489,12 @@ describe('editing the fields', () => {
     await screen.findByRole('button', { name: 'Status: Todo' });
     expect(
       screen.queryByRole('button', { name: /^Estimate:/ })
+    ).not.toBeInTheDocument();
+    await userEvent
+      .setup()
+      .click(screen.getByRole('button', { name: 'Add property' }));
+    expect(
+      screen.queryByRole('menuitem', { name: 'Estimate' })
     ).not.toBeInTheDocument();
   });
 
@@ -508,8 +527,11 @@ describe('editing the fields', () => {
     const user = userEvent.setup();
     renderPage();
 
-    await openPicker(user, /^Due date:/);
-    await user.type(screen.getByLabelText('Custom date'), '2026-10-01{Enter}');
+    await revealPicker(user, 'Due date');
+    await user.type(
+      await screen.findByLabelText('Custom date'),
+      '2026-10-01{Enter}'
+    );
 
     await waitFor(() => {
       expect(updateIssue).toHaveBeenCalledWith('iss-1', {
@@ -523,8 +545,11 @@ describe('editing the fields', () => {
     const user = userEvent.setup();
     renderPage();
 
-    await openPicker(user, /^Due date:/);
-    await user.type(screen.getByLabelText('Custom date'), '2026-10-01{Enter}');
+    await revealPicker(user, 'Due date');
+    await user.type(
+      await screen.findByLabelText('Custom date'),
+      '2026-10-01{Enter}'
+    );
 
     expect(
       await screen.findByText(/due date cannot fall before/i)
@@ -546,7 +571,7 @@ describe('editing the fields', () => {
     await waitFor(() => {
       expect(listIssues).toHaveBeenCalled();
     });
-    await openPicker(user, /^Parent:/);
+    await revealPicker(user, 'Parent');
     const rows = (await screen.findAllByRole('option')).map(
       (option) => option.textContent ?? ''
     );
@@ -571,11 +596,9 @@ const relation = (
   created_at: '2026-09-17T00:00:00Z',
 });
 
-/** The rail section with the given name, once it has rendered. */
+/** The main column section with the given name, once it has rendered. */
 const railSection = async (name: string): Promise<HTMLElement> =>
-  within(
-    await screen.findByRole('complementary', { name: 'Properties' })
-  ).findByRole('region', { name });
+  screen.findByRole('region', { name });
 
 describe('the sub-issues', () => {
   it('counts done over total from the rollup, not from the rows', async () => {
@@ -667,7 +690,7 @@ describe('the relations', () => {
     });
   });
 
-  it('adds a relation from the section header through the picker', async () => {
+  it('adds a relation from the properties add menu through the picker', async () => {
     listIssues.mockResolvedValue({
       issues: [{ ...issue, id: 'iss-5', key: 'ENG-5', title: 'Target' }],
       next_cursor: null,
@@ -677,8 +700,9 @@ describe('the relations', () => {
     renderPage();
 
     await user.click(
-      await screen.findByRole('button', { name: 'Add relation' })
+      await screen.findByRole('button', { name: 'Add property' })
     );
+    await user.click(await screen.findByRole('menuitem', { name: 'Relation' }));
     const dialog = await screen.findByRole('dialog', { name: 'Add relation' });
     await user.selectOptions(
       within(dialog).getByLabelText('Relation'),
@@ -984,6 +1008,9 @@ describe('the capability gate', () => {
     ).toBeDisabled();
     expect(
       screen.queryByRole('button', { name: 'Add relation' })
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'Add property' })
     ).not.toBeInTheDocument();
     await userEvent
       .setup()

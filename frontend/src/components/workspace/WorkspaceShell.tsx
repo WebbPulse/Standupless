@@ -1,8 +1,9 @@
 /**
- * The frame every page under `/w/:slug` renders inside: the sidebar, the page
- * bar with the title and actions, and the resolving, error and not-found
- * states the slug lookup can land in. On a phone the sidebar becomes a drawer
- * opened from the page bar.
+ * The frame every page under `/w/:slug` renders inside: the sidebar on the
+ * darker app background, one inset panel beside it holding the page bar, the
+ * page and the peek pane, and the resolving, error and not-found states the
+ * slug lookup can land in. On a phone the sidebar becomes a drawer opened from
+ * the page bar and the panel runs edge to edge.
  *
  * The command palette, the shortcut layer and the dialogs that outlive a page
  * live one level up in {@link WorkspaceLayout}. The shell renders the peek
@@ -137,8 +138,8 @@ export const WorkspaceShell: React.FC<WorkspaceShellProps> = ({
   );
 
   return (
-    <div className="flex min-h-0 flex-1" data-testid="signed-in">
-      <aside className="hidden w-sidebar shrink-0 border-r border-line lg:block">
+    <div className="flex min-h-0 flex-1 bg-app" data-testid="signed-in">
+      <aside className="hidden w-sidebar shrink-0 lg:block">
         <Sidebar workspace={workspace} />
       </aside>
 
@@ -173,22 +174,27 @@ export const WorkspaceShell: React.FC<WorkspaceShellProps> = ({
         </div>
       )}
 
-      <main className="flex min-w-0 flex-1 flex-col">
-        <PageHeader
-          title={title ?? workspace.name}
-          actions={actions}
-          toolbar={toolbar}
-          leading={
-            <>
-              {menuButton}
-              {leading}
-            </>
-          }
-        />
-        <Body flush={flush}>{children}</Body>
-      </main>
+      <div
+        data-testid="content-panel"
+        className="flex min-w-0 flex-1 overflow-hidden bg-bg lg:my-2 lg:mr-2 lg:rounded-lg lg:border lg:border-line lg:shadow-xs"
+      >
+        <main className="flex min-w-0 flex-1 flex-col">
+          <PageHeader
+            title={title ?? workspace.name}
+            actions={actions}
+            toolbar={toolbar}
+            leading={
+              <>
+                {menuButton}
+                {leading}
+              </>
+            }
+          />
+          <Body flush={flush}>{children}</Body>
+        </main>
 
-      <PeekPane />
+        <PeekPane />
+      </div>
     </div>
   );
 };

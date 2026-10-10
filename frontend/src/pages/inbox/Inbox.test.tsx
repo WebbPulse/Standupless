@@ -72,7 +72,7 @@ vi.mock('@webbpulse/auth/react', async () => {
   };
 });
 
-vi.mock('../../components/issues/IssuePeek', () => ({
+vi.mock('../../components/issues/IssuePane', () => ({
   default: ({ issueId, onClose }: { issueId: string; onClose: () => void }) => (
     <aside aria-label={`Peek ${issueId}`}>
       <button type="button" onClick={onClose}>

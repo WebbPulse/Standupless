@@ -27,6 +27,8 @@ export interface IssueParentProps {
   statuses: StatusRead[];
   canEdit: boolean;
   onChange: (parentId: string | null) => void;
+  /** Renders nothing while the section has no content, for a compact panel. */
+  hideEmpty?: boolean;
 }
 
 /** How often a parent read on its own is re-read. */
@@ -41,6 +43,7 @@ export const IssueParent: React.FC<IssueParentProps> = ({
   statuses,
   canEdit,
   onChange,
+  hideEmpty = false,
 }) => {
   const auth = useQueryAuth();
   const parentId = issue.parent_id;
@@ -64,7 +67,7 @@ export const IssueParent: React.FC<IssueParentProps> = ({
     (fetched !== null && fetched.id === parentId ? fetched : undefined);
   const status = statuses.find((item) => item.id === parent?.status_id);
 
-  if (parentId === null && !canEdit) return null;
+  if (parentId === null && (hideEmpty || !canEdit)) return null;
 
   return (
     <RailSection
