@@ -105,6 +105,10 @@ locals {
     "DELETE /api/auth/oauth/{provider}/link" = { integration = "identity", require_identity_jwt = true }
   } : {}
 
+  identity_desktop_handoff_route_keys = contains(local.routed_lambda_domains, "identity") && length(var.desktop_handoff_schemes) > 0 ? {
+    "POST /api/auth/desktop-handoff" = { integration = "identity", require_identity_jwt = true }
+  } : {}
+
   domain_identity_jwt_route_paths = {
     workspaces = [
       "POST /api/workspaces",
@@ -207,6 +211,7 @@ locals {
   lambda_domain_route_keys = merge(
     local.lambda_domain_generated_route_keys,
     local.identity_jwt_route_keys,
+    local.identity_desktop_handoff_route_keys,
     local.ephemeral_users_route_keys,
     local.domain_identity_jwt_route_keys,
     local.github_webhook_route_keys,

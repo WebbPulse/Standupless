@@ -152,6 +152,12 @@ variable "oauth_google_client_id" {
   default     = ""
 }
 
+variable "desktop_handoff_schemes" {
+  description = "Custom URL schemes the desktop app may receive a browser sign-in handoff on. Empty leaves the handoff routes unmounted. Not a secret; set in env/<environment>.tfvars."
+  type        = list(string)
+  default     = []
+}
+
 variable "oauth_github_client_id" {
   description = "Client id of the GitHub OAuth application. Empty means no GitHub route is declared and GitHub is not advertised on the providers route. Not a secret; set in env/<environment>.tfvars."
   type        = string

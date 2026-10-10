@@ -23,3 +23,5 @@ workspace_export_enabled = true
 
 oauth_github_client_id = "Ov23liZzrfg6s7FT5wnh"
 oauth_google_client_id = "564116507829-vlse1e633244k5rdijm04g53gas1ojiu.apps.googleusercontent.com"
+
+desktop_handoff_schemes = ["standupless"]
