@@ -91,7 +91,7 @@ role, so the pair is what lets a credential exercise that role at all.
 """
 
 SETTINGS_READ_ADMIN = ("settings:read", "admin")
-"""Workspace exports, imports and the audit log, which touch the whole workspace and so need the admin role behind the scope."""
+"""Workspace exports, imports and the audit log, which span the whole workspace and so need the admin role."""
 
 STATUSES_WRITE_ADMIN = ("statuses:write", "admin")
 """Workspace status writes, which every team inherits, so held to workspace administration."""
