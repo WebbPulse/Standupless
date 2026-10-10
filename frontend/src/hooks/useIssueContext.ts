@@ -1,9 +1,9 @@
 /**
  * The lists an issue view resolves ids against, for one team or several. A
  * saved view can span every team the caller sees, and its groups, filters
- * and pickers need each team's statuses, labels and people, so they are read
- * in one polled query rather than one hook per team, which a changing team
- * count could not call.
+ * and pickers need each team's statuses, labels and people, so every team is
+ * read inside each polled query rather than one hook per team, which a
+ * changing team count could not call.
  *
  * Every status and label carries the team it came from, so a status column
  * that merges "In Progress" across teams still moves each card to its own
@@ -14,7 +14,7 @@
  * surfaces on the page already make and the shared client hands it over.
  */
 
-import { useCallback, useMemo } from 'react';
+import { useCallback, useEffect, useMemo } from 'react';
 import { useQueryAuth } from '@webbpulse/auth/react';
 import { invalidateQueries, usePolledQuery } from '@webbpulse/api-client/react';
 import { listCycles } from '../api/planning';
@@ -30,6 +30,7 @@ import type { IssueContext, ScopedLabel, ScopedStatus } from '../lib/issueView';
 import { labelColorFor } from '../lib/propertyOptions';
 import { withGroupNames } from '../lib/labelGroups';
 import { labelsKey } from '../lib/queryKeys';
+import { readCachedParts, writeCachedPart } from '../lib/issueContextCache';
 import { listAllProjects } from './useWorkspaceProjects';
 import { showErrorToast } from '../lib/toast';
 import type { CycleRead, LabelRead, ProjectRead } from '../types/Api';
@@ -37,21 +38,30 @@ import type { CycleRead, LabelRead, ProjectRead } from '../types/Api';
 /** How often the lists are re-read. */
 const POLL_MS = 60000;
 
-/** Everything read for one team. */
-interface TeamLists {
+/** A team's statuses and labels, the lists every row paints from. */
+interface TeamAppearance {
   teamId: string;
   statuses: ScopedStatus[];
   labels: ScopedLabel[];
+}
+
+/** A team's people, projects and cycles, which only pickers and filters need. */
+interface TeamPlanning {
+  teamId: string;
   people: Assignable[];
   projects: ProjectRead[];
   cycles: CycleRead[];
 }
+
+/** Everything read for one team. */
+type TeamLists = TeamAppearance & TeamPlanning;
 
 /** What {@link useIssueContext} hands back. */
 export interface IssueContextState {
   context: IssueContext;
   /** The lists of one team, for the pickers on that team's issues. */
   forTeam: (teamId: string) => IssueContext;
+  /** True until every team's statuses and labels are known, cached or read. */
   isLoading: boolean;
   /** Creates a label in a team and refreshes the lists. */
   createLabel: (teamId: string, name: string) => Promise<LabelRead | null>;
@@ -66,19 +76,38 @@ const orEmpty = async <T>(read: Promise<T[]>): Promise<T[]> => {
   }
 };
 
+/** Reads one team's statuses and labels, keeping the statuses if labels fail. */
+const readAppearance = async (
+  workspaceId: string,
+  teamId: string,
+  signal: AbortSignal
+): Promise<TeamAppearance> => {
+  const [statuses, labels] = await Promise.all([
+    listStatuses(workspaceId, teamId, signal),
+    orEmpty(listLabels(workspaceId, teamId, signal)),
+  ]);
+  return {
+    teamId,
+    statuses: statuses.map((status) => ({ ...status, team_id: teamId })),
+    labels: withGroupNames(labels).map((label) => ({
+      ...label,
+      team_id: teamId,
+    })),
+  };
+};
+
 /**
- * Reads one team's lists, keeping what it can when one of them fails. The
- * team's projects are picked out of the workspace's, read once by the caller.
+ * Reads one team's people, projects and cycles, keeping what it can when one
+ * of them fails. The team's projects are picked out of the workspace's, read
+ * once by the caller.
  */
-const readTeam = async (
+const readPlanning = async (
   workspaceId: string,
   teamId: string,
   workspaceProjects: Promise<ProjectRead[]>,
   signal: AbortSignal
-): Promise<TeamLists> => {
-  const [statuses, labels, people, projects, cycles] = await Promise.all([
-    listStatuses(workspaceId, teamId, signal),
-    orEmpty(listLabels(workspaceId, teamId, signal)),
+): Promise<TeamPlanning> => {
+  const [people, projects, cycles] = await Promise.all([
     orEmpty(listTeamMembers(workspaceId, teamId, signal)),
     workspaceProjects.then((all) =>
       all.filter(
@@ -92,17 +121,41 @@ const readTeam = async (
       )
     ),
   ]);
-  return {
-    teamId,
-    statuses: statuses.map((status) => ({ ...status, team_id: teamId })),
-    labels: withGroupNames(labels).map((label) => ({
-      ...label,
-      team_id: teamId,
-    })),
-    people,
-    projects,
-    cycles,
-  };
+  return { teamId, people, projects, cycles };
+};
+
+/** Pairs each team's appearance with its planning lists, empty until read. */
+const combine = (
+  appearance: readonly TeamAppearance[],
+  planning: readonly TeamPlanning[] | null
+): TeamLists[] => {
+  const byTeam = new Map(
+    (planning ?? []).map((team) => [team.teamId, team] as const)
+  );
+  return appearance.map((team) => ({
+    people: [],
+    projects: [],
+    cycles: [],
+    ...byTeam.get(team.teamId),
+    ...team,
+  }));
+};
+
+/**
+ * Writes each team's freshly read part to the browser cache, once per new
+ * value of the query rather than on every render.
+ */
+const useRemember = (
+  workspaceId: string,
+  part: 'statuses' | 'lists',
+  data: readonly { teamId: string }[] | null
+): void => {
+  useEffect(() => {
+    if (data === null || workspaceId === '') return;
+    for (const team of data) {
+      writeCachedPart(workspaceId, team.teamId, part, team);
+    }
+  }, [workspaceId, part, data]);
 };
 
 /** Joins several teams' lists, each person, project and cycle once. */
@@ -138,7 +191,12 @@ const merge = (
   };
 };
 
-/** Reads the lists for the given teams. */
+/**
+ * Reads the lists for the given teams. Statuses and labels are one query and
+ * people, projects and cycles another, so the rows' appearance never waits on
+ * the slower planning reads. Both seed from the browser cache, so a reload
+ * paints the last known lists and the polls refresh them in place.
+ */
 export const useIssueContext = (
   workspaceId: string,
   teamIds: readonly string[],
@@ -147,27 +205,58 @@ export const useIssueContext = (
   const auth = useQueryAuth();
   const ids = useMemo(() => [...new Set(teamIds)].sort(), [teamIds]);
   const idsJson = ids.join(',');
+  const enabled = workspaceId !== '' && idsJson !== '';
+  const appearanceKey = useMemo(
+    () => ['issue-appearance', workspaceId, idsJson] as const,
+    [workspaceId, idsJson]
+  );
   const queryKey = useMemo(
     () => ['issue-context', workspaceId, idsJson] as const,
     [workspaceId, idsJson]
   );
+  const teamList = useMemo(
+    (): string[] => (idsJson === '' ? [] : idsJson.split(',')),
+    [idsJson]
+  );
 
-  const { data, isLoading } = usePolledQuery(
+  const cachedAppearance = useMemo(
+    () => readCachedParts<TeamAppearance>(workspaceId, teamList, 'statuses'),
+    [workspaceId, teamList]
+  );
+  const cachedPlanning = useMemo(
+    () => readCachedParts<TeamPlanning>(workspaceId, teamList, 'lists'),
+    [workspaceId, teamList]
+  );
+
+  const appearance = usePolledQuery(
+    ({ signal }) =>
+      Promise.all(
+        teamList.map((teamId) => readAppearance(workspaceId, teamId, signal))
+      ),
+    { intervalMs: POLL_MS, enabled, queryKey: appearanceKey, auth }
+  );
+
+  const planning = usePolledQuery(
     ({ signal }) => {
       const projects = orEmpty(listAllProjects(workspaceId, '', signal));
       return Promise.all(
-        (idsJson === '' ? [] : idsJson.split(',')).map((teamId) =>
-          readTeam(workspaceId, teamId, projects, signal)
+        teamList.map((teamId) =>
+          readPlanning(workspaceId, teamId, projects, signal)
         )
       );
     },
-    {
-      intervalMs: POLL_MS,
-      enabled: workspaceId !== '' && idsJson !== '',
-      queryKey,
-      auth,
-    }
+    { intervalMs: POLL_MS, enabled, queryKey, auth }
   );
+
+  useRemember(workspaceId, 'statuses', appearance.data);
+  useRemember(workspaceId, 'lists', planning.data);
+
+  const data = useMemo(() => {
+    const shown = appearance.data ?? cachedAppearance;
+    return shown === null
+      ? null
+      : combine(shown, planning.data ?? cachedPlanning);
+  }, [appearance.data, cachedAppearance, planning.data, cachedPlanning]);
 
   const context = useMemo(
     () => merge(data ?? [], currentUserId),
@@ -195,7 +284,7 @@ export const useIssueContext = (
         color: labelColorFor(name),
       }).then(
         (label) => {
-          invalidateQueries([queryKey, labelsKey(teamId)]);
+          invalidateQueries([appearanceKey, queryKey, labelsKey(teamId)]);
           return label;
         },
         (error: unknown) => {
@@ -203,13 +292,13 @@ export const useIssueContext = (
           return null;
         }
       ),
-    [workspaceId, queryKey]
+    [workspaceId, appearanceKey, queryKey]
   );
 
   return {
     context,
     forTeam,
-    isLoading: isLoading && idsJson !== '',
+    isLoading: enabled && appearance.isLoading && cachedAppearance === null,
     createLabel,
   };
 };
