@@ -4825,7 +4825,7 @@
         "type": "object"
       },
       "IssueLinkRead": {
-        "description": "One pull request linked to one issue.",
+        "description": "One pull request linked to one issue.\n\n`review_state` is the review decision and `ci_state` the combined result of the\nhead commit's checks, both `none` until GitHub reports one. `stack` is set when\nthe pull request is stacked with another of the issue's pull requests.",
         "properties": {
           "applied_status_id": {
             "anyOf": [
@@ -4842,9 +4842,30 @@
             "title": "Author Login",
             "type": "string"
           },
+          "base_ref": {
+            "default": "",
+            "title": "Base Ref",
+            "type": "string"
+          },
+          "ci_state": {
+            "default": "none",
+            "enum": [
+              "none",
+              "pending",
+              "success",
+              "failure"
+            ],
+            "title": "Ci State",
+            "type": "string"
+          },
           "closes_issue": {
             "title": "Closes Issue",
             "type": "boolean"
+          },
+          "head_ref": {
+            "default": "",
+            "title": "Head Ref",
+            "type": "string"
           },
           "issue_id": {
             "title": "Issue Id",
@@ -4888,6 +4909,27 @@
           "repository_full_name": {
             "title": "Repository Full Name",
             "type": "string"
+          },
+          "review_state": {
+            "default": "none",
+            "enum": [
+              "none",
+              "pending",
+              "approved",
+              "changes_requested"
+            ],
+            "title": "Review State",
+            "type": "string"
+          },
+          "stack": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/StackRead"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "updated_at": {
             "format": "date-time",
@@ -9383,6 +9425,63 @@
           }
         },
         "title": "SlaSettingsUpdate",
+        "type": "object"
+      },
+      "StackRead": {
+        "description": "Where one pull request sits in a stack of the issue's pull requests.\n\n`position` counts from the bottom of the stack, the pull request based on the\ntrunk, and `size` is how many of the issue's pull requests the stack holds. The\n`pr_state`, `review_state` and `ci_state` fields describe the whole stack, so a\nlist that shows a stack as one row reads them from any entry. Review and checks\ncount only the entries still open.",
+        "properties": {
+          "ci_state": {
+            "enum": [
+              "none",
+              "pending",
+              "success",
+              "failure"
+            ],
+            "title": "Ci State",
+            "type": "string"
+          },
+          "position": {
+            "title": "Position",
+            "type": "integer"
+          },
+          "pr_state": {
+            "enum": [
+              "open",
+              "draft",
+              "merged",
+              "closed"
+            ],
+            "title": "Pr State",
+            "type": "string"
+          },
+          "review_state": {
+            "enum": [
+              "none",
+              "pending",
+              "approved",
+              "changes_requested"
+            ],
+            "title": "Review State",
+            "type": "string"
+          },
+          "size": {
+            "title": "Size",
+            "type": "integer"
+          },
+          "stack_id": {
+            "title": "Stack Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "stack_id",
+          "position",
+          "size",
+          "pr_state",
+          "review_state",
+          "ci_state"
+        ],
+        "title": "StackRead",
         "type": "object"
       },
       "StandupDigest": {
@@ -21618,7 +21717,7 @@
     },
     "/api/workspaces/{workspace_id}/issues/{issue_id}/github-links": {
       "get": {
-        "description": "The pull requests that mention this issue, newest first.\n\nThe issue is loaded first so that an issue in a team the caller is outside\ngives the same 404 as one that does not exist, rather than an empty list which\nwould confirm the id.",
+        "description": "The pull requests that mention this issue, newest first.\n\nStacks are worked out among the pull requests on the page, which at the default\nsize holds every pull request a real issue gathers.\n\nThe issue is loaded first so that an issue in a team the caller is outside\ngives the same 404 as one that does not exist, rather than an empty list which\nwould confirm the id.",
         "operationId": "list_issue_links_api_workspaces__workspace_id__issues__issue_id__github_links_get",
         "parameters": [
           {

@@ -1838,9 +1838,30 @@ export interface GithubInstallationRead {
   repository_count: number;
 }
 
+/** A linked pull request's review decision. */
+export type PullRequestReviewState =
+  'none' | 'pending' | 'approved' | 'changes_requested';
+
+/** The combined result of a linked pull request's checks on its head commit. */
+export type PullRequestCiState = 'none' | 'pending' | 'success' | 'failure';
+
+/**
+ * Where a pull request sits in a stack of an issue's pull requests, counted
+ * from the one based on the trunk. The state fields describe the whole stack.
+ */
+export interface PullRequestStackRead {
+  stack_id: string;
+  position: number;
+  size: number;
+  pr_state: 'open' | 'draft' | 'merged' | 'closed';
+  review_state: PullRequestReviewState;
+  ci_state: PullRequestCiState;
+}
+
 /**
  * One pull request linked to an issue. The pull request's own fields are
- * denormalised at write, so a link still renders without calling GitHub.
+ * denormalised at write, so a link still renders without calling GitHub. The
+ * branch, review, check and stack fields are absent from an older server.
  */
 export interface GithubIssueLinkRead {
   link_id: string;
@@ -1854,6 +1875,11 @@ export interface GithubIssueLinkRead {
   author_login: string;
   closes_issue: boolean;
   applied_status_id: string | null;
+  head_ref?: string;
+  base_ref?: string;
+  review_state?: PullRequestReviewState;
+  ci_state?: PullRequestCiState;
+  stack?: PullRequestStackRead | null;
   linked_at: string;
   updated_at: string;
 }

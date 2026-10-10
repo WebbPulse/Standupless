@@ -114,10 +114,17 @@ comments of a repository a team syncs with.
 - Issue comment
 - Repository
 - Deployment status
+- Pull request review
+- Check run
 - Installation
 - Installation repositories
 
-The manifest names only the first six: GitHub delivers installation and
+Pull request review and Check run feed the review and check icons on an issue's
+pull requests, and the stacks those pull requests form. Both use permissions the
+App already has, Pull requests and Checks. A check run on a commit no pull request
+heads, and the App's own check run, are answered 200 without being queued.
+
+The manifest names only the first eight: GitHub delivers installation and
 installation repository events to every App without a subscription. Nothing else. An event that is not on this list is answered 200 and dropped by the
 receiver, so subscribing to more would only spend deliveries.
 
@@ -149,6 +156,19 @@ event. Each environment's App is changed by hand, once:
 
 Until then no deployment reaches Standupless, and releases come only from the
 app, the API, the CLI and MCP.
+
+## Adding pull request reviews and check runs to an existing App
+
+An App created before stacked pull requests does not subscribe to the two events
+that carry review and check state. No permission changes, so no installation has
+to accept anything. Each environment's App is changed by hand, once:
+
+1. On the App's settings page, open Permissions & events.
+2. Under Subscribe to events, check Pull request review and Check run.
+3. Save changes.
+
+Until then stacks still form from the branch names a pull request delivery
+carries, and every pull request shows no review and no checks.
 
 ## Publishing GitHub Releases
 

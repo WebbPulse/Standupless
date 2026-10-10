@@ -18,6 +18,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from tests.domains.integrations.conftest import (
+    APP_SLUG,
     INSTALLATION_ID,
     REPOSITORY_FULL_NAME,
     REPOSITORY_ID,
@@ -323,3 +324,57 @@ def test_a_failed_enqueue_releases_the_claim_so_a_redelivery_is_queued(
 
     assert redelivered.status_code == 202
     assert len(enqueued) == 1
+
+
+def check_run_payload(*, pull_requests: list[dict[str, Any]], app: str = "ci") -> dict[str, Any]:
+    """A minimal `check_run` delivery."""
+    return {
+        "action": "completed",
+        "installation": {"id": int(INSTALLATION_ID)},
+        "repository": {"id": int(REPOSITORY_ID), "full_name": REPOSITORY_FULL_NAME},
+        "check_run": {
+            "id": 1,
+            "name": "tests",
+            "status": "completed",
+            "conclusion": "success",
+            "head_sha": "deadbeef",
+            "app": {"slug": app},
+            "pull_requests": pull_requests,
+        },
+    }
+
+
+def post_check_run(client: TestClient, payload: dict[str, Any], delivery_id: str) -> Any:
+    """Post one signed `check_run` delivery."""
+    body = delivery(payload)
+    return client.post(
+        PATH,
+        content=body,
+        headers={
+            "X-Hub-Signature-256": signature(body),
+            "X-GitHub-Event": "check_run",
+            "X-GitHub-Delivery": delivery_id,
+            "Content-Type": "application/json",
+        },
+    )
+
+
+def test_a_check_run_on_a_pull_request_is_queued(client: TestClient, enqueued: list[tuple[str, Any]]) -> None:
+    """A check run naming a pull request may move a linked pull request's checks, so it is queued."""
+    response = post_check_run(client, check_run_payload(pull_requests=[{"number": 7}]), "check-1")
+
+    assert response.status_code == 202
+    assert len(enqueued) == 1
+
+
+def test_a_check_run_on_no_pull_request_or_from_this_app_is_not_queued(
+    client: TestClient,
+    enqueued: list[tuple[str, Any]],
+) -> None:
+    """A trunk commit's checks and the App's own check are answered without touching the queue."""
+    trunk = post_check_run(client, check_run_payload(pull_requests=[]), "check-2")
+    own = post_check_run(client, check_run_payload(pull_requests=[{"number": 7}], app=APP_SLUG), "check-3")
+
+    assert (trunk.status_code, own.status_code) == (200, 200)
+    assert trunk.json()["reason"] == own.json()["reason"] == "ignored"
+    assert enqueued == []
