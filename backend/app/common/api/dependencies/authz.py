@@ -1129,16 +1129,6 @@ sign-in or in a step-up.
 """
 
 
-def amr_of(claims: Any) -> tuple[str, ...]:
-    """The authentication methods a token's `amr` claim names, in either wire shape."""
-    raw_amr = claims.get("amr") if claims is not None else None
-    if isinstance(raw_amr, str):
-        return tuple(part for part in raw_amr.split() if part)
-    if isinstance(raw_amr, (list, tuple)):
-        return tuple(str(part) for part in raw_amr)
-    return ()
-
-
 def client_ip_of(request: Request) -> str:
     """The caller's IP as API Gateway observed it, or empty when it cannot be read."""
     from app.common.api.middleware.rate_limiter import client_identity

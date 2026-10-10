@@ -405,7 +405,7 @@ class MembershipRepository:
 
         `allowed_methods` of `None` allows every sign-in method.
         """
-        methods = (
+        methods: list[SignInMethod] = (
             list(SIGN_IN_METHODS)
             if allowed_methods is None
             else [method for method in SIGN_IN_METHODS if method in allowed_methods]
