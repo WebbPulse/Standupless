@@ -2245,6 +2245,7 @@ class ReleaseDetailRead(TypedDict):
     skipped_issues: NotRequired[list[str]]
     source: str
     stages: list[ReleaseStageRead]
+    status_counts: NotRequired[dict[str, int]]
     team_id: str
     updated_at: str
     url: NotRequired[str | None]
@@ -2269,6 +2270,7 @@ class ReleaseRead(TypedDict):
     sha: NotRequired[str | None]
     source: str
     stages: list[ReleaseStageRead]
+    status_counts: NotRequired[dict[str, int]]
     team_id: str
     updated_at: str
     url: NotRequired[str | None]

@@ -229,7 +229,7 @@ describe('Releases', () => {
     expect(row).not.toBeNull();
     const scope = within(row as HTMLElement);
     expect(scope.getByText('Staging')).toBeInTheDocument();
-    expect(scope.getByText('2 issues')).toBeInTheDocument();
+    expect(scope.getByLabelText('2 issues')).toBeInTheDocument();
     expect(scope.getByText('acme/engine')).toBeInTheDocument();
     expect(scope.getByText('abcdef1')).toBeInTheDocument();
     expect(
