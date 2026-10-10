@@ -37,6 +37,7 @@ import {
   removeReleaseIssue,
   updateRelease,
 } from '../../api/releases';
+import ReleaseStagePill from '../../components/releases/ReleaseStagePill';
 import { ErrorAlert } from '../../components/ui/alert';
 import Badge from '../../components/ui/badge';
 import Button, { IconButton } from '../../components/ui/button';
@@ -625,7 +626,13 @@ export const ReleaseDetail: React.FC = () => {
           <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-text-muted">
             {release.current_stage !== null &&
               release.current_stage !== undefined && (
-                <Badge tone="accent">{release.current_stage.name}</Badge>
+                <ReleaseStagePill
+                  name={release.current_stage.name}
+                  final={
+                    release.current_stage.stage_id ===
+                    pipeline?.stages[pipeline.stages.length - 1]?.stage_id
+                  }
+                />
               )}
             <span>{releaseSourceLabel(release.source)}</span>
             {commitLabel !== null &&

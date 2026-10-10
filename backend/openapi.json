@@ -7859,6 +7859,13 @@
             "title": "Stages",
             "type": "array"
           },
+          "status_counts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Status Counts",
+            "type": "object"
+          },
           "team_id": {
             "title": "Team Id",
             "type": "string"
@@ -8044,7 +8051,7 @@
         "type": "object"
       },
       "ReleaseRead": {
-        "description": "One release as a listing shows it.\n\n`current_stage` is the furthest stage of the pipeline the release reached, so a\nreader sees \"Released to Production\" without ordering the stages itself.",
+        "description": "One release as a listing shows it.\n\n`current_stage` is the furthest stage of the pipeline the release reached, so a\nreader sees \"Released to Production\" without ordering the stages itself.\n`status_counts` tallies the issues the caller can see by status category, so a\nlisting draws each release's progress without reading its issues.",
         "properties": {
           "created_at": {
             "format": "date-time",
@@ -8182,6 +8189,13 @@
             },
             "title": "Stages",
             "type": "array"
+          },
+          "status_counts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Status Counts",
+            "type": "object"
           },
           "team_id": {
             "title": "Team Id",
