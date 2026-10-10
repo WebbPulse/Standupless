@@ -8,13 +8,21 @@
 import type {
   HomeAttentionItem,
   HomeFocusReason,
+  HomePullRequestItem,
   HomeRead,
   IssueRead,
 } from '../../../types/Api';
 
 /** The sections of the home, in the order the keyboard visits them. */
 export type HomeSectionId =
-  'focus' | 'shipped' | 'cycles' | 'projects' | 'pulse' | 'inbox';
+  | 'focus'
+  | 'pull_requests'
+  | 'shipped'
+  | 'releases'
+  | 'cycles'
+  | 'projects'
+  | 'pulse'
+  | 'inbox';
 
 /** One row the keyboard can land on, and the section it belongs to. */
 export interface HomeNavItem {
@@ -103,6 +111,10 @@ export const focusGroups = (focus: HomeRead['focus']): FocusGroup[] => {
   return groups;
 };
 
+/** A pull request's stable id on the home: its repository and number. */
+export const pullRequestId = (item: HomePullRequestItem): string =>
+  `${item.pull_request.repository_full_name}#${String(item.pull_request.number)}`;
+
 /** Every row the keyboard walks, in the order the page draws them. */
 export const navItems = (
   home: HomeRead,
@@ -111,9 +123,17 @@ export const navItems = (
   ...groups.flatMap((group) =>
     group.issues.map((issue) => ({ section: 'focus' as const, id: issue.id }))
   ),
+  ...home.pull_requests.map((item) => ({
+    section: 'pull_requests' as const,
+    id: pullRequestId(item),
+  })),
   ...home.shipped.items.map((item) => ({
     section: 'shipped' as const,
     id: item.issue.id,
+  })),
+  ...home.releases.map((release) => ({
+    section: 'releases' as const,
+    id: release.release_id,
   })),
   ...home.cycles.map((cycle) => ({
     section: 'cycles' as const,

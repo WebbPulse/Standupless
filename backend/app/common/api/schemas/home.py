@@ -11,8 +11,9 @@ from typing import Literal, Optional
 
 from pydantic import BaseModel, Field
 
-from app.common.api.schemas.issues import IssueRead
+from app.common.api.schemas.issues import IssueRead, PullRequestSummaryEntryRead
 from app.common.api.schemas.planning import CycleRead, ProjectRead, ProjectUpdateRead
+from app.common.api.schemas.releases import ReleaseRead
 from app.common.api.schemas.views import NotificationRead
 
 FocusReason = Literal["overdue", "due_soon", "sla_breached", "sla_at_risk", "blocked"]
@@ -68,6 +69,13 @@ class HomePulseItem(BaseModel):
     update: ProjectUpdateRead
 
 
+class HomePullRequestItem(BaseModel):
+    """One open or draft pull request linked to an issue assigned to the caller, and that issue."""
+
+    issue: IssueRead
+    pull_request: PullRequestSummaryEntryRead
+
+
 class HomeInboxRead(BaseModel):
     """The caller's unread count, capped like the inbox badge, and the newest unread rows."""
 
@@ -79,7 +87,10 @@ class HomeRead(BaseModel):
     """Everything the workspace home draws, read in one request.
 
     `team_ids` is the scope the team sections were read over: the caller's own
-    teams, or every team they can see when they belong to none.
+    teams, or every team they can see when they belong to none. `pull_requests`
+    are the open ones linked to the caller's open assigned issues, and `releases`
+    are the scope teams' releases that reached their pipeline's last stage in the
+    shipped window, newest first.
     """
 
     generated_at: datetime
@@ -92,3 +103,5 @@ class HomeRead(BaseModel):
     shipped: HomeShippedRead
     pulse: list[HomePulseItem] = Field(default_factory=list)
     inbox: HomeInboxRead
+    pull_requests: list[HomePullRequestItem] = Field(default_factory=list)
+    releases: list[ReleaseRead] = Field(default_factory=list)
