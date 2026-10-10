@@ -181,6 +181,13 @@ export const viewsKey = (
   teamId: string
 ): QueryKey => ['views', workspaceId, scope, teamId];
 
+/** How many issues one saved view selects, read again when the view changes. */
+export const viewCountKey = (
+  workspaceId: string,
+  viewId: string,
+  updatedAt: string
+): QueryKey => ['view-count', workspaceId, viewId, updatedAt];
+
 /** One saved view read by id. */
 export const viewKey = (workspaceId: string, viewId: string): QueryKey => [
   'view',
@@ -342,6 +349,18 @@ export const channelsKey = (workspaceId: string, teamId: string): QueryKey => [
   workspaceId,
   teamId,
 ];
+
+/** Whether the workspace installed the Slack App, and into which Slack workspace. */
+export const slackConnectionKey = (workspaceId: string): QueryKey => [
+  'slack-connection',
+  workspaceId,
+];
+
+/** The Slack channels the installed bot can post to, offered when adding a team channel. */
+export const slackChannelsKey = (
+  workspaceId: string,
+  teamId: string
+): QueryKey => ['slack-channels', workspaceId, teamId];
 
 /**
  * The webhooks of a workspace, or of one team in it. The two are different

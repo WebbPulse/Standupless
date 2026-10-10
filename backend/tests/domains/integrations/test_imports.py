@@ -17,6 +17,7 @@ from typing import Any, Iterator
 
 import pytest
 from fastapi.testclient import TestClient
+from webbpulse.audit import AuditQuery
 
 from app.common import issue_import
 from app.common.db.dynamo.base import utc_now
@@ -200,12 +201,11 @@ def test_starting_an_import_is_recorded_in_the_audit_log(
 
     import_id = client.post(f"/api/workspaces/{WORKSPACE}/imports", json=body()).json()["import_id"]
 
-    rows, _ = repositories.audit.list_events(WORKSPACE, event="import.started")
-    [row] = rows
-    assert row.actor_id == ADMIN
-    assert row.target_type == "import"
-    assert row.target_id == import_id
-    assert row.target_label == "jira.csv"
+    [row] = repositories.audit.list_events(WORKSPACE, AuditQuery(action="import.started")).events
+    assert row.actor.id == ADMIN
+    assert row.target.type == "import"
+    assert row.target.id == import_id
+    assert row.target.label == "jira.csv"
     assert row.after == {"team_id": TEAM, "preset": "jira", "total_rows": 4}
 
 

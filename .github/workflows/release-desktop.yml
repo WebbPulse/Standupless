@@ -1,0 +1,192 @@
+name: Release desktop
+
+on:
+  push:
+    tags:
+      - "desktop-v*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-desktop-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  check:
+    name: Check the tag
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Check the tag matches the app version
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          TAG_VERSION="${TAG#desktop-v}"
+          APP_VERSION="$(node -p 'require("./desktop/package.json").version')"
+          echo "Tag version: ${TAG_VERSION}, app version: ${APP_VERSION}"
+          if [ "$TAG_VERSION" != "$APP_VERSION" ]; then
+            echo "::error::tag ${TAG} does not match version ${APP_VERSION} in desktop/package.json"
+            exit 1
+          fi
+
+  build:
+    name: Build for ${{ matrix.name }}
+    needs: check
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - name: macOS
+            os: macos-latest
+            flag: --mac
+            artifact: desktop-mac
+          - name: Windows
+            os: windows-latest
+            flag: --win
+            artifact: desktop-win
+          - name: Linux
+            os: ubuntu-latest
+            flag: --linux
+            artifact: desktop-linux
+    defaults:
+      run:
+        working-directory: desktop
+        shell: bash
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build the app
+        run: npm run build
+
+      - name: Package the installers
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+        run: npx electron-builder --config electron-builder.config.cjs ${{ matrix.flag }} --publish never
+
+      - name: Upload the installers
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ${{ matrix.artifact }}
+          if-no-files-found: error
+          retention-days: 7
+          path: |
+            desktop/release/production/*.dmg
+            desktop/release/production/*.zip
+            desktop/release/production/*.exe
+            desktop/release/production/*.AppImage
+            desktop/release/production/*.deb
+            desktop/release/production/*.blockmap
+            desktop/release/production/latest*.yml
+
+  publish:
+    name: Publish the release
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    concurrency:
+      group: release-desktop-channel
+      cancel-in-progress: false
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TAG: ${{ github.ref_name }}
+      CHANNEL: desktop-latest
+    steps:
+      - name: Download the installers
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: desktop-*
+          path: assets
+          merge-multiple: true
+
+      - name: List the assets
+        run: |
+          set -euo pipefail
+          ls -l assets
+          for meta in latest.yml latest-mac.yml latest-linux.yml; do
+            test -f "assets/${meta}" || { echo "::error::${meta} is missing"; exit 1; }
+          done
+
+      - name: Publish the versioned release
+        run: |
+          set -euo pipefail
+          VERSION="${TAG#desktop-v}"
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$TAG" assets/* --repo "$GITHUB_REPOSITORY" --clobber
+            gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft=false --latest=false
+          else
+            gh release create "$TAG" assets/* --repo "$GITHUB_REPOSITORY" \
+              --verify-tag --latest=false \
+              --title "Standupless desktop ${VERSION}" \
+              --notes "Standupless desktop ${VERSION}. These builds are unsigned."
+          fi
+
+      - name: Move the desktop-latest release to this version
+        run: |
+          set -euo pipefail
+          VERSION="${TAG#desktop-v}"
+          SHA="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${TAG}" --jq .object.sha)"
+          TYPE="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${TAG}" --jq .object.type)"
+          if [ "$TYPE" = "tag" ]; then
+            SHA="$(gh api "repos/${GITHUB_REPOSITORY}/git/tags/${SHA}" --jq .object.sha)"
+          fi
+
+          if gh release view "$CHANNEL" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            CURRENT="$(gh release view "$CHANNEL" --repo "$GITHUB_REPOSITORY" --json name --jq .name)"
+            CURRENT="${CURRENT##* }"
+            NEWEST="$(printf '%s\n%s\n' "$CURRENT" "$VERSION" | sort -V | tail -n1)"
+            if [ "$CURRENT" != "$VERSION" ] && [ "$NEWEST" = "$CURRENT" ]; then
+              echo "${CHANNEL} already serves ${CURRENT}, newer than ${VERSION}; leaving it."
+              exit 0
+            fi
+            gh api -X PATCH "repos/${GITHUB_REPOSITORY}/git/refs/tags/${CHANNEL}" \
+              -f sha="$SHA" -F force=true >/dev/null
+          else
+            if gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${CHANNEL}" >/dev/null 2>&1; then
+              gh api -X PATCH "repos/${GITHUB_REPOSITORY}/git/refs/tags/${CHANNEL}" \
+                -f sha="$SHA" -F force=true >/dev/null
+            else
+              gh api -X POST "repos/${GITHUB_REPOSITORY}/git/refs" \
+                -f ref="refs/tags/${CHANNEL}" -f sha="$SHA" >/dev/null
+            fi
+            gh release create "$CHANNEL" --repo "$GITHUB_REPOSITORY" \
+              --verify-tag --latest=false \
+              --title "Standupless desktop ${VERSION}" \
+              --notes "Placeholder"
+          fi
+
+          find assets -maxdepth 1 -type f ! -name 'latest*.yml' -print0 \
+            | xargs -0 gh release upload "$CHANNEL" --repo "$GITHUB_REPOSITORY" --clobber
+          gh release upload "$CHANNEL" assets/latest*.yml --repo "$GITHUB_REPOSITORY" --clobber
+
+          KEEP="$(cd assets && ls -1)"
+          gh release view "$CHANNEL" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name' \
+            | while IFS= read -r NAME; do
+                if ! grep -Fxq "$NAME" <<<"$KEEP"; then
+                  gh release delete-asset "$CHANNEL" "$NAME" --repo "$GITHUB_REPOSITORY" --yes
+                fi
+              done
+
+          gh release edit "$CHANNEL" --repo "$GITHUB_REPOSITORY" --latest=false \
+            --title "Standupless desktop ${VERSION}" \
+            --notes "The current Standupless desktop builds, version ${VERSION}. The desktop apps update from this release, and it always holds the newest version. Versioned copies live on the ${TAG} release. These builds are unsigned."

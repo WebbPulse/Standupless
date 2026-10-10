@@ -177,6 +177,8 @@ class BillingRead(TypedDict):
     billing_interval: NotRequired[str | None]
     business_available: bool
     cancel_at_period_end: NotRequired[bool]
+    comp_expires_at: NotRequired[str | None]
+    comp_plan: NotRequired[str | None]
     current_period_end: NotRequired[str | None]
     features: NotRequired[list[str]]
     guests_per_seat: int
@@ -217,7 +219,9 @@ class ChannelCreate(TypedDict, closed=True):
         ]
     ]
     label: NotRequired[str]
-    url: str
+    slack_channel_id: NotRequired[str | None]
+    slack_channel_name: NotRequired[str]
+    url: NotRequired[str | None]
 
 
 class ChannelRead(TypedDict):
@@ -242,7 +246,9 @@ class ChannelRead(TypedDict):
     last_delivery_at: NotRequired[str | None]
     last_status: NotRequired[int | None]
     provider: Literal["slack", "discord"]
+    slack_channel_id: NotRequired[str]
     team_id: str
+    transport: NotRequired[Literal["webhook", "slack_app"]]
     updated_at: str
     url_hint: str
 
@@ -522,6 +528,7 @@ class InitiativeRead(TypedDict):
     project_health: NotRequired[HealthBreakdownRead]
     project_ids: NotRequired[list[str]]
     status: Literal["planned", "active", "completed"]
+    status_counts: NotRequired[dict[str, int]]
     target_date: NotRequired[str | None]
     update_due_state: NotRequired[Literal["upcoming", "due", "overdue"] | None]
     update_interval_days: NotRequired[int]
@@ -583,14 +590,25 @@ class InsightGroup(TypedDict):
 
 class InsightsRead(TypedDict):
     group_by: Literal[
-        "status", "status_category", "assignee", "creator", "priority", "label", "project", "cycle", "estimate"
+        "status", "status_category", "assignee", "creator", "priority", "label", "project", "cycle", "estimate", "team"
     ]
     groups: list[InsightGroup]
     issue_count: int
     measure: Literal["count", "points"]
     row_cap: NotRequired[int]
     segment_by: NotRequired[
-        Literal["status", "status_category", "assignee", "creator", "priority", "label", "project", "cycle", "estimate"]
+        Literal[
+            "status",
+            "status_category",
+            "assignee",
+            "creator",
+            "priority",
+            "label",
+            "project",
+            "cycle",
+            "estimate",
+            "team",
+        ]
         | None
     ]
     team_ids: list[str]
@@ -815,6 +833,7 @@ class MilestoneRead(TypedDict):
     points: NotRequired[CountsRead]
     project_id: str
     sort_order: str
+    status_counts: NotRequired[dict[str, int]]
     target_date: NotRequired[str | None]
     updated_at: str
     workspace_id: str
@@ -942,6 +961,7 @@ class ProjectRead(TypedDict):
     project_id: str
     start_date: NotRequired[str | None]
     status: Literal["backlog", "planned", "in_progress", "paused", "completed", "canceled"]
+    status_counts: NotRequired[dict[str, int]]
     target_date: NotRequired[str | None]
     team_id: str
     team_ids: list[str]
@@ -1012,6 +1032,21 @@ class ProjectUpdateRead(TypedDict):
     update_id: str
     updated_at: str
     workspace_id: str
+
+
+class PullRequestSummaryEntryRead(TypedDict):
+    ci_state: Literal["none", "pending", "success", "failure"]
+    number: int
+    repository_full_name: str
+    review_state: Literal["none", "pending", "approved", "changes_requested"]
+    state: Literal["open", "closed", "merged", "draft"]
+    title: str
+    url: str
+
+
+class PullRequestSummaryRead(TypedDict):
+    count: int
+    pull_requests: list[PullRequestSummaryEntryRead]
 
 
 class ReactionGroupRead(TypedDict):
@@ -1256,6 +1291,26 @@ class SlaSettingsUpdate(TypedDict):
     low_hours: NotRequired[int | None]
     medium_hours: NotRequired[int | None]
     urgent_hours: NotRequired[int | None]
+
+
+class SlackChannelRead(TypedDict):
+    id: str
+    is_private: NotRequired[bool]
+    name: str
+
+
+class SlackConnectionRead(TypedDict):
+    configured: bool
+    installed: bool
+    installed_at: NotRequired[str | None]
+    installed_by: NotRequired[str | None]
+    slack_team_id: NotRequired[str | None]
+    slack_team_name: NotRequired[str | None]
+
+
+class SlackInstallUrlRead(TypedDict):
+    expires_at: str
+    url: str
 
 
 class StackRead(TypedDict):
@@ -1723,14 +1778,20 @@ class VelocityRead(TypedDict):
 
 
 class ViewCreate(TypedDict):
+    color: NotRequired[
+        Literal["gray", "red", "orange", "yellow", "green", "teal", "blue", "indigo", "purple", "pink"] | None
+    ]
+    description: NotRequired[str | None]
     filter: NotRequired[dict[str, Any]]
     group_by: NotRequired[Literal["status", "assignee", "priority", "label", "milestone"] | None]
+    icon: NotRequired[str | None]
     kind: NotRequired[Literal["list", "board"]]
     layout: NotRequired[Literal["list", "board"] | None]
     name: str
     ordering: NotRequired[
         Literal["updated_desc", "created_desc", "key_asc", "priority_desc", "due_asc", "manual"] | None
     ]
+    shared: NotRequired[bool]
     show_archived: NotRequired[bool]
     show_completed: NotRequired[bool]
     show_sub_issues: NotRequired[bool]
@@ -1752,6 +1813,7 @@ class ViewCreate(TypedDict):
                 "cycle",
                 "parent",
                 "sub_issues",
+                "pull_requests",
                 "created_at",
                 "updated_at",
             ]
@@ -1761,9 +1823,13 @@ class ViewCreate(TypedDict):
 
 
 class ViewRead(TypedDict):
+    color: NotRequired[str | None]
     created_at: str
+    description: NotRequired[str | None]
+    favorite: NotRequired[bool]
     filter: NotRequired[dict[str, Any]]
     group_by: NotRequired[str | None]
+    icon: NotRequired[str | None]
     kind: str
     layout: str
     name: str
@@ -1783,13 +1849,19 @@ class ViewRead(TypedDict):
 
 
 class ViewUpdate(TypedDict):
+    color: NotRequired[
+        Literal["gray", "red", "orange", "yellow", "green", "teal", "blue", "indigo", "purple", "pink"] | None
+    ]
+    description: NotRequired[str | None]
     filter: NotRequired[dict[str, Any] | None]
     group_by: NotRequired[Literal["status", "assignee", "priority", "label", "milestone"] | None]
+    icon: NotRequired[str | None]
     layout: NotRequired[Literal["list", "board"] | None]
     name: NotRequired[str | None]
     ordering: NotRequired[
         Literal["updated_desc", "created_desc", "key_asc", "priority_desc", "due_asc", "manual"] | None
     ]
+    shared: NotRequired[bool | None]
     show_archived: NotRequired[bool | None]
     show_completed: NotRequired[bool | None]
     show_sub_issues: NotRequired[bool | None]
@@ -1810,6 +1882,7 @@ class ViewUpdate(TypedDict):
                 "cycle",
                 "parent",
                 "sub_issues",
+                "pull_requests",
                 "created_at",
                 "updated_at",
             ]
@@ -1962,6 +2035,7 @@ class AppCommonApiSchemasIssuesIssueRead(TypedDict):
     progress: ProgressRead
     project_id: NotRequired[str | None]
     project_milestone_id: NotRequired[str | None]
+    pull_request_summary: NotRequired[PullRequestSummaryRead | None]
     sla_breaches_at: NotRequired[str | None]
     sla_started_at: NotRequired[str | None]
     sla_status: NotRequired[Literal["none", "on_track", "at_risk", "breached"]]
@@ -2083,6 +2157,46 @@ class ErrorResponse(TypedDict):
     request_id: str
     status: int
     success: NotRequired[bool]
+
+
+class HomeAttentionItem(TypedDict):
+    issue: AppCommonApiSchemasIssuesIssueRead
+    reasons: list[Literal["overdue", "due_soon", "sla_breached", "sla_at_risk", "blocked"]]
+
+
+class HomeFocusRead(TypedDict):
+    attention: NotRequired[list[HomeAttentionItem]]
+    attention_count: int
+    in_progress: NotRequired[list[AppCommonApiSchemasIssuesIssueRead]]
+    in_progress_count: int
+    open_count: int
+    truncated: NotRequired[bool]
+    up_next: NotRequired[list[AppCommonApiSchemasIssuesIssueRead]]
+    up_next_count: int
+
+
+class HomeInboxRead(TypedDict):
+    items: NotRequired[list[NotificationRead]]
+    unread_count: int
+
+
+class HomePulseItem(TypedDict):
+    project_id: str
+    project_name: str
+    update: ProjectUpdateRead
+
+
+class HomeShippedItem(TypedDict):
+    completed_at: str
+    completed_by: NotRequired[str | None]
+    issue: AppCommonApiSchemasIssuesIssueRead
+
+
+class HomeShippedRead(TypedDict):
+    count: int
+    items: NotRequired[list[HomeShippedItem]]
+    mine: int
+    since: str
 
 
 class InboxListRead(TypedDict):
@@ -2245,6 +2359,7 @@ class ReleaseDetailRead(TypedDict):
     skipped_issues: NotRequired[list[str]]
     source: str
     stages: list[ReleaseStageRead]
+    status_counts: NotRequired[dict[str, int]]
     team_id: str
     updated_at: str
     url: NotRequired[str | None]
@@ -2269,6 +2384,7 @@ class ReleaseRead(TypedDict):
     sha: NotRequired[str | None]
     source: str
     stages: list[ReleaseStageRead]
+    status_counts: NotRequired[dict[str, int]]
     team_id: str
     updated_at: str
     url: NotRequired[str | None]
@@ -2372,6 +2488,19 @@ class ConnectedAppListRead(TypedDict):
 class CursorPageIssueLinkRead(TypedDict):
     items: list[IssueLinkRead]
     next_cursor: NotRequired[str | None]
+
+
+class HomeRead(TypedDict):
+    cycles: NotRequired[list[CycleRead]]
+    focus: HomeFocusRead
+    generated_at: str
+    inbox: HomeInboxRead
+    projects: NotRequired[list[ProjectRead]]
+    projects_total: NotRequired[int]
+    pulse: NotRequired[list[HomePulseItem]]
+    shipped: HomeShippedRead
+    team_ids: list[str]
+    today: str
 
 
 class IssueImportListRead(TypedDict):

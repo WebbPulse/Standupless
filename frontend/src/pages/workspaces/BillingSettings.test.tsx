@@ -184,6 +184,29 @@ describe('the plan and usage', () => {
     ).not.toBeInTheDocument();
   });
 
+  it('shows a comp plan as active and offers no checkout or portal', async () => {
+    getBilling.mockResolvedValue(
+      plan({
+        plan: 'business',
+        comp_plan: 'business',
+        comp_expires_at: '2027-10-10T00:00:00Z',
+        has_billing_account: true,
+        features: ['triage', 'issue_slas'],
+      })
+    );
+    renderPage();
+
+    expect(await screen.findByText('Business')).toBeInTheDocument();
+    expect(screen.getByText('Complimentary')).toBeInTheDocument();
+    expect(screen.getByText('Ends')).toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'Manage billing' })
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: /Upgrade to/ })
+    ).not.toBeInTheDocument();
+  });
+
   it('explains the preview limits while paid plans are off', async () => {
     getBilling.mockResolvedValue(plan({ billing_enabled: false }));
     renderPage();

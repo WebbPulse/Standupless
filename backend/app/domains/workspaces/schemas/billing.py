@@ -23,6 +23,13 @@ class BillingRead(BaseModel):
     current_period_end: Optional[datetime] = None
     cancel_at_period_end: bool = False
     has_billing_account: bool = False
+    comp_plan: Optional[str] = Field(
+        default=None,
+        description="The plan an internal comp grant holds the workspace on, set only while the grant is live.",
+    )
+    comp_expires_at: Optional[datetime] = Field(
+        default=None, description="When the live comp grant ends, or null for a grant with no expiry."
+    )
     billing_enabled: bool
     business_available: bool
     features: list[str] = Field(default_factory=list)

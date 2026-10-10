@@ -143,8 +143,12 @@ PREVIEW_FREE_GUESTS_PER_SEAT = STANDARD_GUESTS_PER_SEAT
 
 
 def plan_of(workspace: Workspace | str | None) -> str:
-    """The plan name a workspace, or a bare plan name, resolves to."""
-    plan = workspace.plan if isinstance(workspace, Workspace) else workspace
+    """The plan name a workspace, or a bare plan name, resolves to.
+
+    A workspace resolves through `Workspace.effective_plan`, so a live comp grant
+    counts as an active subscription of its plan at every gate.
+    """
+    plan = workspace.effective_plan() if isinstance(workspace, Workspace) else workspace
     return plan if plan in PLAN_LIMITS else DEFAULT_PLAN
 
 

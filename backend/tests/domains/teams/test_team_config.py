@@ -323,3 +323,96 @@ def test_a_guest_in_the_team_reads_its_configuration(client: TestClient, team: s
 
     assert client.get(f"/api/workspaces/{WORKSPACE}/teams/{team}/statuses").status_code == 200
     assert client.get(f"/api/workspaces/{WORKSPACE}/teams/{team}/labels").status_code == 200
+
+
+def _positions(client: TestClient, team: str) -> dict[str, int]:
+    """A team's statuses by name, mapped to their positions."""
+    rows = client.get(f"/api/workspaces/{WORKSPACE}/teams/{team}/statuses").json()["statuses"]
+    return {row["name"]: row["position"] for row in rows}
+
+
+def test_a_status_created_at_a_taken_position_moves_the_rest_up(client: TestClient, team: str) -> None:
+    """Inserting at position 2 leaves no two statuses sharing a position."""
+    sign_in(client, OWNER)
+    response = client.post(
+        f"/api/workspaces/{WORKSPACE}/teams/{team}/statuses",
+        json={"name": "In Review", "category": "started", "position": 2},
+    )
+
+    assert response.status_code == 201
+    assert response.json()["position"] == 2
+    assert _positions(client, team) == {
+        "Backlog": 0,
+        "Todo": 1,
+        "In Review": 2,
+        "In Progress": 3,
+        "Done": 4,
+        "Cancelled": 5,
+    }
+
+
+def test_a_status_moved_onto_a_taken_position_moves_the_rest_up(client: TestClient, team: str) -> None:
+    """A move keeps positions unique and leaves the rows before the target alone."""
+    sign_in(client, OWNER)
+    statuses = client.get(f"/api/workspaces/{WORKSPACE}/teams/{team}/statuses").json()["statuses"]
+    cancelled = next(row["id"] for row in statuses if row["name"] == "Cancelled")
+
+    response = client.patch(f"/api/workspaces/{WORKSPACE}/teams/{team}/statuses/{cancelled}", json={"position": 1})
+
+    assert response.status_code == 200
+    positions = _positions(client, team)
+    assert positions == {"Backlog": 0, "Cancelled": 1, "Todo": 2, "In Progress": 3, "Done": 4}
+
+
+def test_reasserting_a_tied_position_breaks_the_tie(client: TestClient, team: str, repositories: Any) -> None:
+    """Rows already stored on one position are pulled apart by the next write to it."""
+    sign_in(client, OWNER)
+    statuses = client.get(f"/api/workspaces/{WORKSPACE}/teams/{team}/statuses").json()["statuses"]
+    by_name = {row["name"]: row["id"] for row in statuses}
+    repositories.team_config.update_status(WORKSPACE, team, by_name["Done"], position=2)
+
+    response = client.patch(
+        f"/api/workspaces/{WORKSPACE}/teams/{team}/statuses/{by_name['In Progress']}", json={"position": 2}
+    )
+
+    assert response.status_code == 200
+    positions = _positions(client, team)
+    assert positions["In Progress"] == 2
+    assert len(set(positions.values())) == len(positions)
+
+
+def test_a_rename_alone_leaves_positions_as_they_are(client: TestClient, team: str) -> None:
+    """Only a write that names a position renumbers anything."""
+    sign_in(client, OWNER)
+    before = _positions(client, team)
+    statuses = client.get(f"/api/workspaces/{WORKSPACE}/teams/{team}/statuses").json()["statuses"]
+
+    client.patch(f"/api/workspaces/{WORKSPACE}/teams/{team}/statuses/{statuses[0]['id']}", json={"name": "Icebox"})
+
+    after = _positions(client, team)
+    assert after.pop("Icebox") == before.pop("Backlog")
+    assert after == before
+
+
+def test_a_duplicate_label_name_is_refused_ignoring_case(client: TestClient, team: str) -> None:
+    """A second label with the same name, in any case, answers 409 naming the one that exists."""
+    sign_in(client, OWNER)
+    base = f"/api/workspaces/{WORKSPACE}/teams/{team}/labels"
+    first = client.post(base, json={"name": "Bug", "color": "#ff0000"}).json()
+
+    response = client.post(base, json={"name": " bug ", "color": "#00ff00"})
+
+    assert response.status_code == 409
+    assert response.json()["details"]["label_id"] == first["id"]
+    assert len(client.get(base).json()["labels"]) == 1
+
+
+def test_renaming_a_label_onto_another_name_is_refused(client: TestClient, team: str) -> None:
+    """A rename is held to the same rule, while a case-only rename of the label itself is fine."""
+    sign_in(client, OWNER)
+    base = f"/api/workspaces/{WORKSPACE}/teams/{team}/labels"
+    client.post(base, json={"name": "bug", "color": "#ff0000"})
+    other = client.post(base, json={"name": "feature", "color": "#00ff00"}).json()
+
+    assert client.patch(f"{base}/{other['id']}", json={"name": "BUG"}).status_code == 409
+    assert client.patch(f"{base}/{other['id']}", json={"name": "Feature"}).status_code == 200

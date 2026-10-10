@@ -107,7 +107,7 @@ CONSUMERS: Dict[str, ConsumerScope] = {
         ConsumerScope(
             name="integrations-events-consumer",
             domain="integrations",
-            repositories=("github", "idempotency", "issues", "comments", "counters", "activity"),
+            repositories=("github", "idempotency", "issues", "comments", "counters", "activity", "releases"),
             read_repositories=("memberships", "workspaces", "users", "teams", "team_config", "oauth_links"),
         ),
         ConsumerScope(

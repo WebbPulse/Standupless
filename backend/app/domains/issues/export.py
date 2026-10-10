@@ -21,6 +21,7 @@ from app.common.api.dependencies.authz import AuthzContext
 from app.common.api.dependencies.repositories import Repositories
 from app.common.api.pagination import digest_scope, resume_key
 from app.common.db.dynamo.issues import Issue
+from app.common.filter_resolution import resolve_issue_filter
 from app.common.issue_filters import IssueFilter
 from app.common.issue_keys import current
 from app.common.issue_rules import require_team_reader, visible_team_ids
@@ -240,6 +241,7 @@ def export_page(
     team_index = int(position.get("team", 0)) if position else 0
     after = int(position.get("after", 0)) if position else 0
 
+    wanted = resolve_issue_filter(repositories, context.workspace_id, teams, wanted)
     categories: dict[str, str] = {}
     if wanted.needs_categories:
         for candidate in teams:

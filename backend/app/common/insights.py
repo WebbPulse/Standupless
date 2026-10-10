@@ -27,6 +27,7 @@ from app.common.api.schemas.views import FILTER_FIELDS
 from app.common.db.dynamo.issues import PRIORITY_ORDER, Issue, as_issue
 from app.common.db.dynamo.team_config import STATUS_CATEGORIES, status_order
 from app.common.estimates import estimate_points
+from app.common.filter_resolution import resolve_issue_filter
 from app.common.issue_filters import ME, IssueFilter, UnknownStatusCategory, build_issue_filter
 from app.common.issue_keyed_reads import keyed_rows
 from app.common.issue_keys import current_all
@@ -60,6 +61,7 @@ UNSET_NAMES: dict[str, str] = {
     "status_category": "Unknown category",
     "creator": "Unknown",
     "priority": "No priority",
+    "team": "No team",
 }
 """What the unset bucket of each dimension is called."""
 
@@ -70,6 +72,7 @@ UNKNOWN_NAMES: dict[str, str] = {
     "project": "Deleted project",
     "cycle": "Deleted cycle",
     "status": "Deleted status",
+    "team": "Deleted team",
 }
 """What a value is called when the row it names is gone."""
 
@@ -194,13 +197,14 @@ def insight_rows(repositories: Repositories, context: AuthzContext, scope: Insig
         candidates = candidates[:INSIGHTS_ROW_CAP]
         truncated = True
 
+    filters = [resolve_issue_filter(repositories, workspace_id, teams, item) for item in scope.filters]
     categories: dict[str, str] = {}
-    if any(item.needs_categories for item in scope.filters):
+    if any(item.needs_categories for item in filters):
         for team in teams:
             categories.update(
                 {row.status_id: row.category for row in repositories.team_config.list_statuses(workspace_id, team)}
             )
-    matched = [issue for issue in candidates if all(item.matches(issue, categories) for item in scope.filters)]
+    matched = [issue for issue in candidates if all(item.matches(issue, categories) for item in filters)]
     return matched, truncated
 
 
@@ -224,6 +228,8 @@ def _values_of(issue: Issue, dimension: str, categories: Mapping[str, str]) -> l
         return [issue.cycle_id]
     if dimension == "estimate":
         return [issue.estimate or None]
+    if dimension == "team":
+        return [issue.team_id or None]
     raise unprocessable(f"Unknown insight dimension {dimension}")
 
 
@@ -277,6 +283,11 @@ def _names(
                 if cycle.cycle_id in wanted:
                     names.labels[cycle.cycle_id] = cycle.name or (f"Cycle {cycle.number}" if cycle.number else "Cycle")
                     names.order[cycle.cycle_id] = (cycle.start_date, rank)
+    elif dimension == "team" and wanted:
+        for team_id in sorted(wanted):
+            team = repositories.teams.get(workspace_id, team_id)
+            if team is not None:
+                names.labels[team_id] = team.name
     elif dimension == "estimate":
         for key in wanted:
             names.labels[key] = key

@@ -12,9 +12,11 @@ from __future__ import annotations
 import hashlib
 import json
 from dataclasses import dataclass, field, fields
+from datetime import datetime
 from typing import Iterable, Mapping, Optional
 
 from app.common.db.dynamo.issues import Issue
+from app.common.db.dynamo.relations import LINK_TYPES
 from app.common.db.dynamo.team_config import STATUS_CATEGORIES
 from app.common.estimates import is_unestimated
 from app.common.sla import SLA_STATUSES
@@ -29,6 +31,15 @@ ME = "me"
 CATEGORY_ALIASES: dict[str, str] = {"canceled": "cancelled"}
 """Spellings accepted for a category, because clients carry both and neither is wrong."""
 
+CLOSED_CATEGORIES: frozenset[str] = frozenset({"completed", "cancelled"})
+"""The categories a blocker stops counting in, the rule the blocked marker keeps too."""
+
+RELATIVE_CYCLES: tuple[str, ...] = ("current", "next", "previous")
+"""Cycle filter values resolved per team when the query runs, so a view follows the schedule."""
+
+BOOLEAN_VALUES: dict[str, bool] = {"true": True, "false": False}
+"""The spellings a boolean filter takes, since a saved view stores every value as text."""
+
 FilterValues = frozenset[Optional[str]]
 
 
@@ -38,6 +49,35 @@ class UnknownStatusCategory(ValueError):
 
 class UnknownSlaStatus(UnknownStatusCategory):
     """An SLA status outside the fixed four, a subclass so every category catch 422s on it too."""
+
+
+class InvalidFilterValue(UnknownStatusCategory):
+    """A relation or boolean filter value outside its fixed set, 422ed like a category."""
+
+
+def _boolean(name: str, raw: object) -> Optional[bool]:
+    """One boolean filter from a bool or its text spelling, `None` when absent."""
+    if raw is None or raw == "" or raw == []:
+        return None
+    if isinstance(raw, list):
+        if len(raw) != 1:
+            raise InvalidFilterValue(f"{name} must be true or false")
+        raw = raw[0]
+    if isinstance(raw, bool):
+        return raw
+    value = BOOLEAN_VALUES.get(str(raw).strip().lower())
+    if value is None:
+        raise InvalidFilterValue(f"{name} must be true or false")
+    return value
+
+
+def _relation_types(raw: Iterable[str] | str | None) -> FilterValues:
+    """Relation types for `has_relation`, refusing any outside the four a link may take."""
+    values = _values(raw, nullable=False)
+    for value in values:
+        if value not in LINK_TYPES:
+            raise InvalidFilterValue(f"has_relation must be one of: {', '.join(LINK_TYPES)}")
+    return values
 
 
 def _values(raw: Iterable[str] | str | None, *, me: str | None = None, nullable: bool = True) -> FilterValues:
@@ -109,6 +149,8 @@ class IssueFilter:
     does not resend an issue whose SLA status moved only because time passed.
     """
 
+    team_ids: FilterValues = field(default_factory=frozenset)
+    team_ids_not: FilterValues = field(default_factory=frozenset)
     status_ids: FilterValues = field(default_factory=frozenset)
     status_ids_not: FilterValues = field(default_factory=frozenset)
     status_categories: FilterValues = field(default_factory=frozenset)
@@ -133,16 +175,38 @@ class IssueFilter:
     sla_statuses: FilterValues = field(default_factory=frozenset)
     due_before: Optional[str] = None
     due_after: Optional[str] = None
+    created_before: Optional[str] = None
+    created_after: Optional[str] = None
+    updated_before: Optional[str] = None
+    updated_after: Optional[str] = None
     query: Optional[str] = None
     include_archived: bool = False
     archived_only: bool = False
     include_triage: bool = False
     triage_only: bool = False
+    is_blocked: Optional[bool] = None
+    is_blocking: Optional[bool] = None
+    has_relations: FilterValues = field(default_factory=frozenset)
+    relation_ids: Optional[Mapping[str, frozenset[str]]] = field(default=None, compare=False)
 
     @property
     def needs_categories(self) -> bool:
         """Whether matching needs each status's category, which costs a config read."""
-        return bool(self.status_categories or self.status_categories_not)
+        return bool(self.status_categories or self.status_categories_not or self.is_blocking is not None)
+
+    @property
+    def needs_relations(self) -> bool:
+        """Whether matching needs the workspace's links, which costs one relations read."""
+        return bool(self.is_blocking is not None or self.has_relations)
+
+    @property
+    def needs_cycles(self) -> bool:
+        """Whether a cycle value must be checked or resolved against the teams' cycles."""
+        return bool(self.cycle_ids - {None} or self.cycle_ids_not - {None})
+
+    def _linked(self, relation_type: str, issue_id: str) -> bool:
+        """Whether one issue holds a link of one type, from the resolved link index."""
+        return issue_id in (self.relation_ids or {}).get(relation_type, frozenset())
 
     def fingerprint(self) -> str:
         """A short stable digest of the filter, for binding a cursor to it.
@@ -155,6 +219,7 @@ class IssueFilter:
             if isinstance(getattr(self, item.name), frozenset)
             else getattr(self, item.name)
             for item in fields(self)
+            if item.name != "relation_ids"
         }
         encoded = json.dumps(canonical, sort_keys=True).encode("utf-8")
         return hashlib.sha256(encoded).hexdigest()[:16]
@@ -174,6 +239,8 @@ class IssueFilter:
             if not issue.in_triage:
                 return False
         elif issue.in_triage and not self.include_triage:
+            return False
+        if not _included(self.team_ids, self.team_ids_not, issue.team_id):
             return False
         if not _included(self.status_ids, self.status_ids_not, issue.status_id):
             return False
@@ -205,7 +272,43 @@ class IssueFilter:
             return False
         if self.due_after and not (issue.due_date and issue.due_date > self.due_after):
             return False
+        if not _within(issue.created_at, self.created_after, self.created_before):
+            return False
+        if not _within(issue.updated_at, self.updated_after, self.updated_before):
+            return False
+        if self.is_blocked is not None and (issue.blocked_by_open_count > 0) != self.is_blocked:
+            return False
+        if self.is_blocking is not None:
+            open_now = (categories or {}).get(issue.status_id) not in CLOSED_CATEGORIES
+            if (open_now and self._linked("blocks", issue.issue_id)) != self.is_blocking:
+                return False
+        if self.has_relations and not any(
+            kind is not None and self._linked(kind, issue.issue_id) for kind in self.has_relations
+        ):
+            return False
         return _query_matches(self.query, issue)
+
+
+def _within(moment: datetime, after: Optional[str], before: Optional[str]) -> bool:
+    """One timestamp's calendar day against an exclusive after and before day.
+
+    Compared by UTC day rather than instant, the way the due date bounds are, so
+    "created after 2026-10-01" means from the 2nd whatever the hour.
+    """
+    day = moment.date().isoformat()
+    if after and not day > after:
+        return False
+    if before and not day < before:
+        return False
+    return True
+
+
+def _day(value: Optional[str]) -> Optional[str]:
+    """A date bound reduced to its `YYYY-MM-DD` day, so a full timestamp bound still compares by day."""
+    if not value:
+        return None
+    text = str(value).strip()[:10]
+    return text or None
 
 
 def _included(wanted: FilterValues, unwanted: FilterValues, value: Optional[str]) -> bool:
@@ -261,6 +364,8 @@ def _query_matches(query: Optional[str], issue: Issue) -> bool:
 def build_issue_filter(
     *,
     user_id: str,
+    team_id_in: Iterable[str] | str | None = None,
+    team_id_not: Iterable[str] | str | None = None,
     status_id: Iterable[str] | str | None = None,
     status_id_not: Iterable[str] | str | None = None,
     status_category: Iterable[str] | str | None = None,
@@ -285,20 +390,34 @@ def build_issue_filter(
     sla_status: Iterable[str] | str | None = None,
     due_before: Optional[str] = None,
     due_after: Optional[str] = None,
+    created_before: Optional[str] = None,
+    created_after: Optional[str] = None,
+    updated_before: Optional[str] = None,
+    updated_after: Optional[str] = None,
     q: Optional[str] = None,
     include_archived: bool = False,
     archived_only: bool = False,
     include_triage: bool = False,
     triage_only: bool = False,
+    is_blocked: object = None,
+    is_blocking: object = None,
+    has_relation: Iterable[str] | str | None = None,
 ) -> IssueFilter:
     """An `IssueFilter` from the list's wire names, sentinels resolved.
 
     Keyword names match the query parameters and the saved view filter keys, so a
-    stored filter can be splatted straight in. Raises `UnknownStatusCategory` for a
+    stored filter can be splatted straight in. `team_id_in` and `team_id_not`
+    narrow the teams a list already fanned out over, which is how a workspace
+    view says "these teams" or "every team but these". Raises `UnknownStatusCategory` for a
     category outside the fixed five, and its `UnknownSlaStatus` subclass for an
-    SLA status outside the fixed four.
+    SLA status outside the fixed four. `is_blocked` and `is_blocking` take a bool
+    or `true` and `false`, and `has_relation` a link type, each refused with
+    `InvalidFilterValue` otherwise. Relative cycles and the link index are resolved
+    later, by `resolve_issue_filter`, because both need a read.
     """
     return IssueFilter(
+        team_ids=_values(team_id_in, nullable=False),
+        team_ids_not=_values(team_id_not, nullable=False),
         status_ids=_values(status_id, nullable=False),
         status_ids_not=_values(status_id_not, nullable=False),
         status_categories=_categories(status_category),
@@ -323,9 +442,16 @@ def build_issue_filter(
         sla_statuses=_sla_statuses(sla_status),
         due_before=due_before or None,
         due_after=due_after or None,
+        created_before=_day(created_before),
+        created_after=_day(created_after),
+        updated_before=_day(updated_before),
+        updated_after=_day(updated_after),
         query=q or None,
         include_archived=bool(include_archived),
         archived_only=bool(archived_only),
         include_triage=bool(include_triage),
         triage_only=bool(triage_only),
+        is_blocked=_boolean("is_blocked", is_blocked),
+        is_blocking=_boolean("is_blocking", is_blocking),
+        has_relations=_relation_types(has_relation),
     )

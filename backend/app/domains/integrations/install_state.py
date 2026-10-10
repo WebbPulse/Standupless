@@ -48,19 +48,30 @@ class _Claims(Protocol):
         ...
 
 
-def mint_state(workspace_id: str, user_id: str) -> tuple[str, datetime]:
-    """A signed state binding this install to one workspace, and when it expires."""
+def mint_state(
+    workspace_id: str,
+    user_id: str,
+    *,
+    audience: str = STATE_AUDIENCE,
+    extra: Mapping[str, str] | None = None,
+) -> tuple[str, datetime]:
+    """A signed state binding this install to one workspace, and when it expires.
+
+    `audience` names the install flow, so a state minted for one App is refused by
+    another's callback, and `extra` carries the few plain claims a callback needs
+    to send the browser back where it started.
+    """
     expires_at = datetime.now(timezone.utc) + timedelta(seconds=STATE_TTL_SECONDS)
     token = create_token(
-        {"workspace_id": workspace_id, "user_id": user_id, "nonce": secrets.token_urlsafe(16)},
+        {**(extra or {}), "workspace_id": workspace_id, "user_id": user_id, "nonce": secrets.token_urlsafe(16)},
         settings.SECRET_KEY,
         expires_in=timedelta(seconds=STATE_TTL_SECONDS),
-        audience=STATE_AUDIENCE,
+        audience=audience,
     )
     return token, expires_at
 
 
-def read_state(state: str) -> Mapping[str, Any]:
+def read_state(state: str, *, audience: str = STATE_AUDIENCE) -> Mapping[str, Any]:
     """The claims of a valid state, or `StateError`.
 
     Every failure is the same exception with no detail, because the caller is
@@ -73,7 +84,7 @@ def read_state(state: str) -> Mapping[str, Any]:
         claims = decode_token(
             state,
             settings.SECRET_KEY,
-            audience=STATE_AUDIENCE,
+            audience=audience,
             require=["exp", "iat", "workspace_id", "user_id", "nonce"],
         )
     except (ExpiredToken, InvalidToken) as error:
@@ -84,21 +95,23 @@ def read_state(state: str) -> Mapping[str, Any]:
     return claims
 
 
-def redeem_state(state: str, idempotency: _Claims) -> Mapping[str, Any]:
+def redeem_state(
+    state: str, idempotency: _Claims, *, audience: str = STATE_AUDIENCE, nonce_scope: str = NONCE_SCOPE
+) -> Mapping[str, Any]:
     """The claims of a valid state that has not been redeemed before, or `StateError`.
 
     The nonce claim outlives the token, so a state replayed from a browser history
     inside its ten minutes finds the claim already taken.
     """
-    claims = read_state(state)
+    claims = read_state(state, audience=audience)
     nonce = str(claims.get("nonce", ""))
-    if not nonce or not idempotency.claim(PLATFORM_SCOPE, NONCE_SCOPE, nonce, ttl_seconds=STATE_TTL_SECONDS * 2):
+    if not nonce or not idempotency.claim(PLATFORM_SCOPE, nonce_scope, nonce, ttl_seconds=STATE_TTL_SECONDS * 2):
         raise StateError("state already redeemed")
     return claims
 
 
-def workspace_hint(state: str) -> str:
-    """The workspace a state was minted for, even when it has expired or been redeemed.
+def state_hint(state: str, *, audience: str = STATE_AUDIENCE) -> Mapping[str, Any]:
+    """The claims a state was minted with, even when it has expired or been redeemed.
 
     Only ever used to choose which settings page a refused callback lands on, so an
     admin whose state went stale is sent back to their own workspace rather than to
@@ -110,9 +123,14 @@ def workspace_hint(state: str) -> str:
             state,
             settings.SECRET_KEY,
             algorithms=[DEFAULT_ALGORITHM],
-            audience=STATE_AUDIENCE,
+            audience=audience,
             options={"verify_exp": False},
         )
     except jwt.PyJWTError:
-        return ""
-    return str(claims.get("workspace_id", ""))
+        return {}
+    return claims
+
+
+def workspace_hint(state: str, *, audience: str = STATE_AUDIENCE) -> str:
+    """The workspace id `state_hint` reads, or `""`."""
+    return str(state_hint(state, audience=audience).get("workspace_id", ""))

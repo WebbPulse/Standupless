@@ -23,6 +23,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import BaseModel, Field
 
+from app.common import issue_keys
 from app.common.api.dependencies.repositories import Repositories
 from app.common.db.dynamo.activity import Activity
 from app.common.db.dynamo.base import utc_now
@@ -213,6 +214,7 @@ def build_digest(
     missing = sorted(touched - set(issues))
     if missing:
         issues.update(repositories.issues.get_many(workspace_id, missing))
+    issues = {issue_id: issue_keys.current(repositories.teams, issue) for issue_id, issue in issues.items()}
     builder = _Builder(projects, issues)
     _credit_status_changes(builder, feed, categories)
     for issue_id, author_id, at in comments:
@@ -221,8 +223,9 @@ def build_digest(
     for update, project in _project_updates(repositories, workspace_id, team_id, projects.values(), start, end):
         builder.project_update(update.author_id, update, project)
     notes = repositories.team_config.list_standup_notes(workspace_id, team_id, day.isoformat())
+    renames = issue_keys.retired_prefixes(repositories.teams, workspace_id) if notes else {}
     for note in notes:
-        builder.person(note.user_id).note = note.body
+        builder.person(note.user_id).note = issue_keys.current_references(note.body, renames)
     for user_id in member_ids:
         builder.person(user_id)
     people = builder.finish(repositories)

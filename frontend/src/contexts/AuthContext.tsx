@@ -12,6 +12,8 @@ import {
 } from '@webbpulse/auth/react';
 import { useNavigate } from 'react-router-dom';
 import { getIdentityClient } from '../api/identityClient';
+import { clearIssueContextCache } from '../lib/issueContextCache';
+import { clearSignedIn, useSignedInHint } from '../lib/signedInHint';
 import type { UserRead } from '../types/Api';
 import {
   AuthExtrasContext,
@@ -31,7 +33,11 @@ const AuthExtrasProvider: React.FC<{ children: ReactNode }> = ({
     setUser,
     reloadUser,
     logout: packageLogout,
+    isAuthenticated,
+    isLoading,
   } = usePackageAuth<UserRead>();
+
+  useSignedInHint(isAuthenticated, isLoading);
 
   const login = useCallback(
     (userData: UserRead) => {
@@ -55,6 +61,8 @@ const AuthExtrasProvider: React.FC<{ children: ReactNode }> = ({
       } catch {
         void 0;
       }
+      clearIssueContextCache();
+      clearSignedIn();
       void navigate(to, { replace: true });
     },
     [navigate, packageLogout]

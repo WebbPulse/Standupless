@@ -222,7 +222,7 @@ def test_a_manual_status_change_after_the_event_is_not_overridden(
     assert unchanged.status_id == status_ids["backlog"]
 
 
-def test_a_key_naming_a_team_the_repository_is_pinned_away_from_is_dropped(
+def test_a_pinned_repository_still_links_another_teams_key(
     repositories: Any,
     installed: str,
     issue: Any,
@@ -230,12 +230,26 @@ def test_a_key_naming_a_team_the_repository_is_pinned_away_from_is_dropped(
     enqueued: list[tuple[str, Any]],
     github_env: None,
 ) -> None:
-    """A repository pinned to one team searches that team's prefix alone.
-
-    Without this, `XYZ-1` in a repository belonging to one team would move an issue
-    of a team that team was never given.
-    """
+    """A pin only chooses whose releases a repository feeds, so every team key still links."""
     repositories.github.set_repository_team(WORKSPACE, REPOSITORY_ID, TEAM)
+
+    events.handle_record(repositories, sqs_record(pull_request_event(title="XYZ-1 and ABC-1")))
+
+    assert len(repositories.github.list_links_for_issue(WORKSPACE, hidden_issue.issue_id).items) == 1
+    assert len(repositories.github.list_links_for_issue(WORKSPACE, issue.issue_id).items) == 1
+
+
+def test_a_pinned_repository_does_not_reach_a_private_team_its_author_is_outside(
+    repositories: Any,
+    installed: str,
+    issue: Any,
+    hidden_issue: Any,
+    enqueued: list[tuple[str, Any]],
+    github_env: None,
+) -> None:
+    """Pinning never widens reach: a private team still needs an author who can see it."""
+    repositories.github.set_repository_team(WORKSPACE, REPOSITORY_ID, TEAM)
+    repositories.memberships.set_team_private(WORKSPACE, OTHER_TEAM, True)
 
     events.handle_record(repositories, sqs_record(pull_request_event(title="XYZ-1 and ABC-1")))
 

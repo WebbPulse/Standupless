@@ -29,6 +29,8 @@ export interface IssueRelationsProps {
   canEdit: boolean;
   /** Opens the add relation dialog. */
   onAdd: () => void;
+  /** Renders nothing while the section has no content, for a compact panel. */
+  hideEmpty?: boolean;
 }
 
 /** The groups in the order they read, each with its heading. */
@@ -48,6 +50,7 @@ export const IssueRelations: React.FC<IssueRelationsProps> = ({
   links,
   canEdit,
   onAdd,
+  hideEmpty = false,
 }) => {
   const remove = (link: LinkRead): void => {
     deleteLink(workspaceId, issueId, link.link_id)
@@ -62,7 +65,7 @@ export const IssueRelations: React.FC<IssueRelationsProps> = ({
       });
   };
 
-  if (links.length === 0 && !canEdit) return null;
+  if (links.length === 0 && (hideEmpty || !canEdit)) return null;
 
   const groups = GROUPS.map((group) => ({
     ...group,

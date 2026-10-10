@@ -1,7 +1,7 @@
 /**
  * The workspace sidebar: the workspace menu with the create and search
  * buttons beside it, the caller's own inbox and issues, the places that span
- * the workspace, their saved views, then a section per team, each expanding to
+ * the workspace, their favorite views, then a section per team, each expanding to
  * that team's issues, cycles, releases and projects. Rendered as the fixed rail on wide
  * screens and inside a drawer on phones.
  *
@@ -16,9 +16,9 @@
  * follows them to every device. The new order shows at once and settles when
  * the saved list is read back.
  *
- * There is no favorites section: the API has nowhere to keep a person's
- * favorites yet, and a section that only lived in one browser would disagree
- * with every other device the person signs in on.
+ * Favorites are the saved views the caller starred. The star is kept by the
+ * server per person, so the section agrees on every device they sign in on,
+ * and each opens with the display options stored on the view.
  *
  * The footer's sign-out button carries the same `sign-out` test id as the
  * account shell's, because signing in lands a person with one workspace inside
@@ -86,6 +86,7 @@ import Menu, { MenuItem, MenuSeparator } from '../ui/menu';
 import { Skeleton } from '../ui/skeleton';
 import ThemeToggle from '../ui/theme-toggle';
 import InboxBadge from '../views/InboxBadge';
+import ViewIcon from '../views/ViewIcon';
 import { useTeamsFor } from '../../hooks/useTeams';
 
 /** Props for Sidebar: the workspace and what to do when a link is followed. */
@@ -95,8 +96,8 @@ export interface SidebarProps {
   onNavigate?: () => void;
 }
 
-/** How many of the caller's views the sidebar lists before pointing at the rest. */
-const VIEW_LIMIT = 6;
+/** How many of the caller's favorite views the sidebar lists before pointing at the rest. */
+const VIEW_LIMIT = 10;
 
 const ICON = 'h-4 w-4 shrink-0';
 const SUB_ICON = 'h-3.5 w-3.5 shrink-0';
@@ -549,10 +550,16 @@ export const Sidebar: React.FC<SidebarProps> = ({ workspace, onNavigate }) => {
     }
     return index < dragFrom ? 'before' : 'after';
   };
-  const ownViews = useMemo(() => (views ?? []).slice(0, VIEW_LIMIT), [views]);
+  const ownViews = useMemo(
+    () =>
+      (views ?? [])
+        .filter((view) => view.favorite === true)
+        .slice(0, VIEW_LIMIT),
+    [views]
+  );
 
   return (
-    <div className="flex h-full flex-col bg-surface">
+    <div className="flex h-full flex-col bg-app">
       <div className="flex h-topbar items-center gap-0.5 px-2">
         <Menu
           label="Workspace"
@@ -712,7 +719,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ workspace, onNavigate }) => {
 
         {ownViews.length > 0 && (
           <section aria-labelledby="sidebar-views">
-            <SectionHeading id="sidebar-views">Your views</SectionHeading>
+            <SectionHeading id="sidebar-views">Favorites</SectionHeading>
             <div className="space-y-px">
               {ownViews.map((view) => (
                 <NavLink
@@ -722,9 +729,10 @@ export const Sidebar: React.FC<SidebarProps> = ({ workspace, onNavigate }) => {
                   className={itemClass}
                   onClick={onNavigate}
                 >
-                  <LuLayers
-                    className="h-3.5 w-3.5 shrink-0 text-text-faint"
-                    aria-hidden="true"
+                  <ViewIcon
+                    icon={view.icon}
+                    color={view.color}
+                    className="h-3.5 w-3.5 shrink-0"
                   />
                   <span className="min-w-0 truncate">{view.name}</span>
                 </NavLink>

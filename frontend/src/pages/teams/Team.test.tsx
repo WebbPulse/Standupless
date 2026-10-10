@@ -546,15 +546,21 @@ describe('creating and saving', () => {
     ).not.toBeInTheDocument();
   });
 
-  it('offers to save only once something changed, and saves it as a team view', async () => {
+  it('saves the list as a view shared with the team', async () => {
     const user = userEvent.setup();
     createView.mockResolvedValue({ view_id: 'view-9', name: 'Urgent work' });
     renderPage('/w/mine/team/ENG?group=priority');
 
-    await user.click(await screen.findByRole('button', { name: 'Save view' }));
+    await user.click(
+      await screen.findByRole('button', { name: 'Save as view' })
+    );
     const dialog = await screen.findByRole('dialog');
     await user.type(within(dialog).getByLabelText('View name'), 'Urgent work');
-    await user.click(within(dialog).getByLabelText('Share with Engine'));
+    expect(within(dialog).getByLabelText('Location')).toHaveValue('team-1');
+    await user.selectOptions(
+      within(dialog).getByLabelText('Visibility'),
+      'shared'
+    );
     await user.click(within(dialog).getByRole('button', { name: 'Save view' }));
 
     await waitFor(() => {
@@ -565,18 +571,19 @@ describe('creating and saving', () => {
           team_id: 'team-1',
           group_by: 'priority',
           filter: { team_id: 'team-1' },
+          icon: 'layers',
         })
       );
     });
     expect(await screen.findByText('View page')).toBeInTheDocument();
   });
 
-  it('has no save button while the list is as the page opens', async () => {
+  it('offers to save as a view even before anything changed', async () => {
     renderPage();
 
     await screen.findByText('Cache the token');
     expect(
-      screen.queryByRole('button', { name: 'Save view' })
-    ).not.toBeInTheDocument();
+      screen.getByRole('button', { name: 'Save as view' })
+    ).toBeInTheDocument();
   });
 });

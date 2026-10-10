@@ -1,8 +1,9 @@
 identity_jwt_mode   = "gate"
 domain_jwt_enforced = true
 
-passkeys_enabled      = true
-passkeys_passwordless = true
+passkeys_enabled       = true
+passkeys_passwordless  = true
+passkeys_second_factor = true
 
 ephemeral_users_enabled = true
 adopt_spans_log_group   = true

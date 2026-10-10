@@ -5,7 +5,9 @@ path decides the team. They sit inside the team webhooks subtree because the gat
 already routes that prefix to this function, and this router is included before the
 webhooks router so the literal `channels` segment wins over a `{webhook_id}`. The URL
 is a bearer credential for the channel, so it is accepted on create and on an update
-that replaces it and never returned: reads carry only its masked tail.
+that replaces it and never returned: reads carry only its masked tail. A channel can
+instead post through the workspace's installed Slack App, picked from the list
+`slack-channels` answers, and then has no URL at all.
 """
 
 from __future__ import annotations
@@ -18,7 +20,10 @@ from app.common.api.dependencies.authz import AuthzContext, Capability, require
 from app.common.api.dependencies.repositories import Repositories, get_repositories
 from app.domains.integrations.channels import manage
 from app.domains.integrations.schemas.channels import ChannelCreate, ChannelRead, ChannelTestRead, ChannelUpdate
+from app.domains.integrations.schemas.slack import SlackChannelRead
 from app.domains.integrations.service import not_found, require_team_content, unavailable, unprocessable
+from app.domains.integrations.slack import install as slack_install
+from app.domains.integrations.slack.api import SlackError
 
 router = APIRouter()
 
@@ -51,6 +56,21 @@ def list_team_channels(team_id: TeamId, context: TeamAdmin, repositories: Bundle
     """The Slack and Discord channels a team posts to."""
     _require_team(repositories, context.workspace_id, team_id)
     return manage.list_for_team(repositories, context.workspace_id, team_id)
+
+
+@router.get("/{workspace_id}/teams/{team_id}/webhooks/slack-channels", response_model=list[SlackChannelRead])
+def list_slack_channels(team_id: TeamId, context: TeamAdmin, repositories: Bundle) -> list[SlackChannelRead]:
+    """The Slack channels the workspace's Slack App can post to, for the add channel picker."""
+    _require_team(repositories, context.workspace_id, team_id)
+    require_team_content(context, team_id)
+    installation = repositories.github.slack.get(context.workspace_id)
+    if installation is None:
+        raise not_found()
+    try:
+        channels = slack_install.list_channels(installation)
+    except (SlackError, slack_install.BotUnavailable) as exc:
+        raise unavailable("Slack did not list the channels. Try again.") from exc
+    return [SlackChannelRead.model_validate(channel) for channel in channels]
 
 
 @router.post(

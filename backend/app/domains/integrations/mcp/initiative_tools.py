@@ -78,6 +78,7 @@ def _initiative_json(initiative: InitiativeRead) -> dict[str, Any]:
         "project_ids": initiative.project_ids,
         "project_count": initiative.project_count,
         "counts": initiative.counts.model_dump(),
+        "status_counts": initiative.status_counts,
         "points": initiative.points.model_dump(),
         "project_health": initiative.project_health.model_dump(),
         "last_update_at": initiative.last_update_at.isoformat() if initiative.last_update_at else None,

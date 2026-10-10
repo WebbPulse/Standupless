@@ -77,6 +77,9 @@ describe('the auth policy gate', () => {
     expect(
       screen.getByRole('link', { name: 'Set up two-factor authentication' })
     ).toHaveAttribute('href', '/security');
+    expect(
+      screen.getByText(/Add an authenticator app or a passkey/)
+    ).toBeInTheDocument();
   });
 
   it('refreshes the session before checking again', async () => {

@@ -1,17 +1,28 @@
 /**
  * The filters over a list or board. The Filter button walks from a property
- * to its values, and each active filter is a chip reading "Status is Todo,
- * In Progress" whose verb flips between "is" and "is not" and whose values
- * reopen the same list. Values are offered by name, so a status or label
- * shared by name across teams is one choice that matches in every team.
+ * to its values, and each active filter is a chip reading "Status is any of
+ * Todo, In Progress" whose verb flips between keeping and excluding and whose
+ * values reopen the same list. Chips are ANDed together. Values are offered
+ * by name, so a status or label shared by name across teams is one choice
+ * that matches in every team. A date field takes one day instead, picked
+ * from a few relative presets or a calendar, and its verb flips between
+ * "before" and "after".
  */
 
 import React, { useState } from 'react';
 import {
+  LuBan,
   LuBox,
+  LuCalendar,
+  LuCalendarClock,
+  LuCalendarPlus,
   LuCircleDashed,
   LuClock,
   LuIterationCw,
+  LuLink,
+  LuOctagonAlert,
+  LuPenLine,
+  LuUsers,
   LuListFilter,
   LuMilestone,
   LuSignal,
@@ -27,7 +38,9 @@ import {
   FILTER_FIELDS,
   FILTER_LABELS,
   KEEP_ONLY_FIELDS,
+  RELATIVE_CYCLES,
   fieldsFor,
+  isDateField,
   labelGroupKey,
   statusGroupKey,
   type FilterClause,
@@ -41,10 +54,12 @@ import {
 import { pickableLabels } from '../../../lib/labelGroups';
 import { SLA_STATUSES, SLA_STATUS_LABELS } from '../../../lib/sla';
 import { cn } from '../../../lib/cn';
+import type { LinkType } from '../../../types/Api';
 import { estimateChoices } from '../../../lib/validation';
 import Avatar from '../../ui/avatar';
 import Button from '../../ui/button';
 import { Combobox, type ComboboxOption } from '../../ui/combobox';
+import { Input } from '../../ui/input';
 import { PriorityGlyph } from '../../ui/glyphs';
 import { StatusIcon } from '../../ui/StatusIcon';
 import { Popover } from '../../ui/popover';
@@ -53,13 +68,101 @@ import { useShortcut } from '../../../hooks/useShortcuts';
 const FIELD_ICONS: Record<FilterField, React.ReactNode> = {
   status: <LuCircleDashed className="h-3.5 w-3.5" />,
   assignee: <LuUserRound className="h-3.5 w-3.5" />,
+  creator: <LuPenLine className="h-3.5 w-3.5" />,
   priority: <LuSignal className="h-3.5 w-3.5" />,
   label: <LuTag className="h-3.5 w-3.5" />,
   estimate: <LuTriangle className="h-3.5 w-3.5" />,
+  team: <LuUsers className="h-3.5 w-3.5" />,
   project: <LuBox className="h-3.5 w-3.5" />,
   milestone: <LuMilestone className="h-3.5 w-3.5" />,
   cycle: <LuIterationCw className="h-3.5 w-3.5" />,
+  created: <LuCalendarPlus className="h-3.5 w-3.5" />,
+  updated: <LuCalendarClock className="h-3.5 w-3.5" />,
+  due: <LuCalendar className="h-3.5 w-3.5" />,
   sla: <LuClock className="h-3.5 w-3.5" />,
+  blocked: <LuOctagonAlert className="h-3.5 w-3.5" />,
+  blocking: <LuBan className="h-3.5 w-3.5" />,
+  relation: <LuLink className="h-3.5 w-3.5" />,
+};
+
+/** How each relative cycle reads in the cycle filter. */
+const RELATIVE_CYCLE_LABELS: Record<(typeof RELATIVE_CYCLES)[number], string> =
+  {
+    current: 'Current cycle',
+    next: 'Next cycle',
+    previous: 'Previous cycle',
+  };
+
+/** The link types a relation filter offers, as the issue page names them. */
+const RELATION_CHOICES: { value: LinkType; label: string }[] = [
+  { value: 'blocks', label: 'Blocking' },
+  { value: 'blocked_by', label: 'Blocked by' },
+  { value: 'relates_to', label: 'Related to' },
+  { value: 'duplicate_of', label: 'Duplicate of' },
+];
+
+/** A day as `YYYY-MM-DD` in local time, the way a date input reads it. */
+const isoDay = (date: Date): string => {
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${String(date.getFullYear())}-${month}-${day}`;
+};
+
+/** The day `days` from today, negative for the past. */
+const dayFromToday = (days: number, today: Date = new Date()): string => {
+  const date = new Date(today);
+  date.setDate(date.getDate() + days);
+  return isoDay(date);
+};
+
+/** The relative days a date filter offers, past ones for most fields, both ways for due. */
+const datePresets = (field: FilterField): { label: string; days: number }[] => {
+  const past = [
+    { label: '1 day ago', days: -1 },
+    { label: '1 week ago', days: -7 },
+    { label: '2 weeks ago', days: -14 },
+    { label: '1 month ago', days: -30 },
+    { label: '3 months ago', days: -90 },
+    { label: '6 months ago', days: -180 },
+  ];
+  if (field !== 'due') return past;
+  return [
+    { label: 'Today', days: 0 },
+    { label: 'Tomorrow', days: 1 },
+    { label: 'In 1 week', days: 7 },
+    { label: 'In 2 weeks', days: 14 },
+    { label: 'In 1 month', days: 30 },
+    ...past.slice(0, 3),
+  ];
+};
+
+/** How a stored day reads on a chip. */
+const dayLabel = (day: string): string => {
+  const [year, month, date] = day.split('-').map(Number);
+  if (year === undefined || month === undefined || date === undefined) {
+    return day;
+  }
+  return new Date(year, month - 1, date).toLocaleDateString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  });
+};
+
+/** Sets a date field's one bound, replacing any bound it held with the same verb. */
+const setDateBound = (
+  filters: FilterClause[],
+  field: FilterField,
+  op: 'before' | 'after',
+  day: string
+): FilterClause[] => {
+  const index = filters.findIndex(
+    (clause) => clause.field === field && clause.op === op
+  );
+  if (index < 0) return [...filters, { field, op, values: [day] }];
+  return filters.map((clause, at) =>
+    at === index ? { ...clause, values: [day] } : clause
+  );
 };
 
 /**
@@ -95,6 +198,12 @@ const hollow = (
     className="h-3.5 w-3.5 rounded-full border border-dashed border-text-faint"
   />
 );
+
+/** The two answers a yes or no filter takes. */
+const yesNo = (icon: React.ReactNode): FilterChoice[] => [
+  { option: { value: 'true', label: 'Yes', icon }, ids: ['true'] },
+  { option: { value: 'false', label: 'No', icon: hollow }, ids: ['false'] },
+];
 
 /** Every choice a field offers, grouping like named statuses and labels. */
 const filterChoices = (
@@ -141,15 +250,20 @@ const filterChoices = (
         },
         ids: [priority],
       }));
-    case 'assignee': {
+    case 'assignee':
+    case 'creator': {
       const me = context.people.find(
         (person) => person.user_id === context.currentUserId
       );
       return [
-        {
-          option: { value: NONE, label: 'No assignee', icon: hollow },
-          ids: [NONE],
-        },
+        ...(field === 'assignee'
+          ? [
+              {
+                option: { value: NONE, label: 'No assignee', icon: hollow },
+                ids: [NONE],
+              },
+            ]
+          : []),
         ...[
           ...(me === undefined ? [] : [me]),
           ...context.people
@@ -227,6 +341,20 @@ const filterChoices = (
           }))
         ),
       ];
+    case 'team':
+      return (context.teams ?? []).map((team) => ({
+        option: {
+          value: team.id,
+          label: team.name,
+          icon: <LuUsers className="h-3.5 w-3.5 text-text-muted" />,
+          ...(team.key === undefined ? {} : { detail: team.key }),
+        },
+        ids: [team.id],
+      }));
+    case 'created':
+    case 'updated':
+    case 'due':
+      return [];
     case 'project':
       return [
         {
@@ -263,6 +391,14 @@ const filterChoices = (
           option: { value: NONE, label: 'No cycle', icon: hollow },
           ids: [NONE],
         },
+        ...RELATIVE_CYCLES.map((value) => ({
+          option: {
+            value,
+            label: RELATIVE_CYCLE_LABELS[value],
+            icon: <LuIterationCw className="h-3.5 w-3.5 text-accent" />,
+          },
+          ids: [value],
+        })),
         ...context.cycles.map((cycle) => ({
           option: {
             value: cycle.cycle_id,
@@ -292,6 +428,19 @@ const filterChoices = (
             ),
         },
         ids: [status],
+      }));
+    case 'blocked':
+      return yesNo(<LuOctagonAlert className="h-3.5 w-3.5 text-danger" />);
+    case 'blocking':
+      return yesNo(<LuBan className="h-3.5 w-3.5 text-warning" />);
+    case 'relation':
+      return RELATION_CHOICES.map((choice) => ({
+        option: {
+          value: choice.value,
+          label: choice.label,
+          icon: <LuLink className="h-3.5 w-3.5 text-text-muted" />,
+        },
+        ids: [choice.value],
       }));
   }
 };
@@ -329,6 +478,56 @@ const chosen = (
         choice.ids.every((id) => clause.values.includes(id))
       );
 
+/**
+ * A date field's day picker: relative presets resolved to a fixed day when
+ * picked, so a saved view keeps the day it was saved with, and a calendar
+ * input for any other day.
+ */
+const DateList: React.FC<{
+  field: FilterField;
+  op: 'before' | 'after';
+  filters: FilterClause[];
+  onChange: (filters: FilterClause[]) => void;
+}> = ({ field, op, filters, onChange }) => {
+  const held = filters.find(
+    (clause) => clause.field === field && clause.op === op
+  )?.values[0];
+  const presets = datePresets(field);
+  return (
+    <Combobox
+      label={`${FILTER_LABELS[field]} ${op}`}
+      placeholder={`${FILTER_LABELS[field]} ${op}...`}
+      options={presets.map((preset) => ({
+        value: String(preset.days),
+        label: preset.label,
+        icon: <LuCalendar className="h-3.5 w-3.5 text-text-muted" />,
+        detail: dayLabel(dayFromToday(preset.days)),
+      }))}
+      selected={presets
+        .filter((preset) => dayFromToday(preset.days) === held)
+        .map((preset) => String(preset.days))}
+      onSelect={(value) => {
+        onChange(setDateBound(filters, field, op, dayFromToday(Number(value))));
+      }}
+      footer={
+        <label className="flex items-center gap-2 border-t border-line px-2 py-2 text-xs text-text-muted">
+          Custom date
+          <Input
+            type="date"
+            aria-label={`${FILTER_LABELS[field]} ${op} date`}
+            className="flex-1"
+            value={held ?? ''}
+            onChange={(event) => {
+              const day = event.target.value;
+              if (day !== '') onChange(setDateBound(filters, field, op, day));
+            }}
+          />
+        </label>
+      }
+    />
+  );
+};
+
 /** The list of one field's values, toggling each on the filters. */
 const ValueList: React.FC<{
   field: FilterField;
@@ -336,6 +535,16 @@ const ValueList: React.FC<{
   context: IssueContext;
   onChange: (filters: FilterClause[]) => void;
 }> = ({ field, filters, context, onChange }) => {
+  if (isDateField(field)) {
+    return (
+      <DateList
+        field={field}
+        op={field === 'due' ? 'before' : 'after'}
+        filters={filters}
+        onChange={onChange}
+      />
+    );
+  }
   const choices = filterChoices(field, context);
   const clause = filters.find((item) => item.field === field);
   return (
@@ -362,14 +571,39 @@ const FilterChip: React.FC<{
   context: IssueContext;
   onChange: (filters: FilterClause[]) => void;
 }> = ({ clause, filters, context, onChange }) => {
-  const choices = filterChoices(clause.field, context);
+  const dated = clause.op === 'before' || clause.op === 'after';
+  const choices = dated ? [] : filterChoices(clause.field, context);
   const names = chosen(clause, choices).map((choice) => choice.option.label);
-  const summary =
-    names.length === 0
+  const summary = dated
+    ? dayLabel(clause.values[0] ?? '')
+    : names.length === 0
       ? `${String(clause.values.length)} values`
       : names.length <= 2
         ? names.join(', ')
         : `${String(names.length)} ${FILTER_LABELS[clause.field].toLowerCase()}`;
+  const many = clause.values.length > 1;
+  const verb =
+    clause.op === 'before' || clause.op === 'after'
+      ? clause.op
+      : clause.op === 'is'
+        ? many
+          ? 'is any of'
+          : 'is'
+        : many
+          ? 'is none of'
+          : 'is not';
+  const flipped: FilterClause['op'] =
+    clause.op === 'is'
+      ? 'is_not'
+      : clause.op === 'is_not'
+        ? 'is'
+        : clause.op === 'before'
+          ? 'after'
+          : 'before';
+  const flipTaken = filters.some(
+    (item) =>
+      item !== clause && item.field === clause.field && item.op === flipped
+  );
   const replace = (next: FilterClause | null): void => {
     onChange(
       filters.flatMap((item) =>
@@ -392,17 +626,14 @@ const FilterChip: React.FC<{
       ) : (
         <button
           type="button"
-          aria-label={`${FILTER_LABELS[clause.field]} ${clause.op === 'is' ? 'is' : 'is not'}, switch`}
+          aria-label={`${FILTER_LABELS[clause.field]} ${dated ? clause.op : clause.op === 'is' ? 'is' : 'is not'}, switch`}
+          disabled={flipTaken}
           onClick={() => {
-            replace({ ...clause, op: clause.op === 'is' ? 'is_not' : 'is' });
+            replace({ ...clause, op: flipped });
           }}
           className={cn(segment, 'border-r border-line text-text-muted')}
         >
-          {clause.op === 'is'
-            ? clause.values.length > 1
-              ? 'is any of'
-              : 'is'
-            : 'is not'}
+          {verb}
         </button>
       )}
       <Popover
@@ -419,12 +650,21 @@ const FilterChip: React.FC<{
           </button>
         )}
       >
-        <ValueList
-          field={clause.field}
-          filters={filters}
-          context={context}
-          onChange={onChange}
-        />
+        {clause.op === 'before' || clause.op === 'after' ? (
+          <DateList
+            field={clause.field}
+            op={clause.op}
+            filters={filters}
+            onChange={onChange}
+          />
+        ) : (
+          <ValueList
+            field={clause.field}
+            filters={filters}
+            context={context}
+            onChange={onChange}
+          />
+        )}
       </Popover>
       <button
         type="button"

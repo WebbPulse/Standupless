@@ -238,6 +238,21 @@ def test_listing_pages_newest_first(client: TestClient) -> None:
     assert second["next_cursor"] is None
 
 
+def test_listing_tallies_each_releases_issues_by_category(client: TestClient, repositories: Any) -> None:
+    """A listed release carries its issues counted by status category, so a list draws progress unread."""
+    _issue(repositories, TEAM, "APO", 1)
+    _move(repositories, _issue(repositories, TEAM, "APO", 2), "Done")
+    sign_in(client, MEMBER)
+    assert client.post(RELEASES, json={"name": "Empty"}).status_code == 201
+    assert client.post(RELEASES, json={"name": "Full", "issues": ["APO-1", "APO-2"]}).status_code == 201
+
+    rows = {row["name"]: row for row in client.get(RELEASES).json()["releases"]}
+    assert rows["Empty"]["status_counts"] == {}
+    assert rows["Full"]["issue_count"] == 2
+    first = repositories.team_config.list_statuses(WORKSPACE, TEAM)[0].category
+    assert rows["Full"]["status_counts"] == {first: 1, "completed": 1}
+
+
 def test_an_issue_lists_the_releases_it_shipped_in(client: TestClient, repositories: Any) -> None:
     """The issue page shows where its work went, hidden from callers who cannot see the team."""
     issue = _issue(repositories, TEAM, "APO", 1)

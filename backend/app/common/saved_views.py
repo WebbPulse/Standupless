@@ -3,8 +3,9 @@
 Held in `common` because the integrations image may not import another domain's
 code, and which views a caller may read or change is decided once. Reads are built
 from what the caller may read rather than filtered afterwards. A personal view is
-its owner's alone, and a team view needs team membership to create and its owner or
-a team admin to change or delete.
+its owner's alone, a team view needs team membership to create and its owner or a
+team admin to change or delete, and a workspace view is read by every member but a
+guest and changed by its owner or a workspace admin.
 """
 
 from __future__ import annotations
@@ -23,6 +24,7 @@ from app.common.api.schemas.views import (
     malformed_filter_keys,
     unknown_filter_keys,
 )
+from app.common.db.dynamo.base import utc_now
 from app.common.db.dynamo.views import SavedView, new_view_id, view_key_for
 from app.common.issue_rules import (
     not_found,
@@ -53,13 +55,17 @@ def readable_views(
     """Saved views the caller may read, narrowed by scope, in name order.
 
     `mine` is the caller's own views, `team` the shared views of one team or of
-    every team they can see, and `all` both. For a guest the teams are only the
-    ones they hold a membership in.
+    every team they can see, `workspace` the views shared with the whole
+    workspace, and `all` every one of those. For a guest the teams are only the
+    ones they hold a membership in, and workspace views are not theirs to read.
     """
     rows: list[SavedView] = []
 
     if scope in ("mine", "all"):
         rows.extend(repositories.views.list_personal(context.workspace_id, context.user_id))
+
+    if scope in ("workspace", "all") and not context.is_guest and not team_id:
+        rows.extend(repositories.views.list_workspace(context.workspace_id))
 
     if scope in ("team", "all"):
         if team_id:
@@ -88,6 +94,7 @@ def load_visible_view(repositories: Repositories, context: AuthzContext, view_id
         view_id,
         context.user_id,
         visible_team_ids(repositories, context),
+        workspace_shared=not context.is_guest,
     )
     if view is None:
         raise not_found()
@@ -97,10 +104,13 @@ def load_visible_view(repositories: Repositories, context: AuthzContext, view_id
 def require_view_writer(repositories: Repositories, context: AuthzContext, view: SavedView) -> None:
     """Hold that the caller may change one saved view, or 403.
 
-    A personal view is its owner's alone, and a team view is the owner's or a team
-    admin's. The view was already found, so only the verb is in doubt.
+    A personal view is its owner's alone, a team view is the owner's or a team
+    admin's, and a workspace view the owner's or a workspace admin's. The view was
+    already found, so only the verb is in doubt.
     """
     if view.owner_id == context.user_id:
+        return
+    if view.scope == "workspace" and context.is_workspace_admin:
         return
     if view.team_id and (context.is_workspace_admin or team_role(repositories, context, view.team_id) == "admin"):
         return
@@ -129,21 +139,24 @@ def check_sub_group(group_by: Optional[str], sub_group_by: Optional[str]) -> Non
 
 
 def create_saved_view(repositories: Repositories, context: AuthzContext, payload: ViewCreate) -> SavedView:
-    """Save a new view, personal unless it names a team.
+    """Save a new view, personal unless it names a team or is shared.
 
     A team view needs the caller to be a member of that team, so a reader cannot
-    leave a shared view on a team they cannot write in. The owner is the caller.
+    leave a shared view on a team they cannot write in, and a guest cannot share
+    a view with a workspace they only partly see. The owner is the caller.
     """
     check_filter(payload.filter)
     check_sub_group(payload.group_by, payload.sub_group_by)
 
     if payload.team_id:
         require_team_member(repositories, context, payload.team_id)
+    elif payload.shared and context.is_guest:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=FORBIDDEN)
 
     view_id = new_view_id()
     view = SavedView(
         workspace_id=context.workspace_id,
-        view_key=view_key_for(context.user_id, payload.team_id, view_id),
+        view_key=view_key_for(context.user_id, payload.team_id, view_id, shared=payload.shared),
         view_id=view_id,
         name=payload.name,
         kind=payload.kind,
@@ -158,6 +171,9 @@ def create_saved_view(repositories: Repositories, context: AuthzContext, payload
         show_sub_issues=payload.show_sub_issues,
         show_completed=payload.show_completed,
         show_archived=payload.show_archived,
+        icon=payload.icon,
+        color=payload.color,
+        description=payload.description,
         owner_id=context.user_id,
     )
     try:
@@ -182,9 +198,12 @@ def update_saved_view(
     require_view_writer(repositories, context, view)
 
     changes = payload.model_dump(exclude_unset=True)
+    shared = changes.pop("shared", None)
     for name in DISPLAY_SWITCHES:
         if name in changes and changes[name] is None:
             raise unprocessable(f"{name} must be true or false")
+    if shared is not None:
+        view = rescope_view(repositories, context, view, shared)
     if not changes:
         return view
     check_sub_group(changes.get("group_by", view.group_by), changes.get("sub_group_by", view.sub_group_by))
@@ -195,9 +214,62 @@ def update_saved_view(
     return updated
 
 
+def rescope_view(repositories: Repositories, context: AuthzContext, view: SavedView, shared: bool) -> SavedView:
+    """Move a view without a team between its owner and the whole workspace.
+
+    The scope lives in the sort key, so the row is written under its new key with
+    the same view id and the old row removed, which keeps links and favorites
+    pointing at it. A team view is already shared with its team, a guest cannot
+    publish to a workspace they only partly see, and only the owner may take a
+    workspace view back to private, so nobody else's view vanishes into theirs.
+    """
+    if view.team_id:
+        raise unprocessable("shared applies only to a view without a team")
+    if shared == (view.scope == "workspace"):
+        return view
+    if shared and context.is_guest:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=FORBIDDEN)
+    if not shared and view.owner_id != context.user_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=FORBIDDEN)
+    moved = view.model_copy(
+        update={"view_key": view_key_for(view.owner_id, None, view.view_id, shared=shared), "updated_at": utc_now()}
+    )
+    repositories.views.create(moved)
+    repositories.views.delete(context.workspace_id, view.view_key)
+    return moved
+
+
 def delete_saved_view(repositories: Repositories, context: AuthzContext, view_id: str) -> SavedView:
     """Remove a saved view, the owner's or a team admin's call, answering the row removed."""
     view = load_visible_view(repositories, context, view_id)
     require_view_writer(repositories, context, view)
     repositories.views.delete(context.workspace_id, view.view_key)
+    favorites = repositories.views.favorites(context.workspace_id, context.user_id)
+    if view.view_id in favorites:
+        repositories.views.set_favorites(
+            context.workspace_id, context.user_id, [item for item in favorites if item != view.view_id]
+        )
+    return view
+
+
+def favorite_ids(repositories: Repositories, context: AuthzContext) -> set[str]:
+    """The caller's favorite view ids, for marking a read or a listing."""
+    return set(repositories.views.favorites(context.workspace_id, context.user_id))
+
+
+def set_view_favorite(repositories: Repositories, context: AuthzContext, view_id: str, favorite: bool) -> SavedView:
+    """Star or unstar a view the caller may read, answering the view.
+
+    Starring a view already starred, or unstarring one that is not, is a no-op
+    rather than an error, so a double click never surfaces as a failure. A new
+    star goes last, which is the order the sidebar lists them in.
+    """
+    view = load_visible_view(repositories, context, view_id)
+    current = repositories.views.favorites(context.workspace_id, context.user_id)
+    if favorite and view.view_id not in current:
+        repositories.views.set_favorites(context.workspace_id, context.user_id, [*current, view.view_id])
+    elif not favorite and view.view_id in current:
+        repositories.views.set_favorites(
+            context.workspace_id, context.user_id, [item for item in current if item != view.view_id]
+        )
     return view

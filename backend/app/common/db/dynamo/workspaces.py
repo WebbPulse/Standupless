@@ -13,7 +13,7 @@ taking `workspace_id` first, because the id is the partition key.
 from __future__ import annotations
 
 import re
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from enum import StrEnum
 from typing import Any, Mapping, Optional
 
@@ -53,6 +53,15 @@ BILLING_FIELDS = (
     "cancel_at_period_end",
 )
 """The attributes `set_billing` may write, and nothing else."""
+
+COMP_FIELDS = ("comp_plan", "comp_reason", "comp_expires_at", "comp_granted_at")
+"""The comp grant's attributes, written only by `set_comp_grant` and `clear_comp_grant`.
+
+None is a billing field, so a Stripe webhook can never overwrite or clear a grant.
+"""
+
+PLAN_RANK = {plan.value: rank for rank, plan in enumerate(Plan)}
+"""Each plan's tier, so the higher of a comp grant and a subscription wins."""
 
 SLUG_INDEX = "slug-index"
 
@@ -102,8 +111,10 @@ class Workspace(BaseModel):
     The slug is the workspace's stable URL segment, unique across the product and
     indexed by `slug-index`, so a link survives a rename of the display name.
     `plan` is written only by the Stripe webhook; the billing fields mirror the
-    subscription it last saw. `project_update_interval_days` is the update
-    cadence a project without its own follows, 0 for no reminders.
+    subscription it last saw. The `comp_` fields are an internal grant of a plan
+    with no subscription behind it, written only by the admin script, and
+    `effective_plan` is the higher of the two. `project_update_interval_days` is
+    the update cadence a project without its own follows, 0 for no reminders.
     """
 
     id: str = Field(default_factory=new_workspace_id)
@@ -117,6 +128,10 @@ class Workspace(BaseModel):
     billed_seats: Optional[int] = None
     current_period_end: Optional[datetime] = None
     cancel_at_period_end: bool = False
+    comp_plan: Optional[str] = None
+    comp_reason: Optional[str] = None
+    comp_expires_at: Optional[datetime] = None
+    comp_granted_at: Optional[datetime] = None
     icon_key: Optional[str] = None
     accent_color: Optional[str] = None
     project_update_interval_days: int = 7
@@ -126,6 +141,24 @@ class Workspace(BaseModel):
     purge_after: Optional[datetime] = None
     purging_at: Optional[datetime] = None
     purge_member_ids: list[str] = Field(default_factory=list)
+
+    def comp_active(self, now: datetime | None = None) -> bool:
+        """Whether a comp grant naming a known plan holds right now, its expiry not yet reached."""
+        if self.comp_plan not in PLAN_RANK:
+            return False
+        if self.comp_expires_at is None:
+            return True
+        expires = self.comp_expires_at
+        if expires.tzinfo is None:
+            expires = expires.replace(tzinfo=timezone.utc)
+        return expires > (now or utc_now())
+
+    def effective_plan(self, now: datetime | None = None) -> str:
+        """The plan every gate reads: the higher of the subscription's plan and a live comp grant."""
+        plan = self.plan if self.plan in PLAN_RANK else DEFAULT_PLAN
+        if self.comp_active(now) and PLAN_RANK[str(self.comp_plan)] > PLAN_RANK[plan]:
+            return str(self.comp_plan)
+        return plan
 
     @property
     def is_purging(self) -> bool:
@@ -238,6 +271,48 @@ class WorkspaceRepository:
         values = {key: value.isoformat() if isinstance(value, datetime) else value for key, value in fields.items()}
         try:
             item = self._repository.set_attributes({"id": workspace_id}, values, condition=Attr("id").exists())
+        except ConditionFailed:
+            return None
+        return _as_workspace(item) if item is not None else None
+
+    def set_comp_grant(
+        self,
+        workspace_id: str,
+        *,
+        plan: str,
+        reason: str,
+        expires_at: Optional[datetime] = None,
+        now: datetime | None = None,
+    ) -> Workspace | None:
+        """Grant a workspace `plan` with no subscription, or `None` when it does not exist.
+
+        A grant with no expiry holds until `clear_comp_grant`. Raises `ValueError`
+        for a plan that is not a paid one.
+        """
+        if plan not in PLAN_RANK or plan == DEFAULT_PLAN:
+            raise ValueError(f"not a paid plan: {plan}")
+        values: dict[str, Any] = {
+            "comp_plan": plan,
+            "comp_reason": reason,
+            "comp_expires_at": expires_at.isoformat() if expires_at else None,
+            "comp_granted_at": (now or utc_now()).isoformat(),
+        }
+        try:
+            item = self._repository.set_attributes({"id": workspace_id}, values, condition=Attr("id").exists())
+        except ConditionFailed:
+            return None
+        return _as_workspace(item) if item is not None else None
+
+    def clear_comp_grant(self, workspace_id: str) -> Workspace | None:
+        """Remove a workspace's comp grant, or `None` when it does not exist."""
+        try:
+            item = self._repository.update(
+                {"id": workspace_id},
+                update_expression="REMOVE " + ", ".join(f"#f{index}" for index in range(len(COMP_FIELDS))),
+                expression_names={f"#f{index}": field for index, field in enumerate(COMP_FIELDS)},
+                condition=Attr("id").exists(),
+                return_values="ALL_NEW",
+            )
         except ConditionFailed:
             return None
         return _as_workspace(item) if item is not None else None

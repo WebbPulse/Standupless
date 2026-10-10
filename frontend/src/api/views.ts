@@ -48,6 +48,7 @@ export type ViewVisibleProperty =
   | 'cycle'
   | 'parent'
   | 'sub_issues'
+  | 'pull_requests'
   | 'created_at'
   | 'updated_at';
 
@@ -56,6 +57,8 @@ export type ViewVisibleProperty =
  * excluding any issue matching one of its values.
  */
 export interface ViewFilterNegations {
+  team_id_not?: string | string[];
+  creator_id_not?: string | string[];
   status_id_not?: string | string[];
   status_category_not?: string | string[];
   assignee_id_not?: string | string[];
@@ -95,6 +98,35 @@ export interface SavedViewDisplay {
  */
 export interface SavedViewDisplayRead extends SavedViewRead, SavedViewDisplay {
   filter: SavedViewFilter;
+  icon?: string | null;
+  color?: ViewColor | null;
+  description?: string | null;
+  /** Whether the caller starred this view; a star is theirs alone. */
+  favorite?: boolean;
+}
+
+/** The fixed palette a view's icon may take. */
+export const VIEW_COLORS = [
+  'gray',
+  'red',
+  'orange',
+  'yellow',
+  'green',
+  'teal',
+  'blue',
+  'indigo',
+  'purple',
+  'pink',
+] as const;
+
+/** One color from {@link VIEW_COLORS}. */
+export type ViewColor = (typeof VIEW_COLORS)[number];
+
+/** The look and description a view is saved with. */
+export interface SavedViewLook {
+  icon?: string | null;
+  color?: ViewColor | null;
+  description?: string | null;
 }
 
 /** A view's sort in the full list vocabulary, `manual` included. */
@@ -114,6 +146,11 @@ export interface SavedViewDisplayCreate extends Omit<
   show_sub_issues?: boolean;
   show_completed?: boolean;
   show_archived?: boolean;
+  icon?: string | null;
+  color?: ViewColor | null;
+  description?: string | null;
+  /** True with no team to share the view with the whole workspace. */
+  shared?: boolean;
 }
 
 /** The editable fields on a saved view, including its display settings. */
@@ -130,9 +167,25 @@ export interface SavedViewDisplayUpdate extends Omit<
   show_sub_issues?: boolean;
   show_completed?: boolean;
   show_archived?: boolean;
+  icon?: string | null;
+  color?: ViewColor | null;
+  description?: string | null;
+  /** Moves a view without a team between its owner and the whole workspace. */
+  shared?: boolean;
 }
 
-const SCALAR_FILTER_KEYS = new Set(['team_id', 'due_before', 'due_after', 'q']);
+const SCALAR_FILTER_KEYS = new Set([
+  'team_id',
+  'due_before',
+  'due_after',
+  'created_after',
+  'created_before',
+  'updated_after',
+  'updated_before',
+  'q',
+  'is_blocked',
+  'is_blocking',
+]);
 
 /**
  * Expands a stored filter into the issue list query that runs it. Running a
@@ -326,6 +379,23 @@ export const updateView = async (
     viewPath(workspaceId, viewId),
     body
   );
+  return response.data;
+};
+
+/** The route a saved view is starred and unstarred through. */
+export const viewFavoritePath = (workspaceId: string, viewId: string): string =>
+  `${viewPath(workspaceId, viewId)}/favorite`;
+
+/** Stars or unstars a saved view for the caller alone. */
+export const setViewFavorite = async (
+  workspaceId: string,
+  viewId: string,
+  favorite: boolean
+): Promise<SavedViewDisplayRead> => {
+  const path = viewFavoritePath(workspaceId, viewId);
+  const response = favorite
+    ? await apiClient.put<SavedViewDisplayRead>(path)
+    : await apiClient.delete<SavedViewDisplayRead>(path);
   return response.data;
 };
 

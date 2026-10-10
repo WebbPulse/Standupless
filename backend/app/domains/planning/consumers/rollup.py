@@ -181,7 +181,9 @@ def recount_project(
 
     Nothing is written when the project is gone, and a row whose stored counts
     already match is left alone. A milestone that no issue names any more is
-    written back to zero, so a move out of its last issue leaves it right. Points
+    written back to zero, so a move out of its last issue leaves it right. Beside
+    the category buckets each row keeps a count per status id, so a progress bar
+    can split In Review from In Progress. Points
     sum each issue's estimate, and an unestimated issue adds one point when its
     team counts unestimated issues.
     """
@@ -194,16 +196,21 @@ def recount_project(
     stored: dict[str, dict[str, int]] = {
         project_key(project_id): {**project.counts.as_map(), **project.points.as_map(POINT_PREFIX)}
     }
+    stored_statuses: dict[str, dict[str, int]] = {project_key(project_id): dict(project.status_counts)}
     categories: dict[str, dict[str, str]] = {}
     counting: dict[str, bool] = {}
     project_counts = _zeroed_counts()
+    project_statuses: dict[str, int] = {}
     milestone_counts: dict[str, dict[str, int]] = {}
+    milestone_statuses: dict[str, dict[str, int]] = {}
     for milestone in milestones:
         milestone_counts[milestone.milestone_id] = _zeroed_counts()
+        milestone_statuses[milestone.milestone_id] = {}
         stored[milestone_key(project_id, milestone.milestone_id)] = {
             **milestone.counts.as_map(),
             **milestone.points.as_map(POINT_PREFIX),
         }
+        stored_statuses[milestone_key(project_id, milestone.milestone_id)] = dict(milestone.status_counts)
     for issue in issues.values():
         team_id = issue["team_id"]
         if team_id not in categories:
@@ -220,22 +227,23 @@ def recount_project(
         estimate = issue.get("estimate", "")
         points = 1 if is_unestimated(estimate) and counting[team_id] else estimate_points(estimate)
         point_bucket = f"{POINT_PREFIX}{bucket}"
-        targets = [project_counts]
+        targets = [(project_counts, project_statuses)]
         milestone = milestone_counts.get(issue["project_milestone_id"])
         if milestone is not None:
-            targets.append(milestone)
-        for counts in targets:
+            targets.append((milestone, milestone_statuses[issue["project_milestone_id"]]))
+        for counts, statuses in targets:
             counts[bucket] += 1
             counts[point_bucket] += points
+            statuses[issue["status_id"]] = statuses.get(issue["status_id"], 0) + 1
 
-    wanted = {project_key(project_id): project_counts}
+    wanted = {project_key(project_id): (project_counts, project_statuses)}
     for milestone_id, counts in milestone_counts.items():
-        wanted[milestone_key(project_id, milestone_id)] = counts
+        wanted[milestone_key(project_id, milestone_id)] = (counts, milestone_statuses[milestone_id])
     written = 0
-    for planning_key, counts in wanted.items():
-        if stored.get(planning_key) == counts:
+    for planning_key, (counts, statuses) in wanted.items():
+        if stored.get(planning_key) == counts and stored_statuses.get(planning_key) == statuses:
             continue
-        if repositories.planning.set_counts(workspace_id, planning_key, counts):
+        if repositories.planning.set_counts(workspace_id, planning_key, counts, statuses):
             written += 1
     return written
 

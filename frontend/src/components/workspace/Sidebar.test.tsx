@@ -493,19 +493,29 @@ describe('creating from the sidebar', () => {
     expect(open).toHaveBeenCalled();
   });
 
-  it('lists the caller own saved views', async () => {
+  it('lists the caller favorite views and leaves the rest out', async () => {
     listViews.mockResolvedValue([
       {
         view_id: 'view-1',
         workspace_id: 'ws-1',
         name: 'My bugs',
-      } as SavedViewRead,
+        favorite: true,
+      } as unknown as SavedViewRead,
+      {
+        view_id: 'view-2',
+        workspace_id: 'ws-1',
+        name: 'Not starred',
+        favorite: false,
+      } as unknown as SavedViewRead,
     ]);
     renderSidebar();
 
     expect(
       await screen.findByRole('link', { name: /My bugs/ })
     ).toHaveAttribute('href', '/w/mine/views/view-1');
+    expect(
+      screen.queryByRole('link', { name: /Not starred/ })
+    ).not.toBeInTheDocument();
   });
 });
 

@@ -27,6 +27,7 @@ from webbpulse.dynamodb import ConditionFailed, Page, Repository, new_ulid
 
 from app.common.db.dynamo.base import as_item, build_repository, delete_partition, first, utc_now
 from app.common.db.dynamo.channels import ChannelStore
+from app.common.db.dynamo.slack import SlackStore
 from app.common.db.dynamo.tables import GITHUB
 
 INSTALLATION_INDEX = "installation_id-index"
@@ -224,10 +225,8 @@ class Installation(BaseModel):
 class Repository_(BaseModel):
     """One repository the installation covers.
 
-    `team_id` is nullable and means "match this repository's issue keys against
-    every team of the workspace". Set, it narrows the match to one team,
-    which is what stops a monorepo's branch names from moving another team's
-    issues.
+    `team_id` is the team whose releases the repository's deployments feed, null
+    for none. Issue keys match against every team of the workspace either way.
     """
 
     workspace_id: str
@@ -569,6 +568,7 @@ class GithubRepository:
         """Take an injected package repository, or build this table's own."""
         self._repository = build_repository(GITHUB, repository)
         self.channels = ChannelStore(self._repository)
+        self.slack = SlackStore(self._repository)
 
     def delete_workspace_rows(self, workspace_id: str) -> int:
         """Delete every row this table holds for one workspace, for the workspace purge."""
@@ -734,6 +734,21 @@ class GithubRepository:
             return []
         rows = self._query(workspace_id, f"{link_key(pr_node_id)}#", limit, consistent=True)
         return [IssueLink.model_validate(dict(item)) for item in rows]
+
+    def get_links(self, workspace_id: str, link_ids: Sequence[str]) -> list[IssueLink]:
+        """The named links that still exist, read strongly consistent in one batch."""
+        wanted = [link_id for link_id in dict.fromkeys(link_ids) if link_id]
+        if not workspace_id or not wanted:
+            return []
+        items = self._repository.batch_get(
+            [{"workspace_id": workspace_id, "github_key": link_key(link_id)} for link_id in wanted],
+            consistent=True,
+        )
+        return [IssueLink.model_validate(dict(item)) for item in items]
+
+    def iter_links(self, workspace_id: str, *, limit: int = 100_000) -> list[IssueLink]:
+        """Every pull request link of one workspace, for a backfill that has to visit them all."""
+        return [IssueLink.model_validate(dict(item)) for item in self._query(workspace_id, LINK_PREFIX, limit)]
 
     def get_pr_state(self, workspace_id: str, repository_id: str, number: int) -> PullRequestState | None:
         """One pull request's review and check state, or `None`."""

@@ -33,7 +33,7 @@ locals {
       ses         = false
       memory      = 512
       tables      = ["views", "inbox", "search_index", "share-tokens", "rate-limits"]
-      read_tables = ["memberships", "workspaces", "users", "teams", "team_config", "issues", "comments", "subscriptions", "planning", "counters", "api-keys", "activity"]
+      read_tables = ["memberships", "workspaces", "users", "teams", "team_config", "issues", "comments", "subscriptions", "planning", "counters", "api-keys", "activity", "relations"]
     }
     views-notify-consumer = {
       secrets     = false
@@ -81,7 +81,7 @@ locals {
       secrets     = true
       ses         = false
       memory      = 512
-      tables      = ["github", "idempotency", "issues", "comments", "counters", "activity", "rate-limits"]
+      tables      = ["github", "idempotency", "issues", "comments", "counters", "activity", "planning", "rate-limits"]
       read_tables = ["memberships", "workspaces", "users", "teams", "team_config", "oauth-links"]
     }
     integrations-dispatch-consumer = {
@@ -154,7 +154,7 @@ locals {
     },
     {
       workspaces-purge-consumer = merge(local.lambda_domains_declared["workspaces"], {
-        secrets     = false
+        secrets     = var.billing_enabled
         ses         = false
         tables      = concat(local.lambda_domains_declared["workspaces"].tables, ["users"])
         read_tables = []
@@ -344,8 +344,9 @@ locals {
 
         IDENTITY_EPHEMERAL_USERS_ENABLED = tostring(var.ephemeral_users_enabled)
 
-        IDENTITY_PASSKEYS_ENABLED      = tostring(var.passkeys_enabled)
-        IDENTITY_PASSKEYS_PASSWORDLESS = tostring(var.passkeys_passwordless)
+        IDENTITY_PASSKEYS_ENABLED       = tostring(var.passkeys_enabled)
+        IDENTITY_PASSKEYS_PASSWORDLESS  = tostring(var.passkeys_passwordless)
+        IDENTITY_PASSKEYS_SECOND_FACTOR = tostring(var.passkeys_second_factor)
 
         IDENTITY_WEBAUTHN_ORIGINS = local.identity_webauthn_origins
 

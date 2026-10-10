@@ -5,7 +5,8 @@ with the stored filter expanded into its query, which is why there is deliberate
 no route returning a view's issues: a second read path would be a second place
 team visibility is decided, and the invariant is that there is one.
 
-Scope is derived from whether a team is named, never sent, and the owner comes
+Scope is derived from whether a team is named or the view is shared with the
+workspace, never sent as a scope, and the owner comes
 from the authorization context, so neither is something a caller can assert.
 """
 
@@ -20,8 +21,10 @@ from app.common.api.dependencies.repositories import Repositories, get_repositor
 from app.common.saved_views import (
     create_saved_view,
     delete_saved_view,
+    favorite_ids,
     load_visible_view,
     readable_views,
+    set_view_favorite,
     update_saved_view,
 )
 from app.domains.views.schemas.view import ScopeField, ViewCreate, ViewListRead, ViewRead, ViewUpdate
@@ -44,7 +47,8 @@ def list_views(
     is built from what they may read rather than filtered afterwards.
     """
     ordered = readable_views(repositories, context, scope, team_id)
-    return ViewListRead(views=[ViewRead.from_row(row) for row in ordered])
+    starred = favorite_ids(repositories, context)
+    return ViewListRead(views=[ViewRead.from_row(row, favorite=row.view_id in starred) for row in ordered])
 
 
 @router.post("/{workspace_id}/views", response_model=ViewRead, status_code=status.HTTP_201_CREATED)
@@ -70,7 +74,8 @@ def read_view(
     repositories: Repositories = Depends(get_repositories),
 ) -> ViewRead:
     """One saved view the caller may read, or a 404."""
-    return ViewRead.from_row(load_visible_view(repositories, context, view_id))
+    view = load_visible_view(repositories, context, view_id)
+    return ViewRead.from_row(view, favorite=view.view_id in favorite_ids(repositories, context))
 
 
 @router.patch("/{workspace_id}/views/{view_id}", response_model=ViewRead)
@@ -86,7 +91,8 @@ def update_view(
     The display switches take true or false and never null, because a switch
     that could be neither would leave the client guessing what the view shows.
     """
-    return ViewRead.from_row(update_saved_view(repositories, context, view_id, payload))
+    view = update_saved_view(repositories, context, view_id, payload)
+    return ViewRead.from_row(view, favorite=view.view_id in favorite_ids(repositories, context))
 
 
 @router.delete("/{workspace_id}/views/{view_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -99,3 +105,25 @@ def delete_view(
     """Remove a saved view, the owner's or a team admin's call."""
     delete_saved_view(repositories, context, view_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.put("/{workspace_id}/views/{view_id}/favorite", response_model=ViewRead)
+def favorite_view(
+    workspace_id: str = Path(..., min_length=1),
+    view_id: str = Path(..., min_length=1),
+    context: AuthzContext = Depends(require(Capability.WORKSPACE_READ)),
+    repositories: Repositories = Depends(get_repositories),
+) -> ViewRead:
+    """Star a view the caller may read, so it lists under their favorites."""
+    return ViewRead.from_row(set_view_favorite(repositories, context, view_id, True), favorite=True)
+
+
+@router.delete("/{workspace_id}/views/{view_id}/favorite", response_model=ViewRead)
+def unfavorite_view(
+    workspace_id: str = Path(..., min_length=1),
+    view_id: str = Path(..., min_length=1),
+    context: AuthzContext = Depends(require(Capability.WORKSPACE_READ)),
+    repositories: Repositories = Depends(get_repositories),
+) -> ViewRead:
+    """Unstar a view, a no-op when it was not starred."""
+    return ViewRead.from_row(set_view_favorite(repositories, context, view_id, False), favorite=False)

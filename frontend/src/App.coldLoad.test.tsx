@@ -104,6 +104,35 @@ const answer = (url: URL): unknown => {
     };
   }
   if (/\/teams\/?$/.test(path)) return { teams };
+  if (/\/views\/home\/?$/.test(path)) {
+    const mine = teams.map((team) => issue(team, 1));
+    return {
+      generated_at: '2026-09-17T12:00:00Z',
+      today: '2026-09-17',
+      team_ids: teams.map((team) => team.id),
+      focus: {
+        open_count: mine.length,
+        truncated: false,
+        attention_count: 0,
+        in_progress_count: 0,
+        up_next_count: mine.length,
+        attention: [],
+        in_progress: [],
+        up_next: mine,
+      },
+      cycles: [],
+      projects: [],
+      projects_total: 0,
+      shipped: {
+        since: '2026-09-10T12:00:00Z',
+        count: 0,
+        mine: 0,
+        items: [],
+      },
+      pulse: [],
+      inbox: { unread_count: 0, items: [] },
+    };
+  }
   if (/\/issues\/?$/.test(path)) {
     const assignee = url.searchParams.get('assignee_id');
     const rows =
@@ -221,7 +250,12 @@ describe('cold workspace load', () => {
     expect(gets.length, JSON.stringify(counts, null, 2)).toBeLessThan(60);
     const repeated = Object.entries(counts).filter(([, n]) => n > 1);
     expect(repeated, JSON.stringify(counts, null, 2)).toEqual([]);
-    expect(gets.filter((url) => /\/projects(\?|$)/.test(url))).toHaveLength(1);
+    expect(gets.filter((url) => /\/views\/home(\?|$)/.test(url))).toHaveLength(
+      1
+    );
+    expect(
+      gets.filter((url) => /\/projects(\?|$)/.test(url)).length
+    ).toBeLessThanOrEqual(1);
     for (const team of teams) {
       expect(
         gets.filter((url) => url.includes(`/teams/${team.id}/statuses`))

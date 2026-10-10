@@ -49,18 +49,21 @@ export const useTriageSummary = (
   return shared === undefined ? own.data : shared.triage;
 };
 
-/** Returns the caller's own saved views in the workspace. */
+/**
+ * Returns every saved view the caller can open in the workspace, each marked
+ * with whether they starred it, so the sidebar can list their favorites.
+ */
 export const useOwnViews = (
   workspaceId: string
 ): SavedViewDisplayRead[] | null => {
   const shared = useShared(workspaceId);
   const auth = useQueryAuth();
   const own = usePolledQuery(
-    ({ signal }) => listViews(workspaceId, { scope: 'mine' }, signal),
+    ({ signal }) => listViews(workspaceId, { scope: 'all' }, signal),
     {
       intervalMs: POLL_MS,
       enabled: shared === undefined && workspaceId !== '',
-      queryKey: viewsKey(workspaceId, 'mine', ''),
+      queryKey: viewsKey(workspaceId, 'all', ''),
       auth,
     }
   );

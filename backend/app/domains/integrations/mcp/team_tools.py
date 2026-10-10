@@ -62,7 +62,7 @@ from app.domains.integrations.mcp.toolkit import (
 )
 from app.domains.integrations.mcp.transport import ToolError
 
-VIEW_SCOPES: tuple[str, ...] = ("mine", "team", "all")
+VIEW_SCOPES: tuple[str, ...] = ("mine", "team", "workspace", "all")
 
 ESTIMATE_SCALES: tuple[str, ...] = ("off", "exponential", "fibonacci", "linear", "tshirt")
 
@@ -1134,7 +1134,8 @@ TEAM_TOOLS: tuple[Tool, ...] = (
         name="list_views",
         description=(
             "Saved views this credential can read: 'mine' the caller's own, 'team' shared team views, "
-            "'all' both (the default). Each carries its issue list filter and sort."
+            "'workspace' views shared with the whole workspace, 'all' every one (the default). Each carries "
+            "its issue list filter and sort."
         ),
         scopes=("views:read",),
         schema=object_schema(

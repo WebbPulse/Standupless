@@ -22,6 +22,7 @@ import {
   orderKeyAt,
   parseViewState,
   sameViewState,
+  sharedChange,
   shownIssues,
   sortIssues,
   stateToViewBody,
@@ -29,6 +30,7 @@ import {
   viewScope,
   viewStateQuery,
   viewToState,
+  viewVisibility,
   writeViewState,
   type IssueContext,
   type ViewState,
@@ -372,6 +374,94 @@ describe('saved views', () => {
   });
 });
 
+describe('the composer filters', () => {
+  const composed: ViewState = {
+    ...base,
+    filters: [
+      { field: 'creator', op: 'is_not', values: ['user-2'] },
+      { field: 'team', op: 'is', values: ['team-1', 'team-2'] },
+      { field: 'team', op: 'is_not', values: ['team-3'] },
+      { field: 'created', op: 'after', values: ['2026-10-01'] },
+      { field: 'due', op: 'before', values: ['2026-11-01'] },
+    ],
+  };
+
+  it('sends team, creator and date clauses under their server keys', () => {
+    expect(viewStateQuery(composed)).toEqual({
+      team_id_in: ['team-1', 'team-2'],
+      team_id_not: ['team-3'],
+      creator_id_not: ['user-2'],
+      created_after: '2026-10-01',
+      due_before: '2026-11-01',
+      sort: 'priority_desc',
+    });
+  });
+
+  it('round trips the clauses through the URL and a saved view', () => {
+    const params = writeViewState(composed, base);
+    expect(sameViewState(parseViewState(params, base), composed)).toBe(true);
+
+    const body = stateToViewBody(composed, 'Composed');
+    const view = {
+      view_id: 'v-9',
+      ...body,
+      team_id: null,
+    } as unknown as SavedViewDisplayRead;
+    expect(sameViewState(viewToState(view), composed)).toBe(true);
+  });
+
+  it('drops a date clause whose value is not a day', () => {
+    expect(
+      parseViewState(new URLSearchParams('f=created.after:soon'), base).filters
+    ).toEqual([]);
+  });
+
+  it('matches date bounds as exclusive days', () => {
+    const made = issue({ created_at: '2026-10-05T12:00:00Z' });
+    const after = (day: string) =>
+      matchesFilters(made, [{ field: 'created', op: 'after', values: [day] }]);
+    expect(after('2026-10-04')).toBe(true);
+    expect(after('2026-10-05')).toBe(false);
+    expect(
+      matchesFilters(issue({ due_date: null }), [
+        { field: 'due', op: 'before', values: ['2026-10-05'] },
+      ])
+    ).toBe(false);
+  });
+
+  it('marks a workspace view as shared and carries its look', () => {
+    expect(
+      stateToViewBody(base, 'Everyone', {}, undefined, {
+        shared: true,
+        look: { icon: 'bug', color: 'red', description: null },
+      })
+    ).toMatchObject({
+      shared: true,
+      icon: 'bug',
+      color: 'red',
+      description: null,
+    });
+    expect(
+      stateToViewBody(base, 'Team', { team_id: 'team-1' }, 'team-1', {
+        shared: true,
+      })
+    ).not.toHaveProperty('shared');
+  });
+
+  it('offers the team field only across more than one team', () => {
+    const one = { milestones: [], teams: [{ id: 't-1', name: 'Engine' }] };
+    const two = {
+      milestones: [],
+      teams: [
+        { id: 't-1', name: 'Engine' },
+        { id: 't-2', name: 'Design' },
+      ],
+    };
+    expect(fieldsFor(['team', 'status'], one)).toEqual(['status']);
+    expect(fieldsFor(['team', 'status'], two)).toEqual(['team', 'status']);
+  });
+});
+
 describe('grouping', () => {
   it('groups like named statuses across teams under one header', () => {
     const groups = groupIssues(
@@ -622,5 +712,71 @@ describe('the estimate filter', () => {
     ).toEqual(
       expect.objectContaining({ estimate: ['M'], estimate_not: [NONE] })
     );
+  });
+});
+
+describe('the relation and relative cycle filters', () => {
+  it('sends one boolean and drops a clause holding both answers', () => {
+    expect(
+      viewStateQuery({
+        ...base,
+        filters: [
+          { field: 'blocked', op: 'is', values: ['true'] },
+          { field: 'blocking', op: 'is', values: ['true', 'false'] },
+          { field: 'relation', op: 'is', values: ['blocks', 'relates_to'] },
+        ],
+      })
+    ).toEqual(
+      expect.objectContaining({
+        is_blocked: 'true',
+        has_relation: ['blocks', 'relates_to'],
+      })
+    );
+    expect(
+      viewStateQuery({
+        ...base,
+        filters: [{ field: 'blocking', op: 'is', values: ['true', 'false'] }],
+      })
+    ).not.toHaveProperty('is_blocking');
+  });
+
+  it('matches blocked on the client and leaves link filters to the server', () => {
+    const held = issue({ blocked_by_open_count: 1 });
+    const free = issue({ id: 'iss-2' });
+    const blocked = [
+      { field: 'blocked' as const, op: 'is' as const, values: ['true'] },
+    ];
+    expect(matchesFilters(held, blocked)).toBe(true);
+    expect(matchesFilters(free, blocked)).toBe(false);
+    expect(
+      matchesFilters(free, [
+        { field: 'relation', op: 'is', values: ['blocks'] },
+        { field: 'cycle', op: 'is', values: ['current'] },
+      ])
+    ).toBe(true);
+  });
+
+  it('reads saved relation filters back into clauses', () => {
+    const state = viewToState({
+      filter: { is_blocking: 'false', has_relation: ['duplicate_of'] },
+    } as unknown as SavedViewDisplayRead);
+    expect(state.filters).toEqual([
+      { field: 'blocking', op: 'is', values: ['false'] },
+      { field: 'relation', op: 'is', values: ['duplicate_of'] },
+    ]);
+  });
+
+  it('lets only the right caller move a view without a team', () => {
+    const own = { team_id: null, scope: 'personal' as const, owner_id: 'u1' };
+    const everyone = { ...own, scope: 'workspace' as const };
+    expect(viewVisibility(own, 'u1', 'member').rescopable).toBe(true);
+    expect(viewVisibility(own, 'u1', 'guest').rescopable).toBe(false);
+    expect(viewVisibility(everyone, 'u2', 'admin').rescopable).toBe(false);
+    expect(viewVisibility({ ...own, team_id: 't1' }, 'u1', 'member')).toEqual({
+      rescopable: false,
+      initialShared: false,
+    });
+    expect(sharedChange(own, true)).toEqual({ shared: true });
+    expect(sharedChange(everyone, true)).toEqual({});
   });
 });

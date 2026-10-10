@@ -15,12 +15,13 @@ from typing import Any, Iterator
 
 import pytest
 from fastapi.testclient import TestClient
-from webbpulse.dynamodb import new_ulid
+from webbpulse.audit import AuditActor, AuditEvent, AuditQuery
 
 from app.common import audit
 from app.common.composition.domains import DOMAINS
 from app.common.composition.wiring import build_domain_app
-from app.common.db.dynamo.audit import AuditEvent
+from app.common.db.dynamo.base import build_repository
+from app.common.db.dynamo.tables import AUDIT
 from tests.domains.helpers import ADMIN, MEMBER, OWNER, add_member, make_user, make_workspace, sign_in
 
 WORKSPACE = "01JB00000000000000000000WS"
@@ -123,10 +124,8 @@ def test_the_date_range_bounds_the_log(client: TestClient, workspace: str, repos
     old = datetime.now(UTC) - timedelta(days=40)
     recent = datetime.now(UTC) - timedelta(days=2)
     for moment, event in ((old, "team.created"), (recent, "team.deleted")):
-        repositories.audit.record(
-            AuditEvent(
-                workspace_id=WORKSPACE, audit_id=new_ulid(moment), event=event, actor_id=OWNER, created_at=moment
-            )
+        repositories.audit.append(
+            AuditEvent(tenant_id=WORKSPACE, action=event, actor=AuditActor(id=OWNER), occurred_at=moment)
         )
     sign_in(client, OWNER)
     week_ago = (datetime.now(UTC) - timedelta(days=7)).isoformat()
@@ -171,8 +170,8 @@ def test_a_plan_without_the_audit_log_still_records_but_does_not_read(
     export = client.get(f"{LOG}/export")
     assert export.status_code == 403
     assert export.json()["error_code"] == "PLAN_FEATURE_UNAVAILABLE"
-    rows, _ = repositories.audit.list_events(WORKSPACE)
-    assert [row.event for row in rows] == ["workspace.updated"]
+    rows = repositories.audit.list_events(WORKSPACE).events
+    assert [row.action for row in rows] == ["workspace.updated"]
 
 
 def test_the_csv_download_carries_every_row_and_defuses_formulas(
@@ -214,12 +213,68 @@ def test_the_purge_deletes_the_log(repositories: Any, workspace: str) -> None:
 
     repositories.audit.delete_for_workspace(WORKSPACE)
 
-    assert repositories.audit.list_events(WORKSPACE) == ([], None)
+    page = repositories.audit.list_events(WORKSPACE)
+    assert (page.events, page.next_cursor) == ([], None)
 
 
 def test_a_row_ages_out_a_year_after_it_was_written(repositories: Any, workspace: str) -> None:
     written = audit.record_system(repositories, WORKSPACE, "plan.changed")
 
     assert written is not None
-    expected = int((written.created_at + timedelta(days=365)).timestamp())
+    expected = int((written.occurred_at + timedelta(days=365)).timestamp())
     assert written.expires_at == expected
+
+
+def test_a_row_written_before_the_shared_store_still_lists(
+    client: TestClient, workspace: str, repositories: Any
+) -> None:
+    moment = datetime.now(UTC) - timedelta(days=1)
+    build_repository(AUDIT).put(
+        {
+            "workspace_id": WORKSPACE,
+            "audit_id": "01K6Z0000000000000000000AB",
+            "event": "member.role_changed",
+            "actor_id": OWNER,
+            "actor_kind": "user",
+            "source": "web",
+            "ip": "203.0.113.9",
+            "amr": ["pwd", "otp"],
+            "target_type": "member",
+            "target_id": MEMBER,
+            "target_label": "Mo Member",
+            "before": {"role": "member"},
+            "after": {"role": "admin"},
+            "created_at": moment.isoformat().replace("+00:00", "Z"),
+            "expires_at": int((moment + timedelta(days=365)).timestamp()),
+        }
+    )
+    sign_in(client, OWNER)
+
+    [row] = events(client)
+
+    assert row["audit_id"] == "01K6Z0000000000000000000AB"
+    assert row["event"] == "member.role_changed"
+    assert row["event_label"] == "Member role changed"
+    assert row["actor_name"] == "Olive Owner"
+    assert row["amr"] == ["pwd", "otp"]
+    assert row["before"] == {"role": "member"}
+    assert row["after"] == {"role": "admin"}
+    assert row["target_label"] == "Mo Member"
+
+
+def test_a_stale_cursor_starts_from_the_newest(client: TestClient, workspace: str, repositories: Any) -> None:
+    audit.record_system(repositories, WORKSPACE, "plan.changed")
+    sign_in(client, OWNER)
+
+    body = client.get(LOG, params={"cursor": "not-a-cursor"}).json()
+
+    assert [row["event"] for row in body["events"]] == ["plan.changed"]
+
+
+def test_the_shared_query_filters_by_event(repositories: Any, workspace: str) -> None:
+    audit.record_system(repositories, WORKSPACE, "plan.changed")
+    audit.record_system(repositories, WORKSPACE, "team.created")
+
+    page = repositories.audit.list_events(WORKSPACE, AuditQuery(action="team.created"))
+
+    assert [row.action for row in page.events] == ["team.created"]

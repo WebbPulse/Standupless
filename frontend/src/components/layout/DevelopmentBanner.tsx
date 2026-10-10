@@ -1,6 +1,7 @@
 /**
- * The slim "in development" notice across the top of the signed in app. It
- * greets every new session: dismissing it hides it for the rest of that
+ * The thin "in development" strip across the top of the signed in app, one
+ * line tall so it stays visible without taking a row of the page. It greets
+ * every new session: dismissing it hides it for the rest of that
  * session, and the next sign-in shows it again.
  */
 
@@ -24,13 +25,10 @@ export const DevelopmentBanner: React.FC = () => {
     <div
       role="status"
       data-testid="development-banner"
-      className="flex shrink-0 items-center gap-2.5 border-b border-accent/30 bg-accent-soft px-4 py-1.5 text-xs text-text"
+      className="flex min-h-6 shrink-0 items-center gap-2 border-b border-accent/30 bg-accent-soft px-3 text-2xs text-text"
     >
-      <LuWrench
-        className="h-3.5 w-3.5 shrink-0 text-accent"
-        aria-hidden="true"
-      />
-      <p className="min-w-0 flex-1">
+      <LuWrench className="h-3 w-3 shrink-0 text-accent" aria-hidden="true" />
+      <p className="min-w-0 flex-1 truncate">
         Standupless is in development. Expect rough edges, and send feedback or
         problems to{' '}
         <a
@@ -45,9 +43,9 @@ export const DevelopmentBanner: React.FC = () => {
         type="button"
         onClick={dismiss}
         aria-label="Dismiss notice"
-        className="-mr-1 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-sm text-text-muted transition-colors hover:bg-raised hover:text-text focus-visible:outline-2 focus-visible:outline-accent"
+        className="-mr-1 inline-flex h-5 w-5 pointer-coarse:h-9 pointer-coarse:w-9 shrink-0 items-center justify-center rounded-sm text-text-muted transition-colors hover:bg-raised hover:text-text focus-visible:outline-2 focus-visible:outline-accent"
       >
-        <LuX className="h-3.5 w-3.5" aria-hidden="true" />
+        <LuX className="h-3 w-3" aria-hidden="true" />
       </button>
     </div>
   );
