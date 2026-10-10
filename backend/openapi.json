@@ -949,7 +949,7 @@
                 "type": "null"
               }
             ],
-            "description": "Whether every member must have an authenticator app to reach the workspace.",
+            "description": "Whether every member must have an authenticator app or a passkey to reach the workspace.",
             "title": "Require Two Factor"
           }
         },

@@ -344,8 +344,9 @@ locals {
 
         IDENTITY_EPHEMERAL_USERS_ENABLED = tostring(var.ephemeral_users_enabled)
 
-        IDENTITY_PASSKEYS_ENABLED      = tostring(var.passkeys_enabled)
-        IDENTITY_PASSKEYS_PASSWORDLESS = tostring(var.passkeys_passwordless)
+        IDENTITY_PASSKEYS_ENABLED       = tostring(var.passkeys_enabled)
+        IDENTITY_PASSKEYS_PASSWORDLESS  = tostring(var.passkeys_passwordless)
+        IDENTITY_PASSKEYS_SECOND_FACTOR = tostring(var.passkeys_second_factor)
 
         IDENTITY_WEBAUTHN_ORIGINS = local.identity_webauthn_origins
 

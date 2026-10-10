@@ -1,5 +1,5 @@
 /**
- * The workspace security page. An admin with their own authenticator app turns
+ * The workspace security page. An admin with their own second factor turns
  * the two-factor requirement on; the switch is held off below Business or
  * without the admin's own factor, says why, and turning it off always works.
  * Anyone below admin is told they cannot change it. The allowed sign-in methods
@@ -164,7 +164,7 @@ describe('the workspace security page', () => {
     });
     expect(toggle).toBeDisabled();
     expect(
-      screen.getByText(/Set up an authenticator app on your own account/)
+      screen.getByText(/Add an authenticator app or a passkey to your own account/)
     ).toBeInTheDocument();
     expect(
       screen.getByRole('link', { name: 'Account security' })

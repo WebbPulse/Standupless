@@ -37,6 +37,7 @@ from app.common.db.dynamo.memberships import (
     SIGN_IN_METHODS,
     TEAM_ROLES,
     WORKSPACE_ROLES,
+    AuthPolicy,
 )
 from app.common.team_refs import team_not_found
 
@@ -46,6 +47,9 @@ __all__ = [
     "amr_of",
     "auth_policy_refusal",
     "auth_strength_of",
+    "has_two_factor",
+    "is_stepped_up",
+    "policy_refusal",
     "IMPLIED_TEAM_ROLE",
     "ActorKind",
     "AuthzContext",
@@ -76,7 +80,10 @@ UNAUTHENTICATED_DETAIL = {"error_code": "NOT_AUTHENTICATED", "message": "Sign in
 AUTH_POLICY_REQUIRED_DETAIL = {
     "error_code": "AUTH_POLICY_REQUIRED",
     "reason": "two_factor",
-    "message": "This workspace requires two-factor authentication. Set it up in your account security settings.",
+    "message": (
+        "This workspace requires two-factor authentication. "
+        "Add an authenticator app or a passkey in your account security settings."
+    ),
 }
 
 SIGN_IN_METHOD_LABELS: dict[str, str] = {
@@ -87,8 +94,14 @@ SIGN_IN_METHOD_LABELS: dict[str, str] = {
 }
 """How a refusal names each sign-in method in a sentence."""
 
+SECOND_FACTOR_METHODS = frozenset({"otp", "recovery", "swk"})
+"""The `amr` values only a TOTP code, a recovery code or a passkey gesture puts on a token.
+
+`mfa` is not one of them: an OAuth sign-in can carry `mfa` with no second factor.
+"""
+
 TWO_FACTOR_CLAIM = "two_factor"
-"""The session claim saying the person has an active authenticator app."""
+"""The session claim saying the person has an active authenticator app or a passkey second factor."""
 
 IDENTITY_BEARER = HTTPBearer(
     auto_error=False,
@@ -538,13 +551,19 @@ def _team_access(
 
 
 def has_two_factor(claims: Any) -> bool:
-    """Whether the credential says its person has a second factor enrolled.
+    """Whether the credential says its person has a second factor.
 
-    The gateway's lambda gate forwards claims as strings, so `"true"` counts as well
-    as `True`.
+    The `two_factor` claim says one is enrolled. The gateway's lambda gate forwards
+    claims as strings, so `"true"` counts as well as `True`. A session whose `amr`
+    shows it answered a second factor counts too: `mfa` beside one of
+    `SECOND_FACTOR_METHODS`, such as a passkey answering the sign-in challenge. `mfa`
+    alone proves nothing, because an OAuth sign-in can carry it with no second factor.
     """
     value = claims.get(TWO_FACTOR_CLAIM) if claims is not None else None
-    return value is True or str(value or "").strip().lower() == "true"
+    if value is True or str(value or "").strip().lower() == "true":
+        return True
+    amr = set(amr_of(claims))
+    return "mfa" in amr and bool(SECOND_FACTOR_METHODS & amr)
 
 
 def amr_of(claims: Any) -> tuple[str, ...]:
@@ -611,12 +630,19 @@ def auth_policy_refusal(repositories: RepositoryBundle, workspace_id: str, claim
 
     Only a person's own session is held to the policy. An API key or an MCP token is
     a delegated credential minted from a session, so it carries no session claims to
-    check. A session is refused first for the way it signed in, then for a missing
-    second factor.
+    check.
     """
     if _actor(claims) is not ActorKind.USER:
         return None
-    policy = repositories.memberships.get_auth_policy(workspace_id)
+    return policy_refusal(repositories.memberships.get_auth_policy(workspace_id), claims)
+
+
+def policy_refusal(policy: AuthPolicy, claims: Any) -> Optional[AuthPolicyRefusal]:
+    """Why this policy refuses a session with these claims, or `None`.
+
+    A session is refused first for the way it signed in, then for a missing second
+    factor. MCP consent asks the same question of each workspace it might offer.
+    """
     allowed = tuple(policy.allowed_methods)
     if set(allowed) != set(SIGN_IN_METHODS) and sign_in_method_of(claims) not in allowed:
         return AuthPolicyRefusal(reason="sign_in_method", allowed_methods=allowed)
@@ -1120,12 +1146,13 @@ def refuse_delegated_claims(claims: Any) -> None:
 STEP_UP_WINDOW_SECONDS = 600
 """How recent a second factor has to be for a destructive request to count as stepped up."""
 
-STEP_UP_METHODS = frozenset({"mfa", "otp", "recovery", "swk"})
-"""The `amr` values only a second factor or a passkey gesture puts on a token.
+STEP_UP_METHODS = SECOND_FACTOR_METHODS
+"""The `amr` values that make a recent `auth_time` a step-up.
 
 A refreshed token carries the sign-in's `amr` and `auth_time`, so one of these
 with a recent `auth_time` means the person proved a factor recently, whether at
-sign-in or in a step-up.
+sign-in or in a step-up. `mfa` is left out, since an OAuth sign-in can carry it
+with no second factor.
 """
 
 
@@ -1187,6 +1214,11 @@ def auth_strength_of(request: Request, *, now: float | None = None) -> AuthStren
         auth_time = int(claims.get("auth_time") or 0) if claims is not None else 0
     except (TypeError, ValueError):
         auth_time = 0
+    return AuthStrength(amr=amr, auth_time=auth_time, stepped_up=is_stepped_up(amr, auth_time, now=now))
+
+
+def is_stepped_up(amr: Iterable[str], auth_time: int, *, now: float | None = None) -> bool:
+    """Whether `amr` shows a second factor or passkey proved within `STEP_UP_WINDOW_SECONDS`."""
     moment = time.time() if now is None else now
     recent = auth_time > 0 and moment - auth_time <= STEP_UP_WINDOW_SECONDS
-    return AuthStrength(amr=amr, auth_time=auth_time, stepped_up=recent and bool(STEP_UP_METHODS & set(amr)))
+    return recent and bool(STEP_UP_METHODS & set(amr))
