@@ -298,4 +298,3 @@ def as_csv(
                 ]
             )
     return buffer.getvalue()
-
