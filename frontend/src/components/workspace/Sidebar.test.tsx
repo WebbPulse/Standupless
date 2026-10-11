@@ -33,6 +33,7 @@ import {
 } from '../../hooks/useCreateTeam';
 import { triageSummaryKey } from '../../lib/queryKeys';
 import type {
+  ReviewsRead,
   SavedViewRead,
   TeamRead,
   TriageSummaryRead,
@@ -47,6 +48,7 @@ const setTeamOrder =
 const getInboxCount = vi.fn<() => Promise<{ count: number }>>();
 const listViews = vi.fn<() => Promise<SavedViewRead[]>>();
 const getTriageSummary = vi.fn<() => Promise<TriageSummaryRead>>();
+const getReviews = vi.fn<() => Promise<ReviewsRead>>();
 
 vi.mock('../../hooks/useAuth', () => ({
   useAuth: () => ({
@@ -73,6 +75,10 @@ vi.mock('../../api/views', () => ({
 
 vi.mock('../../api/triage', () => ({
   getTriageSummary: () => getTriageSummary(),
+}));
+
+vi.mock('../../api/reviews', () => ({
+  getReviews: () => getReviews(),
 }));
 
 vi.mock('@webbpulse/auth/react', async () => {
@@ -206,6 +212,12 @@ beforeEach(() => {
   listViews.mockResolvedValue([]);
   getTriageSummary.mockReset();
   getTriageSummary.mockResolvedValue({ teams: [] });
+  getReviews.mockReset();
+  getReviews.mockResolvedValue({
+    github_linked: true,
+    counts: { needs_review: 0, changes_requested: 0, approved: 0 },
+    items: [],
+  });
   globalThis.localStorage.clear();
 });
 
@@ -221,6 +233,10 @@ describe('the workspace level links', () => {
       'href',
       '/w/mine/issues'
     );
+    expect(screen.getByRole('link', { name: 'Reviews' })).toHaveAttribute(
+      'href',
+      '/w/mine/reviews'
+    );
     expect(screen.getByRole('link', { name: 'Projects' })).toHaveAttribute(
       'href',
       '/w/mine/projects'
@@ -229,6 +245,21 @@ describe('the workspace level links', () => {
       'href',
       '/w/mine/roadmap'
     );
+  });
+});
+
+describe('the reviews badge', () => {
+  it('counts the pull requests waiting on the caller', async () => {
+    getReviews.mockResolvedValue({
+      github_linked: true,
+      counts: { needs_review: 3, changes_requested: 1, approved: 2 },
+      items: [],
+    });
+    renderSidebar();
+
+    expect(
+      await screen.findByLabelText('3 waiting for your review')
+    ).toBeInTheDocument();
   });
 });
 

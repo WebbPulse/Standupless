@@ -7,6 +7,7 @@
 import { useContext } from 'react';
 import { useQueryAuth } from '@webbpulse/auth/react';
 import { usePolledQuery } from '@webbpulse/api-client/react';
+import { getReviews } from '../api/reviews';
 import { getTriageSummary } from '../api/triage';
 import {
   getInboxCount,
@@ -17,8 +18,13 @@ import {
   SidebarDataContext,
   type SidebarDataContextType,
 } from '../contexts/SidebarDataContextDefinition';
-import { inboxCountKey, triageSummaryKey, viewsKey } from '../lib/queryKeys';
-import type { TriageSummaryRead } from '../types/Api';
+import {
+  inboxCountKey,
+  reviewsKey,
+  triageSummaryKey,
+  viewsKey,
+} from '../lib/queryKeys';
+import type { ReviewsRead, TriageSummaryRead } from '../types/Api';
 
 /** How often a fallback read repeats. */
 const POLL_MS = 60000;
@@ -84,4 +90,20 @@ export const useInboxCount = (workspaceId: string): number | null => {
     }
   );
   return shared === undefined ? own.data : shared.inboxCount;
+};
+
+/**
+ * Returns the caller's Reviews list in the workspace. The page and the sidebar
+ * badge share one read, so opening Reviews shows the badge's last answer at once.
+ */
+export const useReviews = (workspaceId: string): ReviewsRead | null => {
+  const shared = useShared(workspaceId);
+  const auth = useQueryAuth();
+  const own = usePolledQuery(({ signal }) => getReviews(workspaceId, signal), {
+    intervalMs: POLL_MS,
+    enabled: shared === undefined && workspaceId !== '',
+    queryKey: reviewsKey(workspaceId),
+    auth,
+  });
+  return shared === undefined ? own.data : shared.reviews;
 };
