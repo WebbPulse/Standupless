@@ -71,7 +71,7 @@ export interface StatusWorkflowEditorProps {
   /** Where an inherited status is edited, for the team page's menu. */
   workspaceSettingsPath?: string;
   /** Where a status the team inherits from its parent team is edited. */
-  parentSettingsPath?: string;
+  parentSettingsPath?: string | undefined;
 }
 
 /** The empty look a new status starts on. */

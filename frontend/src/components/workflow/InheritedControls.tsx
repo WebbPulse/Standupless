@@ -50,7 +50,7 @@ export interface InheritedRowMenuProps {
   /** Where the workspace record is edited. */
   workspaceSettingsPath: string;
   /** Where the parent team's record is edited, for a row the team inherits from its parent. */
-  parentSettingsPath?: string;
+  parentSettingsPath?: string | undefined;
   onOverride: (body: OverrideUpdate) => void;
   onReset: () => void;
 }

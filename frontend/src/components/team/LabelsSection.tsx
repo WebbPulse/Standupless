@@ -40,7 +40,7 @@ export interface LabelsSectionProps {
   /** The workspace slug, for the link to the workspace's own labels. */
   slug?: string;
   /** The parent team's settings page, for a sub-team whose labels include the parent's. */
-  parentSettingsPath?: string;
+  parentSettingsPath?: string | undefined;
   canEdit: boolean;
 }
 

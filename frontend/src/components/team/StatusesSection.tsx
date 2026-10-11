@@ -40,7 +40,7 @@ export interface StatusesSectionProps {
   /** The workspace slug, for the link to the workspace's own statuses. */
   slug?: string;
   /** The parent team's settings page, for a sub-team whose statuses include the parent's. */
-  parentSettingsPath?: string;
+  parentSettingsPath?: string | undefined;
   canEdit: boolean;
 }
 

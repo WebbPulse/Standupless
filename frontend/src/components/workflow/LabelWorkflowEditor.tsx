@@ -52,7 +52,7 @@ export interface LabelWorkflowEditorProps {
   /** Where an inherited label is edited, for the team page's menu. */
   workspaceSettingsPath?: string;
   /** Where a label the team inherits from its parent team is edited. */
-  parentSettingsPath?: string;
+  parentSettingsPath?: string | undefined;
 }
 
 /** The color a new label starts on. */
