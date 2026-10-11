@@ -53,6 +53,10 @@ const KIND_COPY: Record<NotificationKind, { title: string; detail: string }> = {
     title: 'Status changes',
     detail: 'An issue you are subscribed to or assigned moves status.',
   },
+  subscribed: {
+    title: 'Subscribed by someone',
+    detail: 'Someone else subscribes you to an issue.',
+  },
   project_update: {
     title: 'Project updates',
     detail: 'Someone posts an update on a project you lead or are a member of.',

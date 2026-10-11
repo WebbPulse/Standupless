@@ -129,7 +129,9 @@
               "child_added",
               "child_removed",
               "archived",
-              "unarchived"
+              "unarchived",
+              "subscriber_added",
+              "subscriber_removed"
             ],
             "title": "Kind",
             "type": "string"
@@ -13453,6 +13455,7 @@
                     "mentioned",
                     "commented",
                     "status_changed",
+                    "subscribed",
                     "project_update",
                     "project_update_due",
                     "due_soon",
@@ -25716,10 +25719,10 @@
         ]
       }
     },
-    "/api/workspaces/{workspace_id}/issues/{issue_id}/subscribers/me": {
+    "/api/workspaces/{workspace_id}/issues/{issue_id}/subscribers/{user_id}": {
       "delete": {
-        "description": "Stop following the issue. Unsubscribing when not subscribed is not an error.",
-        "operationId": "unsubscribe_api_workspaces__workspace_id__issues__issue_id__subscribers_me_delete",
+        "description": "Unsubscribe the caller or a teammate. Unsubscribing someone not subscribed is not an error.",
+        "operationId": "unsubscribe_api_workspaces__workspace_id__issues__issue_id__subscribers__user_id__delete",
         "parameters": [
           {
             "in": "path",
@@ -25728,6 +25731,18 @@
             "schema": {
               "minLength": 1,
               "title": "Issue Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The person to unsubscribe, or `me` for the caller.",
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "description": "The person to unsubscribe, or `me` for the caller.",
+              "minLength": 1,
+              "title": "User Id",
               "type": "string"
             }
           },
@@ -25775,8 +25790,8 @@
         ]
       },
       "put": {
-        "description": "Follow the issue. Subscribing twice keeps the first subscription.",
-        "operationId": "subscribe_api_workspaces__workspace_id__issues__issue_id__subscribers_me_put",
+        "description": "Subscribe the caller or a teammate who can see the issue. Subscribing twice keeps the first subscription.",
+        "operationId": "subscribe_api_workspaces__workspace_id__issues__issue_id__subscribers__user_id__put",
         "parameters": [
           {
             "in": "path",
@@ -25785,6 +25800,18 @@
             "schema": {
               "minLength": 1,
               "title": "Issue Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The person to subscribe, or `me` for the caller.",
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "description": "The person to subscribe, or `me` for the caller.",
+              "minLength": 1,
+              "title": "User Id",
               "type": "string"
             }
           },

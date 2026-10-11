@@ -507,7 +507,9 @@ export type ActivityKind =
   | 'child_added'
   | 'child_removed'
   | 'archived'
-  | 'unarchived';
+  | 'unarchived'
+  | 'subscriber_added'
+  | 'subscriber_removed';
 
 /**
  * Direct sub-issue counts, maintained by the rollup consumer rather than the
@@ -1174,6 +1176,7 @@ export type NotificationKind =
   | 'mentioned'
   | 'commented'
   | 'status_changed'
+  | 'subscribed'
   | 'project_update'
   | 'project_update_due'
   | 'due_soon'

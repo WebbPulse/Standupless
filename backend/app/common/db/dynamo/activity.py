@@ -35,7 +35,16 @@ ActorKindField = Literal["user", "system", "github"]
 ACTOR_KINDS: tuple[str, ...] = ("user", "system", "github")
 
 ActivityKind = Literal[
-    "created", "field_changed", "link_added", "link_removed", "child_added", "child_removed", "archived", "unarchived"
+    "created",
+    "field_changed",
+    "link_added",
+    "link_removed",
+    "child_added",
+    "child_removed",
+    "archived",
+    "unarchived",
+    "subscriber_added",
+    "subscriber_removed",
 ]
 
 ACTIVITY_KINDS: tuple[str, ...] = (
@@ -47,6 +56,8 @@ ACTIVITY_KINDS: tuple[str, ...] = (
     "child_removed",
     "archived",
     "unarchived",
+    "subscriber_added",
+    "subscriber_removed",
 )
 
 

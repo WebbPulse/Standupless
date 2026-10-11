@@ -729,13 +729,13 @@
     "auth": "workspace:read",
     "domain": "issues",
     "method": "DELETE",
-    "path": "/api/workspaces/{workspace_id}/issues/{issue_id}/subscribers/me"
+    "path": "/api/workspaces/{workspace_id}/issues/{issue_id}/subscribers/{user_id}"
   },
   {
     "auth": "workspace:read",
     "domain": "issues",
     "method": "PUT",
-    "path": "/api/workspaces/{workspace_id}/issues/{issue_id}/subscribers/me"
+    "path": "/api/workspaces/{workspace_id}/issues/{issue_id}/subscribers/{user_id}"
   },
   {
     "auth": "workspace:read",

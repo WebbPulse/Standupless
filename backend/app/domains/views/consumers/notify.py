@@ -1,8 +1,9 @@
-"""The notify consumer: turns issue, comment and project update stream records into inbox rows.
+"""The notify consumer: turns issue, comment, subscription and project update stream records into inbox rows.
 
-It reads three streams on one route, the `issues` table's, the `comments` table's
-and the `planning` table's, filtered to inserted project updates, and tells them
-apart by `eventSourceARN` rather than by guessing from the attributes present,
+It reads four streams on one route, the `issues` table's, the `comments` table's,
+the `subscriptions` table's, filtered to inserted rows one member made for
+another, and the `planning` table's, filtered to inserted project updates, and
+tells them apart by `eventSourceARN` rather than by guessing from the attributes present,
 because a filtered record carries no marker of its own.
 
 A project has no subscriptions of its own, so a project update reaches the
@@ -66,6 +67,8 @@ MENTIONED = "mentioned"
 COMMENTED = "commented"
 
 STATUS_CHANGED = "status_changed"
+
+SUBSCRIBED = "subscribed"
 
 PROJECT_UPDATED = "project_update"
 
@@ -426,6 +429,47 @@ def handle_comment_record(repositories: Repositories, record: Mapping[str, Any])
     return written
 
 
+def handle_subscription_record(repositories: Repositories, record: Mapping[str, Any]) -> int:
+    """Notify from one `subscriptions` record, answering how many rows were written.
+
+    Only an insert carrying `added_by` notifies, which is a member subscribing
+    someone else: the person subscribed hears who added them. A row someone made
+    for themselves, or one an automatic subscription wrote, carries no `added_by`
+    and is skipped, as is any removal.
+    """
+    if str(record.get("eventName", "")).upper() != "INSERT":
+        return 0
+    new_image = deserialize_image(record, "NewImage")
+    if not new_image:
+        return 0
+
+    workspace_id = _text(new_image, "workspace_id")
+    issue_id = _text(new_image, "issue_id")
+    recipient_id = _text(new_image, "user_id")
+    actor_id = _text(new_image, "added_by")
+    if not workspace_id or not issue_id or not recipient_id or not actor_id:
+        return 0
+
+    issue = repositories.issues.get(workspace_id, issue_id)
+    if issue is None:
+        return 0
+
+    return int(
+        write_notification(
+            repositories,
+            workspace_id=workspace_id,
+            recipient_id=recipient_id,
+            kind=SUBSCRIBED,
+            issue=issue,
+            comment_id=None,
+            actor_id=actor_id,
+            actor_display=actor_name(repositories, actor_id),
+            created_at=_stamped_at(new_image),
+            source_id=f"{issue_id}#subscribed#{recipient_id}",
+        )
+    )
+
+
 def receiving_team(repositories: Repositories, project: Project, user_id: str) -> str:
     """The first of a project's teams one member can see, or empty when they see none."""
     for team_id in project.team_ids:
@@ -548,7 +592,7 @@ def handle_record(repositories: Repositories, record: Mapping[str, Any]) -> None
     are imported here rather than at the top because they build on this module's
     writers.
 
-    A record whose ARN names none of the three tables is ignored rather than raised on: a
+    A record whose ARN names none of the four tables is ignored rather than raised on: a
     mapping pointed at a third stream is a deployment mistake, and failing every
     such record would retry it until the stream aged out.
     """
@@ -574,6 +618,8 @@ def handle_record(repositories: Repositories, record: Mapping[str, Any]) -> None
         written = handle_issue_record(repositories, record)
     elif physical == table_name("comments", prefix):
         written = handle_comment_record(repositories, record)
+    elif physical == table_name("subscriptions", prefix):
+        written = handle_subscription_record(repositories, record)
     elif physical == table_name("planning", prefix):
         written = handle_planning_record(repositories, record)
     else:
