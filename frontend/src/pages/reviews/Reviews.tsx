@@ -188,6 +188,7 @@ const GroupHeader: React.FC<{
       type="button"
       onClick={onToggle}
       aria-expanded={!collapsed}
+      data-hover="parent"
       className="flex min-w-0 flex-1 items-center gap-2 rounded-sm py-1 text-left text-sm focus-visible:outline-2 focus-visible:outline-accent"
     >
       <LuChevronRight
