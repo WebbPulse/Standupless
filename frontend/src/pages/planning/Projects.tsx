@@ -4,7 +4,8 @@
  * and order by date, name or progress from the Display menu; the filters,
  * grouping and ordering live in the URL so an arranged list can be shared,
  * and health, priority, status and lead can be changed from the row without
- * opening it.
+ * opening it. Filtered to a parent team, the list includes the projects of
+ * its visible sub-teams, with the issue list's toggle to show the team alone.
  */
 
 import React, { useCallback, useMemo, useState } from 'react';
@@ -39,6 +40,7 @@ import { Combobox, type ComboboxOption } from '../../components/ui/combobox';
 import EmptyState from '../../components/ui/empty-state';
 import { Popover } from '../../components/ui/popover';
 import { SkeletonRows } from '../../components/ui/skeleton';
+import SubTeamToggle from '../../components/workspace/SubTeamToggle';
 import WorkspaceShell from '../../components/workspace/WorkspaceShell';
 import { useListKeyboardNav } from '../../hooks/useListKeyboardNav';
 import { usePlanningTeamLists } from '../../hooks/usePlanningTeamLists';
@@ -46,6 +48,7 @@ import { useShortcut } from '../../hooks/useShortcuts';
 import { useTeam } from '../../hooks/useTeam';
 import { useWorkspace } from '../../hooks/useWorkspace';
 import { useWorkspaceProjects } from '../../hooks/useWorkspaceProjects';
+import { ROLL_UP_PARAM, useSubTeamRollUp } from '../../hooks/useSubTeamRollUp';
 import { canWriteIssues } from '../../lib/capabilities';
 import { cn } from '../../lib/cn';
 import { errorMessage } from '../../lib/errors';
@@ -331,11 +334,17 @@ export const Projects: React.FC = () => {
   const grouping = parseGrouping(params.get('group'));
   const ordering = parseOrdering(params.get('order'));
   const filteredTeam = teams.find((team) => team.key_prefix === teamFilter);
+  const {
+    subTeams,
+    rollUp,
+    toggle: toggleRollUp,
+  } = useSubTeamRollUp(filteredTeam);
 
   const { projects, error, isLoading, queryKey } = useWorkspaceProjects(
     workspaceId,
     filteredTeam?.id ?? '',
-    !isResolvingTeams && (teamFilter === '' || filteredTeam !== undefined)
+    !isResolvingTeams && (teamFilter === '' || filteredTeam !== undefined),
+    rollUp
   );
   const teamIds = useMemo(() => teams.map((team) => team.id), [teams]);
   const { people } = usePlanningTeamLists(workspaceId, teamIds, {
@@ -536,9 +545,16 @@ export const Projects: React.FC = () => {
             options={teamOptions}
             selected={teamFilter === '' ? [] : [teamFilter]}
             onSelect={(value) => {
-              setParam('team', value === teamFilter ? '' : value);
+              const next = new URLSearchParams(params);
+              if (value === teamFilter) next.delete('team');
+              else next.set('team', value);
+              next.delete(ROLL_UP_PARAM);
+              setParams(next, { replace: true });
             }}
           />
+          {filteredTeam !== undefined && subTeams.length > 0 && (
+            <SubTeamToggle rollUp={rollUp} onToggle={toggleRollUp} />
+          )}
           {hasFilters && (
             <Button
               variant="ghost"
@@ -546,6 +562,7 @@ export const Projects: React.FC = () => {
               onClick={() => {
                 const next = new URLSearchParams(params);
                 next.delete('team');
+                next.delete(ROLL_UP_PARAM);
                 next.delete('status');
                 next.delete('lead');
                 setParams(next, { replace: true });
