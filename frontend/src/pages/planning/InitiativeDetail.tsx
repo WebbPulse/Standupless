@@ -29,6 +29,7 @@ import {
   updateInitiative,
 } from '../../api/initiatives';
 import { DatePicker } from '../../components/issues/PropertyPickers';
+import DocumentsSection from '../../components/planning/DocumentsSection';
 import EditableText from '../../components/planning/EditableText';
 import ProgressRing from '../../components/planning/ProgressRing';
 import ProjectHealthGlyph from '../../components/planning/ProjectHealthGlyph';
@@ -625,6 +626,14 @@ export const InitiativeDetail: React.FC = () => {
                   </ul>
                 )}
               </section>
+              <DocumentsSection
+                workspaceId={workspaceId}
+                slug={slug}
+                parentKind="initiative"
+                parentId={initiativeId}
+                canCreate={canEdit}
+                people={people}
+              />
             </div>
             <RollupPanel initiative={initiative} />
           </div>

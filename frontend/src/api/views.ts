@@ -427,6 +427,27 @@ export const search = async (
 };
 
 /**
+ * Searches the visible teams and, across the workspace, the documents the
+ * caller can read. A search narrowed to one team answers no documents.
+ */
+export const searchAll = async (
+  workspaceId: string,
+  q: string,
+  query: { team_id?: string; limit?: number } = {},
+  signal?: AbortSignal
+): Promise<Required<SearchListRead>> => {
+  const response = await apiClient.get<SearchListRead>(
+    searchPath(workspaceId),
+    listOptions({ q, ...query }, signal)
+  );
+  const body = response.data;
+  return {
+    results: Array.isArray(body?.results) ? body.results : [],
+    documents: Array.isArray(body?.documents) ? body.documents : [],
+  };
+};
+
+/**
  * Open issues in the visible teams whose titles share terms with a draft
  * title, best match first. A title with no searchable word answers nothing.
  */

@@ -97,6 +97,10 @@ export const projectPath = (
       : `?team=${encodeURIComponent(teamKeyPrefix)}`
   }`;
 
+/** One document, reached by its own id whichever project or initiative holds it. */
+export const documentPath = (slug: string, documentId: string): string =>
+  `${workspacePath(slug)}/documents/${documentId}`;
+
 /** One project opened on its Updates tab, where a notification about one lands. */
 export const projectUpdatesTabPath = (
   slug: string,
