@@ -11,9 +11,13 @@
  *
  * Velocity sits under the current cycle: what the last closed cycles
  * delivered and how the cycle being planned compares with that average.
+ *
+ * A parent team's cycles roll up its visible sub-teams' matching cycles, so
+ * their counts and progress include the sub-teams' issues, with the same
+ * toggle as the issue list to show the team alone.
  */
 
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import { useQueryAuth } from '@webbpulse/auth/react';
 import {
   useMutationWithRefetch,
@@ -48,11 +52,14 @@ import VelocityPanel from '../../components/planning/VelocityPanel';
 import WorkspaceShell from '../../components/workspace/WorkspaceShell';
 import TeamTabs from '../../components/workspace/TeamTabs';
 import TeamTitle from '../../components/workspace/TeamTitle';
+import SubTeamToggle from '../../components/workspace/SubTeamToggle';
 import { useShortcut } from '../../hooks/useShortcuts';
+import { useSubTeamRollUp } from '../../hooks/useSubTeamRollUp';
 import { useTeam } from '../../hooks/useTeam';
 import { useWorkspace } from '../../hooks/useWorkspace';
 import { canWriteIssues, isTeamAdmin } from '../../lib/capabilities';
 import { cn } from '../../lib/cn';
+import { readRolledUpCycles, rollUpCycles } from '../../lib/cycleRollUp';
 import { errorMessage } from '../../lib/errors';
 import {
   CYCLE_STATUS_LABELS,
@@ -65,7 +72,7 @@ import {
 import { cyclePath } from '../../lib/paths';
 import { cyclesKey } from '../../lib/queryKeys';
 import { validateCycleDates } from '../../lib/validation';
-import type { CycleRead, CycleStatus } from '../../types/Api';
+import type { CycleListRead, CycleRead, CycleStatus } from '../../types/Api';
 
 /** How often the list re-reads. */
 const POLL_MS = 60000;
@@ -341,12 +348,23 @@ export const Cycles: React.FC = () => {
   const [goal, setGoal] = useState('');
 
   const teamId = team?.id ?? '';
-  const queryKey = cyclesKey(workspaceId, teamId, '');
+  const { subTeams, rollUp, toggle } = useSubTeamRollUp(team);
+  const subTeamIds = useMemo(
+    () => subTeams.map((other) => other.id),
+    [subTeams]
+  );
+  const queryKey = cyclesKey(workspaceId, teamId, rollUp ? 'sub-teams' : '');
 
   const read = useCallback(
-    ({ signal }: { signal?: AbortSignal }) =>
-      listCycles(workspaceId, { team_id: teamId }, signal),
-    [workspaceId, teamId]
+    async ({ signal }: { signal?: AbortSignal }): Promise<CycleListRead> => {
+      if (!rollUp) return listCycles(workspaceId, { team_id: teamId }, signal);
+      const rows = await readRolledUpCycles(workspaceId, teamId, signal);
+      return {
+        cycles: rollUpCycles(teamId, rows, subTeamIds),
+        next_cursor: null,
+      };
+    },
+    [workspaceId, teamId, rollUp, subTeamIds]
   );
 
   const { data, error, isLoading } = usePolledQuery(read, {
@@ -469,11 +487,16 @@ export const Cycles: React.FC = () => {
     <WorkspaceShell
       title={<TeamTitle name={team.name} keyPrefix={team.key_prefix} />}
       toolbar={
-        <TeamTabs
-          slug={slug ?? ''}
-          keyPrefix={team.key_prefix}
-          current="cycles"
-        />
+        <div className="flex items-center gap-2">
+          <TeamTabs
+            slug={slug ?? ''}
+            keyPrefix={team.key_prefix}
+            current="cycles"
+          />
+          {subTeams.length > 0 && (
+            <SubTeamToggle rollUp={rollUp} onToggle={toggle} />
+          )}
+        </div>
       }
       actions={
         canEdit ? (

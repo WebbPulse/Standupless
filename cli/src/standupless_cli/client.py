@@ -68,11 +68,16 @@ from standupless_cli._generated.models import (
     StatusListRead,
     StatusRead,
     StatusUpdate,
+    SubscribersRead,
+    TeamCreate,
     TeamListRead,
     TeamRead,
     TeamSyncRead,
     TeamSyncWrite,
     TeamUpdate,
+    TemplateCreate,
+    TemplateListRead,
+    TemplateRead,
     TriageAccept,
     TriageDecline,
     TriageSettingsRead,
@@ -223,6 +228,10 @@ class StanduplessClient:
     def list_teams(self, workspace_id: str) -> list[TeamRead]:
         """The workspace's teams."""
         return cast(TeamListRead, self._request("GET", f"/api/workspaces/{workspace_id}/teams"))["teams"]
+
+    def create_team(self, workspace_id: str, body: TeamCreate) -> TeamRead:
+        """Create a team, under a parent team when the body names one, with the caller as its admin."""
+        return cast(TeamRead, self._request("POST", f"/api/workspaces/{workspace_id}/teams", json=body))
 
     def update_team(self, workspace_id: str, team_id: str, body: TeamUpdate) -> TeamRead:
         """Change a team's settings, with team admin."""
@@ -408,6 +417,29 @@ class StanduplessClient:
         """Delete a workspace label from every team."""
         self._request("DELETE", f"/api/workspaces/{workspace_id}/labels/{label_id}")
 
+    def list_templates(self, workspace_id: str, team_id: str | None) -> TemplateListRead:
+        """The templates a team offers and its default, or the workspace templates with no team."""
+        if team_id is None:
+            return cast(TemplateListRead, self._request("GET", f"/api/workspaces/{workspace_id}/templates"))
+        path = f"/api/workspaces/{workspace_id}/teams/{team_id}/templates"
+        return cast(TemplateListRead, self._request("GET", path))
+
+    def create_template(self, workspace_id: str, team_id: str | None, body: TemplateCreate) -> TemplateRead:
+        """Save a template on a team, or on the workspace with no team."""
+        if team_id is None:
+            path = f"/api/workspaces/{workspace_id}/templates"
+        else:
+            path = f"/api/workspaces/{workspace_id}/teams/{team_id}/templates"
+        return cast(TemplateRead, self._request("POST", path, json=body))
+
+    def delete_template(self, workspace_id: str, team_id: str | None, template_id: str) -> None:
+        """Delete one of a team's own templates, or a workspace template with no team."""
+        if team_id is None:
+            path = f"/api/workspaces/{workspace_id}/templates/{template_id}"
+        else:
+            path = f"/api/workspaces/{workspace_id}/teams/{team_id}/templates/{template_id}"
+        self._request("DELETE", path)
+
     def list_members(self, workspace_id: str) -> list[MemberRead]:
         """The workspace's members."""
         return cast(MemberListRead, self._request("GET", f"/api/workspaces/{workspace_id}/members"))["members"]
@@ -469,6 +501,21 @@ class StanduplessClient:
         path = f"/api/workspaces/{workspace_id}/issues/{issue_id}/activity"
         params = {"source": source} if source else {}
         return list(self._pages(path, "activity", params, limit))
+
+    def list_subscribers(self, workspace_id: str, issue_id: str) -> SubscribersRead:
+        """Everyone following an issue, oldest subscription first."""
+        path = f"/api/workspaces/{workspace_id}/issues/{issue_id}/subscribers"
+        return cast(SubscribersRead, self._request("GET", path))
+
+    def subscribe(self, workspace_id: str, issue_id: str, user_id: str = "me") -> SubscribersRead:
+        """Subscribe someone to an issue, the caller when `user_id` is `me`."""
+        path = f"/api/workspaces/{workspace_id}/issues/{issue_id}/subscribers/{user_id}"
+        return cast(SubscribersRead, self._request("PUT", path))
+
+    def unsubscribe(self, workspace_id: str, issue_id: str, user_id: str = "me") -> SubscribersRead:
+        """Unsubscribe someone from an issue, the caller when `user_id` is `me`."""
+        path = f"/api/workspaces/{workspace_id}/issues/{issue_id}/subscribers/{user_id}"
+        return cast(SubscribersRead, self._request("DELETE", path))
 
     def list_triage(
         self, workspace_id: str, team_id: str, snoozed: bool = False, limit: int | None = 50

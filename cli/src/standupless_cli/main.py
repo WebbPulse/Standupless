@@ -48,8 +48,11 @@ from standupless_cli._generated.models import (
     StatusCreate,
     StatusRead,
     StatusUpdate,
+    TeamCreate,
     TeamRead,
     TeamUpdate,
+    TemplateCreate,
+    TemplateRead,
     TriageAccept,
     ViewRead,
     WorkspaceExportCreate,
@@ -113,6 +116,9 @@ label_app = typer.Typer(
     help="Labels: the workspace set every team inherits, and each team's own.", no_args_is_help=True
 )
 workspace_app = typer.Typer(help="The workspace's own settings.", no_args_is_help=True)
+template_app = typer.Typer(
+    help="Issue templates: a team's own, its parent team's and the workspace's.", no_args_is_help=True
+)
 app.add_typer(auth_app, name="auth")
 app.add_typer(issue_app, name="issue")
 app.add_typer(team_app, name="team")
@@ -128,6 +134,7 @@ app.add_typer(workspace_app, name="workspace")
 app.add_typer(triage_app, name="triage")
 app.add_typer(channel_app, name="channel")
 app.add_typer(standup_app, name="standup")
+app.add_typer(template_app, name="template")
 
 
 class Source(StrEnum):
@@ -705,10 +712,14 @@ def issue_create(
     estimate: Annotated[str | None, typer.Option("--estimate", help="Estimate on the team's scale.")] = None,
     due: Annotated[str | None, typer.Option("--due", help="Due date, YYYY-MM-DD.")] = None,
     parent: Annotated[str | None, typer.Option("--parent", help="Parent issue key.")] = None,
+    template: Annotated[
+        str | None,
+        typer.Option("--template", help="Template name or id; fills every field not passed, the title included."),
+    ] = None,
     web: Annotated[bool, typer.Option("--web", help="Open the new issue in the browser.")] = False,
     as_json: JsonFlag = False,
 ) -> None:
-    """Create an issue and print its key."""
+    """Create an issue and print its key, optionally starting from a template."""
     context = _state(ctx).context()
     if team:
         chosen = context.team(team)
@@ -718,9 +729,10 @@ def issue_create(
             raise ConfigError("This workspace has several teams; pass --team.")
         chosen = teams[0]
     text = _read_body(body, body_file)
-    if title is None:
-        title = typer.prompt("Title")
     team_id = chosen["id"]
+    found_template = _find_template(context, team_id, template) if template else None
+    if title is None and not (found_template and found_template.get("title")):
+        title = typer.prompt("Title")
     assignee_id = _assignee_id(context, assignee) if assignee else None
     payload = compact(
         {
@@ -736,6 +748,7 @@ def issue_create(
             "estimate": estimate,
             "due_date": due,
             "parent_id": context.issue(parent)["id"] if parent else None,
+            "template_id": found_template["id"] if found_template else None,
         }
     )
     created = context.client.create_issue(context.workspace_id, cast(IssueCreate, payload))
@@ -901,6 +914,54 @@ def issue_activity(
     output.activity_rows(rows)
 
 
+def _subscriber(context: Context, user: str | None) -> tuple[str, str]:
+    """The path segment and the display name for a `--user` option, `me` when it is absent."""
+    if user is None or user.strip().lower() == "me":
+        return "me", ""
+    user_id = context.user_id(user)
+    return user_id, context.member_names().get(user_id, user)
+
+
+@issue_app.command("subscribe")
+def issue_subscribe(
+    ctx: typer.Context,
+    key: Annotated[str, typer.Argument(help="Issue key, such as ENG-12.")],
+    user: Annotated[
+        str | None, typer.Option("--user", "-u", help="Subscribe this teammate instead: me, an id, email or name.")
+    ] = None,
+    as_json: JsonFlag = False,
+) -> None:
+    """Follow an issue, or subscribe a teammate who can see it, who is then notified."""
+    context = _state(ctx).context()
+    issue = context.issue(key)
+    target, name = _subscriber(context, user)
+    found = context.client.subscribe(context.workspace_id, issue["id"], target)
+    if as_json:
+        output.print_json(found)
+        return
+    output.success(f"Subscribed {name} to {issue['key']}." if name else f"Subscribed to {issue['key']}.")
+
+
+@issue_app.command("unsubscribe")
+def issue_unsubscribe(
+    ctx: typer.Context,
+    key: Annotated[str, typer.Argument(help="Issue key, such as ENG-12.")],
+    user: Annotated[
+        str | None, typer.Option("--user", "-u", help="Unsubscribe this teammate instead: me, an id, email or name.")
+    ] = None,
+    as_json: JsonFlag = False,
+) -> None:
+    """Stop following an issue, or unsubscribe a teammate."""
+    context = _state(ctx).context()
+    issue = context.issue(key)
+    target, name = _subscriber(context, user)
+    found = context.client.unsubscribe(context.workspace_id, issue["id"], target)
+    if as_json:
+        output.print_json(found)
+        return
+    output.success(f"Unsubscribed {name} from {issue['key']}." if name else f"Unsubscribed from {issue['key']}.")
+
+
 @issue_app.command("comment")
 def issue_comment(
     ctx: typer.Context,
@@ -986,6 +1047,51 @@ class EstimateScaleChoice(StrEnum):
     fibonacci = "fibonacci"
     linear = "linear"
     tshirt = "tshirt"
+
+
+@team_app.command("create")
+def team_create(
+    ctx: typer.Context,
+    name: Annotated[str, typer.Argument(help="The team's name.")],
+    key: Annotated[str, typer.Option("--key", "-k", help="The issue key prefix, 2 to 6 characters such as ENG.")],
+    parent: Annotated[
+        str | None,
+        typer.Option(
+            "--parent",
+            "-p",
+            help="Create the team as a sub-team of this top-level team (key prefix, name or id).",
+        ),
+    ] = None,
+    description: Annotated[str | None, typer.Option("--description", help="What the team works on.")] = None,
+    estimate_scale: Annotated[
+        EstimateScaleChoice | None,
+        typer.Option("--estimate-scale", help="How issues are estimated. A sub-team takes its parent's."),
+    ] = None,
+    private: Annotated[
+        bool, typer.Option("--private", help="Only members see the team. Needs the Business plan.")
+    ] = False,
+    as_json: JsonFlag = False,
+) -> None:
+    """Create a team with you as its admin, nested under a parent team with --parent."""
+    context = _state(ctx).context()
+    body: TeamCreate = {"name": name, "key_prefix": key.strip().upper()}
+    if description is not None:
+        body["description"] = description
+    if estimate_scale is not None:
+        body["estimate_scale"] = cast(Any, estimate_scale.value)
+    if private:
+        body["private"] = True
+    if parent is not None:
+        body["parent_team_id"] = context.team(parent)["id"]
+    created = context.client.create_team(context.workspace_id, body)
+    if as_json:
+        output.print_json(created)
+        return
+    parent_id = created.get("parent_team_id")
+    above = context.team_by_id(parent_id) if parent_id else None
+    where = f" under {above['key_prefix']}" if above else ""
+    url = context.team_url(created["key_prefix"])
+    output.success(f"Created {created['key_prefix']} {created['name']}{where}: {url}")
 
 
 @team_app.command("update")
@@ -3336,6 +3442,105 @@ def standup_settings(
         f"The {found['key_prefix']} standup goes out {when} at {settings['send_time']} {settings['timezone']}. "
         f"Next digest {settings['next_digest_date']}."
     )
+
+
+TEMPLATE_COLUMNS = ["NAME", "TITLE", "SCOPE", "DEFAULT", "ID"]
+
+
+def _find_template(context: Context, team_id: str | None, ref: str) -> TemplateRead:
+    """One template a team offers, or a workspace template with no team, by name or id."""
+    templates = context.client.list_templates(context.workspace_id, team_id)["templates"]
+    for row in templates:
+        if row["id"] == ref:
+            return row
+    folded = ref.strip().casefold()
+    named = [row for row in templates if row["name"].casefold() == folded]
+    if len(named) > 1:
+        raise ConfigError(f"More than one template is named {ref}; pass its id.")
+    if not named:
+        raise ConfigError(f"No template named {ref}.")
+    return named[0]
+
+
+@template_app.command("list")
+def template_list(
+    ctx: typer.Context,
+    team: OptionalTeam = None,
+    shared: SharedFlag = False,
+    as_json: JsonFlag = False,
+) -> None:
+    """List the templates a team offers, its own, its parent's and the workspace's, or the workspace set."""
+    context = _state(ctx).context()
+    listed = context.client.list_templates(context.workspace_id, _scope_team(context, team, shared))
+    if as_json:
+        output.print_json(listed)
+        return
+    default = listed.get("default_template_id")
+    rows = [
+        [
+            row["name"],
+            row.get("title") or "",
+            row.get("scope") or "team",
+            "yes" if row["id"] == default else "",
+            row["id"],
+        ]
+        for row in listed["templates"]
+    ]
+    output.table(TEMPLATE_COLUMNS, rows, "No templates.")
+
+
+@template_app.command("create")
+def template_create(
+    ctx: typer.Context,
+    name: Annotated[str, typer.Argument(help="The template name shown in the picker.")],
+    team: OptionalTeam = None,
+    shared: SharedFlag = False,
+    title: Annotated[str | None, typer.Option("--title", help="The default issue title.")] = None,
+    body: Annotated[str | None, typer.Option("--body", "-b", help="The default description in Markdown.")] = None,
+    body_file: Annotated[
+        Path | None, typer.Option("--body-file", "-F", help="Read the description from a file, or - for stdin.")
+    ] = None,
+    priority: Annotated[Priority | None, typer.Option("--priority")] = None,
+    label: Annotated[list[str] | None, typer.Option("--label", "-l", help="Label name; repeat for several.")] = None,
+    as_json: JsonFlag = False,
+) -> None:
+    """Save a team template, or with --shared a workspace template every team offers."""
+    context = _state(ctx).context()
+    team_id = _scope_team(context, team, shared)
+    payload = compact(
+        {
+            "name": name,
+            "title": title,
+            "body": _read_body(body, body_file),
+            "priority": priority.value if priority else None,
+        }
+    )
+    if label:
+        if team_id is None:
+            raise ConfigError("--label needs --team.")
+        payload["label_ids"] = context.label_ids([context.team(team_id)], label)
+    created = context.client.create_template(context.workspace_id, team_id, cast(TemplateCreate, payload))
+    if as_json:
+        output.print_json(created)
+        return
+    output.success(f"Created template {created['name']}.")
+
+
+@template_app.command("delete")
+def template_delete(
+    ctx: typer.Context,
+    template: Annotated[str, typer.Argument(help="Template name or id.")],
+    team: OptionalTeam = None,
+    shared: SharedFlag = False,
+) -> None:
+    """Delete one of a team's own templates, or with --shared a workspace template."""
+    context = _state(ctx).context()
+    team_id = _scope_team(context, team, shared)
+    found = _find_template(context, team_id, template)
+    if team_id is not None and found.get("team_id") != team_id:
+        raise ConfigError(f"{found['name']} is inherited; delete it where it lives.")
+    context.client.delete_template(context.workspace_id, team_id, found["id"])
+    output.success(f"Deleted template {found['name']}.")
 
 
 def run() -> None:

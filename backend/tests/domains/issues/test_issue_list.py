@@ -123,6 +123,21 @@ def test_priority_desc_puts_urgent_first_and_none_last(client: TestClient, works
     assert _ids(listed) == [urgent["id"], low["id"], plain["id"]]
 
 
+def test_priority_desc_breaks_ties_by_newest_created_not_last_updated(
+    client: TestClient, workspace: str, statuses: Any
+) -> None:
+    """Editing an issue leaves its place in a priority bucket alone."""
+    sign_in(client, OWNER)
+    older = create_issue(client, workspace, title="Older", priority="high")
+    newer = create_issue(client, workspace, title="Newer", priority="high")
+    edited = client.patch(f"/api/workspaces/{workspace}/issues/{older['id']}", json={"title": "Older, edited"})
+    assert edited.status_code == 200
+
+    listed = client.get(f"/api/workspaces/{workspace}/issues", params={"sort": "priority_desc", "limit": 100}).json()
+
+    assert _ids(listed) == [newer["id"], older["id"]]
+
+
 def test_due_asc_puts_the_soonest_first_and_undated_last(client: TestClient, workspace: str, statuses: Any) -> None:
     """An issue with no due date sorts after every dated one rather than first."""
     sign_in(client, OWNER)

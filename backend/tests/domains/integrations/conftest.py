@@ -174,6 +174,28 @@ def public_dns(monkeypatch: pytest.MonkeyPatch) -> None:
     )
 
 
+@dataclass
+class CheckRuns:
+    """What the patched check run read answers, and the commits it was asked about."""
+
+    runs: list[dict[str, Any]]
+    asked: list[tuple[str, str, str]]
+
+
+@pytest.fixture(autouse=True)
+def check_runs(monkeypatch: pytest.MonkeyPatch) -> CheckRuns:
+    """Answer every check run read back from GitHub from a list a test fills, empty by default."""
+    recorded = CheckRuns(runs=[], asked=[])
+
+    def fetch(installation_id: str, repository_id: str, head_sha: str) -> list[dict[str, Any]]:
+        """Record the read and answer the seeded runs."""
+        recorded.asked.append((installation_id, repository_id, head_sha))
+        return list(recorded.runs)
+
+    monkeypatch.setattr("app.domains.integrations.pr_status.fetch_check_runs", fetch)
+    return recorded
+
+
 @pytest.fixture
 def enqueued(monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, Any]]:
     """Every message the code under test enqueues, instead of an SQS call.

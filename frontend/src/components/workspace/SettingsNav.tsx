@@ -30,7 +30,7 @@ const tabClass = ({ isActive }: { isActive: boolean }): string =>
       : 'text-text-muted hover:text-text'
   );
 
-/** Renders the links between the workspace, security, team, workflow, label, billing, API key, connected app, MCP and CLI, share link, export, import, audit log and notification settings. */
+/** Renders the links between the workspace, security, team, workflow, label, template, billing, API key, connected app, MCP and CLI, share link, export, import, audit log and notification settings. */
 export const SettingsNav: React.FC<SettingsNavProps> = ({ workspace }) => (
   <nav aria-label="Settings sections" className="flex flex-wrap gap-1">
     {canManageMembers(workspace.role) && (
@@ -54,6 +54,12 @@ export const SettingsNav: React.FC<SettingsNavProps> = ({ workspace }) => (
     </NavLink>
     <NavLink to={`/w/${workspace.slug}/settings/labels`} className={tabClass}>
       Labels
+    </NavLink>
+    <NavLink
+      to={`/w/${workspace.slug}/settings/templates`}
+      className={tabClass}
+    >
+      Templates
     </NavLink>
     <NavLink to={`/w/${workspace.slug}/settings/billing`} className={tabClass}>
       Billing

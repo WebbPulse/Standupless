@@ -1,11 +1,12 @@
 /**
  * One team's settings: its name and key, the parent team it sits under, who belongs to it, the statuses its
- * issues move through, its labels, its automatic cycles, when stale open
+ * issues move through, its labels, its issue templates, its automatic cycles, when stale open
  * issues close, how long closed issues stay before they are archived, its SLA
  * rules, the rules that move an issue when a pull request changes, whether
  * linked pull requests carry its issue labels, the GitHub repository its issues sync with, the release
  * pipeline its releases move through, the Slack and Discord channels it
- * posts notifications to, and its outbound webhooks. These are a route of
+ * posts notifications to, its outbound webhooks, and a danger zone for
+ * deleting it. These are a route of
  * their own so a link to them survives being sent to someone else.
  *
  * The sections sit on one scrolling page with a list of anchors beside them
@@ -13,8 +14,8 @@
  * a new team walks through them in order.
  */
 
-import React from 'react';
-import { useParams } from 'react-router-dom';
+import React, { useEffect } from 'react';
+import { useLocation, useParams } from 'react-router-dom';
 import AutoArchiveSection from '../../components/team/AutoArchiveSection';
 import AutoCloseSection from '../../components/team/AutoCloseSection';
 import CyclesSection from '../../components/team/CyclesSection';
@@ -28,10 +29,12 @@ import TeamGeneralSection from '../../components/team/TeamGeneralSection';
 import TeamMembersSection from '../../components/team/TeamMembersSection';
 import TeamParentSection from '../../components/team/TeamParentSection';
 import TeamChannelsSection from '../../components/team/TeamChannelsSection';
+import TeamDangerZoneSection from '../../components/team/TeamDangerZoneSection';
 import DiscordReturnToast from '../../components/team/DiscordReturnToast';
 import SlackReturnToast from '../../components/team/SlackReturnToast';
 import TeamPrivacySection from '../../components/team/TeamPrivacySection';
 import TeamWebhooksSection from '../../components/team/TeamWebhooksSection';
+import TemplatesSection from '../../components/team/TemplatesSection';
 import StatusesSection from '../../components/team/StatusesSection';
 import TransitionsSection from '../../components/team/TransitionsSection';
 import TriageSection from '../../components/team/TriageSection';
@@ -42,14 +45,18 @@ import WorkspaceShell from '../../components/workspace/WorkspaceShell';
 import TeamTabs from '../../components/workspace/TeamTabs';
 import TeamTitle from '../../components/workspace/TeamTitle';
 import { useTeam } from '../../hooks/useTeam';
+import { useTeamsFor } from '../../hooks/useTeams';
 import { useWorkspace } from '../../hooks/useWorkspace';
 import { planIncludes } from '../../lib/billing';
 import {
   canDeleteTeam,
   canManageMembers,
+  canWriteIssues,
   isTeamAdmin,
 } from '../../lib/capabilities';
 import { errorMessage } from '../../lib/errors';
+import { teamSettingsPath } from '../../lib/paths';
+import { estimateOptionsOf } from '../../lib/validation';
 
 /** The sections in page order, as the anchor list names them. */
 const SECTIONS = [
@@ -57,6 +64,7 @@ const SECTIONS = [
   { id: 'members', label: 'Members' },
   { id: 'workflow', label: 'Workflow' },
   { id: 'labels', label: 'Labels' },
+  { id: 'templates', label: 'Templates' },
   { id: 'cycles', label: 'Cycles' },
   { id: 'triage', label: 'Triage' },
   { id: 'sla', label: 'SLAs' },
@@ -67,6 +75,7 @@ const SECTIONS = [
   { id: 'releases', label: 'Releases' },
   { id: 'notifications', label: 'Notifications' },
   { id: 'webhooks', label: 'Webhooks' },
+  { id: 'danger', label: 'Danger zone' },
 ] as const;
 
 /**
@@ -88,6 +97,17 @@ const TeamSettings: React.FC = () => {
   const { keyPrefix, slug } = useParams<{ keyPrefix: string; slug: string }>();
   const { workspace } = useWorkspace();
   const { team, workspaceId, isLoading, notFound, error } = useTeam(keyPrefix);
+  const { data: teams } = useTeamsFor(workspaceId);
+  const { hash } = useLocation();
+  const loaded = team !== null;
+
+  useEffect(() => {
+    if (!loaded || !hash.startsWith('#team-settings-')) return;
+    const target = globalThis.document.getElementById(hash.slice(1));
+    if (target !== null && typeof target.scrollIntoView === 'function') {
+      target.scrollIntoView({ block: 'start' });
+    }
+  }, [loaded, hash]);
 
   if (isLoading) {
     return (
@@ -111,6 +131,15 @@ const TeamSettings: React.FC = () => {
   }
 
   const editable = isTeamAdmin(workspace?.role, team.role);
+  const parent = (teams ?? []).find((row) => row.id === team.parent_team_id);
+  const parentSettings =
+    parent === undefined
+      ? undefined
+      : teamSettingsPath(slug ?? '', parent.key_prefix);
+  const canDelete = canDeleteTeam(workspace?.role);
+  const sections = SECTIONS.filter(
+    (section) => section.id !== 'danger' || canDelete
+  );
 
   const frame = (
     id: (typeof SECTIONS)[number]['id'],
@@ -150,7 +179,7 @@ const TeamSettings: React.FC = () => {
             {team.name}
           </p>
           <ul className="space-y-px">
-            {SECTIONS.map((section) => (
+            {sections.map((section) => (
               <li key={section.id}>
                 <a
                   href={`#team-settings-${section.id}`}
@@ -172,13 +201,13 @@ const TeamSettings: React.FC = () => {
             <div className="space-y-6">
               <TeamGeneralSection
                 workspaceId={workspaceId}
-                slug={slug ?? ''}
                 team={team}
                 canEdit={editable}
-                canDelete={canDeleteTeam(workspace?.role)}
+                parentSettingsPath={parentSettings}
               />
               <TeamParentSection
                 workspaceId={workspaceId}
+                slug={slug ?? ''}
                 team={team}
                 canEdit={editable}
               />
@@ -204,6 +233,7 @@ const TeamSettings: React.FC = () => {
               workspaceId={workspaceId}
               teamId={team.id}
               slug={slug ?? ''}
+              parentSettingsPath={parentSettings}
               canEdit={editable}
             />
           )}
@@ -213,7 +243,19 @@ const TeamSettings: React.FC = () => {
               workspaceId={workspaceId}
               teamId={team.id}
               slug={slug ?? ''}
+              parentSettingsPath={parentSettings}
               canEdit={editable}
+            />
+          )}
+          {frame(
+            'templates',
+            <TemplatesSection
+              workspaceId={workspaceId}
+              teamId={team.id}
+              estimateScale={team.estimate_scale}
+              estimateOptions={estimateOptionsOf(team)}
+              canEdit={canWriteIssues(workspace?.role, team.role)}
+              canSetDefault={editable}
             />
           )}
           {frame(
@@ -222,6 +264,11 @@ const TeamSettings: React.FC = () => {
               workspaceId={workspaceId}
               teamId={team.id}
               canEdit={editable}
+              parentSettingsPath={parentSettings}
+              inherited={
+                team.parent_team_id !== undefined &&
+                team.parent_team_id !== null
+              }
             />
           )}
           {frame(
@@ -318,6 +365,15 @@ const TeamSettings: React.FC = () => {
               canEdit={editable}
             />
           )}
+          {canDelete &&
+            frame(
+              'danger',
+              <TeamDangerZoneSection
+                workspaceId={workspaceId}
+                slug={slug ?? ''}
+                team={team}
+              />
+            )}
         </div>
       </div>
     </WorkspaceShell>

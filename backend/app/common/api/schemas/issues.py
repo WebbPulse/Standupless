@@ -40,6 +40,8 @@ ActivityKindField = Literal[
     "child_removed",
     "archived",
     "unarchived",
+    "subscriber_added",
+    "subscriber_removed",
 ]
 
 SortField = Literal["updated_desc", "created_desc", "key_asc", "priority_desc", "due_asc", "sla_asc", "manual"]
@@ -127,10 +129,13 @@ class IssueCreate(BaseModel):
 
     `team_id` is a field rather than a path segment because issues are workspace
     scoped, which is what lets a link and a "my issues" read cross teams.
+    `template_id` fills every field the body leaves out from a template the team
+    offers, so `title` may be left out only when a template is named.
     """
 
     team_id: str = Field(min_length=1)
-    title: str = Field(min_length=1, max_length=TITLE_MAX)
+    title: str = Field(default="", max_length=TITLE_MAX)
+    template_id: Optional[str] = None
     body: Optional[str] = None
     status_id: Optional[str] = None
     priority: PriorityField = "none"
@@ -149,11 +154,14 @@ class IssueCreate(BaseModel):
     @field_validator("title")
     @classmethod
     def check_title(cls, value: str) -> str:
-        """Reject a title that is only whitespace."""
-        candidate = value.strip()
-        if not candidate:
-            raise ValueError("title must not be blank")
-        return candidate
+        """Strip the title; a blank one is refused below unless a template supplies it."""
+        return value.strip()
+
+    @field_validator("template_id")
+    @classmethod
+    def check_template_id(cls, value: Optional[str]) -> Optional[str]:
+        """Read a blank template id as none."""
+        return (value or "").strip() or None
 
     @field_validator("body")
     @classmethod
@@ -175,8 +183,10 @@ class IssueCreate(BaseModel):
 
     @model_validator(mode="after")
     def check_date_order(self) -> "IssueCreate":
-        """Refuse a due date before the start date."""
+        """Refuse a due date before the start date, and a blank title with no template to fill it."""
         _check_order(self.start_date, self.due_date)
+        if not self.title and not self.template_id:
+            raise ValueError("title must not be blank")
         return self
 
 

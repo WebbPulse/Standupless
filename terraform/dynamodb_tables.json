@@ -499,7 +499,7 @@
     ],
     "hash_key": "ws_issue",
     "range_key": "user_id",
-    "stream_view_type": null,
+    "stream_view_type": "NEW_IMAGE",
     "ttl_attribute": null
   },
   "team_config": {

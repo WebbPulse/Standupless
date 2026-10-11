@@ -458,3 +458,44 @@ describe('an inherited status', () => {
     ).not.toBeInTheDocument();
   });
 });
+
+describe('a status inherited from the parent team', () => {
+  const triaged: StatusRead = {
+    id: 'parent-triaged',
+    name: 'Triaged',
+    category: 'unstarted',
+    position: 3,
+    scope: 'parent',
+    hidden: false,
+    inherited_name: null,
+  };
+
+  beforeEach(() => {
+    listStatuses.mockResolvedValue([...rows, triaged]);
+  });
+
+  it('links to the parent team settings for an edit', async () => {
+    const user = userEvent.setup();
+    render(
+      <MemoryRouter>
+        <StatusesSection
+          workspaceId="ws-1"
+          teamId="team-1"
+          slug="mine"
+          parentSettingsPath="/w/mine/team/PLAT/settings"
+          canEdit
+        />
+      </MemoryRouter>
+    );
+    await openActions(user, 'Triaged');
+    expect(
+      screen.getByRole('menuitem', { name: 'Edit in parent team settings' })
+    ).toHaveAttribute(
+      'href',
+      '/w/mine/team/PLAT/settings#team-settings-workflow'
+    );
+    expect(
+      screen.queryByRole('menuitem', { name: 'Edit in workspace settings' })
+    ).not.toBeInTheDocument();
+  });
+});

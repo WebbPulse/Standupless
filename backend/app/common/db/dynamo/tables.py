@@ -383,6 +383,7 @@ SUBSCRIPTIONS = TableSpec(
             projection="KEYS_ONLY",
         ),
     ),
+    stream_view_type="NEW_IMAGE",
 )
 """Who follows one issue, one row per subscriber keyed by user id.
 
@@ -393,7 +394,9 @@ which names the issue.
 
 Partitioned per issue like `comments`, so the notify consumer reads an issue's
 audience in one query. Written by `issues` and `discussion`, which subscribe the
-people an issue or a comment touches, and read by `views` for the fan-out.
+people an issue or a comment touches, and read by `views` for the fan-out. Its
+stream carries the new image alone, which is all the notify consumer needs to tell
+someone a teammate subscribed them.
 """
 
 PLANNING = TableSpec(

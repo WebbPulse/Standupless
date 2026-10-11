@@ -1,7 +1,7 @@
 """The scheduled standup digest delivery, run from the notify digest flush schedule.
 
-Rides the every minute flush on the views notify consumer, every
-`SWEEP_EVERY_MINUTES`, the way the project update reminder sweep does. Each pass
+Rides the every minute flush on the views notify consumer, once per
+`SWEEP_INTERVAL` window, the way the project update reminder sweep does. Each pass
 reads every live workspace's teams and their standup settings, and a team whose
 local send time has passed today, on a day its cadence covers, gets that date's
 digest built once and delivered to each member who can still see the team: an
@@ -28,10 +28,14 @@ from app.common.db.dynamo.team_config import StandupSettings
 from app.common.email import deliver
 from app.common.standup import StandupDigest, StandupWindowError, build_digest, parse_send_time, resolve_zone
 from app.domains.views.consumers.notify import can_receive, notification_id
+from app.domains.views.consumers.sweeps import claim_pass
 from app.domains.views.email import STANDUP_DIGEST, render_standup_digest
 
-SWEEP_EVERY_MINUTES = 5
-"""How often, in minutes of the hour, the flush schedule also runs the standup sweep."""
+SWEEP_NAME = "standups"
+"""The name this sweep claims its passes under."""
+
+SWEEP_INTERVAL = timedelta(minutes=5)
+"""How often the flush schedule also runs the standup sweep."""
 
 SEND_WINDOW = timedelta(hours=2)
 """How long after a team's send time its digest may still go out, covering a paused schedule."""
@@ -50,9 +54,9 @@ class StandupSummary:
     notified: int = 0
 
 
-def sweep_due(now: datetime) -> bool:
-    """Whether the flush tick at `now` also runs the standup sweep."""
-    return now.minute % SWEEP_EVERY_MINUTES == 0
+def sweep_due(repositories: Repositories, now: datetime) -> bool:
+    """Whether the flush tick at `now` also runs the standup sweep, claiming its window when it does."""
+    return claim_pass(repositories, SWEEP_NAME, SWEEP_INTERVAL, now)
 
 
 def send_moment(settings: StandupSettings, day: date) -> datetime:

@@ -17,6 +17,7 @@ import {
   useMutationWithRefetch,
   type QueryKey,
 } from '@webbpulse/api-client/react';
+import { Link } from 'react-router-dom';
 import { getCycleSettings, updateCycleSettings } from '../../api/teams';
 import {
   COOLDOWN_WEEKS,
@@ -46,6 +47,10 @@ export interface CyclesSectionProps {
   teamId: string;
   /** Whether the caller administers the team. */
   canEdit: boolean;
+  /** Whether the team is a sub-team, which runs on its parent's schedule. */
+  inherited?: boolean | undefined;
+  /** The parent team's settings page, linked from a sub-team's note. */
+  parentSettingsPath?: string | undefined;
 }
 
 /** How often the schedule is re-read while the settings tab is open. */
@@ -133,6 +138,8 @@ export const CyclesSection: React.FC<CyclesSectionProps> = ({
   workspaceId,
   teamId,
   canEdit,
+  inherited = false,
+  parentSettingsPath,
 }) => {
   const auth = useQueryAuth();
   const prefix = useId();
@@ -164,7 +171,7 @@ export const CyclesSection: React.FC<CyclesSectionProps> = ({
   const current = draft ?? saved;
   const changes = scheduleChanges(saved, current);
   const dirty = Object.keys(changes).length > 0;
-  const locked = !canEdit || saving;
+  const locked = !canEdit || saving || inherited;
 
   const edit = (patch: Partial<CycleSchedule>): void => {
     setDraft({ ...current, ...patch });
@@ -207,6 +214,22 @@ export const CyclesSection: React.FC<CyclesSectionProps> = ({
           and the upcoming ones are created for you, and unfinished issues roll
           over to the next cycle when one ends.
         </p>
+        {inherited && (
+          <p className="text-xs text-text-faint">
+            This sub-team uses its parent team's cycles. Change them in the{' '}
+            {parentSettingsPath === undefined ? (
+              "parent team's settings"
+            ) : (
+              <Link
+                to={`${parentSettingsPath}#team-settings-cycles`}
+                className="text-accent hover:underline"
+              >
+                parent team's settings
+              </Link>
+            )}
+            .
+          </p>
+        )}
       </div>
 
       {error !== null && (
@@ -382,7 +405,7 @@ export const CyclesSection: React.FC<CyclesSectionProps> = ({
             </p>
           )}
 
-          {canEdit && (
+          {canEdit && !inherited && (
             <div className="flex justify-end gap-2">
               {dirty && (
                 <Button

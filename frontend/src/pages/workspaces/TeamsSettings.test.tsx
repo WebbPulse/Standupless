@@ -110,7 +110,7 @@ beforeEach(() => {
 
 describe('the team list', () => {
   it('shows each team with its key and the caller role', async () => {
-    renderPage({ open: vi.fn(), canCreate: true });
+    renderPage({ open: vi.fn(), openSubTeam: vi.fn(), canCreate: true });
 
     const row = (await screen.findByRole('link', { name: /Engine/ })).closest(
       'tr'
@@ -127,7 +127,7 @@ describe('the team list', () => {
 
   it('opens a row menu with the team settings and no leave action', async () => {
     const user = userEvent.setup();
-    renderPage({ open: vi.fn(), canCreate: true });
+    renderPage({ open: vi.fn(), openSubTeam: vi.fn(), canCreate: true });
 
     await user.click(
       await screen.findByRole('button', { name: 'Actions for Engine' })
@@ -142,7 +142,7 @@ describe('the team list', () => {
   });
 
   it('links to the page from the settings tabs', async () => {
-    renderPage({ open: vi.fn(), canCreate: true });
+    renderPage({ open: vi.fn(), openSubTeam: vi.fn(), canCreate: true });
 
     expect(await screen.findByRole('link', { name: 'Teams' })).toHaveAttribute(
       'href',
@@ -155,7 +155,7 @@ describe('creating a team', () => {
   it('opens the create team dialog from the page', async () => {
     const user = userEvent.setup();
     const open = vi.fn();
-    renderPage({ open, canCreate: true });
+    renderPage({ open, openSubTeam: vi.fn(), canCreate: true });
 
     await screen.findByRole('link', { name: /Engine/ });
     await user.click(
@@ -169,7 +169,7 @@ describe('creating a team', () => {
 
   it('hides Create team from a role the create route refuses', async () => {
     useWorkspaceMock.mockReturnValue(resolved('guest'));
-    renderPage({ open: vi.fn(), canCreate: false });
+    renderPage({ open: vi.fn(), openSubTeam: vi.fn(), canCreate: false });
 
     await screen.findByRole('link', { name: /Engine/ });
 
@@ -182,7 +182,7 @@ describe('creating a team', () => {
 
   it('offers Create team from the empty state when there are no teams', async () => {
     listTeams.mockResolvedValue([]);
-    renderPage({ open: vi.fn(), canCreate: true });
+    renderPage({ open: vi.fn(), openSubTeam: vi.fn(), canCreate: true });
 
     expect(
       await screen.findByText(

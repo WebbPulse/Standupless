@@ -21,7 +21,13 @@
  * resolve the same ids without reading them twice.
  */
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import type { ReactNode } from 'react';
 import { useQueryAuth } from '@webbpulse/auth/react';
 import { invalidateQueries, usePolledQuery } from '@webbpulse/api-client/react';
@@ -350,8 +356,11 @@ export const IssueView: React.FC<IssueViewProps> = ({
   const [moving, setMoving] = useState(false);
 
   const canonicalKey = data?.key;
+  const redirectRef = useRef(issueRef);
   useEffect(() => {
-    if (embedded || lookup !== 'key') return;
+    const refChanged = redirectRef.current !== issueRef;
+    redirectRef.current = issueRef;
+    if (refChanged || embedded || lookup !== 'key') return;
     if (canonicalKey !== undefined && canonicalKey !== issueRef) {
       void navigate(issuePath(slug, canonicalKey), { replace: true });
     }

@@ -2,8 +2,8 @@
 
 The digest flush already fires every minute on the views notify consumer, which
 holds the inbox grant and reads workspaces, memberships, users and planning, so
-the sweep rides it every `SWEEP_EVERY_MINUTES` rather than needing a schedule of
-its own. Each pass reads every live workspace's projects, finds the ones whose
+the sweep rides it once per `SWEEP_INTERVAL` window, claimed through `sweeps`,
+rather than needing a schedule of its own. Each pass reads every live workspace's projects, finds the ones whose
 update has come due, and sends each lead one inbox reminder per due date.
 
 A marker per project and due date is what makes the reminder once only: it is
@@ -32,11 +32,15 @@ from app.common.project_cadence import (
     queue_update_due_announcement,
 )
 from app.domains.views.consumers.notify import hold_for_digest, notification_id, receiving_team
+from app.domains.views.consumers.sweeps import claim_pass
 
 PROJECT_UPDATE_DUE = "project_update_due"
 
-SWEEP_EVERY_MINUTES = 15
-"""How often, in minutes of the hour, the flush schedule also runs the sweep."""
+SWEEP_NAME = "project_reminders"
+"""The name this sweep claims its passes under."""
+
+SWEEP_INTERVAL = timedelta(minutes=15)
+"""How often the flush schedule also runs the sweep."""
 
 REMINDER_WINDOW = timedelta(days=7)
 """How long after its due date a reminder may still go out, covering a paused schedule."""
@@ -53,9 +57,9 @@ class ReminderSummary:
     notified: int = 0
 
 
-def sweep_due(now: datetime) -> bool:
-    """Whether the flush tick at `now` also runs the reminder sweep."""
-    return now.minute % SWEEP_EVERY_MINUTES == 0
+def sweep_due(repositories: Repositories, now: datetime) -> bool:
+    """Whether the flush tick at `now` also runs the reminder sweep, claiming its window when it does."""
+    return claim_pass(repositories, SWEEP_NAME, SWEEP_INTERVAL, now)
 
 
 def write_reminder(repositories: Repositories, project: Project, due_at: datetime) -> bool:

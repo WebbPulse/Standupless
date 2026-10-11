@@ -8,6 +8,10 @@
  * estimate points, with a projection once a few days are in. While that
  * history is unavailable it falls back to a series read off the issues as
  * they are now, so the chart never goes blank on a slow or older backend.
+ *
+ * On a parent team the cycle rolls up its visible sub-teams' cycles with the
+ * same dates: the header, the burn-up and the issues all cover the same set,
+ * with the issue list's toggle to show the team alone.
  */
 
 import React, { useCallback, useMemo, useState } from 'react';
@@ -25,15 +29,23 @@ import Badge from '../../components/ui/badge';
 import Button from '../../components/ui/button';
 import EmptyState from '../../components/ui/empty-state';
 import { SkeletonRows } from '../../components/ui/skeleton';
+import SubTeamToggle from '../../components/workspace/SubTeamToggle';
 import TeamTabs from '../../components/workspace/TeamTabs';
 import WorkspaceShell from '../../components/workspace/WorkspaceShell';
 import { useCreatePlannedIssue } from '../../hooks/useCreatePlannedIssue';
 import { usePlanningIssues } from '../../hooks/usePlanningIssues';
 import { usePlanningTeamLists } from '../../hooks/usePlanningTeamLists';
 import { useShortcut } from '../../hooks/useShortcuts';
+import { useSubTeamRollUp } from '../../hooks/useSubTeamRollUp';
 import { useTeam } from '../../hooks/useTeam';
 import { useWorkspace } from '../../hooks/useWorkspace';
 import { canWriteIssues } from '../../lib/capabilities';
+import {
+  matchingCycles,
+  mergeCycles,
+  mergeHistories,
+  readRolledUpCycles,
+} from '../../lib/cycleRollUp';
 import { errorMessage } from '../../lib/errors';
 import { teamCyclesPath } from '../../lib/paths';
 import {
@@ -51,7 +63,7 @@ import {
   type PlanningMeasure,
 } from '../../lib/planningModel';
 import { dayValue, todayNumber } from '../../lib/timeline';
-import type { CycleRead } from '../../types/Api';
+import type { CycleHistoryRead, CycleRead } from '../../types/Api';
 
 /** How often the cycle re-reads. */
 const POLL_MS = 30000;
@@ -169,12 +181,56 @@ export const CycleDetail: React.FC = () => {
     queryKey: ['cycle', workspaceId, teamId, id],
     auth,
   });
-  const cycle: CycleRead | undefined = data ?? undefined;
+  const own: CycleRead | undefined = data ?? undefined;
+
+  const { subTeams, rollUp, toggle } = useSubTeamRollUp(team);
+  const subTeamIds = useMemo(
+    () => subTeams.map((other) => other.id),
+    [subTeams]
+  );
+  const readMatches = useCallback(
+    ({ signal }: { signal?: AbortSignal }) =>
+      readRolledUpCycles(workspaceId, teamId, signal),
+    [workspaceId, teamId]
+  );
+  const { data: matchData } = usePolledQuery(readMatches, {
+    intervalMs: POLL_MS,
+    enabled: rollUp && own !== undefined,
+    queryKey: ['cycleRollUp', workspaceId, teamId],
+    auth,
+  });
+  const matches = useMemo(
+    () =>
+      rollUp && own !== undefined
+        ? matchingCycles(own, matchData ?? [], subTeamIds)
+        : [],
+    [rollUp, own, matchData, subTeamIds]
+  );
+  const cycle = useMemo(
+    () => (own === undefined ? undefined : mergeCycles(own, matches)),
+    [own, matches]
+  );
+  const matchKey = matches
+    .map((row) => `${row.team_id}:${row.cycle_id}`)
+    .join(',');
 
   const readHistory = useCallback(
-    ({ signal }: { signal?: AbortSignal }) =>
-      getCycleHistory(workspaceId, id, teamId, signal),
-    [workspaceId, id, teamId]
+    async ({ signal }: { signal?: AbortSignal }): Promise<CycleHistoryRead> => {
+      const parts = matchKey === '' ? [] : matchKey.split(',');
+      const [mine, ...theirs] = await Promise.all([
+        getCycleHistory(workspaceId, id, teamId, signal),
+        ...parts.map((part) => {
+          const [memberId = '', memberCycle = ''] = part.split(':');
+          return getCycleHistory(workspaceId, memberCycle, memberId, signal);
+        }),
+      ]);
+      if (theirs.length === 0) return mine;
+      return {
+        ...mine,
+        days: mergeHistories([mine.days, ...theirs.map((row) => row.days)]),
+      };
+    },
+    [workspaceId, id, teamId, matchKey]
   );
   const { data: history } = usePolledQuery(readHistory, {
     intervalMs: POLL_MS,
@@ -184,7 +240,7 @@ export const CycleDetail: React.FC = () => {
       id !== '' &&
       cycle !== undefined &&
       cycle.status !== 'upcoming',
-    queryKey: ['cycleHistory', workspaceId, teamId, id],
+    queryKey: ['cycleHistory', workspaceId, teamId, id, matchKey],
     auth,
   });
 
@@ -194,14 +250,35 @@ export const CycleDetail: React.FC = () => {
   const [chosenMeasure, setChosenMeasure] = useState<PlanningMeasure>('issues');
   const measure: PlanningMeasure = hasPoints ? chosenMeasure : 'issues';
 
+  const listTeamIds = useMemo(
+    () => (teamId === '' ? [] : rollUp ? [teamId, ...subTeamIds] : [teamId]),
+    [teamId, rollUp, subTeamIds]
+  );
   const { statuses, labels, people } = usePlanningTeamLists(
     workspaceId,
-    teamId === '' ? [] : [teamId]
+    listTeamIds
   );
-  const issuesKey = ['cycleIssues', workspaceId, teamId, id] as const;
+  const cycleIds = useMemo(
+    () => [id, ...matches.map((row) => row.cycle_id)],
+    [id, matches]
+  );
+  const issuesKey = [
+    'cycleIssues',
+    workspaceId,
+    teamId,
+    id,
+    cycleIds.join(','),
+  ] as const;
+  const issueQuery = useMemo(
+    () =>
+      cycleIds.length > 1
+        ? { team_id: teamId, include_sub_teams: true, cycle_id: cycleIds }
+        : { team_id: teamId, cycle_id: id },
+    [teamId, id, cycleIds]
+  );
   const issues = usePlanningIssues(
     workspaceId,
-    { team_id: teamId, cycle_id: id },
+    issueQuery,
     issuesKey,
     teamId !== '' && id !== ''
   );
@@ -320,7 +397,12 @@ export const CycleDetail: React.FC = () => {
       }
       leading={crumbs}
       toolbar={
-        <TeamTabs slug={slug} keyPrefix={team.key_prefix} current="cycles" />
+        <div className="flex items-center gap-2">
+          <TeamTabs slug={slug} keyPrefix={team.key_prefix} current="cycles" />
+          {subTeams.length > 0 && (
+            <SubTeamToggle rollUp={rollUp} onToggle={toggle} />
+          )}
+        </div>
       }
       actions={
         mayCreate ? (
@@ -390,6 +472,7 @@ export const CycleDetail: React.FC = () => {
                 days={days}
                 projection={projection}
                 unit={measure === 'points' ? 'points' : 'issues'}
+                emptyMessage="No issues in this cycle yet, so there is nothing to chart."
               />
             )}
           </div>

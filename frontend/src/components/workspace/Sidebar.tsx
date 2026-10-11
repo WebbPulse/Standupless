@@ -26,7 +26,13 @@
  * it, and the post-deploy suite signs out through that one id wherever it lands.
  */
 
-import React, { useCallback, useMemo, useRef, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import {
   LuChevronRight,
   LuChevronsUpDown,
@@ -81,9 +87,11 @@ import {
 } from '../../lib/paths';
 import {
   applyTeamOrder,
+  areSiblings,
   isNested,
   moveTeam,
   nestTeams,
+  siblingIndex,
 } from '../../lib/teamOrder';
 import { settingsLanding } from '../../lib/workspaceNav';
 import { Logo } from '../../brand';
@@ -217,8 +225,10 @@ interface TeamSectionProps {
   isProjectsActive: boolean;
   /** How many issues wait in the team's triage inbox, or null when triage is off. */
   triageCount: number | null;
-  index: number;
-  count: number;
+  /** Where a move up lands among the team's siblings, or null when it is first. */
+  upTo: number | null;
+  /** Where a move down lands among the team's siblings, or null when it is last. */
+  downTo: number | null;
   /** Whether the caller may move teams, false while there is only one. */
   canReorder: boolean;
   dragging: boolean;
@@ -229,6 +239,8 @@ interface TeamSectionProps {
   onDragEnter: () => void;
   onDragEnd: () => void;
   onDrop: () => void;
+  /** Opens the create team dialog with this team as the parent, or undefined when it cannot take one. */
+  onCreateSubTeam?: (() => void) | undefined;
 }
 
 /**
@@ -247,8 +259,8 @@ const TeamSection: React.FC<TeamSectionProps> = ({
   pathname,
   isProjectsActive,
   triageCount,
-  index,
-  count,
+  upTo,
+  downTo,
   canReorder,
   dragging,
   dropEdge,
@@ -257,6 +269,7 @@ const TeamSection: React.FC<TeamSectionProps> = ({
   onDragEnter,
   onDragEnd,
   onDrop,
+  onCreateSubTeam,
 }) => {
   const panelId = `team-nav-${team.id}`;
   const home = teamPath(slug, team.key_prefix);
@@ -309,13 +322,13 @@ const TeamSection: React.FC<TeamSectionProps> = ({
         onClick={onToggle}
         onKeyDown={(event) => {
           if (!canReorder || !event.altKey) return;
-          if (event.key === 'ArrowUp' && index > 0) {
+          if (event.key === 'ArrowUp' && upTo !== null) {
             event.preventDefault();
-            onMove(index - 1);
+            onMove(upTo);
           }
-          if (event.key === 'ArrowDown' && index < count - 1) {
+          if (event.key === 'ArrowDown' && downTo !== null) {
             event.preventDefault();
-            onMove(index + 1);
+            onMove(downTo);
           }
         }}
         aria-expanded={isOpen}
@@ -380,20 +393,23 @@ const TeamSection: React.FC<TeamSectionProps> = ({
         >
           Copy link
         </MenuItem>
+        {onCreateSubTeam !== undefined && (
+          <MenuItem onSelect={onCreateSubTeam}>Create sub-team</MenuItem>
+        )}
         {canReorder && <MenuSeparator />}
-        {canReorder && index > 0 && (
+        {canReorder && upTo !== null && (
           <MenuItem
             onSelect={() => {
-              onMove(index - 1);
+              onMove(upTo);
             }}
           >
             Move up
           </MenuItem>
         )}
-        {canReorder && index < count - 1 && (
+        {canReorder && downTo !== null && (
           <MenuItem
             onSelect={() => {
-              onMove(index + 1);
+              onMove(downTo);
             }}
           >
             Move down
@@ -464,7 +480,9 @@ const TeamSection: React.FC<TeamSectionProps> = ({
 /**
  * The workspace navigation column. A team section is open when it was toggled
  * open, or when the current route is inside it, which is derived from the route
- * rather than stored so that navigating never has to write state back.
+ * rather than stored. Arriving on a sub-team's page expands its parent and
+ * saves that like a manual expand, once per arrival, so the active sub-team
+ * shows in its nested place and collapsing the parent afterwards still hides it.
  */
 export const Sidebar: React.FC<SidebarProps> = ({ workspace, onNavigate }) => {
   const { user, logout } = useAuth();
@@ -566,8 +584,38 @@ export const Sidebar: React.FC<SidebarProps> = ({ workspace, onNavigate }) => {
     if (dragFrom === null || dragOver !== index || dragOver === dragFrom) {
       return null;
     }
+    if (!areSiblings(rows, dragFrom, index)) return null;
     return index < dragFrom ? 'before' : 'after';
   };
+
+  const isOpen = (team: TeamRead): boolean =>
+    expanded.includes(team.key_prefix) || team.key_prefix === prefix;
+
+  const isShown = (team: TeamRead): boolean => {
+    if (!isNested(team, rows)) return true;
+    const parent = rows.find((row) => row.id === team.parent_team_id);
+    return parent === undefined || isOpen(parent);
+  };
+
+  const revealedFor = useRef<string | null>(null);
+  useEffect(() => {
+    if (revealedFor.current === prefix) return;
+    if (prefix === null) {
+      revealedFor.current = null;
+      return;
+    }
+    const active = rows.find((row) => row.key_prefix === prefix);
+    if (active === undefined) return;
+    revealedFor.current = prefix;
+    const parent = rows.find((row) => row.id === active.parent_team_id);
+    if (parent === undefined) return;
+    setExpanded((held) => {
+      if (held.includes(parent.key_prefix)) return held;
+      const next = [...held, parent.key_prefix];
+      writeExpanded(workspace.id, next);
+      return next;
+    });
+  }, [prefix, rows, workspace.id]);
   const ownViews = useMemo(
     () =>
       (views ?? [])
@@ -659,7 +707,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ workspace, onNavigate }) => {
                 setPointerMoved(true);
               }
         }
-        className="group/nav min-w-0 flex-1 space-y-4 overflow-x-hidden overflow-y-auto px-2 py-1 scrollbar-thin"
+        data-testid="sidebar-nav"
+        className="group/nav relative min-h-0 min-w-0 flex-1 space-y-4 overflow-x-hidden overflow-y-auto px-2 py-1 scrollbar-thin"
       >
         <div className="space-y-px">
           <NavLink
@@ -788,44 +837,57 @@ export const Sidebar: React.FC<SidebarProps> = ({ workspace, onNavigate }) => {
             Your teams
           </SectionHeading>
           <div className="space-y-px">
-            {rows.map((team, index) => (
-              <TeamSection
-                key={team.id}
-                slug={slug}
-                team={team}
-                nested={isNested(team, rows)}
-                isOpen={
-                  expanded.includes(team.key_prefix) ||
-                  team.key_prefix === prefix
-                }
-                onToggle={() => {
-                  toggle(team.key_prefix);
-                }}
-                onNavigate={onNavigate}
-                pathname={location.pathname}
-                isProjectsActive={projectsTeam === team.key_prefix}
-                triageCount={triageCounts.get(team.id) ?? null}
-                index={index}
-                count={rows.length}
-                canReorder={rows.length > 1}
-                dragging={dragFrom === index}
-                dropEdge={dropEdgeOf(index)}
-                onMove={(to) => {
-                  moveTo(index, to, true);
-                }}
-                onDragStart={() => {
-                  setDragFrom(index);
-                }}
-                onDragEnter={() => {
-                  if (dragFrom !== null) setDragOver(index);
-                }}
-                onDragEnd={endDrag}
-                onDrop={() => {
-                  if (dragFrom !== null) moveTo(dragFrom, index, false);
-                  endDrag();
-                }}
-              />
-            ))}
+            {rows.map((team, index) =>
+              isShown(team) ? (
+                <TeamSection
+                  key={team.id}
+                  slug={slug}
+                  team={team}
+                  nested={isNested(team, rows)}
+                  isOpen={isOpen(team)}
+                  onToggle={() => {
+                    toggle(team.key_prefix);
+                  }}
+                  onNavigate={onNavigate}
+                  pathname={location.pathname}
+                  isProjectsActive={projectsTeam === team.key_prefix}
+                  triageCount={triageCounts.get(team.id) ?? null}
+                  upTo={siblingIndex(rows, index, -1)}
+                  downTo={siblingIndex(rows, index, 1)}
+                  canReorder={rows.length > 1}
+                  dragging={dragFrom === index}
+                  dropEdge={dropEdgeOf(index)}
+                  onMove={(to) => {
+                    moveTo(index, to, true);
+                  }}
+                  onDragStart={() => {
+                    setDragFrom(index);
+                  }}
+                  onDragEnter={() => {
+                    if (dragFrom !== null) setDragOver(index);
+                  }}
+                  onDragEnd={endDrag}
+                  onCreateSubTeam={
+                    createTeam.canCreate &&
+                    (team.parent_team_id === null ||
+                      team.parent_team_id === undefined)
+                      ? () => {
+                          createTeam.openSubTeam(team.id);
+                        }
+                      : undefined
+                  }
+                  onDrop={() => {
+                    if (
+                      dragFrom !== null &&
+                      areSiblings(rows, dragFrom, index)
+                    ) {
+                      moveTo(dragFrom, index, false);
+                    }
+                    endDrag();
+                  }}
+                />
+              ) : null
+            )}
             <p role="status" aria-live="polite" className="sr-only">
               {announcement}
             </p>

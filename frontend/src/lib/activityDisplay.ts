@@ -549,6 +549,16 @@ export const describeActivity = (
       return describe('other', ['archived the issue']);
     case 'unarchived':
       return describe('other', ['restored the issue from the archive']);
+    case 'subscriber_added':
+      return describe('assignee', [
+        'subscribed',
+        personEntity(entry.to, context),
+      ]);
+    case 'subscriber_removed':
+      return describe('assignee', [
+        'unsubscribed',
+        personEntity(entry.from, context),
+      ]);
     default:
       return describe('other', [humanizeName(String(entry.kind))]);
   }

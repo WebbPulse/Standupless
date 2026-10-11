@@ -48,16 +48,54 @@ export const applyTeamOrder = <T extends { id: string }>(
 type Nestable = { id: string; parent_team_id?: string | null };
 
 /** Whether the team sits under a parent that is also in `teams`. */
-export const isNested = <T extends Nestable>(team: T, teams: T[]): boolean =>
+export const isNested = <T extends Nestable>(
+  team: T,
+  teams: readonly T[]
+): boolean =>
   typeof team.parent_team_id === 'string' &&
   teams.some((other) => other.id === team.parent_team_id);
+
+/** The parent a team is drawn under in `teams`, or null at the top level. */
+const levelOf = <T extends Nestable>(
+  team: T,
+  teams: readonly T[]
+): string | null =>
+  isNested(team, teams) ? (team.parent_team_id ?? null) : null;
+
+/** Whether two rows of `teams` sit at the same level under the same parent, so one may take the other's place. */
+export const areSiblings = <T extends Nestable>(
+  teams: readonly T[],
+  first: number,
+  second: number
+): boolean => {
+  const left = teams[first];
+  const right = teams[second];
+  if (left === undefined || right === undefined) return false;
+  return levelOf(left, teams) === levelOf(right, teams);
+};
+
+/**
+ * The index of the nearest row above (`step` -1) or below (`step` 1) that is a
+ * sibling of the row at `index`, or null when it is first or last among them.
+ * A move steps over a team's sub-teams, which travel with it.
+ */
+export const siblingIndex = <T extends Nestable>(
+  teams: readonly T[],
+  index: number,
+  step: 1 | -1
+): number | null => {
+  for (let at = index + step; at >= 0 && at < teams.length; at += step) {
+    if (areSiblings(teams, index, at)) return at;
+  }
+  return null;
+};
 
 /**
  * The teams with each sub-team moved to just after its parent, keeping their
  * order otherwise, so the sidebar can nest them. A sub-team whose parent is not
  * in the list stays where it is, at the top level.
  */
-export const nestTeams = <T extends Nestable>(teams: T[]): T[] => {
+export const nestTeams = <T extends Nestable>(teams: readonly T[]): T[] => {
   const children = new Map<string, T[]>();
   const top: T[] = [];
   for (const team of teams) {
@@ -69,4 +107,31 @@ export const nestTeams = <T extends Nestable>(teams: T[]): T[] => {
     }
   }
   return top.flatMap((team) => [team, ...(children.get(team.id) ?? [])]);
+};
+
+/** One team in tree order, with the parent it is drawn under when that parent is listed too. */
+export interface TeamTreeRow<T> {
+  team: T;
+  nested: boolean;
+  parentName?: string;
+}
+
+/**
+ * The teams in tree order for a picker: each sub-team right after its parent,
+ * marked nested and carrying the parent's name so filtering by the parent
+ * still finds it.
+ */
+export const teamTree = <T extends Nestable & { name: string }>(
+  teams: readonly T[]
+): TeamTreeRow<T>[] => {
+  const byId = new Map(teams.map((team) => [team.id, team]));
+  return nestTeams(teams).map((team) => {
+    const parent =
+      typeof team.parent_team_id === 'string'
+        ? byId.get(team.parent_team_id)
+        : undefined;
+    return parent === undefined
+      ? { team, nested: false }
+      : { team, nested: true, parentName: parent.name };
+  });
 };

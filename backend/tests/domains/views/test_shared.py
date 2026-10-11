@@ -248,6 +248,23 @@ def test_a_shared_view_follows_its_saved_sort(client: TestClient, issues_client:
     assert [row["title"] for row in body["issues"]] == ["Urgent", "Medium", "Low"]
 
 
+def test_a_shared_view_breaks_priority_ties_by_newest_created(
+    client: TestClient, issues_client: TestClient, workspace: str
+) -> None:
+    """An edit to an older issue does not lift it above a newer one of the same priority."""
+    sign_in(issues_client, MEMBER)
+    older = seed_issue(issues_client, workspace, title="Older", priority="high")
+    seed_issue(issues_client, workspace, title="Newer", priority="high")
+    edited = issues_client.patch(f"/api/workspaces/{workspace}/issues/{older['id']}", json={"body": "Edited"})
+    assert edited.status_code == 200
+
+    view_id = _team_view(client, workspace, sort="priority_desc")
+    link = mint(client, workspace, target_type="view", target_id=view_id)
+    body = client.get(f"/api/shared/{link['token']}/view").json()
+
+    assert [row["title"] for row in body["issues"]] == ["Newer", "Older"]
+
+
 def test_a_shared_view_pages_with_an_offset_cursor(
     client: TestClient, issues_client: TestClient, workspace: str
 ) -> None:

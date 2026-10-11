@@ -55,6 +55,7 @@ from app.common.issue_rules import (
     subscribe_touched,
     unprocessable,
 )
+from app.common.issue_templates import apply_template
 from app.common.labels import replace_group_siblings
 from app.common.mentions import mentioned_user_ids
 from app.common.relation_effects import child_activity
@@ -103,7 +104,7 @@ def sort_key(sort: str) -> Any:
     if sort == "key_asc":
         return lambda issue: (issue.team_id, issue.number)
     if sort == "priority_desc":
-        return lambda issue: (-PRIORITY_ORDER.get(issue.priority, 4), issue.updated_at)
+        return lambda issue: (-PRIORITY_ORDER.get(issue.priority, 4), issue.created_at, issue.issue_id)
     if sort == "due_asc":
         return lambda issue: (issue.due_date is None, issue.due_date or "", issue.issue_id)
     if sort == "sla_asc":
@@ -290,14 +291,17 @@ def resolve_me(context: AuthzContext, user_id: Optional[str]) -> Optional[str]:
 def create_issue(repositories: Repositories, context: AuthzContext, payload: IssueCreate) -> Issue:
     """Create an issue, allocating its key from the team's counter.
 
-    The counter is allocated after every validation has passed, because a number is
-    consumed whether or not the write lands and the contract accepts gaps but not
+    A named template fills the fields the payload leaves out before anything is
+    validated, so a template's rows are held to the same checks as typed ones.
+    The counter is allocated after every validation has passed, because a number
+    is consumed whether or not the write lands and the contract accepts gaps but not
     wasted ones.
     """
     require_team_member(repositories, context, payload.team_id)
     team = repositories.teams.get(context.workspace_id, payload.team_id)
     if team is None:
         raise not_found()
+    payload = apply_template(repositories, context, payload)
 
     if payload.status_id:
         chosen = check_status(repositories, context.workspace_id, payload.team_id, payload.status_id)

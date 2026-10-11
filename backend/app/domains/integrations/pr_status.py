@@ -11,9 +11,17 @@ the pull request, which is what the issue's pull request panel reads.
 
 Rows are created only for a pull request that links an issue or involves a
 workspace member as a reviewer, so a busy repository's checks on unrelated pull
-requests write nothing. Each row keeps a `ReviewPointer` for every GitHub account
-asked to review it or holding a decision on it while it is open, which is what
-the Reviews list reads.
+requests write nothing.
+
+GitHub stops naming a pull request on a `check_run` once its head commit no longer
+heads a branch, so a check finishing after a merge deleted the branch names none.
+Each row keeps a `HeadShaPointer` from its head commit, which is how such a check
+still finds its pull request. A close or merge also reads the head commit's checks
+back from GitHub once, and a merged or closed link still showing running checks
+when it is read queues that same read, which repairs rows written before either.
+
+Each row keeps a `ReviewPointer` for every GitHub account asked to review it or
+holding a decision on it while it is open, which is what the Reviews list reads.
 """
 
 from __future__ import annotations
@@ -23,7 +31,15 @@ from datetime import datetime
 from typing import Any, Callable, Iterable, Mapping
 
 from app.common.api.dependencies.repositories import Repositories
-from app.common.db.dynamo.github import CheckEntry, PullRequestState, ReviewEntry, pr_state_key, source_millis
+from app.common.core.config import settings
+from app.common.db.dynamo.github import (
+    CheckEntry,
+    IssueLink,
+    PullRequestState,
+    ReviewEntry,
+    pr_state_key,
+    source_millis,
+)
 from app.domains.integrations import pr_summary
 
 _log = logging.getLogger(__name__)
@@ -52,6 +68,15 @@ SAVE_ATTEMPTS = 5
 
 LIVE_PR_STATES = frozenset({"open", "draft"})
 """Pull request states that still want reviewing, the only ones that keep pointers."""
+
+FINISHED_PR_STATES = frozenset({"merged", "closed"})
+"""Pull request states whose checks no new commit can change."""
+
+RECONCILE_EVENT = "standupless.reconcile_checks"
+"""The events queue kind that reads a finished pull request's checks back from GitHub.
+
+GitHub never sends an event of this name, and the webhook receiver queues only the
+events it knows, so only this product's own read path queues one."""
 
 POINTED_REVIEWS = frozenset({"approved", "changes_requested"})
 """Review states that keep a reviewer on the pull request's Reviews list."""
@@ -333,6 +358,7 @@ def update_state(
         )
         change(state)
         state.reviewer_ids = involved_ids(state)
+        _point_head_sha(repositories, state)
         if stored is not None and state.model_dump() == stored.model_dump():
             return stored
         expected = stored.version if stored is not None else 0
@@ -344,6 +370,14 @@ def update_state(
         extra={"event": "integrations.pr_state_contended"},
     )
     raise RuntimeError("pull request state write kept losing its race")
+
+
+def _point_head_sha(repositories: Repositories, state: PullRequestState) -> None:
+    """Point the row's head commit at it once, before the row records that it has."""
+    if not state.head_sha or state.pointed_sha == state.head_sha:
+        return
+    repositories.github.put_head_sha_pointer(state.workspace_id, state.repository_id, state.head_sha, state.pr_number)
+    state.pointed_sha = state.head_sha
 
 
 def _sync_pointers(repositories: Repositories, state: PullRequestState, before: Iterable[str]) -> None:
@@ -400,8 +434,10 @@ def handle_review(repositories: Repositories, workspace_id: str, body: Mapping[s
 def handle_check_run(repositories: Repositories, workspace_id: str, body: Mapping[str, Any], own_app: str) -> None:
     """Record one `check_run` delivery on each linked pull request it names.
 
-    The App's own check, the one listing linked issues, is skipped: it always
-    passes and says nothing about the code.
+    A run naming no pull request, which is how a check that finishes after its
+    pull request merged arrives, is matched to the pull requests its head commit
+    headed. The App's own check, the one listing linked issues, is skipped: it
+    always passes and says nothing about the code.
     """
     check_run = body.get("check_run")
     repository = body.get("repository")
@@ -410,7 +446,11 @@ def handle_check_run(repositories: Repositories, workspace_id: str, body: Mappin
     if is_own_check(check_run, own_app):
         return
     repository_id = str(repository.get("id", ""))
-    for number in check_run_pull_requests(check_run, repository_id):
+    numbers = check_run_pull_requests(check_run, repository_id)
+    if not check_run.get("pull_requests"):
+        sha = str(check_run.get("head_sha", "") or "")
+        numbers = repositories.github.pr_numbers_for_head_sha(workspace_id, repository_id, sha)
+    for number in numbers:
         state = update_state(
             repositories,
             workspace_id,
@@ -445,3 +485,127 @@ def check_run_pull_requests(check_run: Mapping[str, Any], repository_id: str) ->
         if isinstance(number, int) and not isinstance(number, bool) and number > 0 and number not in numbers:
             numbers.append(number)
     return numbers
+
+
+def fetch_check_runs(installation_id: str, repository_id: str, head_sha: str) -> list[Mapping[str, Any]]:
+    """The latest run of every check on one commit, read with a fresh installation token."""
+    from app.domains.integrations import github_issues
+
+    token = github_issues.installation_token(installation_id)
+    return github_issues.list_check_runs(token, repository_id, head_sha)
+
+
+def reconcile_checks(
+    repositories: Repositories,
+    workspace_id: str,
+    installation_id: str,
+    repository_id: str,
+    number: int,
+    own_app: str,
+) -> bool:
+    """Read a tracked pull request's head commit checks back from GitHub and fold them into its row.
+
+    Run on a close or merge, and when a finished pull request is read still showing
+    running checks, because a check delivery that raced the merge may have named no
+    pull request. A failed read is logged and answered `False` rather than raised:
+    the delivery that asked has already applied, and the next read asks again.
+    """
+    state = repositories.github.get_pr_state(workspace_id, repository_id, number)
+    if state is None or not state.head_sha or not installation_id:
+        return False
+    sha = state.head_sha
+    try:
+        runs = fetch_check_runs(installation_id, repository_id, sha)
+    except Exception:
+        _log.warning(
+            "Could not read a pull request's checks back from GitHub.",
+            extra={"event": "integrations.pr_checks_unavailable"},
+        )
+        return False
+
+    def change(row: PullRequestState) -> None:
+        """Fold every run but the App's own into the row and mark the commit read."""
+        for run in runs:
+            if str(run.get("head_sha", "") or sha) != sha or is_own_check(run, own_app):
+                continue
+            apply_check_run(row, {**run, "head_sha": sha})
+        if row.head_sha == sha:
+            row.reconciled_sha = sha
+
+    saved = update_state(repositories, workspace_id, repository_id, number, change, create=False)
+    if saved is not None and propagate(repositories, workspace_id, saved):
+        pr_summary.refresh_for_pr(repositories, workspace_id, saved.node_id)
+    return True
+
+
+def handle_reconcile(repositories: Repositories, workspace_id: str, body: Mapping[str, Any], own_app: str) -> None:
+    """Run one queued `RECONCILE_EVENT` for the pull request it names."""
+    installation = body.get("installation")
+    repository = body.get("repository")
+    installation_id = str(installation.get("id", "") or "") if isinstance(installation, Mapping) else ""
+    repository_id = str(repository.get("id", "") or "") if isinstance(repository, Mapping) else ""
+    number = body.get("number")
+    if not repository_id or not isinstance(number, int) or isinstance(number, bool) or number <= 0:
+        return
+    reconcile_checks(repositories, workspace_id, installation_id, repository_id, number, own_app)
+
+
+def stale_links(links: Iterable[IssueLink]) -> list[IssueLink]:
+    """The merged or closed links still showing running checks."""
+    return [
+        link
+        for link in links
+        if link.pr_state in FINISHED_PR_STATES and link.ci_state == "pending" and link.repository_id and link.pr_number
+    ]
+
+
+def request_reconcile(repositories: Repositories, workspace_id: str, links: Iterable[IssueLink]) -> int:
+    """Queue a check read for each finished pull request among `links` still showing running checks.
+
+    A pull request whose head commit was already read back is left alone, so a
+    check GitHub itself still shows running is not asked about on every read.
+    Answers how many were queued; a failed enqueue is logged, never raised, since
+    the read that asked must still answer.
+    """
+    stale = stale_links(links)
+    if not stale or not settings.GITHUB_EVENTS_QUEUE_URL:
+        return 0
+    installation = repositories.github.get_installation(workspace_id)
+    if installation is None or installation.suspended_at is not None:
+        return 0
+    states = repositories.github.get_pr_states(workspace_id, [(link.repository_id, link.pr_number) for link in stale])
+    queued = 0
+    for state in states:
+        if not state.head_sha or state.reconciled_sha == state.head_sha:
+            continue
+        try:
+            _enqueue_reconcile(str(installation.installation_id), state)
+        except Exception:
+            _log.warning(
+                "Could not queue a pull request's check read.",
+                extra={"event": "integrations.pr_checks_enqueue_failed"},
+            )
+            continue
+        queued += 1
+    return queued
+
+
+def _enqueue_reconcile(installation_id: str, state: PullRequestState) -> None:
+    """Queue one pull request's check read on the events queue, which may write its issues."""
+    from webbpulse.events import EventEnvelope, enqueue
+
+    enqueue(
+        settings.GITHUB_EVENTS_QUEUE_URL,
+        EventEnvelope(
+            name=RECONCILE_EVENT,
+            payload={
+                "event": RECONCILE_EVENT,
+                "body": {
+                    "installation": {"id": installation_id},
+                    "repository": {"id": state.repository_id},
+                    "number": state.pr_number,
+                },
+            },
+            scope=installation_id,
+        ),
+    )

@@ -90,6 +90,9 @@ const presetOf = (request: Request): CreateIssuePreset => ({
   ...(request.cycleId === undefined ? {} : { cycleId: request.cycleId }),
   ...(request.parentId === undefined ? {} : { parentId: request.parentId }),
   ...(request.parentKey === undefined ? {} : { parentKey: request.parentKey }),
+  ...(request.templateId === undefined
+    ? {}
+    : { templateId: request.templateId }),
 });
 
 /**
@@ -152,7 +155,9 @@ const WorkspaceOverlays: React.FC = () => {
   const palette = useCommandPalette();
   const [helpOpen, setHelpOpen] = useState(false);
   const [request, setRequest] = useState<Request | null>(null);
-  const [creatingTeam, setCreatingTeam] = useState(false);
+  const [creatingTeam, setCreatingTeam] = useState<{
+    parentTeamId: string | null;
+  } | null>(null);
 
   const workspaceId = workspace?.id ?? '';
   const slug = workspace?.slug ?? '';
@@ -201,7 +206,10 @@ const WorkspaceOverlays: React.FC = () => {
   const createTeam = useMemo<CreateTeamState>(
     () => ({
       open: () => {
-        if (mayCreateTeam) setCreatingTeam(true);
+        if (mayCreateTeam) setCreatingTeam({ parentTeamId: null });
+      },
+      openSubTeam: (parentTeamId: string) => {
+        if (mayCreateTeam) setCreatingTeam({ parentTeamId });
       },
       canCreate: mayCreateTeam,
     }),
@@ -239,7 +247,7 @@ const WorkspaceOverlays: React.FC = () => {
 
   const onTeamCreated = useCallback(
     (team: TeamRead, warning?: string) => {
-      setCreatingTeam(false);
+      setCreatingTeam(null);
       showToast(warning ?? `Created ${team.name}.`);
       void navigate(teamPath(slug, team.key_prefix));
     },
@@ -304,11 +312,13 @@ const WorkspaceOverlays: React.FC = () => {
                 />
               )}
 
-              {creatingTeam && workspaceId !== '' && (
+              {creatingTeam !== null && workspaceId !== '' && (
                 <CreateTeamDialog
                   workspaceId={workspaceId}
+                  teams={teams}
+                  initialParentTeamId={creatingTeam.parentTeamId}
                   onClose={() => {
-                    setCreatingTeam(false);
+                    setCreatingTeam(null);
                   }}
                   onCreated={onTeamCreated}
                 />

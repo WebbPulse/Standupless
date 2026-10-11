@@ -154,6 +154,28 @@ export const reviewStateStyle = (
     ? REVIEW_STATE_STYLES[state]
     : null;
 
-/** The style for a check state, reading one the client does not know as none. */
-export const ciStateStyle = (state: string | undefined): StatusStyle | null =>
-  state !== undefined && isCiState(state) ? CI_STATE_STYLES[state] : null;
+/** Pull request states after which no check is still running for it. */
+const FINISHED_PR_STATES: ReadonlySet<string> = new Set(['merged', 'closed']);
+
+/**
+ * The style for a check state, reading one the client does not know as none.
+ *
+ * A merged or closed pull request never shows checks as running: a pending
+ * state there is one whose final result has not arrived, so it shows nothing.
+ */
+export const ciStateStyle = (
+  state: string | undefined,
+  prState?: string
+): StatusStyle | null => {
+  if (state === undefined || !isCiState(state)) {
+    return null;
+  }
+  if (
+    state === 'pending' &&
+    prState !== undefined &&
+    FINISHED_PR_STATES.has(prState)
+  ) {
+    return null;
+  }
+  return CI_STATE_STYLES[state];
+};

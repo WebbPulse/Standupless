@@ -28,6 +28,7 @@ import { labelsOf, type FilterField } from '../../../lib/issueView';
 import { pullRequestChipStyle } from '../../../lib/pullRequestState';
 import { cyclePath, projectPath } from '../../../lib/paths';
 import { shortDateLabel } from '../../../lib/propertyOptions';
+import { isPastDue } from '../../../lib/viewerTimezone';
 import Avatar from '../../ui/avatar';
 import { LabelChip } from '../../ui/badge';
 import { PriorityGlyph } from '../../ui/glyphs';
@@ -210,14 +211,6 @@ const LABELS_SHOWN = 3;
 
 /** A timestamp as a short day. */
 const dayOf = (value: string): string => shortDateLabel(value.slice(0, 10));
-
-/** Whether a due date has passed, compared as local calendar days. */
-const isOverdue = (due: string): boolean => {
-  const today = new Date();
-  const month = String(today.getMonth() + 1).padStart(2, '0');
-  const date = String(today.getDate()).padStart(2, '0');
-  return due < `${String(today.getFullYear())}-${month}-${date}`;
-};
 
 /** How long a pull request title runs in the chip's hover list before it is cut. */
 const PR_TITLE_SHOWN = 60;
@@ -438,7 +431,7 @@ export const MetaChips: React.FC<MetaChipsProps> = ({
           icon={<LuCalendar aria-hidden="true" className="h-3 w-3" />}
           className={cn(
             hide,
-            isOverdue(issue.due_date) && 'border-danger/40 text-danger'
+            isPastDue(issue.due_date) && 'border-danger/40 text-danger'
           )}
         >
           {shortDateLabel(issue.due_date)}

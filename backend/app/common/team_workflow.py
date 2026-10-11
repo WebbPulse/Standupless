@@ -746,7 +746,8 @@ def set_status_override(
     would leave them in a column the team no longer shows. The 409 counts them so
     the admin knows what to move first, as Linear asks. A parent team's hide
     reaches its sub-teams, so they are held to the same checks, and a refusal
-    neither names nor counts a sub-team `can_see` refuses.
+    neither names nor counts a sub-team `can_see` refuses. A sub-team may show a
+    workspace status its parent hides, which keeps it shown there.
     """
     existing = repositories.team_config.get_status(workspace_id, team_id, status_id)
     if existing is None:
@@ -869,14 +870,24 @@ def _next_override(
     update: dict[str, Any] = {}
     if given.get("hidden") is not None:
         update["hidden"] = given["hidden"]
+        update["shown"] = not given["hidden"] and _parent_hides(repositories, workspace_id, team_id, target, target_id)
     if "name" in given:
         update["name"] = given["name"] or None
     return current.model_copy(update=update)
 
 
+def _parent_hides(repositories: Repositories, workspace_id: str, team_id: str, target: str, target_id: str) -> bool:
+    """Whether the team's parent team hides a workspace row, which showing it in the team then overrules."""
+    parent_id = repositories.team_config.get_parent_id(workspace_id, team_id)
+    if parent_id is None:
+        return False
+    override = repositories.team_config.get_override(workspace_id, parent_id, target, target_id)
+    return override is not None and override.hidden
+
+
 def _store_override(repositories: Repositories, override: Override) -> None:
     """Write an override, or remove it when it no longer changes anything."""
-    if override.hidden or override.name:
+    if override.hidden or override.shown or override.name:
         repositories.team_config.put_override(override)
         return
     repositories.team_config.delete_override(

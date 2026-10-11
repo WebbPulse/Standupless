@@ -248,6 +248,15 @@ describe('the workspace level links', () => {
   });
 });
 
+describe('the nav scroller', () => {
+  it('is positioned so its hidden live region scrolls inside it instead of stretching the shell', async () => {
+    renderSidebar();
+
+    const nav = await screen.findByTestId('sidebar-nav');
+    expect(nav).toHaveClass('relative', 'min-h-0', 'flex-1', 'overflow-y-auto');
+  });
+});
+
 describe('the reviews badge', () => {
   it('counts the pull requests waiting on the caller', async () => {
     getReviews.mockResolvedValue({
@@ -468,7 +477,7 @@ describe('creating from the sidebar', () => {
     const user = userEvent.setup();
     const open = vi.fn();
     renderSidebar('member', '/w/mine', {
-      createTeam: { open, canCreate: true },
+      createTeam: { open, openSubTeam: vi.fn(), canCreate: true },
     });
 
     await screen.findByRole('button', { name: /Engine/ });
@@ -481,7 +490,7 @@ describe('creating from the sidebar', () => {
   it('keeps Add team visible when the workspace has no teams', async () => {
     listTeams.mockResolvedValue([]);
     renderSidebar('owner', '/w/mine', {
-      createTeam: { open: vi.fn(), canCreate: true },
+      createTeam: { open: vi.fn(), openSubTeam: vi.fn(), canCreate: true },
     });
 
     expect(
@@ -492,7 +501,7 @@ describe('creating from the sidebar', () => {
   it('hides the create team controls from a role that cannot create', async () => {
     listTeams.mockResolvedValue([]);
     renderSidebar('guest', '/w/mine', {
-      createTeam: { open: vi.fn(), canCreate: false },
+      createTeam: { open: vi.fn(), openSubTeam: vi.fn(), canCreate: false },
     });
 
     expect(await screen.findByText('No teams yet.')).toBeInTheDocument();
@@ -650,6 +659,136 @@ describe('reordering teams', () => {
 
     const section = await screen.findByTestId('team-section-proj-1');
     expect(section).toHaveAttribute('draggable', 'false');
+  });
+});
+
+describe('sub-teams', () => {
+  /** A sub-team of Engine. */
+  const web: TeamRead = {
+    ...engine,
+    id: 'proj-3',
+    name: 'Web',
+    key_prefix: 'WEB',
+    parent_team_id: 'proj-1',
+  };
+
+  beforeEach(() => {
+    listTeams.mockResolvedValue([engine, design, web]);
+  });
+
+  it('keeps a sub-team folded under its parent until the parent opens', async () => {
+    const user = userEvent.setup();
+    renderSidebar();
+    const toggle = await screen.findByRole('button', { name: /Engine/ });
+    expect(shownOrder()).toEqual(['proj-1', 'proj-2']);
+
+    await user.click(toggle);
+
+    expect(shownOrder()).toEqual(['proj-1', 'proj-3', 'proj-2']);
+  });
+
+  it('expands the collapsed parent of the sub-team the route is in', async () => {
+    const user = userEvent.setup();
+    renderSidebar('owner', '/w/mine/team/WEB');
+    await screen.findByRole('button', { name: /Web/ });
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /Engine/ })).toHaveAttribute(
+        'aria-expanded',
+        'true'
+      );
+    });
+    expect(shownOrder()).toEqual(['proj-1', 'proj-3', 'proj-2']);
+    expect(
+      globalThis.localStorage.getItem('standupless.sidebar.teams.ws-1')
+    ).toBe(JSON.stringify(['ENG']));
+
+    await user.click(screen.getByRole('button', { name: /Engine/ }));
+
+    expect(shownOrder()).toEqual(['proj-1', 'proj-2']);
+  });
+
+  it('moves a parent past the next team with its sub-team along', async () => {
+    const user = userEvent.setup();
+    setTeamOrder.mockResolvedValue([web, design, engine]);
+    renderSidebar();
+    const toggle = await screen.findByRole('button', { name: /Engine/ });
+
+    toggle.focus();
+    await user.keyboard('{Alt>}{ArrowDown}{/Alt}');
+
+    expect(setTeamOrder).toHaveBeenCalledWith('ws-1', [
+      'proj-3',
+      'proj-2',
+      'proj-1',
+    ]);
+  });
+
+  it('offers a sub-team no move out from under its parent', async () => {
+    const user = userEvent.setup();
+    renderSidebar('owner', '/w/mine/team/WEB');
+    const section = await sectionOf(/Web/);
+
+    await user.click(
+      within(section).getByRole('button', { name: 'Team options' })
+    );
+
+    expect(
+      screen.queryByRole('menuitem', { name: 'Move up' })
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('menuitem', { name: 'Move down' })
+    ).not.toBeInTheDocument();
+  });
+
+  it('creates a sub-team from a top-level team menu with that team as parent', async () => {
+    const user = userEvent.setup();
+    const openSubTeam = vi.fn();
+    renderSidebar('owner', '/w/mine/team/WEB', {
+      createTeam: { open: vi.fn(), openSubTeam, canCreate: true },
+    });
+    const section = await sectionOf(/Engine/);
+
+    await user.click(
+      within(section).getByRole('button', { name: 'Team options' })
+    );
+    await user.click(
+      await screen.findByRole('menuitem', { name: 'Create sub-team' })
+    );
+
+    expect(openSubTeam).toHaveBeenCalledWith('proj-1');
+  });
+
+  it('offers no sub-team of a sub-team', async () => {
+    const user = userEvent.setup();
+    renderSidebar('owner', '/w/mine/team/WEB', {
+      createTeam: { open: vi.fn(), openSubTeam: vi.fn(), canCreate: true },
+    });
+    const sub = await sectionOf(/Web/);
+
+    await user.click(within(sub).getByRole('button', { name: 'Team options' }));
+    await screen.findByRole('menuitem', { name: 'Team settings' });
+
+    expect(
+      screen.queryByRole('menuitem', { name: 'Create sub-team' })
+    ).not.toBeInTheDocument();
+  });
+
+  it('hides Create sub-team when the caller cannot create teams', async () => {
+    const user = userEvent.setup();
+    renderSidebar('guest', '/w/mine', {
+      createTeam: { open: vi.fn(), openSubTeam: vi.fn(), canCreate: false },
+    });
+    const section = await sectionOf(/Engine/);
+
+    await user.click(
+      within(section).getByRole('button', { name: 'Team options' })
+    );
+    await screen.findByRole('menuitem', { name: 'Team settings' });
+
+    expect(
+      screen.queryByRole('menuitem', { name: 'Create sub-team' })
+    ).not.toBeInTheDocument();
   });
 });
 

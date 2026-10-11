@@ -346,7 +346,7 @@ def shared_sort_key(sort: str) -> Callable[[Issue], Any]:
     if sort == "key_asc":
         return lambda issue: (issue.team_id, issue.number)
     if sort == "priority_desc":
-        return lambda issue: (-PRIORITY_ORDER.get(issue.priority, 4), issue.updated_at)
+        return lambda issue: (-PRIORITY_ORDER.get(issue.priority, 4), issue.created_at, issue.issue_id)
     if sort == "due_asc":
         return lambda issue: (issue.due_date is None, issue.due_date or "", issue.issue_id)
     if sort == "sla_asc":

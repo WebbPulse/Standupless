@@ -58,6 +58,15 @@ export const allLabelsKey = (teamId: string): QueryKey => [
   'all',
 ];
 
+/** The issue templates one team offers, with its default. */
+export const templatesKey = (teamId: string): QueryKey => ['templates', teamId];
+
+/** The issue templates a workspace offers every team. */
+export const workspaceTemplatesKey = (workspaceId: string): QueryKey => [
+  'workspace-templates',
+  workspaceId,
+];
+
 /** The statuses a workspace defines for every team. */
 export const workspaceStatusesKey = (workspaceId: string): QueryKey => [
   'workspace-statuses',

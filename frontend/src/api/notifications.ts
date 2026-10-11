@@ -22,6 +22,7 @@ export const NOTIFICATION_KINDS: readonly NotificationKind[] = [
   'mentioned',
   'commented',
   'status_changed',
+  'subscribed',
   'project_update',
   'project_update_due',
   'due_soon',
@@ -38,11 +39,16 @@ export const issueSubscribersPath = (
   issueId: string
 ): string => `${issuePath(workspaceId, issueId)}/subscribers`;
 
-/** The route the caller subscribes and unsubscribes through. */
-export const mySubscriptionPath = (
+/** Who a subscribe or unsubscribe acts on when no person is named. */
+export const ME = 'me';
+
+/** The route one person is subscribed and unsubscribed through, `me` by default. */
+export const subscriptionPath = (
   workspaceId: string,
-  issueId: string
-): string => `${issueSubscribersPath(workspaceId, issueId)}/me`;
+  issueId: string,
+  userId: string = ME
+): string =>
+  `${issueSubscribersPath(workspaceId, issueId)}/${encodeURIComponent(userId)}`;
 
 /** The route the caller's own profile is read from. */
 export const CURRENT_USER_ROUTE = '/users/me';
@@ -69,24 +75,32 @@ export const listSubscribers = async (
   return response.data;
 };
 
-/** Follows an issue. Subscribing twice keeps the first subscription. */
+/**
+ * Subscribes the caller, or the named teammate, to an issue. Subscribing twice
+ * keeps the first subscription.
+ */
 export const subscribe = async (
   workspaceId: string,
-  issueId: string
+  issueId: string,
+  userId: string = ME
 ): Promise<SubscribersRead> => {
   const response = await apiClient.put<SubscribersRead>(
-    mySubscriptionPath(workspaceId, issueId)
+    subscriptionPath(workspaceId, issueId, userId)
   );
   return response.data;
 };
 
-/** Stops following an issue. Unsubscribing twice is not an error. */
+/**
+ * Unsubscribes the caller, or the named teammate, from an issue. Unsubscribing
+ * twice is not an error.
+ */
 export const unsubscribe = async (
   workspaceId: string,
-  issueId: string
+  issueId: string,
+  userId: string = ME
 ): Promise<SubscribersRead> => {
   const response = await apiClient.delete<SubscribersRead>(
-    mySubscriptionPath(workspaceId, issueId)
+    subscriptionPath(workspaceId, issueId, userId)
   );
   return response.data;
 };

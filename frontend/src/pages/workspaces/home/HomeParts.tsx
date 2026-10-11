@@ -231,7 +231,7 @@ export const PullRequestRow: React.FC<
         {pr.title !== '' ? pr.title : item.issue.title}
       </Link>
       <StatusGlyph style={reviewStateStyle(pr.review_state)} kind="review" />
-      <StatusGlyph style={ciStateStyle(pr.ci_state)} kind="ci" />
+      <StatusGlyph style={ciStateStyle(pr.ci_state, pr.state)} kind="ci" />
       <a
         href={pr.url}
         target="_blank"
@@ -426,6 +426,7 @@ const NOTIFICATION_VERBS: Partial<Record<NotificationRead['kind'], string>> = {
   mentioned: 'mentioned you',
   commented: 'commented',
   status_changed: 'changed status',
+  subscribed: 'subscribed you',
   project_update: 'posted an update',
   project_update_due: 'Update due',
   due_soon: 'Due soon',

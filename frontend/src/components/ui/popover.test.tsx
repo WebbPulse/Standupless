@@ -1,17 +1,37 @@
 /**
  * The floating panel every picker opens in. Covers that the trigger reports
  * its state, that Escape closes the panel without reaching an enclosing
- * dialog and hands focus back, and that a click outside closes it.
+ * dialog and hands focus back, that Escape still closes it once focus has
+ * left the panel, that opening the command palette closes it, and that a click
+ * outside closes it.
  */
 
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import React from 'react';
 import { describe, expect, it, vi } from 'vitest';
+import {
+  CommandPaletteContext,
+  useCommandPalette,
+} from '../../hooks/useCommandPalette';
 import { Popover } from './popover';
+
+/** Holds the palette state the way the workspace shell does. */
+const PaletteShell: React.FC<{ children: React.ReactNode }> = ({
+  children,
+}) => {
+  const palette = useCommandPalette();
+  return (
+    <CommandPaletteContext.Provider value={palette}>
+      {children}
+      {palette.open && <p>Palette open</p>}
+    </CommandPaletteContext.Provider>
+  );
+};
 
 const renderPopover = () =>
   render(
-    <div>
+    <PaletteShell>
       <Popover
         label="Menu"
         trigger={(props) => (
@@ -30,7 +50,8 @@ const renderPopover = () =>
         )}
       </Popover>
       <p>Outside</p>
-    </div>
+      <button type="button">Elsewhere</button>
+    </PaletteShell>
   );
 
 describe('Popover', () => {
@@ -60,6 +81,26 @@ describe('Popover', () => {
         ([event]) => (event as KeyboardEvent).key === 'Escape'
       )
     ).toBe(false);
+  });
+
+  it('closes on Escape after focus has left the panel', async () => {
+    const user = userEvent.setup();
+    renderPopover();
+    await user.click(screen.getByRole('button', { name: 'Open' }));
+    screen.getByRole('button', { name: 'Elsewhere' }).focus();
+    await user.keyboard('{Escape}');
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Elsewhere' })).toHaveFocus();
+  });
+
+  it('closes when the command palette opens', async () => {
+    const user = userEvent.setup();
+    renderPopover();
+    await user.click(screen.getByRole('button', { name: 'Open' }));
+    screen.getByRole('button', { name: 'Elsewhere' }).focus();
+    await user.keyboard('{Control>}k{/Control}');
+    expect(screen.getByText('Palette open')).toBeInTheDocument();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 
   it('opens from the keyboard with ArrowDown', async () => {

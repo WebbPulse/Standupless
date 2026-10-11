@@ -441,6 +441,13 @@ locals {
           stream_arn      = module.dynamodb.stream_arns["comments"]
           filter_patterns = [jsonencode({ eventName = ["INSERT", "MODIFY"] })]
         })
+        subscriptions = merge(local.lambda_domain_stream_defaults, {
+          stream_arn = module.dynamodb.stream_arns["subscriptions"]
+          filter_patterns = [jsonencode({
+            eventName = ["INSERT"]
+            dynamodb  = { NewImage = { added_by = { S = [{ exists = true }] } } }
+          })]
+        })
         planning = merge(local.lambda_domain_stream_defaults, {
           stream_arn = module.dynamodb.stream_arns["planning"]
           filter_patterns = [jsonencode({

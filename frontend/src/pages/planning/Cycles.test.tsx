@@ -3,7 +3,9 @@
  * names, that the running cycle leads the page while the rest group into
  * upcoming and past, that creating sends no status because the server derives
  * it, that the controls a role may not use are not drawn, and that velocity
- * and capacity guidance read under the current cycle.
+ * and capacity guidance read under the current cycle. A parent team's list
+ * rolls up its sub-teams' cycles on the same dates until the toggle narrows
+ * it to the team alone.
  */
 
 import { render, screen, waitFor, within } from '@testing-library/react';
@@ -170,9 +172,9 @@ const resolved = (role: WorkspaceRole): WorkspaceContextType => {
   };
 };
 
-const renderPage = () =>
+const renderPage = (entry = '/w/mine/team/ENG/cycles') =>
   render(
-    <MemoryRouter initialEntries={['/w/mine/team/ENG/cycles']}>
+    <MemoryRouter initialEntries={[entry]}>
       <Routes>
         <Route path="/w/:slug/team/:keyPrefix/cycles" element={<Cycles />} />
       </Routes>
@@ -479,5 +481,86 @@ describe('what a role is offered', () => {
     expect(
       screen.queryByRole('button', { name: 'Delete Sprint 2' })
     ).not.toBeInTheDocument();
+  });
+});
+
+describe('rolling up sub-teams', () => {
+  /** A sub-team of the team above, on its parent's schedule. */
+  const subTeam: TeamRead = {
+    ...team,
+    id: 'proj-2',
+    name: 'Engine API',
+    key_prefix: 'API',
+    parent_team_id: 'proj-1',
+  };
+
+  /** The sub-team's cycle over the same days, with two more done issues. */
+  const subCycle: CycleRead = {
+    ...cycle,
+    cycle_id: 'cyc-9',
+    team_id: 'proj-2',
+    name: 'API Sprint 1',
+    counts: { todo: 0, in_progress: 0, done: 2, cancelled: 0, total: 2 },
+  };
+
+  beforeEach(() => {
+    listTeams.mockResolvedValue([team, subTeam]);
+    listCycles.mockResolvedValue({
+      cycles: [cycle, subCycle],
+      next_cursor: null,
+    });
+  });
+
+  it('counts the sub-team issues in the matching cycle by default', async () => {
+    renderPage();
+
+    const card = within(
+      await screen.findByRole('region', { name: 'Current cycle' })
+    );
+    expect(await card.findByText(/6 issues/)).toBeInTheDocument();
+    expect(card.getByText('67%')).toBeInTheDocument();
+    expect(listCycles).toHaveBeenCalledWith(
+      expect.objectContaining({ team_id: 'proj-1', include_sub_teams: true })
+    );
+    expect(screen.queryByText('API Sprint 1')).toBeNull();
+    expect(
+      screen.getByRole('button', { name: 'Including sub-teams' })
+    ).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('narrows to the team alone from the toggle', async () => {
+    const user = userEvent.setup();
+    listCycles.mockImplementation((query) =>
+      Promise.resolve({
+        cycles:
+          (query as { include_sub_teams?: boolean }).include_sub_teams === true
+            ? [cycle, subCycle]
+            : [cycle],
+        next_cursor: null,
+      })
+    );
+    renderPage();
+
+    await user.click(
+      await screen.findByRole('button', { name: 'Including sub-teams' })
+    );
+
+    const card = within(
+      await screen.findByRole('region', { name: 'Current cycle' })
+    );
+    expect(await card.findByText(/4 issues/)).toBeInTheDocument();
+    expect(listCycles).toHaveBeenLastCalledWith({ team_id: 'proj-1' });
+    expect(
+      screen.getByRole('button', { name: 'This team only' })
+    ).toHaveAttribute('aria-pressed', 'false');
+  });
+
+  it('draws no toggle for a team without sub-teams', async () => {
+    listTeams.mockResolvedValue([team]);
+    listCycles.mockResolvedValue({ cycles: [cycle], next_cursor: null });
+    renderPage();
+
+    await screen.findByRole('region', { name: 'Current cycle' });
+    expect(screen.queryByTestId('sub-team-roll-up')).toBeNull();
   });
 });

@@ -12,18 +12,18 @@
  */
 
 import React, { useMemo } from 'react';
-import { useParams, useSearchParams } from 'react-router-dom';
+import { useParams } from 'react-router-dom';
+import { useSubTeamRollUp } from '../../../hooks/useSubTeamRollUp';
 import { useTeam } from '../../../hooks/useTeam';
-import { useTeams } from '../../../hooks/useTeams';
 import { useWorkspace } from '../../../hooks/useWorkspace';
 import { canWriteIssues } from '../../../lib/capabilities';
 import { errorMessage } from '../../../lib/errors';
 import type { ViewLayout } from '../../../api/views';
 import { defaultViewState } from '../../../lib/issueView';
 import { ErrorAlert } from '../../ui/alert';
-import Button from '../../ui/button';
 import EmptyState from '../../ui/empty-state';
 import Spinner from '../../ui/spinner';
+import SubTeamToggle from '../../workspace/SubTeamToggle';
 import TeamTabs from '../../workspace/TeamTabs';
 import TeamTitle from '../../workspace/TeamTitle';
 import WorkspaceShell from '../../workspace/WorkspaceShell';
@@ -33,9 +33,6 @@ const BASES = {
   list: defaultViewState('list'),
   board: defaultViewState('board'),
 } as const;
-
-/** The URL parameter that turns the sub-team roll-up off. */
-const ROLL_UP_PARAM = 'subteams';
 
 /** Props for TeamIssuesPage. */
 export interface TeamIssuesPageProps {
@@ -55,17 +52,7 @@ export const TeamIssuesPage: React.FC<TeamIssuesPageProps> = ({
   }>();
   const { workspace } = useWorkspace();
   const { team, workspaceId, isLoading, notFound, error } = useTeam(keyPrefix);
-  const { data: allTeams } = useTeams();
-  const [params, setParams] = useSearchParams();
-  const subTeams = useMemo(
-    () =>
-      team === null
-        ? []
-        : (allTeams ?? []).filter((other) => other.parent_team_id === team.id),
-    [allTeams, team]
-  );
-  const rollUp =
-    !archive && subTeams.length > 0 && params.get(ROLL_UP_PARAM) !== '0';
+  const { subTeams, rollUp, toggle } = useSubTeamRollUp(team, !archive);
   const teams = useMemo(
     () => (team === null ? [] : rollUp ? [team, ...subTeams] : [team]),
     [team, subTeams, rollUp]
@@ -146,20 +133,7 @@ export const TeamIssuesPage: React.FC<TeamIssuesPageProps> = ({
             current={layout === 'board' ? 'board' : 'issues'}
           />
           {subTeams.length > 0 && (
-            <Button
-              size="sm"
-              variant="secondary"
-              aria-pressed={rollUp}
-              data-testid="sub-team-roll-up"
-              onClick={() => {
-                const next = new URLSearchParams(params);
-                if (rollUp) next.set(ROLL_UP_PARAM, '0');
-                else next.delete(ROLL_UP_PARAM);
-                setParams(next, { replace: true });
-              }}
-            >
-              {rollUp ? 'Including sub-teams' : 'This team only'}
-            </Button>
+            <SubTeamToggle rollUp={rollUp} onToggle={toggle} />
           )}
         </>
       }

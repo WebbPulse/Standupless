@@ -100,4 +100,11 @@ describe('status styles', () => {
     );
     expect(ciStateStyle('failure')?.label).toBe('Checks failed');
   });
+
+  it('never shows checks running on a merged or closed pull request', () => {
+    expect(ciStateStyle('pending', 'merged')).toBeNull();
+    expect(ciStateStyle('pending', 'closed')).toBeNull();
+    expect(ciStateStyle('pending', 'open')?.label).toBe('Checks running');
+    expect(ciStateStyle('success', 'merged')?.label).toBe('Checks passed');
+  });
 });

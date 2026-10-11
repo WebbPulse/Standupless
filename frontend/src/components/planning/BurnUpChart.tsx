@@ -4,6 +4,10 @@
  * the last day and, once there is enough history, a dotted projection of
  * where completed work lands if the pace so far holds. Drawn as plain SVG in a fixed coordinate space that scales to
  * its container, and summed up in words for a reader who cannot see it.
+ *
+ * The y axis is labelled in whole numbers, each once, and a cycle whose scope
+ * has been empty on every day so far says so instead of drawing an axis
+ * stretched over nothing.
  */
 
 import React from 'react';
@@ -18,6 +22,8 @@ export interface BurnUpChartProps {
   projection?: number | null;
   /** What the values count, for the summary a screen reader hears. */
   unit?: string;
+  /** What shows in place of the chart while the scope has been empty every day. */
+  emptyMessage?: string;
 }
 
 const WIDTH = 640;
@@ -26,6 +32,17 @@ const PAD_LEFT = 28;
 const PAD_RIGHT = 8;
 const PAD_TOP = 10;
 const PAD_BOTTOM = 22;
+
+/**
+ * The y axis ticks for a chart topping out at `top`: zero, the top and a
+ * whole-number midpoint between them when there is room for one, so no
+ * label repeats.
+ */
+export const axisTicks = (top: number): number[] => {
+  const ceiling = Math.max(1, Math.ceil(top));
+  const middle = Math.round(ceiling / 2);
+  return middle > 0 && middle < ceiling ? [0, middle, ceiling] : [0, ceiling];
+};
 
 /** A stepped path through the values, one step per day. */
 const stepPath = (
@@ -57,9 +74,11 @@ export const BurnUpChart: React.FC<BurnUpChartProps> = ({
   days,
   projection = null,
   unit = 'issues',
+  emptyMessage = 'Nothing is in scope yet, so there is nothing to chart.',
 }) => {
   const count = Math.max(days.length, 1);
-  const top = Math.max(1, ...points.map((point) => point.scope));
+  const ticks = axisTicks(Math.max(0, ...points.map((point) => point.scope)));
+  const top = ticks[ticks.length - 1] ?? 1;
   const plotWidth = WIDTH - PAD_LEFT - PAD_RIGHT;
   const plotHeight = HEIGHT - PAD_TOP - PAD_BOTTOM;
   const x = (index: number): number => PAD_LEFT + (index / count) * plotWidth;
@@ -76,6 +95,14 @@ export const BurnUpChart: React.FC<BurnUpChartProps> = ({
       : `Scope ${String(last.scope)}, started ${String(last.started)}, completed ${String(last.completed)} ${unit} as of ${last.date}.${projection === null ? '' : ` Projected to complete ${String(projection)} by the last day.`}`;
   const showProjection = projection !== null && last !== undefined;
 
+  if (points.length > 0 && points.every((point) => point.scope === 0)) {
+    return (
+      <p className="text-sm text-text-muted" data-testid="burn-up-empty">
+        {emptyMessage}
+      </p>
+    );
+  }
+
   return (
     <figure className="space-y-2">
       <svg
@@ -84,24 +111,25 @@ export const BurnUpChart: React.FC<BurnUpChartProps> = ({
         role="img"
         aria-label={`Burn-up chart. ${summary}`}
       >
-        {[0, 0.5, 1].map((share) => (
-          <g key={share}>
+        {ticks.map((tick) => (
+          <g key={tick}>
             <line
               x1={PAD_LEFT}
               x2={WIDTH - PAD_RIGHT}
-              y1={y(top * share)}
-              y2={y(top * share)}
+              y1={y(tick)}
+              y2={y(tick)}
               stroke="var(--line)"
               strokeWidth="1"
             />
             <text
               x={PAD_LEFT - 6}
-              y={y(top * share) + 3}
+              y={y(tick) + 3}
               textAnchor="end"
               fontSize="10"
               fill="var(--text-faint)"
+              data-testid="burn-up-tick"
             >
-              {String(Math.round(top * share))}
+              {String(tick)}
             </text>
           </g>
         ))}

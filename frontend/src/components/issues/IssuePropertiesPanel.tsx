@@ -481,7 +481,11 @@ export const IssuePropertiesPanel: React.FC<IssuePropertiesPanelProps> = ({
           issueId={issue.id}
           slug={slug}
         />
-        <IssueSubscribers subscription={subscription} />
+        <IssueSubscribers
+          subscription={subscription}
+          people={people}
+          currentUserId={currentUserId}
+        />
       </div>
 
       <p className="px-2 pt-2 text-2xs text-text-faint">

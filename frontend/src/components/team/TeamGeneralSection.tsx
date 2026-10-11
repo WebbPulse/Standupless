@@ -1,22 +1,21 @@
 /**
  * A team's General settings: its icon, name, description, estimate scale and
- * estimate toggles, the key its issues carry, and deleting the team.
+ * estimate toggles, and the key its issues carry. Deleting the team is the
+ * danger zone at the bottom of the settings page.
  *
  * The key is shown but not editable because the API fixes it once allocated:
  * every issue key already handed out embeds it, and links in commits and pull
  * requests would stop resolving if it moved. Editing is offered to team
- * admins, which is what the update route checks, and deleting only to
- * workspace owners and admins, which is what the delete route checks, so no
- * control here leads to a refusal.
+ * admins, which is what the update route checks, so no control here leads to
+ * a refusal.
  */
 
 import React, { useState } from 'react';
 import { invalidateQueries } from '@webbpulse/api-client/react';
-import { useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { teamIcon, uploadIcon } from '../../api/icons';
-import { deleteTeam, updateTeam } from '../../api/teams';
+import { updateTeam } from '../../api/teams';
 import { errorMessage } from '../../lib/errors';
-import { settingsTeamsPath } from '../../lib/paths';
 import { teamsKey } from '../../lib/queryKeys';
 import { EXTENDED_ESTIMATE_CHOICES } from '../../lib/validation';
 import {
@@ -28,7 +27,6 @@ import type { EstimateScale, TeamRead } from '../../types/Api';
 import { ConfirmationAlert, ErrorAlert } from '../ui/alert';
 import Button from '../ui/button';
 import Checkbox from '../ui/checkbox';
-import Dialog from '../ui/dialog';
 import Field from '../ui/field';
 import IconUploader from '../ui/icon-uploader';
 import { Textarea } from '../ui/input';
@@ -38,12 +36,11 @@ import { SelectField } from '../ui/select';
 /** Props for TeamGeneralSection. */
 export interface TeamGeneralSectionProps {
   workspaceId: string;
-  slug: string;
   team: TeamRead;
   /** Whether the caller may edit the team: a team admin. */
   canEdit: boolean;
-  /** Whether the caller may delete the team: a workspace owner or admin. */
-  canDelete: boolean;
+  /** The parent team's settings page, for a sub-team whose estimates come from the parent. */
+  parentSettingsPath?: string | undefined;
 }
 
 /** Props for the edit form, which starts from the team as last read. */
@@ -51,6 +48,7 @@ interface GeneralFormProps {
   workspaceId: string;
   team: TeamRead;
   canEdit: boolean;
+  parentSettingsPath?: string | undefined;
   onSaved: () => void;
 }
 
@@ -69,6 +67,7 @@ const GeneralForm: React.FC<GeneralFormProps> = ({
   workspaceId,
   team,
   canEdit,
+  parentSettingsPath,
   onSaved,
 }) => {
   const [name, setName] = useState(team.name);
@@ -95,6 +94,9 @@ const GeneralForm: React.FC<GeneralFormProps> = ({
     allowZero !== (team.estimate_allow_zero ?? false) ||
     countUnestimated !== (team.estimate_count_unestimated ?? false);
   const estimatesOn = estimateScale !== 'off';
+  const inherited =
+    team.parent_team_id !== undefined && team.parent_team_id !== null;
+  const estimatesLocked = !canEdit || inherited;
   const canSave =
     canEdit &&
     dirty &&
@@ -189,7 +191,7 @@ const GeneralForm: React.FC<GeneralFormProps> = ({
         id="team-general-estimates"
         label="Estimates"
         value={estimateScale}
-        disabled={!canEdit}
+        disabled={estimatesLocked}
         className="sm:w-56"
         onChange={(event) => {
           setEstimateScale(event.target.value as EstimateScale);
@@ -201,6 +203,22 @@ const GeneralForm: React.FC<GeneralFormProps> = ({
           </option>
         ))}
       </SelectField>
+      {inherited && (
+        <p className="text-xs text-text-faint">
+          This sub-team uses its parent team's estimates. Change them in the{' '}
+          {parentSettingsPath === undefined ? (
+            "parent team's settings"
+          ) : (
+            <Link
+              to={`${parentSettingsPath}#team-settings-general`}
+              className="text-accent hover:underline"
+            >
+              parent team's settings
+            </Link>
+          )}
+          .
+        </p>
+      )}
 
       {estimatesOn && (
         <fieldset className="space-y-2">
@@ -208,7 +226,7 @@ const GeneralForm: React.FC<GeneralFormProps> = ({
           <Checkbox
             label={`Extended range: add ${extendedPhrase(estimateScale)}`}
             checked={extended}
-            disabled={!canEdit}
+            disabled={estimatesLocked}
             onChange={(event) => {
               setExtended(event.target.checked);
             }}
@@ -216,7 +234,7 @@ const GeneralForm: React.FC<GeneralFormProps> = ({
           <Checkbox
             label="Allow zero: add 0 for work that takes no effort"
             checked={allowZero}
-            disabled={!canEdit}
+            disabled={estimatesLocked}
             onChange={(event) => {
               setAllowZero(event.target.checked);
             }}
@@ -224,7 +242,7 @@ const GeneralForm: React.FC<GeneralFormProps> = ({
           <Checkbox
             label="Count unestimated issues as 1 point in cycle and project progress"
             checked={countUnestimated}
-            disabled={!canEdit}
+            disabled={estimatesLocked}
             onChange={(event) => {
               setCountUnestimated(event.target.checked);
             }}
@@ -247,100 +265,14 @@ const GeneralForm: React.FC<GeneralFormProps> = ({
   );
 };
 
-/** Props for the delete confirmation. */
-interface DeleteTeamDialogProps {
-  workspaceId: string;
-  slug: string;
-  team: TeamRead;
-  onClose: () => void;
-}
-
-/**
- * Asks for the team's key before deleting it, because a deleted team takes
- * its workflow with it and cuts its issues off, and a single click is too easy
- * to make by mistake.
- */
-const DeleteTeamDialog: React.FC<DeleteTeamDialogProps> = ({
-  workspaceId,
-  slug,
-  team,
-  onClose,
-}) => {
-  const navigate = useNavigate();
-  const [typed, setTyped] = useState('');
-  const [isDeleting, setIsDeleting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const matches = typed.trim().toUpperCase() === team.key_prefix;
-
-  const onConfirm = async (event: React.FormEvent): Promise<void> => {
-    event.preventDefault();
-    if (!matches || isDeleting) return;
-    setIsDeleting(true);
-    setError(null);
-    try {
-      await deleteTeam(workspaceId, team.id);
-      invalidateQueries(teamsKey(workspaceId));
-      void navigate(settingsTeamsPath(slug));
-    } catch (caught) {
-      setError(errorMessage(caught, 'Could not delete the team.'));
-      setIsDeleting(false);
-    }
-  };
-
-  return (
-    <Dialog
-      open
-      onClose={onClose}
-      title={`Delete ${team.name}`}
-      description="This removes the team, its statuses and its labels. Its issues can no longer be opened from the team. It cannot be undone."
-      size="sm"
-    >
-      <form
-        className="space-y-4"
-        noValidate
-        onSubmit={(event) => {
-          void onConfirm(event);
-        }}
-      >
-        {error !== null && <ErrorAlert message={error} />}
-        <Field
-          id="delete-team-confirm"
-          label={`Type ${team.key_prefix} to confirm`}
-          value={typed}
-          autoComplete="off"
-          spellCheck={false}
-          className="font-mono"
-          onChange={(event) => {
-            setTyped(event.target.value);
-          }}
-        />
-        <div className="flex justify-end gap-2">
-          <Button type="button" variant="ghost" onClick={onClose}>
-            Cancel
-          </Button>
-          <Button
-            type="submit"
-            variant="danger"
-            disabled={!matches || isDeleting}
-          >
-            {isDeleting ? 'Deleting' : 'Delete team'}
-          </Button>
-        </div>
-      </form>
-    </Dialog>
-  );
-};
-
 /** The General section of a team's settings. */
 export const TeamGeneralSection: React.FC<TeamGeneralSectionProps> = ({
   workspaceId,
-  slug,
   team,
   canEdit,
-  canDelete,
+  parentSettingsPath,
 }) => {
   const [saved, setSaved] = useState(false);
-  const [deleting, setDeleting] = useState(false);
 
   return (
     <section className="space-y-4">
@@ -377,41 +309,11 @@ export const TeamGeneralSection: React.FC<TeamGeneralSectionProps> = ({
         workspaceId={workspaceId}
         team={team}
         canEdit={canEdit}
+        parentSettingsPath={parentSettingsPath}
         onSaved={() => {
           setSaved(true);
         }}
       />
-
-      {canDelete && (
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-danger/40 px-4 py-3">
-          <div className="min-w-0 space-y-0.5">
-            <p className="text-sm font-medium text-text">Delete team</p>
-            <p className="text-xs text-text-muted">
-              Removes the team and its workflow. This cannot be undone.
-            </p>
-          </div>
-          <Button
-            type="button"
-            variant="danger"
-            onClick={() => {
-              setDeleting(true);
-            }}
-          >
-            Delete team
-          </Button>
-        </div>
-      )}
-
-      {deleting && (
-        <DeleteTeamDialog
-          workspaceId={workspaceId}
-          slug={slug}
-          team={team}
-          onClose={() => {
-            setDeleting(false);
-          }}
-        />
-      )}
     </section>
   );
 };

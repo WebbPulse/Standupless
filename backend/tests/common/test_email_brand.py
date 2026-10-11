@@ -61,14 +61,16 @@ def test_the_email_theme_matches_the_frontend_tokens() -> None:
     assert EMAIL_THEME.on_accent_dark == brand_dark["brand-accent-foreground"]
 
 
-def test_the_default_email_reads_like_the_app_in_both_schemes() -> None:
-    """Inline styles carry the light tokens and the dark rules carry the dark ones and the dark orange."""
+def test_the_default_email_is_dark_first_like_the_app() -> None:
+    """Inline styles carry the dark tokens and the dark orange, and the dark rules pin the same values."""
     html = _html()
 
+    assert EMAIL_THEME.scheme == "dark"
     assert "font-family:Inter, ui-sans-serif" in html
-    assert f"border:1px solid {EMAIL_THEME.light.line};border-radius:8px;" in html
-    assert f"border-radius:6px;background-color:{BRAND_ACCENT};" in html
-    assert "color:#ffffff;text-decoration:none" in html
+    assert f"border:1px solid {EMAIL_THEME.dark.line};border-radius:8px;" in html
+    assert f"border-radius:6px;background-color:{BRAND_ACCENT_DARK};" in html
+    assert "color:#17120f;text-decoration:none" in html
+    assert BRAND_ACCENT not in html
     assert f".wp-bg{{background-color:{EMAIL_THEME.dark.page} !important;}}" in html
     assert f".wp-button{{background-color:{BRAND_ACCENT_DARK} !important;}}" in html
     assert ".wp-button-text{color:#17120f !important;}" in html

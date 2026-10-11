@@ -239,6 +239,18 @@ describe('describeActivity', () => {
     );
   });
 
+  it('names the teammate someone subscribed or unsubscribed', () => {
+    expect(text({ kind: 'subscriber_added', to: 'u-2' })).toBe(
+      'subscribed sam@example.com'
+    );
+    expect(text({ kind: 'subscriber_removed', from: 'u-2' })).toBe(
+      'unsubscribed sam@example.com'
+    );
+    expect(text({ kind: 'subscriber_added', to: 'u-gone' })).toBe(
+      'subscribed someone'
+    );
+  });
+
   it('links the person an issue was assigned to', () => {
     const { parts } = describeActivity(
       entry({ field: 'assignee_id', to: 'u-2' }),

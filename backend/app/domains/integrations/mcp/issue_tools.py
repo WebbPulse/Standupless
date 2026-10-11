@@ -45,6 +45,8 @@ from app.common.issue_rules import require_team_reader, visible_team_ids
 from app.common.issue_subscribers import list_subscribers, subscribe, unsubscribe
 from app.common.issue_writes import bulk_update_issues, create_issue, list_issues, update_issue, walk_page
 from app.common.similar_issues import find_similar
+from app.domains.integrations import pr_status
+from app.domains.integrations.mcp.template_tools import template_ref
 from app.domains.integrations.mcp.toolkit import (
     PRIORITIES,
     Tool,
@@ -323,6 +325,7 @@ def _pull_requests(call: ToolCall, issue: Issue) -> list[dict[str, Any]]:
         call.context.workspace_id, issue.issue_id, limit=PULL_REQUEST_LIMIT
     )
     links = [IssueLink.model_validate({**dict(row), "issue_key": issue.key}) for row in page.items]
+    pr_status.request_reconcile(call.repositories, call.context.workspace_id, links)
     return [read.model_dump(mode="json") for read in link_reads(links)]
 
 
@@ -353,7 +356,11 @@ def _possible_duplicates(call: ToolCall, issue: Issue) -> list[dict[str, Any]]:
 
 
 def _create_issue(call: ToolCall) -> Any:
-    """Create an issue through the route's own create path, naming any possible duplicates."""
+    """Create an issue through the route's own create path, naming any possible duplicates.
+
+    A template fills every field the caller left out, so an argument sent always
+    wins over the template's value, as it does in the create dialog.
+    """
     fields = (
         "team_id",
         "title",
@@ -369,8 +376,12 @@ def _create_issue(call: ToolCall) -> Any:
         "project_milestone_id",
     )
     payload: dict[str, Any] = {name: call.arguments[name] for name in fields if call.optional(name) is not None}
-    payload["assignee_id"] = resolve_user(call, call.optional("assignee_id"))
-    payload["parent_id"] = issue_id_ref(call, call.optional("parent_id"))
+    if call.optional("assignee_id") is not None:
+        payload["assignee_id"] = resolve_user(call, call.optional("assignee_id"))
+    if call.optional("parent_id") is not None:
+        payload["parent_id"] = issue_id_ref(call, call.optional("parent_id"))
+    if call.optional("template_id") is not None:
+        payload["template_id"] = template_ref(call, str(payload["team_id"]), call.optional("template_id")).template_id
     if payload.get("status_id"):
         payload["status_id"] = _status_ref(call, str(payload["team_id"]), str(payload["status_id"]))
     created = create_issue(call.repositories, call.context, IssueCreate.model_validate(payload))
@@ -584,16 +595,25 @@ def _list_issue_subscribers(call: ToolCall) -> Any:
     return _subscribers_json(list_subscribers(call.repositories, call.context, issue.issue_id))
 
 
+def _subscriber_target(call: ToolCall) -> str | None:
+    """The `user_id` argument as a user id, `me` and an email resolved, or `None` for the caller."""
+    value = call.optional("user_id")
+    if value is None or not str(value).strip():
+        return None
+    reference = str(value).strip()
+    return user_ref(call, reference) if "@" in reference else resolve_user(call, reference)
+
+
 def _subscribe_to_issue(call: ToolCall) -> Any:
-    """Follow an issue as the caller, idempotently."""
+    """Follow an issue as the caller, or subscribe a teammate who can see it, idempotently."""
     issue = issue_ref(call, call.require("issue_id"))
-    return _subscribers_json(subscribe(call.repositories, call.context, issue.issue_id))
+    return _subscribers_json(subscribe(call.repositories, call.context, issue.issue_id, _subscriber_target(call)))
 
 
 def _unsubscribe_from_issue(call: ToolCall) -> Any:
-    """Stop following an issue as the caller, idempotently."""
+    """Stop following an issue as the caller, or unsubscribe a teammate, idempotently."""
     issue = issue_ref(call, call.require("issue_id"))
-    return _subscribers_json(unsubscribe(call.repositories, call.context, issue.issue_id))
+    return _subscribers_json(unsubscribe(call.repositories, call.context, issue.issue_id, _subscriber_target(call)))
 
 
 def _status_ref(call: ToolCall, team: str, value: str) -> str:
@@ -794,6 +814,8 @@ ISSUE_TOOLS: tuple[Tool, ...] = (
         description=(
             "Create an issue in a team, allocating its key. The status defaults to the team's first. "
             "parent_id makes it a sub-issue; cycle_id, project_id and project_milestone_id place it. "
+            "template_id fills every field not passed from one of the team's templates (see list_templates), "
+            "and title may then be omitted when the template has one. "
             "The answer lists possible_duplicates: open issues whose titles share its terms."
         ),
         scopes=("issues:write",),
@@ -813,8 +835,9 @@ ISSUE_TOOLS: tuple[Tool, ...] = (
                 "cycle_id": string("A cycle of the same team"),
                 "project_id": string("A project the team is on"),
                 "project_milestone_id": string("A milestone of that project"),
+                "template_id": string("A template the team offers, by id or name, filling the fields not passed"),
             },
-            required=("team_id", "title"),
+            required=("team_id",),
         ),
         handler=_create_issue,
     ),
@@ -982,16 +1005,34 @@ ISSUE_TOOLS: tuple[Tool, ...] = (
     ),
     Tool(
         name="subscribe_to_issue",
-        description="Follow an issue as the caller, to be notified of its changes. Idempotent.",
+        description=(
+            "Follow an issue to be notified of its changes, as the caller or on behalf of a teammate who can see "
+            "it. Subscribing someone else notifies them and records it in the issue's history. Idempotent."
+        ),
         scopes=("issues:write",),
-        schema=object_schema({"issue_id": string(ISSUE_REF)}, required=("issue_id",)),
+        schema=object_schema(
+            {
+                "issue_id": string(ISSUE_REF),
+                "user_id": string("Who to subscribe: a user id or email, or 'me' for the caller (the default)"),
+            },
+            required=("issue_id",),
+        ),
         handler=_subscribe_to_issue,
     ),
     Tool(
         name="unsubscribe_from_issue",
-        description="Stop following an issue as the caller. Idempotent.",
+        description=(
+            "Stop following an issue, as the caller or on behalf of a teammate. Removing someone else is recorded "
+            "in the issue's history. Idempotent."
+        ),
         scopes=("issues:write",),
-        schema=object_schema({"issue_id": string(ISSUE_REF)}, required=("issue_id",)),
+        schema=object_schema(
+            {
+                "issue_id": string(ISSUE_REF),
+                "user_id": string("Who to unsubscribe: a user id or email, or 'me' for the caller (the default)"),
+            },
+            required=("issue_id",),
+        ),
         handler=_unsubscribe_from_issue,
     ),
     Tool(

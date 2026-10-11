@@ -326,17 +326,19 @@ def test_a_failed_enqueue_releases_the_claim_so_a_redelivery_is_queued(
     assert len(enqueued) == 1
 
 
-def check_run_payload(*, pull_requests: list[dict[str, Any]], app: str = "ci") -> dict[str, Any]:
+def check_run_payload(
+    *, pull_requests: list[dict[str, Any]], app: str = "ci", status: str = "completed"
+) -> dict[str, Any]:
     """A minimal `check_run` delivery."""
     return {
-        "action": "completed",
+        "action": "completed" if status == "completed" else "created",
         "installation": {"id": int(INSTALLATION_ID)},
         "repository": {"id": int(REPOSITORY_ID), "full_name": REPOSITORY_FULL_NAME},
         "check_run": {
             "id": 1,
             "name": "tests",
-            "status": "completed",
-            "conclusion": "success",
+            "status": status,
+            "conclusion": "success" if status == "completed" else None,
             "head_sha": "deadbeef",
             "app": {"slug": app},
             "pull_requests": pull_requests,
@@ -371,10 +373,21 @@ def test_a_check_run_on_no_pull_request_or_from_this_app_is_not_queued(
     client: TestClient,
     enqueued: list[tuple[str, Any]],
 ) -> None:
-    """A trunk commit's checks and the App's own check are answered without touching the queue."""
-    trunk = post_check_run(client, check_run_payload(pull_requests=[]), "check-2")
+    """A trunk commit's running checks and the App's own check are answered without touching the queue."""
+    trunk = post_check_run(client, check_run_payload(pull_requests=[], status="in_progress"), "check-2")
     own = post_check_run(client, check_run_payload(pull_requests=[{"number": 7}], app=APP_SLUG), "check-3")
 
     assert (trunk.status_code, own.status_code) == (200, 200)
     assert trunk.json()["reason"] == own.json()["reason"] == "ignored"
     assert enqueued == []
+
+
+def test_a_finished_check_run_naming_no_pull_request_is_queued(
+    client: TestClient,
+    enqueued: list[tuple[str, Any]],
+) -> None:
+    """A check that finishes after its pull request merged names none, and is queued to find it by commit."""
+    response = post_check_run(client, check_run_payload(pull_requests=[]), "check-4")
+
+    assert response.status_code == 202
+    assert len(enqueued) == 1

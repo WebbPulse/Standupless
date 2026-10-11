@@ -27,14 +27,16 @@ export interface WorkspaceProjects {
 
 /**
  * Reads every project to the end of the cursor, narrowed to one team when
- * `teamId` is not empty. Stops on a repeated cursor rather than looping on it.
+ * `teamId` is not empty, and to that team with its visible sub-teams when
+ * `includeSubTeams` is set. Stops on a repeated cursor rather than looping on it.
  * The workspace wide read is the one every surface shares, so callers that
  * need several teams' projects filter it rather than reading per team.
  */
 export const listAllProjects = async (
   workspaceId: string,
   teamId: string,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  includeSubTeams = false
 ): Promise<ProjectRead[]> => {
   const projects: ProjectRead[] = [];
   let cursor: string | null = null;
@@ -43,6 +45,9 @@ export const listAllProjects = async (
       workspaceId,
       {
         ...(teamId === '' ? {} : { team_id: teamId }),
+        ...(teamId !== '' && includeSubTeams
+          ? { include_sub_teams: true }
+          : {}),
         ...(cursor === null ? {} : { cursor }),
       },
       signal
@@ -54,19 +59,28 @@ export const listAllProjects = async (
   return projects;
 };
 
-/** Reads the projects, narrowed to one team when `teamId` is not empty. */
+/**
+ * Reads the projects, narrowed to one team when `teamId` is not empty, with
+ * its visible sub-teams' projects too when `includeSubTeams` is set.
+ */
 export const useWorkspaceProjects = (
   workspaceId: string,
   teamId: string,
-  enabled = true
+  enabled = true,
+  includeSubTeams = false
 ): WorkspaceProjects => {
   const auth = useQueryAuth();
-  const queryKey = projectsKey(workspaceId, teamId, '');
+  const rollUp = teamId !== '' && includeSubTeams;
+  const queryKey = projectsKey(
+    workspaceId,
+    rollUp ? `${teamId}:sub-teams` : teamId,
+    ''
+  );
 
   const read = useCallback(
     ({ signal }: { signal?: AbortSignal }) =>
-      listAllProjects(workspaceId, teamId, signal),
-    [workspaceId, teamId]
+      listAllProjects(workspaceId, teamId, signal, rollUp),
+    [workspaceId, teamId, rollUp]
   );
 
   const { data, error, isLoading } = usePolledQuery(read, {

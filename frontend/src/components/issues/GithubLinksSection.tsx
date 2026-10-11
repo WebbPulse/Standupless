@@ -78,10 +78,11 @@ const StatusIcon: React.FC<{ style: StatusStyle | null; kind: string }> = ({
 const StatusIcons: React.FC<{
   review?: string | undefined;
   ci?: string | undefined;
-}> = ({ review, ci }) => (
+  prState?: string | undefined;
+}> = ({ review, ci, prState }) => (
   <span className="mt-0.5 flex shrink-0 items-center gap-1">
     <StatusIcon style={reviewStateStyle(review)} kind="review" />
-    <StatusIcon style={ciStateStyle(ci)} kind="ci" />
+    <StatusIcon style={ciStateStyle(ci, prState)} kind="ci" />
   </span>
 );
 
@@ -128,7 +129,11 @@ const PullRequestEntry: React.FC<{
         </p>
       </div>
       {badge}
-      <StatusIcons review={link.review_state} ci={link.ci_state} />
+      <StatusIcons
+        review={link.review_state}
+        ci={link.ci_state}
+        prState={link.pr_state}
+      />
     </div>
   );
 };
@@ -178,7 +183,11 @@ const StackRow: React.FC<{ row: StackedPullRequestRow }> = ({ row }) => {
           </p>
         </div>
         <PositionBadge position={lead.stack?.position ?? 1} size={size} />
-        <StatusIcons review={stack.review_state} ci={stack.ci_state} />
+        <StatusIcons
+          review={stack.review_state}
+          ci={stack.ci_state}
+          prState={stack.pr_state}
+        />
       </div>
       {open && (
         <ol

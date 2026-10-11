@@ -272,6 +272,35 @@ def test_list_issue_subscribers_needs_only_read(client: TestClient, repositories
     assert listed["subscribed"] is False
 
 
+def test_subscribe_and_unsubscribe_a_teammate_by_email(client: TestClient, repositories: Any, issue: Issue) -> None:
+    """Naming `user_id` acts on that teammate, records `added_by` and writes both history rows."""
+    secret = mint_for(repositories, MEMBER, WRITE)
+
+    added = answer(tool(client, secret, "subscribe_to_issue", {"issue_id": "ABC-1", "user_id": "owner@example.com"}))
+    stored = repositories.subscriptions.get(WORKSPACE, issue.issue_id, OWNER)
+    removed = answer(tool(client, secret, "unsubscribe_from_issue", {"issue_id": "ABC-1", "user_id": OWNER}))
+
+    assert [row["user_id"] for row in added["subscribers"]] == [OWNER]
+    assert added["subscribed"] is False
+    assert stored is not None and stored.added_by == MEMBER
+    assert removed["subscribers"] == []
+    kinds = [row["kind"] for row in repositories.activity.list_for_issue(WORKSPACE, issue.issue_id).items]
+    assert "subscriber_added" in kinds
+    assert "subscriber_removed" in kinds
+
+
+def test_subscribing_a_teammate_who_cannot_see_the_issue_is_refused(
+    client: TestClient, repositories: Any, hidden_issue: Issue
+) -> None:
+    """A guest outside the team cannot be added to its issue, and nothing is written."""
+    secret = mint_for(repositories, MEMBER, WRITE)
+
+    text = refusal(tool(client, secret, "subscribe_to_issue", {"issue_id": "XYZ-1", "user_id": GUEST}))
+
+    assert "cannot see" in text
+    assert repositories.subscriptions.get(WORKSPACE, hidden_issue.issue_id, GUEST) is None
+
+
 @pytest.mark.parametrize("name", ["list_issue_subscribers", "subscribe_to_issue", "unsubscribe_from_issue"])
 def test_subscriber_tools_refuse_a_guest_outside_the_team(
     client: TestClient, repositories: Any, hidden_issue: Issue, name: str

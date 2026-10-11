@@ -216,6 +216,7 @@ def handle_record(repositories: Repositories, record: Mapping[str, Any]) -> None
     if event == "pull_request":
         recorded = _handle_pull_request(repositories, workspace_id, body, _event_time(record, payload))
         _track_reviewers(repositories, workspace_id, body, _event_time(record, payload), recorded=recorded)
+        _reconcile_on_close(repositories, workspace_id, body, installation_id)
     elif event == "push":
         _handle_push(repositories, workspace_id, body, _event_time(record, payload))
     elif event == "issues":
@@ -230,10 +231,42 @@ def handle_record(repositories: Repositories, record: Mapping[str, Any]) -> None
         pr_status.handle_review(repositories, workspace_id, body)
     elif event == "check_run":
         pr_status.handle_check_run(repositories, workspace_id, body, settings.GITHUB_APP_SLUG)
+    elif event == pr_status.RECONCILE_EVENT:
+        pr_status.handle_reconcile(repositories, workspace_id, body, settings.GITHUB_APP_SLUG)
     elif event == "deployment_status":
         from app.domains.integrations.deployments import handle_deployment_status
 
         handle_deployment_status(repositories, workspace_id, body)
+
+
+def _reconcile_on_close(
+    repositories: Repositories,
+    workspace_id: str,
+    body: Mapping[str, Any],
+    installation_id: str,
+) -> None:
+    """Read a tracked pull request's checks back from GitHub once when it closes or merges.
+
+    A check still running at the merge reports its result naming no pull request
+    once the branch is deleted, so the merge is the last moment to read them.
+    """
+    if str(body.get("action", "")) != "closed":
+        return
+    pull_request = body.get("pull_request")
+    repository = body.get("repository")
+    if not isinstance(pull_request, Mapping) or not isinstance(repository, Mapping):
+        return
+    number = pull_request.get("number")
+    if not isinstance(number, int) or isinstance(number, bool) or number <= 0:
+        return
+    pr_status.reconcile_checks(
+        repositories,
+        workspace_id,
+        installation_id,
+        str(repository.get("id", "")),
+        number,
+        settings.GITHUB_APP_SLUG,
+    )
 
 
 def _handle_installation(repositories: Repositories, body: Mapping[str, Any], installation_id: str) -> None:

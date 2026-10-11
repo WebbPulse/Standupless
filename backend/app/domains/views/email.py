@@ -46,6 +46,7 @@ _HEADLINES: Mapping[str, str] = {
     "mentioned": "$actor mentioned you in a comment.",
     "commented": "$actor commented on this issue.",
     "status_changed": "$actor changed the status of this issue.",
+    "subscribed": "$actor subscribed you to this issue.",
     "mentioned_in_description": "$actor mentioned you in this issue.",
     "due_soon": "This issue assigned to you is due soon.",
     "overdue": "This issue assigned to you is overdue.",

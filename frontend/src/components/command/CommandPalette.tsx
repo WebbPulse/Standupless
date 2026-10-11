@@ -62,6 +62,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { usePolledQuery } from '@webbpulse/api-client/react';
 import { useQueryAuth } from '@webbpulse/auth/react';
 import { listWorkspaceDocuments } from '../../api/documents';
+import { listTeamTemplates } from '../../api/templates';
 import { listViews, search } from '../../api/views';
 import ViewIcon from '../views/ViewIcon';
 import { useCreateIssue } from '../../hooks/useCreateIssue';
@@ -96,6 +97,7 @@ import {
 import { COPY_ISSUE_URL_KEYS } from '../../lib/copyIssue';
 import {
   searchKey,
+  templatesKey,
   viewsKey,
   workspaceDocumentsKey,
 } from '../../lib/queryKeys';
@@ -105,6 +107,7 @@ import {
   isPartialIssueKey,
   MIN_TERM,
 } from '../../lib/searchTerms';
+import { teamTree } from '../../lib/teamOrder';
 import type { Theme } from '../../lib/theme';
 import { currentOrFirstTeam, settingsLanding } from '../../lib/workspaceNav';
 import type { TeamRead, WorkspaceRead } from '../../types/Api';
@@ -147,6 +150,8 @@ interface Command {
   to?: string;
   run?: () => void;
   page?: Page;
+  /** Draws the row one step in, as a sub-team under its parent. */
+  indent?: boolean;
 }
 
 /** A run of commands under one heading. */
@@ -155,8 +160,11 @@ interface CommandGroup {
   commands: Command[];
 }
 
-/** The palette's lists: the top level, or the team or view picker inside it. */
-type Page = 'root' | 'teams' | 'views';
+/**
+ * The palette's lists: the top level, or the team, view, sub-team parent or
+ * issue template picker inside it.
+ */
+type Page = 'root' | 'teams' | 'views' | 'sub-team' | 'template';
 
 /** What the back button and the input say on each nested list. */
 const PAGE_COPY: Record<
@@ -165,7 +173,19 @@ const PAGE_COPY: Record<
 > = {
   teams: { back: 'Switch team', placeholder: 'Switch to a team' },
   views: { back: 'Open view', placeholder: 'Open a saved view' },
+  'sub-team': {
+    back: 'Create sub-team',
+    placeholder: 'Pick the parent team',
+  },
+  template: {
+    back: 'Create issue from template',
+    placeholder: 'Pick a template',
+  },
 };
+
+/** Whether a team sits at the top level, so it can take a sub-team. */
+const isTopLevel = (team: TeamRead): boolean =>
+  team.parent_team_id === null || team.parent_team_id === undefined;
 
 const ICON = 'h-3.5 w-3.5 shrink-0';
 
@@ -293,6 +313,16 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
     }
   );
 
+  const { data: templateList } = usePolledQuery(
+    ({ signal }) => listTeamTemplates(workspaceId, team?.id ?? '', signal),
+    {
+      intervalMs: POLL_MS,
+      enabled: page === 'template' && workspaceId !== '' && team !== undefined,
+      queryKey: [...templatesKey(team?.id ?? ''), 'palette'],
+      auth,
+    }
+  );
+
   const pageActions = useMemo<CommandGroup[]>(() => {
     const byGroup = new Map<string, Command[]>();
     for (const shortcut of registered) {
@@ -363,6 +393,13 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
           createIssue.open();
         },
       });
+      built.push({
+        id: 'action-create-issue-template',
+        label: 'Create issue from template',
+        keywords: 'new template prefill',
+        icon: <LuFileText className={ICON} />,
+        page: 'template',
+      });
     }
     if (createTeam.canCreate) {
       built.push({
@@ -372,6 +409,15 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
         icon: <LuUsersRound className={ICON} />,
         run: createTeam.open,
       });
+      if (teams.some(isTopLevel)) {
+        built.push({
+          id: 'action-create-sub-team',
+          label: 'Create sub-team',
+          keywords: 'new add nested child parent team',
+          icon: <LuUsersRound className={ICON} />,
+          page: 'sub-team',
+        });
+      }
     }
     if (teams.length > 1) {
       built.push({
@@ -421,15 +467,7 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
       }
     );
     return built;
-  }, [
-    createIssue,
-    createTeam,
-    slug,
-    teams.length,
-    theme,
-    setTheme,
-    onShowShortcuts,
-  ]);
+  }, [createIssue, createTeam, slug, teams, theme, setTheme, onShowShortcuts]);
 
   const places = useMemo<Command[]>(() => {
     const built: Command[] = [
@@ -536,12 +574,14 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
         icon: <LuTerminal className={ICON} />,
         to: cliSetupPath(slug),
       },
-      ...teams.map((row) => ({
+      ...teamTree(teams).map(({ team: row, nested, parentName }) => ({
         id: `nav-team-${row.id}`,
         label: `Go to ${row.name}`,
+        keywords: parentName ?? '',
         hint: row.key_prefix,
         icon: <LuUsers className={ICON} />,
         to: teamPath(slug, row.key_prefix),
+        indent: nested,
       }))
     );
     return built;
@@ -549,24 +589,27 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
 
   const teamSettings = useMemo<Command[]>(
     () =>
-      teams.map((row) => ({
+      teamTree(teams).map(({ team: row, nested, parentName }) => ({
         id: `settings-team-${row.id}`,
         label: `${row.name} settings`,
-        keywords: 'team settings members labels statuses workflow',
+        keywords: `team settings members labels statuses workflow ${parentName ?? ''}`,
         hint: row.key_prefix,
         icon: <LuSettings className={ICON} />,
         to: teamSettingsPath(slug, row.key_prefix),
+        indent: nested,
       })),
     [teams, slug]
   );
 
   const groups = useMemo<CommandGroup[]>(() => {
     if (page === 'teams') {
-      const rows = teams
-        .map((row) => ({
+      const rows = teamTree(teams)
+        .map(({ team: row, nested, parentName }) => ({
           id: `switch-${row.id}`,
           label: row.name,
+          keywords: parentName ?? '',
           hint: row.key_prefix,
+          indent: nested,
           icon: <LuUsers className={ICON} />,
           to: switchTeamPath(
             location.pathname,
@@ -579,6 +622,47 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
       return rows.length === 0
         ? []
         : [{ heading: 'Switch team', commands: rows }];
+    }
+
+    if (page === 'sub-team') {
+      const rows = teams
+        .filter(isTopLevel)
+        .map((row) => ({
+          id: `sub-team-of-${row.id}`,
+          label: row.name,
+          hint: row.key_prefix,
+          icon: <LuUsers className={ICON} />,
+          run: () => {
+            createTeam.openSubTeam(row.id);
+          },
+        }))
+        .filter((command) => matches(command, deferred));
+      return rows.length === 0
+        ? []
+        : [{ heading: 'Parent team', commands: rows }];
+    }
+
+    if (page === 'template') {
+      const rows = (team === undefined ? [] : (templateList?.templates ?? []))
+        .map((template) => ({
+          id: `template-${template.id}`,
+          label: template.name,
+          keywords: template.title ?? '',
+          ...(template.id === templateList?.default_template_id
+            ? { hint: 'Default' }
+            : {}),
+          icon: <LuFileText className={ICON} />,
+          run: () => {
+            createIssue.open({
+              ...(team === undefined ? {} : { teamId: team.id }),
+              templateId: template.id,
+            });
+          },
+        }))
+        .filter((command) => matches(command, deferred));
+      return rows.length === 0
+        ? []
+        : [{ heading: team?.name ?? 'Templates', commands: rows }];
     }
 
     if (page === 'views') {
@@ -697,7 +781,11 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
   }, [
     page,
     savedViews,
+    templateList,
+    team,
+    createIssue,
     teams,
+    createTeam,
     location.pathname,
     slug,
     routePrefix,
@@ -815,7 +903,9 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
       ? `Search needs a word of at least ${String(MIN_TERM)} letters.`
       : isLoading && enabled
         ? 'Searching'
-        : 'Nothing matched that.';
+        : page === 'template' && (templateList?.templates.length ?? 0) === 0
+          ? 'This team has no templates yet.'
+          : 'Nothing matched that.';
 
   const placeholder =
     page === 'root' ? 'Type a command or search' : PAGE_COPY[page].placeholder;
@@ -924,8 +1014,11 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
                           aria-selected={selected}
                           data-active={selected}
                           className={cn(
-                            'mx-1.5 flex h-9 cursor-pointer pointer-coarse:h-11 items-center gap-2.5 rounded-sm px-2 text-sm hover:bg-raised hover:text-text active:bg-line',
-                            selected ? 'bg-raised text-text' : 'text-text-muted'
+                            'mx-1.5 flex h-9 cursor-pointer pointer-coarse:h-11 items-center gap-2.5 rounded-sm text-sm hover:bg-raised hover:text-text active:bg-line',
+                            selected
+                              ? 'bg-raised text-text'
+                              : 'text-text-muted',
+                            command.indent === true ? 'pr-2 pl-7' : 'px-2'
                           )}
                           onMouseMove={() => {
                             setActive(at);

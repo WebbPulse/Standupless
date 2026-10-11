@@ -18,6 +18,8 @@ export interface UserRead {
   notification_preferences?: Record<NotificationKind, NotificationChannels>;
   /** Whether this session has a second factor, the claim a workspace auth policy checks. */
   two_factor?: boolean;
+  /** The IANA zone due dates are judged in, or null when none is stored yet. */
+  timezone?: string | null;
 }
 
 /** One workspace as the account deletion plan names it. */
@@ -61,6 +63,7 @@ export interface UserPreferencesUpdate {
   notification_preferences?: Partial<
     Record<NotificationKind, Partial<NotificationChannels>>
   >;
+  timezone?: string;
 }
 
 /** A role held at the workspace level. */
@@ -507,7 +510,9 @@ export type ActivityKind =
   | 'child_added'
   | 'child_removed'
   | 'archived'
-  | 'unarchived';
+  | 'unarchived'
+  | 'subscriber_added'
+  | 'subscriber_removed';
 
 /**
  * Direct sub-issue counts, maintained by the rollup consumer rather than the
@@ -646,6 +651,76 @@ export interface IssueCreate {
   cycle_id?: string | null;
   project_id?: string | null;
   project_milestone_id?: string | null;
+}
+
+/** The issue fields a template fills, every one optional. */
+export interface TemplateFields {
+  title?: string | null;
+  body?: string | null;
+  status_id?: string | null;
+  priority?: IssuePriority | null;
+  assignee_id?: string | null;
+  estimate?: string | null;
+  project_id?: string | null;
+  project_milestone_id?: string | null;
+  cycle_id?: string | null;
+  /** Zero-based place in the picker; a create without one goes to the end. */
+  position?: number | null;
+}
+
+/** A new template: a name and any of the issue fields. */
+export interface TemplateCreate extends TemplateFields {
+  name: string;
+  label_ids?: string[];
+}
+
+/** A template patch: only the fields sent change, and null clears one. */
+export interface TemplateUpdate extends TemplateFields {
+  name?: string;
+  label_ids?: string[] | null;
+}
+
+/**
+ * One issue template. `scope` says where it comes from as the team asked
+ * about sees it: its own, its parent team's or the workspace's.
+ */
+export interface TemplateRead {
+  id: string;
+  name: string;
+  team_id: string | null;
+  scope: WorkflowScope;
+  title: string | null;
+  body: string | null;
+  status_id: string | null;
+  priority: IssuePriority | null;
+  assignee_id: string | null;
+  label_ids: string[];
+  estimate: string | null;
+  project_id: string | null;
+  project_milestone_id: string | null;
+  cycle_id: string | null;
+  position: number;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+/** The templates a team offers, and the one its create dialog opens with. */
+export interface TemplateListRead {
+  templates: TemplateRead[];
+  default_template_id: string | null;
+}
+
+/** A team's saved default template and the one it falls back to from its parent. */
+export interface TemplateSettingsRead {
+  team_id: string;
+  default_template_id: string | null;
+  effective_default_template_id: string | null;
+}
+
+/** The body that sets or clears a team's default template. */
+export interface TemplateSettingsUpdate {
+  default_template_id: string | null;
 }
 
 /** The body that moves an issue to another team, which gives it a new key. */
@@ -1104,6 +1179,7 @@ export type NotificationKind =
   | 'mentioned'
   | 'commented'
   | 'status_changed'
+  | 'subscribed'
   | 'project_update'
   | 'project_update_due'
   | 'due_soon'

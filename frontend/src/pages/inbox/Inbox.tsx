@@ -112,6 +112,7 @@ const KIND_LABELS: Record<InboxKind, string> = {
   mentioned: 'Mentioned you',
   commented: 'New comment',
   status_changed: 'Status changed',
+  subscribed: 'Subscribed you',
   project_update: 'Project update',
   project_update_due: 'Update due',
   due_soon: 'Due soon',

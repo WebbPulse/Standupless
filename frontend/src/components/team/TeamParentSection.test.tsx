@@ -1,12 +1,20 @@
 /**
  * The parent team section. Covers that only top-level teams are offered, that
  * picking one and clearing it saves at once, that a team with sub-teams cannot
- * take a parent, and that a reader sees no picker.
+ * take a parent, that a reader sees no picker, and that a top-level team offers
+ * "Create sub-team" with itself as the parent, and that the parent and
+ * sub-teams named link to their settings.
  */
 
-import { render, screen, waitFor } from '@testing-library/react';
+import { render as rtlRender, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import type React from 'react';
+import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  CreateTeamContext,
+  type CreateTeamState,
+} from '../../hooks/useCreateTeam';
 import type { TeamRead, TeamUpdate } from '../../types/Api';
 import TeamParentSection from './TeamParentSection';
 
@@ -32,6 +40,10 @@ vi.mock('../../hooks/useTeams', () => ({
     workspaceId,
   }),
 }));
+
+/** Renders inside a router, since the section links to related teams. */
+const render = (node: React.ReactElement) =>
+  rtlRender(<MemoryRouter>{node}</MemoryRouter>);
 
 /** A team in the shape the contract answers with. */
 const team = (over: Partial<TeamRead> = {}): TeamRead => ({
@@ -69,7 +81,14 @@ beforeEach(() => {
 describe('the parent team section', () => {
   it('offers only other top-level teams and saves the pick', async () => {
     const user = userEvent.setup();
-    render(<TeamParentSection workspaceId="ws-1" team={own} canEdit={true} />);
+    render(
+      <TeamParentSection
+        workspaceId="ws-1"
+        slug="acme"
+        team={own}
+        canEdit={true}
+      />
+    );
 
     const picker = screen.getByRole('combobox', { name: 'Parent team' });
     const options = Array.from(
@@ -87,10 +106,19 @@ describe('the parent team section', () => {
   it('clears the parent of a sub-team', async () => {
     const user = userEvent.setup();
     render(
-      <TeamParentSection workspaceId="ws-1" team={mobile} canEdit={true} />
+      <TeamParentSection
+        workspaceId="ws-1"
+        slug="acme"
+        team={mobile}
+        canEdit={true}
+      />
     );
 
-    expect(screen.getByText(/sits under Engineering/)).toBeInTheDocument();
+    expect(screen.getByText(/sits under/)).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Engineering' })).toHaveAttribute(
+      'href',
+      '/w/acme/team/ENG/settings'
+    );
     await user.selectOptions(
       screen.getByRole('combobox', { name: 'Parent team' }),
       ''
@@ -102,18 +130,80 @@ describe('the parent team section', () => {
 
   it('keeps a team with sub-teams top-level', () => {
     render(
-      <TeamParentSection workspaceId="ws-1" team={engineering} canEdit={true} />
+      <TeamParentSection
+        workspaceId="ws-1"
+        slug="acme"
+        team={engineering}
+        canEdit={true}
+      />
     );
 
-    expect(screen.getByText(/Sub-teams: Mobile/)).toBeInTheDocument();
+    expect(screen.getByText(/Sub-teams:/)).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Mobile' })).toHaveAttribute(
+      'href',
+      '/w/acme/team/MOB/settings'
+    );
     expect(
       screen.getByRole('combobox', { name: 'Parent team' })
     ).toBeDisabled();
   });
 
   it('shows a reader no picker', () => {
-    render(<TeamParentSection workspaceId="ws-1" team={own} canEdit={false} />);
+    render(
+      <TeamParentSection
+        workspaceId="ws-1"
+        slug="acme"
+        team={own}
+        canEdit={false}
+      />
+    );
     expect(screen.queryByRole('combobox')).not.toBeInTheDocument();
     expect(screen.getByText(/top-level/)).toBeInTheDocument();
+  });
+
+  it('creates a sub-team of a top-level team from its settings', async () => {
+    const user = userEvent.setup();
+    const openSubTeam = vi.fn();
+    const dialog: CreateTeamState = {
+      open: vi.fn(),
+      openSubTeam,
+      canCreate: true,
+    };
+    render(
+      <CreateTeamContext.Provider value={dialog}>
+        <TeamParentSection
+          workspaceId="ws-1"
+          slug="acme"
+          team={own}
+          canEdit={false}
+        />
+      </CreateTeamContext.Provider>
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Create sub-team' }));
+
+    expect(openSubTeam).toHaveBeenCalledWith('team-1');
+  });
+
+  it('offers a sub-team no Create sub-team', () => {
+    const dialog: CreateTeamState = {
+      open: vi.fn(),
+      openSubTeam: vi.fn(),
+      canCreate: true,
+    };
+    render(
+      <CreateTeamContext.Provider value={dialog}>
+        <TeamParentSection
+          workspaceId="ws-1"
+          slug="acme"
+          team={mobile}
+          canEdit={true}
+        />
+      </CreateTeamContext.Provider>
+    );
+
+    expect(
+      screen.queryByRole('button', { name: 'Create sub-team' })
+    ).not.toBeInTheDocument();
   });
 });

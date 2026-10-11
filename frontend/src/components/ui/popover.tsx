@@ -3,12 +3,14 @@
  * is positioned with fixed coordinates rather than portalled, so it escapes a
  * scrolling rail or a dialog's overflow while staying inside the dialog's DOM,
  * which keeps that dialog's focus trap and backdrop click working. It flips
- * above the trigger when there is no room below, closes on Escape, on an
- * outside press and on Tab, and hands focus back to the trigger when it closes
- * from the keyboard.
+ * above the trigger when there is no room below, closes on Escape (even after
+ * focus has left the panel), on an outside press, on Tab and when the command
+ * palette opens, and hands focus back to the trigger when it closes from the
+ * keyboard.
  */
 
 import React, { useCallback, useEffect, useId, useRef, useState } from 'react';
+import { usePaletteControls } from '../../hooks/useCommandPalette';
 import { cn } from '../../lib/cn';
 import { UNPLACED, useAnchoredPlacement } from './anchoredPlacement';
 
@@ -62,6 +64,7 @@ export const Popover: React.FC<PopoverProps> = ({
   const root = useRef<HTMLDivElement>(null);
   const panel = useRef<HTMLDivElement>(null);
   const panelId = useId();
+  const paletteOpen = usePaletteControls()?.open ?? false;
 
   const setOpen = useCallback(
     (next: boolean): void => {
@@ -97,6 +100,32 @@ export const Popover: React.FC<PopoverProps> = ({
       document.removeEventListener('mousedown', onPointer);
     };
   }, [open, close]);
+
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (event: KeyboardEvent): void => {
+      if (event.key !== 'Escape' || event.defaultPrevented) return;
+      const focused = document.activeElement;
+      if (panel.current?.contains(focused) === true) return;
+      const modal = document.querySelector('[aria-modal="true"]');
+      if (modal !== null && !modal.contains(root.current)) return;
+      event.preventDefault();
+      event.stopPropagation();
+      close(
+        focused === null ||
+          focused === document.body ||
+          root.current?.contains(focused) === true
+      );
+    };
+    document.addEventListener('keydown', onKey, true);
+    return () => {
+      document.removeEventListener('keydown', onKey, true);
+    };
+  }, [open, close]);
+
+  useEffect(() => {
+    if (open && paletteOpen) close(false);
+  }, [open, paletteOpen, close]);
 
   const onPanelKeyDown = (event: React.KeyboardEvent): void => {
     if (event.key === 'Escape') {

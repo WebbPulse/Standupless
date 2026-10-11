@@ -9,9 +9,10 @@ from __future__ import annotations
 
 import logging
 from typing import Any, Optional
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from webbpulse.identity.claims import identity_claims
 
 from app.common import team_purge
@@ -69,6 +70,7 @@ class UserRead(BaseModel):
     notification_preferences: dict[str, NotificationChannels]
     avatar_url: Optional[str] = None
     two_factor: bool = False
+    timezone: Optional[str] = None
 
 
 class WorkspaceSummaryRead(BaseModel):
@@ -111,14 +113,29 @@ class NotificationChannelsUpdate(BaseModel):
 class UserPreferencesUpdate(BaseModel):
     """The preferences a person may change on their own account.
 
-    Both fields are optional, so the global email switch and one kind's channels
-    can each be changed without restating the other. Deliberately not a settings
+    Every field is optional, so the global email switch, one kind's channels and
+    the timezone can each be changed without restating the others. `timezone` is
+    the IANA zone due date reminders are judged in, which the browser captures on
+    sign in and the person can change. Deliberately not a settings
     domain of its own: a few values on the row the product already owns are cheaper
     than a table and a second read on every notification.
     """
 
     email_notifications: Optional[bool] = None
     notification_preferences: Optional[dict[NotificationKind, NotificationChannelsUpdate]] = None
+    timezone: Optional[str] = Field(default=None, min_length=1, max_length=64)
+
+    @field_validator("timezone")
+    @classmethod
+    def _known_zone(cls, value: Optional[str]) -> Optional[str]:
+        """Refuse a name the zone database does not know."""
+        if value is None:
+            return None
+        try:
+            ZoneInfo(value)
+        except (ZoneInfoNotFoundError, ValueError) as exc:
+            raise ValueError(f"{value!r} is not a known IANA timezone") from exc
+        return value
 
 
 def _as_read(user: "Any") -> UserRead:
@@ -137,6 +154,7 @@ def _as_read(user: "Any") -> UserRead:
             for kind in NOTIFICATION_KINDS
         },
         avatar_url=icon_url(user.icon_key),
+        timezone=user.timezone,
     )
 
 
@@ -232,6 +250,8 @@ def update_current_user_preferences(
         changes["notification_preferences"] = _merged_preferences(
             user.notification_preferences, dict(payload.notification_preferences)
         )
+    if payload.timezone is not None and payload.timezone != user.timezone:
+        changes["timezone"] = payload.timezone
     if not changes:
         return _as_read(user)
     return _as_read(repos.users.update(subject, **changes))

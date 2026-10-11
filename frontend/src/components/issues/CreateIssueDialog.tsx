@@ -9,6 +9,12 @@
  * Escape closes, and typed text is guarded so a stray Escape does not throw a
  * paragraph away. "Create more" keeps the dialog open with the chosen
  * properties held, for filing a run of related issues in one sitting.
+ *
+ * A template prefills the draft. The team's default is applied as the dialog
+ * opens and fills only what the caller did not preset, and picking one in the
+ * header starts the draft over from that template. The fields stay editable
+ * and the dialog sends what they hold, never the template id, so a field the
+ * person clears stays cleared.
  */
 
 import React, {
@@ -18,7 +24,10 @@ import React, {
   useRef,
   useState,
 } from 'react';
+import { useQueryAuth } from '@webbpulse/auth/react';
+import { usePolledQuery } from '@webbpulse/api-client/react';
 import { createIssue, createLink } from '../../api/issues';
+import { listTeamTemplates } from '../../api/templates';
 import { WorkspaceContext } from '../../contexts/WorkspaceContextDefinition';
 import { useAutoGrow } from '../../hooks/useAutoGrow';
 import { useTeamOptions } from '../../hooks/useTeamOptions';
@@ -26,6 +35,11 @@ import { canWriteIssues } from '../../lib/capabilities';
 import { cn } from '../../lib/cn';
 import { errorMessage } from '../../lib/errors';
 import type { Assignable } from '../../lib/issuePeople';
+import {
+  templatePrefill,
+  type TemplatePrefill,
+} from '../../lib/issueTemplates';
+import { templatesKey } from '../../lib/queryKeys';
 import { sortStatuses } from '../../lib/propertyOptions';
 import { issuePath } from '../../lib/paths';
 import { submitKeysLabel } from '../../lib/platform';
@@ -45,6 +59,8 @@ import type {
   StatusRead,
   SimilarIssueRead,
   TeamRead,
+  TemplateListRead,
+  TemplateRead,
 } from '../../types/Api';
 import { ErrorAlert } from '../ui/alert';
 import Button from '../ui/button';
@@ -63,6 +79,8 @@ import {
 } from './PropertyPickers';
 import { useTeams } from '../../hooks/useTeams';
 import { SimilarIssues, useSimilarIssues } from './SimilarIssues';
+import { teamTree } from '../../lib/teamOrder';
+import { TemplatePicker } from './TemplatePicker';
 
 /** Props for CreateIssueDialog: where the issue lands and what it may carry. */
 export interface CreateIssueDialogProps {
@@ -100,6 +118,8 @@ export interface CreateIssuePreset {
   parentId?: string;
   /** The parent's key, shown in the header so the person sees where it lands. */
   parentKey?: string;
+  /** The template the draft starts from, in place of the team's default. */
+  templateId?: string;
 }
 
 /** The properties a draft holds, all of them team scoped except the last. */
@@ -109,6 +129,7 @@ interface Draft {
   labelIds: string[];
   estimate: string | null;
   projectId: string | null;
+  projectMilestoneId: string | null;
   cycleId: string | null;
   priority: IssuePriority;
   startDate: string | null;
@@ -122,6 +143,7 @@ const EMPTY_DRAFT: Draft = {
   labelIds: [],
   estimate: null,
   projectId: null,
+  projectMilestoneId: null,
   cycleId: null,
   priority: 'none',
   startDate: null,
@@ -147,9 +169,49 @@ const clearTeamScoped = (draft: Draft): Draft => ({
   labelIds: [],
   estimate: null,
   projectId: null,
+  projectMilestoneId: null,
   cycleId: null,
   parentId: null,
 });
+
+/** The draft with a template's properties filled into what is still unset. */
+const withTemplate = (draft: Draft, fill: TemplatePrefill): Draft => {
+  const project =
+    draft.projectId === null
+      ? {
+          projectId: fill.projectId ?? null,
+          projectMilestoneId: fill.projectMilestoneId ?? null,
+        }
+      : {};
+  return {
+    ...draft,
+    ...project,
+    statusId: draft.statusId === '' ? (fill.statusId ?? '') : draft.statusId,
+    priority:
+      draft.priority === 'none' ? (fill.priority ?? 'none') : draft.priority,
+    assigneeId: draft.assigneeId ?? fill.assigneeId ?? null,
+    labelIds:
+      draft.labelIds.length === 0 ? (fill.labelIds ?? []) : draft.labelIds,
+    estimate: draft.estimate ?? fill.estimate ?? null,
+    cycleId: draft.cycleId ?? fill.cycleId ?? null,
+  };
+};
+
+/** The title and description a template wrote, compared to spot edits. */
+interface TemplateText {
+  title: string;
+  body: string;
+}
+
+const NO_TEXT: TemplateText = { title: '', body: '' };
+
+/** A template list tagged with the team it was read for. */
+interface TeamTemplates extends TemplateListRead {
+  teamId: string;
+}
+
+/** How often the dialog re-reads the team's templates while open. */
+const TEMPLATES_POLL_MS = 60000;
 
 /** Builds the create body, leaving out every field still at its default. */
 const toPayload = (
@@ -169,6 +231,9 @@ const toPayload = (
   ...(draft.startDate === null ? {} : { start_date: draft.startDate }),
   ...(draft.dueDate === null ? {} : { due_date: draft.dueDate }),
   ...(draft.projectId === null ? {} : { project_id: draft.projectId }),
+  ...(draft.projectMilestoneId === null
+    ? {}
+    : { project_milestone_id: draft.projectMilestoneId }),
   ...(draft.cycleId === null ? {} : { cycle_id: draft.cycleId }),
   ...(draft.parentId === null ? {} : { parent_id: draft.parentId }),
 });
@@ -194,12 +259,18 @@ const TeamSwitcher: React.FC<TeamSwitcherProps> = ({
 }) => {
   const current = teams.find((team) => team.id === value);
   const name = current?.name ?? fallbackName;
-  const options: ComboboxOption[] = teams.map((team) => ({
-    value: team.id,
-    label: team.name,
-    detail: team.key_prefix,
-    keywords: [team.key_prefix],
-  }));
+  const options: ComboboxOption[] = teamTree(teams).map(
+    ({ team, nested, parentName }) => ({
+      value: team.id,
+      label: team.name,
+      detail: team.key_prefix,
+      keywords: [
+        team.key_prefix,
+        ...(parentName === undefined ? [] : [parentName]),
+      ],
+      indent: nested,
+    })
+  );
   const chip =
     'inline-flex h-6 max-w-48 items-center gap-1.5 truncate rounded-sm border border-line px-2 text-xs text-text-muted';
   if (teams.length < 2) {
@@ -254,7 +325,14 @@ export const CreateIssueDialog: React.FC<CreateIssueDialogProps> = ({
   preset,
 }) => {
   const workspace = useContext(WorkspaceContext)?.workspace ?? null;
+  const auth = useQueryAuth();
   const [activeTeamId, setActiveTeamId] = useState(teamId);
+  const [templateId, setTemplateId] = useState<string | null>(null);
+  const [templateText, setTemplateText] = useState<TemplateText>(NO_TEXT);
+  const pendingTemplate = useRef<{ teamId: string; id: string | null } | null>({
+    teamId,
+    id: preset?.templateId ?? null,
+  });
   const [title, setTitle] = useState('');
   const [body, setBody] = useState('');
   const [draft, setDraft] = useState<Draft>(() => presetDraft(preset));
@@ -306,7 +384,67 @@ export const CreateIssueDialog: React.FC<CreateIssueDialogProps> = ({
     titleError === null &&
     dateError === null &&
     !isSaving;
-  const dirty = title.trim() !== '' || body.trim() !== '';
+  const dirty =
+    title.trim() !== templateText.title.trim() ||
+    body.trim() !== templateText.body.trim();
+
+  const { data: templateList } = usePolledQuery(
+    async ({ signal }): Promise<TeamTemplates> => ({
+      ...(await listTeamTemplates(workspaceId, activeTeamId, signal)),
+      teamId: activeTeamId,
+    }),
+    {
+      intervalMs: TEMPLATES_POLL_MS,
+      queryKey: [...templatesKey(activeTeamId), 'picker'],
+      auth,
+    }
+  );
+  const templates =
+    templateList?.teamId === activeTeamId ? templateList.templates : [];
+
+  const prefillOf = (template: TemplateRead): TemplatePrefill =>
+    templatePrefill(template, {
+      statuses: teamStatuses,
+      labels: teamLabels,
+      people: teamPeople,
+    });
+
+  const applyTemplate = (template: TemplateRead | null): void => {
+    const fill: TemplatePrefill = template === null ? {} : prefillOf(template);
+    const text = { title: fill.title ?? '', body: fill.body ?? '' };
+    const base = onHomeTeam ? presetDraft(preset) : EMPTY_DRAFT;
+    setTemplateId(template?.id ?? null);
+    setDraft(withTemplate(base, fill));
+    if (title.trim() === '' || title === templateText.title) {
+      setTitle(text.title);
+    }
+    if (body.trim() === '' || body === templateText.body) {
+      setBody(text.body);
+    }
+    setTemplateText(text);
+    setConfirming(false);
+  };
+
+  useEffect(() => {
+    const pending = pendingTemplate.current;
+    if (pending === null || pending.teamId !== activeTeamId) return;
+    if (templateList === null || templateList.teamId !== activeTeamId) return;
+    pendingTemplate.current = null;
+    const id = pending.id ?? templateList.default_template_id;
+    const template = templateList.templates.find((item) => item.id === id);
+    if (template === undefined) return;
+    const fill = templatePrefill(template, {
+      statuses: teamStatuses,
+      labels: teamLabels,
+      people: teamPeople,
+    });
+    const text = { title: fill.title ?? '', body: fill.body ?? '' };
+    setTemplateId(template.id);
+    setTemplateText(text);
+    setDraft((held) => withTemplate(held, fill));
+    setTitle((held) => (held.trim() === '' ? text.title : held));
+    setBody((held) => (held.trim() === '' ? text.body : held));
+  }, [activeTeamId, templateList, teamStatuses, teamLabels, teamPeople]);
 
   const state = useRef({ dirty, confirming, lastCreated, onCreated, onClose });
   useEffect(() => {
@@ -370,8 +508,8 @@ export const CreateIssueDialog: React.FC<CreateIssueDialogProps> = ({
           return;
         }
         setLastCreated(issue);
-        setTitle('');
-        setBody('');
+        setTitle(templateText.title);
+        setBody(templateText.body);
         setConfirming(false);
         showToast(
           `Created ${issue.key}`,
@@ -424,8 +562,13 @@ export const CreateIssueDialog: React.FC<CreateIssueDialogProps> = ({
               'Team'
             }
             onChange={(team) => {
+              pendingTemplate.current = { teamId: team.id, id: null };
               setActiveTeamId(team.id);
               setDraft(clearTeamScoped);
+              setTemplateId(null);
+              if (title === templateText.title) setTitle('');
+              if (body === templateText.body) setBody('');
+              setTemplateText(NO_TEXT);
             }}
           />
           <span aria-hidden="true" className="text-text-faint">
@@ -436,6 +579,18 @@ export const CreateIssueDialog: React.FC<CreateIssueDialogProps> = ({
               ? `New sub-issue of ${preset.parentKey}`
               : 'New issue'}
           </span>
+          {templates.length > 0 && (
+            <span className="ml-auto">
+              <TemplatePicker
+                templates={templates}
+                value={templateId}
+                onChange={(template) => {
+                  applyTemplate(template);
+                  titleInput.current?.focus();
+                }}
+              />
+            </span>
+          )}
         </div>
 
         {error !== null && (
@@ -542,7 +697,7 @@ export const CreateIssueDialog: React.FC<CreateIssueDialogProps> = ({
             projects={options.projects}
             value={draft.projectId}
             onChange={(projectId) => {
-              patch({ projectId });
+              patch({ projectId, projectMilestoneId: null });
             }}
           />
           <CyclePicker

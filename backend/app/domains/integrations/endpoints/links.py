@@ -1,6 +1,8 @@
 """The pull requests linked to one issue, read by anyone who can read the issue.
 
-Linking is decided by the consumer, so there is no write route here. The read is
+Linking is decided by the consumer, so there is no write route here. A merged or
+closed pull request still showing running checks queues one read of them back
+from GitHub, which is how a row whose last check result was lost repairs itself. The read is
 the `ws_issue-link-index` query, which is why the link row carries the workspace
 and issue in one attribute rather than being found by scanning the partition.
 """
@@ -18,6 +20,7 @@ from app.common.api.dependencies.repositories import Repositories, get_repositor
 from app.common.api.pagination import resume_key
 from app.common.db.dynamo.github import IssueLink
 from app.common.issue_keys import current
+from app.domains.integrations import pr_status
 from app.domains.integrations.schemas.integrations import IssueLinkRead
 from app.domains.integrations.service import link_reads, not_found
 
@@ -59,7 +62,9 @@ def list_issue_links(
         start_key=resume_key(cursor, scope),
     )
     key = current(repositories.teams, issue).key
+    links = [IssueLink.model_validate({**dict(row), "issue_key": key}) for row in page.items]
+    pr_status.request_reconcile(repositories, context.workspace_id, links)
     return CursorPage(
-        items=link_reads([IssueLink.model_validate({**dict(row), "issue_key": key}) for row in page.items]),
+        items=link_reads(links),
         next_cursor=encode_start_key(page.last_evaluated_key, scope=scope),
     )

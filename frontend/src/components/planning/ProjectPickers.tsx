@@ -51,6 +51,7 @@ import { Popover, type PopoverTriggerProps } from '../ui/popover';
 import ProjectHealthGlyph from './ProjectHealthGlyph';
 import ProjectIcon from './ProjectIcon';
 import ProjectStatusGlyph from './ProjectStatusGlyph';
+import { teamTree } from '../../lib/teamOrder';
 
 /** Which trigger look a project picker draws. */
 export type ProjectPickerVariant = 'rail' | 'chip' | 'icon';
@@ -319,13 +320,17 @@ export const TeamsPicker: React.FC<TeamsPickerProps> = ({
   className = '',
 }) => {
   const chosen = teams.filter((team) => value.includes(team.id));
-  const options: ComboboxOption[] = teams.map((team) => ({
-    value: team.id,
-    label: team.name,
-    detail: team.key_prefix,
-    icon: <TeamKey keyPrefix={team.key_prefix} />,
-    disabled: value.length === 1 && value[0] === team.id,
-  }));
+  const options: ComboboxOption[] = teamTree(teams).map(
+    ({ team, nested, parentName }) => ({
+      value: team.id,
+      label: team.name,
+      detail: team.key_prefix,
+      icon: <TeamKey keyPrefix={team.key_prefix} />,
+      disabled: value.length === 1 && value[0] === team.id,
+      indent: nested,
+      ...(parentName === undefined ? {} : { keywords: [parentName] }),
+    })
+  );
   const text =
     chosen.length === 0
       ? variant === 'chip'

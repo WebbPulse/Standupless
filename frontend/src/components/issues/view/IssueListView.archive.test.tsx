@@ -23,7 +23,10 @@ import {
 } from '../../../lib/issueView';
 import IssueListView from './IssueListView';
 
-/** An open issue with the given number and title. */
+/**
+ * An open issue with the given number and title, created earlier the higher
+ * its number so priority ordering keeps the rows in number order.
+ */
 const makeIssue = (
   number: number,
   title: string,
@@ -48,7 +51,7 @@ const makeIssue = (
   project_id: null,
   progress: { total: 0, completed: 0 },
   created_by: 'user-1',
-  created_at: '2026-09-17T00:00:00Z',
+  created_at: `2026-09-${String(20 - number).padStart(2, '0')}T00:00:00Z`,
   updated_at: '2026-09-17T00:00:00Z',
   archived_at: archivedAt,
 });

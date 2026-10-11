@@ -28,6 +28,7 @@ from app.domains.integrations.mcp.review_tools import REVIEW_TOOLS
 from app.domains.integrations.mcp.standup_tools import STANDUP_TOOLS
 from app.domains.integrations.mcp.sync_tools import SYNC_TOOLS
 from app.domains.integrations.mcp.team_tools import TEAM_TOOLS
+from app.domains.integrations.mcp.template_tools import TEMPLATE_TOOLS
 from app.domains.integrations.mcp.toolkit import Tool, ToolCall
 from app.domains.integrations.mcp.transition_tools import TRANSITION_TOOLS
 from app.domains.integrations.mcp.triage_tools import TRIAGE_TOOLS
@@ -40,6 +41,7 @@ TOOLS: tuple[Tool, ...] = (
     *REVIEW_TOOLS,
     *TEAM_TOOLS,
     *WORKFLOW_TOOLS,
+    *TEMPLATE_TOOLS,
     *TRANSITION_TOOLS,
     *SYNC_TOOLS,
     *CHANNEL_TOOLS,

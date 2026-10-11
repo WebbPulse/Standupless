@@ -56,6 +56,7 @@ from webbpulse.dynamodb import ConditionFailed, Repository, new_ulid
 
 from app.common.db.dynamo.base import as_item, build_repository, delete_partition, utc_now
 from app.common.db.dynamo.tables import TEAM_CONFIG
+from app.common.db.dynamo.team_templates import TemplateRows
 
 StatusCategory = Literal["backlog", "unstarted", "started", "completed", "cancelled"]
 
@@ -308,7 +309,11 @@ class Label(BaseModel):
 
 
 class Override(BaseModel):
-    """One team's local change to a workspace status or label: hidden, renamed, or both."""
+    """One team's local change to a workspace status or label: hidden, renamed, or both.
+
+    `shown` is a sub-team showing a workspace row its parent team hides. It is
+    absent on rows written before it existed, which read as not shown.
+    """
 
     workspace_id: str
     config_key: str
@@ -316,6 +321,7 @@ class Override(BaseModel):
     target: str
     target_id: str
     hidden: bool = False
+    shown: bool = False
     name: str | None = None
     updated_at: datetime = Field(default_factory=utc_now)
 
@@ -515,6 +521,8 @@ def _override_item(override: Override) -> dict[str, Any]:
     item = as_item(override)
     if item.get("name") is None:
         item.pop("name", None)
+    if not item.get("shown"):
+        item.pop("shown", None)
     return item
 
 
@@ -532,12 +540,13 @@ def _inherit(row: Any, team_id: str, override: Override | None, scope: str = WOR
 def _layered(parent: Override | None, own: Override | None) -> Override | None:
     """A parent's override of a workspace row with a sub-team's own on top.
 
-    What the parent hides stays hidden in the sub-team, and the sub-team's
-    rename wins over the parent's.
+    What the parent hides stays hidden in the sub-team unless the sub-team
+    shows it, and the sub-team's rename wins over the parent's.
     """
     if parent is None or own is None:
         return own or parent
-    return own.model_copy(update={"hidden": own.hidden or parent.hidden, "name": own.name or parent.name})
+    hidden = own.hidden or (parent.hidden and not own.shown)
+    return own.model_copy(update={"hidden": hidden, "name": own.name or parent.name})
 
 
 def status_order(row: Status) -> tuple[bool, int, str]:
@@ -679,7 +688,7 @@ class StandupRows:
         return True
 
 
-class TeamConfigRepository(StandupRows):
+class TeamConfigRepository(StandupRows, TemplateRows):
     """Reads and writes `team_config` rows, every method workspace first."""
 
     def __init__(self, repository: Repository | None = None) -> None:
@@ -1276,7 +1285,7 @@ class TeamConfigRepository(StandupRows):
         )
 
     def delete_for_team(self, workspace_id: str, team_id: str, *, batch: int = 100) -> int:
-        """Remove every status, label, override, transition, standup row and setting of one team.
+        """Remove every status, label, override, transition, standup row, template and setting of one team.
 
         Deletes a page at a time until each prefix reads empty, so a team of any
         size is purged and a retry after a crash resumes where the last one stopped.
@@ -1302,6 +1311,7 @@ class TeamConfigRepository(StandupRows):
         if self.get_parent_id(workspace_id, team_id) is not None:
             self._repository.delete({"workspace_id": workspace_id, "config_key": parent_key(team_id)})
             removed += 1
+        removed += self.delete_team_templates(workspace_id, team_id, batch=batch)
         for prefix in (
             status_prefix(team_id),
             label_prefix(team_id),

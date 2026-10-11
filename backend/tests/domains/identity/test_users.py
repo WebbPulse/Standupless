@@ -48,6 +48,7 @@ def test_the_caller_reads_their_own_row(client: TestClient, repositories: Any) -
         "notification_preferences": {kind: ALL_ON for kind in NOTIFICATION_KINDS},
         "avatar_url": None,
         "two_factor": False,
+        "timezone": None,
     }
 
 
@@ -133,6 +134,34 @@ def test_an_unknown_kind_is_refused(client: TestClient, repositories: Any) -> No
         json={"notification_preferences": {"digest": {"email": False}}},
     )
     assert response.status_code == 422
+
+
+def test_the_timezone_is_stored_and_read_back(client: TestClient, repositories: Any) -> None:
+    """The browser's zone is saved on the row the due date sweep reads, and a later patch keeps it."""
+    make_user(repositories, OWNER, "owner@example.com")
+    sign_in(client, OWNER)
+
+    response = client.patch("/api/users/me/preferences", json={"timezone": "America/Los_Angeles"})
+    assert response.status_code == 200
+    assert response.json()["timezone"] == "America/Los_Angeles"
+    assert repositories.users.get(OWNER).timezone == "America/Los_Angeles"
+
+    client.patch("/api/users/me/preferences", json={"email_notifications": False})
+    assert client.get("/api/users/me").json()["timezone"] == "America/Los_Angeles"
+
+    client.patch("/api/users/me/preferences", json={"timezone": "Asia/Tokyo"})
+    assert repositories.users.get(OWNER).timezone == "Asia/Tokyo"
+
+
+def test_an_unknown_timezone_is_refused(client: TestClient, repositories: Any) -> None:
+    """Only a name the zone database knows is stored."""
+    make_user(repositories, OWNER, "owner@example.com")
+    sign_in(client, OWNER)
+
+    response = client.patch("/api/users/me/preferences", json={"timezone": "Mars/Olympus"})
+
+    assert response.status_code == 422
+    assert repositories.users.get(OWNER).timezone is None
 
 
 def test_changing_preferences_needs_a_signed_in_caller(client: TestClient) -> None:

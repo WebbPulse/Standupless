@@ -49,6 +49,8 @@ export interface InheritedRowMenuProps {
   noun: string;
   /** Where the workspace record is edited. */
   workspaceSettingsPath: string;
+  /** Where the parent team's record is edited, for a row the team inherits from its parent. */
+  parentSettingsPath?: string | undefined;
   onOverride: (body: OverrideUpdate) => void;
   onReset: () => void;
 }
@@ -58,6 +60,7 @@ export const InheritedRowMenu: React.FC<InheritedRowMenuProps> = ({
   row,
   noun,
   workspaceSettingsPath,
+  parentSettingsPath,
   onOverride,
   onReset,
 }) => {
@@ -109,6 +112,14 @@ export const InheritedRowMenu: React.FC<InheritedRowMenuProps> = ({
             <MenuSeparator />
             <MenuItem to={workspaceSettingsPath}>
               Edit in workspace settings
+            </MenuItem>
+          </>
+        )}
+        {fromParent && parentSettingsPath !== undefined && (
+          <>
+            <MenuSeparator />
+            <MenuItem to={parentSettingsPath}>
+              Edit in parent team settings
             </MenuItem>
           </>
         )}

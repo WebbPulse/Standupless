@@ -43,11 +43,19 @@ class Subscription(BaseModel):
     issue_id: str
     team_id: str
     reason: str
+    added_by: str | None = None
     created_at: datetime = Field(default_factory=utc_now)
 
 
-def build_subscription(workspace_id: str, issue_id: str, team_id: str, user_id: str, reason: str) -> Subscription:
-    """One subscription with its partition key already composed."""
+def build_subscription(
+    workspace_id: str, issue_id: str, team_id: str, user_id: str, reason: str, *, added_by: str | None = None
+) -> Subscription:
+    """One subscription with its partition key already composed.
+
+    `added_by` names the member who subscribed someone else, and is left off a row
+    a person made for themselves or one an automatic subscription wrote. Its
+    presence is what the notify consumer's stream filter keys on.
+    """
     return Subscription(
         ws_issue=ws_issue(workspace_id, issue_id),
         user_id=user_id,
@@ -55,7 +63,16 @@ def build_subscription(workspace_id: str, issue_id: str, team_id: str, user_id: 
         issue_id=issue_id,
         team_id=team_id,
         reason=reason,
+        added_by=added_by if added_by and added_by != user_id else None,
     )
+
+
+def subscription_item(row: Subscription) -> dict[str, Any]:
+    """One subscription as a stored item, without an `added_by` it does not carry."""
+    item = as_item(row)
+    if item.get("added_by") is None:
+        item.pop("added_by", None)
+    return item
 
 
 class SubscriptionRepository:
@@ -72,7 +89,16 @@ class SubscriptionRepository:
         item = self._repository.get({"ws_issue": ws_issue(workspace_id, issue_id), "user_id": user_id})
         return Subscription.model_validate(item) if item is not None else None
 
-    def subscribe(self, workspace_id: str, issue_id: str, team_id: str, user_id: str, reason: str) -> bool:
+    def subscribe(
+        self,
+        workspace_id: str,
+        issue_id: str,
+        team_id: str,
+        user_id: str,
+        reason: str,
+        *,
+        added_by: str | None = None,
+    ) -> bool:
         """Follow the issue, reporting whether the row is new.
 
         A second subscribe keeps the first row, so the reason stays the one the user
@@ -80,9 +106,9 @@ class SubscriptionRepository:
         """
         if not user_id:
             return False
-        row = build_subscription(workspace_id, issue_id, team_id, user_id, reason)
+        row = build_subscription(workspace_id, issue_id, team_id, user_id, reason, added_by=added_by)
         try:
-            self._repository.put(as_item(row), condition=Attr("user_id").not_exists())
+            self._repository.put(subscription_item(row), condition=Attr("user_id").not_exists())
         except ConditionFailed:
             return False
         return True

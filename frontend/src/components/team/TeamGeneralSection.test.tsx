@@ -2,7 +2,8 @@
  * The team General section's estimate settings. Covers that the three toggles
  * show beside a scale that is on and hide when estimates are off, that saving
  * sends them with the scale, and that the extended toggle names the values it
- * adds for the chosen scale.
+ * adds for the chosen scale, and that a sub-team links to its parent's
+ * settings for them.
  */
 
 import { render, screen, waitFor } from '@testing-library/react';
@@ -39,16 +40,15 @@ const team = (over: Partial<TeamRead> = {}): TeamRead => ({
   ...over,
 });
 
-/** Renders the section for a team admin. */
-const renderSection = (value: TeamRead): void => {
+/** Renders the section for a team admin, under a parent's settings page when given. */
+const renderSection = (value: TeamRead, parentSettingsPath?: string): void => {
   render(
     <MemoryRouter>
       <TeamGeneralSection
         workspaceId="ws-1"
-        slug="acme"
         team={value}
         canEdit={true}
-        canDelete={false}
+        parentSettingsPath={parentSettingsPath}
       />
     </MemoryRouter>
   );
@@ -101,5 +101,19 @@ describe('the team estimate settings', () => {
     renderSection(team({ estimate_scale: 'off' }));
 
     expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
+  });
+
+  it('links a sub-team to the estimates in its parent team settings', () => {
+    renderSection(
+      team({ parent_team_id: 'team-0' }),
+      '/w/acme/team/ENG/settings'
+    );
+
+    expect(
+      screen.getByRole('link', { name: "parent team's settings" })
+    ).toHaveAttribute(
+      'href',
+      '/w/acme/team/ENG/settings#team-settings-general'
+    );
   });
 });

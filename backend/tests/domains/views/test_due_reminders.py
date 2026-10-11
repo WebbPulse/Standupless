@@ -4,30 +4,36 @@ The properties held are that an assignee gets one due soon reminder from the day
 before and one overdue reminder after the date, however many passes run and even
 after deleting them; that moving the due date or the assignee arms a fresh one;
 that completed, archived and unassigned issues, an assignee who cannot see the team,
-an assignee who turned the kind off and a long stale due date get none; and that
-the email names the reminder.
+an assignee who turned the kind off and a long stale due date get none; that the
+day is the assignee's own, from their timezone, else the team's, else UTC, with
+the once only marker holding across zones; that the sweep claims each hourly
+window once, however late its tick lands; and that the email names the reminder.
 """
 
 from __future__ import annotations
 
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Iterator
+from zoneinfo import ZoneInfo
 
 import pytest
 from fastapi.testclient import TestClient
 from webbpulse.identity.email import RecordingEmailSender
 
+from app.common.db.dynamo.team_config import default_standup_settings
 from app.common.email import reset_email_sender
 from app.domains.views.consumers.digest import NOTIFY_DIGEST_SOURCE
 from app.domains.views.consumers.due_reminders import (
     DUE_SOON,
     OVERDUE,
     OVERDUE_WINDOW,
+    SWEEP_INTERVAL,
     reminder_for,
     run_due_reminders,
     sweep_due,
 )
 from app.domains.views.consumers.notify import handle_record
+from app.domains.views.consumers.sweeps import window_start
 from tests.domains.helpers import ADMIN, GUEST, MEMBER, OWNER, sign_in
 from tests.domains.views.conftest import TEAM, seed_issue
 from tests.domains.views.test_notify_consumer import flush_digests, inbox_of
@@ -37,6 +43,10 @@ DUE = "2026-09-10"
 DAY_BEFORE = datetime(2026, 9, 9, 8, 0, tzinfo=timezone.utc)
 
 DAY_AFTER = datetime(2026, 9, 11, 8, 0, tzinfo=timezone.utc)
+
+PACIFIC = "America/Los_Angeles"
+
+TOKYO = "Asia/Tokyo"
 
 
 @pytest.fixture
@@ -62,17 +72,138 @@ def _due_issue(issues_client: TestClient, workspace: str, **payload: Any) -> dic
     return seed_issue(issues_client, workspace, **body)
 
 
+def _noon(day: date) -> datetime:
+    """Midday UTC on one day, well clear of any UTC day boundary."""
+    return datetime(day.year, day.month, day.day, 12, 0, tzinfo=timezone.utc)
+
+
+def _zone_of(repositories: Any, user_id: str, name: str) -> None:
+    """Store one person's own timezone."""
+    repositories.users.update(user_id, timezone=name)
+
+
 def test_the_window_of_each_reminder() -> None:
     """Due soon from the day before through the day, overdue after it until the window closes."""
     due = date(2026, 9, 10)
+    soon_at = datetime(2026, 9, 9, tzinfo=timezone.utc)
+    overdue_at = datetime(2026, 9, 11, tzinfo=timezone.utc)
 
-    assert reminder_for(DUE, due - timedelta(days=2)) is None
-    assert reminder_for(DUE, due - timedelta(days=1)) == (DUE_SOON, datetime(2026, 9, 9, tzinfo=timezone.utc))
-    assert reminder_for(DUE, due) == (DUE_SOON, datetime(2026, 9, 9, tzinfo=timezone.utc))
-    assert reminder_for(DUE, due + timedelta(days=1)) == (OVERDUE, datetime(2026, 9, 11, tzinfo=timezone.utc))
-    assert reminder_for(DUE, due + OVERDUE_WINDOW) is not None
-    assert reminder_for(DUE, due + OVERDUE_WINDOW + timedelta(days=1)) is None
-    assert reminder_for("not a date", due) is None
+    assert reminder_for(DUE, _noon(due - timedelta(days=2))) is None
+    assert reminder_for(DUE, _noon(due - timedelta(days=1))) == (DUE_SOON, soon_at, soon_at)
+    assert reminder_for(DUE, _noon(due)) == (DUE_SOON, soon_at, soon_at)
+    assert reminder_for(DUE, _noon(due + timedelta(days=1))) == (OVERDUE, overdue_at, overdue_at)
+    assert reminder_for(DUE, _noon(due + OVERDUE_WINDOW)) is not None
+    assert reminder_for(DUE, _noon(due + OVERDUE_WINDOW + timedelta(days=1))) is None
+    assert reminder_for("not a date", _noon(due)) is None
+
+
+def test_a_zone_behind_utc_turns_overdue_at_its_own_midnight() -> None:
+    """In Los Angeles the evening of the due date is still not overdue, though UTC has moved on."""
+    zone = ZoneInfo(PACIFIC)
+    evening = datetime(2026, 9, 11, 2, 0, tzinfo=timezone.utc)
+    local_midnight = datetime(2026, 9, 11, 7, 0, tzinfo=timezone.utc)
+
+    assert reminder_for(DUE, evening) is not None and reminder_for(DUE, evening).kind == OVERDUE
+    owed = reminder_for(DUE, evening, zone)
+    assert owed is not None and owed.kind == DUE_SOON
+    late = reminder_for(DUE, local_midnight, zone)
+    assert late is not None
+    assert late.kind == OVERDUE
+    assert late.stamp == local_midnight
+    assert late.marker == datetime(2026, 9, 11, tzinfo=timezone.utc)
+    early = reminder_for(DUE, datetime(2026, 9, 9, 6, 59, tzinfo=timezone.utc), zone)
+    assert early is None
+
+
+def test_a_zone_ahead_of_utc_turns_overdue_before_utc_does() -> None:
+    """In Tokyo the due date is over while UTC is still on it."""
+    zone = ZoneInfo(TOKYO)
+    tokyo_morning = datetime(2026, 9, 10, 16, 0, tzinfo=timezone.utc)
+
+    utc_view = reminder_for(DUE, tokyo_morning)
+    assert utc_view is not None and utc_view.kind == DUE_SOON
+    owed = reminder_for(DUE, tokyo_morning, zone)
+    assert owed is not None
+    assert owed.kind == OVERDUE
+    assert owed.stamp == datetime(2026, 9, 10, 15, 0, tzinfo=timezone.utc)
+    assert owed.marker == datetime(2026, 9, 11, tzinfo=timezone.utc)
+    soon = reminder_for(DUE, datetime(2026, 9, 8, 15, 0, tzinfo=timezone.utc), zone)
+    assert soon is not None and soon.kind == DUE_SOON
+    assert soon.stamp == datetime(2026, 9, 8, 15, 0, tzinfo=timezone.utc)
+
+
+def test_a_pacific_assignee_is_reminded_on_their_own_day(
+    issues_client: TestClient, repositories: Any, workspace: str, statuses: Any
+) -> None:
+    """The overdue reminder waits for midnight in Los Angeles, not in UTC."""
+    _zone_of(repositories, MEMBER, PACIFIC)
+    _due_issue(issues_client, workspace)
+
+    evening = run_due_reminders(repositories, datetime(2026, 9, 11, 2, 0, tzinfo=timezone.utc))
+    after_midnight = run_due_reminders(repositories, datetime(2026, 9, 11, 7, 30, tzinfo=timezone.utc))
+
+    assert (evening.due_soon, evening.overdue) == (1, 0)
+    assert (after_midnight.due_soon, after_midnight.overdue) == (0, 1)
+    soon, overdue = _reminders(repositories, workspace, MEMBER)
+    assert soon["created_at"].startswith("2026-09-09T07:00:00")
+    assert overdue["created_at"].startswith("2026-09-11T07:00:00")
+
+
+def test_a_tokyo_assignee_is_reminded_on_their_own_day(
+    issues_client: TestClient, repositories: Any, workspace: str, statuses: Any
+) -> None:
+    """The overdue reminder arrives at midnight in Tokyo, while UTC is still on the due date."""
+    _zone_of(repositories, MEMBER, TOKYO)
+    _due_issue(issues_client, workspace)
+
+    before = run_due_reminders(repositories, datetime(2026, 9, 10, 14, 0, tzinfo=timezone.utc))
+    after = run_due_reminders(repositories, datetime(2026, 9, 10, 15, 30, tzinfo=timezone.utc))
+
+    assert (before.due_soon, before.overdue) == (1, 0)
+    assert (after.due_soon, after.overdue) == (0, 1)
+
+
+def test_the_team_timezone_is_the_fallback(
+    issues_client: TestClient, repositories: Any, workspace: str, statuses: Any
+) -> None:
+    """An assignee with no timezone of their own is judged on the team's standup timezone."""
+    settings = default_standup_settings(workspace, TEAM).model_copy(update={"timezone": TOKYO})
+    repositories.team_config.put_standup_settings(settings)
+    _due_issue(issues_client, workspace)
+
+    summary = run_due_reminders(repositories, datetime(2026, 9, 10, 15, 30, tzinfo=timezone.utc))
+
+    assert summary.overdue == 1
+
+
+def test_an_unknown_stored_zone_falls_back_to_utc(
+    issues_client: TestClient, repositories: Any, workspace: str, statuses: Any
+) -> None:
+    """A name the zone database does not know reads as UTC rather than failing the sweep."""
+    _zone_of(repositories, MEMBER, "Mars/Olympus")
+    _due_issue(issues_client, workspace)
+
+    summary = run_due_reminders(repositories, datetime(2026, 9, 11, 0, 30, tzinfo=timezone.utc))
+
+    assert summary.overdue == 1
+
+
+def test_changing_zone_near_a_day_boundary_does_not_send_twice(
+    issues_client: TestClient, repositories: Any, workspace: str, statuses: Any
+) -> None:
+    """The marker is keyed on the due date, so a reminder sent in one zone is not sent again in another."""
+    _zone_of(repositories, MEMBER, TOKYO)
+    _due_issue(issues_client, workspace)
+    first = run_due_reminders(repositories, datetime(2026, 9, 10, 15, 5, tzinfo=timezone.utc))
+
+    _zone_of(repositories, MEMBER, PACIFIC)
+    again = run_due_reminders(repositories, datetime(2026, 9, 11, 7, 5, tzinfo=timezone.utc))
+    _zone_of(repositories, MEMBER, "UTC")
+    utc = run_due_reminders(repositories, datetime(2026, 9, 11, 0, 5, tzinfo=timezone.utc))
+
+    assert first.overdue == 1
+    assert (again.overdue, utc.overdue) == (0, 0)
+    assert [row["kind"] for row in _reminders(repositories, workspace, MEMBER)].count(OVERDUE) == 1
 
 
 def test_the_assignee_gets_one_of_each_however_many_passes_run(
@@ -249,11 +380,22 @@ def test_a_long_overdue_issue_is_left_alone(
     assert _reminders(repositories, workspace, MEMBER) == []
 
 
-def test_the_sweep_runs_on_the_hour() -> None:
-    """One flush tick in sixty also runs the sweep."""
+def test_the_sweep_runs_once_an_hour(repositories: Any) -> None:
+    """The first tick of each hour claims it and the rest of that hour's ticks do not."""
     hour = datetime(2026, 9, 1, 12, 0, tzinfo=timezone.utc)
-    ran = [minute for minute in range(60) if sweep_due(hour.replace(minute=minute))]
-    assert ran == [0]
+    ran = [minute for minute in range(120) if sweep_due(repositories, hour + timedelta(minutes=minute))]
+    assert ran == [0, 60]
+    assert repositories.inbox.last_sweep("due_reminders") == window_start(hour + timedelta(hours=1), SWEEP_INTERVAL)
+
+
+def test_a_late_tick_still_runs_the_sweep(repositories: Any) -> None:
+    """A tick that misses the top of the hour still runs that hour's pass, once."""
+    hour = datetime(2026, 9, 1, 12, 0, tzinfo=timezone.utc)
+    assert sweep_due(repositories, hour)
+
+    assert sweep_due(repositories, hour + timedelta(hours=1, minutes=7, seconds=13))
+    assert not sweep_due(repositories, hour + timedelta(hours=1, minutes=8))
+    assert sweep_due(repositories, hour + timedelta(hours=3, minutes=59))
 
 
 def test_the_schedule_record_runs_the_sweep(
@@ -266,7 +408,7 @@ def test_the_schedule_record_runs_the_sweep(
     """The flush schedule's synthetic record reaches the sweep on the hour."""
     today = datetime.now(timezone.utc).date()
     _due_issue(issues_client, workspace, due_date=(today + timedelta(days=1)).isoformat())
-    monkeypatch.setattr("app.domains.views.consumers.due_reminders.sweep_due", lambda now: True)
+    monkeypatch.setattr("app.domains.views.consumers.due_reminders.sweep_due", lambda repositories, now: True)
 
     handle_record(repositories, {"eventSource": NOTIFY_DIGEST_SOURCE, "eventName": "FLUSH", "eventID": "x"})
 
