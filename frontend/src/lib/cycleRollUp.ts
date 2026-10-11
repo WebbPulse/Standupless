@@ -107,10 +107,7 @@ const addCarry = (
  * `cycle` with the counts, points and carry-over of `others` added, so its
  * header and progress cover the sub-teams' issues too.
  */
-export const mergeCycles = (
-  cycle: CycleRead,
-  others: CycleRead[]
-): CycleRead =>
+export const mergeCycles = (cycle: CycleRead, others: CycleRead[]): CycleRead =>
   others.reduce<CycleRead>((held, other) => {
     const points = addOptional(held.points, other.points);
     const unestimated = addOptional(held.unestimated, other.unestimated);
