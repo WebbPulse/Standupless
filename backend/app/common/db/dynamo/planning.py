@@ -1026,14 +1026,15 @@ class PlanningRepository:
         stored = self._replace_fields(as_initiative_item(initiative), INITIATIVE_OPTIONAL_FIELDS)
         return as_initiative(stored)
 
-    def set_project_initiative(self, workspace_id: str, project_id: str, initiative_id: str | None) -> bool:
-        """Put one project in an initiative, or take it out with `None`, returning whether the row was there.
+    def set_project_initiative(self, workspace_id: str, project_id: str, initiative_id: str | None) -> Project | None:
+        """Put one project in an initiative, or take it out with `None`, returning the row as written or `None`.
 
         A targeted `SET` or `REMOVE`, so the rollup counters the stream consumer
-        moves concurrently are never written back stale.
+        moves concurrently are never written back stale. The row comes back from
+        the write itself, because a read straight after it may not see the change.
         """
         if not workspace_id or not project_id:
-            return False
+            return None
         names = {"#initiative": "initiative_id", "#updated": "updated_at"}
         values: dict[str, Any] = {":updated": _stored_time(utc_now())}
         if initiative_id is None:
@@ -1042,16 +1043,17 @@ class PlanningRepository:
             values[":initiative"] = initiative_id
             expression = "SET #initiative = :initiative, #updated = :updated"
         try:
-            self._repository.update(
+            item = self._repository.update(
                 {"workspace_id": workspace_id, "planning_key": project_key(project_id)},
                 update_expression=expression,
                 expression_names=names,
                 expression_values=values,
                 condition=Attr("planning_key").exists() & Attr("kind").eq(PROJECT),
+                return_values="ALL_NEW",
             )
         except ConditionFailed:
-            return False
-        return True
+            return None
+        return as_project(item) if item is not None else None
 
     def get_initiative_update(
         self, workspace_id: str, initiative_id: str, update_id: str
