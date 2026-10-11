@@ -17,6 +17,7 @@ import pytest
 from fastapi.testclient import TestClient
 from webbpulse.dynamodb import new_ulid
 
+from app.common.db.dynamo.planning import PlanningRepository, Project
 from tests.domains.helpers import ADMIN, GUEST, MEMBER, OWNER, add_member, make_user, sign_in
 from tests.domains.planning.conftest import OTHER_TEAM, WORKSPACE, seed_project
 
@@ -198,6 +199,38 @@ def test_removing_a_project_needs_it_to_be_in_that_initiative(client: TestClient
     assert removed.status_code == 200, removed.text
     assert removed.json()["initiative_id"] is None
     assert _get(client, workspace, one)["project_ids"] == []
+
+
+def _serve_stale_project(monkeypatch: pytest.MonkeyPatch, repositories: Any, workspace: str, project_id: str) -> None:
+    """Make every later read of one project return the row as it stands now, as a lagging read would."""
+    stale = repositories.planning.get_project(workspace, project_id)
+    original = PlanningRepository.get_project
+
+    def lagging(self: PlanningRepository, workspace_id: str, wanted: str) -> Project | None:
+        """The frozen row for the project under test, every other one read as usual."""
+        return stale if wanted == project_id else original(self, workspace_id, wanted)
+
+    monkeypatch.setattr(PlanningRepository, "get_project", lagging)
+
+
+def test_membership_changes_answer_with_the_written_row_not_a_stale_read(
+    client: TestClient, workspace: str, repositories: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Adding and removing return the initiative just written even when a read straight after lags behind it."""
+    sign_in(client, MEMBER)
+    initiative_id = _create(client, workspace)["initiative_id"]
+    project_id = seed_project(client, workspace)["project_id"]
+
+    with monkeypatch.context() as patch:
+        _serve_stale_project(patch, repositories, workspace, project_id)
+        added = _add(client, workspace, initiative_id, project_id)
+    assert added["initiative_id"] == initiative_id
+
+    with monkeypatch.context() as patch:
+        _serve_stale_project(patch, repositories, workspace, project_id)
+        removed = client.delete(f"{_base(workspace)}/{initiative_id}/projects/{project_id}")
+    assert removed.status_code == 200, removed.text
+    assert removed.json()["initiative_id"] is None
 
 
 def test_a_project_patch_sets_and_clears_its_initiative(client: TestClient, workspace: str) -> None:
