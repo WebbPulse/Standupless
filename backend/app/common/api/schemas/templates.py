@@ -36,10 +36,10 @@ def _check_name(value: Optional[str]) -> Optional[str]:
 
 
 def _check_title(value: Optional[str]) -> Optional[str]:
-    """Strip a default title, reading a blank one as no title."""
+    """Read a blank default title as no title, keeping a trailing space so a prefix such as "Bug: " survives."""
     if value is None:
         return None
-    return value.strip() or None
+    return value.lstrip() or None
 
 
 def _check_body(value: Optional[str]) -> Optional[str]:
@@ -73,7 +73,7 @@ class TemplateFields(BaseModel):
     @field_validator("title")
     @classmethod
     def check_title(cls, value: Optional[str]) -> Optional[str]:
-        """Strip the default title."""
+        """Drop leading whitespace from the default title, keeping a prefix's trailing space."""
         return _check_title(value)
 
     @field_validator("body")

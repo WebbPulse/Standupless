@@ -106,6 +106,7 @@ def test_a_team_list_carries_its_own_and_the_workspace_templates(teams: TestClie
 
     assert saved["scope"] == "team"
     assert saved["team_id"] == TEAM
+    assert saved["title"] == "Bug: "
     listed = _listed(teams, TEAM)
     assert [(row["name"], row["scope"]) for row in listed["templates"]] == [
         ("Bug report", "team"),

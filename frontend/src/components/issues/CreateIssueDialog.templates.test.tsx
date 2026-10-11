@@ -331,6 +331,7 @@ describe('the template picker', () => {
     await user.click(screen.getByRole('option', { name: /Bug report/ }));
 
     expect(titleBox()).toHaveValue('Bug: ');
+    expect(titleBox()).toHaveFocus();
     expect(
       screen.getByRole('button', { name: 'Status: Todo' })
     ).toBeInTheDocument();

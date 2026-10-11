@@ -584,7 +584,10 @@ export const CreateIssueDialog: React.FC<CreateIssueDialogProps> = ({
               <TemplatePicker
                 templates={templates}
                 value={templateId}
-                onChange={applyTemplate}
+                onChange={(template) => {
+                  applyTemplate(template);
+                  titleInput.current?.focus();
+                }}
               />
             </span>
           )}
