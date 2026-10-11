@@ -434,7 +434,8 @@ RELEASE_TOOLS: tuple[Tool, ...] = (
             "Rebuild a team's releases from a GitHub environment's past successful deployments, newest first, "
             "a few per call. Pass next_cursor back as cursor until it is null. A call stops early, with "
             "stopped_early and a message saying when to continue, rather than use more than half the GitHub "
-            "App's hourly API budget or outrun the request timeout. Never moves issues or "
+            "App's hourly API budget or outrun the request timeout. A call that recorded and skipped nothing "
+            "sets stalled and says why; passing its cursor straight back repeats it. Never moves issues or "
             "publishes GitHub Releases. Team administrators only."
         ),
         scopes=("releases:write",),

@@ -6,7 +6,8 @@ the range since the last one, that a promotion advances the staging release rath
 than making another, and that a redelivery or a failed deployment changes nothing.
 They also hold that a promotion pull request names its release, that a first
 deployment seeds its range from GitHub, that a stage can publish a GitHub Release,
-and that a backfill rebuilds history without moving issues. Driven through the
+and that a backfill rebuilds history without moving issues and moves its cursor
+even past a deployment too slow for one page. Driven through the
 github-events consumer, under that function's own grant, a deployment records its
 release, moves its issues, publishes, and is listed.
 """
@@ -543,7 +544,159 @@ def test_a_rate_limited_backfill_answers_a_cursor_rather_than_failing(
     assert page.stopped_early is True
     assert page.deployments_scanned == 0
     assert page.next_cursor == f"{REPOSITORY_ID}::1"
+    assert page.stalled is True
     assert page.message is not None and "rate limited" in page.message
+    assert page.message.startswith("Made no progress before deployment 30.")
+
+
+@pytest.fixture
+def clock(monkeypatch: pytest.MonkeyPatch) -> list[float]:
+    """A stood-in monotonic clock for the call budget, which the stood-in GitHub reads move forward."""
+    from types import SimpleNamespace
+
+    from app.domains.integrations import github_budget
+
+    now = [1000.0]
+    monkeypatch.setattr(github_budget, "time", SimpleNamespace(monotonic=lambda: now[0]))
+    return now
+
+
+def _slow_reads(
+    monkeypatch: pytest.MonkeyPatch, github: FakeGitHub, clock: list[float], *, compare_seconds: float
+) -> list[int]:
+    """Make the stood-in compare and pull request reads check the budget and take time; answer the pulls read."""
+    from app.domains.integrations import github_budget, github_deployments, github_issues
+
+    reads: list[int] = []
+
+    def compare(token: str, repository_id: Any, base: str, head: str) -> list[tuple[str, str]]:
+        """Check the budget before each of two pages, as a long range does, then answer the range."""
+        for _ in range(2):
+            github_budget.before_call()
+            clock[0] += compare_seconds / 2
+        github.compares.append((base, head))
+        shas = list(github.messages)
+        start = shas.index(base) + 1 if base in shas else 0
+        return [(sha, github.messages[sha]) for sha in shas[start : shas.index(head) + 1]]
+
+    def pull(token: str, repository_id: Any, number: int) -> PullRef | None:
+        """Check the budget and take a second, as one pull request read does."""
+        github_budget.before_call()
+        reads.append(number)
+        clock[0] += 1
+        return github.pulls.get(number)
+
+    monkeypatch.setattr(github_issues, "compare_commits", compare)
+    monkeypatch.setattr(github_deployments, "pull_request", pull)
+    return reads
+
+
+def _bumps(github: FakeGitHub, count: int) -> None:
+    """Put `count` squash merges whose messages name no key between the second and third deployments."""
+    messages = {FIRST: github.messages[FIRST], SECOND: github.messages[SECOND]}
+    for index in range(count):
+        messages[f"a{index:039d}"] = f"Bump lib {index} (#{100 + index})"
+        github.pulls[100 + index] = PullRef(100 + index, f"Bump lib {index}", f"dependabot/lib-{index}", None)
+    messages[THIRD] = github.messages[THIRD]
+    github.messages = messages
+
+
+def test_a_deployment_too_slow_for_one_page_is_still_recorded(
+    repositories: Any, installed: str, github: FakeGitHub, monkeypatch: pytest.MonkeyPatch, clock: list[float]
+) -> None:
+    """A first deployment whose pull request reads outrun the page records with what it read and moves the cursor."""
+    _three_deployments(repositories, github)
+    _bumps(github, 20)
+    reads = _slow_reads(monkeypatch, github, clock, compare_seconds=0)
+
+    page = backfill(repositories, WORKSPACE, TEAM, ReleaseBackfill(limit=3))
+
+    assert page.stalled is False
+    assert page.stopped_early is True
+    assert page.deployments_scanned == 1
+    assert page.releases_created == 1
+    assert page.next_cursor == f"{REPOSITORY_ID}:30:1"
+    assert len(reads) == 16
+    assert page.pull_reads_skipped == 4
+    assert page.message == "Stopped early to answer inside the request timeout. Pass next_cursor back to continue."
+    assert github.compares == [(SECOND, THIRD)]
+
+
+def test_pull_requests_the_deliveries_stored_are_not_read_again(
+    repositories: Any, installed: str, github: FakeGitHub, monkeypatch: pytest.MonkeyPatch, clock: list[float]
+) -> None:
+    """A stored pull request's title and branch stand in for a GitHub read, and its keys still count."""
+    from app.common.db.dynamo.github import PullRequestState, pr_state_key
+
+    _three_deployments(repositories, github)
+    _bumps(github, 20)
+    reads = _slow_reads(monkeypatch, github, clock, compare_seconds=0)
+    for number in range(100, 120):
+        state = PullRequestState(
+            workspace_id=WORKSPACE,
+            github_key=pr_state_key(REPOSITORY_ID, number),
+            repository_id=REPOSITORY_ID,
+            pr_number=number,
+            title="Fix ABC-1 again" if number == 100 else f"Bump lib {number}",
+            head_ref=f"dependabot/lib-{number}",
+        )
+        assert repositories.github.save_pr_state(state, expected_version=0)
+
+    page = backfill(repositories, WORKSPACE, TEAM, ReleaseBackfill(limit=1))
+
+    assert reads == []
+    assert page.releases_created == 1
+    assert page.pull_reads_skipped == 0
+    (release,) = _releases(repositories)
+    assert "01JB0000000000000000000IS1" in release.issue_ids
+
+
+def test_a_deployment_whose_range_cannot_be_read_in_time_is_passed_over(
+    repositories: Any, installed: str, github: FakeGitHub, monkeypatch: pytest.MonkeyPatch, clock: list[float]
+) -> None:
+    """A first deployment whose range outruns even the first deployment's allowance is named and passed over."""
+    _three_deployments(repositories, github)
+    _slow_reads(monkeypatch, github, clock, compare_seconds=40)
+
+    page = backfill(repositories, WORKSPACE, TEAM, ReleaseBackfill(limit=3))
+
+    assert page.stalled is False
+    assert page.unreadable_deployment_ids == [30]
+    assert page.deployments_scanned == 1
+    assert page.releases_created == 0
+    assert page.next_cursor == f"{REPOSITORY_ID}:30:1"
+    assert page.message is not None and page.message.startswith("Passed over deployment 30:")
+    assert _releases(repositories) == []
+
+    again = backfill(repositories, WORKSPACE, TEAM, ReleaseBackfill(limit=3, cursor=page.next_cursor))
+
+    assert again.next_cursor != page.next_cursor
+
+
+def test_a_page_that_cannot_list_deployments_in_time_says_it_made_no_progress(
+    repositories: Any, installed: str, github: FakeGitHub, monkeypatch: pytest.MonkeyPatch, clock: list[float]
+) -> None:
+    """A page that records and skips nothing sets stalled and says so rather than telling the caller to continue."""
+    from app.domains.integrations import github_budget, github_deployments
+
+    _three_deployments(repositories, github)
+
+    def slow(token: str, repository_id: Any, environment: str, **options: Any) -> DeploymentPage:
+        """Take longer than the page may run, then ask for one more call."""
+        clock[0] += 20
+        github_budget.before_call()
+        return DeploymentPage(github.deployments, False, 1)
+
+    monkeypatch.setattr(github_deployments, "successful_deployments", slow)
+
+    page = backfill(repositories, WORKSPACE, TEAM, ReleaseBackfill(limit=1, cursor=f"{REPOSITORY_ID}:40:5"))
+
+    assert page.stalled is True
+    assert page.stopped_early is True
+    assert page.deployments_scanned == 0
+    assert page.next_cursor == f"{REPOSITORY_ID}:40:5"
+    assert page.message is not None and page.message.startswith("Made no progress: reading the deployment list")
+    assert "Pass next_cursor back to continue" not in page.message
 
 
 def _consume(repositories: Any, delivery: dict[str, Any]) -> None:

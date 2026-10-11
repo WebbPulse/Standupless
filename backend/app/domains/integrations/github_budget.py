@@ -12,7 +12,7 @@ from __future__ import annotations
 import time
 from contextlib import contextmanager
 from contextvars import ContextVar
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Iterator, Mapping
 
@@ -43,6 +43,11 @@ class CallBudget:
     remaining: int | None = None
     reset_at: datetime | None = None
     calls: int = 0
+    started: float = field(default_factory=time.monotonic)
+
+    def until(self, seconds: float) -> None:
+        """Move the deadline to `seconds` after this unit of work started, earlier or later."""
+        self.deadline = self.started + seconds
 
     def floor(self) -> int | None:
         """The remaining calls below which this work stops, once GitHub has named its limit."""
@@ -92,7 +97,8 @@ _active: ContextVar[CallBudget | None] = ContextVar("github_call_budget", defaul
 @contextmanager
 def capped(seconds: float, *, reserve_share: float = RESERVE_SHARE) -> Iterator[CallBudget]:
     """Check every GitHub call inside the block against a budget that ends after `seconds`."""
-    budget = CallBudget(deadline=time.monotonic() + seconds, reserve_share=reserve_share)
+    now = time.monotonic()
+    budget = CallBudget(deadline=now + seconds, reserve_share=reserve_share, started=now)
     token = _active.set(budget)
     try:
         yield budget

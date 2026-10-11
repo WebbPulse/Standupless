@@ -200,13 +200,16 @@ def previous_successful_sha(
     sha: str,
     *,
     deployment_id: int | None = None,
+    start_page: int = 1,
     client: httpx.Client | None = None,
 ) -> str | None:
     """The commit the environment last deployed successfully before this deployment, or `None`.
 
     This seeds the range of the first deployment Standupless sees for a
     repository and stage, so its first release carries what that deployment
-    shipped rather than only its head commit.
+    shipped rather than only its head commit. A backfill paging back through
+    history passes the list page it started on as `start_page`, so the read does
+    not list every newer page again.
     """
     found = successful_deployments(
         token,
@@ -216,6 +219,7 @@ def previous_successful_sha(
         exclude_sha=sha,
         count=1,
         scan=SEED_SCANNED,
+        start_page=start_page,
         client=client,
     )
     return found.deployments[0].sha if found.deployments else None

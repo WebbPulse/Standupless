@@ -1170,14 +1170,17 @@ class ReleaseBackfillRead(TypedDict):
     github_calls: NotRequired[int]
     message: NotRequired[str | None]
     next_cursor: NotRequired[str | None]
+    pull_reads_skipped: NotRequired[int]
     rate_limit: NotRequired[int | None]
     rate_limit_remaining: NotRequired[int | None]
     release_ids: list[str]
     releases_created: int
     releases_updated: int
     resume_after: NotRequired[str | None]
+    stalled: NotRequired[bool]
     stopped_early: NotRequired[bool]
     team_id: str
+    unreadable_deployment_ids: NotRequired[list[int]]
 
 
 class ReleaseCreate(TypedDict):

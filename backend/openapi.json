@@ -8422,7 +8422,7 @@
         "type": "object"
       },
       "ReleaseBackfillRead": {
-        "description": "What one backfill call did, and the cursor to continue from, null when it is done.\n\n`deployments_skipped` counts deployments whose release had already reached\nthe stage, which cost no GitHub call. A page that stopped before its limit to\nkeep half the GitHub App's hourly budget for live sync, or to answer inside\nthe request timeout, sets `stopped_early` and says in `message` when to pass\nthe cursor back; `resume_after` is GitHub's budget reset when that is the\nreason. `rate_limit_remaining` and `rate_limit` are GitHub's last word on the\ninstallation's budget, and `github_calls` what this page spent of it.",
+        "description": "What one backfill call did, and the cursor to continue from, null when it is done.\n\n`deployments_skipped` counts deployments whose release had already reached\nthe stage, which cost no GitHub call. A page that stopped before its limit to\nkeep half the GitHub App's hourly budget for live sync, or to answer inside\nthe request timeout, sets `stopped_early` and says in `message` when to pass\nthe cursor back; `resume_after` is GitHub's budget reset when that is the\nreason. `rate_limit_remaining` and `rate_limit` are GitHub's last word on the\ninstallation's budget, and `github_calls` what this page spent of it.\n\n`stalled` is set when the page recorded and skipped nothing, so passing the\ncursor back moves only once the message's reason has passed.\n`unreadable_deployment_ids` names deployments passed over because their range\ncould not be read inside the request timeout, and `pull_reads_skipped` counts\npull requests a recorded deployment did not read for keys for the same reason.",
         "properties": {
           "deployments_scanned": {
             "title": "Deployments Scanned",
@@ -8463,6 +8463,11 @@
               }
             ],
             "title": "Next Cursor"
+          },
+          "pull_reads_skipped": {
+            "default": 0,
+            "title": "Pull Reads Skipped",
+            "type": "integer"
           },
           "rate_limit": {
             "anyOf": [
@@ -8513,6 +8518,11 @@
             ],
             "title": "Resume After"
           },
+          "stalled": {
+            "default": false,
+            "title": "Stalled",
+            "type": "boolean"
+          },
           "stopped_early": {
             "default": false,
             "title": "Stopped Early",
@@ -8521,6 +8531,13 @@
           "team_id": {
             "title": "Team Id",
             "type": "string"
+          },
+          "unreadable_deployment_ids": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Unreadable Deployment Ids",
+            "type": "array"
           }
         },
         "required": [

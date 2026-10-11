@@ -447,6 +447,12 @@ class ReleaseBackfillRead(BaseModel):
     the cursor back; `resume_after` is GitHub's budget reset when that is the
     reason. `rate_limit_remaining` and `rate_limit` are GitHub's last word on the
     installation's budget, and `github_calls` what this page spent of it.
+
+    `stalled` is set when the page recorded and skipped nothing, so passing the
+    cursor back moves only once the message's reason has passed.
+    `unreadable_deployment_ids` names deployments passed over because their range
+    could not be read inside the request timeout, and `pull_reads_skipped` counts
+    pull requests a recorded deployment did not read for keys for the same reason.
     """
 
     team_id: str
@@ -458,6 +464,9 @@ class ReleaseBackfillRead(BaseModel):
     release_ids: list[str]
     next_cursor: Optional[str] = None
     stopped_early: bool = False
+    stalled: bool = False
+    unreadable_deployment_ids: list[int] = Field(default_factory=list)
+    pull_reads_skipped: int = 0
     message: Optional[str] = None
     resume_after: Optional[datetime] = None
     github_calls: int = 0
