@@ -85,6 +85,8 @@ class _GitHub:
     repository_id: str
     _token: str | None = None
     _pulls: dict[str, Any] = field(default_factory=dict)
+    _pulls_by_number: dict[int, Any] = field(default_factory=dict)
+    _ranges: dict[tuple[str | None, str], list[tuple[str, str]]] = field(default_factory=dict)
 
     def token(self) -> str:
         """An installation token, minted on first use."""
@@ -95,7 +97,14 @@ class _GitHub:
         return self._token
 
     def commits(self, previous_sha: str | None, sha: str) -> list[tuple[str, str]]:
-        """The deployment's commits, with the pull request text their messages lack folded in."""
+        """The deployment's commits, with the pull request text their messages lack folded in, read once per range."""
+        key = (previous_sha, sha)
+        if key not in self._ranges:
+            self._ranges[key] = self._read_commits(previous_sha, sha)
+        return self._ranges[key]
+
+    def _read_commits(self, previous_sha: str | None, sha: str) -> list[tuple[str, str]]:
+        """The deployment's commits from GitHub, with their pull request text."""
         from app.domains.integrations import github_issues
 
         def read() -> list[tuple[str, str]]:
@@ -119,11 +128,13 @@ class _GitHub:
             if match is None or _KEY_LIKE.search(message) or reads >= PULL_READS_MAX:
                 result.append((commit_sha, message))
                 continue
-            reads += 1
             number = int(match.group(1) or match.group(2))
-            pull = _readable(
-                lambda: github_deployments.pull_request(self.token(), self.repository_id, number), None, "pull"
-            )
+            if number not in self._pulls_by_number:
+                reads += 1
+                self._pulls_by_number[number] = _readable(
+                    lambda: github_deployments.pull_request(self.token(), self.repository_id, number), None, "pull"
+                )
+            pull = self._pulls_by_number[number]
             if pull is None:
                 result.append((commit_sha, message))
                 continue
@@ -434,6 +445,46 @@ def _backfill_repositories(
     return pinned
 
 
+BACKFILL_PAGE_SECONDS = 12.0
+"""How long one backfill page may start GitHub calls for, so it answers well inside the 29 second API timeout."""
+
+BACKFILL_SCAN_PER_DEPLOYMENT = 3
+"""How many deployments' statuses one page reads per deployment it asks for, so failed ones cannot stall it."""
+
+
+def _recorded_at_stage(
+    repositories: Repositories, workspace_id: str, team_id: str, repository_id: str, sha: str, stage_id: str
+) -> bool:
+    """Whether this commit's release already reached the stage, so a backfill has nothing to read for it."""
+    release_id = repositories.releases.release_for_sha(workspace_id, team_id, repository_id, sha)
+    if release_id is None:
+        return False
+    release = repositories.releases.get(workspace_id, team_id, release_id)
+    return release is not None and any(reached.stage_id == stage_id for reached in release.stages)
+
+
+def _stopped(error: Exception, budget: Any) -> tuple[str, datetime | None]:
+    """Why a backfill page stopped early, said so a caller knows when to pass the cursor back."""
+    from webbpulse.integrations.github import GitHubRateLimited
+
+    from app.domains.integrations import github_budget
+
+    reset = budget.reset_at
+    when = reset.strftime("%Y-%m-%d %H:%M UTC") if reset is not None else "the top of the hour"
+    left = f"{budget.remaining} of {budget.limit}" if budget.remaining is not None and budget.limit else "too few"
+    if isinstance(error, github_budget.BudgetSpent) and error.reason == github_budget.RATE:
+        return (
+            f"Stopped early to keep the GitHub App's API budget for live sync: {left} calls left this hour. "
+            f"Pass next_cursor back after {when}, when the budget resets.",
+            reset,
+        )
+    if isinstance(error, github_budget.BudgetSpent):
+        return "Stopped early to answer inside the request timeout. Pass next_cursor back to continue.", None
+    if isinstance(error, GitHubRateLimited):
+        return f"GitHub rate limited the App. Pass next_cursor back after {when}, when the budget resets.", reset
+    return "GitHub did not answer. Pass next_cursor back in a few minutes to continue.", None
+
+
 def backfill(
     repositories: Repositories, workspace_id: str, team_id: str, payload: ReleaseBackfill
 ) -> ReleaseBackfillRead:
@@ -443,7 +494,17 @@ def backfill(
     successful one, through the same path a live deployment takes, so a commit
     that already has a release only gains issues. It never moves issues, never
     publishes, and sets a repository's stage head only when it has none.
+
+    The GitHub App's hourly budget is shared with live sync, so a page stops
+    before any call that would leave less than half of it, or that would start
+    after `BACKFILL_PAGE_SECONDS`, and answers a cursor at the first deployment
+    it did not record. A deployment whose release already reached the stage
+    costs no GitHub call.
     """
+    from webbpulse.integrations.github import GitHubRateLimited, GitHubUnavailable
+
+    from app.domains.integrations import github_budget, github_deployments
+
     pipeline, _ = releases.pipeline_for(repositories, workspace_id, team_id)
     stage = releases.stage_for_environment(pipeline, payload.environment)
     if stage is None:
@@ -461,64 +522,95 @@ def backfill(
     github = _GitHub(installation_id, target.repository_id)
     created = 0
     updated = 0
+    skipped = 0
+    done = 0
     release_ids: list[str] = []
+    found: Any = None
+    batch: list[Any] = []
+    scan = min(github_deployments.DEPLOYMENTS_SCANNED, (payload.limit + 1) * BACKFILL_SCAN_PER_DEPLOYMENT)
+    stop: tuple[str, datetime | None] | None = None
 
-    from app.domains.integrations import github_deployments
-
-    found = _readable(
-        lambda: github_deployments.successful_deployments(
-            github.token(),
-            target.repository_id,
-            payload.environment,
-            before_id=before_id,
-            count=payload.limit + 1,
-            start_page=start_page,
-        ),
-        None,
-        "deployments",
-    )
-    if found is None:
-        raise unprocessable("GitHub would not list this repository's deployments; check the App's permissions")
-    batch = found.deployments[: payload.limit]
-    pinned = target.team_id == team_id
-    if before_id is None and batch:
-        if repositories.releases.get_head(workspace_id, team_id, target.repository_id, stage.stage_id) is None:
-            repositories.releases.set_head(workspace_id, team_id, target.repository_id, stage.stage_id, batch[0].sha)
-    for index, deployment in enumerate(batch):
-        older = [row.sha for row in found.deployments[index + 1 :] if row.sha != deployment.sha]
-        if older:
-            previous: str | None = older[0]
-        else:
-            previous = github.previous_success(payload.environment, deployment.sha, deployment.deployment_id)
-        had = repositories.releases.release_for_sha(workspace_id, team_id, target.repository_id, deployment.sha)
-        release = _record_for_team(
-            repositories,
-            workspace_id,
-            team_id,
-            stage,
-            commits=github.commits(previous, deployment.sha),
-            sha=deployment.sha,
-            previous_sha=previous,
-            repository_id=target.repository_id,
-            repository=target.full_name,
-            environment=payload.environment,
-            url=None,
-            pinned=pinned,
-            pull=github.merged_pull(deployment.sha),
-            at=deployment.created_at,
-            automate=False,
-        )
-        if release is None:
-            continue
-        release_ids.append(release.release_id)
-        if had is None:
-            created += 1
-        else:
-            updated += 1
-    remaining = len(found.deployments) > len(batch) or found.more
-    if remaining:
+    with github_budget.capped(BACKFILL_PAGE_SECONDS) as budget:
+        try:
+            found = _readable(
+                lambda: github_deployments.successful_deployments(
+                    github.token(),
+                    target.repository_id,
+                    payload.environment,
+                    before_id=before_id,
+                    count=payload.limit + 1,
+                    scan=scan,
+                    start_page=start_page,
+                ),
+                None,
+                "deployments",
+            )
+            if found is None:
+                raise unprocessable("GitHub would not list this repository's deployments; check the App's permissions")
+            batch = found.deployments[: payload.limit]
+            pinned = target.team_id == team_id
+            if before_id is None and batch:
+                if repositories.releases.get_head(workspace_id, team_id, target.repository_id, stage.stage_id) is None:
+                    repositories.releases.set_head(
+                        workspace_id, team_id, target.repository_id, stage.stage_id, batch[0].sha
+                    )
+            for index, deployment in enumerate(batch):
+                if _recorded_at_stage(
+                    repositories, workspace_id, team_id, target.repository_id, deployment.sha, stage.stage_id
+                ):
+                    skipped += 1
+                    done += 1
+                    continue
+                older = [row.sha for row in found.deployments[index + 1 :] if row.sha != deployment.sha]
+                if older:
+                    previous: str | None = older[0]
+                else:
+                    previous = github.previous_success(payload.environment, deployment.sha, deployment.deployment_id)
+                commits = github.commits(previous, deployment.sha)
+                pull = github.merged_pull(deployment.sha)
+                had = repositories.releases.release_for_sha(workspace_id, team_id, target.repository_id, deployment.sha)
+                release = _record_for_team(
+                    repositories,
+                    workspace_id,
+                    team_id,
+                    stage,
+                    commits=commits,
+                    sha=deployment.sha,
+                    previous_sha=previous,
+                    repository_id=target.repository_id,
+                    repository=target.full_name,
+                    environment=payload.environment,
+                    url=None,
+                    pinned=pinned,
+                    pull=pull,
+                    at=deployment.created_at,
+                    automate=False,
+                )
+                done += 1
+                if release is None:
+                    continue
+                release_ids.append(release.release_id)
+                if had is None:
+                    created += 1
+                else:
+                    updated += 1
+        except (github_budget.BudgetSpent, GitHubRateLimited, GitHubUnavailable) as error:
+            stop = _stopped(error, budget)
+            _log.warning(
+                "A release backfill page stopped early.",
+                extra={
+                    "event": "integrations.release_backfill_stopped",
+                    "reason": type(error).__name__,
+                    "github_calls": budget.calls,
+                    "rate_limit_remaining": budget.remaining,
+                },
+            )
+    if stop is not None:
+        before = batch[done - 1].deployment_id if done else before_id
+        next_cursor: str | None = _cursor(target.repository_id, before, start_page)
+    elif len(found.deployments) > len(batch) or found.more:
         before = batch[-1].deployment_id if batch else before_id
-        next_cursor: str | None = _cursor(target.repository_id, before, found.page)
+        next_cursor = _cursor(target.repository_id, before, found.page)
     elif len(targets) > 1:
         next_cursor = _cursor(targets[1].repository_id, None, 1)
     else:
@@ -526,9 +618,16 @@ def backfill(
     return ReleaseBackfillRead(
         team_id=team_id,
         environment=payload.environment,
-        deployments_scanned=len(batch),
+        deployments_scanned=done,
+        deployments_skipped=skipped,
         releases_created=created,
         releases_updated=updated,
         release_ids=list(dict.fromkeys(release_ids)),
         next_cursor=next_cursor,
+        stopped_early=stop is not None,
+        message=stop[0] if stop is not None else None,
+        resume_after=stop[1] if stop is not None else None,
+        github_calls=budget.calls,
+        rate_limit_remaining=budget.remaining,
+        rate_limit=budget.limit,
     )

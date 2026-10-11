@@ -7986,15 +7986,36 @@
         "type": "object"
       },
       "ReleaseBackfillRead": {
-        "description": "What one backfill call did, and the cursor to continue from, null when it is done.",
+        "description": "What one backfill call did, and the cursor to continue from, null when it is done.\n\n`deployments_skipped` counts deployments whose release had already reached\nthe stage, which cost no GitHub call. A page that stopped before its limit to\nkeep half the GitHub App's hourly budget for live sync, or to answer inside\nthe request timeout, sets `stopped_early` and says in `message` when to pass\nthe cursor back; `resume_after` is GitHub's budget reset when that is the\nreason. `rate_limit_remaining` and `rate_limit` are GitHub's last word on the\ninstallation's budget, and `github_calls` what this page spent of it.",
         "properties": {
           "deployments_scanned": {
             "title": "Deployments Scanned",
             "type": "integer"
           },
+          "deployments_skipped": {
+            "default": 0,
+            "title": "Deployments Skipped",
+            "type": "integer"
+          },
           "environment": {
             "title": "Environment",
             "type": "string"
+          },
+          "github_calls": {
+            "default": 0,
+            "title": "Github Calls",
+            "type": "integer"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
           },
           "next_cursor": {
             "anyOf": [
@@ -8006,6 +8027,28 @@
               }
             ],
             "title": "Next Cursor"
+          },
+          "rate_limit": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rate Limit"
+          },
+          "rate_limit_remaining": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rate Limit Remaining"
           },
           "release_ids": {
             "items": {
@@ -8021,6 +8064,23 @@
           "releases_updated": {
             "title": "Releases Updated",
             "type": "integer"
+          },
+          "resume_after": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resume After"
+          },
+          "stopped_early": {
+            "default": false,
+            "title": "Stopped Early",
+            "type": "boolean"
           },
           "team_id": {
             "title": "Team Id",

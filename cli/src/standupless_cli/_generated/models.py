@@ -1098,11 +1098,18 @@ class ReleaseBackfill(TypedDict):
 
 class ReleaseBackfillRead(TypedDict):
     deployments_scanned: int
+    deployments_skipped: NotRequired[int]
     environment: str
+    github_calls: NotRequired[int]
+    message: NotRequired[str | None]
     next_cursor: NotRequired[str | None]
+    rate_limit: NotRequired[int | None]
+    rate_limit_remaining: NotRequired[int | None]
     release_ids: list[str]
     releases_created: int
     releases_updated: int
+    resume_after: NotRequired[str | None]
+    stopped_early: NotRequired[bool]
     team_id: str
 
 
