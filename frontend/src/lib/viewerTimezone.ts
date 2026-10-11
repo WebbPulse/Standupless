@@ -6,7 +6,6 @@
  * with none stored, the browser's zone stands in.
  */
 
-
 let stored: string | null = null;
 
 /** The caller's IANA timezone, or UTC where the runtime cannot say. */
