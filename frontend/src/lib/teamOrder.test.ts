@@ -4,7 +4,13 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { applyTeamOrder, isNested, moveTeam, nestTeams } from './teamOrder';
+import {
+  applyTeamOrder,
+  isNested,
+  moveTeam,
+  nestTeams,
+  teamTree,
+} from './teamOrder';
 
 const teams = [{ id: 'a' }, { id: 'b' }, { id: 'c' }];
 
@@ -65,5 +71,22 @@ describe('nestTeams', () => {
     expect(nestTeams(rows).map((team) => team.id)).toEqual(['a', 'sub']);
     expect(isNested(rows[1] ?? { id: '' }, rows)).toBe(false);
     expect(isNested({ id: 'x', parent_team_id: 'a' }, rows)).toBe(true);
+  });
+});
+
+describe('teamTree', () => {
+  it('marks each sub-team nested under its parent and names the parent', () => {
+    const rows = [
+      { id: 'sub', name: 'Web', parent_team_id: 'b' },
+      { id: 'a', name: 'Design' },
+      { id: 'b', name: 'Platform' },
+      { id: 'orphan', name: 'Data', parent_team_id: 'gone' },
+    ];
+    expect(teamTree(rows)).toEqual([
+      { team: rows[1], nested: false },
+      { team: rows[2], nested: false },
+      { team: rows[0], nested: true, parentName: 'Platform' },
+      { team: rows[3], nested: false },
+    ]);
   });
 });

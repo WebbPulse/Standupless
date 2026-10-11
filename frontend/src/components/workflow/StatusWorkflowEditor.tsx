@@ -70,6 +70,8 @@ export interface StatusWorkflowEditorProps {
   actions: StatusEditorActions;
   /** Where an inherited status is edited, for the team page's menu. */
   workspaceSettingsPath?: string;
+  /** Where a status the team inherits from its parent team is edited. */
+  parentSettingsPath?: string | undefined;
 }
 
 /** The empty look a new status starts on. */
@@ -176,6 +178,7 @@ export const StatusWorkflowEditor: React.FC<StatusWorkflowEditorProps> = ({
   canEdit,
   actions,
   workspaceSettingsPath = '',
+  parentSettingsPath,
 }) => {
   const [error, setError] = useState<string | null>(null);
   const [showHidden, setShowHidden] = useState(false);
@@ -423,6 +426,7 @@ export const StatusWorkflowEditor: React.FC<StatusWorkflowEditorProps> = ({
                                 row={status}
                                 noun="status"
                                 workspaceSettingsPath={workspaceSettingsPath}
+                                parentSettingsPath={parentSettingsPath}
                                 onOverride={(body) => {
                                   run(
                                     override(status, body),

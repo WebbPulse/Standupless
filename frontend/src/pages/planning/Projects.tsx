@@ -76,6 +76,7 @@ import type {
   TeamRead,
   WorkspaceRole,
 } from '../../types/Api';
+import { teamTree } from '../../lib/teamOrder';
 
 /** The grid every header and row lines up on. */
 const GRID =
@@ -471,11 +472,15 @@ export const Projects: React.FC = () => {
       keywords: [person.email],
     })),
   ];
-  const teamOptions: ComboboxOption[] = teams.map((team) => ({
-    value: team.key_prefix,
-    label: team.name,
-    icon: <TeamKey keyPrefix={team.key_prefix} />,
-  }));
+  const teamOptions: ComboboxOption[] = teamTree(teams).map(
+    ({ team, nested, parentName }) => ({
+      value: team.key_prefix,
+      label: team.name,
+      icon: <TeamKey keyPrefix={team.key_prefix} />,
+      indent: nested,
+      ...(parentName === undefined ? {} : { keywords: [parentName] }),
+    })
+  );
 
   const initialTeamIds =
     filteredTeam !== undefined && writableTeams.includes(filteredTeam)

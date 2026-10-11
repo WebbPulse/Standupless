@@ -31,6 +31,8 @@ export interface ComboboxOption {
   /** A single key that picks this option while the filter is empty. */
   shortcut?: string;
   disabled?: boolean;
+  /** Draws the option one step in, under the option before it, as a sub-team under its parent. */
+  indent?: boolean;
 }
 
 /** Props for Combobox: the options, what is selected and what picking does. */
@@ -284,9 +286,10 @@ export const Combobox: React.FC<ComboboxProps> = ({
                       pick(row);
                     }}
                     className={cn(
-                      'flex h-8 cursor-pointer pointer-coarse:h-11 items-center gap-2 rounded-sm px-2 text-sm text-text select-none hover:bg-raised active:bg-line aria-disabled:cursor-not-allowed',
+                      'flex h-8 cursor-pointer pointer-coarse:h-11 items-center gap-2 rounded-sm text-sm text-text select-none hover:bg-raised active:bg-line aria-disabled:cursor-not-allowed',
                       isActive && 'bg-raised',
-                      row.disabled === true && 'opacity-50'
+                      row.disabled === true && 'opacity-50',
+                      row.indent === true ? 'pr-2 pl-7' : 'px-2'
                     )}
                   >
                     {multiple && row.value !== CREATE_VALUE && (

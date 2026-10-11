@@ -81,9 +81,11 @@ import {
 } from '../../lib/paths';
 import {
   applyTeamOrder,
+  areSiblings,
   isNested,
   moveTeam,
   nestTeams,
+  siblingIndex,
 } from '../../lib/teamOrder';
 import { settingsLanding } from '../../lib/workspaceNav';
 import { Logo } from '../../brand';
@@ -217,8 +219,10 @@ interface TeamSectionProps {
   isProjectsActive: boolean;
   /** How many issues wait in the team's triage inbox, or null when triage is off. */
   triageCount: number | null;
-  index: number;
-  count: number;
+  /** Where a move up lands among the team's siblings, or null when it is first. */
+  upTo: number | null;
+  /** Where a move down lands among the team's siblings, or null when it is last. */
+  downTo: number | null;
   /** Whether the caller may move teams, false while there is only one. */
   canReorder: boolean;
   dragging: boolean;
@@ -247,8 +251,8 @@ const TeamSection: React.FC<TeamSectionProps> = ({
   pathname,
   isProjectsActive,
   triageCount,
-  index,
-  count,
+  upTo,
+  downTo,
   canReorder,
   dragging,
   dropEdge,
@@ -309,13 +313,13 @@ const TeamSection: React.FC<TeamSectionProps> = ({
         onClick={onToggle}
         onKeyDown={(event) => {
           if (!canReorder || !event.altKey) return;
-          if (event.key === 'ArrowUp' && index > 0) {
+          if (event.key === 'ArrowUp' && upTo !== null) {
             event.preventDefault();
-            onMove(index - 1);
+            onMove(upTo);
           }
-          if (event.key === 'ArrowDown' && index < count - 1) {
+          if (event.key === 'ArrowDown' && downTo !== null) {
             event.preventDefault();
-            onMove(index + 1);
+            onMove(downTo);
           }
         }}
         aria-expanded={isOpen}
@@ -381,19 +385,19 @@ const TeamSection: React.FC<TeamSectionProps> = ({
           Copy link
         </MenuItem>
         {canReorder && <MenuSeparator />}
-        {canReorder && index > 0 && (
+        {canReorder && upTo !== null && (
           <MenuItem
             onSelect={() => {
-              onMove(index - 1);
+              onMove(upTo);
             }}
           >
             Move up
           </MenuItem>
         )}
-        {canReorder && index < count - 1 && (
+        {canReorder && downTo !== null && (
           <MenuItem
             onSelect={() => {
-              onMove(index + 1);
+              onMove(downTo);
             }}
           >
             Move down
@@ -566,7 +570,17 @@ export const Sidebar: React.FC<SidebarProps> = ({ workspace, onNavigate }) => {
     if (dragFrom === null || dragOver !== index || dragOver === dragFrom) {
       return null;
     }
+    if (!areSiblings(rows, dragFrom, index)) return null;
     return index < dragFrom ? 'before' : 'after';
+  };
+
+  const isOpen = (team: TeamRead): boolean =>
+    expanded.includes(team.key_prefix) || team.key_prefix === prefix;
+
+  const isShown = (team: TeamRead): boolean => {
+    if (!isNested(team, rows) || team.key_prefix === prefix) return true;
+    const parent = rows.find((row) => row.id === team.parent_team_id);
+    return parent === undefined || isOpen(parent);
   };
   const ownViews = useMemo(
     () =>
@@ -788,44 +802,48 @@ export const Sidebar: React.FC<SidebarProps> = ({ workspace, onNavigate }) => {
             Your teams
           </SectionHeading>
           <div className="space-y-px">
-            {rows.map((team, index) => (
-              <TeamSection
-                key={team.id}
-                slug={slug}
-                team={team}
-                nested={isNested(team, rows)}
-                isOpen={
-                  expanded.includes(team.key_prefix) ||
-                  team.key_prefix === prefix
-                }
-                onToggle={() => {
-                  toggle(team.key_prefix);
-                }}
-                onNavigate={onNavigate}
-                pathname={location.pathname}
-                isProjectsActive={projectsTeam === team.key_prefix}
-                triageCount={triageCounts.get(team.id) ?? null}
-                index={index}
-                count={rows.length}
-                canReorder={rows.length > 1}
-                dragging={dragFrom === index}
-                dropEdge={dropEdgeOf(index)}
-                onMove={(to) => {
-                  moveTo(index, to, true);
-                }}
-                onDragStart={() => {
-                  setDragFrom(index);
-                }}
-                onDragEnter={() => {
-                  if (dragFrom !== null) setDragOver(index);
-                }}
-                onDragEnd={endDrag}
-                onDrop={() => {
-                  if (dragFrom !== null) moveTo(dragFrom, index, false);
-                  endDrag();
-                }}
-              />
-            ))}
+            {rows.map((team, index) =>
+              isShown(team) ? (
+                <TeamSection
+                  key={team.id}
+                  slug={slug}
+                  team={team}
+                  nested={isNested(team, rows)}
+                  isOpen={isOpen(team)}
+                  onToggle={() => {
+                    toggle(team.key_prefix);
+                  }}
+                  onNavigate={onNavigate}
+                  pathname={location.pathname}
+                  isProjectsActive={projectsTeam === team.key_prefix}
+                  triageCount={triageCounts.get(team.id) ?? null}
+                  upTo={siblingIndex(rows, index, -1)}
+                  downTo={siblingIndex(rows, index, 1)}
+                  canReorder={rows.length > 1}
+                  dragging={dragFrom === index}
+                  dropEdge={dropEdgeOf(index)}
+                  onMove={(to) => {
+                    moveTo(index, to, true);
+                  }}
+                  onDragStart={() => {
+                    setDragFrom(index);
+                  }}
+                  onDragEnter={() => {
+                    if (dragFrom !== null) setDragOver(index);
+                  }}
+                  onDragEnd={endDrag}
+                  onDrop={() => {
+                    if (
+                      dragFrom !== null &&
+                      areSiblings(rows, dragFrom, index)
+                    ) {
+                      moveTo(dragFrom, index, false);
+                    }
+                    endDrag();
+                  }}
+                />
+              ) : null
+            )}
             <p role="status" aria-live="polite" className="sr-only">
               {announcement}
             </p>

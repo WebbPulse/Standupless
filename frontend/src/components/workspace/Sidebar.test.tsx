@@ -653,6 +653,76 @@ describe('reordering teams', () => {
   });
 });
 
+describe('sub-teams', () => {
+  /** A sub-team of Engine. */
+  const web: TeamRead = {
+    ...engine,
+    id: 'proj-3',
+    name: 'Web',
+    key_prefix: 'WEB',
+    parent_team_id: 'proj-1',
+  };
+
+  beforeEach(() => {
+    listTeams.mockResolvedValue([engine, design, web]);
+  });
+
+  it('keeps a sub-team folded under its parent until the parent opens', async () => {
+    const user = userEvent.setup();
+    renderSidebar();
+    const toggle = await screen.findByRole('button', { name: /Engine/ });
+    expect(shownOrder()).toEqual(['proj-1', 'proj-2']);
+
+    await user.click(toggle);
+
+    expect(shownOrder()).toEqual(['proj-1', 'proj-3', 'proj-2']);
+  });
+
+  it('shows the sub-team the route is in with its parent closed', async () => {
+    renderSidebar('owner', '/w/mine/team/WEB');
+    await screen.findByRole('button', { name: /Web/ });
+
+    expect(shownOrder()).toEqual(['proj-1', 'proj-3', 'proj-2']);
+    expect(screen.getByRole('button', { name: /Engine/ })).toHaveAttribute(
+      'aria-expanded',
+      'false'
+    );
+  });
+
+  it('moves a parent past the next team with its sub-team along', async () => {
+    const user = userEvent.setup();
+    setTeamOrder.mockResolvedValue([web, design, engine]);
+    renderSidebar();
+    const toggle = await screen.findByRole('button', { name: /Engine/ });
+
+    toggle.focus();
+    await user.keyboard('{Alt>}{ArrowDown}{/Alt}');
+
+    expect(setTeamOrder).toHaveBeenCalledWith('ws-1', [
+      'proj-3',
+      'proj-2',
+      'proj-1',
+    ]);
+  });
+
+  it('offers a sub-team no move out from under its parent', async () => {
+    const user = userEvent.setup();
+    renderSidebar('owner', '/w/mine/team/WEB');
+    const section = await sectionOf(/Web/);
+
+    await user.click(
+      within(section).getByRole('button', { name: 'Team options' })
+    );
+
+    expect(
+      screen.queryByRole('menuitem', { name: 'Move up' })
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('menuitem', { name: 'Move down' })
+    ).not.toBeInTheDocument();
+  });
+});
+
 describe('the triage entry across navigation', () => {
   /**
    * Mounts the sidebar the way the app does: the workspace layout holds the
