@@ -145,9 +145,10 @@ class _GitHub:
                     result.append((commit_sha, message))
                     continue
                 reads += 1
+                wanted: int = number
                 try:
                     self._pulls_by_number[number] = _readable(
-                        lambda: github_deployments.pull_request(self.token(), self.repository_id, number), None, "pull"
+                        lambda: github_deployments.pull_request(self.token(), self.repository_id, wanted), None, "pull"
                     )
                 except github_budget.BudgetSpent as error:
                     if not self.best_effort_pulls or error.reason != github_budget.TIME:
