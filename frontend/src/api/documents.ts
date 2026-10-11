@@ -24,12 +24,17 @@ const signalOptions = (
 const rows = (body: DocumentListRead | undefined): DocumentSummaryRead[] =>
   Array.isArray(body?.documents) ? body.documents : [];
 
-/** The route one project's or initiative's documents are listed and created on. */
-export const parentDocumentsPath = (
+/** The route one project's documents are listed and created on. */
+export const projectDocumentsPath = (
   workspaceId: string,
-  parentKind: DocumentParentKind,
-  parentId: string
-): string => `/workspaces/${workspaceId}/${parentKind}s/${parentId}/documents`;
+  projectId: string
+): string => `/workspaces/${workspaceId}/projects/${projectId}/documents`;
+
+/** The route one initiative's documents are listed and created on. */
+export const initiativeDocumentsPath = (
+  workspaceId: string,
+  initiativeId: string
+): string => `/workspaces/${workspaceId}/initiatives/${initiativeId}/documents`;
 
 /** The route every readable document is listed on. */
 export const workspaceDocumentsPath = (workspaceId: string): string =>
@@ -60,8 +65,15 @@ export const listDocuments = async (
   parentId: string,
   signal?: AbortSignal
 ): Promise<DocumentSummaryRead[]> => {
+  if (parentKind === 'project') {
+    const response = await apiClient.get<DocumentListRead>(
+      projectDocumentsPath(workspaceId, parentId),
+      signalOptions(signal)
+    );
+    return rows(response.data);
+  }
   const response = await apiClient.get<DocumentListRead>(
-    parentDocumentsPath(workspaceId, parentKind, parentId),
+    initiativeDocumentsPath(workspaceId, parentId),
     signalOptions(signal)
   );
   return rows(response.data);
@@ -99,8 +111,15 @@ export const createDocument = async (
   parentId: string,
   body: DocumentCreate
 ): Promise<DocumentRead> => {
+  if (parentKind === 'project') {
+    const response = await apiClient.post<DocumentRead>(
+      projectDocumentsPath(workspaceId, parentId),
+      body
+    );
+    return response.data;
+  }
   const response = await apiClient.post<DocumentRead>(
-    parentDocumentsPath(workspaceId, parentKind, parentId),
+    initiativeDocumentsPath(workspaceId, parentId),
     body
   );
   return response.data;
