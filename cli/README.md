@@ -56,11 +56,12 @@ standupless issue comment ENG-12 -b "Looks good"     # or -F - to read stdin
 standupless issue branch ENG-12                       # git switch -c "$(standupless issue branch ENG-12)"
 standupless workspace export [-o backup.zip] [--mask-emails]   # whole workspace as NDJSON in a zip; needs admin
 standupless workspace export --no-wait                          # print the export id, then: --id ID to download
-standupless team list
+standupless team list [--parent ENG]                 # each team's parent; --parent keeps only ENG's sub-teams
 standupless team update -t ENG --no-sync-pr-labels   # stop carrying issue labels onto linked pull requests
 standupless team sync -t ENG [-r 123456] [-d two_way] [--pause] [--no-sync-labels] [--allow-public-two-way]
 standupless team update -t ENG --private             # only team members see the team and its issues
 standupless team update -t ENG --estimate-scale exponential --extended --count-unestimated   # 1 to 64, unestimated count as 1 point
+standupless team update -t PLT --parent ENG           # make PLT a sub-team of ENG; --parent none makes it top level
 standupless status list -t ENG
 standupless status create "In Review" -t ENG -c started [--color green] [--icon half]
 standupless status edit "In Review" -t ENG [--name ...] [-c ...] [--color default] [--icon paused]

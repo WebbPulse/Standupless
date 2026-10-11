@@ -941,20 +941,37 @@ def issue_branch(
 
 
 @team_app.command("list")
-def team_list(ctx: typer.Context, as_json: JsonFlag = False) -> None:
-    """List the workspace's teams."""
+def team_list(
+    ctx: typer.Context,
+    parent: Annotated[
+        str | None, typer.Option("--parent", "-p", help="Only this team's sub-teams: key prefix, name or id.")
+    ] = None,
+    as_json: JsonFlag = False,
+) -> None:
+    """List the workspace's teams, each with the parent team it sits under."""
     context = _state(ctx).context()
     teams = context.teams()
+    if parent is not None:
+        parent_id = context.team(parent)["id"]
+        teams = [t for t in teams if t.get("parent_team_id") == parent_id]
     if as_json:
         output.print_json(teams)
         return
+    prefixes = {t["id"]: t["key_prefix"] for t in context.teams()}
     output.table(
-        ["KEY", "NAME", "MEMBERS", "PRIVATE", "ID"],
+        ["KEY", "NAME", "PARENT", "MEMBERS", "PRIVATE", "ID"],
         [
-            [t["key_prefix"], t["name"], t.get("member_count", ""), "yes" if t.get("private") else "", t["id"]]
+            [
+                t["key_prefix"],
+                t["name"],
+                prefixes.get(t.get("parent_team_id") or "", ""),
+                t.get("member_count", ""),
+                "yes" if t.get("private") else "",
+                t["id"],
+            ]
             for t in teams
         ],
-        "No teams yet.",
+        "No sub-teams." if parent is not None else "No teams yet.",
     )
 
 
@@ -1011,6 +1028,13 @@ def team_update(
             help="Count each unestimated issue as 1 point in cycle and project progress, rather than skip it.",
         ),
     ] = None,
+    parent: Annotated[
+        str | None,
+        typer.Option(
+            "--parent",
+            help="Put the team under this parent team (key prefix, name or id), or `none` to make it top level.",
+        ),
+    ] = None,
     as_json: JsonFlag = False,
 ) -> None:
     """Change a team's settings. Needs team admin."""
@@ -1027,13 +1051,15 @@ def team_update(
         body["estimate_allow_zero"] = allow_zero
     if count_unestimated is not None:
         body["estimate_count_unestimated"] = count_unestimated
-    if not body:
+    if not body and parent is None:
         raise ConfigError(
             "Nothing to change. Pass --sync-pr-labels, --private, --public, --estimate-scale, --extended, "
-            "--allow-zero, --count-unestimated or one of their --no- forms."
+            "--allow-zero, --count-unestimated, --parent or one of their --no- forms."
         )
     context = _state(ctx).context()
     found = context.team(team)
+    if parent is not None:
+        body["parent_team_id"] = None if parent.strip().casefold() == "none" else context.team(parent)["id"]
     updated = context.client.update_team(context.workspace_id, found["id"], body)
     if as_json:
         output.print_json(updated)
@@ -1046,6 +1072,10 @@ def team_update(
         output.success(f"{updated['key_prefix']} is now {visibility}.")
     if any(value is not None for value in (estimate_scale, extended, allow_zero, count_unestimated)):
         output.success(f"Estimates for {updated['key_prefix']}: {_estimate_summary(updated)}.")
+    if parent is not None:
+        above = context.team_by_id(str(updated.get("parent_team_id") or ""))
+        where = f"now sits under {above['key_prefix']}" if above else "is now a top-level team"
+        output.success(f"{updated['key_prefix']} {where}.")
 
 
 def _estimate_summary(team: Mapping[str, Any]) -> str:

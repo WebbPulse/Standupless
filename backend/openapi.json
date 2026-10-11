@@ -28517,7 +28517,7 @@
         ]
       },
       "patch": {
-        "description": "Change a team's name, key prefix, description, estimate scale or parent team.\n\nA new key prefix is applied first, in its own transaction, so a 409 on a\ntaken prefix leaves every other field of the patch unapplied too. An\nexplicit null `parent_team_id` makes the team top-level again.",
+        "description": "Change a team's name, key prefix, description, estimate scale or parent team.\n\nA new key prefix is applied first, in its own transaction, so a 409 on a\ntaken prefix leaves every other field of the patch unapplied too. An\nexplicit null `parent_team_id` makes the team top-level again, and any\nchange of parent is recorded in the audit log.",
         "operationId": "update_team_api_workspaces__workspace_id__teams__team_id__patch",
         "parameters": [
           {
