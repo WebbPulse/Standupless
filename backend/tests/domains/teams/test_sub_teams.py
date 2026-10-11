@@ -186,8 +186,8 @@ def test_leaving_a_parent_leaves_a_full_workflow_of_its_own(client: TestClient, 
 
 def test_an_existing_team_joins_a_parent(client: TestClient, workspace: str) -> None:
     """A top-level team put under a parent keeps its own statuses and gains the parent's."""
-    own = {row["id"] for row in _statuses(client, LONER)}
     sign_in(client, OWNER)
+    own = {row["id"] for row in _statuses(client, LONER)}
     response = client.patch(f"{BASE}/teams/{LONER}", json={"parent_team_id": PARENT})
     assert response.status_code == 200, response.text
     assert response.json()["parent_team_id"] == PARENT

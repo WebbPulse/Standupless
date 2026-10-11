@@ -213,6 +213,7 @@ def parent_key(team_id: str) -> str:
     """The sort key of the pointer row naming one sub-team's parent."""
     return f"team#{team_id}#parent"
 
+
 EFFECTIVE_FIELDS: tuple[str, ...] = ("scope", "hidden", "inherited_name")
 """Fields resolved at read time, never stored on a status or label row."""
 

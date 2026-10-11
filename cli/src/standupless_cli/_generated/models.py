@@ -858,7 +858,7 @@ class LabelRead(TypedDict):
     is_group: NotRequired[bool]
     name: str
     parent_id: NotRequired[str | None]
-    scope: NotRequired[Literal["team", "workspace"]]
+    scope: NotRequired[Literal["team", "parent", "workspace"]]
 
 
 class LabelUpdate(TypedDict):
@@ -1605,7 +1605,7 @@ class StatusRead(TypedDict):
     inherited_name: NotRequired[str | None]
     name: str
     position: int
-    scope: NotRequired[Literal["team", "workspace"]]
+    scope: NotRequired[Literal["team", "parent", "workspace"]]
 
 
 class StatusUpdate(TypedDict):
@@ -1687,6 +1687,7 @@ class TeamCreate(TypedDict):
     estimate_scale: NotRequired[Literal["off", "exponential", "fibonacci", "linear", "tshirt"]]
     key_prefix: str
     name: str
+    parent_team_id: NotRequired[str | None]
     private: NotRequired[bool]
 
 
@@ -1720,6 +1721,7 @@ class TeamRead(TypedDict):
     key_prefix: str
     member_count: NotRequired[int]
     name: str
+    parent_team_id: NotRequired[str | None]
     private: NotRequired[bool]
     retired_key_prefixes: NotRequired[list[str]]
     role: NotRequired[Literal["admin", "member"] | None]
@@ -1759,6 +1761,7 @@ class TeamUpdate(TypedDict):
     estimate_scale: NotRequired[Literal["off", "exponential", "fibonacci", "linear", "tshirt"] | None]
     key_prefix: NotRequired[str | None]
     name: NotRequired[str | None]
+    parent_team_id: NotRequired[str | None]
     private: NotRequired[bool | None]
     sync_pr_labels: NotRequired[bool | None]
 

@@ -262,9 +262,7 @@ class TeamRepository:
         if not workspace_id or not parent_team_id:
             return []
         return [
-            team
-            for team in self.list_for_workspace(workspace_id, limit=limit)
-            if team.parent_team_id == parent_team_id
+            team for team in self.list_for_workspace(workspace_id, limit=limit) if team.parent_team_id == parent_team_id
         ]
 
     def change_key_prefix(self, workspace_id: str, team_id: str, new_prefix: str) -> Team | None:
