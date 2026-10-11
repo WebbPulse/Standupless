@@ -242,6 +242,10 @@ const TeamSettings: React.FC = () => {
               workspaceId={workspaceId}
               teamId={team.id}
               canEdit={editable}
+              inherited={
+                team.parent_team_id !== undefined &&
+                team.parent_team_id !== null
+              }
             />
           )}
           {frame(

@@ -46,6 +46,8 @@ export interface CyclesSectionProps {
   teamId: string;
   /** Whether the caller administers the team. */
   canEdit: boolean;
+  /** Whether the team is a sub-team, which runs on its parent's schedule. */
+  inherited?: boolean | undefined;
 }
 
 /** How often the schedule is re-read while the settings tab is open. */
@@ -133,6 +135,7 @@ export const CyclesSection: React.FC<CyclesSectionProps> = ({
   workspaceId,
   teamId,
   canEdit,
+  inherited = false,
 }) => {
   const auth = useQueryAuth();
   const prefix = useId();
@@ -164,7 +167,7 @@ export const CyclesSection: React.FC<CyclesSectionProps> = ({
   const current = draft ?? saved;
   const changes = scheduleChanges(saved, current);
   const dirty = Object.keys(changes).length > 0;
-  const locked = !canEdit || saving;
+  const locked = !canEdit || saving || inherited;
 
   const edit = (patch: Partial<CycleSchedule>): void => {
     setDraft({ ...current, ...patch });
@@ -207,6 +210,12 @@ export const CyclesSection: React.FC<CyclesSectionProps> = ({
           and the upcoming ones are created for you, and unfinished issues roll
           over to the next cycle when one ends.
         </p>
+        {inherited && (
+          <p className="text-xs text-text-faint">
+            This sub-team uses its parent team's cycles. Change them in the
+            parent team's settings.
+          </p>
+        )}
       </div>
 
       {error !== null && (
@@ -382,7 +391,7 @@ export const CyclesSection: React.FC<CyclesSectionProps> = ({
             </p>
           )}
 
-          {canEdit && (
+          {canEdit && !inherited && (
             <div className="flex justify-end gap-2">
               {dirty && (
                 <Button

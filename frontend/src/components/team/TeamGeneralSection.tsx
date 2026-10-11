@@ -95,6 +95,9 @@ const GeneralForm: React.FC<GeneralFormProps> = ({
     allowZero !== (team.estimate_allow_zero ?? false) ||
     countUnestimated !== (team.estimate_count_unestimated ?? false);
   const estimatesOn = estimateScale !== 'off';
+  const inherited =
+    team.parent_team_id !== undefined && team.parent_team_id !== null;
+  const estimatesLocked = !canEdit || inherited;
   const canSave =
     canEdit &&
     dirty &&
@@ -189,7 +192,7 @@ const GeneralForm: React.FC<GeneralFormProps> = ({
         id="team-general-estimates"
         label="Estimates"
         value={estimateScale}
-        disabled={!canEdit}
+        disabled={estimatesLocked}
         className="sm:w-56"
         onChange={(event) => {
           setEstimateScale(event.target.value as EstimateScale);
@@ -201,6 +204,12 @@ const GeneralForm: React.FC<GeneralFormProps> = ({
           </option>
         ))}
       </SelectField>
+      {inherited && (
+        <p className="text-xs text-text-faint">
+          This sub-team uses its parent team's estimates. Change them in the
+          parent team's settings.
+        </p>
+      )}
 
       {estimatesOn && (
         <fieldset className="space-y-2">
@@ -208,7 +217,7 @@ const GeneralForm: React.FC<GeneralFormProps> = ({
           <Checkbox
             label={`Extended range: add ${extendedPhrase(estimateScale)}`}
             checked={extended}
-            disabled={!canEdit}
+            disabled={estimatesLocked}
             onChange={(event) => {
               setExtended(event.target.checked);
             }}
@@ -216,7 +225,7 @@ const GeneralForm: React.FC<GeneralFormProps> = ({
           <Checkbox
             label="Allow zero: add 0 for work that takes no effort"
             checked={allowZero}
-            disabled={!canEdit}
+            disabled={estimatesLocked}
             onChange={(event) => {
               setAllowZero(event.target.checked);
             }}
@@ -224,7 +233,7 @@ const GeneralForm: React.FC<GeneralFormProps> = ({
           <Checkbox
             label="Count unestimated issues as 1 point in cycle and project progress"
             checked={countUnestimated}
-            disabled={!canEdit}
+            disabled={estimatesLocked}
             onChange={(event) => {
               setCountUnestimated(event.target.checked);
             }}
