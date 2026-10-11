@@ -383,7 +383,9 @@ class TestTeamsDomain:
             statuses = api.get(f"{base}/teams/{sub['id']}/statuses")
             assert statuses.status_code == 200, statuses.text[:400]
             rows = _items(statuses.json(), "statuses")
-            assert rows and {row["scope"] for row in rows} == {"parent"}, rows
+            parent_rows = _items(api.get(f"{base}/teams/{team['id']}/statuses").json(), "statuses")
+            assert rows and {row["id"] for row in rows} == {row["id"] for row in parent_rows}, rows
+            assert "team" not in {row["scope"] for row in rows}, rows
 
             created = _created(
                 api.post(f"{base}/issues", json={"team_id": sub["id"], "title": run_scope.name("sub-issue")}), "issue"
