@@ -140,3 +140,17 @@ def test_search_resumes_with_a_cursor_when_the_scan_budget_stops_it(
 
     assert seen == [oldest]
     assert cursor is None
+
+
+def test_search_finds_an_issue_by_its_key(client: TestClient, workspace: str, repositories: Any) -> None:
+    """A query equal to a key, in any case, answers that issue, as Linear's search does."""
+    secret = mint(repositories, MEMBER, ("issues:write", "issues:read"))
+    wanted = _create(client, secret, title="Cache the token")
+    _create(client, secret, title="Something else")
+    key = repositories.issues.get(workspace, wanted).key
+
+    exact = json.loads(_search(client, secret, query=key)["content"][0]["text"])
+    lowered = json.loads(_search(client, secret, query=key.lower())["content"][0]["text"])
+
+    assert [row["issue_id"] for row in exact["issues"]] == [wanted]
+    assert [row["issue_id"] for row in lowered["issues"]] == [wanted]

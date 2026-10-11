@@ -251,9 +251,10 @@ def _list_my_issues(call: ToolCall) -> Any:
 
 
 def _search_issues(call: ToolCall) -> Any:
-    """Issues whose title or body contains a text, newest first, in visible teams only.
+    """Issues whose key is a text or whose title or body contains it, newest first, in visible teams only.
 
-    Substring over title and body, unlike `list_issues`, whose `query` is the
+    A key matches whole and in any case, as Linear's search finds `ABC-12`; the
+    rest is a substring over title and body, unlike `list_issues`, whose `query` is the
     HTTP list's key or title prefix. Filtered after the team read rather than
     through the search index, because the index is a separate table this domain
     holds no grant on. Each team is walked through every page up to the list's
@@ -279,8 +280,13 @@ def _search_issues(call: ToolCall) -> Any:
                 categories[row.status_id] = row.category
 
     def keep(issue: Issue) -> bool:
-        """Whether one issue holds the text and passes the filters."""
-        if query and query not in issue.title.lower() and query not in (issue.body or "").lower():
+        """Whether one issue carries the key or holds the text, and passes the filters."""
+        if (
+            query
+            and query != issue.key.lower()
+            and query not in issue.title.lower()
+            and query not in (issue.body or "").lower()
+        ):
             return False
         return wanted.matches(issue, categories)
 
@@ -743,13 +749,14 @@ ISSUE_TOOLS: tuple[Tool, ...] = (
     Tool(
         name="search_issues",
         description=(
-            "Search issues whose title or body contains a text, with the issue list filters. "
+            "Search issues whose key is a text, such as ABC-123, or whose title or body contains it, "
+            "with the issue list filters. "
             "Answers summaries, newest first, and a next_cursor while more issues remain to search."
         ),
         scopes=("issues:read",),
         schema=object_schema(
             {
-                "query": string("Text to match against the title and body"),
+                "query": string("An issue key such as ABC-123, or text to match against the title and body"),
                 **_filter_properties(),
                 "include_archived": {"type": "boolean", "description": "Include archived issues, default true"},
                 **page_properties(),
