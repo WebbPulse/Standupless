@@ -233,6 +233,8 @@ interface TeamSectionProps {
   onDragEnter: () => void;
   onDragEnd: () => void;
   onDrop: () => void;
+  /** Opens the create team dialog with this team as the parent, or undefined when it cannot take one. */
+  onCreateSubTeam?: (() => void) | undefined;
 }
 
 /**
@@ -261,6 +263,7 @@ const TeamSection: React.FC<TeamSectionProps> = ({
   onDragEnter,
   onDragEnd,
   onDrop,
+  onCreateSubTeam,
 }) => {
   const panelId = `team-nav-${team.id}`;
   const home = teamPath(slug, team.key_prefix);
@@ -384,6 +387,9 @@ const TeamSection: React.FC<TeamSectionProps> = ({
         >
           Copy link
         </MenuItem>
+        {onCreateSubTeam !== undefined && (
+          <MenuItem onSelect={onCreateSubTeam}>Create sub-team</MenuItem>
+        )}
         {canReorder && <MenuSeparator />}
         {canReorder && upTo !== null && (
           <MenuItem
@@ -833,6 +839,15 @@ export const Sidebar: React.FC<SidebarProps> = ({ workspace, onNavigate }) => {
                     if (dragFrom !== null) setDragOver(index);
                   }}
                   onDragEnd={endDrag}
+                  onCreateSubTeam={
+                    createTeam.canCreate &&
+                    (team.parent_team_id === null ||
+                      team.parent_team_id === undefined)
+                      ? () => {
+                          createTeam.openSubTeam(team.id);
+                        }
+                      : undefined
+                  }
                   onDrop={() => {
                     if (
                       dragFrom !== null &&

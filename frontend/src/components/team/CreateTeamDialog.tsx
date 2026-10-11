@@ -11,14 +11,20 @@
  *
  * A team can start private, which the server allows on the Business plan only;
  * its refusal is shown as sent.
+ *
+ * A team can also start under a parent team, created nested in the one call so
+ * it has the parent's statuses, labels, estimates and cycle settings from its
+ * first moment. Teams nest one level, so the picker lists the hierarchy but
+ * offers only top-level teams, and the estimate scale is left to the parent.
  */
 
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { invalidateQueries } from '@webbpulse/api-client/react';
 import { createTeam, updateTeam } from '../../api/teams';
 import { errorMessage, hasStatus, CONFLICT } from '../../lib/errors';
 import { teamsKey } from '../../lib/queryKeys';
 import { cn } from '../../lib/cn';
+import { teamTree } from '../../lib/teamOrder';
 import { keyPrefixFromName, validateKeyPrefix } from '../../lib/validation';
 import {
   ESTIMATE_SCALES,
@@ -31,8 +37,10 @@ import Button from '../ui/button';
 import Dialog from '../ui/dialog';
 import Field from '../ui/field';
 import Checkbox from '../ui/checkbox';
+import { Combobox, type ComboboxOption } from '../ui/combobox';
 import { Textarea } from '../ui/input';
 import Label from '../ui/label';
+import { Popover } from '../ui/popover';
 import { SelectField } from '../ui/select';
 
 /** Props for CreateTeamDialog. */
@@ -44,13 +52,97 @@ export interface CreateTeamDialogProps {
    * of the request did not land.
    */
   onCreated: (team: TeamRead, notice?: string) => void;
+  /** The workspace's teams the caller can see, offered as parents. */
+  teams?: readonly TeamRead[];
+  /** The parent team picked when the dialog opens, to create a sub-team of it. */
+  initialParentTeamId?: string | null;
 }
 
-/** A form for a team's name, key prefix, description, estimate scale and privacy. */
+/** The picker value that stands for no parent team. */
+const NO_PARENT = '__none__';
+
+/** Props for ParentTeamPicker. */
+interface ParentTeamPickerProps {
+  teams: readonly TeamRead[];
+  value: string | null;
+  onChange: (teamId: string | null) => void;
+}
+
+/**
+ * The parent team control: a chip that opens a filterable list of the team
+ * hierarchy. Sub-teams show under their parents but cannot be picked, since a
+ * team nests one level.
+ */
+const ParentTeamPicker: React.FC<ParentTeamPickerProps> = ({
+  teams,
+  value,
+  onChange,
+}) => {
+  const parent = teams.find((team) => team.id === value);
+  const label =
+    value === null
+      ? 'No parent team'
+      : (parent?.name ?? 'A team you cannot see');
+  const options: ComboboxOption[] = useMemo(
+    () => [
+      { value: NO_PARENT, label: 'No parent team' },
+      ...teamTree(teams).map(({ team, nested, parentName }) => ({
+        value: team.id,
+        label: team.name,
+        detail: nested ? 'Sub-team' : team.key_prefix,
+        keywords: [
+          team.key_prefix,
+          ...(parentName === undefined ? [] : [parentName]),
+        ],
+        indent: nested,
+        disabled: nested,
+      })),
+    ],
+    [teams]
+  );
+  return (
+    <Popover
+      label="Parent team"
+      contentClassName="w-64"
+      trigger={(trigger) => (
+        <button
+          type="button"
+          id="create-team-parent"
+          aria-label={`Parent team: ${label}`}
+          {...trigger}
+          className={cn(
+            'inline-flex h-7 max-w-full items-center gap-1.5 truncate rounded-sm border border-line px-2 text-sm',
+            'hover:border-line-strong hover:bg-raised',
+            value === null ? 'text-text-muted' : 'text-text'
+          )}
+        >
+          {label}
+        </button>
+      )}
+    >
+      {(close) => (
+        <Combobox
+          label="Parent team"
+          placeholder="Pick a parent team"
+          options={options}
+          selected={[value ?? NO_PARENT]}
+          onSelect={(picked) => {
+            close();
+            onChange(picked === NO_PARENT ? null : picked);
+          }}
+        />
+      )}
+    </Popover>
+  );
+};
+
+/** A form for a team's name, key prefix, parent, description, estimate scale and privacy. */
 export const CreateTeamDialog: React.FC<CreateTeamDialogProps> = ({
   workspaceId,
   onClose,
   onCreated,
+  teams = [],
+  initialParentTeamId = null,
 }) => {
   const [name, setName] = useState('');
   const [keyPrefix, setKeyPrefix] = useState('');
@@ -58,6 +150,11 @@ export const CreateTeamDialog: React.FC<CreateTeamDialogProps> = ({
   const [description, setDescription] = useState('');
   const [estimateScale, setEstimateScale] = useState<EstimateScale>('off');
   const [isPrivate, setIsPrivate] = useState(false);
+  const [parentTeamId, setParentTeamId] = useState<string | null>(
+    initialParentTeamId
+  );
+  const parent = teams.find((team) => team.id === parentTeamId);
+  const subTeam = initialParentTeamId !== null;
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -82,7 +179,9 @@ export const CreateTeamDialog: React.FC<CreateTeamDialogProps> = ({
       team = await createTeam(workspaceId, {
         name: name.trim(),
         key_prefix: keyPrefix,
-        estimate_scale: estimateScale,
+        ...(parentTeamId === null
+          ? { estimate_scale: estimateScale }
+          : { parent_team_id: parentTeamId }),
         ...(isPrivate ? { private: true } : {}),
       });
     } catch (caught) {
@@ -118,8 +217,12 @@ export const CreateTeamDialog: React.FC<CreateTeamDialogProps> = ({
     <Dialog
       open
       onClose={onClose}
-      title="Create a team"
-      description="Issues in a team take its key, so pick one that reads well in a sentence."
+      title={subTeam ? 'Create a sub-team' : 'Create a team'}
+      description={
+        parentTeamId === null
+          ? 'Issues in a team take its key, so pick one that reads well in a sentence.'
+          : `It starts with ${parent?.name ?? 'the parent'}'s statuses, labels, estimates and cycle settings.`
+      }
     >
       <form
         className="space-y-4"
@@ -150,6 +253,23 @@ export const CreateTeamDialog: React.FC<CreateTeamDialogProps> = ({
           )}
         </div>
 
+        {(teams.length > 0 || parentTeamId !== null) && (
+          <div className="space-y-1">
+            <Label htmlFor="create-team-parent">Parent team</Label>
+            <div>
+              <ParentTeamPicker
+                teams={teams}
+                value={parentTeamId}
+                onChange={setParentTeamId}
+              />
+            </div>
+            <p className="text-xs text-text-faint">
+              Optional. Teams nest one level, so only top-level teams can be
+              picked.
+            </p>
+          </div>
+        )}
+
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="space-y-1">
             <Field
@@ -179,20 +299,29 @@ export const CreateTeamDialog: React.FC<CreateTeamDialogProps> = ({
             </p>
           </div>
 
-          <SelectField
-            id="create-team-estimates"
-            label="Estimates"
-            value={estimateScale}
-            onChange={(event) => {
-              setEstimateScale(event.target.value as EstimateScale);
-            }}
-          >
-            {ESTIMATE_SCALES.map((scale) => (
-              <option key={scale.value} value={scale.value}>
-                {scale.label}
-              </option>
-            ))}
-          </SelectField>
+          {parentTeamId === null ? (
+            <SelectField
+              id="create-team-estimates"
+              label="Estimates"
+              value={estimateScale}
+              onChange={(event) => {
+                setEstimateScale(event.target.value as EstimateScale);
+              }}
+            >
+              {ESTIMATE_SCALES.map((scale) => (
+                <option key={scale.value} value={scale.value}>
+                  {scale.label}
+                </option>
+              ))}
+            </SelectField>
+          ) : (
+            <div className="space-y-1">
+              <p className="text-sm font-medium">Estimates</p>
+              <p className="text-xs text-text-faint">
+                Inherited from {parent?.name ?? 'the parent team'}.
+              </p>
+            </div>
+          )}
         </div>
 
         <div className="space-y-1">
@@ -233,7 +362,11 @@ export const CreateTeamDialog: React.FC<CreateTeamDialogProps> = ({
             Cancel
           </Button>
           <Button type="submit" variant="primary" disabled={!canSubmit}>
-            {isSaving ? 'Creating' : 'Create team'}
+            {isSaving
+              ? 'Creating'
+              : subTeam
+                ? 'Create sub-team'
+                : 'Create team'}
           </Button>
         </div>
       </form>

@@ -48,6 +48,7 @@ from standupless_cli._generated.models import (
     StatusCreate,
     StatusRead,
     StatusUpdate,
+    TeamCreate,
     TeamRead,
     TeamUpdate,
     TriageAccept,
@@ -986,6 +987,51 @@ class EstimateScaleChoice(StrEnum):
     fibonacci = "fibonacci"
     linear = "linear"
     tshirt = "tshirt"
+
+
+@team_app.command("create")
+def team_create(
+    ctx: typer.Context,
+    name: Annotated[str, typer.Argument(help="The team's name.")],
+    key: Annotated[str, typer.Option("--key", "-k", help="The issue key prefix, 2 to 6 characters such as ENG.")],
+    parent: Annotated[
+        str | None,
+        typer.Option(
+            "--parent",
+            "-p",
+            help="Create the team as a sub-team of this top-level team (key prefix, name or id).",
+        ),
+    ] = None,
+    description: Annotated[str | None, typer.Option("--description", help="What the team works on.")] = None,
+    estimate_scale: Annotated[
+        EstimateScaleChoice | None,
+        typer.Option("--estimate-scale", help="How issues are estimated. A sub-team takes its parent's."),
+    ] = None,
+    private: Annotated[
+        bool, typer.Option("--private", help="Only members see the team. Needs the Business plan.")
+    ] = False,
+    as_json: JsonFlag = False,
+) -> None:
+    """Create a team with you as its admin, nested under a parent team with --parent."""
+    context = _state(ctx).context()
+    body: TeamCreate = {"name": name, "key_prefix": key.strip().upper()}
+    if description is not None:
+        body["description"] = description
+    if estimate_scale is not None:
+        body["estimate_scale"] = cast(Any, estimate_scale.value)
+    if private:
+        body["private"] = True
+    if parent is not None:
+        body["parent_team_id"] = context.team(parent)["id"]
+    created = context.client.create_team(context.workspace_id, body)
+    if as_json:
+        output.print_json(created)
+        return
+    parent_id = created.get("parent_team_id")
+    above = context.team_by_id(parent_id) if parent_id else None
+    where = f" under {above['key_prefix']}" if above else ""
+    url = context.team_url(created["key_prefix"])
+    output.success(f"Created {created['key_prefix']} {created['name']}{where}: {url}")
 
 
 @team_app.command("update")

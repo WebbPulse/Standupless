@@ -1,12 +1,17 @@
 /**
  * The parent team section. Covers that only top-level teams are offered, that
  * picking one and clearing it saves at once, that a team with sub-teams cannot
- * take a parent, and that a reader sees no picker.
+ * take a parent, that a reader sees no picker, and that a top-level team offers
+ * "Create sub-team" with itself as the parent.
  */
 
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  CreateTeamContext,
+  type CreateTeamState,
+} from '../../hooks/useCreateTeam';
 import type { TeamRead, TeamUpdate } from '../../types/Api';
 import TeamParentSection from './TeamParentSection';
 
@@ -115,5 +120,41 @@ describe('the parent team section', () => {
     render(<TeamParentSection workspaceId="ws-1" team={own} canEdit={false} />);
     expect(screen.queryByRole('combobox')).not.toBeInTheDocument();
     expect(screen.getByText(/top-level/)).toBeInTheDocument();
+  });
+
+  it('creates a sub-team of a top-level team from its settings', async () => {
+    const user = userEvent.setup();
+    const openSubTeam = vi.fn();
+    const dialog: CreateTeamState = {
+      open: vi.fn(),
+      openSubTeam,
+      canCreate: true,
+    };
+    render(
+      <CreateTeamContext.Provider value={dialog}>
+        <TeamParentSection workspaceId="ws-1" team={own} canEdit={false} />
+      </CreateTeamContext.Provider>
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Create sub-team' }));
+
+    expect(openSubTeam).toHaveBeenCalledWith('team-1');
+  });
+
+  it('offers a sub-team no Create sub-team', () => {
+    const dialog: CreateTeamState = {
+      open: vi.fn(),
+      openSubTeam: vi.fn(),
+      canCreate: true,
+    };
+    render(
+      <CreateTeamContext.Provider value={dialog}>
+        <TeamParentSection workspaceId="ws-1" team={mobile} canEdit={true} />
+      </CreateTeamContext.Provider>
+    );
+
+    expect(
+      screen.queryByRole('button', { name: 'Create sub-team' })
+    ).not.toBeInTheDocument();
   });
 });

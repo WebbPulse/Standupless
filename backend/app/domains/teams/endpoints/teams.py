@@ -113,20 +113,13 @@ def create_team(
     in total, because a team written without its statuses is unusable and cannot
     be recreated: the prefix is taken, so a retry 409s while issue creation 422s on
     the missing statuses. All or nothing means a failure leaves the prefix free.
-    A parent team must be one the caller can find.
+    A parent team must be one the caller can find, and a team created under one
+    records the parent change as joining it later does.
     """
     team = team_writes.create_team(
         repositories, context.workspace_id, context.user_id, payload, can_see=context.can_find_team
     )
-    audit.record(
-        repositories,
-        context,
-        "team.created",
-        target_type="team",
-        target_id=team.team_id,
-        target_label=team.name,
-        after={"key_prefix": team.key_prefix, "private": bool(payload.private)},
-    )
+    audit.record_team_created(repositories, context, team, private=payload.private)
     return TeamRead.from_row(team, "admin", member_count=1, is_member=True, private=payload.private)
 
 

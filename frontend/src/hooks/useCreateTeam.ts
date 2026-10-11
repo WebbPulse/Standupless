@@ -1,7 +1,9 @@
 /**
  * Opens the create team dialog from the sidebar, the command palette, the
  * settings Teams page and the workspace home, all of which share the one
- * dialog the workspace layout renders. `canCreate` mirrors the API's rule
+ * dialog the workspace layout renders. Opened with a parent team, the dialog
+ * creates a sub-team of it, which is how the team menu, the team's settings
+ * and the palette's "Create sub-team" reach it. `canCreate` mirrors the API's rule
  * (owners, admins and members, never guests) so no surface offers a control
  * the server would refuse.
  */
@@ -12,6 +14,8 @@ import { createContext, useContext } from 'react';
 export interface CreateTeamState {
   /** Opens the dialog. Does nothing when the caller may not create teams. */
   open: () => void;
+  /** Opens the dialog to create a sub-team, with this team picked as its parent. */
+  openSubTeam: (parentTeamId: string) => void;
   /** Whether the caller's workspace role may create a team. */
   canCreate: boolean;
 }
@@ -22,6 +26,7 @@ export const CreateTeamContext = createContext<CreateTeamState | null>(null);
 /** A dialog that never opens, for use outside a workspace. */
 const UNAVAILABLE: CreateTeamState = {
   open: () => undefined,
+  openSubTeam: () => undefined,
   canCreate: false,
 };
 

@@ -138,6 +138,23 @@ def test_update_team_sets_and_clears_the_parent_team(client: TestClient, reposit
     assert repositories.teams.get(WORKSPACE, OTHER_TEAM).parent_team_id is None
 
 
+def test_create_team_nests_under_a_parent_in_one_call(client: TestClient, repositories: Any, workspace: str) -> None:
+    """A parent named by key creates the team as its sub-team in one call, with the parent change audited."""
+    secret = mint_for(repositories, ADMIN, ("teams:write", "teams:read"))
+
+    arguments = {"name": "Sub", "key_prefix": "SUBT", "parent_team_id": "ABC"}
+    created = answer(tool(client, secret, "create_team", arguments))
+
+    assert created["parent_team_id"] == TEAM
+    assert repositories.teams.get(WORKSPACE, created["team_id"]).parent_team_id == TEAM
+    moved = [row for row in repositories.audit.list_events(WORKSPACE).events if row.action == "team.parent_changed"]
+    assert [(row.target.id, row.after) for row in moved] == [(created["team_id"], {"parent_team_id": TEAM})]
+
+    assert "nest one level" in refusal(
+        tool(client, secret, "create_team", {"name": "Deep", "key_prefix": "DEEP", "parent_team_id": "SUBT"})
+    )
+
+
 def test_update_team_holds_the_route_roles(client: TestClient, repositories: Any, workspace: str) -> None:
     """A member is refused as the route refuses, a guest outside the team sees nothing."""
     member = mint_for(repositories, MEMBER, ("teams:write",))

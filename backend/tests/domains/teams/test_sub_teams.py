@@ -14,7 +14,7 @@ from fastapi.testclient import TestClient
 
 from app.common.composition.domains import DOMAINS
 from app.common.composition.wiring import build_domain_app
-from tests.domains.helpers import ADMIN, MEMBER, OWNER, add_member, make_team, make_workspace, sign_in
+from tests.domains.helpers import ADMIN, MEMBER, OWNER, add_member, add_team_member, make_team, make_workspace, sign_in
 
 WORKSPACE = "01JB00000000000000000000WS"
 
@@ -218,3 +218,59 @@ def test_a_member_cannot_move_a_team(client: TestClient, workspace: str) -> None
     """Changing the parent is a team admin write like any other team setting."""
     sign_in(client, MEMBER)
     assert client.patch(f"{BASE}/teams/{LONER}", json={"parent_team_id": PARENT}).status_code == 403
+
+
+def test_a_team_created_under_a_parent_is_audited_as_joining_it(
+    client: TestClient, workspace: str, repositories: Any
+) -> None:
+    """Create-with-parent records the new team with its parent and a parent change from none, in one call."""
+    sub = _create_sub_team(client)
+    events = repositories.audit.list_events(WORKSPACE).events
+
+    created = [row for row in events if row.action == "team.created"]
+    assert [(row.target.id, row.after) for row in created] == [
+        (sub["id"], {"key_prefix": "SUB", "private": False, "parent_team_id": PARENT})
+    ]
+    moved = [row for row in events if row.action == "team.parent_changed"]
+    assert [(row.target.id, row.before, row.after) for row in moved] == [
+        (sub["id"], {"parent_team_id": None}, {"parent_team_id": PARENT})
+    ]
+
+
+def test_a_top_level_team_records_no_parent_change(client: TestClient, workspace: str, repositories: Any) -> None:
+    """A team created at the top level records only its creation."""
+    sign_in(client, OWNER)
+    response = client.post(f"{BASE}/teams", json={"name": "Top", "key_prefix": "TOP"})
+    assert response.status_code == 201, response.text
+
+    actions = [row.action for row in repositories.audit.list_events(WORKSPACE).events]
+    assert actions == ["team.created"]
+
+
+def test_a_sub_team_starts_with_its_parents_labels(client: TestClient, workspace: str) -> None:
+    """A parent's label is the new sub-team's from its first read, tagged parent."""
+    bug = _label(client, PARENT)
+
+    sub = _create_sub_team(client)
+
+    rows = _labels(client, sub["id"])
+    assert [(row["id"], row["scope"]) for row in rows if row["name"] == "Bug"] == [(bug["id"], "parent")]
+
+
+def test_a_private_parent_reads_as_missing_to_an_outsider(
+    client: TestClient, workspace: str, repositories: Any
+) -> None:
+    """Creating under a private team the caller is outside is the missing-team 422, never naming it."""
+    repositories.memberships.set_team_private(WORKSPACE, LONER, True)
+    sign_in(client, MEMBER)
+
+    refused = client.post(f"{BASE}/teams", json={"name": "Shadow", "key_prefix": "SHD", "parent_team_id": LONER})
+
+    assert refused.status_code == 422, refused.text
+    assert "Gem" not in refused.text
+    assert all(team["key_prefix"] != "SHD" for team in client.get(f"{BASE}/teams").json()["teams"])
+
+    add_team_member(repositories, WORKSPACE, LONER, MEMBER, "member")
+    allowed = client.post(f"{BASE}/teams", json={"name": "Shadow", "key_prefix": "SHD", "parent_team_id": LONER})
+    assert allowed.status_code == 201, allowed.text
+    assert allowed.json()["parent_team_id"] == LONER

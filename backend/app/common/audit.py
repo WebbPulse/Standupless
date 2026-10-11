@@ -138,6 +138,26 @@ def record(
     )
 
 
+def record_team_created(
+    repositories: Repositories, context: AuthzContext, team: Team, *, private: bool = False
+) -> None:
+    """Record a new team, and the parent it was created under as a parent change from none."""
+    record(
+        repositories,
+        context,
+        "team.created",
+        target_type="team",
+        target_id=team.team_id,
+        target_label=team.name,
+        after={
+            "key_prefix": team.key_prefix,
+            "private": bool(private),
+            **({"parent_team_id": team.parent_team_id} if team.parent_team_id else {}),
+        },
+    )
+    record_parent_change(repositories, context, team, None)
+
+
 def record_parent_change(
     repositories: Repositories, context: AuthzContext, team: Team, before: str | None
 ) -> AuditEvent | None:

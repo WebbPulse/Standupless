@@ -68,6 +68,7 @@ from standupless_cli._generated.models import (
     StatusListRead,
     StatusRead,
     StatusUpdate,
+    TeamCreate,
     TeamListRead,
     TeamRead,
     TeamSyncRead,
@@ -223,6 +224,10 @@ class StanduplessClient:
     def list_teams(self, workspace_id: str) -> list[TeamRead]:
         """The workspace's teams."""
         return cast(TeamListRead, self._request("GET", f"/api/workspaces/{workspace_id}/teams"))["teams"]
+
+    def create_team(self, workspace_id: str, body: TeamCreate) -> TeamRead:
+        """Create a team, under a parent team when the body names one, with the caller as its admin."""
+        return cast(TeamRead, self._request("POST", f"/api/workspaces/{workspace_id}/teams", json=body))
 
     def update_team(self, workspace_id: str, team_id: str, body: TeamUpdate) -> TeamRead:
         """Change a team's settings, with team admin."""
