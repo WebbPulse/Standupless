@@ -16,7 +16,8 @@ import type {
   RecurringIssueUpdate,
   TemplateRead,
 } from '../../types/Api';
-import RecurringSection, { describeRule } from './RecurringSection';
+import { describeRule } from '../../lib/recurringRule';
+import RecurringSection from './RecurringSection';
 
 const listRecurringIssues = vi.fn<() => Promise<RecurringIssueListRead>>();
 const createRecurringIssue =
@@ -132,9 +133,7 @@ describe('describeRule', () => {
       'Every 2 weeks on Mon, Fri at 09:30 Europe/Paris'
     );
     expect(
-      describeRule(
-        schedule({ frequency: 'daily', interval: 1, weekdays: [] })
-      )
+      describeRule(schedule({ frequency: 'daily', interval: 1, weekdays: [] }))
     ).toBe('Every day at 09:30 Europe/Paris');
     expect(
       describeRule(

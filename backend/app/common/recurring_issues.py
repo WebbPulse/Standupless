@@ -120,9 +120,7 @@ def list_recurring(
     return rows, names, team_timezone(repositories, context.workspace_id, team_id)
 
 
-def get_recurring(
-    repositories: Repositories, context: AuthzContext, team_id: str, recurring_id: str
-) -> RecurringIssue:
+def get_recurring(repositories: Repositories, context: AuthzContext, team_id: str, recurring_id: str) -> RecurringIssue:
     """One schedule of a team the caller can see, or a 404."""
     require_team_reader(repositories, context, team_id)
     row = repositories.team_config.get_recurring(context.workspace_id, team_id, recurring_id)
@@ -311,4 +309,3 @@ def run_due(repositories: Any, row: RecurringIssue, now: datetime) -> tuple[str,
         claimed.model_copy(update={"last_issue_id": issue.issue_id, "last_issue_key": issue.key})
     )
     return "created", issue
-

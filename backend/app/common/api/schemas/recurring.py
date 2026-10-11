@@ -113,9 +113,7 @@ class RecurringRead(BaseModel):
     updated_at: datetime
 
     @classmethod
-    def from_row(
-        cls, row: RecurringIssue, template_name: Optional[str], upcoming: list[datetime]
-    ) -> "RecurringRead":
+    def from_row(cls, row: RecurringIssue, template_name: Optional[str], upcoming: list[datetime]) -> "RecurringRead":
         """Build the response shape from a stored row, its template's name and its preview."""
         return cls(
             id=row.recurring_id,

@@ -88,9 +88,7 @@ def _update(call: ToolCall) -> Any:
     if call.optional("template") is not None:
         fields["template_id"] = template_ref(call, team_id, call.arguments["template"]).template_id
     payload = RecurringUpdate.model_validate(fields)
-    updated = recurring_issues.update_recurring(
-        call.repositories, call.context, team_id, found.recurring_id, payload
-    )
+    updated = recurring_issues.update_recurring(call.repositories, call.context, team_id, found.recurring_id, payload)
     return _json(call, updated)
 
 

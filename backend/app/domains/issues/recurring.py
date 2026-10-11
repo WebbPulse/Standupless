@@ -66,7 +66,7 @@ def sweep(repositories: Any, now: datetime | None = None) -> RecurringSummary:
             extra={
                 "event": "issues.recurring",
                 "due": summary.due,
-                "created": summary.created,
+                "issues_created": summary.created,
                 "skipped": summary.skipped,
                 "paused": summary.paused,
                 "failed": summary.failed,

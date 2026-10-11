@@ -25,6 +25,7 @@ import {
 import { listTeamTemplates } from '../../api/templates';
 import { errorMessage } from '../../lib/errors';
 import { recurringKey, templatesKey } from '../../lib/queryKeys';
+import { describeRule, WEEKDAY_SHORT } from '../../lib/recurringRule';
 import { fullTimestamp } from '../../lib/relativeTime';
 import type {
   RecurringFrequency,
@@ -60,8 +61,6 @@ const FREQUENCIES: readonly { value: RecurringFrequency; label: string }[] = [
   { value: 'monthly', label: 'Monthly' },
 ];
 
-const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] as const;
-
 const WEEKDAY_NAMES = [
   'Monday',
   'Tuesday',
@@ -76,12 +75,6 @@ const MAX_INTERVAL: Record<RecurringFrequency, number> = {
   daily: 365,
   weekly: 52,
   monthly: 12,
-};
-
-const UNITS: Record<RecurringFrequency, string> = {
-  daily: 'day',
-  weekly: 'week',
-  monthly: 'month',
 };
 
 const PAUSE_REASONS: Record<RecurringPausedReason, string> = {
@@ -148,32 +141,6 @@ const ruleOf = (draft: Draft): RecurringIssueUpdate => ({
   time: draft.time,
   timezone: draft.timezone,
 });
-
-/** The schedule as a sentence, such as "Every 2 weeks on Mon, Fri at 09:00 UTC". */
-export const describeRule = (
-  row: Pick<
-    RecurringIssueRead,
-    'frequency' | 'interval' | 'weekdays' | 'day_of_month' | 'time' | 'timezone'
-  >
-): string => {
-  const unit = UNITS[row.frequency];
-  const every =
-    row.interval === 1
-      ? row.frequency === 'daily'
-        ? 'Every day'
-        : `Every ${unit}`
-      : `Every ${String(row.interval)} ${unit}s`;
-  let on = '';
-  if (row.frequency === 'weekly') {
-    const days = [...row.weekdays]
-      .sort((a, b) => a - b)
-      .map((day) => WEEKDAYS[day] ?? String(day));
-    on = ` on ${days.join(', ')}`;
-  } else if (row.frequency === 'monthly' && row.day_of_month !== null) {
-    on = ` on day ${String(row.day_of_month)}`;
-  }
-  return `${every}${on} at ${row.time} ${row.timezone}`;
-};
 
 /** Props for ScheduleForm. */
 interface ScheduleFormProps {
@@ -321,7 +288,7 @@ const ScheduleForm: React.FC<ScheduleFormProps> = ({
               aria-labelledby={`${baseId}-days`}
               className="flex flex-wrap gap-1"
             >
-              {WEEKDAYS.map((name, index) => (
+              {WEEKDAY_SHORT.map((name, index) => (
                 <Button
                   key={name}
                   size="sm"
@@ -484,10 +451,7 @@ export const RecurringSection: React.FC<RecurringSectionProps> = ({
 
       {error !== null && (
         <ErrorAlert
-          message={errorMessage(
-            error,
-            'Could not load the recurring issues.'
-          )}
+          message={errorMessage(error, 'Could not load the recurring issues.')}
         />
       )}
       {actionError !== null && (

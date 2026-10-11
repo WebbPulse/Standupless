@@ -728,9 +728,7 @@ export type RecurringFrequency = 'daily' | 'weekly' | 'monthly';
 
 /** Why the system paused a recurring issue, or null when a person did. */
 export type RecurringPausedReason =
-  | 'template_deleted'
-  | 'creator_cannot_write'
-  | 'create_failed';
+  'template_deleted' | 'creator_cannot_write' | 'create_failed';
 
 /** The rule fields a recurring issue create and patch share. */
 export interface RecurringIssueFields {
