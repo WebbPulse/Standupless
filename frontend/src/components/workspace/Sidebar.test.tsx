@@ -248,6 +248,15 @@ describe('the workspace level links', () => {
   });
 });
 
+describe('the nav scroller', () => {
+  it('is positioned so its hidden live region scrolls inside it instead of stretching the shell', async () => {
+    renderSidebar();
+
+    const nav = await screen.findByTestId('sidebar-nav');
+    expect(nav).toHaveClass('relative', 'min-h-0', 'flex-1', 'overflow-y-auto');
+  });
+});
+
 describe('the reviews badge', () => {
   it('counts the pull requests waiting on the caller', async () => {
     getReviews.mockResolvedValue({

@@ -8,6 +8,11 @@
  * The command palette, the shortcut layer and the dialogs that outlive a page
  * live one level up in {@link WorkspaceLayout}. The shell renders the peek
  * pane's frame beside the page, because the pane shares the page's row.
+ *
+ * The frame is positioned and clips, and so is the sidebar's column, so an
+ * absolutely positioned element anywhere inside, such as a visually hidden
+ * live region below the fold of the sidebar, can never stretch the app shell
+ * into a second scroller. Only the sidebar nav and the page body scroll.
  */
 
 import React, { useEffect, useRef, useState } from 'react';
@@ -138,8 +143,14 @@ export const WorkspaceShell: React.FC<WorkspaceShellProps> = ({
   );
 
   return (
-    <div className="flex min-h-0 flex-1 bg-app" data-testid="signed-in">
-      <aside className="hidden w-sidebar shrink-0 lg:block">
+    <div
+      className="relative flex min-h-0 flex-1 overflow-clip bg-app"
+      data-testid="signed-in"
+    >
+      <aside
+        data-testid="sidebar-frame"
+        className="relative hidden min-h-0 w-sidebar shrink-0 overflow-hidden lg:block"
+      >
         <Sidebar workspace={workspace} />
       </aside>
 
