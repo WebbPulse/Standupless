@@ -1,4 +1,4 @@
-"""A team joining a parent folds its duplicates into the parent's workflow, and a sub-team may show what its parent hides.
+"""A team joining a parent folds its duplicates into the parent's workflow, and a sub-team can show what it hides.
 
 A team with its own copies of the parent's statuses would show each twice, so
 they fold into the parent's and their issues move with them. A plain label
