@@ -5,14 +5,16 @@ As in Linear, the assignee of an open issue hears about its due date twice: a
 date has passed. Due dates are calendar days, read on the assignee's own calendar:
 their stored timezone, else the team's standup timezone, else UTC, which is the
 day the issue page shows them. The sweep rides the digest flush once per
-`SWEEP_INTERVAL` window, the way the project update reminders do, because the views notify consumer already holds the inbox grant and reads
-issues, teams, statuses and users.
+`SWEEP_INTERVAL` window, the way the project update reminders do, because the
+views notify consumer already holds the inbox grant and reads issues, teams,
+statuses and users.
 
 Each pass walks the open status columns of every live team, which leaves out
 completed, canceled, archived and triage issues by construction. A marker per
 kind, issue, assignee and due date makes each reminder once only. The marker is
 keyed on the due date alone, never on the zone, so a pass near a day boundary or a
-change of timezone cannot send one twice, while moving the due date or handing the issue to someone else arms a fresh one, and a person who
+change of timezone cannot send one twice, while moving the due date or handing
+the issue to someone else arms a fresh one, and a person who
 deletes a reminder is not sent it again. A pass that dies between the write and
 the marker is finished by the next one, the conditional inbox put turning the
 repeat into a no-op. An overdue reminder is only sent within `OVERDUE_WINDOW` of
