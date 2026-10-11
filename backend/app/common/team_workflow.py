@@ -55,7 +55,7 @@ from app.common.labels import (
 )
 from app.common.sla import apply_sla
 from app.common.status_appearance import icon_fits
-from app.common.sub_teams import family
+from app.common.sub_teams import UNSEEN_SUB_TEAM, TeamFilter, family, unseen
 
 NOT_FOUND = {"error_code": "NOT_FOUND", "message": "Resource not found"}
 
@@ -64,6 +64,14 @@ LAST_OF_CATEGORY = "{team} must keep one status in each category it uses"
 LAST_VISIBLE = "{team} must keep one visible status in each category it uses"
 
 STATUS_HAS_ISSUES = "{count} in this status. Choose a status to move them to."
+
+STATUS_HAS_UNSEEN_ISSUES = "Issues in {where} are in this status. Choose a status to move them to."
+
+STATUS_HAS_MORE_ISSUES = "{count} in this status, and more in {where}. Choose a status to move them to."
+
+HIDDEN_HAS_UNSEEN_ISSUES = (
+    "Issues in {where} are in this status. Its members must move them to another status before it is hidden."
+)
 
 HIDDEN_HAS_ISSUES = "{count} in this status in {team}. Move them to another status before hiding it."
 
@@ -116,9 +124,25 @@ def _inherited_label(row: Label) -> HTTPException:
 
 
 def _category_conflict(
-    repositories: Repositories, workspace_id: str, team_id: str, template: str, row: Status
+    repositories: Repositories,
+    workspace_id: str,
+    team_id: str,
+    template: str,
+    row: Status,
+    can_see: TeamFilter | None = None,
 ) -> HTTPException:
-    """A 409 naming the team a category guard protects, with its id and the category in `details`."""
+    """A 409 naming the team a category guard protects, with its id and the category in `details`.
+
+    A team `can_see` refuses goes unnamed.
+    """
+    if unseen(can_see, team_id):
+        return _conflict(
+            {
+                "error_code": "CONFLICT",
+                "message": template.format(team=UNSEEN_SUB_TEAM.capitalize()),
+                "details": {"team_id": None, "team_name": None, "category": row.category, "hidden_teams": True},
+            }
+        )
     team = repositories.teams.get(workspace_id, team_id)
     name = f"The {team.name} team" if team is not None else "A team"
     return _conflict(
@@ -150,19 +174,33 @@ def _team_count(repositories: Repositories, workspace_id: str, team_id: str, cou
     return {"team_id": team_id, "team_name": _team_name(repositories, workspace_id, team_id), "issue_count": count}
 
 
-def _has_issues(repositories: Repositories, workspace_id: str, moves: list[tuple[str, list[Issue]]]) -> HTTPException:
-    """The 409 a delete answers when issues are in the status and no replacement was named."""
-    total = sum(len(issues) for _, issues in moves)
-    return _conflict(
-        {
-            "error_code": "CONFLICT",
-            "message": STATUS_HAS_ISSUES.format(count=_issues_phrase(total)),
-            "details": {
-                "issue_count": total,
-                "teams": [_team_count(repositories, workspace_id, team_id, len(issues)) for team_id, issues in moves],
-            },
-        }
-    )
+def _has_issues(
+    repositories: Repositories,
+    workspace_id: str,
+    moves: list[tuple[str, list[Issue]]],
+    can_see: TeamFilter | None = None,
+) -> HTTPException:
+    """The 409 a delete answers when issues are in the status and no replacement was named.
+
+    Issues in a team `can_see` refuses are neither counted nor attributed, only
+    said to exist, so the caller knows to name a replacement.
+    """
+    shown = [(team_id, issues) for team_id, issues in moves if not unseen(can_see, team_id)]
+    hidden = len(shown) < len(moves)
+    total = sum(len(issues) for _, issues in shown)
+    if not total:
+        message = STATUS_HAS_UNSEEN_ISSUES.format(where=UNSEEN_SUB_TEAM)
+    elif hidden:
+        message = STATUS_HAS_MORE_ISSUES.format(count=_issues_phrase(total), where=UNSEEN_SUB_TEAM)
+    else:
+        message = STATUS_HAS_ISSUES.format(count=_issues_phrase(total))
+    details: dict[str, Any] = {
+        "issue_count": total,
+        "teams": [_team_count(repositories, workspace_id, team_id, len(issues)) for team_id, issues in shown],
+    }
+    if hidden:
+        details["hidden_teams"] = True
+    return _conflict({"error_code": "CONFLICT", "message": message, "details": details})
 
 
 def move_issues(
@@ -345,6 +383,7 @@ def delete_status(
     actor_id: str,
     source: str | None = None,
     replacement_status_id: str | None = None,
+    can_see: TeamFilter | None = None,
 ) -> None:
     """Delete a team status, moving its issues to `replacement_status_id`.
 
@@ -354,7 +393,8 @@ def delete_status(
     go. The replacement must be another status the team can see, or it is a 422.
     An inherited status is a 409: the team hides it. A parent team's status is
     checked in every sub-team too, whose issues in it move with the parent's and
-    whose overrides of it go with it.
+    whose overrides of it go with it. A refusal neither names nor counts a
+    sub-team `can_see` refuses.
     """
     existing = repositories.team_config.get_status(workspace_id, team_id, status_id)
     if existing is None:
@@ -376,14 +416,14 @@ def delete_status(
         if row is None:
             continue
         if not row.hidden and not _visible_siblings(repositories, workspace_id, member, row):
-            raise _category_conflict(repositories, workspace_id, member, LAST_OF_CATEGORY, row)
+            raise _category_conflict(repositories, workspace_id, member, LAST_OF_CATEGORY, row, can_see)
         issues = repositories.issues.iter_for_status(workspace_id, member, status_id, include_archived=True)
         if issues:
             moves.append((member, issues))
     if moves and replacement_status_id is None:
-        raise _has_issues(repositories, workspace_id, moves)
+        raise _has_issues(repositories, workspace_id, moves, can_see)
     if replacement_status_id is not None:
-        _check_replacement(repositories, workspace_id, [member for member, _ in moves], replacement_status_id)
+        _check_replacement(repositories, workspace_id, [member for member, _ in moves], replacement_status_id, can_see)
         for _, issues in moves:
             move_issues(repositories, issues, replacement_status_id, actor_id, source)
     repositories.team_config.delete_status(workspace_id, team_id, status_id)
@@ -391,12 +431,27 @@ def delete_status(
 
 
 def _check_replacement(
-    repositories: Repositories, workspace_id: str, team_ids: list[str], replacement_status_id: str
+    repositories: Repositories,
+    workspace_id: str,
+    team_ids: list[str],
+    replacement_status_id: str,
+    can_see: TeamFilter | None = None,
 ) -> None:
-    """Refuse with a 409 a replacement status one of the teams with issues to move cannot see."""
+    """Refuse with a 409 a replacement status one of the teams with issues to move cannot see.
+
+    A team `can_see` refuses goes unnamed.
+    """
     for team_id in team_ids:
         target = repositories.team_config.get_status(workspace_id, team_id, replacement_status_id)
         if target is None or target.hidden:
+            if unseen(can_see, team_id):
+                raise _conflict(
+                    {
+                        "error_code": "CONFLICT",
+                        "message": REPLACEMENT_HIDDEN.format(team=UNSEEN_SUB_TEAM.capitalize()),
+                        "details": {"team_id": None, "team_name": None, "hidden_teams": True},
+                    }
+                )
             name = _team_name(repositories, workspace_id, team_id)
             raise _conflict(
                 {
@@ -417,9 +472,18 @@ def _visible_siblings(repositories: Repositories, workspace_id: str, team_id: st
 
 
 def update_label(
-    repositories: Repositories, workspace_id: str, team_id: str, label_id: str, payload: LabelUpdate
+    repositories: Repositories,
+    workspace_id: str,
+    team_id: str,
+    label_id: str,
+    payload: LabelUpdate,
+    *,
+    can_see: TeamFilter | None = None,
 ) -> Label:
-    """Rename, recolour, group or ungroup a team label, or 404, or 409 for an inherited one."""
+    """Rename, recolour, group or ungroup a team label, or 404, or 409 for an inherited one.
+
+    The checks reach every sub-team, and a refusal neither names nor counts one `can_see` refuses.
+    """
     existing = repositories.team_config.get_label(workspace_id, team_id, label_id)
     if existing is None:
         raise _not_found()
@@ -429,8 +493,8 @@ def update_label(
     team_ids = family(repositories, workspace_id, team_id)
     if "parent_id" in attributes:
         group = team_group(repositories, workspace_id, team_id, attributes["parent_id"])
-        check_move_into_group(repositories, workspace_id, team_ids, existing, group)
-    _check_renamed(repositories, workspace_id, team_ids, existing, attributes, clear)
+        check_move_into_group(repositories, workspace_id, team_ids, existing, group, can_see=can_see)
+    _check_renamed(repositories, workspace_id, team_ids, existing, attributes, clear, can_see)
     if not attributes and not clear:
         return existing
     updated = repositories.team_config.update_label(workspace_id, team_id, label_id, clear=clear, **attributes)
@@ -446,6 +510,7 @@ def _check_renamed(
     existing: Label,
     attributes: dict[str, Any],
     clear: list[str],
+    can_see: TeamFilter | None = None,
 ) -> None:
     """Refuse a patch that gives a label a name another label holds where it will sit.
 
@@ -456,7 +521,9 @@ def _check_renamed(
     parent_id = None if "parent_id" in clear else attributes.get("parent_id", existing.parent_id)
     if name_key(name) == name_key(existing.name) and parent_id == existing.parent_id:
         return
-    check_unique_name(repositories, workspace_id, team_ids, name, parent_id, exclude_label_id=existing.label_id)
+    check_unique_name(
+        repositories, workspace_id, team_ids, name, parent_id, exclude_label_id=existing.label_id, can_see=can_see
+    )
 
 
 def _label_patch(payload: LabelUpdate, existing: Label) -> tuple[dict[str, Any], list[str]]:
@@ -664,7 +731,13 @@ def delete_workspace_label(repositories: Repositories, workspace_id: str, label_
 
 
 def set_status_override(
-    repositories: Repositories, workspace_id: str, team_id: str, status_id: str, payload: OverrideUpdate
+    repositories: Repositories,
+    workspace_id: str,
+    team_id: str,
+    status_id: str,
+    payload: OverrideUpdate,
+    *,
+    can_see: TeamFilter | None = None,
 ) -> Status:
     """Hide, show, rename or clear the rename of an inherited status in one team.
 
@@ -672,7 +745,8 @@ def set_status_override(
     reason deleting it is, and so is hiding one live issues are still in, which
     would leave them in a column the team no longer shows. The 409 counts them so
     the admin knows what to move first, as Linear asks. A parent team's hide
-    reaches its sub-teams, so they are held to the same checks.
+    reaches its sub-teams, so they are held to the same checks, and a refusal
+    neither names nor counts a sub-team `can_see` refuses.
     """
     existing = repositories.team_config.get_status(workspace_id, team_id, status_id)
     if existing is None:
@@ -686,16 +760,26 @@ def set_status_override(
                 existing if member == team_id else repositories.team_config.get_status(workspace_id, member, status_id)
             )
             if row is not None and not row.hidden:
-                _check_hide(repositories, workspace_id, member, row)
+                _check_hide(repositories, workspace_id, member, row, can_see)
     _store_override(repositories, override)
     return _resolved(repositories.team_config.get_status(workspace_id, team_id, status_id))
 
 
-def _check_hide(repositories: Repositories, workspace_id: str, team_id: str, row: Status) -> None:
+def _check_hide(
+    repositories: Repositories, workspace_id: str, team_id: str, row: Status, can_see: TeamFilter | None = None
+) -> None:
     """Refuse with a 409 hiding a status that is a team's last visible one of its category or holds live issues."""
     if not _visible_siblings(repositories, workspace_id, team_id, row):
-        raise _category_conflict(repositories, workspace_id, team_id, LAST_VISIBLE, row)
+        raise _category_conflict(repositories, workspace_id, team_id, LAST_VISIBLE, row, can_see)
     live = repositories.issues.iter_for_status(workspace_id, team_id, row.status_id, include_archived=False)
+    if live and unseen(can_see, team_id):
+        raise _conflict(
+            {
+                "error_code": "CONFLICT",
+                "message": HIDDEN_HAS_UNSEEN_ISSUES.format(where=UNSEEN_SUB_TEAM),
+                "details": {"team_id": None, "team_name": None, "hidden_teams": True},
+            }
+        )
     if live:
         name = _team_name(repositories, workspace_id, team_id)
         raise _conflict(
@@ -710,9 +794,18 @@ def _check_hide(repositories: Repositories, workspace_id: str, team_id: str, row
 
 
 def set_label_override(
-    repositories: Repositories, workspace_id: str, team_id: str, label_id: str, payload: OverrideUpdate
+    repositories: Repositories,
+    workspace_id: str,
+    team_id: str,
+    label_id: str,
+    payload: OverrideUpdate,
+    *,
+    can_see: TeamFilter | None = None,
 ) -> Label:
-    """Hide, show, rename or clear the rename of an inherited label in one team."""
+    """Hide, show, rename or clear the rename of an inherited label in one team.
+
+    A rename clashing in a sub-team `can_see` refuses is refused without naming it.
+    """
     existing = repositories.team_config.get_label(workspace_id, team_id, label_id)
     if existing is None:
         raise _not_found()
@@ -722,7 +815,13 @@ def set_label_override(
     if override.name and name_key(override.name) != name_key(existing.name):
         team_ids = family(repositories, workspace_id, team_id)
         check_unique_name(
-            repositories, workspace_id, team_ids, override.name, existing.parent_id, exclude_label_id=label_id
+            repositories,
+            workspace_id,
+            team_ids,
+            override.name,
+            existing.parent_id,
+            exclude_label_id=label_id,
+            can_see=can_see,
         )
     _store_override(repositories, override)
     return _resolved(repositories.team_config.get_label(workspace_id, team_id, label_id))

@@ -49,7 +49,9 @@ def create_label(
     repositories: Annotated[Repositories, Depends(get_repositories)],
 ) -> LabelRead:
     """Add a label to the team."""
-    created = create_label_row(repositories, context.workspace_id, str(context.team_id), payload)
+    created = create_label_row(
+        repositories, context.workspace_id, str(context.team_id), payload, can_see=context.can_see_team
+    )
     return LabelRead.from_row(created)
 
 
@@ -61,7 +63,9 @@ def update_label(
     repositories: Annotated[Repositories, Depends(get_repositories)],
 ) -> LabelRead:
     """Rename or recolour a label."""
-    updated = team_workflow.update_label(repositories, context.workspace_id, str(context.team_id), label_id, payload)
+    updated = team_workflow.update_label(
+        repositories, context.workspace_id, str(context.team_id), label_id, payload, can_see=context.can_see_team
+    )
     return LabelRead.from_row(updated)
 
 
@@ -88,7 +92,7 @@ def override_label(
 ) -> LabelRead:
     """Hide, show or rename an inherited workspace label in this team, a null name clearing the rename."""
     updated = team_workflow.set_label_override(
-        repositories, context.workspace_id, str(context.team_id), label_id, payload
+        repositories, context.workspace_id, str(context.team_id), label_id, payload, can_see=context.can_see_team
     )
     return LabelRead.from_row(updated)
 

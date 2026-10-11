@@ -26,6 +26,21 @@ PARENT_IS_SUB_TEAM = "{name} is a sub-team, and sub-teams nest one level. Choose
 
 HAS_SUB_TEAMS = "{name} has sub-teams, so it cannot sit under another team. Move its sub-teams first."
 
+UNSEEN_SUB_TEAM = "a sub-team you cannot see"
+
+TeamFilter = Callable[[str], bool]
+"""Whether the caller may read one team, as `AuthzContext.can_see_team` answers."""
+
+
+def unseen(can_see: TeamFilter | None, team_id: str) -> bool:
+    """Whether a refusal must neither name `team_id` nor count its issues, because the caller cannot read it.
+
+    A parent team's settings reach its sub-teams, a private one included, so the
+    checks run over every sub-team while what they report keeps to the ones the
+    caller may read. `None` reports everything, for callers with no person behind them.
+    """
+    return can_see is not None and not can_see(team_id)
+
 
 def sub_team_ids(repositories: Repositories, workspace_id: str, team_id: str) -> list[str]:
     """Every live team directly under `team_id`, oldest first."""

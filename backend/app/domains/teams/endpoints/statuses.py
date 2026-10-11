@@ -93,6 +93,7 @@ def delete_status(
         actor_id=context.user_id,
         source=context.source,
         replacement_status_id=replacement_status_id,
+        can_see=context.can_see_team,
     )
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
@@ -106,7 +107,7 @@ def override_status(
 ) -> StatusRead:
     """Hide, show or rename an inherited workspace status in this team, a null name clearing the rename."""
     updated = team_workflow.set_status_override(
-        repositories, context.workspace_id, str(context.team_id), status_id, payload
+        repositories, context.workspace_id, str(context.team_id), status_id, payload, can_see=context.can_see_team
     )
     return StatusRead.from_row(updated)
 

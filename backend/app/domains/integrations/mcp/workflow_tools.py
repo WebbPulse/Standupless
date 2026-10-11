@@ -183,7 +183,12 @@ def _override_team_status(call: ToolCall) -> Any:
     team = admin_team(call)
     found = status_ref(call, team.team_id, call.require("status"))
     updated = team_workflow.set_status_override(
-        call.repositories, call.context.workspace_id, team.team_id, found.status_id, _override(call)
+        call.repositories,
+        call.context.workspace_id,
+        team.team_id,
+        found.status_id,
+        _override(call),
+        can_see=call.context.can_see_team,
     )
     return status_json(updated)
 
@@ -203,7 +208,12 @@ def _override_team_label(call: ToolCall) -> Any:
     team = admin_team(call)
     found = label_ref(call, team.team_id, call.require("label"))
     updated = team_workflow.set_label_override(
-        call.repositories, call.context.workspace_id, team.team_id, found.label_id, _override(call)
+        call.repositories,
+        call.context.workspace_id,
+        team.team_id,
+        found.label_id,
+        _override(call),
+        can_see=call.context.can_see_team,
     )
     return label_json(updated)
 
