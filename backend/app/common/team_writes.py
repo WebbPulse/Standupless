@@ -33,6 +33,7 @@ from app.common.db.dynamo.team_config import (
     CycleSettings,
     SlaSettings,
     Status,
+    cycle_settings_key,
     default_archive_settings,
     default_auto_close_settings,
     default_cycle_settings,
@@ -47,6 +48,19 @@ from app.common.sub_teams import check_parent, sub_team_ids
 NOT_FOUND = {"error_code": "NOT_FOUND", "message": "Resource not found"}
 
 PREFIX_TAKEN = {"error_code": "CONFLICT", "message": "That team key prefix is in use"}
+
+ESTIMATE_FIELDS: tuple[str, ...] = (
+    "estimate_scale",
+    "estimate_extended",
+    "estimate_allow_zero",
+    "estimate_count_unestimated",
+)
+"""The team fields a sub-team takes from its parent, as it takes the parent's cycle settings."""
+
+INHERITED_SETTINGS = {
+    "error_code": "CONFLICT",
+    "message": "This sub-team takes its {what} from its parent team. Change them in the parent team's settings.",
+}
 
 HAS_SUB_TEAMS = {
     "error_code": "CONFLICT",
@@ -106,6 +120,7 @@ def create_team(
     The team takes its plan slot in that transaction too, so racing creates at the
     last slot land one team and refuse the rest. A sub-team's parent pointer rides
     in it as well; `can_see` holds the parent to the teams the caller may read.
+    A sub-team then takes its parent's estimate and cycle settings.
     """
     if payload.private:
         enforce_feature(repositories, workspace_id, Feature.PRIVATE_TEAMS)
@@ -148,6 +163,9 @@ def create_team(
         if not exc.conditional_check_failed:
             raise
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=PREFIX_TAKEN) from exc
+    if payload.parent_team_id is not None:
+        inherit_settings(repositories, workspace_id, team.team_id, payload.parent_team_id)
+        return load_team(repositories, workspace_id, team.team_id)
     return team
 
 
@@ -170,11 +188,23 @@ def update_team(
     traps a team. A scale change pins the extended toggle as it reads now, so a row
     stored before the toggle existed keeps its value rather than reading it afresh
     from the new scale. A new parent is checked before the prefix moves and
-    applied through `set_parent` after it.
+    applied through `set_parent` after it. A sub-team's estimate settings are its
+    parent's, so a patch changing them is a 409, and a parent's change reaches
+    its sub-teams.
     """
     attributes = payload.model_dump(exclude_unset=True, exclude_none=True)
     attributes.pop("parent_team_id", None)
     reparent = "parent_team_id" in payload.model_fields_set
+    estimates = {name: attributes[name] for name in ESTIMATE_FIELDS if name in attributes}
+    if estimates:
+        team = load_team(repositories, workspace_id, team_id)
+        parent_id = payload.parent_team_id if reparent else team.parent_team_id
+        if parent_id is not None and any(getattr(team, name) != value for name, value in estimates.items()):
+            raise _inherited("estimate settings")
+        if parent_id is not None:
+            for name in estimates:
+                attributes.pop(name)
+            estimates = {}
     if reparent and payload.parent_team_id is not None:
         team = load_team(repositories, workspace_id, team_id)
         if payload.parent_team_id != team.parent_team_id:
@@ -213,7 +243,39 @@ def update_team(
     updated = repositories.teams.update(workspace_id, team_id, **attributes)
     if updated is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=NOT_FOUND)
+    if estimates:
+        for sub_team_id in sub_team_ids(repositories, workspace_id, team_id):
+            _inherit_estimates(repositories, workspace_id, sub_team_id, updated)
     return updated
+
+
+def _inherited(what: str) -> HTTPException:
+    """The 409 for a sub-team changing a setting it takes from its parent."""
+    return HTTPException(
+        status_code=status.HTTP_409_CONFLICT,
+        detail={**INHERITED_SETTINGS, "message": INHERITED_SETTINGS["message"].format(what=what)},
+    )
+
+
+def _inherit_estimates(repositories: Repositories, workspace_id: str, team_id: str, parent: Team) -> None:
+    """Give one sub-team its parent's estimate settings."""
+    repositories.teams.update(workspace_id, team_id, **{name: getattr(parent, name) for name in ESTIMATE_FIELDS})
+
+
+def _inherit_cycles(repositories: Repositories, workspace_id: str, team_id: str, parent_team_id: str) -> None:
+    """Give one sub-team its parent's cycle settings, stocking its cycles when they are on."""
+    source = cycle_settings(repositories, workspace_id, parent_team_id)
+    saved = repositories.team_config.put_cycle_settings(
+        source.model_copy(update={"team_id": team_id, "config_key": cycle_settings_key(team_id)})
+    )
+    if saved.enabled:
+        cycle_schedule.ensure_cycles(repositories.planning, saved)
+
+
+def inherit_settings(repositories: Repositories, workspace_id: str, team_id: str, parent_team_id: str) -> None:
+    """Give a team that just joined a parent the parent's estimate and cycle settings."""
+    _inherit_estimates(repositories, workspace_id, team_id, load_team(repositories, workspace_id, parent_team_id))
+    _inherit_cycles(repositories, workspace_id, team_id, parent_team_id)
 
 
 def set_parent(
@@ -271,6 +333,7 @@ def set_parent(
             source=source,
         )
     if parent_team_id is not None:
+        inherit_settings(repositories, workspace_id, team_id, parent_team_id)
         team_join.merge_labels(repositories, workspace_id, team_id, merges)
         team_join.merge_statuses(repositories, workspace_id, team_id, parent_team_id, actor_id=actor_id, source=source)
     return load_team(repositories, workspace_id, team_id)
@@ -321,13 +384,18 @@ def update_cycle_settings(
 
     When cycles are on after the change, the missing current and upcoming cycles
     are created at once rather than on the next hourly run. Turning cycles off
-    keeps every cycle already created.
+    keeps every cycle already created. A sub-team takes its parent's settings, so
+    changing its own is a 409, and a parent's change reaches its sub-teams.
     """
+    if load_team(repositories, workspace_id, team_id).parent_team_id is not None:
+        raise _inherited("cycle settings")
     current = cycle_settings(repositories, workspace_id, team_id)
     changes = payload.model_dump(exclude_unset=True, exclude_none=True)
     saved = repositories.team_config.put_cycle_settings(current.model_copy(update=changes))
     if saved.enabled:
         cycle_schedule.ensure_cycles(repositories.planning, saved)
+    for sub_team_id in sub_team_ids(repositories, workspace_id, team_id):
+        _inherit_cycles(repositories, workspace_id, sub_team_id, team_id)
     return saved
 
 
