@@ -24,7 +24,7 @@ from app.common.db.dynamo.issues import Issue
 from app.common.filter_resolution import resolve_issue_filter
 from app.common.issue_filters import IssueFilter
 from app.common.issue_keys import current
-from app.common.issue_rules import require_team_reader, visible_team_ids
+from app.common.sub_teams import listed_teams
 
 COLUMNS: tuple[str, ...] = (
     "ID",
@@ -222,19 +222,18 @@ def export_page(
     team_id: Optional[str],
     cursor: Optional[str],
     limit: int,
+    include_sub_teams: bool = False,
 ) -> ExportPage:
     """One page of the CSV export of every issue the caller may see that `wanted` keeps.
 
     The first page, the one asked for without a cursor, starts with the header row,
     so concatenating the pages in order is the whole file. A page may hold fewer
     than `limit` issues, even none, when it stops at the read or size budget; only
-    a missing `next_cursor` means the export is finished.
+    a missing `next_cursor` means the export is finished. `include_sub_teams`
+    rolls the named team's sub-teams in as the issue list does, leaving out any
+    the caller cannot see.
     """
-    if team_id is not None:
-        require_team_reader(repositories, context, team_id)
-        teams = [team_id]
-    else:
-        teams = visible_team_ids(repositories, context)
+    teams = listed_teams(repositories, context, team_id, include_sub_teams=include_sub_teams)
 
     scope = digest_scope(f"export:{context.workspace_id}:{','.join(teams)}:{wanted.fingerprint()}")
     position = resume_key(cursor, scope) if cursor else None

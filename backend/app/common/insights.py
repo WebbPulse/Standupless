@@ -31,9 +31,10 @@ from app.common.filter_resolution import resolve_issue_filter
 from app.common.issue_filters import ME, IssueFilter, UnknownStatusCategory, build_issue_filter
 from app.common.issue_keyed_reads import keyed_rows
 from app.common.issue_keys import current_all
-from app.common.issue_rules import require_team_reader, unprocessable, visible_team_ids
+from app.common.issue_rules import unprocessable
 from app.common.issue_writes import archived_rows
 from app.common.saved_views import load_visible_view
+from app.common.sub_teams import listed_teams
 
 PRIORITY_NAMES: dict[str, str] = {
     "urgent": "Urgent",
@@ -111,12 +112,15 @@ def resolve_scope(
     team_id: Optional[str],
     view_id: Optional[str],
     subscribed: bool,
+    include_sub_teams: bool = False,
 ) -> InsightScope:
     """The teams and filters a breakdown runs over, deciding visibility first.
 
     A saved view brings its team and its live filter. A request naming a team
     other than the view's is a 422 rather than a silent pick of one of them. With
     neither a team nor a view, every team the caller can see is read.
+    `include_sub_teams` rolls the team's sub-teams in as the issue list does,
+    leaving out any the caller cannot see.
     """
     filters: list[IssueFilter] = [wanted]
     if view_id:
@@ -141,11 +145,7 @@ def resolve_scope(
             filters[0] = _with_archived(wanted)
         filters.append(view_filter)
 
-    if team_id:
-        require_team_reader(repositories, context, team_id)
-        teams = [team_id]
-    else:
-        teams = visible_team_ids(repositories, context)
+    teams = listed_teams(repositories, context, team_id or None, include_sub_teams=include_sub_teams)
     return InsightScope(team_ids=teams, filters=tuple(filters), subscribed=subscribed, view_id=view_id)
 
 
@@ -436,6 +436,7 @@ def insights_for(
     segment_by: Optional[str],
     measure: str,
     filters: Mapping[str, Any],
+    include_sub_teams: bool = False,
 ) -> InsightsRead:
     """A breakdown from wire values, the one entry point the route and the MCP tool share.
 
@@ -455,5 +456,13 @@ def insights_for(
         wanted = build_issue_filter(user_id=context.user_id, **filters)
     except UnknownStatusCategory as exc:
         raise unprocessable(str(exc)) from exc
-    scope = resolve_scope(repositories, context, wanted, team_id=team_id, view_id=view_id, subscribed=subscribed)
+    scope = resolve_scope(
+        repositories,
+        context,
+        wanted,
+        team_id=team_id,
+        view_id=view_id,
+        subscribed=subscribed,
+        include_sub_teams=include_sub_teams,
+    )
     return build_insights(repositories, context, scope, group_by=group_by, segment_by=segment_by, measure=measure)
