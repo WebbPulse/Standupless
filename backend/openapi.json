@@ -1998,7 +1998,7 @@
         "type": "object"
       },
       "ConnectedAppRead": {
-        "description": "One client the caller authorized, across every workspace they granted it.",
+        "description": "One client the caller authorized, across every workspace they granted it.\n\n`new_scopes` are scopes the product offers that some grant does not cover yet,\nusually because they were added after the client was authorized.",
         "properties": {
           "client_id": {
             "title": "Client Id",
@@ -2032,6 +2032,13 @@
             ],
             "title": "Last Used At"
           },
+          "new_scopes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "New Scopes",
+            "type": "array"
+          },
           "scopes": {
             "items": {
               "type": "string"
@@ -2054,6 +2061,38 @@
           "workspaces"
         ],
         "title": "ConnectedAppRead",
+        "type": "object"
+      },
+      "ConnectedAppScopesGrant": {
+        "description": "The new permissions the caller approved for one client, and optionally where.",
+        "properties": {
+          "scopes": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 26,
+            "minItems": 1,
+            "title": "Scopes",
+            "type": "array"
+          },
+          "workspace_id": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Workspace Id"
+          }
+        },
+        "required": [
+          "scopes"
+        ],
+        "title": "ConnectedAppScopesGrant",
         "type": "object"
       },
       "ConnectedAppWorkspaceRead": {
@@ -2090,6 +2129,13 @@
           "name": {
             "title": "Name",
             "type": "string"
+          },
+          "new_scopes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "New Scopes",
+            "type": "array"
           },
           "scopes": {
             "items": {
@@ -16252,6 +16298,66 @@
           }
         ],
         "summary": "Revoke My Connected App",
+        "tags": [
+          "identity"
+        ]
+      }
+    },
+    "/api/users/me/connected-apps/{client_id}/scopes": {
+      "post": {
+        "description": "Add the approved scopes to the caller's existing grants to one client.\n\nThe client keeps its refresh tokens, and its next refresh carries the new scopes,\nso it gains them without a new authorization. Every request still intersects them\nwith the caller's live role, so a scope the role cannot hold stays inert. A client\nthe caller never authorized, or never in the named workspace, is a 404.",
+        "operationId": "grant_my_connected_app_scopes_api_users_me_connected_apps__client_id__scopes_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "client_id",
+            "required": true,
+            "schema": {
+              "maxLength": 256,
+              "minLength": 1,
+              "title": "Client Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConnectedAppScopesGrant"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectedAppRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Grant My Connected App Scopes",
         "tags": [
           "identity"
         ]

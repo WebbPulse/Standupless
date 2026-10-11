@@ -20,6 +20,8 @@ import ConnectedAppsSettings from './ConnectedAppsSettings';
 
 const listMyConnectedApps = vi.fn<() => Promise<ConnectedAppRead[]>>();
 const revokeMyConnectedApp = vi.fn<(clientId: string) => Promise<void>>();
+const grantMyConnectedAppScopes =
+  vi.fn<(clientId: string, scopes: string[]) => Promise<ConnectedAppRead>>();
 const listWorkspaceConnectedApps =
   vi.fn<(workspaceId: string) => Promise<WorkspaceConnectedAppRead[]>>();
 const revokeWorkspaceConnectedApp =
@@ -42,6 +44,8 @@ vi.mock('../../hooks/useAuth', () => ({
 vi.mock('../../api/connectedApps', () => ({
   listMyConnectedApps: () => listMyConnectedApps(),
   revokeMyConnectedApp: (clientId: string) => revokeMyConnectedApp(clientId),
+  grantMyConnectedAppScopes: (clientId: string, scopes: string[]) =>
+    grantMyConnectedAppScopes(clientId, scopes),
   listWorkspaceConnectedApps: (workspaceId: string) =>
     listWorkspaceConnectedApps(workspaceId),
   revokeWorkspaceConnectedApp: (
@@ -129,6 +133,7 @@ const renderPage = () =>
 beforeEach(() => {
   listMyConnectedApps.mockReset();
   revokeMyConnectedApp.mockReset();
+  grantMyConnectedAppScopes.mockReset();
   listWorkspaceConnectedApps.mockReset();
   revokeWorkspaceConnectedApp.mockReset();
   useWorkspaceMock.mockReset();
@@ -148,6 +153,50 @@ describe('the caller connected apps', () => {
     const scoped = within(row as HTMLElement);
     expect(scoped.getByText('Engineering', { exact: false })).toBeVisible();
     expect(scoped.getByText('issues:read, issues:write')).toBeInTheDocument();
+  });
+
+  it('offers no grant when the app holds every permission', async () => {
+    renderPage();
+
+    await screen.findByText('Claude');
+    expect(
+      screen.queryByRole('button', { name: 'Grant new permissions' })
+    ).not.toBeInTheDocument();
+  });
+
+  it('grants the new permissions only after the confirmation', async () => {
+    listMyConnectedApps.mockResolvedValue([
+      app({ new_scopes: ['releases:read', 'releases:write'] }),
+    ]);
+    grantMyConnectedAppScopes.mockResolvedValue(app());
+    const user = userEvent.setup();
+    renderPage();
+
+    expect(
+      await screen.findByText(/New permissions available/)
+    ).toBeInTheDocument();
+    await user.click(
+      screen.getByRole('button', { name: 'Grant new permissions' })
+    );
+    expect(grantMyConnectedAppScopes).not.toHaveBeenCalled();
+
+    const dialog = screen.getByRole('dialog', {
+      name: 'Grant new permissions to Claude?',
+    });
+    expect(within(dialog).getByText('releases:write')).toBeInTheDocument();
+    await user.click(
+      within(dialog).getByRole('button', { name: 'Grant permissions' })
+    );
+
+    await waitFor(() => {
+      expect(grantMyConnectedAppScopes).toHaveBeenCalledWith('mcp_claude', [
+        'releases:read',
+        'releases:write',
+      ]);
+    });
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    });
   });
 
   it('shows the empty state when nothing is connected', async () => {

@@ -57,6 +57,7 @@ EVENTS: dict[str, str] = {
     "api_key.revoked": "API key revoked",
     "connected_app.authorized": "Connected app authorized",
     "connected_app.revoked": "Connected app revoked",
+    "connected_app.scopes_granted": "Connected app permissions granted",
     "export.started": "Workspace export started",
     "import.started": "Issue import started",
     "workspace.updated": "Workspace settings changed",
