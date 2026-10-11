@@ -18846,7 +18846,7 @@
     },
     "/api/workspaces/{workspace_id}/cycles": {
       "get": {
-        "description": "One page of a team's cycles, by start date ascending.\n\nThe team is required rather than optional: a workspace-wide cycle list is\nwhat the roadmap answers, and it answers it in date order across both entities\nrather than as an undated pile of one of them.\n\nThe status filter is applied after the read because status is derived, so no\nindex can carry it.",
+        "description": "One page of a team's cycles, by start date ascending.\n\nThe team is required rather than optional: a workspace-wide cycle list is\nwhat the roadmap answers, and it answers it in date order across both entities\nrather than as an undated pile of one of them.\n\nThe status filter is applied after the read because status is derived, so no\nindex can carry it. `include_sub_teams` rolls in the cycles of the team's\nsub-teams the caller may read, so a private sub-team stays out for outsiders.",
         "operationId": "list_cycles_api_workspaces__workspace_id__cycles_get",
         "parameters": [
           {
@@ -18916,6 +18916,16 @@
               "minimum": 1,
               "title": "Limit",
               "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "include_sub_teams",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Include Sub Teams",
+              "type": "boolean"
             }
           }
         ],
@@ -26043,7 +26053,7 @@
     },
     "/api/workspaces/{workspace_id}/projects": {
       "get": {
-        "description": "One page of the workspace's projects the caller can see, by target date, undated last.\n\nA project is listed when the caller can see at least one of its teams, and\n`team_id` narrows to the projects that team is on and `initiative_id` to the\nones in that initiative. The rows are read whole and paged over the filtered\norder, so a page is never left short by projects the caller cannot see.\nUndated projects sort last, because an absent target is a project nobody has\ncommitted to yet.",
+        "description": "One page of the workspace's projects the caller can see, by target date, undated last.\n\nA project is listed when the caller can see at least one of its teams, and\n`team_id` narrows to the projects that team is on and `initiative_id` to the\nones in that initiative. The rows are read whole and paged over the filtered\norder, so a page is never left short by projects the caller cannot see.\nUndated projects sort last, because an absent target is a project nobody has\ncommitted to yet. `include_sub_teams` with `team_id` also lists the projects\nof the team's sub-teams the caller may read, so a private sub-team stays out\nfor outsiders.",
         "operationId": "list_projects_api_workspaces__workspace_id__projects_get",
         "parameters": [
           {
@@ -26130,6 +26140,16 @@
               "minimum": 1,
               "title": "Limit",
               "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "include_sub_teams",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Include Sub Teams",
+              "type": "boolean"
             }
           }
         ],
