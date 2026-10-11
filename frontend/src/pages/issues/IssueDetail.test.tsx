@@ -3,10 +3,12 @@
  * inline pickers each sending their own PATCH and showing the change before it
  * lands, the rollback when a write fails, the rail sections for the parent,
  * sub-issues, relations and links, the issue menu that adds them, the unified
- * timeline, and the capability gate that hides every control.
+ * timeline, following issue links within and across teams, and the
+ * capability gate that hides every control.
  */
 
 import type { Editor } from '@tiptap/core';
+import React from 'react';
 import {
   act,
   fireEvent,
@@ -16,7 +18,13 @@ import {
   within,
 } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import {
+  MemoryRouter,
+  Route,
+  Routes,
+  useLocation,
+  useNavigate,
+} from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AuthContextType } from '../../contexts/AuthContextDefinition';
 import type { WorkspaceContextType } from '../../contexts/WorkspaceContextDefinition';
@@ -35,7 +43,7 @@ import type {
 import { clearToasts } from '../../lib/toast';
 import IssueDetail from './IssueDetail';
 
-const getIssueByKey = vi.fn<() => Promise<IssueRead>>();
+const getIssueByKey = vi.fn<(key?: string) => Promise<IssueRead>>();
 const updateIssue = vi.fn<(id: string, body: unknown) => Promise<IssueRead>>();
 const listIssues = vi.fn<(query: unknown) => Promise<IssueListRead>>();
 const listChildren = vi.fn<() => Promise<IssueListRead>>();
@@ -67,7 +75,7 @@ vi.mock('../../api/issues', async () => {
     );
   return {
     ...actual,
-    getIssueByKey: () => getIssueByKey(),
+    getIssueByKey: (_w: string, key: string) => getIssueByKey(key),
     updateIssue: (_w: string, id: string, body: unknown) =>
       updateIssue(id, body),
     listIssues: (_w: string, query: unknown) => listIssues(query),
@@ -233,6 +241,36 @@ const resolved = (role: WorkspaceRole): WorkspaceContextType => {
 const renderPage = (key = 'ENG-1') =>
   render(
     <MemoryRouter initialEntries={[`/w/mine/issues/${key}`]}>
+      <Routes>
+        <Route path="/w/:slug/issues/:key" element={<IssueDetail />} />
+      </Routes>
+    </MemoryRouter>
+  );
+
+/** Shows the current path and steps back through history, like the browser. */
+const HistoryProbe: React.FC = () => {
+  const location = useLocation();
+  const navigate = useNavigate();
+  return (
+    <>
+      <output aria-label="Path">{location.pathname}</output>
+      <button
+        type="button"
+        onClick={() => {
+          void navigate(-1);
+        }}
+      >
+        Back
+      </button>
+    </>
+  );
+};
+
+/** Mounts the key route beside a probe that reads and rewinds the history. */
+const renderWithHistory = (key = 'ENG-1') =>
+  render(
+    <MemoryRouter initialEntries={[`/w/mine/issues/${key}`]}>
+      <HistoryProbe />
       <Routes>
         <Route path="/w/:slug/issues/:key" element={<IssueDetail />} />
       </Routes>
@@ -656,6 +694,84 @@ describe('the parent', () => {
       name: 'Sub-issue of ENG-9 The epic',
     });
     expect(link).toHaveAttribute('href', '/w/mine/issues/ENG-9');
+  });
+});
+
+describe('following issue links', () => {
+  const ops: TeamRead = {
+    ...team,
+    id: 'proj-2',
+    name: 'Operations',
+    key_prefix: 'OPS',
+  };
+  const other: IssueRead = {
+    ...issue,
+    id: 'id-OPS-7',
+    team_id: 'proj-2',
+    key: 'OPS-7',
+    title: 'Over in operations',
+  };
+
+  it('opens a related issue in another team and comes back', async () => {
+    listTeams.mockResolvedValue([team, ops]);
+    getIssueByKey.mockImplementation((key) =>
+      Promise.resolve(key === 'OPS-7' ? other : issue)
+    );
+    listLinks.mockResolvedValue([
+      relation('relates_to', 'OPS-7', 'Over in operations'),
+    ]);
+    const user = userEvent.setup();
+    renderWithHistory();
+
+    const related = await screen.findByRole('list', { name: 'Related' });
+    await user.click(within(related).getByRole('link', { name: /OPS-7/ }));
+
+    expect(
+      await screen.findByRole('textbox', { name: 'Issue title' })
+    ).toHaveValue('Over in operations');
+    await waitFor(() => {
+      expect(screen.getByRole('status', { name: 'Path' })).toHaveTextContent(
+        '/w/mine/issues/OPS-7'
+      );
+    });
+
+    await user.click(screen.getByRole('button', { name: 'Back' }));
+
+    await waitFor(() => {
+      expect(screen.getByRole('textbox', { name: 'Issue title' })).toHaveValue(
+        'Cache the token'
+      );
+    });
+    expect(screen.getByRole('status', { name: 'Path' })).toHaveTextContent(
+      '/w/mine/issues/ENG-1'
+    );
+  });
+
+  it('opens a sub-issue without bouncing back to the parent', async () => {
+    const child: IssueRead = {
+      ...issue,
+      id: 'iss-2',
+      key: 'ENG-2',
+      title: 'A child',
+      parent_id: 'iss-1',
+    };
+    getIssueByKey.mockImplementation((key) =>
+      Promise.resolve(key === 'ENG-2' ? child : issue)
+    );
+    listChildren.mockResolvedValue({ issues: [child], next_cursor: null });
+    const user = userEvent.setup();
+    renderWithHistory();
+
+    await user.click(await screen.findByText('A child'));
+
+    await waitFor(() => {
+      expect(screen.getByRole('textbox', { name: 'Issue title' })).toHaveValue(
+        'A child'
+      );
+    });
+    expect(screen.getByRole('status', { name: 'Path' })).toHaveTextContent(
+      '/w/mine/issues/ENG-2'
+    );
   });
 });
 
