@@ -1,6 +1,6 @@
 # Standupless MVP technical design
 
-Scope is fixed by `ISSUE-TRACKER-MVP.md`. Shape follows CarModPicker: `app/common/` plus `app/domains/<name>/`, one OCI image per domain selected by the `DOMAIN` build arg, routers registered once in `composition/domains.py`, tables declared as `TableSpec`s and exported to `terraform/dynamodb_tables.json`, GSIs auto-named `<hash>-<range>-index` by `gsi()`. Domain names kebab-case, packages snake_case, services `standupless-{domain}`. Terraform points straight at `app.domains.<x>.consumers.<y>_entrypoint`, skipping CarModPicker's `app/entrypoints/` shims, which exist there only for historical pinning.
+Scope lives in the Standupless Paid launch project and its "Paid launch scope" document. Shape follows CarModPicker: `app/common/` plus `app/domains/<name>/`, one OCI image per domain selected by the `DOMAIN` build arg, routers registered once in `composition/domains.py`, tables declared as `TableSpec`s and exported to `terraform/dynamodb_tables.json`, GSIs auto-named `<hash>-<range>-index` by `gsi()`. Domain names kebab-case, packages snake_case, services `standupless-{domain}`. Terraform points straight at `app.domains.<x>.consumers.<y>_entrypoint`, skipping CarModPicker's `app/entrypoints/` shims, which exist there only for historical pinning.
 
 ## 1. Domain decomposition
 
