@@ -49,6 +49,11 @@ vi.mock('../../api/views', () => ({
   similarIssues: (_w: string, title: string) => similarIssues(title),
 }));
 
+vi.mock('../../api/templates', () => ({
+  listTeamTemplates: () =>
+    Promise.resolve({ templates: [], default_template_id: null }),
+}));
+
 vi.mock('../../api/planning', () => ({
   listCycles: () => Promise.resolve({ cycles: [], next_cursor: null }),
   listProjects: () => Promise.resolve({ projects: [], next_cursor: null }),

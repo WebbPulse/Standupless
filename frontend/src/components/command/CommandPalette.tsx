@@ -62,6 +62,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { usePolledQuery } from '@webbpulse/api-client/react';
 import { useQueryAuth } from '@webbpulse/auth/react';
 import { listWorkspaceDocuments } from '../../api/documents';
+import { listTeamTemplates } from '../../api/templates';
 import { listViews, search } from '../../api/views';
 import ViewIcon from '../views/ViewIcon';
 import { useCreateIssue } from '../../hooks/useCreateIssue';
@@ -96,6 +97,7 @@ import {
 import { COPY_ISSUE_URL_KEYS } from '../../lib/copyIssue';
 import {
   searchKey,
+  templatesKey,
   viewsKey,
   workspaceDocumentsKey,
 } from '../../lib/queryKeys';
@@ -159,10 +161,10 @@ interface CommandGroup {
 }
 
 /**
- * The palette's lists: the top level, or the team, view or sub-team parent
- * picker inside it.
+ * The palette's lists: the top level, or the team, view, sub-team parent or
+ * issue template picker inside it.
  */
-type Page = 'root' | 'teams' | 'views' | 'sub-team';
+type Page = 'root' | 'teams' | 'views' | 'sub-team' | 'template';
 
 /** What the back button and the input say on each nested list. */
 const PAGE_COPY: Record<
@@ -174,6 +176,10 @@ const PAGE_COPY: Record<
   'sub-team': {
     back: 'Create sub-team',
     placeholder: 'Pick the parent team',
+  },
+  template: {
+    back: 'Create issue from template',
+    placeholder: 'Pick a template',
   },
 };
 
@@ -307,6 +313,16 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
     }
   );
 
+  const { data: templateList } = usePolledQuery(
+    ({ signal }) => listTeamTemplates(workspaceId, team?.id ?? '', signal),
+    {
+      intervalMs: POLL_MS,
+      enabled: page === 'template' && workspaceId !== '' && team !== undefined,
+      queryKey: [...templatesKey(team?.id ?? ''), 'palette'],
+      auth,
+    }
+  );
+
   const pageActions = useMemo<CommandGroup[]>(() => {
     const byGroup = new Map<string, Command[]>();
     for (const shortcut of registered) {
@@ -376,6 +392,13 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
         run: () => {
           createIssue.open();
         },
+      });
+      built.push({
+        id: 'action-create-issue-template',
+        label: 'Create issue from template',
+        keywords: 'new template prefill',
+        icon: <LuFileText className={ICON} />,
+        page: 'template',
       });
     }
     if (createTeam.canCreate) {
@@ -619,6 +642,29 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
         : [{ heading: 'Parent team', commands: rows }];
     }
 
+    if (page === 'template') {
+      const rows = (team === undefined ? [] : (templateList?.templates ?? []))
+        .map((template) => ({
+          id: `template-${template.id}`,
+          label: template.name,
+          keywords: template.title ?? '',
+          ...(template.id === templateList?.default_template_id
+            ? { hint: 'Default' }
+            : {}),
+          icon: <LuFileText className={ICON} />,
+          run: () => {
+            createIssue.open({
+              ...(team === undefined ? {} : { teamId: team.id }),
+              templateId: template.id,
+            });
+          },
+        }))
+        .filter((command) => matches(command, deferred));
+      return rows.length === 0
+        ? []
+        : [{ heading: team?.name ?? 'Templates', commands: rows }];
+    }
+
     if (page === 'views') {
       const rows = (savedViews ?? [])
         .map((view) => ({
@@ -735,6 +781,9 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
   }, [
     page,
     savedViews,
+    templateList,
+    team,
+    createIssue,
     teams,
     createTeam,
     location.pathname,
@@ -854,7 +903,9 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
       ? `Search needs a word of at least ${String(MIN_TERM)} letters.`
       : isLoading && enabled
         ? 'Searching'
-        : 'Nothing matched that.';
+        : page === 'template' && (templateList?.templates.length ?? 0) === 0
+          ? 'This team has no templates yet.'
+          : 'Nothing matched that.';
 
   const placeholder =
     page === 'root' ? 'Type a command or search' : PAGE_COPY[page].placeholder;

@@ -4,7 +4,8 @@
  * Enter resolves to for a navigation command, an issue key and a search hit,
  * and the actions it offers: creating an issue or a team, switching team,
  * changing the theme, the focused issue's shortcuts, and a page's own actions
- * under their group heading.
+ * under their group heading. Creating an issue from a template opens a page
+ * listing the current team's templates.
  */
 
 import { render, screen, waitFor } from '@testing-library/react';
@@ -13,7 +14,11 @@ import React from 'react';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import ShortcutProvider from '../shortcuts/ShortcutProvider';
-import type { SearchResultRead, TeamRead } from '../../types/Api';
+import type {
+  SearchResultRead,
+  TeamRead,
+  TemplateListRead,
+} from '../../types/Api';
 import { useCommandPalette } from '../../hooks/useCommandPalette';
 import {
   CreateIssueContext,
@@ -31,6 +36,8 @@ import CommandPalette from './CommandPalette';
 const search = vi.fn<() => Promise<SearchResultRead[]>>();
 const listViews = vi.fn<() => Promise<SavedViewDisplayRead[]>>();
 const navigate = vi.fn();
+const listTeamTemplates =
+  vi.fn<(workspaceId: string, teamId: string) => Promise<TemplateListRead>>();
 
 vi.mock('../../api/documents', () => ({
   listWorkspaceDocuments: () => Promise.resolve([]),
@@ -39,6 +46,11 @@ vi.mock('../../api/documents', () => ({
 vi.mock('../../api/views', () => ({
   search: () => search(),
   listViews: () => listViews(),
+}));
+
+vi.mock('../../api/templates', () => ({
+  listTeamTemplates: (workspaceId: string, teamId: string) =>
+    listTeamTemplates(workspaceId, teamId),
 }));
 
 vi.mock('react-router-dom', async () => {
@@ -193,6 +205,11 @@ beforeEach(() => {
   navigate.mockReset();
   listViews.mockReset();
   listViews.mockResolvedValue([]);
+  listTeamTemplates.mockReset();
+  listTeamTemplates.mockResolvedValue({
+    templates: [],
+    default_template_id: null,
+  });
   search.mockResolvedValue([]);
   globalThis.localStorage.removeItem(THEME_STORAGE_KEY);
 });
@@ -452,13 +469,76 @@ describe('the actions', () => {
     const user = renderPalette({ createIssue: dialog });
 
     await user.keyboard('{Control>}k{/Control}');
-    await user.click(
-      await screen.findByRole('option', { name: /Create issue/ })
-    );
+    const [createRow] = await screen.findAllByRole('option', {
+      name: /Create issue/,
+    });
+    if (createRow === undefined) throw new Error('no Create issue row');
+    await user.click(createRow);
 
     await waitFor(() => {
-      expect(dialog.open).toHaveBeenCalled();
+      expect(dialog.open).toHaveBeenCalledWith();
     });
+  });
+
+  it('creates an issue from a template of the current team', async () => {
+    listTeamTemplates.mockResolvedValue({
+      templates: [
+        {
+          id: 'tp-1',
+          name: 'Bug report',
+          team_id: 'team-1',
+          scope: 'team',
+          title: 'Bug: ',
+          body: null,
+          status_id: null,
+          priority: null,
+          assignee_id: null,
+          label_ids: [],
+          estimate: null,
+          project_id: null,
+          project_milestone_id: null,
+          cycle_id: null,
+          position: 0,
+          created_by: 'user-1',
+          created_at: '2026-10-10T00:00:00Z',
+          updated_at: '2026-10-10T00:00:00Z',
+        },
+      ],
+      default_template_id: null,
+    });
+    const dialog = issueDialog();
+    const user = renderPalette({ createIssue: dialog });
+
+    await user.keyboard('{Control>}k{/Control}');
+    await user.click(
+      await screen.findByRole('option', { name: /Create issue from template/ })
+    );
+
+    expect(
+      await screen.findByRole('combobox', { name: 'Pick a template' })
+    ).toBeInTheDocument();
+    await user.click(await screen.findByRole('option', { name: /Bug report/ }));
+
+    await waitFor(() => {
+      expect(dialog.open).toHaveBeenCalledWith({
+        teamId: 'team-1',
+        templateId: 'tp-1',
+      });
+    });
+    expect(listTeamTemplates).toHaveBeenCalledWith('ws-1', 'team-1');
+  });
+
+  it('says so when the team has no templates', async () => {
+    const user = renderPalette({ createIssue: issueDialog() });
+
+    await user.keyboard('{Control>}k{/Control}');
+    await user.click(
+      await screen.findByRole('option', { name: /Create issue from template/ })
+    );
+
+    expect(
+      await screen.findByText('This team has no templates yet.')
+    ).toBeInTheDocument();
   });
 
   it('leaves out create issue when the caller may not write issues', async () => {

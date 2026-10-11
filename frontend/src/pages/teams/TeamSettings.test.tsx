@@ -101,6 +101,26 @@ vi.mock('../../api/standup', () => ({
     updateStandupSettings(body),
 }));
 
+vi.mock('../../api/templates', () => ({
+  listTeamTemplates: () =>
+    Promise.resolve({ templates: [], default_template_id: null }),
+  getTemplateSettings: () =>
+    Promise.resolve({
+      team_id: 'proj-1',
+      default_template_id: null,
+      effective_default_template_id: null,
+    }),
+  createTeamTemplate: vi.fn(),
+  updateTeamTemplate: vi.fn(),
+  deleteTeamTemplate: vi.fn(),
+  updateTemplateSettings: vi.fn(),
+}));
+
+vi.mock('../../api/planning', () => ({
+  listCycles: () => Promise.resolve({ cycles: [], next_cursor: null }),
+  listProjects: () => Promise.resolve({ projects: [], next_cursor: null }),
+}));
+
 vi.mock('../../api/workspaces', () => ({
   listMembers: () => listMembers(),
 }));
