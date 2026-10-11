@@ -6411,6 +6411,7 @@
             "default": "team",
             "enum": [
               "team",
+              "parent",
               "workspace"
             ],
             "title": "Scope",
@@ -11474,7 +11475,7 @@
         "type": "object"
       },
       "StatusRead": {
-        "description": "One workflow status as the API returns it, `null` color and icon meaning the default.\n\n`scope` says whether the team owns it or inherits it from the workspace. An\ninherited status the team hid carries `hidden`, and one it renamed locally\ncarries the workspace name in `inherited_name`.",
+        "description": "One workflow status as the API returns it, `null` color and icon meaning the default.\n\n`scope` says whether the team owns it or inherits it from its parent team or\nthe workspace. An inherited status the team hid carries `hidden`, and one it\nrenamed locally carries the inherited name in `inherited_name`.",
         "properties": {
           "category": {
             "enum": [
@@ -11575,6 +11576,7 @@
             "default": "team",
             "enum": [
               "team",
+              "parent",
               "workspace"
             ],
             "title": "Scope",
@@ -11808,7 +11810,7 @@
         "type": "object"
       },
       "TeamCreate": {
-        "description": "The body `POST /api/workspaces/{workspace_id}/teams` takes.",
+        "description": "The body `POST /api/workspaces/{workspace_id}/teams` takes.\n\n`parent_team_id` creates the team as a sub-team of a top-level team, whose\nstatuses and labels it inherits.",
         "properties": {
           "description": {
             "anyOf": [
@@ -11860,6 +11862,18 @@
             "minLength": 1,
             "title": "Name",
             "type": "string"
+          },
+          "parent_team_id": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Team Id"
           },
           "private": {
             "default": false,
@@ -11995,7 +12009,7 @@
         "type": "object"
       },
       "TeamRead": {
-        "description": "One team as the API returns it, carrying the caller's team role.",
+        "description": "One team as the API returns it, carrying the caller's team role.\n\n`parent_team_id` names the team this one sits under, `null` for a top-level team.",
         "properties": {
           "created_at": {
             "format": "date-time",
@@ -12064,6 +12078,17 @@
           "name": {
             "title": "Name",
             "type": "string"
+          },
+          "parent_team_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Team Id"
           },
           "private": {
             "default": false,
@@ -12242,7 +12267,7 @@
         "type": "object"
       },
       "TeamUpdate": {
-        "description": "The body a team patch takes.\n\nA new `key_prefix` retires the old one as an alias, so issue keys under the\nold prefix keep resolving and no other team can take it. `sync_pr_labels`\nturns off copying this team's issue labels onto linked pull requests.\n`private` hides the team and its issues from everyone who is not a member.\n`estimate_extended` adds the larger values to the scale, `estimate_allow_zero`\nadds 0, and `estimate_count_unestimated` counts an unestimated issue as one\npoint in cycle and project progress instead of skipping it.",
+        "description": "The body a team patch takes.\n\nA new `key_prefix` retires the old one as an alias, so issue keys under the\nold prefix keep resolving and no other team can take it. `sync_pr_labels`\nturns off copying this team's issue labels onto linked pull requests.\n`private` hides the team and its issues from everyone who is not a member.\n`estimate_extended` adds the larger values to the scale, `estimate_allow_zero`\nadds 0, and `estimate_count_unestimated` counts an unestimated issue as one\npoint in cycle and project progress instead of skipping it.\n`parent_team_id` puts the team under a top-level parent team, and an explicit\nnull makes it a top-level team again.",
         "properties": {
           "description": {
             "anyOf": [
@@ -12332,6 +12357,18 @@
               }
             ],
             "title": "Name"
+          },
+          "parent_team_id": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Team Id"
           },
           "private": {
             "anyOf": [
@@ -22041,7 +22078,7 @@
     },
     "/api/workspaces/{workspace_id}/issues": {
       "get": {
-        "description": "One page of the issues the caller may see, filtered and sorted.\n\nEvery id filter repeats, ORing its values, and `none` matches the unset field\nwhere the field can be unset. Filters are applied after the key read rather\nthan through an index, so adding one costs no GSI. The cursor is a position in\nthe filtered, sorted set and is bound to the filter, so a cursor carried to a\ndifferent filter starts over rather than skipping rows.\n\nThe exception is a filter on one person: `subscriber_id=me`, one `creator_id`\nor one `assignee_id` reads that person's own index instead of every team, which\nis what the My issues tabs ask for. `subscriber_id` takes only the caller,\nbecause what someone else follows is theirs to know.\n\nArchived issues are left out unless `include_archived` is set, and\n`archived_only` lists nothing but them, the archive view. That read goes\nstraight to each status's archived partition of the status index rather than\nreading every issue of the team and dropping the live ones. Issues awaiting\ntriage are left out the same way unless `include_triage` is set, and\n`triage_only` lists nothing but them.\n\nEvery body carries `synced_at`. Sent back as `updated_since` with the same\nfilter, it turns the read into a delta: only the issues changed since, every\none in the list's sort order and unpaged, plus `removed_ids` for issues that\nleft the filter, were archived or were deleted. `resync_required` asks for a\nfull read instead, when the cursor is older than deletions are remembered or\nthe delta is too large to carry. A delta costs one key-bounded query per team\non the change feed index, so a poll that finds nothing reads almost nothing.\n\nA delta answer carries a weak `ETag` over its body. Two polls that find the\nsame thing answer the same body, so a poll that sends the tag back in\n`If-None-Match` gets a 304 with no body instead. A full read carries none,\nbecause its cursor moves with the clock.",
+        "description": "One page of the issues the caller may see, filtered and sorted.\n\nEvery id filter repeats, ORing its values, and `none` matches the unset field\nwhere the field can be unset. Filters are applied after the key read rather\nthan through an index, so adding one costs no GSI. The cursor is a position in\nthe filtered, sorted set and is bound to the filter, so a cursor carried to a\ndifferent filter starts over rather than skipping rows.\n\nThe exception is a filter on one person: `subscriber_id=me`, one `creator_id`\nor one `assignee_id` reads that person's own index instead of every team, which\nis what the My issues tabs ask for. `subscriber_id` takes only the caller,\nbecause what someone else follows is theirs to know.\n\nArchived issues are left out unless `include_archived` is set, and\n`archived_only` lists nothing but them, the archive view. That read goes\nstraight to each status's archived partition of the status index rather than\nreading every issue of the team and dropping the live ones. Issues awaiting\ntriage are left out the same way unless `include_triage` is set, and\n`triage_only` lists nothing but them.\n\n`include_sub_teams` with a `team_id` rolls that team's sub-teams the caller\nmay see into the list, so a parent team's views show its sub-teams' issues.\n\nEvery body carries `synced_at`. Sent back as `updated_since` with the same\nfilter, it turns the read into a delta: only the issues changed since, every\none in the list's sort order and unpaged, plus `removed_ids` for issues that\nleft the filter, were archived or were deleted. `resync_required` asks for a\nfull read instead, when the cursor is older than deletions are remembered or\nthe delta is too large to carry. A delta costs one key-bounded query per team\non the change feed index, so a poll that finds nothing reads almost nothing.\n\nA delta answer carries a weak `ETag` over its body. Two polls that find the\nsame thing answer the same body, so a poll that sends the tag back in\n`If-None-Match` gets a 304 with no body instead. A full read carries none,\nbecause its cursor moves with the clock.",
         "operationId": "list_issues_api_workspaces__workspace_id__issues_get",
         "parameters": [
           {
@@ -22068,6 +22105,16 @@
                 }
               ],
               "title": "Team Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "include_sub_teams",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Include Sub Teams",
+              "type": "boolean"
             }
           },
           {
@@ -28184,7 +28231,7 @@
     },
     "/api/workspaces/{workspace_id}/teams": {
       "get": {
-        "description": "Every team in the workspace the caller may see, in the caller's saved order.\n\nA guest sees only the teams they are a member of, which is the same rule\nthe single team route applies, read off the context rather than repeated.\nTeams the saved order does not name follow it, oldest first.",
+        "description": "Every team in the workspace the caller may see, in the caller's saved order.\n\nA guest sees only the teams they are a member of, which is the same rule\nthe single team route applies, read off the context rather than repeated.\nTeams the saved order does not name follow it, oldest first. With\n`parent_team_id`, only that team's sub-teams.",
         "operationId": "list_teams_api_workspaces__workspace_id__teams_get",
         "parameters": [
           {
@@ -28195,6 +28242,23 @@
               "minLength": 1,
               "title": "Workspace Id",
               "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "parent_team_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Parent Team Id"
             }
           }
         ],
@@ -28231,7 +28295,7 @@
         ]
       },
       "post": {
-        "description": "Create a team, make the caller its admin and seed the default statuses.\n\nAll three land as one `TransactWriteItems` across the three tables, seven items\nin total, because a team written without its statuses is unusable and cannot\nbe recreated: the prefix is taken, so a retry 409s while issue creation 422s on\nthe missing statuses. All or nothing means a failure leaves the prefix free.",
+        "description": "Create a team, make the caller its admin and seed the default statuses.\n\nAll three land as one `TransactWriteItems` across the three tables, seven items\nin total, because a team written without its statuses is unusable and cannot\nbe recreated: the prefix is taken, so a retry 409s while issue creation 422s on\nthe missing statuses. All or nothing means a failure leaves the prefix free.\nA parent team must be one the caller can find.",
         "operationId": "create_team_api_workspaces__workspace_id__teams_post",
         "parameters": [
           {
@@ -28436,7 +28500,7 @@
         ]
       },
       "patch": {
-        "description": "Change a team's name, key prefix, description or estimate scale.\n\nA new key prefix is applied first, in its own transaction, so a 409 on a\ntaken prefix leaves every other field of the patch unapplied too.",
+        "description": "Change a team's name, key prefix, description, estimate scale or parent team.\n\nA new key prefix is applied first, in its own transaction, so a 409 on a\ntaken prefix leaves every other field of the patch unapplied too. An\nexplicit null `parent_team_id` makes the team top-level again.",
         "operationId": "update_team_api_workspaces__workspace_id__teams__team_id__patch",
         "parameters": [
           {

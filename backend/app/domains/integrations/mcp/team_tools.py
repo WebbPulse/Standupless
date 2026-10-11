@@ -34,7 +34,7 @@ from app.common.db.dynamo.team_config import (
     MAX_SLA_HOURS,
     MAX_UPCOMING_CYCLES,
     SLA_PRIORITIES,
-    WORKSPACE_SCOPE,
+    TEAM_SCOPE,
     ArchiveSettings,
     AutoCloseSettings,
     CycleSettings,
@@ -54,6 +54,7 @@ from app.domains.integrations.mcp.toolkit import (
     Tool,
     ToolCall,
     enum,
+    nullable,
     nullable_enum,
     object_schema,
     string,
@@ -63,6 +64,13 @@ from app.domains.integrations.mcp.toolkit import (
 from app.domains.integrations.mcp.transport import ToolError
 
 VIEW_SCOPES: tuple[str, ...] = ("mine", "team", "workspace", "all")
+
+PARENT_ARGUMENT = (
+    "Parent team: id, key such as ENG, or name. The team becomes its sub-team and inherits its statuses and labels. "
+    "Teams nest one level"
+)
+
+PARENT_CLEARED = "null makes the team top-level again, and its issues leave the parent's statuses and labels"
 
 ESTIMATE_SCALES: tuple[str, ...] = ("off", "exponential", "fibonacci", "linear", "tshirt")
 
@@ -106,12 +114,23 @@ def given_arguments(call: ToolCall, names: tuple[str, ...]) -> dict[str, Any]:
     return {name: call.arguments[name] for name in names if name in call.arguments}
 
 
+def _parent_arguments(call: ToolCall) -> dict[str, Any]:
+    """`parent_team_id` as the caller sent it, a team reference resolved to its id, or null to clear it."""
+    if "parent_team_id" not in call.arguments:
+        return {}
+    value = call.arguments["parent_team_id"]
+    if value is None:
+        return {"parent_team_id": None}
+    return {"parent_team_id": team_ref(call, value, administer=True).team_id}
+
+
 def _team_json(call: ToolCall, team: Team) -> dict[str, Any]:
     """One team's identity, as every team tool answers it."""
     return {
         "team_id": team.team_id,
         "name": team.name,
         "key_prefix": team.key_prefix,
+        "parent_team_id": team.parent_team_id,
         "description": team.description,
         "estimate_scale": team.estimate_scale,
         "estimate_extended": team.estimate_extended,
@@ -346,15 +365,19 @@ def _workspace_user_ref(call: ToolCall, value: Any) -> str:
 
 
 def _list_teams(call: ToolCall) -> Any:
-    """Every team this credential may read, with what an agent needs to write."""
+    """Every team this credential may read, with what an agent needs to write, or one parent's sub-teams."""
     teams = call.repositories.teams.list_for_workspace(call.context.workspace_id)
     visible = [row for row in teams if call.context.can_see_team(row.team_id)]
+    if call.arguments.get("parent_team_id") is not None:
+        parent_id = team_ref(call, call.arguments["parent_team_id"]).team_id
+        visible = [row for row in visible if row.parent_team_id == parent_id]
     return {
         "teams": [
             {
                 "team_id": row.team_id,
                 "name": row.name,
                 "key_prefix": row.key_prefix,
+                "parent_team_id": row.parent_team_id,
                 "estimate_scale": row.estimate_scale,
                 "private": call.context.is_private_team(row.team_id),
             }
@@ -395,10 +418,11 @@ def _get_team(call: ToolCall) -> Any:
 def _create_team(call: ToolCall) -> Any:
     """Create a team with the caller as its admin, as the create route does."""
     check_capability(call.repositories, call.context, Capability.TEAM_CREATE)
-    payload = TeamCreate.model_validate(
-        given_arguments(call, ("name", "key_prefix", "description", *ESTIMATE_ARGUMENTS, "private"))
+    arguments = given_arguments(call, ("name", "key_prefix", "description", *ESTIMATE_ARGUMENTS, "private"))
+    payload = TeamCreate.model_validate({**arguments, **_parent_arguments(call)})
+    team = team_writes.create_team(
+        call.repositories, call.context.workspace_id, call.context.user_id, payload, can_see=call.context.can_find_team
     )
-    team = team_writes.create_team(call.repositories, call.context.workspace_id, call.context.user_id, payload)
     audit.record(
         call.repositories,
         call.context,
@@ -415,12 +439,21 @@ def _create_team(call: ToolCall) -> Any:
 
 
 def _update_team(call: ToolCall) -> Any:
-    """Change a team's name, key prefix, description, estimate settings, label sync or privacy."""
+    """Change a team's name, key prefix, description, estimate settings, label sync, privacy or parent team."""
     team = admin_team(call)
-    payload = TeamUpdate.model_validate(
-        given_arguments(call, ("name", "key_prefix", "description", *ESTIMATE_ARGUMENTS, "sync_pr_labels", "private"))
+    arguments = given_arguments(
+        call, ("name", "key_prefix", "description", *ESTIMATE_ARGUMENTS, "sync_pr_labels", "private")
     )
-    updated = team_writes.update_team(call.repositories, call.context.workspace_id, team.team_id, payload)
+    payload = TeamUpdate.model_validate({**arguments, **_parent_arguments(call)})
+    updated = team_writes.update_team(
+        call.repositories,
+        call.context.workspace_id,
+        team.team_id,
+        payload,
+        actor_id=call.context.user_id,
+        source=call.context.source,
+        can_see=call.context.can_find_team,
+    )
     body = _team_json(call, updated)
     body["retired_key_prefixes"] = call.repositories.teams.list_aliases(call.context.workspace_id, team.team_id)
     return body
@@ -612,7 +645,7 @@ def _list_labels(call: ToolCall) -> Any:
         labels.extend(
             label_json(row)
             for row in ordered_labels(call.repositories, workspace_id, candidate, include_hidden=include_hidden)
-            if row.scope != WORKSPACE_SCOPE
+            if row.scope == TEAM_SCOPE
         )
     return {"labels": labels}
 
@@ -624,7 +657,7 @@ def _create_label(call: ToolCall) -> Any:
     own = [
         row
         for row in call.repositories.team_config.list_labels(call.context.workspace_id, team_id)
-        if row.scope != WORKSPACE_SCOPE
+        if row.scope == TEAM_SCOPE
     ]
     _, group_id = group_argument(call, own)
     payload = LabelCreate.model_validate(
@@ -646,7 +679,7 @@ def _update_label(call: ToolCall) -> Any:
     own = [
         row
         for row in call.repositories.team_config.list_labels(call.context.workspace_id, team.team_id)
-        if row.scope != WORKSPACE_SCOPE
+        if row.scope == TEAM_SCOPE
     ]
     named, group_id = group_argument(call, own)
     if named:
@@ -738,15 +771,19 @@ def _team_fields(required_name: bool) -> Mapping[str, Any]:
         "private": boolean(
             "Whether only team members can see the team and its issues; needs the Business plan to turn on"
         ),
+        "parent_team_id": nullable(PARENT_ARGUMENT if required_name else f"{PARENT_ARGUMENT}; {PARENT_CLEARED}"),
     }
 
 
 TEAM_TOOLS: tuple[Tool, ...] = (
     Tool(
         name="list_teams",
-        description="Every team this credential can read, with key prefix and estimate scale.",
+        description=(
+            "Every team this credential can read, with key prefix, estimate scale and parent team. "
+            "parent_team_id narrows the list to that team's sub-teams."
+        ),
         scopes=("teams:read",),
-        schema=object_schema({}),
+        schema=object_schema({"parent_team_id": string("Only this team's sub-teams: id, key such as ENG, or name")}),
         handler=_list_teams,
     ),
     Tool(

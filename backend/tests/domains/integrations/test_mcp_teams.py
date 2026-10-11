@@ -118,6 +118,26 @@ def test_update_team_sets_the_estimate_settings(client: TestClient, repositories
     assert team.estimate_count_unestimated is True
 
 
+def test_update_team_sets_and_clears_the_parent_team(client: TestClient, repositories: Any, workspace: str) -> None:
+    """A parent named by key nests the team, the listing filters by it, and null makes the team top-level."""
+    secret = mint_for(repositories, ADMIN, ("teams:write", "teams:read"))
+
+    nested = answer(tool(client, secret, "update_team", {"team_id": "XYZ", "parent_team_id": "ABC"}))
+    assert nested["parent_team_id"] == TEAM
+    assert repositories.teams.get(WORKSPACE, OTHER_TEAM).parent_team_id == TEAM
+
+    listed = answer(tool(client, secret, "list_teams", {"parent_team_id": "ABC"}))
+    assert [(row["team_id"], row["parent_team_id"]) for row in listed["teams"]] == [(OTHER_TEAM, TEAM)]
+    statuses = answer(tool(client, secret, "list_statuses", {"team_id": "XYZ"}))
+    assert "parent" in {row["scope"] for row in statuses["statuses"]}
+
+    assert "nest one level" in refusal(tool(client, secret, "update_team", {"team_id": "ABC", "parent_team_id": "XYZ"}))
+
+    cleared = answer(tool(client, secret, "update_team", {"team_id": "XYZ", "parent_team_id": None}))
+    assert cleared["parent_team_id"] is None
+    assert repositories.teams.get(WORKSPACE, OTHER_TEAM).parent_team_id is None
+
+
 def test_update_team_holds_the_route_roles(client: TestClient, repositories: Any, workspace: str) -> None:
     """A member is refused as the route refuses, a guest outside the team sees nothing."""
     member = mint_for(repositories, MEMBER, ("teams:write",))

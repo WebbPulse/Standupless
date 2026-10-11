@@ -8,8 +8,9 @@ A label group is a label with `is_group` set, holding the labels that name it in
 a scope, and an issue carries at most one label of each group.
 
 A label name is unique, ignoring case, among the labels a team sees in the same
-place: the top level, or one group. A team sees its own labels and every
-workspace label, so a workspace label's name is checked against every team.
+place: the top level, or one group. A team sees its own labels, its parent
+team's and every workspace label, so a workspace label's name is checked against
+every team and a parent team's against each of its sub-teams.
 """
 
 from __future__ import annotations
@@ -20,8 +21,9 @@ from fastapi import HTTPException, status
 
 from app.common.api.dependencies.repositories import Repositories
 from app.common.api.schemas.teams import LabelCreate
-from app.common.db.dynamo.team_config import WORKSPACE_SCOPE, Label, label_key, new_config_id
+from app.common.db.dynamo.team_config import TEAM_SCOPE, WORKSPACE_SCOPE, Label, label_key, new_config_id
 from app.common.issue_rules import unprocessable
+from app.common.sub_teams import family
 
 GITHUB_LABEL_MAX = 50
 """The longest label name GitHub accepts."""
@@ -49,7 +51,7 @@ def ordered_labels(
 def team_group(repositories: Repositories, workspace_id: str, team_id: str, parent_id: str) -> Label:
     """The team's own label group a team label may go in, or a 422."""
     row = repositories.team_config.get_label(workspace_id, team_id, parent_id)
-    if row is None or not row.is_group or row.scope == WORKSPACE_SCOPE:
+    if row is None or not row.is_group or row.scope != TEAM_SCOPE:
         raise unprocessable(NOT_A_GROUP.format(parent_id=parent_id))
     return row
 
@@ -72,7 +74,8 @@ def create_label(repositories: Repositories, workspace_id: str, team_id: str, pa
         if payload.is_group:
             raise unprocessable(GROUP_IN_GROUP)
         team_group(repositories, workspace_id, team_id, payload.parent_id)
-    check_unique_name(repositories, workspace_id, [team_id], payload.name, payload.parent_id)
+    team_ids = family(repositories, workspace_id, team_id)
+    check_unique_name(repositories, workspace_id, team_ids, payload.name, payload.parent_id)
     label_id = new_config_id()
     return repositories.team_config.create_label(
         Label(
@@ -119,7 +122,8 @@ def check_unique_name(
         if name_key(row.name) != wanted:
             continue
         local = row.team_id and (row.scope != WORKSPACE_SCOPE or row.inherited_name)
-        where = f" in the {_team_name(repositories, workspace_id, row.team_id)} team" if local else " in the workspace"
+        owner = _owning_team(repositories, workspace_id, row)
+        where = f" in the {_team_name(repositories, workspace_id, owner)} team" if local else " in the workspace"
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail={
@@ -128,6 +132,13 @@ def check_unique_name(
                 "details": {"label_id": row.label_id, "name": row.name, "scope": row.scope},
             },
         )
+
+
+def _owning_team(repositories: Repositories, workspace_id: str, row: Label) -> str:
+    """The team a label read through a team belongs to: the parent for one a sub-team inherits."""
+    if row.scope == TEAM_SCOPE or row.inherited_name:
+        return row.team_id
+    return repositories.team_config.get_parent_id(workspace_id, row.team_id) or row.team_id
 
 
 def _team_name(repositories: Repositories, workspace_id: str, team_id: str) -> str:
@@ -180,7 +191,7 @@ def ungroup_children(repositories: Repositories, workspace_id: str, group: Label
                 repositories.team_config.update_workspace_label(workspace_id, row.label_id, clear=("parent_id",))
         return
     for row in repositories.team_config.list_labels(workspace_id, group.team_id):
-        if row.parent_id == group.label_id and row.scope != WORKSPACE_SCOPE:
+        if row.parent_id == group.label_id and row.scope == TEAM_SCOPE:
             repositories.team_config.update_label(workspace_id, group.team_id, row.label_id, clear=("parent_id",))
 
 
