@@ -304,11 +304,17 @@ class ConnectedAppMemberRead(TypedDict):
     id: str
 
 
+class ConnectedAppScopesGrant(TypedDict):
+    scopes: list[str]
+    workspace_id: NotRequired[str | None]
+
+
 class ConnectedAppWorkspaceRead(TypedDict):
     authorized_at: NotRequired[str | None]
     id: str
     last_used_at: NotRequired[str | None]
     name: str
+    new_scopes: NotRequired[list[str]]
     scopes: list[str]
 
 
@@ -2273,6 +2279,7 @@ class ConnectedAppRead(TypedDict):
     client_name: str
     first_authorized_at: NotRequired[str | None]
     last_used_at: NotRequired[str | None]
+    new_scopes: NotRequired[list[str]]
     scopes: list[str]
     workspaces: list[ConnectedAppWorkspaceRead]
 

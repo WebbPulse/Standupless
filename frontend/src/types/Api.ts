@@ -2421,6 +2421,8 @@ export interface ConnectedAppWorkspaceRead {
   id: string;
   name: string;
   scopes: string[];
+  /** Scopes offered since this grant was made that it does not cover yet. */
+  new_scopes?: string[];
   authorized_at: string | null;
   last_used_at: string | null;
 }
@@ -2430,6 +2432,8 @@ export interface ConnectedAppRead {
   client_id: string;
   client_name: string;
   scopes: string[];
+  /** Scopes some grant to this client does not cover yet, offered as new permissions. */
+  new_scopes?: string[];
   first_authorized_at: string | null;
   last_used_at: string | null;
   workspaces: ConnectedAppWorkspaceRead[];
