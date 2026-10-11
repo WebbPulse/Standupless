@@ -125,10 +125,6 @@ const Privacy: React.FC = () => (
           Local storage remembers your light or dark theme and which teams you
           expanded in the sidebar.
         </li>
-        <li>
-          Session storage remembers that you dismissed the development notice,
-          until you next sign in.
-        </li>
       </LegalList>
       <p>
         There are no analytics, advertising or third party cookies, and fonts
