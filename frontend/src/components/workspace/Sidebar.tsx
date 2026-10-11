@@ -26,7 +26,13 @@
  * it, and the post-deploy suite signs out through that one id wherever it lands.
  */
 
-import React, { useCallback, useMemo, useRef, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import {
   LuChevronRight,
   LuChevronsUpDown,
@@ -474,7 +480,9 @@ const TeamSection: React.FC<TeamSectionProps> = ({
 /**
  * The workspace navigation column. A team section is open when it was toggled
  * open, or when the current route is inside it, which is derived from the route
- * rather than stored so that navigating never has to write state back.
+ * rather than stored. Arriving on a sub-team's page expands its parent and
+ * saves that like a manual expand, once per arrival, so the active sub-team
+ * shows in its nested place and collapsing the parent afterwards still hides it.
  */
 export const Sidebar: React.FC<SidebarProps> = ({ workspace, onNavigate }) => {
   const { user, logout } = useAuth();
@@ -584,10 +592,30 @@ export const Sidebar: React.FC<SidebarProps> = ({ workspace, onNavigate }) => {
     expanded.includes(team.key_prefix) || team.key_prefix === prefix;
 
   const isShown = (team: TeamRead): boolean => {
-    if (!isNested(team, rows) || team.key_prefix === prefix) return true;
+    if (!isNested(team, rows)) return true;
     const parent = rows.find((row) => row.id === team.parent_team_id);
     return parent === undefined || isOpen(parent);
   };
+
+  const revealedFor = useRef<string | null>(null);
+  useEffect(() => {
+    if (revealedFor.current === prefix) return;
+    if (prefix === null) {
+      revealedFor.current = null;
+      return;
+    }
+    const active = rows.find((row) => row.key_prefix === prefix);
+    if (active === undefined) return;
+    revealedFor.current = prefix;
+    const parent = rows.find((row) => row.id === active.parent_team_id);
+    if (parent === undefined) return;
+    setExpanded((held) => {
+      if (held.includes(parent.key_prefix)) return held;
+      const next = [...held, parent.key_prefix];
+      writeExpanded(workspace.id, next);
+      return next;
+    });
+  }, [prefix, rows, workspace.id]);
   const ownViews = useMemo(
     () =>
       (views ?? [])
