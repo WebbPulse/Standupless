@@ -14,7 +14,7 @@ from typing import Callable
 from fastapi import HTTPException, status
 from webbpulse.dynamodb import ConditionFailed, TransactionCanceled
 
-from app.common import cycle_schedule, issue_keys, plan_usage, team_purge, team_workflow
+from app.common import cycle_schedule, issue_keys, plan_usage, team_join, team_purge, team_workflow
 from app.common.api.dependencies.repositories import Repositories
 from app.common.api.schemas.teams import (
     ArchiveSettingsUpdate,
@@ -179,6 +179,7 @@ def update_team(
         team = load_team(repositories, workspace_id, team_id)
         if payload.parent_team_id != team.parent_team_id:
             check_parent(repositories, workspace_id, team, payload.parent_team_id, can_see=can_see)
+            team_join.plan_label_merges(repositories, workspace_id, team_id, payload.parent_team_id)
     private = attributes.pop("private", None)
     if private:
         enforce_feature(repositories, workspace_id, Feature.PRIVATE_TEAMS)
@@ -232,13 +233,18 @@ def set_parent(
     own copies of any status category it would no longer cover, then its issues in
     the parent's statuses move to its first visible status of the same category,
     recorded as status changes, and the parent's labels come off its issues as a
-    deleted label does. Its overrides of the parent's rows go too.
+    deleted label does. Its overrides of the parent's rows go too. A team joining
+    a parent folds its duplicates of the parent's statuses and labels into them,
+    as `team_join` describes, and a label clash it cannot fold refuses the join
+    before anything is written.
     """
     team = load_team(repositories, workspace_id, team_id)
     if parent_team_id == team.parent_team_id:
         return team
+    merges: list[team_join.LabelMerge] = []
     if parent_team_id is not None:
         check_parent(repositories, workspace_id, team, parent_team_id, can_see=can_see)
+        merges = team_join.plan_label_merges(repositories, workspace_id, team_id, parent_team_id)
     previous = team.parent_team_id
     config = repositories.team_config
     leaving_statuses = config.list_statuses(workspace_id, previous) if previous else []
@@ -264,6 +270,9 @@ def set_parent(
             actor_id=actor_id,
             source=source,
         )
+    if parent_team_id is not None:
+        team_join.merge_labels(repositories, workspace_id, team_id, merges)
+        team_join.merge_statuses(repositories, workspace_id, team_id, parent_team_id, actor_id=actor_id, source=source)
     return load_team(repositories, workspace_id, team_id)
 
 
