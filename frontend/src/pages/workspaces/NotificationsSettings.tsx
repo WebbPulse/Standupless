@@ -9,7 +9,7 @@
  * does not leave the switch showing something that is not stored.
  */
 
-import React, { useState } from 'react';
+import React, { useId, useMemo, useState } from 'react';
 import { useQueryAuth } from '@webbpulse/auth/react';
 import { invalidateQueries, usePolledQuery } from '@webbpulse/api-client/react';
 import {
@@ -19,9 +19,11 @@ import {
 } from '../../api/notifications';
 import { ErrorAlert } from '../../components/ui/alert';
 import Checkbox from '../../components/ui/checkbox';
+import { Select } from '../../components/ui/select';
 import Spinner from '../../components/ui/spinner';
 import SettingsNav from '../../components/workspace/SettingsNav';
 import WorkspaceShell from '../../components/workspace/WorkspaceShell';
+import { browserTimezone } from '../../api/home';
 import { useWorkspace } from '../../hooks/useWorkspace';
 import { errorMessage } from '../../lib/errors';
 import { CURRENT_USER_KEY } from '../../lib/queryKeys';
@@ -96,6 +98,17 @@ const IN_APP_ONLY: ReadonlySet<NotificationKind> = new Set([
 /** The switches a kind shows when the profile has no entry for it. */
 const ALL_ON: NotificationChannels = { in_app: true, email: true };
 
+/** Every timezone the browser knows, with `current` kept even when it is not among them. */
+const zoneChoices = (current: string): string[] => {
+  let known: string[];
+  try {
+    known = Intl.supportedValuesOf('timeZone');
+  } catch {
+    known = [];
+  }
+  return known.includes(current) ? known : [current, ...known];
+};
+
 /** The column layout the header and every row share. */
 const COLUMNS =
   'grid grid-cols-[minmax(0,1fr)_4rem_4rem] items-center gap-3 px-3';
@@ -115,6 +128,9 @@ const NotificationsSettings: React.FC = () => {
 
   const user = saved ?? data;
   const emailOn = user?.email_notifications ?? true;
+  const zoneId = useId();
+  const zone = user?.timezone ?? browserTimezone();
+  const zones = useMemo(() => zoneChoices(zone), [zone]);
 
   const save = (body: UserPreferencesUpdate): void => {
     setSaving(true);
@@ -178,6 +194,35 @@ const NotificationsSettings: React.FC = () => {
               <p className="mt-1 pl-5.5 text-xs text-text-faint">
                 Turning this off stops every email below at once. Your inbox is
                 not affected.
+              </p>
+            </div>
+
+            <div className="space-y-1 rounded-md border border-line p-3">
+              <div className="flex items-center justify-between gap-3">
+                <label
+                  htmlFor={zoneId}
+                  className="text-sm font-medium text-text"
+                >
+                  Timezone
+                </label>
+                <Select
+                  id={zoneId}
+                  className="w-64"
+                  value={zone}
+                  disabled={saving}
+                  onChange={(event) => {
+                    save({ timezone: event.target.value });
+                  }}
+                >
+                  {zones.map((name) => (
+                    <option key={name} value={name}>
+                      {name}
+                    </option>
+                  ))}
+                </Select>
+              </div>
+              <p className="text-xs text-text-faint">
+                Due date reminders arrive on your calendar day in this zone.
               </p>
             </div>
 

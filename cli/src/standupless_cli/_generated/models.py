@@ -1938,6 +1938,7 @@ class UserPreferencesUpdate(TypedDict):
         ]
         | None
     ]
+    timezone: NotRequired[str | None]
 
 
 class UserRead(TypedDict):
@@ -1948,6 +1949,7 @@ class UserRead(TypedDict):
     email_verified: bool
     id: str
     notification_preferences: dict[str, NotificationChannels]
+    timezone: NotRequired[str | None]
     two_factor: NotRequired[bool]
 
 

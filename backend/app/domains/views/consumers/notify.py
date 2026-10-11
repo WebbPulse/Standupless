@@ -544,7 +544,8 @@ def handle_record(repositories: Repositories, record: Mapping[str, Any]) -> None
 
     The digest flush schedule's synthetic record runs the flush, the project
     update reminder sweep every quarter hour, the standup digest sweep every five
-    minutes and the issue due date sweep every hour, and nothing else. The sweeps
+    minutes and the issue due date sweep every hour, and nothing else. Each sweep
+    runs on the first tick of its window, so a late tick does not skip a pass. The sweeps
     are imported here rather than at the top because they build on this module's
     writers.
 
@@ -559,11 +560,11 @@ def handle_record(repositories: Repositories, record: Mapping[str, Any]) -> None
         from app.domains.views.consumers.project_reminders import run_reminders, sweep_due
 
         now = datetime.now(timezone.utc)
-        if sweep_due(now):
+        if sweep_due(repositories, now):
             run_reminders(repositories, now)
-        if standups.sweep_due(now):
+        if standups.sweep_due(repositories, now):
             standups.run_standups(repositories, now)
-        if due_reminders.sweep_due(now):
+        if due_reminders.sweep_due(repositories, now):
             due_reminders.run_due_reminders(repositories, now)
         return
 

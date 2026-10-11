@@ -18,6 +18,8 @@ export interface UserRead {
   notification_preferences?: Record<NotificationKind, NotificationChannels>;
   /** Whether this session has a second factor, the claim a workspace auth policy checks. */
   two_factor?: boolean;
+  /** The IANA zone due dates are judged in, or null when none is stored yet. */
+  timezone?: string | null;
 }
 
 /** One workspace as the account deletion plan names it. */
@@ -61,6 +63,7 @@ export interface UserPreferencesUpdate {
   notification_preferences?: Partial<
     Record<NotificationKind, Partial<NotificationChannels>>
   >;
+  timezone?: string;
 }
 
 /** A role held at the workspace level. */

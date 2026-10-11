@@ -3,7 +3,7 @@
  * calls on top of it.
  */
 
-import React, { useCallback, useMemo } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef } from 'react';
 import type { ReactNode } from 'react';
 import {
   AuthProvider as PackageAuthProvider,
@@ -11,14 +11,49 @@ import {
   type AnyAuthClient,
 } from '@webbpulse/auth/react';
 import { useNavigate } from 'react-router-dom';
+import { browserTimezone } from '../api/home';
 import { getIdentityClient } from '../api/identityClient';
+import { updatePreferences } from '../api/notifications';
 import { clearIssueContextCache } from '../lib/issueContextCache';
 import { clearSignedIn, useSignedInHint } from '../lib/signedInHint';
+import { setViewerTimezone } from '../lib/viewerTimezone';
 import type { UserRead } from '../types/Api';
 import {
   AuthExtrasContext,
   type AuthExtrasContextType,
 } from './AuthContextDefinition';
+
+/**
+ * Keeps the viewer's due date zone in step with the profile, and stores the
+ * browser's zone once on a profile that has none, so due date reminders land on
+ * the day the person sees. A failed capture is left for the next session.
+ */
+const useTimezoneCapture = (
+  user: UserRead | null,
+  setUser: (user: UserRead) => void
+): void => {
+  const captured = useRef(false);
+  const stored = user?.timezone;
+  const signedIn = user !== null;
+
+  useEffect(() => {
+    setViewerTimezone(stored);
+  }, [stored]);
+
+  useEffect(() => {
+    if (!signedIn || stored !== null || captured.current) {
+      return;
+    }
+    captured.current = true;
+    void updatePreferences({ timezone: browserTimezone() })
+      .then((profile) => {
+        if (user !== null && typeof profile.timezone === 'string') {
+          setUser({ ...user, timezone: profile.timezone });
+        }
+      })
+      .catch(() => undefined);
+  }, [signedIn, stored, user, setUser]);
+};
 
 /**
  * Supplies the session calls `@webbpulse/auth` does not own. Mounted inside the
@@ -35,9 +70,11 @@ const AuthExtrasProvider: React.FC<{ children: ReactNode }> = ({
     logout: packageLogout,
     isAuthenticated,
     isLoading,
+    user,
   } = usePackageAuth<UserRead>();
 
   useSignedInHint(isAuthenticated, isLoading);
+  useTimezoneCapture(isAuthenticated ? user : null, setUser);
 
   const login = useCallback(
     (userData: UserRead) => {
