@@ -6,7 +6,8 @@
  * and that an issue nobody follows still offers a way to subscribe, which is
  * the case that once left no visible control at all. Also covers adding and
  * removing a teammate through the picker, a row's remove control and the
- * Manage subscribers palette entry.
+ * Manage subscribers palette entry, and that Escape closes the picker after
+ * focus has left it.
  */
 
 import { render, screen, waitFor, within } from '@testing-library/react';
@@ -309,5 +310,28 @@ describe('managing other subscribers', () => {
     expect(
       await screen.findByRole('option', { name: /Ada Lovelace/ })
     ).toBeInTheDocument();
+  });
+
+  it('closes the picker on Escape after focus has left it', async () => {
+    listSubscribers.mockResolvedValue(answer(true));
+    const user = renderHarness();
+
+    await screen.findByText('Olive Owner');
+    await user.click(
+      screen.getByRole('button', { name: 'Manage subscribers' })
+    );
+    expect(
+      screen.getByRole('dialog', { name: 'Manage subscribers' })
+    ).toBeInTheDocument();
+    const bar = screen.getByRole('banner', { name: 'Issue bar' });
+    const bell = within(bar).getByRole('button', {
+      name: 'Unsubscribe from issue',
+    });
+    bell.focus();
+    await user.keyboard('{Escape}');
+
+    expect(
+      screen.queryByRole('dialog', { name: 'Manage subscribers' })
+    ).not.toBeInTheDocument();
   });
 });
