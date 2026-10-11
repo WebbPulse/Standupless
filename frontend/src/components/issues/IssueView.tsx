@@ -372,11 +372,7 @@ export const IssueView: React.FC<IssueViewProps> = ({
 
   const context = useMemo<ActivityContext>(
     () => ({
-      statuses: options.statuses.map((status) => ({
-        id: status.id,
-        name: status.name,
-        category: status.category,
-      })),
+      statuses: options.statuses,
       people: options.people,
       labels: options.labels.map((label) => ({
         id: label.id,
