@@ -324,9 +324,10 @@ describe('managing other subscribers', () => {
       screen.getByRole('dialog', { name: 'Manage subscribers' })
     ).toBeInTheDocument();
     const bar = screen.getByRole('banner', { name: 'Issue bar' });
-    within(bar)
-      .getByRole('button', { name: 'Unsubscribe from issue' })
-      .focus();
+    const bell = within(bar).getByRole('button', {
+      name: 'Unsubscribe from issue',
+    });
+    bell.focus();
     await user.keyboard('{Escape}');
 
     expect(
