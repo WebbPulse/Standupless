@@ -1212,7 +1212,8 @@ const PRIORITY_RANK: Record<IssuePriority, number> = {
 
 /**
  * Orders rows the way the list route does, so an optimistic change lands in
- * its new place at once rather than on the next read. Ties keep their
+ * its new place at once rather than on the next read. Priority ties go
+ * to the newest created, then the higher id; other ties keep their
  * incoming order.
  */
 export const sortIssues = (
@@ -1231,7 +1232,11 @@ export const sortIssues = (
         return a < b ? -1 : 1;
       }
       case 'priority_desc':
-        return PRIORITY_RANK[left.priority] - PRIORITY_RANK[right.priority];
+        return (
+          PRIORITY_RANK[left.priority] - PRIORITY_RANK[right.priority] ||
+          right.created_at.localeCompare(left.created_at) ||
+          right.id.localeCompare(left.id)
+        );
       case 'updated_desc':
         return right.updated_at.localeCompare(left.updated_at);
       case 'created_desc':

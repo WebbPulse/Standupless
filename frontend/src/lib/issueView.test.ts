@@ -507,17 +507,28 @@ describe('grouping', () => {
     ]);
   });
 
-  it('sorts by priority, keeping ties in order', () => {
+  it('sorts by priority, breaking ties by newest created then id', () => {
     const sorted = sortIssues(
       [
         issue({ id: 'low', priority: 'low' }),
-        issue({ id: 'u1', priority: 'urgent' }),
-        issue({ id: 'u2', priority: 'urgent' }),
+        issue({
+          id: 'u1',
+          priority: 'urgent',
+          created_at: '2026-09-17T00:00:00Z',
+          updated_at: '2026-09-20T00:00:00Z',
+        }),
+        issue({
+          id: 'u2',
+          priority: 'urgent',
+          created_at: '2026-09-18T00:00:00Z',
+          updated_at: '2026-09-18T00:00:00Z',
+        }),
+        issue({ id: 'u0', priority: 'urgent', created_at: '2026-09-17T00:00:00Z' }),
       ],
       'priority_desc'
     );
 
-    expect(sorted.map((row) => row.id)).toEqual(['u1', 'u2', 'low']);
+    expect(sorted.map((row) => row.id)).toEqual(['u2', 'u1', 'u0', 'low']);
   });
 
   it('sorts by SLA breach with no running SLA last', () => {
