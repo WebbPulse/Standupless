@@ -1,6 +1,6 @@
 /**
  * One team's settings: its name and key, the parent team it sits under, who belongs to it, the statuses its
- * issues move through, its labels, its automatic cycles, when stale open
+ * issues move through, its labels, its issue templates, its automatic cycles, when stale open
  * issues close, how long closed issues stay before they are archived, its SLA
  * rules, the rules that move an issue when a pull request changes, whether
  * linked pull requests carry its issue labels, the GitHub repository its issues sync with, the release
@@ -34,6 +34,7 @@ import DiscordReturnToast from '../../components/team/DiscordReturnToast';
 import SlackReturnToast from '../../components/team/SlackReturnToast';
 import TeamPrivacySection from '../../components/team/TeamPrivacySection';
 import TeamWebhooksSection from '../../components/team/TeamWebhooksSection';
+import TemplatesSection from '../../components/team/TemplatesSection';
 import StatusesSection from '../../components/team/StatusesSection';
 import TransitionsSection from '../../components/team/TransitionsSection';
 import TriageSection from '../../components/team/TriageSection';
@@ -50,10 +51,12 @@ import { planIncludes } from '../../lib/billing';
 import {
   canDeleteTeam,
   canManageMembers,
+  canWriteIssues,
   isTeamAdmin,
 } from '../../lib/capabilities';
 import { errorMessage } from '../../lib/errors';
 import { teamSettingsPath } from '../../lib/paths';
+import { estimateOptionsOf } from '../../lib/validation';
 
 /** The sections in page order, as the anchor list names them. */
 const SECTIONS = [
@@ -61,6 +64,7 @@ const SECTIONS = [
   { id: 'members', label: 'Members' },
   { id: 'workflow', label: 'Workflow' },
   { id: 'labels', label: 'Labels' },
+  { id: 'templates', label: 'Templates' },
   { id: 'cycles', label: 'Cycles' },
   { id: 'triage', label: 'Triage' },
   { id: 'sla', label: 'SLAs' },
@@ -241,6 +245,17 @@ const TeamSettings: React.FC = () => {
               slug={slug ?? ''}
               parentSettingsPath={parentSettings}
               canEdit={editable}
+            />
+          )}
+          {frame(
+            'templates',
+            <TemplatesSection
+              workspaceId={workspaceId}
+              teamId={team.id}
+              estimateScale={team.estimate_scale}
+              estimateOptions={estimateOptionsOf(team)}
+              canEdit={canWriteIssues(workspace?.role, team.role)}
+              canSetDefault={editable}
             />
           )}
           {frame(

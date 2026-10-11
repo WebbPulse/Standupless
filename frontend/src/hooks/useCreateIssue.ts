@@ -11,7 +11,8 @@
  * `projectId`, `cycleId`, `statusId`, `assigneeId` and `parentId` are held with
  * the request, exposed as {@link CreateIssueState.request}, and handed to the
  * dialog as its starting draft. A team change in the dialog drops them, since
- * each is scoped to the team it was chosen in.
+ * each is scoped to the team it was chosen in. `templateId` names the template
+ * the draft starts from in place of the team's default.
  */
 
 import { createContext, useContext } from 'react';
@@ -27,6 +28,8 @@ export interface CreateIssueOptions {
   parentId?: string;
   /** The parent's key, shown in the dialog header beside `parentId`. */
   parentKey?: string;
+  /** A template the draft starts from, in place of the team's default. */
+  templateId?: string;
   /** Called with the new issue after the dialog closes on success. */
   onCreated?: (issue: IssueRead) => void;
 }

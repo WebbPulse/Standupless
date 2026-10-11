@@ -98,6 +98,7 @@ import ImportSettings from './pages/workspaces/ImportSettings';
 import SecuritySettings from './pages/workspaces/SecuritySettings';
 import AuditLogSettings from './pages/workspaces/AuditLogSettings';
 import WorkspaceLabelsSettings from './pages/workspaces/WorkspaceLabelsSettings';
+import WorkspaceTemplatesSettings from './pages/workspaces/WorkspaceTemplatesSettings';
 import WorkspaceWorkflowSettings from './pages/workspaces/WorkspaceWorkflowSettings';
 import TeamsSettings from './pages/workspaces/TeamsSettings';
 
@@ -142,6 +143,10 @@ const App: React.FC = () => (
             element={<WorkspaceWorkflowSettings />}
           />
           <Route path="settings/labels" element={<WorkspaceLabelsSettings />} />
+          <Route
+            path="settings/templates"
+            element={<WorkspaceTemplatesSettings />}
+          />
           <Route path="settings/billing" element={<BillingSettings />} />
           <Route path="settings/api-keys" element={<ApiKeysSettings />} />
           <Route
