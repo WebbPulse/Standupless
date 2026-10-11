@@ -68,6 +68,7 @@ from standupless_cli._generated.models import (
     StatusListRead,
     StatusRead,
     StatusUpdate,
+    SubscribersRead,
     TeamCreate,
     TeamListRead,
     TeamRead,
@@ -500,6 +501,21 @@ class StanduplessClient:
         path = f"/api/workspaces/{workspace_id}/issues/{issue_id}/activity"
         params = {"source": source} if source else {}
         return list(self._pages(path, "activity", params, limit))
+
+    def list_subscribers(self, workspace_id: str, issue_id: str) -> SubscribersRead:
+        """Everyone following an issue, oldest subscription first."""
+        path = f"/api/workspaces/{workspace_id}/issues/{issue_id}/subscribers"
+        return cast(SubscribersRead, self._request("GET", path))
+
+    def subscribe(self, workspace_id: str, issue_id: str, user_id: str = "me") -> SubscribersRead:
+        """Subscribe someone to an issue, the caller when `user_id` is `me`."""
+        path = f"/api/workspaces/{workspace_id}/issues/{issue_id}/subscribers/{user_id}"
+        return cast(SubscribersRead, self._request("PUT", path))
+
+    def unsubscribe(self, workspace_id: str, issue_id: str, user_id: str = "me") -> SubscribersRead:
+        """Unsubscribe someone from an issue, the caller when `user_id` is `me`."""
+        path = f"/api/workspaces/{workspace_id}/issues/{issue_id}/subscribers/{user_id}"
+        return cast(SubscribersRead, self._request("DELETE", path))
 
     def list_triage(
         self, workspace_id: str, team_id: str, snoozed: bool = False, limit: int | None = 50

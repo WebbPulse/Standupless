@@ -3,7 +3,8 @@
  * by every control that shows it: the bell in the issue bar, the Subscribers
  * section of the rail, the Cmd or Ctrl, Shift and S shortcut and the command
  * palette. One read keeps them in step, so subscribing from any of them flips
- * all of them together.
+ * all of them together. It also adds and removes teammates, for the
+ * Subscribers picker and its Manage subscribers palette entry.
  */
 
 import { useCallback } from 'react';
@@ -11,7 +12,7 @@ import { useQueryAuth } from '@webbpulse/auth/react';
 import { invalidateQueries, usePolledQuery } from '@webbpulse/api-client/react';
 import { listSubscribers, subscribe, unsubscribe } from '../api/notifications';
 import { errorMessage } from '../lib/errors';
-import { subscribersKey } from '../lib/queryKeys';
+import { activityKey, subscribersKey } from '../lib/queryKeys';
 import { showErrorToast, showToast } from '../lib/toast';
 import type { SubscribersRead } from '../types/Api';
 import { displayKeys, useShortcut } from './useShortcuts';
@@ -38,6 +39,10 @@ export interface IssueSubscription {
   label: string;
   /** Subscribes or unsubscribes, whichever the current state calls for. */
   toggle: () => void;
+  /** Subscribes a teammate, named in the confirmation toast. */
+  add: (userId: string, name: string) => void;
+  /** Unsubscribes a teammate, named in the confirmation toast. */
+  remove: (userId: string, name: string) => void;
 }
 
 /**
@@ -86,6 +91,43 @@ export const useIssueSubscription = (
       });
   }, [data, ready, workspaceId, issueId]);
 
+  const change = useCallback(
+    (userId: string, name: string, adding: boolean): void => {
+      if (!ready) return;
+      const request = adding
+        ? subscribe(workspaceId, issueId, userId)
+        : unsubscribe(workspaceId, issueId, userId);
+      void request
+        .then(() => {
+          invalidateQueries(subscribersKey(workspaceId, issueId));
+          invalidateQueries(activityKey(issueId));
+          showToast(
+            adding ? `Subscribed ${name}.` : `Unsubscribed ${name}.`
+          );
+        })
+        .catch((failure: unknown) => {
+          showErrorToast(
+            errorMessage(failure, 'Could not change the subscribers.')
+          );
+        });
+    },
+    [ready, workspaceId, issueId]
+  );
+
+  const add = useCallback(
+    (userId: string, name: string): void => {
+      change(userId, name, true);
+    },
+    [change]
+  );
+
+  const remove = useCallback(
+    (userId: string, name: string): void => {
+      change(userId, name, false);
+    },
+    [change]
+  );
+
   const label = subscribed ? 'Unsubscribe from issue' : 'Subscribe to issue';
 
   useShortcut({
@@ -97,5 +139,5 @@ export const useIssueSubscription = (
     handler: toggle,
   });
 
-  return { data, error, subscribed, label, toggle };
+  return { data, error, subscribed, label, toggle, add, remove };
 };

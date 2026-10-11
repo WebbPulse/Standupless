@@ -40,6 +40,8 @@ ActivityKindField = Literal[
     "child_removed",
     "archived",
     "unarchived",
+    "subscriber_added",
+    "subscriber_removed",
 ]
 
 SortField = Literal["updated_desc", "created_desc", "key_asc", "priority_desc", "due_asc", "sla_asc", "manual"]

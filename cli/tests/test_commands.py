@@ -291,6 +291,38 @@ def test_issue_move_resolves_the_team_and_reports_the_new_key(runner: CliRunner,
     assert "Moved ENG-12 to Operations as OPS-3" in result.stderr
 
 
+def test_issue_subscribe_defaults_to_the_caller(runner: CliRunner, api: respx.MockRouter) -> None:
+    """With no `--user` the request names `me`, so a key needs no user lookup."""
+    api.get(f"/api/workspaces/{WS}/issues/by-key/ENG-12").respond(json=make_issue())
+    route = api.put(f"/api/workspaces/{WS}/issues/is-12/subscribers/me").respond(
+        json={"subscribers": [], "subscribed": True}
+    )
+    result = invoke(runner, "issue", "subscribe", "ENG-12")
+    assert result.exit_code == 0, result.output
+    assert route.called
+    assert "Subscribed to ENG-12" in result.stderr
+
+
+def test_issue_subscribe_and_unsubscribe_a_teammate_by_name(runner: CliRunner, api: respx.MockRouter) -> None:
+    """`--user` resolves a display name to the member's id and names them in the result."""
+    api.get(f"/api/workspaces/{WS}/issues/by-key/ENG-12").respond(json=make_issue())
+    added = api.put(f"/api/workspaces/{WS}/issues/is-12/subscribers/u-ada").respond(
+        json={"subscribers": [], "subscribed": False}
+    )
+    removed = api.delete(f"/api/workspaces/{WS}/issues/is-12/subscribers/u-ada").respond(
+        json={"subscribers": [], "subscribed": False}
+    )
+    result = invoke(runner, "issue", "subscribe", "ENG-12", "--user", "ada")
+    assert result.exit_code == 0, result.output
+    assert added.called
+    assert "Subscribed Ada to ENG-12" in result.stderr
+
+    result = invoke(runner, "issue", "unsubscribe", "ENG-12", "-u", "ada@example.com")
+    assert result.exit_code == 0, result.output
+    assert removed.called
+    assert "Unsubscribed Ada from ENG-12" in result.stderr
+
+
 def test_issue_comment_from_stdin(runner: CliRunner, api: respx.MockRouter) -> None:
     """`--body-file -` reads the comment from stdin."""
     api.get(f"/api/workspaces/{WS}/issues/by-key/ENG-12").respond(json=make_issue())

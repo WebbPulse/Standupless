@@ -53,6 +53,7 @@ NotificationKindField = Literal[
     "mentioned",
     "commented",
     "status_changed",
+    "subscribed",
     "project_update",
     "project_update_due",
     "due_soon",

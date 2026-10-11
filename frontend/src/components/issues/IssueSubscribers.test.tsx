@@ -4,7 +4,9 @@
  * useIssueSubscription read. Covers that the section lists who follows the
  * issue with why, that each toggle calls the verb matching the caller's state,
  * and that an issue nobody follows still offers a way to subscribe, which is
- * the case that once left no visible control at all.
+ * the case that once left no visible control at all. Also covers adding and
+ * removing a teammate through the picker, a row's remove control and the
+ * Manage subscribers palette entry.
  */
 
 import { render, screen, waitFor, within } from '@testing-library/react';
@@ -16,14 +18,20 @@ import {
   type IssueSubscription,
 } from '../../hooks/useIssueSubscription';
 import { useRegisteredShortcuts } from '../../hooks/useShortcuts';
+import type { Assignable } from '../../lib/issuePeople';
 import type { SubscribersRead } from '../../types/Api';
 import ShortcutProvider from '../shortcuts/ShortcutProvider';
 import IssueSubscribeButton from './IssueSubscribeButton';
 import IssueSubscribers from './IssueSubscribers';
 
 const listSubscribers = vi.fn<() => Promise<SubscribersRead>>();
-const subscribe = vi.fn<() => Promise<SubscribersRead>>();
-const unsubscribe = vi.fn<() => Promise<SubscribersRead>>();
+type Change = (
+  workspaceId: string,
+  issueId: string,
+  userId?: string
+) => Promise<SubscribersRead>;
+const subscribe = vi.fn<Change>();
+const unsubscribe = vi.fn<Change>();
 
 vi.mock('../../api/notifications', async () => {
   const actual = await vi.importActual<
@@ -32,8 +40,10 @@ vi.mock('../../api/notifications', async () => {
   return {
     ...actual,
     listSubscribers: () => listSubscribers(),
-    subscribe: () => subscribe(),
-    unsubscribe: () => unsubscribe(),
+    subscribe: (workspaceId: string, issueId: string, userId?: string) =>
+      subscribe(workspaceId, issueId, userId),
+    unsubscribe: (workspaceId: string, issueId: string, userId?: string) =>
+      unsubscribe(workspaceId, issueId, userId),
   };
 });
 
@@ -59,6 +69,28 @@ const answer = (subscribed: boolean): SubscribersRead => ({
     },
   ],
 });
+
+/** The people who can see the issue, as the view hands them to the rail. */
+const people: Assignable[] = [
+  {
+    user_id: 'u-me',
+    email: 'me@example.com',
+    display_name: 'Mia Me',
+    avatar_url: null,
+  },
+  {
+    user_id: 'u-1',
+    email: 'olive@example.com',
+    display_name: 'Olive Owner',
+    avatar_url: null,
+  },
+  {
+    user_id: 'u-ada',
+    email: 'ada@example.com',
+    display_name: 'Ada Lovelace',
+    avatar_url: null,
+  },
+];
 
 /** The answer for an issue nobody follows. */
 const nobody: SubscribersRead = { subscribed: false, subscribers: [] };
@@ -86,7 +118,11 @@ const Harness: React.FC = () => {
         <IssueSubscribeButton subscription={subscription} />
       </header>
       <aside aria-label="Rail">
-        <IssueSubscribers subscription={subscription} />
+        <IssueSubscribers
+          subscription={subscription}
+          people={people}
+          currentUserId="u-me"
+        />
       </aside>
       <PaletteProbe />
     </>
@@ -214,5 +250,64 @@ describe('an issue nobody is subscribed to', () => {
     await waitFor(() => {
       expect(subscribe).toHaveBeenCalledTimes(1);
     });
+  });
+});
+
+describe('managing other subscribers', () => {
+  it('subscribes a teammate picked from the people who can see the issue', async () => {
+    listSubscribers.mockResolvedValue(answer(true));
+    const user = renderHarness();
+
+    await screen.findByText('Olive Owner');
+    await user.click(
+      screen.getByRole('button', { name: 'Manage subscribers' })
+    );
+    await user.click(screen.getByRole('option', { name: /Ada Lovelace/ }));
+
+    expect(subscribe).toHaveBeenCalledWith('ws-1', 'iss-1', 'u-ada');
+    expect(unsubscribe).not.toHaveBeenCalled();
+  });
+
+  it('unsubscribes a teammate who is already ticked in the picker', async () => {
+    listSubscribers.mockResolvedValue(answer(true));
+    const user = renderHarness();
+
+    await screen.findByText('Olive Owner');
+    await user.click(
+      screen.getByRole('button', { name: 'Manage subscribers' })
+    );
+    await user.click(screen.getByRole('option', { name: /Olive Owner/ }));
+
+    expect(unsubscribe).toHaveBeenCalledWith('ws-1', 'iss-1', 'u-1');
+    expect(subscribe).not.toHaveBeenCalled();
+  });
+
+  it('removes a subscriber from their row', async () => {
+    listSubscribers.mockResolvedValue(answer(true));
+    const user = renderHarness();
+
+    await user.click(
+      await screen.findByRole('button', { name: 'Unsubscribe Olive Owner' })
+    );
+
+    expect(unsubscribe).toHaveBeenCalledWith('ws-1', 'iss-1', 'u-1');
+  });
+
+  it('offers Manage subscribers in the command palette and opens the picker from its shortcut', async () => {
+    listSubscribers.mockResolvedValue(answer(false));
+    const user = renderHarness();
+
+    const palette = screen.getByRole('list', {
+      name: 'Palette issue actions',
+    });
+    await waitFor(() => {
+      expect(palette).toHaveTextContent('Manage subscribers');
+    });
+    await screen.findByText('Olive Owner');
+    await user.keyboard('{Shift>}S{/Shift}');
+
+    expect(
+      await screen.findByRole('option', { name: /Ada Lovelace/ })
+    ).toBeInTheDocument();
   });
 });

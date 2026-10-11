@@ -914,6 +914,54 @@ def issue_activity(
     output.activity_rows(rows)
 
 
+def _subscriber(context: Context, user: str | None) -> tuple[str, str]:
+    """The path segment and the display name for a `--user` option, `me` when it is absent."""
+    if user is None or user.strip().lower() == "me":
+        return "me", ""
+    user_id = context.user_id(user)
+    return user_id, context.member_names().get(user_id, user)
+
+
+@issue_app.command("subscribe")
+def issue_subscribe(
+    ctx: typer.Context,
+    key: Annotated[str, typer.Argument(help="Issue key, such as ENG-12.")],
+    user: Annotated[
+        str | None, typer.Option("--user", "-u", help="Subscribe this teammate instead: me, an id, email or name.")
+    ] = None,
+    as_json: JsonFlag = False,
+) -> None:
+    """Follow an issue, or subscribe a teammate who can see it, who is then notified."""
+    context = _state(ctx).context()
+    issue = context.issue(key)
+    target, name = _subscriber(context, user)
+    found = context.client.subscribe(context.workspace_id, issue["id"], target)
+    if as_json:
+        output.print_json(found)
+        return
+    output.success(f"Subscribed {name} to {issue['key']}." if name else f"Subscribed to {issue['key']}.")
+
+
+@issue_app.command("unsubscribe")
+def issue_unsubscribe(
+    ctx: typer.Context,
+    key: Annotated[str, typer.Argument(help="Issue key, such as ENG-12.")],
+    user: Annotated[
+        str | None, typer.Option("--user", "-u", help="Unsubscribe this teammate instead: me, an id, email or name.")
+    ] = None,
+    as_json: JsonFlag = False,
+) -> None:
+    """Stop following an issue, or unsubscribe a teammate."""
+    context = _state(ctx).context()
+    issue = context.issue(key)
+    target, name = _subscriber(context, user)
+    found = context.client.unsubscribe(context.workspace_id, issue["id"], target)
+    if as_json:
+        output.print_json(found)
+        return
+    output.success(f"Unsubscribed {name} from {issue['key']}." if name else f"Unsubscribed from {issue['key']}.")
+
+
 @issue_app.command("comment")
 def issue_comment(
     ctx: typer.Context,

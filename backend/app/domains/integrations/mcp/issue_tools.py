@@ -593,16 +593,25 @@ def _list_issue_subscribers(call: ToolCall) -> Any:
     return _subscribers_json(list_subscribers(call.repositories, call.context, issue.issue_id))
 
 
+def _subscriber_target(call: ToolCall) -> str | None:
+    """The `user_id` argument as a user id, `me` and an email resolved, or `None` for the caller."""
+    value = call.optional("user_id")
+    if value is None or not str(value).strip():
+        return None
+    reference = str(value).strip()
+    return user_ref(call, reference) if "@" in reference else resolve_user(call, reference)
+
+
 def _subscribe_to_issue(call: ToolCall) -> Any:
-    """Follow an issue as the caller, idempotently."""
+    """Follow an issue as the caller, or subscribe a teammate who can see it, idempotently."""
     issue = issue_ref(call, call.require("issue_id"))
-    return _subscribers_json(subscribe(call.repositories, call.context, issue.issue_id))
+    return _subscribers_json(subscribe(call.repositories, call.context, issue.issue_id, _subscriber_target(call)))
 
 
 def _unsubscribe_from_issue(call: ToolCall) -> Any:
-    """Stop following an issue as the caller, idempotently."""
+    """Stop following an issue as the caller, or unsubscribe a teammate, idempotently."""
     issue = issue_ref(call, call.require("issue_id"))
-    return _subscribers_json(unsubscribe(call.repositories, call.context, issue.issue_id))
+    return _subscribers_json(unsubscribe(call.repositories, call.context, issue.issue_id, _subscriber_target(call)))
 
 
 def _status_ref(call: ToolCall, team: str, value: str) -> str:
@@ -994,16 +1003,34 @@ ISSUE_TOOLS: tuple[Tool, ...] = (
     ),
     Tool(
         name="subscribe_to_issue",
-        description="Follow an issue as the caller, to be notified of its changes. Idempotent.",
+        description=(
+            "Follow an issue to be notified of its changes, as the caller or on behalf of a teammate who can see "
+            "it. Subscribing someone else notifies them and records it in the issue's history. Idempotent."
+        ),
         scopes=("issues:write",),
-        schema=object_schema({"issue_id": string(ISSUE_REF)}, required=("issue_id",)),
+        schema=object_schema(
+            {
+                "issue_id": string(ISSUE_REF),
+                "user_id": string("Who to subscribe: a user id or email, or 'me' for the caller (the default)"),
+            },
+            required=("issue_id",),
+        ),
         handler=_subscribe_to_issue,
     ),
     Tool(
         name="unsubscribe_from_issue",
-        description="Stop following an issue as the caller. Idempotent.",
+        description=(
+            "Stop following an issue, as the caller or on behalf of a teammate. Removing someone else is recorded "
+            "in the issue's history. Idempotent."
+        ),
         scopes=("issues:write",),
-        schema=object_schema({"issue_id": string(ISSUE_REF)}, required=("issue_id",)),
+        schema=object_schema(
+            {
+                "issue_id": string(ISSUE_REF),
+                "user_id": string("Who to unsubscribe: a user id or email, or 'me' for the caller (the default)"),
+            },
+            required=("issue_id",),
+        ),
         handler=_unsubscribe_from_issue,
     ),
     Tool(

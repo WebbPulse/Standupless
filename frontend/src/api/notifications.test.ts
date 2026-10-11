@@ -69,6 +69,20 @@ describe('the subscriber routes', () => {
       undefined
     );
   });
+
+  it('subscribes and unsubscribes a named teammate on their id', async () => {
+    await subscribe('ws-1', 'iss-1', 'u-ada');
+    await unsubscribe('ws-1', 'iss-1', 'u-ada');
+    expect(put).toHaveBeenCalledWith(
+      '/workspaces/ws-1/issues/iss-1/subscribers/u-ada',
+      undefined,
+      undefined
+    );
+    expect(del).toHaveBeenCalledWith(
+      '/workspaces/ws-1/issues/iss-1/subscribers/u-ada',
+      undefined
+    );
+  });
 });
 
 describe('the preference route', () => {
