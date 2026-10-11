@@ -87,6 +87,7 @@ cap gets neither an inbox row nor an email for that record, and the overflow is
 logged as `views.notify.recipients_capped` with the number dropped.
 """
 
+
 def _text(image: Mapping[str, Any], name: str) -> str:
     """One attribute of a stream image as a string, empty when absent or null."""
     value = image.get(name)
