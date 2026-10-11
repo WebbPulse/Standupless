@@ -557,6 +557,7 @@ describe('rolling up sub-teams', () => {
 
   it('draws no toggle for a team without sub-teams', async () => {
     listTeams.mockResolvedValue([team]);
+    listCycles.mockResolvedValue({ cycles: [cycle], next_cursor: null });
     renderPage();
 
     await screen.findByRole('region', { name: 'Current cycle' });
