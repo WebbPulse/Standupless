@@ -747,6 +747,44 @@ describe('following issue links', () => {
     );
   });
 
+  it('opens a related issue in the same team and comes back', async () => {
+    const sibling: IssueRead = {
+      ...issue,
+      id: 'id-ENG-3',
+      key: 'ENG-3',
+      title: 'Next door',
+    };
+    getIssueByKey.mockImplementation((key) =>
+      Promise.resolve(key === 'ENG-3' ? sibling : issue)
+    );
+    listLinks.mockResolvedValue([relation('relates_to', 'ENG-3', 'Next door')]);
+    const user = userEvent.setup();
+    renderWithHistory();
+
+    const related = await screen.findByRole('list', { name: 'Related' });
+    await user.click(within(related).getByRole('link', { name: /ENG-3/ }));
+
+    expect(
+      await screen.findByRole('textbox', { name: 'Issue title' })
+    ).toHaveValue('Next door');
+    await waitFor(() => {
+      expect(screen.getByRole('status', { name: 'Path' })).toHaveTextContent(
+        '/w/mine/issues/ENG-3'
+      );
+    });
+
+    await user.click(screen.getByRole('button', { name: 'Back' }));
+
+    await waitFor(() => {
+      expect(screen.getByRole('textbox', { name: 'Issue title' })).toHaveValue(
+        'Cache the token'
+      );
+    });
+    expect(screen.getByRole('status', { name: 'Path' })).toHaveTextContent(
+      '/w/mine/issues/ENG-1'
+    );
+  });
+
   it('opens a sub-issue without bouncing back to the parent', async () => {
     const child: IssueRead = {
       ...issue,
