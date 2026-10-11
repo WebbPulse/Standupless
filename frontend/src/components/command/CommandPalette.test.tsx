@@ -476,7 +476,9 @@ describe('the actions', () => {
 
   it('opens the create team dialog', async () => {
     const open = vi.fn();
-    const user = renderPalette({ createTeam: { open, canCreate: true } });
+    const user = renderPalette({
+      createTeam: { open, openSubTeam: vi.fn(), canCreate: true },
+    });
 
     await user.keyboard('{Control>}k{/Control}');
     await user.keyboard('create team');
@@ -485,6 +487,53 @@ describe('the actions', () => {
     await waitFor(() => {
       expect(open).toHaveBeenCalled();
     });
+  });
+
+  it('creates a sub-team by asking for its parent, offering only top-level teams', async () => {
+    const openSubTeam = vi.fn();
+    const mobile: TeamRead = {
+      ...engine,
+      id: 'team-3',
+      name: 'Mobile',
+      key_prefix: 'MOB',
+      parent_team_id: 'team-1',
+    };
+    const user = renderPalette({
+      teams: [engine, mobile, design],
+      createTeam: { open: vi.fn(), openSubTeam, canCreate: true },
+    });
+
+    await user.keyboard('{Control>}k{/Control}');
+    await user.keyboard('sub-team');
+    await user.click(
+      await screen.findByRole('option', { name: /Create sub-team/ })
+    );
+
+    expect(
+      await screen.findByRole('combobox', { name: 'Pick the parent team' })
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole('option', { name: /Mobile/ })
+    ).not.toBeInTheDocument();
+    await user.keyboard('des');
+    await user.keyboard('{Enter}');
+
+    await waitFor(() => {
+      expect(openSubTeam).toHaveBeenCalledWith('team-2');
+    });
+  });
+
+  it('offers no Create sub-team to a role that cannot create teams', async () => {
+    const user = renderPalette({
+      createTeam: { open: vi.fn(), openSubTeam: vi.fn(), canCreate: false },
+    });
+
+    await user.keyboard('{Control>}k{/Control}');
+    await screen.findByRole('option', { name: /My issues/ });
+
+    expect(
+      screen.queryByRole('option', { name: /Create sub-team/ })
+    ).not.toBeInTheDocument();
   });
 
   it('offers every theme but the current one and applies the choice', async () => {

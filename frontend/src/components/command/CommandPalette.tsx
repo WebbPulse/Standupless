@@ -158,8 +158,11 @@ interface CommandGroup {
   commands: Command[];
 }
 
-/** The palette's lists: the top level, or the team or view picker inside it. */
-type Page = 'root' | 'teams' | 'views';
+/**
+ * The palette's lists: the top level, or the team, view or sub-team parent
+ * picker inside it.
+ */
+type Page = 'root' | 'teams' | 'views' | 'sub-team';
 
 /** What the back button and the input say on each nested list. */
 const PAGE_COPY: Record<
@@ -168,7 +171,15 @@ const PAGE_COPY: Record<
 > = {
   teams: { back: 'Switch team', placeholder: 'Switch to a team' },
   views: { back: 'Open view', placeholder: 'Open a saved view' },
+  'sub-team': {
+    back: 'Create sub-team',
+    placeholder: 'Pick the parent team',
+  },
 };
+
+/** Whether a team sits at the top level, so it can take a sub-team. */
+const isTopLevel = (team: TeamRead): boolean =>
+  team.parent_team_id === null || team.parent_team_id === undefined;
 
 const ICON = 'h-3.5 w-3.5 shrink-0';
 
@@ -375,6 +386,15 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
         icon: <LuUsersRound className={ICON} />,
         run: createTeam.open,
       });
+      if (teams.some(isTopLevel)) {
+        built.push({
+          id: 'action-create-sub-team',
+          label: 'Create sub-team',
+          keywords: 'new add nested child parent team',
+          icon: <LuUsersRound className={ICON} />,
+          page: 'sub-team',
+        });
+      }
     }
     if (teams.length > 1) {
       built.push({
@@ -424,15 +444,7 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
       }
     );
     return built;
-  }, [
-    createIssue,
-    createTeam,
-    slug,
-    teams.length,
-    theme,
-    setTheme,
-    onShowShortcuts,
-  ]);
+  }, [createIssue, createTeam, slug, teams, theme, setTheme, onShowShortcuts]);
 
   const places = useMemo<Command[]>(() => {
     const built: Command[] = [
@@ -589,6 +601,24 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
         : [{ heading: 'Switch team', commands: rows }];
     }
 
+    if (page === 'sub-team') {
+      const rows = teams
+        .filter(isTopLevel)
+        .map((row) => ({
+          id: `sub-team-of-${row.id}`,
+          label: row.name,
+          hint: row.key_prefix,
+          icon: <LuUsers className={ICON} />,
+          run: () => {
+            createTeam.openSubTeam(row.id);
+          },
+        }))
+        .filter((command) => matches(command, deferred));
+      return rows.length === 0
+        ? []
+        : [{ heading: 'Parent team', commands: rows }];
+    }
+
     if (page === 'views') {
       const rows = (savedViews ?? [])
         .map((view) => ({
@@ -706,6 +736,7 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
     page,
     savedViews,
     teams,
+    createTeam,
     location.pathname,
     slug,
     routePrefix,

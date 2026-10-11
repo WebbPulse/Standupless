@@ -1,8 +1,9 @@
 /**
  * The create team dialog: the key it derives from the name until the person
  * edits it, the key rules the create route enforces, the sentence a taken key
- * gets, and the follow-up write that carries a description the create route
- * has no field for.
+ * gets, the follow-up write that carries a description the create route
+ * has no field for, and the parent team picker that creates a sub-team in the
+ * same call.
  */
 
 import { render, screen, waitFor } from '@testing-library/react';
@@ -10,7 +11,9 @@ import userEvent from '@testing-library/user-event';
 import { ApiError } from '@webbpulse/api-client';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { TeamRead } from '../../types/Api';
-import CreateTeamDialog from './CreateTeamDialog';
+import CreateTeamDialog, {
+  type CreateTeamDialogProps,
+} from './CreateTeamDialog';
 
 const createTeam = vi.fn<(body: unknown) => Promise<TeamRead>>();
 const updateTeam = vi.fn<(body: unknown) => Promise<TeamRead>>();
@@ -33,8 +36,10 @@ const created: TeamRead = {
   role: 'admin',
 };
 
-/** Renders the dialog with spies for its callbacks. */
-const renderDialog = () => {
+/** Renders the dialog with spies for its callbacks, and any parent team props. */
+const renderDialog = (
+  extra: Pick<CreateTeamDialogProps, 'teams' | 'initialParentTeamId'> = {}
+) => {
   const onCreated = vi.fn();
   const onClose = vi.fn();
   const user = userEvent.setup();
@@ -43,6 +48,7 @@ const renderDialog = () => {
       workspaceId="ws-1"
       onClose={onClose}
       onCreated={onCreated}
+      {...extra}
     />
   );
   return { user, onCreated, onClose };
@@ -192,5 +198,103 @@ describe('submitting', () => {
       )
     ).toBeInTheDocument();
     expect(onCreated).not.toHaveBeenCalled();
+  });
+});
+
+describe('the parent team', () => {
+  const engineering: TeamRead = {
+    ...created,
+    id: 'team-1',
+    name: 'Engineering',
+    key_prefix: 'ENG',
+    parent_team_id: null,
+  };
+  const mobile: TeamRead = {
+    ...created,
+    id: 'team-2',
+    name: 'Mobile',
+    key_prefix: 'MOB',
+    parent_team_id: 'team-1',
+  };
+  const teams = [engineering, mobile];
+
+  it('defaults to none and lists the hierarchy with sub-teams unpickable', async () => {
+    const { user } = renderDialog({ teams });
+
+    const picker = screen.getByRole('button', {
+      name: 'Parent team: No parent team',
+    });
+    await user.click(picker);
+
+    expect(
+      await screen.findByRole('option', { name: /No parent team/ })
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('option', { name: /Engineering/ })
+    ).not.toHaveAttribute('aria-disabled');
+    expect(screen.getByRole('option', { name: /Mobile/ })).toHaveAttribute(
+      'aria-disabled',
+      'true'
+    );
+  });
+
+  it('creates the team under the picked parent in one call, leaving estimates to it', async () => {
+    createTeam.mockResolvedValue({ ...created, parent_team_id: 'team-1' });
+    const { user, onCreated } = renderDialog({ teams });
+
+    await user.type(screen.getByLabelText('Name'), 'Platform');
+    await user.click(
+      screen.getByRole('button', { name: 'Parent team: No parent team' })
+    );
+    await user.click(
+      await screen.findByRole('option', { name: /Engineering/ })
+    );
+
+    expect(screen.getByText('Inherited from Engineering.')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Estimates')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Create team' }));
+
+    await waitFor(() => {
+      expect(onCreated).toHaveBeenCalled();
+    });
+    expect(createTeam).toHaveBeenCalledWith({
+      name: 'Platform',
+      key_prefix: 'PLA',
+      parent_team_id: 'team-1',
+    });
+  });
+
+  it('opens as a sub-team form with its parent picked, and can drop the parent', async () => {
+    createTeam.mockResolvedValue(created);
+    const { user } = renderDialog({ teams, initialParentTeamId: 'team-1' });
+
+    expect(
+      screen.getByRole('heading', { name: 'Create a sub-team' })
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText('Name')).toHaveFocus();
+    await user.type(screen.getByLabelText('Name'), 'Platform');
+    await user.click(
+      screen.getByRole('button', { name: 'Parent team: Engineering' })
+    );
+    await user.click(
+      await screen.findByRole('option', { name: /No parent team/ })
+    );
+    await user.click(screen.getByRole('button', { name: 'Create sub-team' }));
+
+    await waitFor(() => {
+      expect(createTeam).toHaveBeenCalledWith({
+        name: 'Platform',
+        key_prefix: 'PLA',
+        estimate_scale: 'off',
+      });
+    });
+  });
+
+  it('shows no picker when there is no team to sit under', () => {
+    renderDialog();
+
+    expect(
+      screen.queryByRole('button', { name: /Parent team/ })
+    ).not.toBeInTheDocument();
   });
 });

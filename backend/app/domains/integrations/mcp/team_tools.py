@@ -416,22 +416,14 @@ def _get_team(call: ToolCall) -> Any:
 
 
 def _create_team(call: ToolCall) -> Any:
-    """Create a team with the caller as its admin, as the create route does."""
+    """Create a team with the caller as its admin, as the create route does, under a parent when one is named."""
     check_capability(call.repositories, call.context, Capability.TEAM_CREATE)
     arguments = given_arguments(call, ("name", "key_prefix", "description", *ESTIMATE_ARGUMENTS, "private"))
     payload = TeamCreate.model_validate({**arguments, **_parent_arguments(call)})
     team = team_writes.create_team(
         call.repositories, call.context.workspace_id, call.context.user_id, payload, can_see=call.context.can_find_team
     )
-    audit.record(
-        call.repositories,
-        call.context,
-        "team.created",
-        target_type="team",
-        target_id=team.team_id,
-        target_label=team.name,
-        after={"key_prefix": team.key_prefix, "private": bool(payload.private)},
-    )
+    audit.record_team_created(call.repositories, call.context, team, private=payload.private)
     body = _team_json(call, team)
     body["caller_role"] = "admin"
     body["statuses"] = _statuses(call, team.team_id)
@@ -812,7 +804,8 @@ TEAM_TOOLS: tuple[Tool, ...] = (
         name="create_team",
         description=(
             "Create a team with the default statuses and the caller as its admin. Guests may not create teams. "
-            "A private team is seen only by its members, who join by being added."
+            "A private team is seen only by its members, who join by being added. parent_team_id creates it as a "
+            "sub-team of that top-level team, inheriting its statuses, labels, estimates and cycle settings."
         ),
         scopes=("teams:write",),
         schema=object_schema(_team_fields(True), required=("name", "key_prefix")),

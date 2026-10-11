@@ -460,6 +460,36 @@ def test_team_list_shows_each_parent_and_filters_to_sub_teams(runner: CliRunner,
     assert [team["key_prefix"] for team in json.loads(narrowed.stdout)] == ["PLT"]
 
 
+def test_team_create_nests_a_team_under_its_parent_in_one_call(runner: CliRunner, api: respx.MockRouter) -> None:
+    """`--parent` resolves the parent to its id and sends it with the new team, uppercasing the key."""
+    created = api.post(f"/api/workspaces/{WS}/teams").respond(201, json=SUB_TEAM)
+    result = invoke(runner, "team", "create", "Platform", "--key", "plt", "--parent", "ENG")
+    assert result.exit_code == 0, result.output
+    assert json.loads(created.calls[0].request.content) == {
+        "name": "Platform",
+        "key_prefix": "PLT",
+        "parent_team_id": "team-1",
+    }
+    assert "Created PLT Platform under ENG" in result.output
+
+
+def test_team_create_without_a_parent_sends_only_what_was_named(runner: CliRunner, api: respx.MockRouter) -> None:
+    """A top-level team sends no parent, and `--private` and `--estimate-scale` pass through."""
+    top = {**TEAM, "id": "team-3", "name": "Design", "key_prefix": "DES"}
+    created = api.post(f"/api/workspaces/{WS}/teams").respond(201, json=top)
+    result = invoke(
+        runner, "team", "create", "Design", "-k", "DES", "--private", "--estimate-scale", "tshirt", "--json"
+    )
+    assert result.exit_code == 0, result.output
+    assert json.loads(created.calls[0].request.content) == {
+        "name": "Design",
+        "key_prefix": "DES",
+        "estimate_scale": "tshirt",
+        "private": True,
+    }
+    assert json.loads(result.stdout)["key_prefix"] == "DES"
+
+
 def test_team_update_moves_a_team_under_a_parent_and_back(runner: CliRunner, api: respx.MockRouter) -> None:
     """`--parent` sends the parent's id, and `none` sends an explicit null to make the team top level."""
     api.get(f"/api/workspaces/{WS}/teams").respond(json={"teams": [TEAM, {**SUB_TEAM, "parent_team_id": None}]})

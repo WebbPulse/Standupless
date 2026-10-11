@@ -477,7 +477,7 @@ describe('creating from the sidebar', () => {
     const user = userEvent.setup();
     const open = vi.fn();
     renderSidebar('member', '/w/mine', {
-      createTeam: { open, canCreate: true },
+      createTeam: { open, openSubTeam: vi.fn(), canCreate: true },
     });
 
     await screen.findByRole('button', { name: /Engine/ });
@@ -490,7 +490,7 @@ describe('creating from the sidebar', () => {
   it('keeps Add team visible when the workspace has no teams', async () => {
     listTeams.mockResolvedValue([]);
     renderSidebar('owner', '/w/mine', {
-      createTeam: { open: vi.fn(), canCreate: true },
+      createTeam: { open: vi.fn(), openSubTeam: vi.fn(), canCreate: true },
     });
 
     expect(
@@ -501,7 +501,7 @@ describe('creating from the sidebar', () => {
   it('hides the create team controls from a role that cannot create', async () => {
     listTeams.mockResolvedValue([]);
     renderSidebar('guest', '/w/mine', {
-      createTeam: { open: vi.fn(), canCreate: false },
+      createTeam: { open: vi.fn(), openSubTeam: vi.fn(), canCreate: false },
     });
 
     expect(await screen.findByText('No teams yet.')).toBeInTheDocument();
@@ -728,6 +728,56 @@ describe('sub-teams', () => {
     ).not.toBeInTheDocument();
     expect(
       screen.queryByRole('menuitem', { name: 'Move down' })
+    ).not.toBeInTheDocument();
+  });
+
+  it('creates a sub-team from a top-level team menu with that team as parent', async () => {
+    const user = userEvent.setup();
+    const openSubTeam = vi.fn();
+    renderSidebar('owner', '/w/mine/team/WEB', {
+      createTeam: { open: vi.fn(), openSubTeam, canCreate: true },
+    });
+    const section = await sectionOf(/Engine/);
+
+    await user.click(
+      within(section).getByRole('button', { name: 'Team options' })
+    );
+    await user.click(
+      await screen.findByRole('menuitem', { name: 'Create sub-team' })
+    );
+
+    expect(openSubTeam).toHaveBeenCalledWith('proj-1');
+  });
+
+  it('offers no sub-team of a sub-team', async () => {
+    const user = userEvent.setup();
+    renderSidebar('owner', '/w/mine/team/WEB', {
+      createTeam: { open: vi.fn(), openSubTeam: vi.fn(), canCreate: true },
+    });
+    const sub = await sectionOf(/Web/);
+
+    await user.click(within(sub).getByRole('button', { name: 'Team options' }));
+    await screen.findByRole('menuitem', { name: 'Team settings' });
+
+    expect(
+      screen.queryByRole('menuitem', { name: 'Create sub-team' })
+    ).not.toBeInTheDocument();
+  });
+
+  it('hides Create sub-team when the caller cannot create teams', async () => {
+    const user = userEvent.setup();
+    renderSidebar('guest', '/w/mine', {
+      createTeam: { open: vi.fn(), openSubTeam: vi.fn(), canCreate: false },
+    });
+    const section = await sectionOf(/Engine/);
+
+    await user.click(
+      within(section).getByRole('button', { name: 'Team options' })
+    );
+    await screen.findByRole('menuitem', { name: 'Team settings' });
+
+    expect(
+      screen.queryByRole('menuitem', { name: 'Create sub-team' })
     ).not.toBeInTheDocument();
   });
 });

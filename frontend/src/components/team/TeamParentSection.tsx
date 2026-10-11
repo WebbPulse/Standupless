@@ -8,11 +8,15 @@
  * one. Leaving a parent gives the team its own statuses again and moves its
  * issues off the parent's ones, so the change saves on pick and the server's
  * refusal is shown as sent.
+ *
+ * A top-level team also offers "Create sub-team", which opens the shared create
+ * team dialog with this team picked as the parent.
  */
 
 import React, { useState } from 'react';
 import { invalidateQueries } from '@webbpulse/api-client/react';
 import { updateTeam } from '../../api/teams';
+import { useCreateTeam } from '../../hooks/useCreateTeam';
 import { useTeamsFor } from '../../hooks/useTeams';
 import { errorMessage } from '../../lib/errors';
 import {
@@ -24,6 +28,7 @@ import {
 } from '../../lib/queryKeys';
 import type { TeamRead } from '../../types/Api';
 import { ErrorAlert } from '../ui/alert';
+import Button from '../ui/button';
 import { SelectField } from '../ui/select';
 
 /** Props for TeamParentSection. */
@@ -44,12 +49,15 @@ export const TeamParentSection: React.FC<TeamParentSectionProps> = ({
   canEdit,
 }) => {
   const { data: teams } = useTeamsFor(workspaceId);
+  const createTeam = useCreateTeam();
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<unknown>(null);
   const current = team.parent_team_id ?? NONE;
   const all = teams ?? [];
   const subTeams = all.filter((other) => other.parent_team_id === team.id);
   const parent = all.find((other) => other.id === current);
+  const isTopLevel =
+    team.parent_team_id === null || team.parent_team_id === undefined;
   const candidates = all.filter(
     (other) =>
       other.id !== team.id &&
@@ -90,9 +98,24 @@ export const TeamParentSection: React.FC<TeamParentSectionProps> = ({
 
   return (
     <section className="space-y-4" data-testid="team-parent-section">
-      <div className="space-y-1">
-        <h3 className="text-base font-semibold">Parent team</h3>
-        <p className="text-sm text-text-muted">{summary()}</p>
+      <div className="flex items-start justify-between gap-4">
+        <div className="space-y-1">
+          <h3 className="text-base font-semibold">Parent team</h3>
+          <p className="text-sm text-text-muted">{summary()}</p>
+        </div>
+        {isTopLevel && createTeam.canCreate && (
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            className="shrink-0"
+            onClick={() => {
+              createTeam.openSubTeam(team.id);
+            }}
+          >
+            Create sub-team
+          </Button>
+        )}
       </div>
       {error !== null && (
         <ErrorAlert
