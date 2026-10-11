@@ -253,12 +253,7 @@ describe('the nav scroller', () => {
     renderSidebar();
 
     const nav = await screen.findByTestId('sidebar-nav');
-    expect(nav).toHaveClass(
-      'relative',
-      'min-h-0',
-      'flex-1',
-      'overflow-y-auto'
-    );
+    expect(nav).toHaveClass('relative', 'min-h-0', 'flex-1', 'overflow-y-auto');
   });
 });
 
