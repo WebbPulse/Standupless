@@ -52,6 +52,14 @@ const listStatuses = vi.fn<() => Promise<StatusRead[]>>();
 const listLabels = vi.fn<() => Promise<LabelRead[]>>();
 const listTeamMembers = vi.fn<() => Promise<TeamMemberRead[]>>();
 
+vi.mock('../../api/documents', () => ({
+  listDocuments: () => Promise.resolve([]),
+  listIssueDocuments: () => Promise.resolve([]),
+  createDocument: vi.fn(),
+  updateDocument: vi.fn(),
+  deleteDocument: vi.fn(),
+}));
+
 vi.mock('../../api/issues', async () => {
   const actual =
     await vi.importActual<typeof import('../../api/issues')>(

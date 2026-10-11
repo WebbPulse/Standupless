@@ -32,6 +32,10 @@ const search = vi.fn<() => Promise<SearchResultRead[]>>();
 const listViews = vi.fn<() => Promise<SavedViewDisplayRead[]>>();
 const navigate = vi.fn();
 
+vi.mock('../../api/documents', () => ({
+  listWorkspaceDocuments: () => Promise.resolve([]),
+}));
+
 vi.mock('../../api/views', () => ({
   search: () => search(),
   listViews: () => listViews(),

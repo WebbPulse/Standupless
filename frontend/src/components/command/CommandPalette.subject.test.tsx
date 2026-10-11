@@ -12,6 +12,10 @@ import { subjectOf, usePublishIssueSubject } from '../../hooks/useIssueSubject';
 import ShortcutProvider from '../shortcuts/ShortcutProvider';
 import CommandPalette from './CommandPalette';
 
+vi.mock('../../api/documents', () => ({
+  listWorkspaceDocuments: () => Promise.resolve([]),
+}));
+
 vi.mock('../../api/views', () => ({
   search: () => Promise.resolve([]),
 }));

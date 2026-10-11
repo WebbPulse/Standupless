@@ -283,6 +283,37 @@ export const initiativeUpdatesKey = (
   initiativeId: string
 ): QueryKey => ['initiativeUpdates', workspaceId, initiativeId];
 
+/** One project's or initiative's documents, most recently edited first. */
+export const documentsKey = (
+  workspaceId: string,
+  parentKind: string,
+  parentId: string
+): QueryKey => ['documents', workspaceId, parentKind, parentId];
+
+/** Every document the caller can read, as the command palette lists them. */
+export const workspaceDocumentsKey = (workspaceId: string): QueryKey => [
+  'workspaceDocuments',
+  workspaceId,
+];
+
+/** One document read by its id, as its page polls it. */
+export const documentKey = (
+  workspaceId: string,
+  documentId: string
+): QueryKey => ['document', workspaceId, documentId];
+
+/** One document's kept versions, newest first. */
+export const documentVersionsKey = (
+  workspaceId: string,
+  documentId: string
+): QueryKey => ['documentVersions', workspaceId, documentId];
+
+/** The documents that mention one issue, for its rail. */
+export const issueDocumentsKey = (
+  workspaceId: string,
+  issueId: string
+): QueryKey => ['issueDocuments', workspaceId, issueId];
+
 /** One project's milestones, in their manual order. */
 export const milestonesKey = (
   workspaceId: string,

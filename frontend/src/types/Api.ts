@@ -1061,6 +1061,8 @@ export interface SearchResultRead {
 /** The body the search route answers with. It is capped rather than paged. */
 export interface SearchListRead {
   results: SearchResultRead[];
+  /** Documents whose title or body matches, for a workspace wide search. */
+  documents?: DocumentSummaryRead[];
 }
 
 /**
@@ -3082,4 +3084,76 @@ export interface HomeRead {
   inbox: HomeInboxRead;
   pull_requests: HomePullRequestItem[];
   releases: ReleaseRead[];
+}
+
+/** The two kinds of record a document can sit under. */
+export type DocumentParentKind = 'project' | 'initiative';
+
+/**
+ * One document without its body, as a listing answers it. `can_edit` and
+ * `can_delete` say what this caller may do with it.
+ */
+export interface DocumentSummaryRead {
+  document_id: string;
+  workspace_id: string;
+  parent_kind: DocumentParentKind;
+  parent_id: string;
+  parent_name: string;
+  title: string;
+  author_id: string;
+  updated_by: string;
+  source?: string | null;
+  created_at: string;
+  updated_at: string;
+  can_edit: boolean;
+  can_delete: boolean;
+}
+
+/** One issue a document mentions, as its key was written. */
+export interface DocumentMentionRead {
+  key: string;
+  issue_id: string;
+  team_id: string;
+}
+
+/** One document with its Markdown and the visible issues it mentions. */
+export interface DocumentRead extends DocumentSummaryRead {
+  body: string;
+  mentions: DocumentMentionRead[];
+}
+
+/** The body a document create takes; the parent comes from the path. */
+export interface DocumentCreate {
+  title: string;
+  body?: string;
+}
+
+/**
+ * The body a document edit takes. `base_updated_at` is the `updated_at` the
+ * editor last read, so an edit over someone else's newer one is a 409.
+ */
+export interface DocumentPatch {
+  title?: string;
+  body?: string;
+  base_updated_at?: string;
+}
+
+/** A list of documents, most recently edited first. */
+export interface DocumentListRead {
+  documents: DocumentSummaryRead[];
+}
+
+/** An earlier title and body of a document, as one edit session left it. */
+export interface DocumentVersionRead {
+  version_id: string;
+  document_id: string;
+  title: string;
+  body: string;
+  edited_by: string;
+  edited_at: string;
+}
+
+/** A document's kept versions, newest first. */
+export interface DocumentVersionListRead {
+  versions: DocumentVersionRead[];
 }
