@@ -673,7 +673,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ workspace, onNavigate }) => {
                 setPointerMoved(true);
               }
         }
-        className="group/nav min-w-0 flex-1 space-y-4 overflow-x-hidden overflow-y-auto px-2 py-1 scrollbar-thin"
+        data-testid="sidebar-nav"
+        className="group/nav relative min-h-0 min-w-0 flex-1 space-y-4 overflow-x-hidden overflow-y-auto px-2 py-1 scrollbar-thin"
       >
         <div className="space-y-px">
           <NavLink
