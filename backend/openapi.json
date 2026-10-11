@@ -1998,7 +1998,7 @@
         "type": "object"
       },
       "ConnectedAppRead": {
-        "description": "One client the caller authorized, across every workspace they granted it.",
+        "description": "One client the caller authorized, across every workspace they granted it.\n\n`new_scopes` are scopes the product offers that some grant does not cover yet,\nusually because they were added after the client was authorized.",
         "properties": {
           "client_id": {
             "title": "Client Id",
@@ -2032,6 +2032,13 @@
             ],
             "title": "Last Used At"
           },
+          "new_scopes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "New Scopes",
+            "type": "array"
+          },
           "scopes": {
             "items": {
               "type": "string"
@@ -2054,6 +2061,38 @@
           "workspaces"
         ],
         "title": "ConnectedAppRead",
+        "type": "object"
+      },
+      "ConnectedAppScopesGrant": {
+        "description": "The new permissions the caller approved for one client, and optionally where.",
+        "properties": {
+          "scopes": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 26,
+            "minItems": 1,
+            "title": "Scopes",
+            "type": "array"
+          },
+          "workspace_id": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Workspace Id"
+          }
+        },
+        "required": [
+          "scopes"
+        ],
+        "title": "ConnectedAppScopesGrant",
         "type": "object"
       },
       "ConnectedAppWorkspaceRead": {
@@ -2090,6 +2129,13 @@
           "name": {
             "title": "Name",
             "type": "string"
+          },
+          "new_scopes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "New Scopes",
+            "type": "array"
           },
           "scopes": {
             "items": {
@@ -6365,6 +6411,7 @@
             "default": "team",
             "enum": [
               "team",
+              "parent",
               "workspace"
             ],
             "title": "Scope",
@@ -8375,7 +8422,7 @@
         "type": "object"
       },
       "ReleaseBackfillRead": {
-        "description": "What one backfill call did, and the cursor to continue from, null when it is done.\n\n`deployments_skipped` counts deployments whose release had already reached\nthe stage, which cost no GitHub call. A page that stopped before its limit to\nkeep half the GitHub App's hourly budget for live sync, or to answer inside\nthe request timeout, sets `stopped_early` and says in `message` when to pass\nthe cursor back; `resume_after` is GitHub's budget reset when that is the\nreason. `rate_limit_remaining` and `rate_limit` are GitHub's last word on the\ninstallation's budget, and `github_calls` what this page spent of it.",
+        "description": "What one backfill call did, and the cursor to continue from, null when it is done.\n\n`deployments_skipped` counts deployments whose release had already reached\nthe stage, which cost no GitHub call. A page that stopped before its limit to\nkeep half the GitHub App's hourly budget for live sync, or to answer inside\nthe request timeout, sets `stopped_early` and says in `message` when to pass\nthe cursor back; `resume_after` is GitHub's budget reset when that is the\nreason. `rate_limit_remaining` and `rate_limit` are GitHub's last word on the\ninstallation's budget, and `github_calls` what this page spent of it.\n\n`stalled` is set when the page recorded and skipped nothing, so passing the\ncursor back moves only once the message's reason has passed.\n`unreadable_deployment_ids` names deployments passed over because their range\ncould not be read inside the request timeout, and `pull_reads_skipped` counts\npull requests a recorded deployment did not read for keys for the same reason.",
         "properties": {
           "deployments_scanned": {
             "title": "Deployments Scanned",
@@ -8416,6 +8463,11 @@
               }
             ],
             "title": "Next Cursor"
+          },
+          "pull_reads_skipped": {
+            "default": 0,
+            "title": "Pull Reads Skipped",
+            "type": "integer"
           },
           "rate_limit": {
             "anyOf": [
@@ -8466,6 +8518,11 @@
             ],
             "title": "Resume After"
           },
+          "stalled": {
+            "default": false,
+            "title": "Stalled",
+            "type": "boolean"
+          },
           "stopped_early": {
             "default": false,
             "title": "Stopped Early",
@@ -8474,6 +8531,13 @@
           "team_id": {
             "title": "Team Id",
             "type": "string"
+          },
+          "unreadable_deployment_ids": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Unreadable Deployment Ids",
+            "type": "array"
           }
         },
         "required": [
@@ -11428,7 +11492,7 @@
         "type": "object"
       },
       "StatusRead": {
-        "description": "One workflow status as the API returns it, `null` color and icon meaning the default.\n\n`scope` says whether the team owns it or inherits it from the workspace. An\ninherited status the team hid carries `hidden`, and one it renamed locally\ncarries the workspace name in `inherited_name`.",
+        "description": "One workflow status as the API returns it, `null` color and icon meaning the default.\n\n`scope` says whether the team owns it or inherits it from its parent team or\nthe workspace. An inherited status the team hid carries `hidden`, and one it\nrenamed locally carries the inherited name in `inherited_name`.",
         "properties": {
           "category": {
             "enum": [
@@ -11529,6 +11593,7 @@
             "default": "team",
             "enum": [
               "team",
+              "parent",
               "workspace"
             ],
             "title": "Scope",
@@ -11762,7 +11827,7 @@
         "type": "object"
       },
       "TeamCreate": {
-        "description": "The body `POST /api/workspaces/{workspace_id}/teams` takes.",
+        "description": "The body `POST /api/workspaces/{workspace_id}/teams` takes.\n\n`parent_team_id` creates the team as a sub-team of a top-level team, whose\nstatuses and labels it inherits.",
         "properties": {
           "description": {
             "anyOf": [
@@ -11814,6 +11879,18 @@
             "minLength": 1,
             "title": "Name",
             "type": "string"
+          },
+          "parent_team_id": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Team Id"
           },
           "private": {
             "default": false,
@@ -11949,7 +12026,7 @@
         "type": "object"
       },
       "TeamRead": {
-        "description": "One team as the API returns it, carrying the caller's team role.",
+        "description": "One team as the API returns it, carrying the caller's team role.\n\n`parent_team_id` names the team this one sits under, `null` for a top-level team.",
         "properties": {
           "created_at": {
             "format": "date-time",
@@ -12018,6 +12095,17 @@
           "name": {
             "title": "Name",
             "type": "string"
+          },
+          "parent_team_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Team Id"
           },
           "private": {
             "default": false,
@@ -12196,7 +12284,7 @@
         "type": "object"
       },
       "TeamUpdate": {
-        "description": "The body a team patch takes.\n\nA new `key_prefix` retires the old one as an alias, so issue keys under the\nold prefix keep resolving and no other team can take it. `sync_pr_labels`\nturns off copying this team's issue labels onto linked pull requests.\n`private` hides the team and its issues from everyone who is not a member.\n`estimate_extended` adds the larger values to the scale, `estimate_allow_zero`\nadds 0, and `estimate_count_unestimated` counts an unestimated issue as one\npoint in cycle and project progress instead of skipping it.",
+        "description": "The body a team patch takes.\n\nA new `key_prefix` retires the old one as an alias, so issue keys under the\nold prefix keep resolving and no other team can take it. `sync_pr_labels`\nturns off copying this team's issue labels onto linked pull requests.\n`private` hides the team and its issues from everyone who is not a member.\n`estimate_extended` adds the larger values to the scale, `estimate_allow_zero`\nadds 0, and `estimate_count_unestimated` counts an unestimated issue as one\npoint in cycle and project progress instead of skipping it.\n`parent_team_id` puts the team under a top-level parent team, and an explicit\nnull makes it a top-level team again.",
         "properties": {
           "description": {
             "anyOf": [
@@ -12286,6 +12374,18 @@
               }
             ],
             "title": "Name"
+          },
+          "parent_team_id": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Team Id"
           },
           "private": {
             "anyOf": [
@@ -16257,6 +16357,66 @@
         ]
       }
     },
+    "/api/users/me/connected-apps/{client_id}/scopes": {
+      "post": {
+        "description": "Add the approved scopes to the caller's existing grants to one client.\n\nThe client keeps its refresh tokens, and its next refresh carries the new scopes,\nso it gains them without a new authorization. Every request still intersects them\nwith the caller's live role, so a scope the role cannot hold stays inert. A client\nthe caller never authorized, or never in the named workspace, is a 404.",
+        "operationId": "grant_my_connected_app_scopes_api_users_me_connected_apps__client_id__scopes_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "client_id",
+            "required": true,
+            "schema": {
+              "maxLength": 256,
+              "minLength": 1,
+              "title": "Client Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConnectedAppScopesGrant"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectedAppRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Grant My Connected App Scopes",
+        "tags": [
+          "identity"
+        ]
+      }
+    },
     "/api/users/me/deletion": {
       "post": {
         "description": "Delete the caller's account now.\n\nA signed in person only, with their address typed out again, and refused with a\n409 naming each workspace where they are the only owner and other people remain.\nOnce it passes, the account is marked deleted, so no sign in method or refresh\nworks for it any more, then every session, OAuth grant and personal API key is\nrevoked and the purge of its data is started at once. The hourly sweep and the\nqueue's retries start any purge this request could not. The account's own\naddress is mailed, and the request is logged with how the caller last\nauthenticated. Repeating it for an account already deleted starts the purge again.",
@@ -18686,7 +18846,7 @@
     },
     "/api/workspaces/{workspace_id}/cycles": {
       "get": {
-        "description": "One page of a team's cycles, by start date ascending.\n\nThe team is required rather than optional: a workspace-wide cycle list is\nwhat the roadmap answers, and it answers it in date order across both entities\nrather than as an undated pile of one of them.\n\nThe status filter is applied after the read because status is derived, so no\nindex can carry it.",
+        "description": "One page of a team's cycles, by start date ascending.\n\nThe team is required rather than optional: a workspace-wide cycle list is\nwhat the roadmap answers, and it answers it in date order across both entities\nrather than as an undated pile of one of them.\n\nThe status filter is applied after the read because status is derived, so no\nindex can carry it. `include_sub_teams` rolls in the cycles of the team's\nsub-teams the caller may read, so a private sub-team stays out for outsiders.",
         "operationId": "list_cycles_api_workspaces__workspace_id__cycles_get",
         "parameters": [
           {
@@ -18756,6 +18916,16 @@
               "minimum": 1,
               "title": "Limit",
               "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "include_sub_teams",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Include Sub Teams",
+              "type": "boolean"
             }
           }
         ],
@@ -21935,7 +22105,7 @@
     },
     "/api/workspaces/{workspace_id}/issues": {
       "get": {
-        "description": "One page of the issues the caller may see, filtered and sorted.\n\nEvery id filter repeats, ORing its values, and `none` matches the unset field\nwhere the field can be unset. Filters are applied after the key read rather\nthan through an index, so adding one costs no GSI. The cursor is a position in\nthe filtered, sorted set and is bound to the filter, so a cursor carried to a\ndifferent filter starts over rather than skipping rows.\n\nThe exception is a filter on one person: `subscriber_id=me`, one `creator_id`\nor one `assignee_id` reads that person's own index instead of every team, which\nis what the My issues tabs ask for. `subscriber_id` takes only the caller,\nbecause what someone else follows is theirs to know.\n\nArchived issues are left out unless `include_archived` is set, and\n`archived_only` lists nothing but them, the archive view. That read goes\nstraight to each status's archived partition of the status index rather than\nreading every issue of the team and dropping the live ones. Issues awaiting\ntriage are left out the same way unless `include_triage` is set, and\n`triage_only` lists nothing but them.\n\nEvery body carries `synced_at`. Sent back as `updated_since` with the same\nfilter, it turns the read into a delta: only the issues changed since, every\none in the list's sort order and unpaged, plus `removed_ids` for issues that\nleft the filter, were archived or were deleted. `resync_required` asks for a\nfull read instead, when the cursor is older than deletions are remembered or\nthe delta is too large to carry. A delta costs one key-bounded query per team\non the change feed index, so a poll that finds nothing reads almost nothing.\n\nA delta answer carries a weak `ETag` over its body. Two polls that find the\nsame thing answer the same body, so a poll that sends the tag back in\n`If-None-Match` gets a 304 with no body instead. A full read carries none,\nbecause its cursor moves with the clock.",
+        "description": "One page of the issues the caller may see, filtered and sorted.\n\nEvery id filter repeats, ORing its values, and `none` matches the unset field\nwhere the field can be unset. Filters are applied after the key read rather\nthan through an index, so adding one costs no GSI. The cursor is a position in\nthe filtered, sorted set and is bound to the filter, so a cursor carried to a\ndifferent filter starts over rather than skipping rows.\n\nThe exception is a filter on one person: `subscriber_id=me`, one `creator_id`\nor one `assignee_id` reads that person's own index instead of every team, which\nis what the My issues tabs ask for. `subscriber_id` takes only the caller,\nbecause what someone else follows is theirs to know.\n\nArchived issues are left out unless `include_archived` is set, and\n`archived_only` lists nothing but them, the archive view. That read goes\nstraight to each status's archived partition of the status index rather than\nreading every issue of the team and dropping the live ones. Issues awaiting\ntriage are left out the same way unless `include_triage` is set, and\n`triage_only` lists nothing but them.\n\n`include_sub_teams` with a `team_id` rolls that team's sub-teams the caller\nmay see into the list, so a parent team's views show its sub-teams' issues.\n\nEvery body carries `synced_at`. Sent back as `updated_since` with the same\nfilter, it turns the read into a delta: only the issues changed since, every\none in the list's sort order and unpaged, plus `removed_ids` for issues that\nleft the filter, were archived or were deleted. `resync_required` asks for a\nfull read instead, when the cursor is older than deletions are remembered or\nthe delta is too large to carry. A delta costs one key-bounded query per team\non the change feed index, so a poll that finds nothing reads almost nothing.\n\nA delta answer carries a weak `ETag` over its body. Two polls that find the\nsame thing answer the same body, so a poll that sends the tag back in\n`If-None-Match` gets a 304 with no body instead. A full read carries none,\nbecause its cursor moves with the clock.",
         "operationId": "list_issues_api_workspaces__workspace_id__issues_get",
         "parameters": [
           {
@@ -21962,6 +22132,16 @@
                 }
               ],
               "title": "Team Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "include_sub_teams",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Include Sub Teams",
+              "type": "boolean"
             }
           },
           {
@@ -22912,7 +23092,7 @@
     },
     "/api/workspaces/{workspace_id}/issues/export": {
       "get": {
-        "description": "One page of the CSV of every issue the caller may see that the filters keep.\n\nThe filters are the issue list's, so a team list or a saved view exports\nexactly what it shows by sending its own query. Without `team_id` the export\nspans every team the caller can read, which for a workspace admin is the whole\nworkspace. Rows come in team order, then by issue number, whatever the list's\nsort, because that order is what lets each page continue a key-bounded read.",
+        "description": "One page of the CSV of every issue the caller may see that the filters keep.\n\nThe filters are the issue list's, so a team list or a saved view exports\nexactly what it shows by sending its own query. Without `team_id` the export\nspans every team the caller can read, which for a workspace admin is the whole\nworkspace, and `include_sub_teams` adds the named team's visible sub-teams as\nthe rolled-up list shows them. Rows come in team order, then by issue number, whatever the list's\nsort, because that order is what lets each page continue a key-bounded read.",
         "operationId": "export_issues_api_workspaces__workspace_id__issues_export_get",
         "parameters": [
           {
@@ -22939,6 +23119,16 @@
                 }
               ],
               "title": "Team Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "include_sub_teams",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Include Sub Teams",
+              "type": "boolean"
             }
           },
           {
@@ -25863,7 +26053,7 @@
     },
     "/api/workspaces/{workspace_id}/projects": {
       "get": {
-        "description": "One page of the workspace's projects the caller can see, by target date, undated last.\n\nA project is listed when the caller can see at least one of its teams, and\n`team_id` narrows to the projects that team is on and `initiative_id` to the\nones in that initiative. The rows are read whole and paged over the filtered\norder, so a page is never left short by projects the caller cannot see.\nUndated projects sort last, because an absent target is a project nobody has\ncommitted to yet.",
+        "description": "One page of the workspace's projects the caller can see, by target date, undated last.\n\nA project is listed when the caller can see at least one of its teams, and\n`team_id` narrows to the projects that team is on and `initiative_id` to the\nones in that initiative. The rows are read whole and paged over the filtered\norder, so a page is never left short by projects the caller cannot see.\nUndated projects sort last, because an absent target is a project nobody has\ncommitted to yet. `include_sub_teams` with `team_id` also lists the projects\nof the team's sub-teams the caller may read, so a private sub-team stays out\nfor outsiders.",
         "operationId": "list_projects_api_workspaces__workspace_id__projects_get",
         "parameters": [
           {
@@ -25950,6 +26140,16 @@
               "minimum": 1,
               "title": "Limit",
               "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "include_sub_teams",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Include Sub Teams",
+              "type": "boolean"
             }
           }
         ],
@@ -28078,7 +28278,7 @@
     },
     "/api/workspaces/{workspace_id}/teams": {
       "get": {
-        "description": "Every team in the workspace the caller may see, in the caller's saved order.\n\nA guest sees only the teams they are a member of, which is the same rule\nthe single team route applies, read off the context rather than repeated.\nTeams the saved order does not name follow it, oldest first.",
+        "description": "Every team in the workspace the caller may see, in the caller's saved order.\n\nA guest sees only the teams they are a member of, which is the same rule\nthe single team route applies, read off the context rather than repeated.\nTeams the saved order does not name follow it, oldest first. With\n`parent_team_id`, only that team's sub-teams.",
         "operationId": "list_teams_api_workspaces__workspace_id__teams_get",
         "parameters": [
           {
@@ -28089,6 +28289,23 @@
               "minLength": 1,
               "title": "Workspace Id",
               "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "parent_team_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Parent Team Id"
             }
           }
         ],
@@ -28125,7 +28342,7 @@
         ]
       },
       "post": {
-        "description": "Create a team, make the caller its admin and seed the default statuses.\n\nAll three land as one `TransactWriteItems` across the three tables, seven items\nin total, because a team written without its statuses is unusable and cannot\nbe recreated: the prefix is taken, so a retry 409s while issue creation 422s on\nthe missing statuses. All or nothing means a failure leaves the prefix free.",
+        "description": "Create a team, make the caller its admin and seed the default statuses.\n\nAll three land as one `TransactWriteItems` across the three tables, seven items\nin total, because a team written without its statuses is unusable and cannot\nbe recreated: the prefix is taken, so a retry 409s while issue creation 422s on\nthe missing statuses. All or nothing means a failure leaves the prefix free.\nA parent team must be one the caller can find.",
         "operationId": "create_team_api_workspaces__workspace_id__teams_post",
         "parameters": [
           {
@@ -28330,7 +28547,7 @@
         ]
       },
       "patch": {
-        "description": "Change a team's name, key prefix, description or estimate scale.\n\nA new key prefix is applied first, in its own transaction, so a 409 on a\ntaken prefix leaves every other field of the patch unapplied too.",
+        "description": "Change a team's name, key prefix, description, estimate scale or parent team.\n\nA new key prefix is applied first, in its own transaction, so a 409 on a\ntaken prefix leaves every other field of the patch unapplied too. An\nexplicit null `parent_team_id` makes the team top-level again, and any\nchange of parent is recorded in the audit log.",
         "operationId": "update_team_api_workspaces__workspace_id__teams__team_id__patch",
         "parameters": [
           {
@@ -32965,6 +33182,16 @@
                 }
               ],
               "title": "Team Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "include_sub_teams",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Include Sub Teams",
+              "type": "boolean"
             }
           },
           {

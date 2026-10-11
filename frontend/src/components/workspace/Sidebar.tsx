@@ -14,7 +14,8 @@
  * The teams sit in the caller's own order, which a drag or Alt with an arrow
  * key changes and the server keeps per person and workspace, so the order
  * follows them to every device. The new order shows at once and settles when
- * the saved list is read back.
+ * the saved list is read back. A sub-team sits indented just under its parent
+ * team, in the caller's order among its siblings.
  *
  * Favorites are the saved views the caller starred. The star is kept by the
  * server per person, so the section agrees on every device they sign in on,
@@ -78,7 +79,12 @@ import {
   viewsPath,
   workspacePath,
 } from '../../lib/paths';
-import { applyTeamOrder, moveTeam } from '../../lib/teamOrder';
+import {
+  applyTeamOrder,
+  isNested,
+  moveTeam,
+  nestTeams,
+} from '../../lib/teamOrder';
 import { settingsLanding } from '../../lib/workspaceNav';
 import { Logo } from '../../brand';
 import type { TeamRead, WorkspaceRead } from '../../types/Api';
@@ -201,6 +207,8 @@ const toggleId = (teamId: string): string => `team-toggle-${teamId}`;
 interface TeamSectionProps {
   slug: string;
   team: TeamRead;
+  /** Whether the team shows nested under its parent team. */
+  nested: boolean;
   isOpen: boolean;
   onToggle: () => void;
   onNavigate?: (() => void) | undefined;
@@ -232,6 +240,7 @@ interface TeamSectionProps {
 const TeamSection: React.FC<TeamSectionProps> = ({
   slug,
   team,
+  nested,
   isOpen,
   onToggle,
   onNavigate,
@@ -256,7 +265,11 @@ const TeamSection: React.FC<TeamSectionProps> = ({
 
   return (
     <div
-      className={cn('group/team relative', dragging && 'opacity-50')}
+      className={cn(
+        'group/team relative',
+        nested && 'ml-3',
+        dragging && 'opacity-50'
+      )}
       data-testid={`team-section-${team.id}`}
       draggable={canReorder}
       onDragStart={(event) => {
@@ -501,11 +514,13 @@ export const Sidebar: React.FC<SidebarProps> = ({ workspace, onNavigate }) => {
 
   const rows = useMemo(
     () =>
-      applyTeamOrder(
-        (teams ?? []).filter(
-          (team) => team.private !== true || team.is_member === true
-        ),
-        pendingOrder
+      nestTeams(
+        applyTeamOrder(
+          (teams ?? []).filter(
+            (team) => team.private !== true || team.is_member === true
+          ),
+          pendingOrder
+        )
       ),
     [teams, pendingOrder]
   );
@@ -778,6 +793,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ workspace, onNavigate }) => {
                 key={team.id}
                 slug={slug}
                 team={team}
+                nested={isNested(team, rows)}
                 isOpen={
                   expanded.includes(team.key_prefix) ||
                   team.key_prefix === prefix

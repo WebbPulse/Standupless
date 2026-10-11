@@ -10,13 +10,15 @@ administer them without reading their issues.
 
 The list answers in the caller's own sidebar order, saved on their workspace
 membership, so the order follows the person to every device they sign in on.
+A team may sit under one parent team, and `parent_team_id` on the list narrows it
+to that parent's sub-teams.
 """
 
 from __future__ import annotations
 
-from typing import Annotated
+from typing import Annotated, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 
 from app.common import audit, team_writes
 from app.common.api.dependencies.authz import (
@@ -64,15 +66,18 @@ NO_TEAM_ORDER = "Only a workspace member can keep a team order"
 def list_teams(
     context: Annotated[AuthzContext, Depends(require(Capability.WORKSPACE_READ))],
     repositories: Annotated[Repositories, Depends(get_repositories)],
+    parent_team_id: Annotated[Optional[str], Query(min_length=1)] = None,
 ) -> TeamListRead:
     """Every team in the workspace the caller may see, in the caller's saved order.
 
     A guest sees only the teams they are a member of, which is the same rule
     the single team route applies, read off the context rather than repeated.
-    Teams the saved order does not name follow it, oldest first.
+    Teams the saved order does not name follow it, oldest first. With
+    `parent_team_id`, only that team's sub-teams.
     """
     membership = repositories.memberships.get(context.workspace_id, context.user_id)
-    return _team_list(repositories, context, membership.team_order if membership is not None else [])
+    order = membership.team_order if membership is not None else []
+    return _team_list(repositories, context, order, parent_team_id=parent_team_id)
 
 
 @router.put("/{workspace_id}/teams/order", response_model=TeamListRead)
@@ -108,8 +113,11 @@ def create_team(
     in total, because a team written without its statuses is unusable and cannot
     be recreated: the prefix is taken, so a retry 409s while issue creation 422s on
     the missing statuses. All or nothing means a failure leaves the prefix free.
+    A parent team must be one the caller can find.
     """
-    team = team_writes.create_team(repositories, context.workspace_id, context.user_id, payload)
+    team = team_writes.create_team(
+        repositories, context.workspace_id, context.user_id, payload, can_see=context.can_find_team
+    )
     audit.record(
         repositories,
         context,
@@ -137,12 +145,24 @@ def update_team(
     context: Annotated[AuthzContext, Depends(require(Capability.TEAM_ADMIN))],
     repositories: Annotated[Repositories, Depends(get_repositories)],
 ) -> TeamRead:
-    """Change a team's name, key prefix, description or estimate scale.
+    """Change a team's name, key prefix, description, estimate scale or parent team.
 
     A new key prefix is applied first, in its own transaction, so a 409 on a
-    taken prefix leaves every other field of the patch unapplied too.
+    taken prefix leaves every other field of the patch unapplied too. An
+    explicit null `parent_team_id` makes the team top-level again, and any
+    change of parent is recorded in the audit log.
     """
-    team = team_writes.update_team(repositories, context.workspace_id, str(context.team_id), payload)
+    before = _load(repositories, context).parent_team_id
+    team = team_writes.update_team(
+        repositories,
+        context.workspace_id,
+        str(context.team_id),
+        payload,
+        actor_id=context.user_id,
+        source=context.source,
+        can_see=context.can_find_team,
+    )
+    audit.record_parent_change(repositories, context, team, before)
     return _read(repositories, context, team)
 
 
@@ -361,15 +381,20 @@ def _visible_teams(repositories: Repositories, context: AuthzContext) -> list[Te
     return [team for team in teams if context.can_find_team(team.team_id)]
 
 
-def _team_list(repositories: Repositories, context: AuthzContext, order: list[str]) -> TeamListRead:
+def _team_list(
+    repositories: Repositories, context: AuthzContext, order: list[str], *, parent_team_id: str | None = None
+) -> TeamListRead:
     """The visible teams with counts and roles, sorted by a saved order.
 
     The sort is stable, so the teams the order does not name keep their oldest
     first order after the ones it does, and a name for a team that is gone is
-    simply never matched.
+    simply never matched. `parent_team_id` keeps only that team's sub-teams.
     """
     rank = {team_id: index for index, team_id in enumerate(order)}
-    visible = sorted(_visible_teams(repositories, context), key=lambda team: rank.get(team.team_id, len(rank)))
+    teams = _visible_teams(repositories, context)
+    if parent_team_id is not None:
+        teams = [team for team in teams if team.parent_team_id == parent_team_id]
+    visible = sorted(teams, key=lambda team: rank.get(team.team_id, len(rank)))
     memberships = repositories.memberships.list_all_team_memberships(context.workspace_id)
     counts: dict[str, int] = {}
     joined: set[str] = set()

@@ -241,6 +241,20 @@ def test_a_token_missing_a_scope_is_refused_with_insufficient_scope(
     assert "issues:write" in body["error"]["message"]
 
 
+def test_a_token_missing_a_scope_is_told_where_to_grant_it(
+    client: TestClient, workspace: str, mcp_tokens: None, signing_key: Any
+) -> None:
+    """The refusal names the scope and the connected apps page, where it is granted without a re-auth."""
+    token = issue_token(signing_key, scopes=("teams:read",))
+
+    error = tool(client, token, "create_issue", {"team_id": "x", "title": "No"}).json()["error"]
+
+    assert error["data"]["missing"] == ["issues:write"]
+    assert "Grant new permissions" in error["message"]
+    assert error["data"]["grant_url"].endswith("/settings/connected-apps")
+    assert error["data"]["grant_url"] in error["message"]
+
+
 def test_a_token_scope_is_intersected_with_live_membership(
     client: TestClient, workspace: str, mcp_tokens: None, signing_key: Any
 ) -> None:

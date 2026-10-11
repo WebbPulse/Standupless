@@ -44,6 +44,7 @@ def export_issues(
     context: Annotated[AuthzContext, Depends(require(Capability.WORKSPACE_READ))],
     repositories: Annotated[Repositories, Depends(get_repositories)],
     team_id: Annotated[Optional[str], Query()] = None,
+    include_sub_teams: Annotated[bool, Query()] = False,
     status_id: Values = None,
     status_id_not: Values = None,
     status_category: Values = None,
@@ -88,7 +89,8 @@ def export_issues(
     The filters are the issue list's, so a team list or a saved view exports
     exactly what it shows by sending its own query. Without `team_id` the export
     spans every team the caller can read, which for a workspace admin is the whole
-    workspace. Rows come in team order, then by issue number, whatever the list's
+    workspace, and `include_sub_teams` adds the named team's visible sub-teams as
+    the rolled-up list shows them. Rows come in team order, then by issue number, whatever the list's
     sort, because that order is what lets each page continue a key-bounded read.
     """
     try:
@@ -133,5 +135,13 @@ def export_issues(
         )
     except UnknownStatusCategory as exc:
         raise unprocessable(str(exc)) from exc
-    page = export_page(repositories, context, wanted, team_id=team_id, cursor=cursor, limit=limit)
+    page = export_page(
+        repositories,
+        context,
+        wanted,
+        team_id=team_id,
+        cursor=cursor,
+        limit=limit,
+        include_sub_teams=include_sub_teams,
+    )
     return IssueExportRead(csv=page.csv, rows=page.rows, next_cursor=page.next_cursor)

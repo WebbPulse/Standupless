@@ -217,3 +217,106 @@ def test_an_admin_revoking_a_grant_not_in_this_workspace_is_a_404(
     grant(server, OWNER, CLAUDE, WORKSPACE_TWO)
     sign_in(client, ADMIN)
     assert client.delete(f"/api/workspaces/{WORKSPACE_ONE}/connected-apps/{OWNER}/{CLAUDE}").status_code == 404
+
+
+def test_a_grant_lists_the_scopes_it_does_not_cover_yet(client: TestClient, server: Any, workspaces: None) -> None:
+    """Scopes the product offers beyond the grant are listed as new, per app and per workspace."""
+    grant(server, OWNER, CLAUDE, WORKSPACE_ONE)
+    sign_in(client, OWNER)
+
+    app = client.get("/api/users/me/connected-apps").json()["apps"][0]
+
+    assert "releases:read" in app["new_scopes"]
+    assert "issues:read" not in app["new_scopes"]
+    assert app["workspaces"][0]["new_scopes"] == app["new_scopes"]
+
+
+def test_granting_new_permissions_reaches_the_next_refresh(client: TestClient, server: Any, workspaces: None) -> None:
+    """The approved scopes join the grant, and the client's next refresh carries them with the old ones."""
+    token = grant(server, OWNER, CLAUDE, WORKSPACE_ONE)
+    sign_in(client, OWNER)
+
+    response = client.post(
+        f"/api/users/me/connected-apps/{CLAUDE}/scopes", json={"scopes": ["releases:read", "releases:write"]}
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["scopes"] == ["issues:read", "issues:write", "releases:read", "releases:write"]
+    assert "releases:read" not in body["new_scopes"]
+    refreshed = server.service.refresh({"refresh_token": token, "client_id": CLAUDE})
+    assert refreshed["scope"].split() == ["issues:read", "issues:write", "releases:read", "releases:write"]
+
+
+def test_granting_new_permissions_never_adds_what_was_not_approved(
+    client: TestClient, server: Any, workspaces: None
+) -> None:
+    """Only the posted scopes are added, never the rest of the product's set."""
+    token = grant(server, OWNER, CLAUDE, WORKSPACE_ONE)
+    sign_in(client, OWNER)
+
+    client.post(f"/api/users/me/connected-apps/{CLAUDE}/scopes", json={"scopes": ["releases:read"]})
+
+    refreshed = server.service.refresh({"refresh_token": token, "client_id": CLAUDE})
+    assert refreshed["scope"].split() == ["issues:read", "issues:write", "releases:read"]
+
+
+def test_granting_new_permissions_in_one_workspace_leaves_the_other(
+    client: TestClient, server: Any, workspaces: None
+) -> None:
+    """A named workspace widens that grant alone."""
+    here = grant(server, OWNER, CLAUDE, WORKSPACE_ONE)
+    elsewhere = grant(server, OWNER, CLAUDE, WORKSPACE_TWO)
+    sign_in(client, OWNER)
+
+    response = client.post(
+        f"/api/users/me/connected-apps/{CLAUDE}/scopes",
+        json={"scopes": ["releases:read"], "workspace_id": WORKSPACE_ONE},
+    )
+
+    assert response.status_code == 200
+    widened = server.service.refresh({"refresh_token": here, "client_id": CLAUDE})["scope"].split()
+    untouched = server.service.refresh({"refresh_token": elsewhere, "client_id": CLAUDE})["scope"].split()
+    assert "releases:read" in widened
+    assert "releases:read" not in untouched
+
+
+def test_granting_new_permissions_is_audited(
+    client: TestClient, server: Any, workspaces: None, repositories: Any
+) -> None:
+    """The workspace log records the widening with the scopes before and after."""
+    grant(server, OWNER, CLAUDE, WORKSPACE_ONE)
+    sign_in(client, OWNER)
+
+    client.post(f"/api/users/me/connected-apps/{CLAUDE}/scopes", json={"scopes": ["releases:read"]})
+
+    events = repositories.audit.list_events(WORKSPACE_ONE).events
+    granted = [event for event in events if event.action == "connected_app.scopes_granted"]
+    assert len(granted) == 1
+
+
+def test_granting_an_unknown_scope_is_refused(client: TestClient, server: Any, workspaces: None) -> None:
+    """A scope the server does not offer is a 422, not silently dropped."""
+    grant(server, OWNER, CLAUDE, WORKSPACE_ONE)
+    sign_in(client, OWNER)
+
+    response = client.post(f"/api/users/me/connected-apps/{CLAUDE}/scopes", json={"scopes": ["everything"]})
+
+    assert response.status_code == 422
+
+
+def test_granting_to_a_client_never_authorized_is_a_404(client: TestClient, server: Any, workspaces: None) -> None:
+    """There is no grant to widen, and another person's grant is out of reach."""
+    grant(server, MEMBER, CURSOR, WORKSPACE_ONE)
+    sign_in(client, OWNER)
+
+    response = client.post(f"/api/users/me/connected-apps/{CURSOR}/scopes", json={"scopes": ["releases:read"]})
+
+    assert response.status_code == 404
+
+
+def test_a_delegated_credential_cannot_grant_itself_scopes(client: TestClient, workspaces: None) -> None:
+    """An MCP token may never widen the grant behind it."""
+    sign_in(client, OWNER, scope="issues:read")
+    response = client.post(f"/api/users/me/connected-apps/{CLAUDE}/scopes", json={"scopes": ["releases:read"]})
+    assert response.status_code == 403

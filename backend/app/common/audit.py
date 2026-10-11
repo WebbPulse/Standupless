@@ -36,6 +36,7 @@ from app.common.api.dependencies.authz import AuthzContext
 from app.common.api.dependencies.repositories import Repositories
 from app.common.api.schemas.audit import AuditEventRead, AuditEventType, AuditLogRead
 from app.common.db.dynamo.audit import RETENTION
+from app.common.db.dynamo.teams import Team
 from app.common.plan_features import Feature, enforce_feature, has_feature
 
 _log = logging.getLogger(__name__)
@@ -57,6 +58,7 @@ EVENTS: dict[str, str] = {
     "api_key.revoked": "API key revoked",
     "connected_app.authorized": "Connected app authorized",
     "connected_app.revoked": "Connected app revoked",
+    "connected_app.scopes_granted": "Connected app permissions granted",
     "export.started": "Workspace export started",
     "import.started": "Issue import started",
     "workspace.updated": "Workspace settings changed",
@@ -65,6 +67,7 @@ EVENTS: dict[str, str] = {
     "plan.changed": "Plan changed",
     "team.created": "Team created",
     "team.deleted": "Team deleted",
+    "team.parent_changed": "Team parent changed",
 }
 """Every event the log records, with the label the settings page shows."""
 
@@ -132,6 +135,24 @@ def record(
         target_label=target_label,
         before=before,
         after=after,
+    )
+
+
+def record_parent_change(
+    repositories: Repositories, context: AuthzContext, team: Team, before: str | None
+) -> AuditEvent | None:
+    """Record a team moving under another parent or to the top level, and nothing when its parent stayed."""
+    if team.parent_team_id == before:
+        return None
+    return record(
+        repositories,
+        context,
+        "team.parent_changed",
+        target_type="team",
+        target_id=team.team_id,
+        target_label=team.name,
+        before={"parent_team_id": before},
+        after={"parent_team_id": team.parent_team_id},
     )
 
 

@@ -304,11 +304,17 @@ class ConnectedAppMemberRead(TypedDict):
     id: str
 
 
+class ConnectedAppScopesGrant(TypedDict):
+    scopes: list[str]
+    workspace_id: NotRequired[str | None]
+
+
 class ConnectedAppWorkspaceRead(TypedDict):
     authorized_at: NotRequired[str | None]
     id: str
     last_used_at: NotRequired[str | None]
     name: str
+    new_scopes: NotRequired[list[str]]
     scopes: list[str]
 
 
@@ -852,7 +858,7 @@ class LabelRead(TypedDict):
     is_group: NotRequired[bool]
     name: str
     parent_id: NotRequired[str | None]
-    scope: NotRequired[Literal["team", "workspace"]]
+    scope: NotRequired[Literal["team", "parent", "workspace"]]
 
 
 class LabelUpdate(TypedDict):
@@ -1164,14 +1170,17 @@ class ReleaseBackfillRead(TypedDict):
     github_calls: NotRequired[int]
     message: NotRequired[str | None]
     next_cursor: NotRequired[str | None]
+    pull_reads_skipped: NotRequired[int]
     rate_limit: NotRequired[int | None]
     rate_limit_remaining: NotRequired[int | None]
     release_ids: list[str]
     releases_created: int
     releases_updated: int
     resume_after: NotRequired[str | None]
+    stalled: NotRequired[bool]
     stopped_early: NotRequired[bool]
     team_id: str
+    unreadable_deployment_ids: NotRequired[list[int]]
 
 
 class ReleaseCreate(TypedDict):
@@ -1599,7 +1608,7 @@ class StatusRead(TypedDict):
     inherited_name: NotRequired[str | None]
     name: str
     position: int
-    scope: NotRequired[Literal["team", "workspace"]]
+    scope: NotRequired[Literal["team", "parent", "workspace"]]
 
 
 class StatusUpdate(TypedDict):
@@ -1681,6 +1690,7 @@ class TeamCreate(TypedDict):
     estimate_scale: NotRequired[Literal["off", "exponential", "fibonacci", "linear", "tshirt"]]
     key_prefix: str
     name: str
+    parent_team_id: NotRequired[str | None]
     private: NotRequired[bool]
 
 
@@ -1714,6 +1724,7 @@ class TeamRead(TypedDict):
     key_prefix: str
     member_count: NotRequired[int]
     name: str
+    parent_team_id: NotRequired[str | None]
     private: NotRequired[bool]
     retired_key_prefixes: NotRequired[list[str]]
     role: NotRequired[Literal["admin", "member"] | None]
@@ -1753,6 +1764,7 @@ class TeamUpdate(TypedDict):
     estimate_scale: NotRequired[Literal["off", "exponential", "fibonacci", "linear", "tshirt"] | None]
     key_prefix: NotRequired[str | None]
     name: NotRequired[str | None]
+    parent_team_id: NotRequired[str | None]
     private: NotRequired[bool | None]
     sync_pr_labels: NotRequired[bool | None]
 
@@ -2273,6 +2285,7 @@ class ConnectedAppRead(TypedDict):
     client_name: str
     first_authorized_at: NotRequired[str | None]
     last_used_at: NotRequired[str | None]
+    new_scopes: NotRequired[list[str]]
     scopes: list[str]
     workspaces: list[ConnectedAppWorkspaceRead]
 

@@ -28,6 +28,7 @@ def get_insights(
     repositories: Annotated[Repositories, Depends(get_repositories)],
     workspace_id: Annotated[str, Path()],
     team_id: Annotated[Optional[str], Query()] = None,
+    include_sub_teams: Annotated[bool, Query()] = False,
     view_id: Annotated[Optional[str], Query()] = None,
     group_by: Annotated[InsightDimension, Query()] = "status",
     segment_by: Annotated[Optional[InsightDimension], Query()] = None,
@@ -87,6 +88,7 @@ def get_insights(
         group_by=group_by,
         segment_by=segment_by,
         measure=measure,
+        include_sub_teams=include_sub_teams,
         filters={
             "status_id": status_id,
             "status_id_not": status_id_not,

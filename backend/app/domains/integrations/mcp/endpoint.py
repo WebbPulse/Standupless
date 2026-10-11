@@ -40,6 +40,7 @@ from webbpulse.identity.api_keys import TENANT_CLAIM
 from app.common.api.dependencies.authz import (
     AuthzContext,
     bearer_claims_of,
+    live_scopes_for,
     missing_scopes,
     resolve_context,
 )
@@ -267,11 +268,7 @@ def _call_tool(
 
     missing = _missing_scopes(context, tool.scopes)
     if missing:
-        raise ProtocolError(
-            INSUFFICIENT_SCOPE,
-            f"Missing scope: {', '.join(missing)}",
-            data={"error_code": "INSUFFICIENT_SCOPE", "required": list(tool.scopes)},
-        )
+        raise _insufficient_scope(context, repositories, tool.scopes, missing)
 
     arguments = params.get("arguments") or {}
     if not isinstance(arguments, Mapping):
@@ -287,6 +284,45 @@ def _call_tool(
         return tool_result(http_error_message(exc), is_error=True)
     except ValidationError as exc:
         return tool_result(validation_message(exc), is_error=True)
+
+
+def _insufficient_scope(
+    context: AuthzContext,
+    repositories: Repositories,
+    required: tuple[str, ...],
+    missing: list[str],
+) -> ProtocolError:
+    """The refusal for a tool whose scopes the credential lacks, saying how to get them.
+
+    A scope the caller's role cannot hold is named as that, because no grant would
+    help. Otherwise the refusal names both ways to get it, because by now every
+    credential is attributed to MCP and an OAuth token cannot be told from an API key:
+    an OAuth client is pointed at the connected apps page, where "Grant new
+    permissions" adds the scope to the existing grant and the client's next token
+    refresh carries it, and an API key at the API keys page, since a key's scopes are
+    fixed when it is created.
+    """
+    names = ", ".join(missing)
+    data: dict[str, Any] = {"error_code": "INSUFFICIENT_SCOPE", "required": list(required), "missing": missing}
+    if missing_scopes(live_scopes_for(context.role, context.user_id), missing):
+        return ProtocolError(
+            INSUFFICIENT_SCOPE,
+            f"Missing scope: {names}. Your role in this workspace does not allow it.",
+            data=data,
+        )
+    workspace = repositories.workspaces.get(context.workspace_id)
+    settings_url = f"{settings.frontend_base_url}/w/{workspace.slug}/settings" if workspace is not None else ""
+    grant_url = f"{settings_url}/connected-apps" if settings_url else ""
+    api_keys_url = f"{settings_url}/api-keys" if settings_url else ""
+    data["grant_url"] = grant_url
+    data["api_keys_url"] = api_keys_url
+    message = (
+        f"Missing scope: {names}. For an OAuth client, grant it without signing in again "
+        f"{f'at {grant_url}' if grant_url else 'under Settings, Connected apps'}: choose Grant new "
+        "permissions on this app, and the client's next token refresh carries it. For an API key, "
+        f"create a key that carries it {f'at {api_keys_url}' if api_keys_url else 'under Settings, API keys'}."
+    )
+    return ProtocolError(INSUFFICIENT_SCOPE, message, data=data)
 
 
 def _missing_scopes(context: AuthzContext, required: tuple[str, ...]) -> list[str]:

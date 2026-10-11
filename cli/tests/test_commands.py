@@ -445,6 +445,41 @@ def test_team_update_sets_the_estimate_settings(runner: CliRunner, api: respx.Mo
     assert "exponential, extended, unestimated count as 1 point" in result.output
 
 
+SUB_TEAM = {**TEAM, "id": "team-2", "name": "Platform", "key_prefix": "PLT", "parent_team_id": "team-1"}
+
+
+def test_team_list_shows_each_parent_and_filters_to_sub_teams(runner: CliRunner, api: respx.MockRouter) -> None:
+    """The parent column names the parent's key, and `--parent` keeps only that team's sub-teams."""
+    api.get(f"/api/workspaces/{WS}/teams").respond(json={"teams": [TEAM, SUB_TEAM]})
+    listed = invoke(runner, "team", "list")
+    assert listed.exit_code == 0, listed.output
+    assert any("PLT" in line and "ENG" in line for line in listed.stdout.splitlines())
+
+    narrowed = invoke(runner, "team", "list", "--parent", "ENG", "--json")
+    assert narrowed.exit_code == 0, narrowed.output
+    assert [team["key_prefix"] for team in json.loads(narrowed.stdout)] == ["PLT"]
+
+
+def test_team_update_moves_a_team_under_a_parent_and_back(runner: CliRunner, api: respx.MockRouter) -> None:
+    """`--parent` sends the parent's id, and `none` sends an explicit null to make the team top level."""
+    api.get(f"/api/workspaces/{WS}/teams").respond(json={"teams": [TEAM, {**SUB_TEAM, "parent_team_id": None}]})
+    patched = api.patch(f"/api/workspaces/{WS}/teams/team-2").mock(
+        side_effect=[
+            httpx.Response(200, json=SUB_TEAM),
+            httpx.Response(200, json={**SUB_TEAM, "parent_team_id": None}),
+        ]
+    )
+    nested = invoke(runner, "team", "update", "-t", "PLT", "--parent", "ENG")
+    assert nested.exit_code == 0, nested.output
+    assert json.loads(patched.calls[0].request.content) == {"parent_team_id": "team-1"}
+    assert "PLT now sits under ENG" in nested.output
+
+    lifted = invoke(runner, "team", "update", "-t", "PLT", "--parent", "none")
+    assert lifted.exit_code == 0, lifted.output
+    assert json.loads(patched.calls[1].request.content) == {"parent_team_id": None}
+    assert "PLT is now a top-level team" in lifted.output
+
+
 def test_team_update_needs_a_change(runner: CliRunner, api: respx.MockRouter) -> None:
     """With no setting named there is nothing to send."""
     result = invoke(runner, "team", "update", "-t", "ENG")

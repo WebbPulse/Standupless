@@ -513,10 +513,10 @@ def _walk(repositories: Any, job: ExportJob, writer: _Writer) -> datetime:
     for team in visible:
         team_id = team.team_id
         for status in repositories.team_config.list_statuses(workspace_id, team_id, limit=1000):
-            if status.team_id == team_id and status.scope != "workspace":
+            if status.team_id == team_id and status.scope == "team":
                 writer.write("statuses", _dump(status))
         for label in repositories.team_config.list_labels(workspace_id, team_id, limit=1000):
-            if label.team_id == team_id and label.scope != "workspace":
+            if label.team_id == team_id and label.scope == "team":
                 writer.write("labels", _dump(label))
         after = 0
         while True:

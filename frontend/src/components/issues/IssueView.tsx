@@ -13,7 +13,9 @@
  * the same view fits a full page and a pane beside a list.
  *
  * Adding a link, a sub-issue or a relation opens a dialog from the issue
- * menu, the panel's "+" menu, the command palette or a shortcut. An archived
+ * menu, the panel's "+" menu, the command palette or a shortcut. The caller's
+ * subscription is read once here and shared by the bell in the bar, the
+ * Subscribers section, the shortcut and the palette, so they never disagree. An archived
  * issue still opens here, under a banner that restores it. The supporting
  * lists are read once here and handed down, so the panel and the timeline
  * resolve the same ids without reading them twice.
@@ -58,6 +60,7 @@ import { useAttachFiles } from '../../hooks/useAttachFiles';
 import { useAuth } from '../../hooks/useAuth';
 import { useCreateIssue } from '../../hooks/useCreateIssue';
 import { useCursorPages, type CursorPage } from '../../hooks/useCursorPages';
+import { useIssueSubscription } from '../../hooks/useIssueSubscription';
 import { useProjectMilestones } from '../../hooks/useProjectMilestones';
 import { useShortcut } from '../../hooks/useShortcuts';
 import { useTeamOptions } from '../../hooks/useTeamOptions';
@@ -100,6 +103,7 @@ import AddRelationDialog from './AddRelationDialog';
 import IssueBody from './IssueBody';
 import IssuePageCommands from './IssuePageCommands';
 import IssuePropertiesPanel from './IssuePropertiesPanel';
+import IssueSubscribeButton from './IssueSubscribeButton';
 import IssueTimeline from './IssueTimeline';
 import IssueTrailNav from './IssueTrailNav';
 import MoveIssueDialog, {
@@ -354,6 +358,7 @@ export const IssueView: React.FC<IssueViewProps> = ({
   }, [embedded, lookup, canonicalKey, issueRef, navigate, slug]);
 
   const attachFiles = useAttachFiles(workspaceId, issueId);
+  const subscription = useIssueSubscription(workspaceId, issueId);
 
   const team = teams?.find((item) => item.id === teamId);
   const canEdit = canWriteIssues(workspace?.role, team?.role);
@@ -367,11 +372,7 @@ export const IssueView: React.FC<IssueViewProps> = ({
 
   const context = useMemo<ActivityContext>(
     () => ({
-      statuses: options.statuses.map((status) => ({
-        id: status.id,
-        name: status.name,
-        category: status.category,
-      })),
+      statuses: options.statuses,
       people: options.people,
       labels: options.labels.map((label) => ({
         id: label.id,
@@ -516,6 +517,7 @@ export const IssueView: React.FC<IssueViewProps> = ({
             <IssueTrailNav slug={slug} issueKey={issueRef} />
           </span>
         )}
+        <IssueSubscribeButton subscription={subscription} />
         {canEdit && (
           <ShareButton
             workspaceId={workspaceId}
@@ -839,6 +841,7 @@ export const IssueView: React.FC<IssueViewProps> = ({
                     setLinkOpen(true);
                   }}
                   onAttachFiles={attachFiles}
+                  subscription={subscription}
                 />
               )}
             </div>

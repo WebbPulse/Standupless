@@ -4,7 +4,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { applyTeamOrder, moveTeam } from './teamOrder';
+import { applyTeamOrder, isNested, moveTeam, nestTeams } from './teamOrder';
 
 const teams = [{ id: 'a' }, { id: 'b' }, { id: 'c' }];
 
@@ -41,5 +41,29 @@ describe('applyTeamOrder', () => {
     expect(
       applyTeamOrder(teams, ['gone', 'b', 'a']).map((team) => team.id)
     ).toEqual(['b', 'a', 'c']);
+  });
+});
+
+describe('nestTeams', () => {
+  it('moves each sub-team to just after its parent', () => {
+    const rows = [
+      { id: 'sub', parent_team_id: 'b' },
+      { id: 'a', parent_team_id: null },
+      { id: 'b' },
+      { id: 'other', parent_team_id: 'a' },
+    ];
+    expect(nestTeams(rows).map((team) => team.id)).toEqual([
+      'a',
+      'other',
+      'b',
+      'sub',
+    ]);
+  });
+
+  it('keeps a sub-team whose parent is not listed at the top level', () => {
+    const rows = [{ id: 'a' }, { id: 'sub', parent_team_id: 'hidden' }];
+    expect(nestTeams(rows).map((team) => team.id)).toEqual(['a', 'sub']);
+    expect(isNested(rows[1] ?? { id: '' }, rows)).toBe(false);
+    expect(isNested({ id: 'x', parent_team_id: 'a' }, rows)).toBe(true);
   });
 });

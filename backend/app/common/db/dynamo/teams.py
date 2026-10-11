@@ -14,6 +14,10 @@ hold the team id and number, so no issue is rewritten when a prefix changes.
 Deleting a team first tombstones its row (`deleting_at`) and drops the indexed
 composite, which hides the team from every read and frees its prefix, then the
 dependent rows are purged, then the row itself goes.
+
+A team may sit under one parent team, `parent_team_id`, one level deep. The
+`team_config` table mirrors the link in a pointer row, written in the same
+transaction, so status and label reads resolve the parent inside that table.
 """
 
 from __future__ import annotations
@@ -94,6 +98,7 @@ class Team(BaseModel):
     estimate_count_unestimated: bool = False
     sync_pr_labels: bool = True
     icon_key: str | None = None
+    parent_team_id: str | None = None
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
 
@@ -227,6 +232,38 @@ class TeamRepository:
         except ConditionFailed:
             return None
         return _as_team(item) if item is not None else None
+
+    def parent_action(self, workspace_id: str, team_id: str, parent_team_id: str | None) -> dict[str, Any]:
+        """A transaction Update putting a live team under `parent_team_id`, or out from under one with `None`.
+
+        Separate from `update`, which drops `None` values and so cannot clear the link.
+        """
+        now = utc_now().isoformat()
+        key = {"workspace_id": workspace_id, "team_id": team_id}
+        condition = Attr("name").exists() & Attr("deleting_at").not_exists()
+        if parent_team_id is None:
+            return self._repository.update_action(
+                key,
+                update_expression="SET #ua = :ua REMOVE #pt",
+                expression_names={"#ua": "updated_at", "#pt": "parent_team_id"},
+                expression_values={":ua": now},
+                condition=condition,
+            )
+        return self._repository.update_action(
+            key,
+            update_expression="SET #ua = :ua, #pt = :pt",
+            expression_names={"#ua": "updated_at", "#pt": "parent_team_id"},
+            expression_values={":ua": now, ":pt": parent_team_id},
+            condition=condition,
+        )
+
+    def list_sub_teams(self, workspace_id: str, parent_team_id: str, *, limit: int = 1000) -> list[Team]:
+        """Every live team directly under `parent_team_id`, oldest first."""
+        if not workspace_id or not parent_team_id:
+            return []
+        return [
+            team for team in self.list_for_workspace(workspace_id, limit=limit) if team.parent_team_id == parent_team_id
+        ]
 
     def change_key_prefix(self, workspace_id: str, team_id: str, new_prefix: str) -> Team | None:
         """Move a team to `new_prefix`, keeping the old prefix as an alias of it.

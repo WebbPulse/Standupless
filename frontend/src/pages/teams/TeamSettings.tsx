@@ -1,5 +1,5 @@
 /**
- * One team's settings: its name and key, who belongs to it, the statuses its
+ * One team's settings: its name and key, the parent team it sits under, who belongs to it, the statuses its
  * issues move through, its labels, its automatic cycles, when stale open
  * issues close, how long closed issues stay before they are archived, its SLA
  * rules, the rules that move an issue when a pull request changes, whether
@@ -26,6 +26,7 @@ import SlaSection from '../../components/team/SlaSection';
 import StandupSection from '../../components/team/StandupSection';
 import TeamGeneralSection from '../../components/team/TeamGeneralSection';
 import TeamMembersSection from '../../components/team/TeamMembersSection';
+import TeamParentSection from '../../components/team/TeamParentSection';
 import TeamChannelsSection from '../../components/team/TeamChannelsSection';
 import DiscordReturnToast from '../../components/team/DiscordReturnToast';
 import SlackReturnToast from '../../components/team/SlackReturnToast';
@@ -175,6 +176,11 @@ const TeamSettings: React.FC = () => {
                 team={team}
                 canEdit={editable}
                 canDelete={canDeleteTeam(workspace?.role)}
+              />
+              <TeamParentSection
+                workspaceId={workspaceId}
+                team={team}
+                canEdit={editable}
               />
               <TeamPrivacySection
                 workspaceId={workspaceId}

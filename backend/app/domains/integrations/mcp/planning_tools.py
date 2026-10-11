@@ -16,9 +16,6 @@ from __future__ import annotations
 
 from typing import Any, get_args
 
-from webbpulse.dynamodb import encode_start_key
-
-from app.common.api.pagination import resume_key
 from app.common.api.schemas.issues import BULK_MAX_ISSUES, IssueBulkUpdate
 from app.common.api.schemas.planning import (
     CycleCreate,
@@ -38,7 +35,7 @@ from app.common.api.schemas.planning import (
     ProjectUpdateRead,
 )
 from app.common.cycle_schedule import active_cycle
-from app.common.cycle_writes import create_cycle, delete_cycle, update_cycle
+from app.common.cycle_writes import create_cycle, delete_cycle, list_cycles, update_cycle
 from app.common.db.dynamo.issues import Issue
 from app.common.issue_writes import bulk_update_issues
 from app.common.milestone_writes import create_milestone, delete_milestone, update_milestone
@@ -251,25 +248,23 @@ def _list_cycles(call: ToolCall) -> Any:
 
     The status is derived from the dates, so it is filtered after the read, as the
     cycles route does, and a page can come back shorter than the limit while
-    next_cursor still names more.
+    next_cursor still names more. `include_sub_teams` rolls in the cycles of the
+    team's sub-teams this credential may read.
     """
     team_id = _team_id(call)
-    require_team_reader(call.repositories, call.context, team_id)
     wanted = call.optional("status")
     if wanted is not None and wanted not in CYCLE_STATUSES:
         raise ToolError(f"status must be one of: {', '.join(CYCLE_STATUSES)}")
-    scope = f"cycles:{call.context.workspace_id}:{team_id}"
-    rows, last_key = call.repositories.planning.list_cycles(
-        call.context.workspace_id,
+    cycles, next_cursor = list_cycles(
+        call.repositories,
+        call.context,
         team_id,
+        status_filter=str(wanted) if wanted is not None else None,
+        cursor=call.optional("cursor"),
         limit=limit(call.optional("limit")),
-        start_key=resume_key(call.optional("cursor"), scope),
+        include_sub_teams=call.optional("include_sub_teams", False) is True,
     )
-    counted = counts_unestimated(call.repositories, call.context.workspace_id, team_id)
-    cycles = [CycleRead.from_row(row, count_unestimated=counted) for row in rows]
-    if wanted is not None:
-        cycles = [row for row in cycles if row.status == wanted]
-    return {"cycles": [_cycle_json(row) for row in cycles], "next_cursor": encode_start_key(last_key, scope=scope)}
+    return {"cycles": [_cycle_json(row) for row in cycles], "next_cursor": next_cursor}
 
 
 def _get_cycle(call: ToolCall) -> Any:
@@ -394,6 +389,7 @@ def _list_projects(call: ToolCall) -> Any:
         status_filter=str(status_filter) if status_filter else None,
         cursor=call.optional("cursor"),
         limit=limit(call.optional("limit")),
+        include_sub_teams=call.optional("include_sub_teams", False) is True,
     )
     return {"projects": [_project_json(row) for row in rows], "next_cursor": next_cursor}
 
@@ -604,6 +600,10 @@ PLANNING_TOOLS: tuple[Tool, ...] = (
             {
                 "team_id": string(TEAM_HELP),
                 "status": enum(CYCLE_STATUSES, "Only cycles in this status"),
+                "include_sub_teams": {
+                    "type": "boolean",
+                    "description": "Also list the cycles of that team's sub-teams, default false",
+                },
                 **page_properties(),
             },
             required=("team_id",),
@@ -703,6 +703,10 @@ PLANNING_TOOLS: tuple[Tool, ...] = (
                 "team_id": string(f"Only projects on this team. {TEAM_HELP}"),
                 "status": enum(PROJECT_STATUSES, "Only projects in this status"),
                 "initiative_id": string(f"Only projects in this initiative. {INITIATIVE_HELP}"),
+                "include_sub_teams": {
+                    "type": "boolean",
+                    "description": "With team_id, also list the projects of that team's sub-teams, default false",
+                },
                 **page_properties(),
             }
         ),

@@ -218,6 +218,7 @@ def _page(call: ToolCall, **overrides: Any) -> dict[str, Any]:
         sort=_sort(call),
         cursor=call.optional("cursor"),
         limit=limit(call.optional("limit")),
+        include_sub_teams=call.optional("include_sub_teams", False) is True,
     )
     return {"issues": [summary_json(row) for row in rows], "next_cursor": next_cursor}
 
@@ -246,6 +247,7 @@ def _get_insights(call: ToolCall) -> Any:
         segment_by=str(segment_by) if segment_by else None,
         measure=str(call.optional("measure", "count")),
         filters=filters,
+        include_sub_teams=call.optional("include_sub_teams", False) is True,
     )
     return body.model_dump(mode="json")
 
@@ -710,6 +712,10 @@ ISSUE_TOOLS: tuple[Tool, ...] = (
                 **_filter_properties(),
                 "query": string("A key or title prefix, such as ABC-12 or 'Fix login'"),
                 "include_archived": {"type": "boolean", "description": "Include archived issues, default false"},
+                "include_sub_teams": {
+                    "type": "boolean",
+                    "description": "With team_id, also list the issues of that team's sub-teams, default false",
+                },
                 "sort": enum(SORTS, SORT_HELP),
                 **page_properties(),
             }
@@ -733,6 +739,10 @@ ISSUE_TOOLS: tuple[Tool, ...] = (
                 "segment_by": enum(INSIGHT_DIMENSIONS, "What splits each bar, optional"),
                 "measure": enum(INSIGHT_MEASURES, "count of issues or sum of estimate points, defaulting to count"),
                 "include_archived": {"type": "boolean", "description": "Include archived issues, default false"},
+                "include_sub_teams": {
+                    "type": "boolean",
+                    "description": "With team_id, also count the issues of that team's sub-teams, default false",
+                },
             }
         ),
         handler=_get_insights,

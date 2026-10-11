@@ -4,34 +4,23 @@
  *
  * Creating, being assigned, commenting and being mentioned all subscribe a
  * person without asking, so the toggle is mostly how someone leaves an issue
- * they no longer care about. Cmd or Ctrl, Shift and S flips it from anywhere
- * on the issue and from the command palette.
+ * they no longer care about. The state comes from useIssueSubscription, read
+ * once by the issue view, so this section, the bell in the issue bar, the
+ * shortcut and the command palette always agree.
  */
 
-import React, { useCallback } from 'react';
-import { useQueryAuth } from '@webbpulse/auth/react';
-import { invalidateQueries, usePolledQuery } from '@webbpulse/api-client/react';
+import React from 'react';
 import { LuBell, LuBellOff } from 'react-icons/lu';
 import {
-  listSubscribers,
-  subscribe,
-  unsubscribe,
-} from '../../api/notifications';
-import { displayKeys, useShortcut } from '../../hooks/useShortcuts';
+  subscriptionTitle,
+  type IssueSubscription,
+} from '../../hooks/useIssueSubscription';
 import { errorMessage } from '../../lib/errors';
-import { subscribersKey } from '../../lib/queryKeys';
-import { showErrorToast, showToast } from '../../lib/toast';
 import type { SubscriptionReason } from '../../types/Api';
 import { ErrorAlert } from '../ui/alert';
 import Avatar from '../ui/avatar';
 import { IconButton } from '../ui/button';
 import RailSection from './RailSection';
-
-/** The shortcut that subscribes to or unsubscribes from the issue. */
-export const TOGGLE_SUBSCRIPTION_KEYS = 'mod+shift+s';
-
-/** How often the subscriber list is re-read while the issue is open. */
-const POLL_MS = 30000;
 
 /** How each reason reads beside a subscriber's name. */
 const REASON_LABELS: Record<SubscriptionReason, string> = {
@@ -42,67 +31,22 @@ const REASON_LABELS: Record<SubscriptionReason, string> = {
   manual: 'Subscribed',
 };
 
-/** Props for IssueSubscribers: which issue's subscribers to show. */
+/** Props for IssueSubscribers: the issue's shared subscription state. */
 export interface IssueSubscribersProps {
-  workspaceId: string;
-  issueId: string;
-  /** Renders nothing while the section has no content, for a compact panel. */
-  hideEmpty?: boolean;
+  subscription: IssueSubscription;
 }
 
-/** Lists an issue's subscribers and toggles the caller's own subscription. */
+/**
+ * Lists an issue's subscribers and toggles the caller's own subscription. The
+ * section stays on the rail when nobody follows the issue, so the toggle is
+ * always reachable there as well as in the issue bar.
+ */
 export const IssueSubscribers: React.FC<IssueSubscribersProps> = ({
-  workspaceId,
-  issueId,
-  hideEmpty = false,
+  subscription,
 }) => {
-  const auth = useQueryAuth();
-  const queryKey = subscribersKey(workspaceId, issueId);
-
-  const { data, error } = usePolledQuery(
-    ({ signal }) => listSubscribers(workspaceId, issueId, signal),
-    { intervalMs: POLL_MS, queryKey, auth }
-  );
-
-  const subscribed = data?.subscribed ?? false;
-
-  const toggle = useCallback((): void => {
-    if (data === null) return;
-    const leaving = data.subscribed;
-    const request = leaving
-      ? unsubscribe(workspaceId, issueId)
-      : subscribe(workspaceId, issueId);
-    void request
-      .then(() => {
-        invalidateQueries(subscribersKey(workspaceId, issueId));
-        showToast(
-          leaving
-            ? 'Unsubscribed from this issue.'
-            : 'Subscribed to this issue.'
-        );
-      })
-      .catch((failure: unknown) => {
-        showErrorToast(
-          errorMessage(failure, 'Could not change your subscription.')
-        );
-      });
-  }, [data, workspaceId, issueId]);
-
-  const label = subscribed ? 'Unsubscribe from issue' : 'Subscribe to issue';
-
-  useShortcut({
-    keys: TOGGLE_SUBSCRIPTION_KEYS,
-    label,
-    scope: 'issue',
-    group: 'Issue',
-    enabled: data !== null,
-    handler: toggle,
-  });
-
+  const { data, error, subscribed, label, toggle } = subscription;
   const subscribers = data?.subscribers ?? [];
   const Icon = subscribed ? LuBellOff : LuBell;
-
-  if (hideEmpty && subscribers.length === 0 && error === null) return null;
 
   return (
     <RailSection
@@ -113,7 +57,7 @@ export const IssueSubscribers: React.FC<IssueSubscribersProps> = ({
           label={label}
           size="sm"
           className="h-5 w-5 shrink-0"
-          title={`${label} (${displayKeys(TOGGLE_SUBSCRIPTION_KEYS)[0] ?? ''})`}
+          title={subscriptionTitle(label)}
           disabled={data === null}
           onClick={toggle}
         >

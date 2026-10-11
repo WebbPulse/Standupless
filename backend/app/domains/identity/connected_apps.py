@@ -9,15 +9,22 @@ per-client view the settings pages render.
 The consents table has no tenant index, so a workspace's grants are read one member
 at a time. A workspace's membership is bounded, and a platform table change for an
 admin view nobody opens often would cost more than the reads it saves.
+
+A grant is never widened behind the person's back. A scope the product adds after a
+client was authorized is offered as a new permission, and only the person's own
+"Grant new permissions" adds it to the stored consent, which the client's next
+refresh then carries. Nothing is added at refresh or check time.
 """
 
 from __future__ import annotations
 
 import os
+import time
 from collections.abc import Iterable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING
 
+from app.common.db.dynamo.api_keys import satisfies
 from app.domains.identity.oauth_server_glue import MCP_SCOPES
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -38,6 +45,11 @@ class Grant:
     granted_at: str
     last_used_at: str
 
+    @property
+    def new_scopes(self) -> tuple[str, ...]:
+        """The scopes the product offers that this grant does not cover, in fixed order."""
+        return _uncovered(self.scopes)
+
 
 @dataclass
 class ConnectedApp:
@@ -52,6 +64,12 @@ class ConnectedApp:
         """The union of the scopes granted in every workspace, in the product's fixed order."""
         granted = {scope for grant in self.grants for scope in grant.scopes}
         return tuple(scope for scope in MCP_SCOPES if scope in granted) + tuple(sorted(granted - set(MCP_SCOPES)))
+
+    @property
+    def new_scopes(self) -> tuple[str, ...]:
+        """The scopes some grant to this client does not cover yet, in the product's fixed order."""
+        missing = {scope for grant in self.grants for scope in grant.new_scopes}
+        return tuple(scope for scope in MCP_SCOPES if scope in missing)
 
     @property
     def first_authorized_at(self) -> str:
@@ -148,6 +166,50 @@ def group_by_client(grants: Iterable[Grant]) -> list[ConnectedApp]:
     return sorted(
         apps.values(), key=lambda app: (app.last_used_at or app.first_authorized_at, app.client_name), reverse=True
     )
+
+
+def add_scopes(
+    stores: "OAuthServerStores",
+    user_id: str,
+    client_id: str,
+    scopes: Iterable[str],
+    *,
+    workspace_id: str = "",
+    now: int | None = None,
+) -> list[tuple["ConsentRecord", "ConsentRecord"]]:
+    """Add scopes the person approved to their grants to one client, keeping what each holds.
+
+    Every grant the person holds to the client is widened, or only the one in
+    `workspace_id` when named. A grant that already covers the scopes is left alone.
+    The consent keeps its id, its first grant time and its refresh families, so the
+    client's next refresh mints a token carrying the widened set without a new
+    authorization. Returns each changed grant as a pair of before and after.
+
+    The scopes must already be ones the authorization server offers; the route
+    validates them before this is called.
+    """
+    wanted = set(scopes)
+    moment = int(time.time()) if now is None else now
+    stamp = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(moment))
+    changes: list[tuple[ConsentRecord, ConsentRecord]] = []
+    for record in stores.consents.list_for_client(user_id, client_id):
+        if workspace_id and record.tenant_id != workspace_id:
+            continue
+        added = [scope for scope in MCP_SCOPES if scope in wanted and not satisfies(record.scopes, scope)]
+        if not added:
+            continue
+        held = set(record.scopes) | set(added)
+        merged = tuple(scope for scope in MCP_SCOPES if scope in held) + tuple(sorted(held - set(MCP_SCOPES)))
+        updated = replace(record, scopes=merged, updated_at=stamp)
+        stores.consents.put(updated)
+        changes.append((record, updated))
+    return changes
+
+
+def _uncovered(scopes: Iterable[str]) -> tuple[str, ...]:
+    """The offered scopes a held set does not satisfy, legacy aliases counted as held."""
+    held = tuple(scopes)
+    return tuple(scope for scope in MCP_SCOPES if not satisfies(held, scope))
 
 
 def _resolve(stores: "OAuthServerStores", records: "Iterable[ConsentRecord]") -> list[Grant]:

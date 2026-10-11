@@ -16,12 +16,10 @@ from datetime import date
 from typing import Annotated, Optional
 
 from fastapi import APIRouter, Depends, Path, Query, Response, status
-from webbpulse.dynamodb import encode_start_key
 from webbpulse.http import CursorPage
 
 from app.common.api.dependencies.authz import AuthzContext, Capability, require
 from app.common.api.dependencies.repositories import Repositories, get_repositories
-from app.common.api.pagination import resume_key
 from app.common.api.schemas.planning import (
     DEFAULT_LIMIT,
     MAX_LIMIT,
@@ -38,6 +36,7 @@ from app.common.api.schemas.planning import (
 )
 from app.common.cycle_writes import create_cycle as create_cycle_row
 from app.common.cycle_writes import delete_cycle as delete_cycle_row
+from app.common.cycle_writes import list_cycles as list_cycle_page
 from app.common.cycle_writes import update_cycle as update_cycle_row
 from app.common.db.dynamo.teams import DEFAULT_ESTIMATE_SCALE
 from app.common.planning_rules import counts_unestimated, load_readable_cycle, not_found, require_team_reader
@@ -67,6 +66,7 @@ def list_cycles(
     status_filter: Annotated[Optional[CycleStatusField], Query(alias="status")] = None,
     cursor: Annotated[Optional[str], Query()] = None,
     limit: Annotated[int, Query(ge=1, le=MAX_LIMIT)] = DEFAULT_LIMIT,
+    include_sub_teams: Annotated[bool, Query()] = False,
 ) -> CursorPage[CycleRead]:
     """One page of a team's cycles, by start date ascending.
 
@@ -75,22 +75,19 @@ def list_cycles(
     rather than as an undated pile of one of them.
 
     The status filter is applied after the read because status is derived, so no
-    index can carry it.
+    index can carry it. `include_sub_teams` rolls in the cycles of the team's
+    sub-teams the caller may read, so a private sub-team stays out for outsiders.
     """
-    require_team_reader(repositories, context, team_id)
-    scope = f"cycles:{context.workspace_id}:{team_id}"
-    start_key = resume_key(cursor, scope)
-    rows, last_key = repositories.planning.list_cycles(
-        context.workspace_id,
+    bodies, next_cursor = list_cycle_page(
+        repositories,
+        context,
         team_id,
+        status_filter=status_filter,
+        cursor=cursor,
         limit=limit,
-        start_key=start_key,
+        include_sub_teams=include_sub_teams,
     )
-    counted = counts_unestimated(repositories, context.workspace_id, team_id)
-    bodies = [CycleRead.from_row(row, count_unestimated=counted) for row in rows]
-    if status_filter is not None:
-        bodies = [body for body in bodies if body.status == status_filter]
-    return CycleListRead(items=bodies, next_cursor=encode_start_key(last_key, scope=scope))
+    return CycleListRead(items=bodies, next_cursor=next_cursor)
 
 
 @router.post("/{workspace_id}/cycles", response_model=CycleRead, status_code=status.HTTP_201_CREATED)
