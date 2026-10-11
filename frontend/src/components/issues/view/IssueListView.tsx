@@ -102,6 +102,8 @@ export interface IssueListViewProps {
   createTeamId?: string | undefined;
   /** The project new issues are filed into, when the view is one project's. */
   createProjectId?: string | undefined;
+  /** The cycle new issues are filed into, when the view is one cycle's. */
+  createCycleId?: string | undefined;
   /** What an empty list says. */
   emptyMessage?: string;
   /**
@@ -166,6 +168,7 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
   canEdit,
   createTeamId,
   createProjectId,
+  createCycleId,
   emptyMessage = 'No issues match this view.',
   collapseKey,
   filterFields,
@@ -722,6 +725,7 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
         ...(createProjectId === undefined
           ? {}
           : { projectId: createProjectId }),
+        ...(createCycleId === undefined ? {} : { cycleId: createCycleId }),
         ...presetFor(group),
         ...(sub === undefined ? {} : presetFor(sub)),
         onCreated: () => {
@@ -729,7 +733,15 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
         },
       });
     };
-  }, [canEdit, creator, createTeamId, createProjectId, presetFor, queryKey]);
+  }, [
+    canEdit,
+    creator,
+    createTeamId,
+    createProjectId,
+    createCycleId,
+    presetFor,
+    queryKey,
+  ]);
 
   const filterFor = useCallback(
     (field: FilterField): ((value: string) => void) | undefined => {
@@ -833,6 +845,7 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
     const firstIssue =
       createTeamId !== undefined &&
       createProjectId === undefined &&
+      createCycleId === undefined &&
       canEdit &&
       creator.canCreate &&
       state.filters.length === 0 &&

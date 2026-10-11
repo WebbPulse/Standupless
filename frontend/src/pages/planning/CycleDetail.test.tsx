@@ -7,7 +7,8 @@
  * carry-over reads in a line under the stats. A parent team's cycle rolls up
  * its sub-teams' cycles on the same dates, in the header, the chart and the
  * issues, until the toggle narrows it to the team alone, and an empty cycle
- * says so rather than drawing an empty chart.
+ * says so rather than drawing an empty chart. A cycle left with its generated
+ * name reads as its number, and the side panel's breakdown filters the list.
  */
 
 import { render, screen, waitFor } from '@testing-library/react';
@@ -58,6 +59,7 @@ vi.mock('../../api/planning', () => ({
   getCycleHistory: (_w: string, id: string, teamId: string) =>
     getCycleHistory(id, teamId),
   listCycles: (_w: string, query: unknown) => listCycles(query),
+  listProjects: () => Promise.resolve({ projects: [], next_cursor: null }),
 }));
 
 vi.mock('../../api/teams', () => ({
@@ -67,10 +69,17 @@ vi.mock('../../api/teams', () => ({
   listTeamMembers: () => Promise.resolve([]),
 }));
 
-vi.mock('../../api/issues', () => ({
-  listIssues: (_w: string, query: unknown) => listIssues(query),
-  appendIssues: (held: unknown) => held,
-}));
+vi.mock('../../api/issues', async () => {
+  const actual =
+    await vi.importActual<typeof import('../../api/issues')>(
+      '../../api/issues'
+    );
+  return {
+    ...actual,
+    listIssues: (_w: string, query: unknown) => listIssues(query),
+    appendIssues: (held: unknown) => held,
+  };
+});
 
 const open = vi.fn();
 
@@ -359,6 +368,37 @@ describe('CycleDetail', () => {
     expect(screen.getByText('50% complete')).toBeInTheDocument();
   });
 
+  it('titles a cycle left with its generated name by its number', async () => {
+    getCycle.mockResolvedValue({ ...cycle, name: 'auto-20260901', number: 3 });
+    renderPage();
+
+    expect(await screen.findByTestId('cycle-title')).toHaveTextContent(
+      'Cycle 3'
+    );
+    expect(screen.queryByText('auto-20260901')).toBeNull();
+  });
+
+  it('breaks the issues down and filters the list from a row', async () => {
+    const user = userEvent.setup();
+    listIssues.mockResolvedValue({ issues: [openIssue], next_cursor: null });
+    renderPage();
+
+    const row = await screen.findByRole('button', {
+      name: 'No assignee, 0 of 1 done',
+    });
+    expect(row).toHaveAttribute('aria-pressed', 'false');
+    await user.click(row);
+
+    await waitFor(() => {
+      expect(listIssues).toHaveBeenCalledWith(
+        expect.objectContaining({ cycle_id: 'cyc-1', assignee_id: ['none'] })
+      );
+    });
+    expect(
+      screen.getByRole('button', { name: 'No assignee, 0 of 1 done' })
+    ).toHaveAttribute('aria-pressed', 'true');
+  });
+
   it('draws the burn-up for a cycle that has begun', async () => {
     renderPage();
 
@@ -531,7 +571,9 @@ describe('CycleDetail', () => {
       renderPage('/w/mine/team/ENG/cycles/cyc-1?subteams=0');
 
       expect(await screen.findByText('50% complete')).toBeInTheDocument();
-      expect(listCycles).not.toHaveBeenCalled();
+      expect(listCycles).not.toHaveBeenCalledWith(
+        expect.objectContaining({ include_sub_teams: true })
+      );
       expect(
         screen.getByRole('button', { name: 'This team only' })
       ).toBeInTheDocument();
