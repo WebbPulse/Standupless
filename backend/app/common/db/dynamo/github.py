@@ -1,8 +1,8 @@
 """The `github` table: one workspace's installation, repositories, links, endpoints and sync state.
 
 The entities share the partition and are told apart by their sort key prefix,
-`install#<iid>`, `repo#<rid>`, `link#<pr_node_id>`, `prstate#<rid>#<number>` and
-`webhook#<id>`, plus the
+`install#<iid>`, `repo#<rid>`, `link#<pr_node_id>`, `prstate#<rid>#<number>`,
+`prsha#<rid>#<sha>#<number>` and `webhook#<id>`, plus the
 issue sync rows described on `TeamSync`, `IssueSync` and `CommentSync`, because
 each one is read either by its exact key or as a prefix query inside one
 workspace, and none of them is large enough to earn a table of its own. None of
@@ -45,6 +45,9 @@ PR_STATE_RANK: dict[str, int] = {"draft": 0, "open": 0, "closed": 1, "merged": 2
 raised in the same second: GitHub's `updated_at` has one second resolution, so a
 close and the delivery before it can carry the same stamp, and the further state
 is the one that happened last."""
+
+HEAD_SHA_RETENTION_SECONDS = 30 * 24 * 3600
+"""How long a head commit pointer lives, far longer than any check runs after its merge."""
 
 TOMBSTONE_RETENTION_SECONDS = 30 * 24 * 3600
 """How long a deleted GitHub issue or comment is remembered, longer than SQS keeps
@@ -110,6 +113,21 @@ def pr_state_key(repository_id: str, number: int) -> str:
     return f"{PR_STATE_PREFIX}{repository_id}#{number}"
 
 
+def head_sha_prefix(repository_id: str, head_sha: str) -> str:
+    """The sort key prefix every pull request pointer at one head commit shares."""
+    return f"{HEAD_SHA_PREFIX}{repository_id}#{head_sha}#"
+
+
+def head_sha_key(repository_id: str, head_sha: str, number: int) -> str:
+    """The sort key of one pull request's pointer from a head commit it had.
+
+    A `check_run` delivery names its pull requests only while the commit heads a
+    branch, so a check finishing after the merge deletes the branch arrives naming
+    none, and this pointer is how it still finds its pull request.
+    """
+    return f"{head_sha_prefix(repository_id, head_sha)}{number}"
+
+
 def reviewer_prefix(github_user_id: str) -> str:
     """The sort key prefix every review pointer of one GitHub account shares."""
     return f"{REVIEWER_PREFIX}{github_user_id}#"
@@ -144,6 +162,7 @@ REPO_PREFIX = "repo#"
 LINK_PREFIX = "link#"
 PR_STATE_PREFIX = "prstate#"
 REVIEWER_PREFIX = "reviewer#"
+HEAD_SHA_PREFIX = "prsha#"
 WEBHOOK_PREFIX = "webhook#"
 DELIVERY_PREFIX = "whdelivery#"
 TEAM_SYNC_PREFIX = "teamsync#"
@@ -340,6 +359,8 @@ class PullRequestState(BaseModel):
     The display fields and `requested_user_ids` are what the Reviews list draws,
     and `reviewer_ids` names the GitHub accounts holding a `ReviewPointer` at this
     pull request, so a change knows which pointers to add and which to drop.
+    `pointed_sha` is the head commit its `HeadShaPointer` names, and
+    `reconciled_sha` the head commit whose checks were last read back from GitHub.
     """
 
     workspace_id: str
@@ -365,6 +386,8 @@ class PullRequestState(BaseModel):
     pr_state: str = ""
     pr_created_at: str = ""
     reviewer_ids: list[str] = Field(default_factory=list)
+    pointed_sha: str = ""
+    reconciled_sha: str = ""
     version: int = 0
     updated_at: datetime = Field(default_factory=utc_now)
 
@@ -381,6 +404,16 @@ class ReviewPointer(BaseModel):
     github_key: str
     github_user_id: str
     repository_id: str
+    pr_number: int
+
+
+class HeadShaPointer(BaseModel):
+    """A pointer from a head commit to a pull request it headed, for checks that no longer name it."""
+
+    workspace_id: str
+    github_key: str
+    repository_id: str
+    head_sha: str
     pr_number: int
 
 
@@ -831,6 +864,25 @@ class GithubRepository:
         )
         return [PullRequestState.model_validate(dict(item)) for item in items]
 
+    def put_head_sha_pointer(self, workspace_id: str, repository_id: str, head_sha: str, number: int) -> None:
+        """Point a head commit at one pull request it heads, expiring once no check could still report on it."""
+        pointer = HeadShaPointer(
+            workspace_id=workspace_id,
+            github_key=head_sha_key(repository_id, head_sha, number),
+            repository_id=repository_id,
+            head_sha=head_sha,
+            pr_number=number,
+        )
+        expires_at = int(utc_now().timestamp()) + HEAD_SHA_RETENTION_SECONDS
+        self._repository.put(as_item(pointer, expires_at=expires_at))
+
+    def pr_numbers_for_head_sha(self, workspace_id: str, repository_id: str, head_sha: str) -> list[int]:
+        """The numbers of the tracked pull requests in one repository that this commit has headed."""
+        if not repository_id or not head_sha:
+            return []
+        rows = self._query(workspace_id, head_sha_prefix(repository_id, head_sha), 50)
+        return sorted({int(row.get("pr_number", 0) or 0) for row in rows} - {0})
+
     def put_review_pointer(self, workspace_id: str, github_user_id: str, repository_id: str, number: int) -> None:
         """Point one GitHub account at a pull request it reviews."""
         pointer = ReviewPointer(
@@ -1086,7 +1138,15 @@ class GithubRepository:
         must not silently stop a customer's integration.
         """
         removed = 0
-        for prefix in (INSTALL_PREFIX, REPO_PREFIX, LINK_PREFIX, PR_STATE_PREFIX, REVIEWER_PREFIX, *SYNC_PREFIXES):
+        for prefix in (
+            INSTALL_PREFIX,
+            REPO_PREFIX,
+            LINK_PREFIX,
+            PR_STATE_PREFIX,
+            REVIEWER_PREFIX,
+            HEAD_SHA_PREFIX,
+            *SYNC_PREFIXES,
+        ):
             for item in self._query(workspace_id, prefix, 1000):
                 self._repository.delete({"workspace_id": workspace_id, "github_key": item["github_key"]})
                 removed += 1
