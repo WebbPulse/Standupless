@@ -1,9 +1,11 @@
 /**
  * The pieces a team settings row uses for a status or label it inherits from
- * the workspace: the markers that say where it comes from and whether the team
- * hid it, the menu that hides, shows, renames and resets it for the team, and
- * the toggle that brings hidden rows into view. An inherited row is never
- * edited in place, so the menu points at workspace settings for that.
+ * the workspace or its parent team: the markers that say where it comes from
+ * and whether the team hid it, the menu that hides, shows, renames and resets
+ * it for the team, and the toggle that brings hidden rows into view. An
+ * inherited row is never edited in place, so the menu points at workspace
+ * settings for a workspace row, and a parent team's row is edited in that
+ * team's settings.
  */
 
 import React, { useState } from 'react';
@@ -21,17 +23,21 @@ import Dialog from '../ui/dialog';
 import Field from '../ui/field';
 import Menu, { MenuItem, MenuSeparator } from '../ui/menu';
 
-/** The Workspace marker, the Hidden marker and the workspace name of a renamed row. */
+/** Where an inherited row comes from, as its marker names it. */
+const sourceLabel = (row: WorkflowRow): string =>
+  row.scope === 'parent' ? 'Parent team' : 'Workspace';
+
+/** The source marker, the Hidden marker and the inherited name of a renamed row. */
 export const InheritedMarkers: React.FC<{ row: WorkflowRow }> = ({ row }) => (
   <>
     {row.inherited_name !== undefined &&
       row.inherited_name !== null &&
       row.inherited_name !== row.name && (
         <span className="truncate text-xs text-text-faint">
-          Workspace name: {row.inherited_name}
+          {sourceLabel(row)} name: {row.inherited_name}
         </span>
       )}
-    <Badge tone="neutral">Workspace</Badge>
+    <Badge tone="neutral">{sourceLabel(row)}</Badge>
     {row.hidden === true && <Badge tone="warning">Hidden</Badge>}
   </>
 );
@@ -58,6 +64,7 @@ export const InheritedRowMenu: React.FC<InheritedRowMenuProps> = ({
   const [renaming, setRenaming] = useState(false);
   const [name, setName] = useState(row.name);
   const original = workspaceName(row);
+  const fromParent = row.scope === 'parent';
 
   const onSubmit = (event: React.FormEvent): void => {
     event.preventDefault();
@@ -95,12 +102,16 @@ export const InheritedRowMenu: React.FC<InheritedRowMenuProps> = ({
           {row.hidden === true ? 'Show in this team' : 'Hide from this team'}
         </MenuItem>
         <MenuItem disabled={!isOverridden(row)} onSelect={onReset}>
-          Reset to workspace
+          {fromParent ? 'Reset to parent team' : 'Reset to workspace'}
         </MenuItem>
-        <MenuSeparator />
-        <MenuItem to={workspaceSettingsPath}>
-          Edit in workspace settings
-        </MenuItem>
+        {!fromParent && (
+          <>
+            <MenuSeparator />
+            <MenuItem to={workspaceSettingsPath}>
+              Edit in workspace settings
+            </MenuItem>
+          </>
+        )}
       </Menu>
       <Dialog
         open={renaming}
@@ -108,7 +119,7 @@ export const InheritedRowMenu: React.FC<InheritedRowMenuProps> = ({
           setRenaming(false);
         }}
         title={`Rename ${original} for this team`}
-        description={`Only this team sees the new name. The workspace ${noun} and every other team keep ${original}.`}
+        description={`Only this team sees the new name. The ${fromParent ? 'parent team' : 'workspace'} ${noun} and every other team keep ${original}.`}
         size="sm"
       >
         <form className="space-y-4" onSubmit={onSubmit}>

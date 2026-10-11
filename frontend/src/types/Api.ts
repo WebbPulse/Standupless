@@ -305,6 +305,8 @@ export interface TeamRead {
   sync_pr_labels?: boolean;
   /** Whether only team members can see the team and its issues. */
   private?: boolean;
+  /** The parent team this one sits under, or null for a top-level team. */
+  parent_team_id?: string | null;
 }
 
 /** The body the teams list route answers with. */
@@ -328,6 +330,8 @@ export interface TeamCreate {
   estimate_count_unestimated?: boolean;
   /** Make the team private from the start. Needs the Business plan. */
   private?: boolean;
+  /** A top-level team to sit under, inheriting its statuses and labels. */
+  parent_team_id?: string | null;
 }
 
 /** The editable fields on a team. */
@@ -344,6 +348,8 @@ export interface TeamUpdate {
   sync_pr_labels?: boolean;
   /** Turning this on needs the Business plan; turning it off never does. */
   private?: boolean;
+  /** A top-level team to sit under, or null to make the team top-level. */
+  parent_team_id?: string | null;
 }
 
 /** One member of a team. */
@@ -367,8 +373,8 @@ export interface TeamMemberUpdate {
   role: TeamRole;
 }
 
-/** Whether a status or label belongs to one team or is inherited from the workspace. */
-export type WorkflowScope = 'team' | 'workspace';
+/** Whether a status or label is a team's own or inherited from the workspace or parent team. */
+export type WorkflowScope = 'team' | 'workspace' | 'parent';
 
 /** One workflow status on a team or the workspace. */
 export interface StatusRead {

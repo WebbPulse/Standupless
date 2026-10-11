@@ -37,9 +37,9 @@ export interface WorkflowRow {
   inherited_name?: string | null;
 }
 
-/** Whether a row comes from the workspace rather than the team. */
+/** Whether a row comes from the workspace or the parent team rather than the team. */
 export const isInherited = (row: WorkflowRow): boolean =>
-  row.scope === 'workspace';
+  row.scope === 'workspace' || row.scope === 'parent';
 
 /** Whether the team hid or renamed an inherited row, so a reset would change it. */
 export const isOverridden = (row: WorkflowRow): boolean =>
