@@ -17,7 +17,7 @@ from fastapi.testclient import TestClient
 from app.common import team_writes
 from app.common.composition.domains import DOMAINS
 from app.common.composition.wiring import build_domain_app
-from tests.domains.helpers import OWNER, add_member, add_team_member, make_team, make_workspace, sign_in
+from tests.domains.helpers import GUEST, OWNER, add_member, add_team_member, make_team, make_workspace, sign_in
 
 WORKSPACE = "01JB00000000000000000000WS"
 
@@ -114,13 +114,14 @@ def test_a_team_list_carries_its_own_and_the_workspace_templates(teams: TestClie
     assert listed["default_template_id"] is None
 
 
-def test_only_team_members_write_team_templates_and_only_admins_workspace_ones(
-    teams: TestClient, workspace: str
+def test_only_team_writers_write_team_templates_and_only_admins_workspace_ones(
+    teams: TestClient, workspace: str, repositories: Any
 ) -> None:
-    """A workspace member outside the team gets a 403, and a member a 403 on the workspace set."""
-    sign_in(teams, STRANGER)
-    refused = teams.post(f"{BASE}/teams/{TEAM}/templates", json={"name": "Nope"})
-    assert refused.status_code == 403, refused.text
+    """A guest outside the team gets a 404, and a plain member a 403 on the workspace set."""
+    add_member(repositories, WORKSPACE, GUEST, "guest")
+    sign_in(teams, GUEST)
+    hidden = teams.post(f"{BASE}/teams/{TEAM}/templates", json={"name": "Nope"})
+    assert hidden.status_code == 404, hidden.text
 
     sign_in(teams, WRITER)
     refused = teams.post(f"{BASE}/templates", json={"name": "Nope"})
