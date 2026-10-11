@@ -23065,7 +23065,7 @@
     },
     "/api/workspaces/{workspace_id}/issues/export": {
       "get": {
-        "description": "One page of the CSV of every issue the caller may see that the filters keep.\n\nThe filters are the issue list's, so a team list or a saved view exports\nexactly what it shows by sending its own query. Without `team_id` the export\nspans every team the caller can read, which for a workspace admin is the whole\nworkspace. Rows come in team order, then by issue number, whatever the list's\nsort, because that order is what lets each page continue a key-bounded read.",
+        "description": "One page of the CSV of every issue the caller may see that the filters keep.\n\nThe filters are the issue list's, so a team list or a saved view exports\nexactly what it shows by sending its own query. Without `team_id` the export\nspans every team the caller can read, which for a workspace admin is the whole\nworkspace, and `include_sub_teams` adds the named team's visible sub-teams as\nthe rolled-up list shows them. Rows come in team order, then by issue number, whatever the list's\nsort, because that order is what lets each page continue a key-bounded read.",
         "operationId": "export_issues_api_workspaces__workspace_id__issues_export_get",
         "parameters": [
           {
@@ -23092,6 +23092,16 @@
                 }
               ],
               "title": "Team Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "include_sub_teams",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Include Sub Teams",
+              "type": "boolean"
             }
           },
           {
@@ -33135,6 +33145,16 @@
                 }
               ],
               "title": "Team Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "include_sub_teams",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Include Sub Teams",
+              "type": "boolean"
             }
           },
           {
