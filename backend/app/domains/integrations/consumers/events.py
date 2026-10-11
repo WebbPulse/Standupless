@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Iterable, Mapping, Sequence
 
 from fastapi import APIRouter
@@ -214,7 +214,8 @@ def handle_record(repositories: Repositories, record: Mapping[str, Any]) -> None
         return
 
     if event == "pull_request":
-        _handle_pull_request(repositories, workspace_id, body, _event_time(record, payload))
+        recorded = _handle_pull_request(repositories, workspace_id, body, _event_time(record, payload))
+        _track_reviewers(repositories, workspace_id, body, _event_time(record, payload), recorded=recorded)
     elif event == "push":
         _handle_push(repositories, workspace_id, body, _event_time(record, payload))
     elif event == "issues":
@@ -287,8 +288,8 @@ def _handle_pull_request(
     workspace_id: str,
     body: Mapping[str, Any],
     event_at: datetime,
-) -> None:
-    """Link a pull request to the issues it names and move them if a rule says so.
+) -> bool:
+    """Link a pull request to the issues it names, move them if a rule says so, and say whether it folded the row.
 
     An issue whose link refuses the write as stale is left alone, and a delivery
     any link refused queues no write-back and no label sync, because every link of
@@ -303,7 +304,7 @@ def _handle_pull_request(
     pull_request = body.get("pull_request")
     repository = body.get("repository")
     if not isinstance(pull_request, Mapping) or not isinstance(repository, Mapping):
-        return
+        return False
 
     trusted, member = _pull_request_author(repositories, workspace_id, pull_request)
     if not trusted:
@@ -311,7 +312,7 @@ def _handle_pull_request(
             "Ignored a pull request from an untrusted author.",
             extra={"event": "integrations.pr_untrusted_author"},
         )
-        return
+        return False
 
     repository_id = str(repository.get("id", ""))
     reachable = _reachable_teams(repositories, workspace_id, member)
@@ -319,7 +320,7 @@ def _handle_pull_request(
         team_id: rows for team_id, rows in _prefixes(repositories, workspace_id).items() if team_id in reachable
     }
     if not prefixes:
-        return
+        return False
 
     head = pull_request.get("head")
     branch = str(head.get("ref", "")) if isinstance(head, Mapping) else ""
@@ -344,7 +345,7 @@ def _handle_pull_request(
         _record_pull_request(repositories, workspace_id, body, node_id, pr_updated_ms, create=False)
         pr_labels.after_delivery(repositories, workspace_id, body, node_id, pr_updated_ms, [])
         refresh_for_pr(repositories, workspace_id, node_id)
-        return
+        return True
 
     user = pull_request.get("user")
     author = str(user.get("login", "")) if isinstance(user, Mapping) else ""
@@ -356,7 +357,7 @@ def _handle_pull_request(
         _record_pull_request(repositories, workspace_id, body, node_id, pr_updated_ms, create=False)
         pr_labels.after_delivery(repositories, workspace_id, body, node_id, pr_updated_ms, [])
         refresh_for_pr(repositories, workspace_id, node_id)
-        return
+        return True
 
     tracked = _record_pull_request(repositories, workspace_id, body, node_id, pr_updated_ms, create=True)
     pr_summary = pr_status.summary(tracked)
@@ -424,11 +425,12 @@ def _handle_pull_request(
         pr_status.propagate(repositories, workspace_id, tracked)
     if stale:
         refresh_for_pr(repositories, workspace_id, node_id)
-        return
+        return True
     link_ids = [f"{node_id}#{issue.issue_id}" for issue in issues.values()]
     _enqueue_writeback(workspace_id, repository, pull_request, sorted(issues), link_ids)
     pr_labels.after_delivery(repositories, workspace_id, body, node_id, pr_updated_ms, link_ids)
     refresh_for_pr(repositories, workspace_id, node_id)
+    return True
 
 
 def _record_pull_request(
@@ -473,6 +475,94 @@ def _record_pull_request(
     if state is not None and not create:
         pr_status.propagate(repositories, workspace_id, state)
     return state
+
+
+def _track_reviewers(
+    repositories: Repositories,
+    workspace_id: str,
+    body: Mapping[str, Any],
+    event_at: datetime,
+    *,
+    recorded: bool,
+) -> None:
+    """Keep a pull request's review pointers current and tell a member their review was asked for.
+
+    Runs whatever the author's standing or the teams' prefixes, because only a
+    person with write access can request a review. A pull request with no state row
+    gains one when it asks a linked member for a review. An existing row the link
+    path already folded, `recorded`, is not folded or propagated a second time.
+    """
+    pull_request = body.get("pull_request")
+    repository = body.get("repository")
+    if not isinstance(pull_request, Mapping) or not isinstance(repository, Mapping):
+        return
+    repository_id = str(repository.get("id", ""))
+    node_id = str(pull_request.get("node_id", "")) or f"{repository_id}#{pull_request.get('number', '')}"
+    pr_updated_ms = source_millis(_pull_request_time(pull_request, event_at))
+    requested = pr_status.requested_user_ids(pull_request)
+    create = bool(requested) and pr_status.involves_member(repositories, workspace_id, requested)
+    if create or not recorded:
+        _record_pull_request(repositories, workspace_id, body, node_id, pr_updated_ms, create=create)
+    if str(body.get("action", "")) == "review_requested":
+        _notify_review_requested(repositories, workspace_id, body, pr_updated_ms)
+
+
+def _notify_review_requested(
+    repositories: Repositories,
+    workspace_id: str,
+    body: Mapping[str, Any],
+    pr_updated_ms: int,
+) -> None:
+    """Put a review request in the requested member's inbox, unless they asked themselves or turned it off.
+
+    The id is a function of the pull request, the reviewer and the request's
+    moment, so a redelivered event is dropped by the inbox's conditional put.
+    """
+    from app.common.db.dynamo.inbox import REVIEW_REQUESTED, Notification, inbox_partition, instant, notification_id
+    from app.domains.integrations.issue_sync import _user_for_github
+
+    reviewer = body.get("requested_reviewer")
+    pull_request = body.get("pull_request")
+    repository = body.get("repository")
+    if not all(isinstance(part, Mapping) for part in (reviewer, pull_request, repository)):
+        return
+    reviewer_id = str(reviewer.get("id", "") or "")
+    sender = body.get("sender")
+    sender_id = str(sender.get("id", "") or "") if isinstance(sender, Mapping) else ""
+    if not reviewer_id or reviewer_id == sender_id:
+        return
+    recipient = _user_for_github(repositories, workspace_id, reviewer_id)
+    if recipient is None:
+        return
+    user = repositories.users.get(recipient)
+    if user is None or not user.wants_notification(REVIEW_REQUESTED, "in_app"):
+        return
+    actor = _user_for_github(repositories, workspace_id, sender_id) if sender_id else None
+    actor_user = repositories.users.get(actor) if actor else None
+    sender_login = str(sender.get("login", "") or "") if isinstance(sender, Mapping) else ""
+    full_name = str(repository.get("full_name", "") or "")
+    number = int(pull_request.get("number", 0) or 0)
+    moment = datetime.fromtimestamp(pr_updated_ms / 1000, tz=timezone.utc) if pr_updated_ms else utc_now()
+    repositories.inbox.create(
+        Notification(
+            ws_user=inbox_partition(workspace_id, recipient),
+            notification_id=notification_id(
+                moment, REVIEW_REQUESTED, recipient, f"{repository.get('id', '')}#{number}#{pr_updated_ms}"
+            ),
+            workspace_id=workspace_id,
+            kind=REVIEW_REQUESTED,
+            issue_key=f"{full_name}#{number}",
+            issue_title=str(pull_request.get("title", "") or ""),
+            team_id="",
+            url=str(pull_request.get("html_url", "") or "") or None,
+            actor_id=actor or "",
+            actor_name=(actor_user.display_name if actor_user is not None else "") or sender_login,
+            source=GITHUB,
+            recipient_id=recipient,
+            created_at=moment,
+            unread_at=instant(moment),
+        )
+    )
 
 
 def _has_merge_rules(repositories: Repositories, workspace_id: str, prefixes: Mapping[str, Any]) -> bool:

@@ -14,6 +14,7 @@ counts as unread by itself, with nothing having to wake it.
 
 from __future__ import annotations
 
+import hashlib
 from datetime import datetime, timedelta, timezone
 from typing import Any, Iterable, Literal, Mapping
 
@@ -37,6 +38,7 @@ NotificationKind = Literal[
     "standup_digest",
     "sla_at_risk",
     "sla_breached",
+    "review_requested",
 ]
 
 NOTIFICATION_KINDS: tuple[str, ...] = (
@@ -51,7 +53,11 @@ NOTIFICATION_KINDS: tuple[str, ...] = (
     "standup_digest",
     "sla_at_risk",
     "sla_breached",
+    "review_requested",
 )
+
+REVIEW_REQUESTED = "review_requested"
+"""The kind a GitHub review request takes in the requested member's inbox, in app only."""
 
 REMINDER_PREFIX = "reminder#"
 """The partition prefix reminder markers live under, which no inbox can name.
@@ -70,6 +76,53 @@ UNREAD_INDEX = "ws_user-unread-index"
 COUNT_CAP = 100
 
 SNOOZE_MAX = RETENTION
+
+
+_ULID_ALPHABET = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
+
+_ULID_TIME_CHARS = 10
+
+_ULID_HASH_CHARS = 16
+
+
+def _ulid_time(moment: datetime) -> str:
+    """The time half of a ULID for one moment, so ids still sort chronologically.
+
+    Only the timestamp is taken from the ULID format; the random half is replaced by
+    a hash of what the notification is about, which is what makes the id a function
+    of the record rather than of when it was handled.
+    """
+    milliseconds = int(moment.timestamp() * 1000)
+    encoded = ""
+    for _ in range(_ULID_TIME_CHARS):
+        encoded = _ULID_ALPHABET[milliseconds & 0x1F] + encoded
+        milliseconds >>= 5
+    return encoded
+
+
+def notification_id(created_at: datetime | None, kind: str, recipient_id: str, source_id: str) -> str:
+    """A notification id that is a function of what the notification is about.
+
+    Chronological by its ULID timestamp prefix, so an inbox partition still reads
+    newest first, and deterministic in its tail, so a redelivered record produces
+    the same key and the conditional put drops it. Truncated because the tail only
+    has to separate the notifications of one millisecond, not resist an attacker:
+    nothing is authorized by this id.
+
+    `created_at` is the moment the record itself carries, or `None` when it carries
+    none. It is never the wall clock: a clock reading would move between the first
+    delivery and a replay, and the whole id has to be stable for the conditional put
+    to recognise the replay. Without one, the timestamp half falls back to the epoch,
+    which sorts such a notification oldest rather than making it a duplicate.
+    """
+    digest = hashlib.sha256(f"{kind}\x00{recipient_id}\x00{source_id}".encode("utf-8")).digest()
+    value = int.from_bytes(digest, "big")
+    tail = ""
+    for _ in range(_ULID_HASH_CHARS):
+        tail = _ULID_ALPHABET[value & 0x1F] + tail
+        value >>= 5
+    moment = created_at if created_at is not None else datetime.fromtimestamp(0, tz=timezone.utc)
+    return _ulid_time(moment) + tail
 
 
 def instant(moment: datetime) -> str:
@@ -112,7 +165,9 @@ class Notification(BaseModel):
     carries the project fields instead and leaves the issue fields empty, with
     `team_id` naming one of the project's teams the recipient can see. A standup
     digest carries its team's key in `issue_key`, the team name in `issue_title`
-    and the digest's team local date in `standup_date`.
+    and the digest's team local date in `standup_date`. A review request carries
+    the pull request's `owner/repo#number` in `issue_key`, its title in
+    `issue_title` and its GitHub address in `url`.
     """
 
     ws_user: str
@@ -128,6 +183,7 @@ class Notification(BaseModel):
     project_name: str | None = None
     project_update_id: str | None = None
     standup_date: str | None = None
+    url: str | None = None
     actor_id: str
     actor_name: str
     source: str | None = None

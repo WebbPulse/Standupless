@@ -550,6 +550,19 @@ class TestViewsDomain:
         assert count.status_code == 200, count.text[:400]
 
     @WRITES
+    def test_the_reviews_list_answers(self, api: Any, workspace: "dict[str, Any]") -> None:
+        """The Reviews list answers for a caller with no pull requests awaiting them.
+
+        The sidebar badge reads it on every page load, so an empty answer has to be
+        a well formed one rather than an error.
+        """
+        response = api.get(f"/api/workspaces/{workspace['id']}/reviews")
+        assert response.status_code == 200, response.text[:400]
+        body = response.json()
+        assert body["items"] == []
+        assert set(body["counts"]) >= {"needs_review", "changes_requested", "approved"}
+
+    @WRITES
     def test_the_workspace_home_answers(self, api: Any, workspace: "dict[str, Any]") -> None:
         """The workspace home answers every section for the run's own workspace.
 

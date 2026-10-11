@@ -957,6 +957,7 @@ class NotificationRead(TypedDict):
     standup_date: NotRequired[str | None]
     team_id: str
     unread: bool
+    url: NotRequired[str | None]
     workspace_id: str
 
 
@@ -1244,6 +1245,41 @@ class RepositoryRead(TypedDict):
     private: bool
     repository_id: str
     team_id: NotRequired[str | None]
+
+
+class ReviewCountsRead(TypedDict):
+    approved: NotRequired[int]
+    changes_requested: NotRequired[int]
+    needs_review: NotRequired[int]
+
+
+class ReviewIssueRead(TypedDict):
+    issue_id: str
+    key: str
+    team_id: str
+    title: str
+
+
+class ReviewItemRead(TypedDict):
+    author_login: str
+    ci_state: str
+    created_at: NotRequired[str | None]
+    group: Literal["needs_review", "changes_requested", "approved"]
+    issues: NotRequired[list[ReviewIssueRead]]
+    number: int
+    repository_full_name: str
+    repository_id: str
+    review_state: str
+    state: Literal["open", "draft"]
+    title: str
+    updated_at: NotRequired[str | None]
+    url: str
+
+
+class ReviewsRead(TypedDict):
+    counts: ReviewCountsRead
+    github_linked: bool
+    items: list[ReviewItemRead]
 
 
 class RoadmapEntryRead(TypedDict):
@@ -1822,6 +1858,7 @@ class UserPreferencesUpdate(TypedDict):
                 "standup_digest",
                 "sla_at_risk",
                 "sla_breached",
+                "review_requested",
             ],
             NotificationChannelsUpdate,
         ]

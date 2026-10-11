@@ -228,6 +228,28 @@ def test_the_frontend_api_modules_were_parsed() -> None:
     assert modules == expected, f"no requests parsed out of {sorted(expected - modules)}"
 
 
+def _matches_partly_interpolated(method: str, path: str, served: "set[tuple[str, str]]") -> bool:
+    """Whether a path with a partly interpolated segment, such as `{}s`, matches a served route.
+
+    A helper like `${parentKind}s` builds one literal segment out of a value and a
+    suffix, so it stands for several served routes rather than one placeholder. Such
+    a segment is read as a pattern over the served literal segments; every whole
+    `{}` segment still has to line up with a served placeholder.
+    """
+    segments = path.split("/")
+    if not any("{}" in segment and segment != "{}" for segment in segments):
+        return False
+    pattern = re.compile("^" + "/".join(_segment_pattern(segment) for segment in segments) + "$")
+    return any(served_method == method and pattern.match(served_path) for served_method, served_path in served)
+
+
+def _segment_pattern(segment: str) -> str:
+    """One frontend path segment as a regex over served segments, `{}` inside a literal matching any text."""
+    if segment == "{}" or "{}" not in segment:
+        return re.escape(segment)
+    return "[^/]+".join(re.escape(part) for part in segment.split("{}"))
+
+
 @pytest.mark.parametrize(("module", "method", "path"), frontend_requests(), ids=lambda value: str(value))
 def test_every_frontend_path_is_a_route_the_backend_serves(module: str, method: str, path: str) -> None:
     """One frontend request path matches a contract route by method and shape.
@@ -239,7 +261,7 @@ def test_every_frontend_path_is_a_route_the_backend_serves(module: str, method: 
         pytest.skip("served by the identity package, not by the product route contract")
 
     served = {(served_method, _shape(served_path)) for served_method, served_path in _contract_paths()}
-    assert (method, path) in served, (
+    assert (method, path) in served or _matches_partly_interpolated(method, path, served), (
         f"{module} calls {method} {path}, which no route in route_contract.json serves. "
         "Either the route is missing from the backend or the frontend path is wrong."
     )

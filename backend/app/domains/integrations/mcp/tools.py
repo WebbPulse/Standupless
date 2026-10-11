@@ -24,6 +24,7 @@ from app.domains.integrations.mcp.initiative_tools import INITIATIVE_TOOLS
 from app.domains.integrations.mcp.issue_tools import ISSUE_TOOLS
 from app.domains.integrations.mcp.planning_tools import PLANNING_TOOLS
 from app.domains.integrations.mcp.release_tools import RELEASE_TOOLS
+from app.domains.integrations.mcp.review_tools import REVIEW_TOOLS
 from app.domains.integrations.mcp.standup_tools import STANDUP_TOOLS
 from app.domains.integrations.mcp.sync_tools import SYNC_TOOLS
 from app.domains.integrations.mcp.team_tools import TEAM_TOOLS
@@ -36,6 +37,7 @@ from app.domains.integrations.mcp.workspace_tools import WORKSPACE_TOOLS
 
 TOOLS: tuple[Tool, ...] = (
     *ISSUE_TOOLS,
+    *REVIEW_TOOLS,
     *TEAM_TOOLS,
     *WORKFLOW_TOOLS,
     *TRANSITION_TOOLS,

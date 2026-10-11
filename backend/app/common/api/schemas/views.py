@@ -339,7 +339,9 @@ class NotificationRead(BaseModel):
 
     A `project_update` notification names its project and update and leaves the
     issue fields empty. A `standup_digest` carries the team key in `issue_key`,
-    the team name in `issue_title` and the digest date in `standup_date`.
+    the team name in `issue_title` and the digest date in `standup_date`. A
+    `review_requested` notification carries the pull request's `owner/repo#number`
+    in `issue_key`, its title in `issue_title` and its GitHub address in `url`.
     """
 
     notification_id: str
@@ -354,6 +356,7 @@ class NotificationRead(BaseModel):
     project_name: Optional[str] = None
     project_update_id: Optional[str] = None
     standup_date: Optional[str] = None
+    url: Optional[str] = None
     actor_id: str
     actor_name: str
     source: Optional[ChangeSource] = None
@@ -378,6 +381,7 @@ class NotificationRead(BaseModel):
             project_name=notification.project_name,
             project_update_id=notification.project_update_id,
             standup_date=notification.standup_date,
+            url=notification.url,
             actor_id=notification.actor_id,
             actor_name=notification.actor_name,
             source=notification.source,  # pyright: ignore[reportArgumentType]

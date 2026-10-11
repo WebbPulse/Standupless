@@ -81,7 +81,7 @@ locals {
       secrets     = true
       ses         = false
       memory      = 512
-      tables      = ["github", "idempotency", "issues", "comments", "counters", "activity", "planning", "rate-limits"]
+      tables      = ["github", "idempotency", "issues", "comments", "counters", "activity", "planning", "inbox", "rate-limits"]
       read_tables = ["memberships", "workspaces", "users", "teams", "team_config", "oauth-links"]
     }
     integrations-dispatch-consumer = {
