@@ -9229,6 +9229,7 @@
                   "key_asc",
                   "priority_desc",
                   "due_asc",
+                  "sla_asc",
                   "manual"
                 ],
                 "type": "string"
@@ -12473,6 +12474,7 @@
                   "key_asc",
                   "priority_desc",
                   "due_asc",
+                  "sla_asc",
                   "manual"
                 ],
                 "type": "string"
@@ -12511,6 +12513,7 @@
               "key_asc",
               "priority_desc",
               "due_asc",
+              "sla_asc",
               "manual"
             ],
             "title": "Sort",
@@ -12893,6 +12896,7 @@
                   "key_asc",
                   "priority_desc",
                   "due_asc",
+                  "sla_asc",
                   "manual"
                 ],
                 "type": "string"
@@ -12956,6 +12960,7 @@
                   "key_asc",
                   "priority_desc",
                   "due_asc",
+                  "sla_asc",
                   "manual"
                 ],
                 "type": "string"
@@ -21609,6 +21614,7 @@
                 "key_asc",
                 "priority_desc",
                 "due_asc",
+                "sla_asc",
                 "manual"
               ],
               "title": "Sort",

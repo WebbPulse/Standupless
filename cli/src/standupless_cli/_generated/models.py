@@ -1221,7 +1221,9 @@ class SearchResultRead(TypedDict):
 class ShareLinkCreate(TypedDict):
     expires_in_days: NotRequired[int | None]
     filter: NotRequired[dict[str, Any] | None]
-    sort: NotRequired[Literal["updated_desc", "created_desc", "key_asc", "priority_desc", "due_asc", "manual"] | None]
+    sort: NotRequired[
+        Literal["updated_desc", "created_desc", "key_asc", "priority_desc", "due_asc", "sla_asc", "manual"] | None
+    ]
     target_id: str
     target_type: Literal["issue", "view", "filter"]
     title: NotRequired[str | None]
@@ -1811,13 +1813,15 @@ class ViewCreate(TypedDict):
     layout: NotRequired[Literal["list", "board"] | None]
     name: str
     ordering: NotRequired[
-        Literal["updated_desc", "created_desc", "key_asc", "priority_desc", "due_asc", "manual"] | None
+        Literal["updated_desc", "created_desc", "key_asc", "priority_desc", "due_asc", "sla_asc", "manual"] | None
     ]
     shared: NotRequired[bool]
     show_archived: NotRequired[bool]
     show_completed: NotRequired[bool]
     show_sub_issues: NotRequired[bool]
-    sort: NotRequired[Literal["updated_desc", "created_desc", "key_asc", "priority_desc", "due_asc", "manual"]]
+    sort: NotRequired[
+        Literal["updated_desc", "created_desc", "key_asc", "priority_desc", "due_asc", "sla_asc", "manual"]
+    ]
     sub_group_by: NotRequired[Literal["status", "assignee", "priority", "label", "milestone"] | None]
     team_id: NotRequired[str | None]
     visible_properties: NotRequired[
@@ -1881,13 +1885,15 @@ class ViewUpdate(TypedDict):
     layout: NotRequired[Literal["list", "board"] | None]
     name: NotRequired[str | None]
     ordering: NotRequired[
-        Literal["updated_desc", "created_desc", "key_asc", "priority_desc", "due_asc", "manual"] | None
+        Literal["updated_desc", "created_desc", "key_asc", "priority_desc", "due_asc", "sla_asc", "manual"] | None
     ]
     shared: NotRequired[bool | None]
     show_archived: NotRequired[bool | None]
     show_completed: NotRequired[bool | None]
     show_sub_issues: NotRequired[bool | None]
-    sort: NotRequired[Literal["updated_desc", "created_desc", "key_asc", "priority_desc", "due_asc", "manual"] | None]
+    sort: NotRequired[
+        Literal["updated_desc", "created_desc", "key_asc", "priority_desc", "due_asc", "sla_asc", "manual"] | None
+    ]
     sub_group_by: NotRequired[Literal["status", "assignee", "priority", "label", "milestone"] | None]
     visible_properties: NotRequired[
         list[

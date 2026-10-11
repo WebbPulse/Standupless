@@ -34,6 +34,7 @@ from app.common.issue_keys import current_all
 from app.common.issue_rules import unprocessable
 from app.common.media_tokens import mint_media_token, referenced_attachments
 from app.common.saved_views import invalid_filter
+from app.common.sla import sla_breach_key
 from app.domains.views.schemas.share import (
     MAX_FILTER_VALUE_LENGTH,
     MAX_FILTER_VALUES,
@@ -348,6 +349,8 @@ def shared_sort_key(sort: str) -> Callable[[Issue], Any]:
         return lambda issue: (-PRIORITY_ORDER.get(issue.priority, 4), issue.updated_at)
     if sort == "due_asc":
         return lambda issue: (issue.due_date is None, issue.due_date or "", issue.issue_id)
+    if sort == "sla_asc":
+        return sla_breach_key
     if sort == "manual":
         return lambda issue: (issue.sort_order is None, issue.sort_order or "", issue.issue_id)
     return lambda issue: (issue.updated_at, issue.issue_id)
@@ -355,7 +358,7 @@ def shared_sort_key(sort: str) -> Callable[[Issue], Any]:
 
 def shared_sort_descending(sort: str) -> bool:
     """Whether one saved sort reads newest or highest first."""
-    return sort not in ("key_asc", "due_asc", "manual")
+    return sort not in ("key_asc", "due_asc", "sla_asc", "manual")
 
 
 DEFAULT_SORT: SortField = "updated_desc"

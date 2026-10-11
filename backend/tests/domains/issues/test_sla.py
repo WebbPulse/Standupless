@@ -17,7 +17,7 @@ from fastapi.testclient import TestClient
 from app.common.db.dynamo.base import utc_now
 from app.common.db.dynamo.issues import Issue
 from app.common.db.dynamo.team_config import default_sla_settings, default_triage_settings
-from app.common.sla import at_risk_from, sla_status
+from app.common.sla import at_risk_from, sla_breach_key, sla_status
 from tests.domains.helpers import MEMBER, OWNER, add_team_member, sign_in
 from tests.domains.issues.conftest import TEAM, WORKSPACE, create_issue
 
@@ -263,3 +263,39 @@ def test_an_unknown_sla_status_is_refused(client: TestClient, workspace: str) ->
     """A misspelt state is a 422 rather than a filter that matches nothing."""
     sign_in(client, OWNER)
     assert client.get(BASE, params={"sla_status": "late"}).status_code == 422
+
+
+def test_the_breach_key_puts_running_timers_first_and_archived_last() -> None:
+    """A running timer sorts by its deadline; none, or an archived issue's, sorts after every running one."""
+    soon = _timed(START, 1)
+    later = _timed(START, 48).model_copy(update={"issue_id": "later"})
+    bare = soon.model_copy(update={"issue_id": "bare", "sla_started_at": None, "sla_breaches_at": None})
+    archived = soon.model_copy(update={"issue_id": "archived", "archived_at": START})
+
+    ordered = sorted([bare, later, archived, soon], key=sla_breach_key)
+
+    assert ordered[:2] == [soon, later]
+    assert {issue.issue_id for issue in ordered[2:]} == {"bare", "archived"}
+
+
+def test_the_list_sorts_by_sla_breach(client: TestClient, workspace: str, repositories: Any) -> None:
+    """Soonest breach first, already breached ahead of the rest, issues without a running SLA last."""
+    _enable(repositories)
+    sign_in(client, OWNER)
+    now = utc_now()
+    unruled = create_issue(client, WORKSPACE, priority="low", title="No SLA")
+    on_track = create_issue(client, WORKSPACE, priority="high", title="On track")
+    at_risk = create_issue(client, WORKSPACE, priority="urgent", title="At risk")
+    breached = create_issue(client, WORKSPACE, priority="urgent", title="Breached")
+    _backdate(repositories, breached["id"], now - timedelta(hours=30), 24)
+    _backdate(repositories, at_risk["id"], now - timedelta(hours=20), 24)
+
+    response = client.get(BASE, params={"team_id": TEAM, "sort": "sla_asc", "limit": 100})
+
+    assert response.status_code == 200, response.text
+    assert [row["id"] for row in response.json()["issues"]] == [
+        breached["id"],
+        at_risk["id"],
+        on_track["id"],
+        unruled["id"],
+    ]

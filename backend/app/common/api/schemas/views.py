@@ -19,7 +19,7 @@ from app.common.change_source import ChangeSource
 from app.common.db.dynamo.inbox import Notification
 from app.common.db.dynamo.views import SavedView
 
-SortField = Literal["updated_desc", "created_desc", "key_asc", "priority_desc", "due_asc", "manual"]
+SortField = Literal["updated_desc", "created_desc", "key_asc", "priority_desc", "due_asc", "sla_asc", "manual"]
 
 ViewKindField = Literal["list", "board"]
 

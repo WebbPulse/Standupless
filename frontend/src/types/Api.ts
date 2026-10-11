@@ -472,7 +472,12 @@ export type IssuePriority = 'none' | 'urgent' | 'high' | 'medium' | 'low';
 
 /** The sort orders the issue list route accepts. */
 export type IssueSort =
-  'updated_desc' | 'created_desc' | 'key_asc' | 'priority_desc' | 'due_asc';
+  | 'updated_desc'
+  | 'created_desc'
+  | 'key_asc'
+  | 'priority_desc'
+  | 'due_asc'
+  | 'sla_asc';
 
 /** The kinds of link a pair of issues may hold. */
 export type LinkType = 'blocks' | 'blocked_by' | 'relates_to' | 'duplicate_of';

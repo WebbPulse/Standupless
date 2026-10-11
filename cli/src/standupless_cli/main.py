@@ -481,7 +481,7 @@ def issue_list(
     search: Annotated[str | None, typer.Option("--search", "-q", help="Match text in the key or title.")] = None,
     include_closed: Annotated[bool, typer.Option("--all", help="Include completed and cancelled issues.")] = False,
     sort: Annotated[
-        str, typer.Option("--sort", help="updated_desc, created_desc, key_asc, priority_desc or due_asc.")
+        str, typer.Option("--sort", help="updated_desc, created_desc, key_asc, priority_desc, due_asc or sla_asc.")
     ] = "updated_desc",
     limit: Annotated[int, typer.Option("--limit", "-L", min=1, help="Most issues to fetch.")] = 50,
     as_json: JsonFlag = False,
