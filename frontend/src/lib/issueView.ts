@@ -214,6 +214,7 @@ export const ORDERINGS: IssueListSort[] = [
   'updated_desc',
   'created_desc',
   'due_asc',
+  'sla_asc',
   'key_asc',
 ];
 
@@ -224,6 +225,7 @@ export const ORDERING_LABELS: Record<IssueListSort, string> = {
   updated_desc: 'Last updated',
   created_desc: 'Created',
   due_asc: 'Due date',
+  sla_asc: 'SLA breach',
   key_asc: 'Issue ID',
 };
 
@@ -1189,6 +1191,16 @@ export const groupIssues = (
     : groups.filter((group) => group.issues.length > 0);
 };
 
+/**
+ * When an issue's running SLA breaches, in milliseconds, or null when it has
+ * no running timer, so the SLA ordering can put those last.
+ */
+const slaDeadline = (issue: OrderedIssueRead): number | null => {
+  if (issue.sla_status === 'none' || !issue.sla_breaches_at) return null;
+  const deadline = Date.parse(issue.sla_breaches_at);
+  return Number.isNaN(deadline) ? null : deadline;
+};
+
 const PRIORITY_RANK: Record<IssuePriority, number> = {
   urgent: 0,
   high: 1,
@@ -1230,6 +1242,14 @@ export const sortIssues = (
         if (a === null) return 1;
         if (b === null) return -1;
         return a.localeCompare(b);
+      }
+      case 'sla_asc': {
+        const a = slaDeadline(left);
+        const b = slaDeadline(right);
+        if (a === b) return 0;
+        if (a === null) return 1;
+        if (b === null) return -1;
+        return a - b;
       }
       case 'key_asc':
         return (

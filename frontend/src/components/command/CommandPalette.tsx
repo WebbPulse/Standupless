@@ -35,6 +35,8 @@ import {
   LuBot,
   LuChevronLeft,
   LuCircleDot,
+  LuFileText,
+  LuGitPullRequest,
   LuInbox,
   LuKeyboard,
   LuLayers,
@@ -59,6 +61,7 @@ import {
 import { useLocation, useNavigate } from 'react-router-dom';
 import { usePolledQuery } from '@webbpulse/api-client/react';
 import { useQueryAuth } from '@webbpulse/auth/react';
+import { listWorkspaceDocuments } from '../../api/documents';
 import { listViews, search } from '../../api/views';
 import ViewIcon from '../views/ViewIcon';
 import { useCreateIssue } from '../../hooks/useCreateIssue';
@@ -69,12 +72,14 @@ import { useTheme } from '../../hooks/useTheme';
 import { cn } from '../../lib/cn';
 import {
   cliSetupPath,
+  documentPath,
   inboxPath,
   issuePath,
   mcpSetupPath,
   myIssuesPath,
   newViewPath,
   projectsPath,
+  reviewsPath,
   roadmapPath,
   routeIssueKey,
   routeTeamPrefix,
@@ -89,7 +94,11 @@ import {
   viewsPath,
 } from '../../lib/paths';
 import { COPY_ISSUE_URL_KEYS } from '../../lib/copyIssue';
-import { searchKey, viewsKey } from '../../lib/queryKeys';
+import {
+  searchKey,
+  viewsKey,
+  workspaceDocumentsKey,
+} from '../../lib/queryKeys';
 import {
   hasIndexableTerm,
   isIssueKey,
@@ -102,6 +111,9 @@ import type { TeamRead, WorkspaceRead } from '../../types/Api';
 
 /** How many hits the palette asks the search route for. */
 const RESULT_LIMIT = 20;
+
+/** How many documents a term lists, since the rest are a narrower term away. */
+const DOCUMENT_LIMIT = 8;
 
 /** How often an open search re-reads while its term is unchanged. */
 const POLL_MS = 60000;
@@ -257,6 +269,16 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
       intervalMs: POLL_MS,
       enabled,
       queryKey: searchKey(workspaceId, deferred, ''),
+      auth,
+    }
+  );
+
+  const { data: documents } = usePolledQuery(
+    ({ signal }) => listWorkspaceDocuments(workspaceId, signal),
+    {
+      intervalMs: POLL_MS,
+      enabled: page === 'root' && workspaceId !== '' && deferred !== '',
+      queryKey: workspaceDocumentsKey(workspaceId),
       auth,
     }
   );
@@ -424,6 +446,13 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
         hint: 'G then I',
         icon: <LuInbox className={ICON} />,
         to: inboxPath(slug),
+      },
+      {
+        id: 'nav-reviews',
+        label: 'Reviews',
+        keywords: 'pull requests review requested github',
+        icon: <LuGitPullRequest className={ICON} />,
+        to: reviewsPath(slug),
       },
       {
         id: 'nav-projects',
@@ -621,6 +650,22 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
       });
     }
 
+    if (!isKey && deferred !== '') {
+      const found = (documents ?? [])
+        .map((row) => ({
+          id: `document-${row.document_id}`,
+          label: row.title,
+          hint: row.parent_name,
+          icon: <LuFileText className={ICON} />,
+          to: documentPath(slug, row.document_id),
+        }))
+        .filter((command) => matches(command, deferred))
+        .slice(0, DOCUMENT_LIMIT);
+      if (found.length > 0) {
+        built.push({ heading: 'Documents', commands: found });
+      }
+    }
+
     const doable = actions.filter((command) => matches(command, deferred));
     if (deferred === '' && routePrefix !== null) {
       const here = teams.find((row) => row.key_prefix === routePrefix);
@@ -662,6 +707,7 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
     pageActions,
     issueKey,
     data,
+    documents,
     enabled,
     actions,
     places,

@@ -44,6 +44,7 @@ import { IconButton } from '../ui/button';
 import Menu, { MenuItem, MenuSeparator } from '../ui/menu';
 import GithubIssueSection from './GithubIssueSection';
 import GithubLinksSection from './GithubLinksSection';
+import IssueDocumentsSection from './IssueDocumentsSection';
 import IssueParent from './IssueParent';
 import IssueRelations from './IssueRelations';
 import IssueReleasesSection from './IssueReleasesSection';
@@ -469,6 +470,11 @@ export const IssuePropertiesPanel: React.FC<IssuePropertiesPanelProps> = ({
           issueId={issue.id}
           slug={slug}
           teams={teams}
+        />
+        <IssueDocumentsSection
+          workspaceId={workspaceId}
+          issueId={issue.id}
+          slug={slug}
         />
         <IssueSubscribers
           workspaceId={workspaceId}

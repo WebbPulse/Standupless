@@ -8,9 +8,9 @@
  */
 
 import React, { useCallback, useDeferredValue, useState } from 'react';
-import { LuSearch } from 'react-icons/lu';
+import { LuFileText, LuSearch } from 'react-icons/lu';
 import { Link, useNavigate } from 'react-router-dom';
-import { search } from '../../api/views';
+import { searchAll } from '../../api/views';
 import { ErrorAlert } from '../../components/ui/alert';
 import EmptyState from '../../components/ui/empty-state';
 import Input from '../../components/ui/input';
@@ -21,6 +21,7 @@ import Spinner from '../../components/ui/spinner';
 import WorkspaceShell from '../../components/workspace/WorkspaceShell';
 import { useWorkspace } from '../../hooks/useWorkspace';
 import { m3ErrorMessage } from '../../lib/errors';
+import { documentPath } from '../../lib/paths';
 import { searchKey } from '../../lib/queryKeys';
 import {
   hasIndexableTerm,
@@ -63,7 +64,7 @@ export const Search: React.FC = () => {
 
   const { data, error, isLoading } = usePolledQuery(
     ({ signal }) =>
-      search(
+      searchAll(
         workspaceId,
         deferred,
         {
@@ -85,7 +86,8 @@ export const Search: React.FC = () => {
     void navigate(`/w/${slug}/issues/${deferred.toUpperCase()}`);
   }, [isKey, navigate, slug, deferred]);
 
-  const results = data ?? [];
+  const results = data?.results ?? [];
+  const documents = data?.documents ?? [];
 
   return (
     <WorkspaceShell
@@ -164,10 +166,50 @@ export const Search: React.FC = () => {
           <EmptyState message="Search needs a word of at least four letters. Shorter words are not indexed." />
         ) : isLoading ? (
           <Spinner label="Searching" />
-        ) : results.length === 0 ? (
+        ) : results.length === 0 && documents.length === 0 ? (
           <EmptyState message="Nothing matched that search." />
         ) : (
           <>
+            {documents.length > 0 && (
+              <section aria-labelledby="search-documents">
+                <h2
+                  id="search-documents"
+                  className="border-b border-line px-4 py-1.5 text-xs font-medium text-text-muted lg:px-6"
+                >
+                  Documents
+                </h2>
+                <ul>
+                  {documents.map((row) => (
+                    <li
+                      key={row.document_id}
+                      className="flex h-row items-center border-b border-line px-4 transition-colors duration-100 hover:bg-surface has-[a:active]:bg-raised lg:px-6"
+                    >
+                      <Link
+                        to={documentPath(slug, row.document_id)}
+                        data-hover="parent"
+                        className="flex min-w-0 flex-1 items-center gap-2.5 rounded-xs"
+                      >
+                        <LuFileText
+                          aria-hidden="true"
+                          className="h-3.5 w-3.5 shrink-0 text-text-faint"
+                        />
+                        <span className="truncate text-sm font-medium text-text">
+                          {row.title}
+                        </span>
+                        <span className="shrink-0 truncate text-xs text-text-faint">
+                          {row.parent_name}
+                        </span>
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            )}
+            {documents.length > 0 && results.length > 0 && (
+              <h2 className="border-b border-line px-4 py-1.5 text-xs font-medium text-text-muted lg:px-6">
+                Issues
+              </h2>
+            )}
             <ul>
               {results.map((result) => (
                 <li

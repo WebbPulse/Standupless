@@ -16,6 +16,7 @@ from webbpulse.identity.crypto import EnvelopeDecryptionFailed
 from app.common.api.dependencies.repositories import Repositories
 from app.common.db.dynamo.base import utc_now
 from app.common.db.dynamo.slack import SlackInstallation, slack_install_key
+from app.domains.integrations.chat.destinations import turn_off
 from app.domains.integrations.slack import api
 from app.domains.integrations.slack.tokens import TokenKeyMissing, open_token, sealed_fields
 
@@ -120,18 +121,7 @@ def list_channels(installation: SlackInstallation) -> list[dict[str, Any]]:
 
 def _turn_off_destinations(repositories: Repositories, workspace_id: str, reason: str, *, notify: bool) -> int:
     """Disable every destination that posts through the bot, which can no longer post."""
-    from app.domains.integrations.channels.delivery import notify_disabled
-
-    store = repositories.github.channels
-    turned_off = 0
-    for destination in store.list(workspace_id):
-        if destination.transport != "slack_app" or not destination.enabled:
-            continue
-        if store.disable(workspace_id, destination.channel_id, reason=reason, status=410):
-            turned_off += 1
-            if notify:
-                notify_disabled(repositories, destination)
-    return turned_off
+    return turn_off(repositories, workspace_id, "slack_app", reason, notify=notify)
 
 
 def disconnect(repositories: Repositories, workspace_id: str) -> bool:

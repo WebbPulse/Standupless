@@ -27,6 +27,7 @@ from webbpulse.dynamodb import ConditionFailed, Page, Repository, new_ulid
 
 from app.common.db.dynamo.base import as_item, build_repository, delete_partition, first, utc_now
 from app.common.db.dynamo.channels import ChannelStore
+from app.common.db.dynamo.discord import DiscordStore
 from app.common.db.dynamo.slack import SlackStore
 from app.common.db.dynamo.tables import GITHUB
 
@@ -109,6 +110,20 @@ def pr_state_key(repository_id: str, number: int) -> str:
     return f"{PR_STATE_PREFIX}{repository_id}#{number}"
 
 
+def reviewer_prefix(github_user_id: str) -> str:
+    """The sort key prefix every review pointer of one GitHub account shares."""
+    return f"{REVIEWER_PREFIX}{github_user_id}#"
+
+
+def reviewer_key(github_user_id: str, repository_id: str, number: int) -> str:
+    """The sort key of one GitHub account's pointer at one pull request it reviews.
+
+    Keyed by account first, so the Reviews list is one prefix query in the
+    workspace partition with no index of its own.
+    """
+    return f"{reviewer_prefix(github_user_id)}{repository_id}#{number}"
+
+
 def webhook_key(webhook_id: str) -> str:
     """The sort key of one outbound webhook endpoint."""
     return f"webhook#{webhook_id}"
@@ -128,6 +143,7 @@ INSTALL_PREFIX = "install#"
 REPO_PREFIX = "repo#"
 LINK_PREFIX = "link#"
 PR_STATE_PREFIX = "prstate#"
+REVIEWER_PREFIX = "reviewer#"
 WEBHOOK_PREFIX = "webhook#"
 DELIVERY_PREFIX = "whdelivery#"
 TEAM_SYNC_PREFIX = "teamsync#"
@@ -299,6 +315,7 @@ class ReviewEntry(BaseModel):
 
     review_id: int = 0
     state: str = ""
+    user_id: str = ""
 
 
 class CheckEntry(BaseModel):
@@ -319,6 +336,10 @@ class PullRequestState(BaseModel):
     the newest run of each check name per head commit, so every delivery may land
     in any order and the row still converges. `version` guards each write, so two
     consumers racing on one pull request cannot both win.
+
+    The display fields and `requested_user_ids` are what the Reviews list draws,
+    and `reviewer_ids` names the GitHub accounts holding a `ReviewPointer` at this
+    pull request, so a change knows which pointers to add and which to drop.
     """
 
     workspace_id: str
@@ -333,10 +354,34 @@ class PullRequestState(BaseModel):
     from_fork: bool = False
     pr_updated_ms: int = 0
     requested_reviewers: int = 0
+    requested_user_ids: list[str] = Field(default_factory=list)
     reviews: dict[str, ReviewEntry] = Field(default_factory=dict)
     checks: dict[str, dict[str, CheckEntry]] = Field(default_factory=dict)
+    title: str = ""
+    url: str = ""
+    repository_full_name: str = ""
+    author_login: str = ""
+    author_id: str = ""
+    pr_state: str = ""
+    pr_created_at: str = ""
+    reviewer_ids: list[str] = Field(default_factory=list)
     version: int = 0
     updated_at: datetime = Field(default_factory=utc_now)
+
+
+class ReviewPointer(BaseModel):
+    """One GitHub account's pointer at a pull request it is asked to review or has decided on.
+
+    The pull request's `PullRequestState` row is the truth: the Reviews list reads
+    it for every pointer and drops a pointer the row no longer backs, so a pointer
+    left behind by a lost write shows nothing.
+    """
+
+    workspace_id: str
+    github_key: str
+    github_user_id: str
+    repository_id: str
+    pr_number: int
 
 
 class WebhookEndpoint(BaseModel):
@@ -569,6 +614,7 @@ class GithubRepository:
         self._repository = build_repository(GITHUB, repository)
         self.channels = ChannelStore(self._repository)
         self.slack = SlackStore(self._repository)
+        self.discord = DiscordStore(self._repository)
 
     def delete_workspace_rows(self, workspace_id: str) -> int:
         """Delete every row this table holds for one workspace, for the workspace purge."""
@@ -772,6 +818,43 @@ class GithubRepository:
             return False
         return True
 
+    def get_pr_states(self, workspace_id: str, keys: Sequence[tuple[str, int]]) -> list[PullRequestState]:
+        """The named pull requests' state rows that exist, by repository id and number."""
+        wanted = list(dict.fromkeys((repository_id, number) for repository_id, number in keys if repository_id))
+        if not workspace_id or not wanted:
+            return []
+        items = self._repository.batch_get(
+            [
+                {"workspace_id": workspace_id, "github_key": pr_state_key(repository_id, number)}
+                for repository_id, number in wanted
+            ]
+        )
+        return [PullRequestState.model_validate(dict(item)) for item in items]
+
+    def put_review_pointer(self, workspace_id: str, github_user_id: str, repository_id: str, number: int) -> None:
+        """Point one GitHub account at a pull request it reviews."""
+        pointer = ReviewPointer(
+            workspace_id=workspace_id,
+            github_key=reviewer_key(github_user_id, repository_id, number),
+            github_user_id=github_user_id,
+            repository_id=repository_id,
+            pr_number=number,
+        )
+        self._repository.put(as_item(pointer))
+
+    def delete_review_pointer(self, workspace_id: str, github_user_id: str, repository_id: str, number: int) -> None:
+        """Drop one GitHub account's pointer at a pull request, whether or not it was there."""
+        self._repository.delete(
+            {"workspace_id": workspace_id, "github_key": reviewer_key(github_user_id, repository_id, number)}
+        )
+
+    def list_review_pointers(self, workspace_id: str, github_user_id: str, *, limit: int = 500) -> list[ReviewPointer]:
+        """Every pull request one GitHub account is pointed at in one workspace."""
+        if not github_user_id:
+            return []
+        rows = self._query(workspace_id, reviewer_prefix(github_user_id), limit)
+        return [ReviewPointer.model_validate(dict(item)) for item in rows]
+
     def detach_link(self, workspace_id: str, link_id: str, pr_updated_ms: int) -> bool:
         """Mark one link as no longer named by its pull request, unless the row holds a newer state.
 
@@ -859,13 +942,22 @@ class GithubRepository:
         self.delete_deliveries(workspace_id, webhook_id)
         return self._delete(workspace_id, webhook_key(webhook_id))
 
-    def delete_team_endpoints(self, workspace_id: str, team_id: str) -> int:
-        """Remove every endpoint scoped to one team, with their logs, for the team purge."""
-        removed = 0
-        for endpoint in self.list_endpoints(workspace_id):
-            if team_id and endpoint.team_id == team_id and self.delete_endpoint(workspace_id, endpoint.webhook_id):
-                removed += 1
-        return removed
+    def create_endpoint_action(self, endpoint: WebhookEndpoint) -> dict[str, Any]:
+        """A transaction Put for a new outbound endpoint, failing its condition on a key collision."""
+        return self._repository.put_action(as_item(endpoint), condition=Attr("github_key").not_exists())
+
+    def delete_endpoint_action(self, workspace_id: str, webhook_id: str) -> dict[str, Any]:
+        """A transaction Delete of one outbound endpoint, only while it exists, so its slot is freed once."""
+        return self._repository.delete_action(
+            {"workspace_id": workspace_id, "github_key": webhook_key(webhook_id)},
+            condition=Attr("webhook_id").exists(),
+        )
+
+    def count_endpoints(self, workspace_id: str, *, limit: int = 10_000) -> int:
+        """How many outbound endpoints this workspace holds, read strongly consistently for plan usage."""
+        if not workspace_id:
+            return 0
+        return len(self._query(workspace_id, WEBHOOK_PREFIX, limit, consistent=True))
 
     def clear_endpoint_fields(self, workspace_id: str, webhook_id: str, *names: str) -> WebhookEndpoint | None:
         """Remove optional attributes from one endpoint, or `None` when it does not exist."""
@@ -994,7 +1086,7 @@ class GithubRepository:
         must not silently stop a customer's integration.
         """
         removed = 0
-        for prefix in (INSTALL_PREFIX, REPO_PREFIX, LINK_PREFIX, PR_STATE_PREFIX, *SYNC_PREFIXES):
+        for prefix in (INSTALL_PREFIX, REPO_PREFIX, LINK_PREFIX, PR_STATE_PREFIX, REVIEWER_PREFIX, *SYNC_PREFIXES):
             for item in self._query(workspace_id, prefix, 1000):
                 self._repository.delete({"workspace_id": workspace_id, "github_key": item["github_key"]})
                 removed += 1

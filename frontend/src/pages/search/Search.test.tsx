@@ -40,6 +40,10 @@ vi.mock('../../api/views', async () => {
   return {
     ...actual,
     search: (_w: string, q: string, query: unknown) => search(q, query),
+    searchAll: async (_w: string, q: string, query: unknown) => ({
+      results: await search(q, query),
+      documents: [],
+    }),
   };
 });
 

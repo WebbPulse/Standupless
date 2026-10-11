@@ -34,6 +34,7 @@ import {
   LuCalendar,
   LuClock,
   LuDownload,
+  LuGitPullRequest,
   LuInbox,
   LuMailOpen,
   LuTarget,
@@ -73,6 +74,7 @@ import {
   importSettingsPath,
   issuePath,
   projectUpdatesTabPath,
+  reviewsPath,
   teamSettingsPath,
   teamStandupPath,
 } from '../../lib/paths';
@@ -122,6 +124,7 @@ const KIND_LABELS: Record<InboxKind, string> = {
   export_failed: 'Export failed',
   import_ready: 'Import finished',
   import_failed: 'Import failed',
+  review_requested: 'Review requested',
 };
 
 /** Names a notification's kind, falling back for one added after this build. */
@@ -163,6 +166,19 @@ const isJobRow = (row: NotificationRead): boolean =>
 const isStandupRow = (row: NotificationRead): boolean =>
   row.kind === 'standup_digest';
 
+/**
+ * Whether a row asks the member to review a pull request. Its `issue_key`
+ * carries `owner/repo#number`, `issue_title` the pull request title and `url`
+ * the pull request on GitHub.
+ */
+const isReviewRow = (row: NotificationRead): boolean =>
+  row.kind === 'review_requested';
+
+/** Opens a review request's pull request on GitHub in a new tab. */
+const openPullRequest = (row: NotificationRead): void => {
+  if (row.url) window.open(row.url, '_blank', 'noopener,noreferrer');
+};
+
 /** What a row is about, as its actions name it: an issue key, a project or a team standup. */
 const subjectName = (row: NotificationRead): string =>
   isProjectRow(row)
@@ -173,23 +189,86 @@ const subjectName = (row: NotificationRead): string =>
         ? `${row.issue_title} standup`
         : row.issue_key;
 
-/** Where opening a row goes: its issue, its project's updates, team settings or the standup. */
+/** Where opening a row goes: its issue, its project's updates, team settings, the standup or Reviews. */
 const rowPath = (slug: string, row: NotificationRead): string =>
-  isProjectRow(row)
-    ? projectUpdatesTabPath(slug, row.project_id ?? '')
-    : isChannelRow(row)
-      ? teamSettingsPath(slug, row.issue_key)
-      : isExportRow(row)
-        ? exportSettingsPath(slug)
-        : isImportRow(row)
-          ? importSettingsPath(slug)
-          : isStandupRow(row)
-            ? `${teamStandupPath(slug, row.issue_key)}${
-                row.standup_date
-                  ? `?date=${encodeURIComponent(row.standup_date)}`
-                  : ''
-              }`
-            : issuePath(slug, row.issue_key);
+  isReviewRow(row)
+    ? reviewsPath(slug)
+    : isProjectRow(row)
+      ? projectUpdatesTabPath(slug, row.project_id ?? '')
+      : isChannelRow(row)
+        ? teamSettingsPath(slug, row.issue_key)
+        : isExportRow(row)
+          ? exportSettingsPath(slug)
+          : isImportRow(row)
+            ? importSettingsPath(slug)
+            : isStandupRow(row)
+              ? `${teamStandupPath(slug, row.issue_key)}${
+                  row.standup_date
+                    ? `?date=${encodeURIComponent(row.standup_date)}`
+                    : ''
+                }`
+              : issuePath(slug, row.issue_key);
+
+/** Props for ReviewRequestPane: the selected row and how to leave it. */
+interface ReviewRequestPaneProps {
+  row: NotificationRead;
+  slug: string;
+  onClose: () => void;
+}
+
+/** The pane beside a review request, which opens the pull request or the Reviews list. */
+const ReviewRequestPane: React.FC<ReviewRequestPaneProps> = ({
+  row,
+  slug,
+  onClose,
+}) => {
+  const navigate = useNavigate();
+  const actor = row.actor_name === '' ? 'Someone' : row.actor_name;
+  return (
+    <aside
+      aria-label="Review request"
+      className="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center"
+    >
+      <LuGitPullRequest
+        aria-hidden="true"
+        className="h-8 w-8 text-text-faint"
+      />
+      <p className="text-sm text-text">
+        {actor} requested your review on{' '}
+        <span className="font-medium">{row.issue_title}</span>
+      </p>
+      <p className="font-mono text-xs text-text-muted">{row.issue_key}</p>
+      <p className="text-xs text-text-faint">
+        {timestampLabel(row.created_at)}
+      </p>
+      <div className="flex items-center gap-2">
+        <Button variant="ghost" size="sm" onClick={onClose}>
+          Close
+        </Button>
+        <Button
+          variant="secondary"
+          size="sm"
+          onClick={() => {
+            void navigate(rowPath(slug, row));
+          }}
+        >
+          Open Reviews
+        </Button>
+        {row.url ? (
+          <Button
+            variant="primary"
+            size="sm"
+            onClick={() => {
+              openPullRequest(row);
+            }}
+          >
+            Open the pull request
+          </Button>
+        ) : null}
+      </div>
+    </aside>
+  );
+};
 
 /** Props for StandupPane: the selected row and how to leave it. */
 interface StandupPaneProps {
@@ -828,7 +907,9 @@ export const Inbox: React.FC = () => {
     group: 'Inbox',
     enabled: selected !== null,
     handler: () => {
-      if (selected !== null) void navigate(rowPath(slug, selected));
+      if (selected === null) return;
+      if (isReviewRow(selected) && selected.url) openPullRequest(selected);
+      else void navigate(rowPath(slug, selected));
     },
   });
   useShortcut({
@@ -1019,6 +1100,15 @@ export const Inbox: React.FC = () => {
                   : 'Select a notification to see its issue.'}
               </p>
             </div>
+          ) : isReviewRow(selected) ? (
+            <ReviewRequestPane
+              key={selected.notification_id}
+              row={selected}
+              slug={slug}
+              onClose={() => {
+                select(null);
+              }}
+            />
           ) : isJobRow(selected) ? (
             <JobNoticePane
               key={selected.notification_id}

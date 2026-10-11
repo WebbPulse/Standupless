@@ -27,6 +27,10 @@ SECRET_FIELDS = (
     "SLACK_CLIENT_ID",
     "SLACK_CLIENT_SECRET",
     "SLACK_SIGNING_SECRET",
+    "DISCORD_APPLICATION_ID",
+    "DISCORD_PUBLIC_KEY",
+    "DISCORD_CLIENT_SECRET",
+    "DISCORD_BOT_TOKEN",
 )
 """Every key of the one JSON app secret.
 
@@ -37,7 +41,10 @@ endpoint secrets are derived from, which is what keeps a customer's signing key 
 of the `github` table. The three Stripe keys are external too and are read by
 `webbpulse.integrations.stripe.load_stripe_settings`. The three Slack keys are the
 Slack App's credentials, set out of band with `webbpulse-config`; while any is
-missing the Slack App routes answer as not configured.
+missing the Slack App routes answer as not configured. The four Discord keys are the
+Discord App's application id, its interactions public key, its OAuth client secret
+and its one bot token, set the same way; while any is missing the Discord App
+routes answer as not configured.
 """
 
 PRODUCTION_HOST = "standupless.dev"
@@ -472,6 +479,37 @@ class Settings(BaseServiceSettings):
     def slack_configured(self) -> bool:
         """Whether this environment has a Slack App to install and to accept requests from."""
         return bool(self.SLACK_CLIENT_ID and self.SLACK_CLIENT_SECRET and self.SLACK_SIGNING_SECRET)
+
+    @property
+    def DISCORD_APPLICATION_ID(self) -> str:
+        """The Discord App's application id, which is also its OAuth client id, resolved on access."""
+        return self._resolve_secret("DISCORD_APPLICATION_ID")
+
+    @property
+    def DISCORD_PUBLIC_KEY(self) -> str:
+        """The hex Ed25519 key Discord signs every interaction with, resolved on access."""
+        return self._resolve_secret("DISCORD_PUBLIC_KEY")
+
+    @property
+    def DISCORD_CLIENT_SECRET(self) -> str:
+        """The Discord App's OAuth client secret, resolved on access."""
+        return self._resolve_secret("DISCORD_CLIENT_SECRET")
+
+    @property
+    def DISCORD_BOT_TOKEN(self) -> str:
+        """The Discord App's bot token, one for every server it is in, resolved on access."""
+        return self._resolve_secret("DISCORD_BOT_TOKEN")
+
+    @property
+    def discord_configured(self) -> bool:
+        """Whether this environment has a Discord App to install and to accept interactions from."""
+        keys = (
+            self.DISCORD_APPLICATION_ID,
+            self.DISCORD_PUBLIC_KEY,
+            self.DISCORD_CLIENT_SECRET,
+            self.DISCORD_BOT_TOKEN,
+        )
+        return all(keys)
 
     @property
     def github_configured(self) -> bool:

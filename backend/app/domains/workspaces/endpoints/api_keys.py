@@ -23,7 +23,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, Response, status
 from webbpulse.identity.api_keys import ApiKeyRecord, mint
 
-from app.common import audit
+from app.common import audit, plan_usage
 from app.common.api.dependencies.authz import (
     AuthzContext,
     Capability,
@@ -33,7 +33,7 @@ from app.common.api.dependencies.authz import (
 from app.common.api.dependencies.repositories import Repositories, get_repositories
 from app.common.db.dynamo.api_keys import service_subject
 from app.common.db.dynamo.base import expiry_timestamp
-from app.common.plan_limits import LimitedResource, enforce_limit
+from app.common.plan_limits import LimitedResource
 from app.domains.workspaces.schemas.api_key import (
     ApiKeyCreate,
     ApiKeyCreated,
@@ -99,17 +99,14 @@ def create_api_key(
     admin of the workspace, so a departure or demotion disables it. Only an admin
     may mint one because it acts for the workspace rather than for a person.
 
-    The limit is checked before the mint rather than enforced by a conditional
-    write, because the count spans the partition and no single-item condition can
-    express it. The race that leaves a workspace one key over is harmless: the
-    limit exists to stop unbounded growth, not to be exact.
+    The key row and the workspace's API key usage row are written in one
+    transaction, the usage row under a conditional increment, so two concurrent
+    mints at the limit cannot both land.
     """
     refuse_api_key_actor(context)
 
     if payload.kind == "workspace" and not context.is_workspace_admin:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=ADMIN_ONLY_KIND)
-
-    enforce_limit(repositories, context.workspace_id, LimitedResource.API_KEYS)
 
     subject = service_subject(context.workspace_id) if payload.kind == "workspace" else context.user_id
 
@@ -119,9 +116,14 @@ def create_api_key(
         scopes=payload.scopes,
         name=payload.name,
         expires_at=expiry_timestamp(payload.expires_in_days),
-        store=repositories.api_keys,
         kind=payload.kind,
         created_by=context.user_id,
+    )
+    plan_usage.commit(
+        repositories,
+        context.workspace_id,
+        [repositories.api_keys.put_action(minted.record)],
+        [plan_usage.Delta(LimitedResource.API_KEYS, 1)],
     )
 
     audit.record(
@@ -161,8 +163,7 @@ def revoke_api_key(
     if not owns and not context.is_workspace_admin:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=NOT_FOUND)
 
-    if not existing.is_revoked:
-        repositories.api_keys.revoke_by_id(context.workspace_id, key_id)
+    if not existing.is_revoked and plan_usage.revoke_api_key(repositories, context.workspace_id, existing.key_hash):
         audit.record(
             repositories,
             context,

@@ -39,7 +39,7 @@ from webbpulse.integrations.github import (
     GitHubUnprocessable,
 )
 
-from app.domains.integrations import github_api
+from app.domains.integrations import github_api, github_budget
 
 _log = logging.getLogger(__name__)
 
@@ -136,8 +136,11 @@ def _request(
 
     Redirects are not followed, so a 3xx raises like any other failure. The token
     never reaches a log line; a failure logs the method, the path and the status.
+    Inside a `github_budget.capped` block the call is refused before it is made
+    once the installation's budget or the block's deadline is spent.
     """
     headers = {"Accept": ACCEPT, "Authorization": f"Bearer {token}", "X-GitHub-Api-Version": API_VERSION}
+    github_budget.before_call()
     owned = client is None
     http = client if client is not None else httpx.Client(timeout=TIMEOUT_SECONDS, follow_redirects=False)
     try:
@@ -147,6 +150,7 @@ def _request(
     finally:
         if owned:
             http.close()
+    github_budget.after_call(response.headers)
     if not 200 <= response.status_code < 300:
         error = _error_for(response, method, path)
         _log.warning(

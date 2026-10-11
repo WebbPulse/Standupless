@@ -9,15 +9,18 @@ the run with the highest id per name and head commit. The row's summary, the
 review decision and the combined check state, is then copied onto every link of
 the pull request, which is what the issue's pull request panel reads.
 
-Rows are created only for a pull request that links an issue, so a busy
-repository's checks on unrelated pull requests write nothing.
+Rows are created only for a pull request that links an issue or involves a
+workspace member as a reviewer, so a busy repository's checks on unrelated pull
+requests write nothing. Each row keeps a `ReviewPointer` for every GitHub account
+asked to review it or holding a decision on it while it is open, which is what
+the Reviews list reads.
 """
 
 from __future__ import annotations
 
 import logging
 from datetime import datetime
-from typing import Any, Callable, Mapping
+from typing import Any, Callable, Iterable, Mapping
 
 from app.common.api.dependencies.repositories import Repositories
 from app.common.db.dynamo.github import CheckEntry, PullRequestState, ReviewEntry, pr_state_key, source_millis
@@ -46,6 +49,12 @@ MAX_TRACKED_COMMITS = 3
 """How many head commits keep their checks, enough for a push racing its own checks."""
 
 SAVE_ATTEMPTS = 5
+
+LIVE_PR_STATES = frozenset({"open", "draft"})
+"""Pull request states that still want reviewing, the only ones that keep pointers."""
+
+POINTED_REVIEWS = frozenset({"approved", "changes_requested"})
+"""Review states that keep a reviewer on the pull request's Reviews list."""
 
 SUMMARY_FIELDS: tuple[str, ...] = (
     "head_ref",
@@ -82,6 +91,43 @@ def ci_state(state: PullRequestState) -> str:
     if any(entry.status != "completed" for entry in checks):
         return "pending"
     return "success"
+
+
+def requested_user_ids(pull_request: Mapping[str, Any]) -> list[str]:
+    """The GitHub account ids a pull request asks for a review, teams left out."""
+    reviewers = pull_request.get("requested_reviewers")
+    ids: list[str] = []
+    for reviewer in reviewers if isinstance(reviewers, list) else []:
+        if not isinstance(reviewer, Mapping):
+            continue
+        github_id = str(reviewer.get("id", "") or "")
+        if github_id and github_id not in ids:
+            ids.append(github_id)
+    return ids
+
+
+def involved_ids(state: PullRequestState) -> list[str]:
+    """The GitHub accounts that should point at this pull request: requested or decided, while it is live."""
+    if state.pr_state not in LIVE_PR_STATES:
+        return []
+    decided = {entry.user_id for entry in state.reviews.values() if entry.user_id and entry.state in POINTED_REVIEWS}
+    return sorted(set(state.requested_user_ids) | decided)
+
+
+def involves_member(repositories: Repositories, workspace_id: str, github_ids: Iterable[str]) -> bool:
+    """Whether any of these GitHub accounts is linked to a member of the workspace."""
+    from app.domains.integrations.issue_sync import _user_for_github
+
+    return any(_user_for_github(repositories, workspace_id, github_id) for github_id in dict.fromkeys(github_ids))
+
+
+def _pr_state(pull_request: Mapping[str, Any]) -> str:
+    """The pull request's state as the link rows record it, a merge read from either field."""
+    if pull_request.get("merged") or pull_request.get("merged_at"):
+        return "merged"
+    if str(pull_request.get("state", "") or "") == "closed":
+        return "closed"
+    return "draft" if pull_request.get("draft") else "open"
 
 
 def pull_request_millis(pull_request: Mapping[str, Any]) -> int:
@@ -155,11 +201,28 @@ def apply_pull_request(
         state.requested_reviewers = len(reviewers if isinstance(reviewers, list) else []) + len(
             teams if isinstance(teams, list) else []
         )
+        state.requested_user_ids = requested_user_ids(pull_request)
+        _apply_display(state, pull_request, extra.get("repository"))
         state.pr_updated_ms = pr_updated_ms
         _prune_checks(state)
     else:
         _remember_base(state, base_ref)
     _remember_base(state, previous)
+
+
+def _apply_display(state: PullRequestState, pull_request: Mapping[str, Any], repository: Any) -> None:
+    """Fold the fields the Reviews list draws, keeping a merge terminal."""
+    state.title = str(pull_request.get("title", "") or "") or state.title
+    state.url = str(pull_request.get("html_url", "") or "") or state.url
+    if isinstance(repository, Mapping):
+        state.repository_full_name = str(repository.get("full_name", "") or "") or state.repository_full_name
+    author = pull_request.get("user")
+    if isinstance(author, Mapping):
+        state.author_login = str(author.get("login", "") or "") or state.author_login
+        state.author_id = str(author.get("id", "") or "") or state.author_id
+    state.pr_created_at = str(pull_request.get("created_at", "") or "") or state.pr_created_at
+    if state.pr_state != "merged":
+        state.pr_state = _pr_state(pull_request)
 
 
 def _from_fork(head: Mapping[str, Any], base: Mapping[str, Any], repository: Any) -> bool:
@@ -188,15 +251,19 @@ def _prune_checks(state: PullRequestState) -> None:
 def apply_review(state: PullRequestState, review: Mapping[str, Any], action: str) -> None:
     """Fold one review into the reviewer's entry, keeping the highest review id.
 
-    A comment-only review is skipped, because it neither approves nor blocks and
-    must not hide the reviewer's earlier decision. A dismissal turns the dismissed
-    review into one that no longer counts.
+    A submitted review of any kind answers the reviewer's request, as it does on
+    GitHub. A comment-only review is then skipped, because it neither approves nor
+    blocks and must not hide the reviewer's earlier decision. A dismissal turns the
+    dismissed review into one that no longer counts.
     """
     user = review.get("user")
     login = str(user.get("login", "") or "") if isinstance(user, Mapping) else ""
+    user_id = str(user.get("id", "") or "") if isinstance(user, Mapping) else ""
     review_id = review.get("id")
     if not login or not isinstance(review_id, int) or isinstance(review_id, bool):
         return
+    if action == "submitted" and user_id in state.requested_user_ids:
+        state.requested_user_ids = [github_id for github_id in state.requested_user_ids if github_id != user_id]
     review_state_value = "dismissed" if action == "dismissed" else str(review.get("state", "") or "").lower()
     if review_state_value not in DECIDING_REVIEWS:
         return
@@ -205,7 +272,7 @@ def apply_review(state: PullRequestState, review: Mapping[str, Any], action: str
         return
     if current is not None and current.review_id == review_id and current.state == "dismissed":
         return
-    state.reviews[login] = ReviewEntry(review_id=review_id, state=review_state_value)
+    state.reviews[login] = ReviewEntry(review_id=review_id, state=review_state_value, user_id=user_id)
 
 
 def apply_check_run(state: PullRequestState, check_run: Mapping[str, Any]) -> None:
@@ -246,8 +313,9 @@ def update_state(
     """Apply `change` to one pull request's row, retrying a lost race against the winner.
 
     `create` says whether a missing row may be started, which only a delivery that
-    linked an issue does. Answers the saved row, or `None` when there was nothing to
-    change.
+    linked an issue or involves a member as a reviewer does. Answers the saved row,
+    or `None` when there was nothing to change. Once the row is saved its review
+    pointers follow it: new accounts gain one and accounts that left lose theirs.
     """
     for _attempt in range(SAVE_ATTEMPTS):
         stored = repositories.github.get_pr_state(workspace_id, repository_id, number)
@@ -264,16 +332,28 @@ def update_state(
             )
         )
         change(state)
+        state.reviewer_ids = involved_ids(state)
         if stored is not None and state.model_dump() == stored.model_dump():
             return stored
         expected = stored.version if stored is not None else 0
         if repositories.github.save_pr_state(state, expected_version=expected):
+            _sync_pointers(repositories, state, stored.reviewer_ids if stored is not None else [])
             return state.model_copy(update={"version": expected + 1})
     _log.warning(
         "Gave up writing a pull request's state after repeated races.",
         extra={"event": "integrations.pr_state_contended"},
     )
     raise RuntimeError("pull request state write kept losing its race")
+
+
+def _sync_pointers(repositories: Repositories, state: PullRequestState, before: Iterable[str]) -> None:
+    """Add the pointers a saved row gained and drop the ones it lost."""
+    previous = set(before)
+    current = set(state.reviewer_ids)
+    for github_id in sorted(current - previous):
+        repositories.github.put_review_pointer(state.workspace_id, github_id, state.repository_id, state.pr_number)
+    for github_id in sorted(previous - current):
+        repositories.github.delete_review_pointer(state.workspace_id, github_id, state.repository_id, state.pr_number)
 
 
 def propagate(repositories: Repositories, workspace_id: str, state: PullRequestState) -> int:
@@ -291,7 +371,7 @@ def propagate(repositories: Repositories, workspace_id: str, state: PullRequestS
 
 
 def handle_review(repositories: Repositories, workspace_id: str, body: Mapping[str, Any]) -> None:
-    """Record one `pull_request_review` delivery on a linked pull request."""
+    """Record one `pull_request_review` delivery on a linked pull request or one a member reviews."""
     pull_request = body.get("pull_request")
     review = body.get("review")
     repository = body.get("repository")
@@ -306,7 +386,13 @@ def handle_review(repositories: Repositories, workspace_id: str, body: Mapping[s
         apply_pull_request(state, pull_request, millis, repository=repository)
         apply_review(state, review, action)
 
-    state = update_state(repositories, workspace_id, str(repository.get("id", "")), number, change, create=False)
+    candidates = requested_user_ids(pull_request)
+    reviewer = review.get("user")
+    reviewer_id = str(reviewer.get("id", "") or "") if isinstance(reviewer, Mapping) else ""
+    if reviewer_id and str(review.get("state", "") or "").lower() in POINTED_REVIEWS:
+        candidates.append(reviewer_id)
+    create = bool(candidates) and involves_member(repositories, workspace_id, candidates)
+    state = update_state(repositories, workspace_id, str(repository.get("id", "")), number, change, create=create)
     if state is not None and propagate(repositories, workspace_id, state):
         pr_summary.refresh_for_pr(repositories, workspace_id, state.node_id)
 

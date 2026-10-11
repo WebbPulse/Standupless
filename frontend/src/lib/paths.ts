@@ -97,6 +97,10 @@ export const projectPath = (
       : `?team=${encodeURIComponent(teamKeyPrefix)}`
   }`;
 
+/** One document, reached by its own id whichever project or initiative holds it. */
+export const documentPath = (slug: string, documentId: string): string =>
+  `${workspacePath(slug)}/documents/${documentId}`;
+
 /** One project opened on its Updates tab, where a notification about one lands. */
 export const projectUpdatesTabPath = (
   slug: string,
@@ -146,6 +150,10 @@ export const issuePath = (slug: string, issueKey: string): string =>
 /** The workspace inbox. */
 export const inboxPath = (slug: string): string =>
   `${workspacePath(slug)}/inbox`;
+
+/** The pull requests waiting on the caller as a reviewer. */
+export const reviewsPath = (slug: string): string =>
+  `${workspacePath(slug)}/reviews`;
 
 /** Workspace search. */
 export const searchPath = (slug: string): string =>

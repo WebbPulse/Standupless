@@ -193,7 +193,7 @@ def can_delete_initiative(context: AuthzContext, initiative: Initiative) -> bool
 
 
 def delete_initiative(repositories: Repositories, context: AuthzContext, initiative_id: str) -> None:
-    """Delete an initiative and its updates, leaving every project it held in place outside it.
+    """Delete an initiative with its updates and documents, leaving every project it held in place outside it.
 
     Every project carrying it is detached, the ones on teams the caller cannot
     see included, so no project is left pointing at an initiative that is gone.
@@ -205,6 +205,7 @@ def delete_initiative(repositories: Repositories, context: AuthzContext, initiat
         if project.initiative_id == initiative.initiative_id:
             repositories.planning.set_project_initiative(context.workspace_id, project.project_id, None)
     repositories.planning.delete_initiative_updates(context.workspace_id, initiative.initiative_id)
+    repositories.documents.delete_for_parent(context.workspace_id, "initiative", initiative.initiative_id)
     repositories.planning.delete(context.workspace_id, initiative.planning_key)
 
 
@@ -218,9 +219,12 @@ def _membership_project(
     return initiative, project, teams
 
 
-def _project_read(repositories: Repositories, context: AuthzContext, project_id: str) -> ProjectRead:
-    """One project as the caller reads it after a membership change."""
-    project, teams = load_readable_project(repositories, context, project_id)
+def _project_read(repositories: Repositories, context: AuthzContext, project: Project, teams: list[str]) -> ProjectRead:
+    """One project as the caller reads it after a membership change.
+
+    Built from the row the write returned rather than a fresh read, which may
+    not yet see the change.
+    """
     return ProjectRead.from_row(
         project, teams, default_interval_days=workspace_interval(repositories.workspaces, context.workspace_id)
     )
@@ -230,25 +234,28 @@ def add_project_to_initiative(
     repositories: Repositories, context: AuthzContext, initiative_id: str, project_id: str
 ) -> ProjectRead:
     """Put a project in an initiative, moving it out of any other it was in."""
-    initiative, project, _ = _membership_project(repositories, context, initiative_id, project_id)
+    initiative, project, teams = _membership_project(repositories, context, initiative_id, project_id)
     if project.initiative_id != initiative.initiative_id:
-        if not repositories.planning.set_project_initiative(
+        written = repositories.planning.set_project_initiative(
             context.workspace_id, project.project_id, initiative.initiative_id
-        ):
+        )
+        if written is None:
             raise not_found()
-    return _project_read(repositories, context, project.project_id)
+        project = written
+    return _project_read(repositories, context, project, teams)
 
 
 def remove_project_from_initiative(
     repositories: Repositories, context: AuthzContext, initiative_id: str, project_id: str
 ) -> ProjectRead:
     """Take a project out of an initiative, or 404 when it is not in that one."""
-    initiative, project, _ = _membership_project(repositories, context, initiative_id, project_id)
+    initiative, project, teams = _membership_project(repositories, context, initiative_id, project_id)
     if project.initiative_id != initiative.initiative_id:
         raise not_found()
-    if not repositories.planning.set_project_initiative(context.workspace_id, project.project_id, None):
+    written = repositories.planning.set_project_initiative(context.workspace_id, project.project_id, None)
+    if written is None:
         raise not_found()
-    return _project_read(repositories, context, project.project_id)
+    return _project_read(repositories, context, written, teams)
 
 
 def update_cursor_scope(workspace_id: str, initiative_id: str) -> str:

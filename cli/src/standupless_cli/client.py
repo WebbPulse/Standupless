@@ -26,6 +26,11 @@ from standupless_cli._generated.models import (
     CycleRead,
     CycleSettingsRead,
     CycleSettingsUpdate,
+    DocumentCreate,
+    DocumentListRead,
+    DocumentPatch,
+    DocumentRead,
+    DocumentSummaryRead,
     InitiativeCreate,
     InitiativeRead,
     InitiativeUpdate,
@@ -593,6 +598,31 @@ class StanduplessClient:
         """Post an update on an initiative, setting its health."""
         path = f"/api/workspaces/{workspace_id}/initiatives/{initiative_id}/updates"
         return cast(InitiativeUpdateRead, self._request("POST", path, json=body))
+
+    def list_documents(self, workspace_id: str, parent_kind: str, parent_id: str) -> list[DocumentSummaryRead]:
+        """A project's or an initiative's documents, most recently edited first."""
+        path = f"/api/workspaces/{workspace_id}/{parent_kind}s/{parent_id}/documents"
+        return cast(DocumentListRead, self._request("GET", path))["documents"]
+
+    def get_document(self, workspace_id: str, document_id: str) -> DocumentRead:
+        """One document with its Markdown body."""
+        return cast(DocumentRead, self._request("GET", f"/api/workspaces/{workspace_id}/documents/{document_id}"))
+
+    def create_document(
+        self, workspace_id: str, parent_kind: str, parent_id: str, body: DocumentCreate
+    ) -> DocumentRead:
+        """Write a new document under a project or an initiative."""
+        path = f"/api/workspaces/{workspace_id}/{parent_kind}s/{parent_id}/documents"
+        return cast(DocumentRead, self._request("POST", path, json=body))
+
+    def update_document(self, workspace_id: str, document_id: str, body: DocumentPatch) -> DocumentRead:
+        """Rename or rewrite a document; only the fields present are changed."""
+        path = f"/api/workspaces/{workspace_id}/documents/{document_id}"
+        return cast(DocumentRead, self._request("PATCH", path, json=body))
+
+    def delete_document(self, workspace_id: str, document_id: str) -> None:
+        """Delete a document with its version history."""
+        self._request("DELETE", f"/api/workspaces/{workspace_id}/documents/{document_id}")
 
     def get_release_pipeline(self, workspace_id: str, team_id: str) -> ReleasePipelineRead:
         """A team's ordered release stages and the GitHub environments mapped to each."""

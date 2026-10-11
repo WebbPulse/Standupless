@@ -20,6 +20,7 @@ jobs:
       frontend: ${{ steps.filter.outputs.frontend }}
       cli: ${{ steps.filter.outputs.cli }}
       desktop: ${{ steps.filter.outputs.desktop }}
+      frontend_paths: ${{ steps.filter.outputs.frontend_paths }}
     steps:
       - uses: actions/checkout@v7
 
@@ -43,6 +44,11 @@ jobs:
               - 'desktop/**'
               - '.github/workflows/ci.yml'
               - '.github/workflows/release-desktop.yml'
+            frontend_paths:
+              - 'frontend/src/api/**'
+              - 'backend/tests/common/test_frontend_paths.py'
+              - 'backend/tests/common/route_contract.json'
+              - '.github/workflows/ci.yml'
 
   affected:
     name: Resolve the affected domains
@@ -211,6 +217,33 @@ jobs:
       - name: Audit production dependencies
         run: npm audit --omit=dev --audit-level=moderate
 
+  frontend-paths:
+    name: Frontend paths match backend routes
+    needs: changes
+    if: needs.changes.outputs.frontend_paths == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.13"
+
+      - name: Install pytest
+        run: python -m pip install "pytest>=9.1.1"
+
+      - name: Check every frontend path against the route contract
+        run: python -m pytest tests/common/test_frontend_paths.py --noconftest -p no:cacheprovider -o addopts= -q
+
   e2e-local:
     name: E2E on a local stack
     needs: changes
@@ -284,6 +317,10 @@ jobs:
           "SLACK_CLIENT_ID": "local-stack-slack-client-id",
           "SLACK_CLIENT_SECRET": "local-stack-slack-client-secret",
           "SLACK_SIGNING_SECRET": "local-stack-slack-signing-secret",
+          "DISCORD_APPLICATION_ID": "1000000000000000001",
+          "DISCORD_PUBLIC_KEY": "bcf89e8d80188588b24a8aa19066c7365e40b260ca0b64cee971fecae3c4492c",
+          "DISCORD_CLIENT_SECRET": "local-stack-discord-client-secret",
+          "DISCORD_BOT_TOKEN": "local-stack-discord-bot-token",
           "E2E_USER_EMAIL": "e2e-local-user@standupless.dev",
           "E2E_USER_PASSWORD": "E2eLocalStackPassw0rd"
         }
@@ -315,6 +352,7 @@ jobs:
       - frontend
       - cli
       - desktop
+      - frontend-paths
       - e2e-local
     if: always()
     steps:

@@ -20,6 +20,7 @@ from typing import Any
 import pytest
 
 from app.common.api.schemas.releases import ReleaseBackfill
+from app.common.db.dynamo.github import IssueLink, link_key
 from app.common.db.dynamo.releases import PipelineStage, ReleasePipeline, pipeline_key
 from app.domains.integrations.deployments import backfill, handle_deployment_status
 from app.domains.integrations.github_deployments import DeploymentPage, DeploymentRef, PullRef
@@ -251,6 +252,25 @@ def test_a_promotion_merge_names_its_release_and_carries_the_range(
     assert first.issue_id not in release.issue_ids
 
 
+def test_a_reused_promotion_branch_gets_the_next_letter(repositories: Any, installed: str, github: FakeGitHub) -> None:
+    """A second promotion from a reused branch name is the next letter; a redelivery keeps its name."""
+    _pin(repositories)
+    github.messages = {SECOND: "Merge pull request #230", THIRD: "Merge pull request #231"}
+    github.merges = {
+        SECOND: PROMOTION,
+        THIRD: PullRef(number=231, title="Promote", head_ref=PROMOTION.head_ref, url=None),
+    }
+
+    handle_deployment_status(repositories, WORKSPACE, _delivery(SECOND))
+    handle_deployment_status(repositories, WORKSPACE, _delivery(THIRD))
+    handle_deployment_status(repositories, WORKSPACE, _delivery(THIRD))
+
+    newest, oldest = _releases(repositories)
+    assert oldest.name == "2026-10-07-b"
+    assert newest.name == "2026-10-07-c"
+    assert newest.pr_number == 231
+
+
 def test_keys_come_from_pull_request_titles_and_branches(repositories: Any, installed: str, github: FakeGitHub) -> None:
     """A squash commit whose message names no key is read through its pull request's title and branch."""
     issue = seed_issue(repositories, WORKSPACE, TEAM, "01JB0000000000000000000IS1", "ABC", 1)
@@ -400,6 +420,132 @@ def test_a_backfill_refuses_an_unmapped_environment_and_a_bad_cursor(
     assert bad.value.status_code == 422
 
 
+def _three_deployments(repositories: Any, github: FakeGitHub) -> None:
+    """A pinned repository with a Production stage and three past deployments, two naming ABC-1 and ABC-2."""
+    _pin(repositories)
+    seed_issue(repositories, WORKSPACE, TEAM, "01JB0000000000000000000IS1", "ABC", 1)
+    seed_issue(repositories, WORKSPACE, TEAM, "01JB0000000000000000000IS3", "ABC", 2)
+    repositories.releases.put_pipeline(
+        ReleasePipeline(
+            workspace_id=WORKSPACE,
+            planning_key=pipeline_key(TEAM),
+            team_id=TEAM,
+            stages=[PipelineStage(stage_id="production", name="Production", github_environments=["production"])],
+        )
+    )
+    github.messages = {FIRST: "ABC-1", SECOND: "ABC-2", THIRD: "Bump dependencies"}
+    github.deployments = [
+        DeploymentRef(deployment_id=30, sha=THIRD, created_at=_at(7)),
+        DeploymentRef(deployment_id=20, sha=SECOND, created_at=_at(5)),
+        DeploymentRef(deployment_id=10, sha=FIRST, created_at=_at(3)),
+    ]
+
+
+def test_a_backfill_skips_recorded_deployments_without_reading_github(
+    repositories: Any, installed: str, github: FakeGitHub
+) -> None:
+    """A second pass over deployments whose releases reached the stage reads no commits or pull requests."""
+    _three_deployments(repositories, github)
+    first = backfill(repositories, WORKSPACE, TEAM, ReleaseBackfill(limit=5))
+    assert first.releases_created == 3
+    reads = (len(github.compares), len(github.heads))
+
+    again = backfill(repositories, WORKSPACE, TEAM, ReleaseBackfill(limit=5))
+
+    assert again.deployments_scanned == 3
+    assert again.deployments_skipped == 3
+    assert again.releases_created == 0
+    assert (len(github.compares), len(github.heads)) == reads
+    assert again.stopped_early is False
+
+
+def _low_after_first_compare(monkeypatch: pytest.MonkeyPatch, github: FakeGitHub) -> None:
+    """Make the stood-in compare go through the budget and report the installation low after its first answer."""
+    from app.domains.integrations import github_budget, github_issues
+
+    def compare(token: str, repository_id: Any, base: str, head: str) -> list[tuple[str, str]]:
+        """Check the budget, answer the range, and report 2000 of 5000 calls left."""
+        github_budget.before_call()
+        github.compares.append((base, head))
+        github_budget.after_call(
+            {"x-ratelimit-limit": "5000", "x-ratelimit-remaining": "2000", "x-ratelimit-reset": "1791000000"}
+        )
+        shas = list(github.messages)
+        start = shas.index(base) + 1 if base in shas else 0
+        return [(sha, github.messages[sha]) for sha in shas[start : shas.index(head) + 1]]
+
+    monkeypatch.setattr(github_issues, "compare_commits", compare)
+
+
+def test_a_backfill_stops_early_to_keep_half_the_budget_for_live_sync(
+    repositories: Any, installed: str, github: FakeGitHub, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Below half the installation budget a page stops, keeps what it recorded, and says when to resume."""
+    _three_deployments(repositories, github)
+    _low_after_first_compare(monkeypatch, github)
+
+    page = backfill(repositories, WORKSPACE, TEAM, ReleaseBackfill(limit=3))
+
+    assert page.stopped_early is True
+    assert page.deployments_scanned == 1
+    assert page.releases_created == 1
+    assert page.next_cursor == f"{REPOSITORY_ID}:30:1"
+    assert page.rate_limit_remaining == 2000
+    assert page.rate_limit == 5000
+    assert page.resume_after == datetime.fromtimestamp(1_791_000_000, tz=timezone.utc)
+    assert page.message is not None and "2000 of 5000" in page.message
+    assert len(github.compares) == 1
+
+
+def test_a_stopped_backfill_resumes_from_its_cursor(
+    repositories: Any, installed: str, github: FakeGitHub, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Passing the cursor back after the reset records the deployments the stopped page did not reach."""
+    _three_deployments(repositories, github)
+    _low_after_first_compare(monkeypatch, github)
+    page = backfill(repositories, WORKSPACE, TEAM, ReleaseBackfill(limit=3))
+    from app.domains.integrations import github_issues
+
+    def plain(token: str, repository_id: Any, base: str, head: str) -> list[tuple[str, str]]:
+        """The range with a full budget behind it."""
+        github.compares.append((base, head))
+        shas = list(github.messages)
+        return [(sha, github.messages[sha]) for sha in shas[shas.index(base) + 1 : shas.index(head) + 1]]
+
+    monkeypatch.setattr(github_issues, "compare_commits", plain)
+
+    rest = backfill(repositories, WORKSPACE, TEAM, ReleaseBackfill(limit=3, cursor=page.next_cursor))
+
+    assert rest.stopped_early is False
+    assert rest.releases_created == 2
+    assert rest.next_cursor is None
+    assert len(_releases(repositories)) == 3
+
+
+def test_a_rate_limited_backfill_answers_a_cursor_rather_than_failing(
+    repositories: Any, installed: str, github: FakeGitHub, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A rate limit GitHub enforces stops the page with the cursor it started from and a message."""
+    from webbpulse.integrations.github import GitHubRateLimited
+
+    from app.domains.integrations import github_issues
+
+    _three_deployments(repositories, github)
+
+    def limited(token: str, repository_id: Any, base: str, head: str) -> list[tuple[str, str]]:
+        """Refuse as GitHub does once the installation is out of calls."""
+        raise GitHubRateLimited("GET compare answered 403")
+
+    monkeypatch.setattr(github_issues, "compare_commits", limited)
+
+    page = backfill(repositories, WORKSPACE, TEAM, ReleaseBackfill(limit=3))
+
+    assert page.stopped_early is True
+    assert page.deployments_scanned == 0
+    assert page.next_cursor == f"{REPOSITORY_ID}::1"
+    assert page.message is not None and "rate limited" in page.message
+
+
 def _consume(repositories: Any, delivery: dict[str, Any]) -> None:
     """Run one deployment delivery through the github-events consumer, under that function's own grant."""
     from app.domains.integrations.consumers import events
@@ -472,3 +618,78 @@ def test_list_releases_answers_a_release_a_deployment_recorded(
     assert [row["release_id"] for row in listed["releases"]] == [release.release_id]
     assert listed["releases"][0]["source"] == "github_deployment"
     assert found["release_id"] == release.release_id
+
+
+def _link(issue: Any, number: int, magic_word: str | None, state: str = "merged") -> IssueLink:
+    """One pull request link of `issue` in the installed repository, closing it when `magic_word` is set."""
+    link_id = f"PR_{number}#{issue.issue_id}"
+    return IssueLink(
+        workspace_id=WORKSPACE,
+        github_key=link_key(link_id),
+        ws_issue=f"{WORKSPACE}#{issue.issue_id}",
+        link_id=link_id,
+        issue_id=issue.issue_id,
+        issue_key=f"ABC-{issue.number}",
+        repository_full_name=REPOSITORY_FULL_NAME,
+        repository_id=REPOSITORY_ID,
+        pr_number=number,
+        pr_state=state,
+        magic_word=magic_word,
+        pr_updated_ms=1,
+    )
+
+
+def test_a_release_moves_only_the_issues_a_pull_request_closes(
+    repositories: Any, installed: str, github: FakeGitHub
+) -> None:
+    """An issue its merged pull request only references stays put; the one it fixes is finished."""
+    _pin(repositories)
+    done = _publishing_production(repositories)
+    fixed = seed_issue(repositories, WORKSPACE, TEAM, "01JB0000000000000000000IS1", "ABC", 1)
+    referenced = seed_issue(repositories, WORKSPACE, TEAM, "01JB0000000000000000000IS3", "ABC", 2)
+    repositories.github.put_link(_link(fixed, 7, "fixes"))
+    repositories.github.put_link(_link(referenced, 8, None))
+    github.messages = {THIRD: "Merge pull request #230 from acme/promote/2026-10-07-b\n\nABC-1 ABC-2"}
+    github.merges = {THIRD: PROMOTION}
+
+    _consume(repositories, _delivery(THIRD))
+
+    [release] = _releases(repositories)
+    assert release.issue_ids == [fixed.issue_id, referenced.issue_id]
+    assert release.referenced_issue_ids == [referenced.issue_id]
+    assert repositories.issues.get(WORKSPACE, fixed.issue_id).status_id == done.status_id
+    assert repositories.issues.get(WORKSPACE, referenced.issue_id).status_id == referenced.status_id
+
+
+def test_a_promotion_rereads_which_issues_its_release_closes(
+    repositories: Any, installed: str, github: FakeGitHub
+) -> None:
+    """A release staged before its links were read still leaves a referenced issue alone on promotion."""
+    done = next(row for row in repositories.team_config.list_statuses(WORKSPACE, TEAM) if row.category == "completed")
+    repositories.releases.put_pipeline(
+        ReleasePipeline(
+            workspace_id=WORKSPACE,
+            planning_key=pipeline_key(TEAM),
+            team_id=TEAM,
+            stages=[
+                PipelineStage(stage_id="staging", name="Staging", github_environments=["staging"]),
+                PipelineStage(
+                    stage_id="production",
+                    name="Production",
+                    github_environments=["production"],
+                    status_id=done.status_id,
+                ),
+            ],
+        )
+    )
+    referenced = seed_issue(repositories, WORKSPACE, TEAM, "01JB0000000000000000000IS1", "ABC", 1)
+    github.messages = {FIRST: "Refs ABC-1"}
+
+    handle_deployment_status(repositories, WORKSPACE, _delivery(FIRST, "staging"))
+    repositories.github.put_link(_link(referenced, 9, None))
+    handle_deployment_status(repositories, WORKSPACE, _delivery(FIRST, "production"))
+
+    [release] = _releases(repositories)
+    assert [stage.stage_id for stage in release.stages] == ["staging", "production"]
+    assert release.referenced_issue_ids == [referenced.issue_id]
+    assert repositories.issues.get(WORKSPACE, referenced.issue_id).status_id == referenced.status_id

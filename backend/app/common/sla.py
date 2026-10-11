@@ -58,6 +58,13 @@ def sla_status(issue: Issue, now: datetime | None = None) -> SlaStatus:
     return "on_track"
 
 
+def sla_breach_key(issue: Issue) -> tuple[bool, float, str]:
+    """The key the SLA breach sort climbs: soonest breach first, issues with no running timer last."""
+    running = issue.sla_breaches_at is not None and issue.archived_at is None
+    breaches = issue.sla_breaches_at.timestamp() if running and issue.sla_breaches_at is not None else 0.0
+    return (not running, breaches, issue.issue_id)
+
+
 def team_sla_settings(repositories: Repositories, workspace_id: str, team_id: str) -> SlaSettings:
     """A team's SLA rules, the off default when none were saved."""
     stored = repositories.team_config.get_sla_settings(workspace_id, team_id)

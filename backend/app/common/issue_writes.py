@@ -60,7 +60,7 @@ from app.common.issue_rules import (
 from app.common.labels import replace_group_siblings
 from app.common.mentions import mentioned_user_ids
 from app.common.relation_effects import child_activity
-from app.common.sla import apply_sla
+from app.common.sla import apply_sla, sla_breach_key
 
 PATCHABLE_FIELDS: tuple[str, ...] = (
     "title",
@@ -107,6 +107,8 @@ def sort_key(sort: str) -> Any:
         return lambda issue: (-PRIORITY_ORDER.get(issue.priority, 4), issue.updated_at)
     if sort == "due_asc":
         return lambda issue: (issue.due_date is None, issue.due_date or "", issue.issue_id)
+    if sort == "sla_asc":
+        return sla_breach_key
     if sort == "manual":
         return lambda issue: (issue.sort_order is None, issue.sort_order or "", issue.issue_id)
     return lambda issue: (issue.updated_at, issue.issue_id)
@@ -115,11 +117,11 @@ def sort_key(sort: str) -> Any:
 def descending(sort: str) -> bool:
     """Whether one sort reads newest or highest first.
 
-    `key_asc`, `due_asc` and `manual` climb; the rest descend, which is what their
+    `key_asc`, `due_asc`, `sla_asc` and `manual` climb; the rest descend, which is what their
     names say. A manual order climbs so the smallest key is the top of the list,
     and an issue nobody has placed yet sorts after every placed one.
     """
-    return sort not in ("key_asc", "due_asc", "manual")
+    return sort not in ("key_asc", "due_asc", "sla_asc", "manual")
 
 
 def list_issues(

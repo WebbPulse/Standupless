@@ -40,6 +40,7 @@ import {
   PriorityPicker,
 } from '../../components/issues/PropertyPickers';
 import EditableText from '../../components/planning/EditableText';
+import DocumentsSection from '../../components/planning/DocumentsSection';
 import MilestonesSection from '../../components/planning/MilestonesSection';
 import ProjectIcon from '../../components/planning/ProjectIcon';
 import ProjectIssuesView from '../../components/planning/ProjectIssuesView';
@@ -627,6 +628,14 @@ export const ProjectDetail: React.FC = () => {
                 }}
                 onDelete={setDeletingMilestone}
                 onOpenIssues={openMilestoneIssues}
+              />
+              <DocumentsSection
+                workspaceId={workspaceId}
+                slug={slug}
+                parentKind="project"
+                parentId={projectId}
+                canCreate={canEdit}
+                people={people}
               />
               <section aria-labelledby="project-issues-preview">
                 <div className="mb-2 flex items-center justify-between">

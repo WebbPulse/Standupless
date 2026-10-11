@@ -49,6 +49,14 @@ vi.mock('../../hooks/useAuth', () => ({
   }),
 }));
 
+vi.mock('../../api/documents', () => ({
+  listDocuments: () => Promise.resolve([]),
+  listIssueDocuments: () => Promise.resolve([]),
+  createDocument: vi.fn(),
+  updateDocument: vi.fn(),
+  deleteDocument: vi.fn(),
+}));
+
 vi.mock('../../api/initiatives', () => ({
   getInitiative: () => getInitiative(),
   updateInitiative: (_w: string, _id: string, body: InitiativeUpdate) =>

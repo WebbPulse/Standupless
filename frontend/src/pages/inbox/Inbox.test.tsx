@@ -625,6 +625,47 @@ describe('inbox', () => {
     );
   });
 
+  it('shows a review request and opens its pull request on enter', async () => {
+    const user = userEvent.setup();
+    const open = vi.spyOn(window, 'open').mockReturnValue(null);
+    listInbox.mockResolvedValue({
+      notifications: [
+        notification({
+          notification_id: 'n-7',
+          kind: 'review_requested',
+          issue_id: '',
+          issue_key: 'acme/api#42',
+          issue_title: 'Refactor the parser',
+          url: 'https://github.com/acme/api/pull/42',
+        }),
+      ],
+      next_cursor: null,
+    });
+    renderPage();
+
+    await user.click(
+      await screen.findByRole('button', { name: /Refactor the parser/ })
+    );
+
+    expect(
+      await screen.findByRole('complementary', { name: 'Review request' })
+    ).toHaveTextContent('requested your review on Refactor the parser');
+    expect(screen.queryByLabelText(/^Peek/)).not.toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'Open the pull request' })
+    ).toBeInTheDocument();
+
+    await keysBound('enter');
+    press('Enter');
+
+    expect(open).toHaveBeenCalledWith(
+      'https://github.com/acme/api/pull/42',
+      '_blank',
+      'noopener,noreferrer'
+    );
+    open.mockRestore();
+  });
+
   it('marks everything read with shift r', async () => {
     renderPage();
 

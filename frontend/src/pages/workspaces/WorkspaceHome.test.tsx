@@ -235,6 +235,14 @@ const launch: ProjectRead = {
   updated_at: '2026-09-18T00:00:00Z',
 };
 
+/** The last stage a release reached this week. */
+const production = {
+  stage_id: 'production',
+  name: 'Production',
+  reached_at: '2026-10-08T12:00:00Z',
+  source: 'github_deployment' as const,
+};
+
 /** A home with something in every section. */
 const fullHome = (): HomeRead => ({
   generated_at: '2026-10-09T12:00:00Z',
@@ -284,6 +292,34 @@ const fullHome = (): HomeRead => ({
     },
   ],
   inbox: { unread_count: 4, items: [] },
+  pull_requests: [
+    {
+      issue,
+      pull_request: {
+        repository_full_name: 'acme/api',
+        number: 42,
+        title: 'Throttle search by caller',
+        url: 'https://github.com/acme/api/pull/42',
+        state: 'open',
+        review_state: 'approved',
+        ci_state: 'failure',
+      },
+    },
+  ],
+  releases: [
+    {
+      release_id: 'rel-1',
+      team_id: 'team-1',
+      workspace_id: 'ws-1',
+      name: 'v1.4.0',
+      source: 'github_deployment',
+      issue_count: 3,
+      stages: [production],
+      current_stage: production,
+      created_at: '2026-10-08T12:00:00Z',
+      updated_at: '2026-10-08T12:00:00Z',
+    },
+  ],
 });
 
 /** A home with nothing in it. */
@@ -305,6 +341,8 @@ const quietHome = (): HomeRead => ({
   shipped: { since: '2026-10-02T12:00:00Z', count: 0, mine: 0, items: [] },
   pulse: [],
   inbox: { unread_count: 0, items: [] },
+  pull_requests: [],
+  releases: [],
 });
 
 /** One workspace member. */
@@ -429,6 +467,27 @@ describe('WorkspaceHome', () => {
     expect(within(planning).getByText(/Maya Chen/)).toBeVisible();
   });
 
+  it('lists open pull requests and this week releases', async () => {
+    renderPage();
+
+    const prs = await screen.findByRole('list', {
+      name: 'Your open pull requests',
+    });
+    expect(
+      within(prs).getByRole('link', { name: 'Throttle search by caller' })
+    ).toHaveAttribute('href', expect.stringContaining('ENG-7'));
+    expect(within(prs).getByRole('link', { name: 'api#42' })).toHaveAttribute(
+      'href',
+      'https://github.com/acme/api/pull/42'
+    );
+
+    const releases = screen.getByRole('list', { name: 'Released this week' });
+    expect(
+      within(releases).getByRole('link', { name: 'v1.4.0' })
+    ).toHaveAttribute('href', '/w/acme/team/ENG/releases/rel-1');
+    expect(within(releases).getByText('3 issues')).toBeVisible();
+  });
+
   it('says so when every section is empty', async () => {
     getHome.mockResolvedValue(quietHome());
     renderPage();
@@ -443,6 +502,12 @@ describe('WorkspaceHome', () => {
       screen.getByText('No projects are planned or in progress.')
     ).toBeInTheDocument();
     expect(screen.getByText('You are all caught up.')).toBeInTheDocument();
+    expect(
+      screen.queryByRole('list', { name: 'Your open pull requests' })
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('list', { name: 'Released this week' })
+    ).not.toBeInTheDocument();
   });
 
   it('offers the setup steps beside the home while GitHub is not connected', async () => {

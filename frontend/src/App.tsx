@@ -46,6 +46,7 @@ import Board from './pages/board/Board';
 import CycleDetail from './pages/planning/CycleDetail';
 import Cycles from './pages/planning/Cycles';
 import Standup from './pages/teams/Standup';
+import DocumentDetail from './pages/planning/DocumentDetail';
 import InitiativeDetail from './pages/planning/InitiativeDetail';
 import Initiatives from './pages/planning/Initiatives';
 import ProjectDetail from './pages/planning/ProjectDetail';
@@ -53,6 +54,7 @@ import Projects from './pages/planning/Projects';
 import Roadmap from './pages/planning/Roadmap';
 import ReleaseDetail from './pages/releases/ReleaseDetail';
 import Releases from './pages/releases/Releases';
+import Reviews from './pages/reviews/Reviews';
 import Inbox from './pages/inbox/Inbox';
 import Landing from './pages/landing/Landing';
 import Privacy from './pages/legal/Privacy';
@@ -178,11 +180,13 @@ const App: React.FC = () => (
           <Route path="projects/:id" element={<ProjectDetail />} />
           <Route path="initiatives" element={<Initiatives />} />
           <Route path="initiatives/:id" element={<InitiativeDetail />} />
+          <Route path="documents/:documentId" element={<DocumentDetail />} />
 
           <Route path="issues" element={<MyIssues />} />
           <Route path="issues/:key" element={<IssueDetail />} />
           <Route path="search" element={<Search />} />
           <Route path="inbox" element={<Inbox />} />
+          <Route path="reviews" element={<Reviews />} />
           <Route path="roadmap" element={<Roadmap />} />
           <Route path="views" element={<Views />} />
           <Route path="views/new" element={<NewView />} />

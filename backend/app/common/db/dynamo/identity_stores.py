@@ -14,12 +14,33 @@ and this product's prefix are the same string.
 
 from __future__ import annotations
 
+from typing import Any, Mapping, cast
+
+from boto3.dynamodb.conditions import Attr, ConditionBase
 from webbpulse.dynamodb import Repository
-from webbpulse.identity.api_keys import API_KEYS_TABLE, DynamoApiKeyStore
+from webbpulse.identity.api_keys import API_KEYS_TABLE, ApiKeyRecord, DynamoApiKeyStore
 from webbpulse.identity.oauth import OAUTH_LINKS_TABLE, DynamoOAuthLinkStore
 from webbpulse.identity.share_tokens import SHARE_TOKENS_TABLE, DynamoShareTokenStore
 
 from app.common.db.dynamo.base import build_identity_repository
+
+
+class _ItemCapture:
+    """Stands in for a repository so the package store renders a record's item without writing it."""
+
+    def __init__(self) -> None:
+        """Start with nothing captured."""
+        self.item: Mapping[str, Any] = {}
+
+    def put(self, item: Mapping[str, Any], condition: ConditionBase | None = None) -> None:
+        """Keep the item the store would have written."""
+        del condition
+        self.item = dict(item)
+
+
+def _live_key() -> ConditionBase:
+    """The condition that a key row exists and is not yet revoked."""
+    return Attr("key_hash").exists() & (Attr("revoked_at").not_exists() | Attr("revoked_at").eq(""))
 
 
 class ApiKeyStoreRepository(DynamoApiKeyStore):
@@ -38,6 +59,32 @@ class ApiKeyStoreRepository(DynamoApiKeyStore):
         """Take an injected package repository, or build this table's own."""
         self._repository = build_identity_repository(API_KEYS_TABLE, repository)
         super().__init__(self._repository)
+
+    def put_action(self, record: ApiKeyRecord) -> dict[str, Any]:
+        """A transaction Put of a freshly minted key, in exactly the shape the package store writes."""
+        capture = _ItemCapture()
+        DynamoApiKeyStore(cast(Repository, capture)).put(record)
+        return self._repository.put_action(dict(capture.item), condition=Attr("key_hash").not_exists())
+
+    def revoke_action(self, key_hash: str, *, revoked_at: str) -> dict[str, Any]:
+        """A transaction Update revoking one live key, failing its condition when already revoked."""
+        return self._repository.update_action(
+            {"key_hash": key_hash},
+            update_expression="SET #revoked = :revoked",
+            expression_values={":revoked": revoked_at},
+            expression_names={"#revoked": "revoked_at"},
+            condition=_live_key(),
+        )
+
+    def delete_live_action(self, key_hash: str) -> dict[str, Any]:
+        """A transaction Delete of one key that is still live, so its slot is freed exactly once."""
+        return self._repository.delete_action({"key_hash": key_hash}, condition=_live_key())
+
+    def count_live_for_tenant(self, tenant_id: str) -> int:
+        """How many keys of one tenant are not revoked, from the tenant index."""
+        if not tenant_id:
+            return 0
+        return len([record for record in self.list_for_tenant(tenant_id) if not record.is_revoked])
 
 
 class ShareTokenStoreRepository(DynamoShareTokenStore):

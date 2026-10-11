@@ -12,18 +12,14 @@ from __future__ import annotations
 
 from typing import Any, Mapping
 
-from app.common import change_source
 from app.common.api.dependencies.authz import AuthzContext
 from app.common.api.dependencies.repositories import Repositories
 from app.common.db.dynamo.slack import SlackInstallation
+from app.domains.integrations.chat.people import WORKSPACE_ROLES, NotLinked, member_context
 from app.domains.integrations.slack import install
 from app.domains.integrations.slack.api import SlackError
 
-WORKSPACE_ROLES = frozenset({"owner", "admin", "member", "guest"})
-
-
-class NotLinked(Exception):
-    """The Slack person has no Standupless account in this workspace that may act."""
+__all__ = ["WORKSPACE_ROLES", "NotLinked", "context_for"]
 
 
 def _email_of(profile: Mapping[str, Any]) -> str:
@@ -48,29 +44,4 @@ def context_for(repositories: Repositories, installation: SlackInstallation, sla
         profile = install.call(installation, "users.info", {"user": slack_user_id})
     except (SlackError, install.BotUnavailable) as error:
         raise NotLinked("Slack did not describe the user") from error
-    email = _email_of(profile)
-    if not email:
-        raise NotLinked("no confirmed email")
-    user = repositories.users.get_by_email(email)
-    if user is None or user.disabled or user.purging_at is not None:
-        raise NotLinked("no account")
-    workspace_id = installation.workspace_id
-    membership = repositories.memberships.get(workspace_id, user.id)
-    if membership is None or membership.role not in WORKSPACE_ROLES:
-        raise NotLinked("not a member")
-    private = repositories.memberships.list_private_team_ids(workspace_id)
-    team_ids: tuple[str, ...] = ()
-    if membership.role == "guest" or private:
-        team_ids = tuple(
-            row.team_id
-            for row in repositories.memberships.list_team_memberships_for_user(workspace_id, user.id)
-            if row.team_id is not None
-        )
-    return AuthzContext(
-        workspace_id=workspace_id,
-        user_id=user.id,
-        role=membership.role,
-        team_ids=team_ids,
-        private_team_ids=private,
-        source=change_source.API,
-    )
+    return member_context(repositories, installation.workspace_id, _email_of(profile))

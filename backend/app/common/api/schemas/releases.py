@@ -438,15 +438,31 @@ class ReleaseBackfill(BaseModel):
 
 
 class ReleaseBackfillRead(BaseModel):
-    """What one backfill call did, and the cursor to continue from, null when it is done."""
+    """What one backfill call did, and the cursor to continue from, null when it is done.
+
+    `deployments_skipped` counts deployments whose release had already reached
+    the stage, which cost no GitHub call. A page that stopped before its limit to
+    keep half the GitHub App's hourly budget for live sync, or to answer inside
+    the request timeout, sets `stopped_early` and says in `message` when to pass
+    the cursor back; `resume_after` is GitHub's budget reset when that is the
+    reason. `rate_limit_remaining` and `rate_limit` are GitHub's last word on the
+    installation's budget, and `github_calls` what this page spent of it.
+    """
 
     team_id: str
     environment: str
     deployments_scanned: int
+    deployments_skipped: int = 0
     releases_created: int
     releases_updated: int
     release_ids: list[str]
     next_cursor: Optional[str] = None
+    stopped_early: bool = False
+    message: Optional[str] = None
+    resume_after: Optional[datetime] = None
+    github_calls: int = 0
+    rate_limit_remaining: Optional[int] = None
+    rate_limit: Optional[int] = None
 
 
 class IssueReleaseRead(BaseModel):

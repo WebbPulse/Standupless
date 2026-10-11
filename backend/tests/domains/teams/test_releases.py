@@ -4,10 +4,13 @@ These pin who may record, change and delete a release and its team's pipeline,
 that one commit lands on one release however many times it is reported, that
 issue references which name nothing are echoed rather than refused, and that an
 issue lists the releases it shipped in only to callers who can see their team.
+They also hold that two releases of a team never share a name: a new one falls to
+the next free name and a rename to a taken one is refused.
 """
 
 from __future__ import annotations
 
+import itertools
 from typing import Any, Iterator
 
 import pytest
@@ -16,6 +19,8 @@ from fastapi.testclient import TestClient
 from app.common.composition.domains import DOMAINS
 from app.common.composition.wiring import build_domain_app
 from app.common.db.dynamo.issues import Issue
+from app.common.db.dynamo.releases import Release, as_release_item, release_key
+from app.common.releases import name_candidates
 from tests.domains.helpers import (
     ADMIN,
     GUEST,
@@ -363,3 +368,80 @@ def test_an_issue_added_later_gets_the_reached_stages_status(client: TestClient,
 
     assert added.status_code == 200, added.text
     assert repositories.issues.get(WORKSPACE, issue.issue_id).status_id == _status_id(repositories, "Done")
+
+
+def test_name_candidates_step_dated_names_by_letter_and_others_by_number() -> None:
+    """A dated name takes the next letter, past `z` or undated it takes a number."""
+    dated = name_candidates("2026-10-10-a")
+    plain = name_candidates("Spring")
+
+    assert [next(dated) for _ in range(3)] == ["2026-10-10-a", "2026-10-10-b", "2026-10-10-c"]
+    assert [next(plain) for _ in range(3)] == ["Spring", "Spring-2", "Spring-3"]
+    assert list(itertools.islice(name_candidates("2026-10-10-z"), 2)) == ["2026-10-10-z", "2026-10-10-z-2"]
+
+
+def test_a_taken_name_falls_to_the_next_free_one(client: TestClient) -> None:
+    """A second release named like the first gets the next free name, case insensitively."""
+    sign_in(client, MEMBER)
+    names = [client.post(RELEASES, json={"name": name}).json()["name"] for name in ("2026-10-10-a",) * 3]
+    plain = [client.post(RELEASES, json={"name": name}).json()["name"] for name in ("Spring", "spring")]
+
+    assert names == ["2026-10-10-a", "2026-10-10-b", "2026-10-10-c"]
+    assert plain == ["Spring", "spring-2"]
+
+
+def test_the_same_sha_keeps_its_name(client: TestClient) -> None:
+    """Recording a known commit again advances its release and leaves the name alone."""
+    sign_in(client, MEMBER)
+    first = client.post(RELEASES, json={"name": "2026-10-10-a", "sha": "d" * 40}).json()
+    again = client.post(RELEASES, json={"name": "2026-10-10-a", "sha": "d" * 40}).json()
+
+    assert again["release_id"] == first["release_id"]
+    assert again["name"] == "2026-10-10-a"
+    assert len(client.get(RELEASES).json()["releases"]) == 1
+
+
+def test_a_rename_to_a_taken_name_is_a_conflict(client: TestClient) -> None:
+    """A rename onto another release's name is refused; onto its own or a freed one is not."""
+    sign_in(client, MEMBER)
+    first = client.post(RELEASES, json={"name": "Autumn"}).json()["release_id"]
+    second = client.post(RELEASES, json={"name": "Winter"}).json()["release_id"]
+
+    taken = client.patch(f"{RELEASES}/{second}", json={"name": "autumn"})
+    assert taken.status_code == 409, taken.text
+    assert taken.json()["error_code"] == "CONFLICT"
+    assert "already has a release named autumn" in taken.text
+    assert client.patch(f"{RELEASES}/{second}", json={"name": "WINTER"}).json()["name"] == "WINTER"
+
+    assert client.patch(f"{RELEASES}/{first}", json={"name": "Spring"}).status_code == 200
+    moved = client.patch(f"{RELEASES}/{second}", json={"name": "Autumn"})
+    assert moved.status_code == 200, moved.text
+    assert client.post(RELEASES, json={"name": "Spring"}).json()["name"] == "Spring-2"
+
+
+def test_deleting_a_release_frees_its_name(client: TestClient) -> None:
+    """A deleted release's name is free for the next one."""
+    sign_in(client, MEMBER)
+    release_id = client.post(RELEASES, json={"name": "Gone"}).json()["release_id"]
+    sign_in(client, ADMIN)
+    client.delete(f"{RELEASES}/{release_id}")
+
+    assert client.post(RELEASES, json={"name": "Gone"}).json()["name"] == "Gone"
+
+
+def test_a_release_stored_before_name_claims_still_holds_its_name(client: TestClient, repositories: Any) -> None:
+    """A release written without a claim counts as taken for new releases and renames."""
+    legacy = Release(
+        workspace_id=WORKSPACE,
+        planning_key=release_key(TEAM, "01JB0000000000000000LEGACY"),
+        release_id="01JB0000000000000000LEGACY",
+        team_id=TEAM,
+        name="2026-10-10-a",
+        source="manual",
+    )
+    repositories.releases._repository.put(as_release_item(legacy))
+    sign_in(client, MEMBER)
+    created = client.post(RELEASES, json={"name": "2026-10-10-a"}).json()
+
+    assert created["name"] == "2026-10-10-b"
+    assert client.patch(f"{RELEASES}/{created['release_id']}", json={"name": "2026-10-10-a"}).status_code == 409

@@ -206,6 +206,8 @@ class CarryOverRead(TypedDict):
 
 
 class ChannelCreate(TypedDict, closed=True):
+    discord_channel_id: NotRequired[str | None]
+    discord_channel_name: NotRequired[str]
     enabled: NotRequired[bool]
     events: list[
         Literal[
@@ -230,6 +232,7 @@ class ChannelRead(TypedDict):
     created_by: str
     disabled_at: NotRequired[str | None]
     disabled_reason: NotRequired[str | None]
+    discord_channel_id: NotRequired[str]
     enabled: bool
     events: list[
         Literal[
@@ -248,7 +251,7 @@ class ChannelRead(TypedDict):
     provider: Literal["slack", "discord"]
     slack_channel_id: NotRequired[str]
     team_id: str
-    transport: NotRequired[Literal["webhook", "slack_app"]]
+    transport: NotRequired[Literal["webhook", "slack_app", "discord_app"]]
     updated_at: str
     url_hint: str
 
@@ -428,6 +431,85 @@ class DeliveryAttemptRead(TypedDict):
     latency_ms: int
     response_body: NotRequired[str]
     status_code: int
+
+
+class DiscordChannelRead(TypedDict):
+    id: str
+    name: str
+
+
+class DiscordConnectionRead(TypedDict):
+    configured: bool
+    guild_id: NotRequired[str | None]
+    guild_name: NotRequired[str | None]
+    installed: bool
+    installed_at: NotRequired[str | None]
+    installed_by: NotRequired[str | None]
+
+
+class DiscordInstallUrlRead(TypedDict):
+    expires_at: str
+    url: str
+
+
+class DocumentCreate(TypedDict):
+    body: NotRequired[str]
+    title: str
+
+
+class DocumentMentionRead(TypedDict):
+    issue_id: str
+    key: str
+    team_id: str
+
+
+class DocumentPatch(TypedDict):
+    base_updated_at: NotRequired[str | None]
+    body: NotRequired[str | None]
+    title: NotRequired[str | None]
+
+
+class DocumentRead(TypedDict):
+    author_id: str
+    body: str
+    can_delete: NotRequired[bool]
+    can_edit: NotRequired[bool]
+    created_at: str
+    document_id: str
+    mentions: NotRequired[list[DocumentMentionRead]]
+    parent_id: str
+    parent_kind: Literal["project", "initiative"]
+    parent_name: NotRequired[str]
+    source: NotRequired[Literal["web", "mcp", "cli", "api", "github", "system"] | None]
+    title: str
+    updated_at: str
+    updated_by: str
+    workspace_id: str
+
+
+class DocumentSummaryRead(TypedDict):
+    author_id: str
+    can_delete: NotRequired[bool]
+    can_edit: NotRequired[bool]
+    created_at: str
+    document_id: str
+    parent_id: str
+    parent_kind: Literal["project", "initiative"]
+    parent_name: NotRequired[str]
+    source: NotRequired[Literal["web", "mcp", "cli", "api", "github", "system"] | None]
+    title: str
+    updated_at: str
+    updated_by: str
+    workspace_id: str
+
+
+class DocumentVersionRead(TypedDict):
+    body: str
+    document_id: str
+    edited_at: str
+    edited_by: str
+    title: str
+    version_id: str
 
 
 class DownloadRead(TypedDict):
@@ -875,6 +957,7 @@ class NotificationRead(TypedDict):
     standup_date: NotRequired[str | None]
     team_id: str
     unread: bool
+    url: NotRequired[str | None]
     workspace_id: str
 
 
@@ -1076,11 +1159,18 @@ class ReleaseBackfill(TypedDict):
 
 class ReleaseBackfillRead(TypedDict):
     deployments_scanned: int
+    deployments_skipped: NotRequired[int]
     environment: str
+    github_calls: NotRequired[int]
+    message: NotRequired[str | None]
     next_cursor: NotRequired[str | None]
+    rate_limit: NotRequired[int | None]
+    rate_limit_remaining: NotRequired[int | None]
     release_ids: list[str]
     releases_created: int
     releases_updated: int
+    resume_after: NotRequired[str | None]
+    stopped_early: NotRequired[bool]
     team_id: str
 
 
@@ -1157,6 +1247,41 @@ class RepositoryRead(TypedDict):
     team_id: NotRequired[str | None]
 
 
+class ReviewCountsRead(TypedDict):
+    approved: NotRequired[int]
+    changes_requested: NotRequired[int]
+    needs_review: NotRequired[int]
+
+
+class ReviewIssueRead(TypedDict):
+    issue_id: str
+    key: str
+    team_id: str
+    title: str
+
+
+class ReviewItemRead(TypedDict):
+    author_login: str
+    ci_state: str
+    created_at: NotRequired[str | None]
+    group: Literal["needs_review", "changes_requested", "approved"]
+    issues: NotRequired[list[ReviewIssueRead]]
+    number: int
+    repository_full_name: str
+    repository_id: str
+    review_state: str
+    state: Literal["open", "draft"]
+    title: str
+    updated_at: NotRequired[str | None]
+    url: str
+
+
+class ReviewsRead(TypedDict):
+    counts: ReviewCountsRead
+    github_linked: bool
+    items: list[ReviewItemRead]
+
+
 class RoadmapEntryRead(TypedDict):
     color: NotRequired[str | None]
     counts: CountsRead
@@ -1199,7 +1324,9 @@ class SearchResultRead(TypedDict):
 class ShareLinkCreate(TypedDict):
     expires_in_days: NotRequired[int | None]
     filter: NotRequired[dict[str, Any] | None]
-    sort: NotRequired[Literal["updated_desc", "created_desc", "key_asc", "priority_desc", "due_asc", "manual"] | None]
+    sort: NotRequired[
+        Literal["updated_desc", "created_desc", "key_asc", "priority_desc", "due_asc", "sla_asc", "manual"] | None
+    ]
     target_id: str
     target_type: Literal["issue", "view", "filter"]
     title: NotRequired[str | None]
@@ -1731,6 +1858,7 @@ class UserPreferencesUpdate(TypedDict):
                 "standup_digest",
                 "sla_at_risk",
                 "sla_breached",
+                "review_requested",
             ],
             NotificationChannelsUpdate,
         ]
@@ -1789,13 +1917,15 @@ class ViewCreate(TypedDict):
     layout: NotRequired[Literal["list", "board"] | None]
     name: str
     ordering: NotRequired[
-        Literal["updated_desc", "created_desc", "key_asc", "priority_desc", "due_asc", "manual"] | None
+        Literal["updated_desc", "created_desc", "key_asc", "priority_desc", "due_asc", "sla_asc", "manual"] | None
     ]
     shared: NotRequired[bool]
     show_archived: NotRequired[bool]
     show_completed: NotRequired[bool]
     show_sub_issues: NotRequired[bool]
-    sort: NotRequired[Literal["updated_desc", "created_desc", "key_asc", "priority_desc", "due_asc", "manual"]]
+    sort: NotRequired[
+        Literal["updated_desc", "created_desc", "key_asc", "priority_desc", "due_asc", "sla_asc", "manual"]
+    ]
     sub_group_by: NotRequired[Literal["status", "assignee", "priority", "label", "milestone"] | None]
     team_id: NotRequired[str | None]
     visible_properties: NotRequired[
@@ -1859,13 +1989,15 @@ class ViewUpdate(TypedDict):
     layout: NotRequired[Literal["list", "board"] | None]
     name: NotRequired[str | None]
     ordering: NotRequired[
-        Literal["updated_desc", "created_desc", "key_asc", "priority_desc", "due_asc", "manual"] | None
+        Literal["updated_desc", "created_desc", "key_asc", "priority_desc", "due_asc", "sla_asc", "manual"] | None
     ]
     shared: NotRequired[bool | None]
     show_archived: NotRequired[bool | None]
     show_completed: NotRequired[bool | None]
     show_sub_issues: NotRequired[bool | None]
-    sort: NotRequired[Literal["updated_desc", "created_desc", "key_asc", "priority_desc", "due_asc", "manual"] | None]
+    sort: NotRequired[
+        Literal["updated_desc", "created_desc", "key_asc", "priority_desc", "due_asc", "sla_asc", "manual"] | None
+    ]
     sub_group_by: NotRequired[Literal["status", "assignee", "priority", "label", "milestone"] | None]
     visible_properties: NotRequired[
         list[
@@ -2150,6 +2282,16 @@ class CycleListRead(TypedDict):
     next_cursor: NotRequired[str | None]
 
 
+class DocumentListRead(TypedDict):
+    documents: list[DocumentSummaryRead]
+    next_cursor: NotRequired[str | None]
+
+
+class DocumentVersionListRead(TypedDict):
+    next_cursor: NotRequired[str | None]
+    versions: list[DocumentVersionRead]
+
+
 class ErrorResponse(TypedDict):
     details: NotRequired[list[ValidationErrorDetail] | None]
     error_code: str
@@ -2178,6 +2320,11 @@ class HomeFocusRead(TypedDict):
 class HomeInboxRead(TypedDict):
     items: NotRequired[list[NotificationRead]]
     unread_count: int
+
+
+class HomePullRequestItem(TypedDict):
+    issue: AppCommonApiSchemasIssuesIssueRead
+    pull_request: PullRequestSummaryEntryRead
 
 
 class HomePulseItem(TypedDict):
@@ -2393,6 +2540,7 @@ class ReleaseRead(TypedDict):
 
 
 class SearchRead(TypedDict):
+    documents: NotRequired[list[DocumentSummaryRead]]
     results: NotRequired[list[SearchResultRead]]
 
 
@@ -2497,7 +2645,9 @@ class HomeRead(TypedDict):
     inbox: HomeInboxRead
     projects: NotRequired[list[ProjectRead]]
     projects_total: NotRequired[int]
+    pull_requests: NotRequired[list[HomePullRequestItem]]
     pulse: NotRequired[list[HomePulseItem]]
+    releases: NotRequired[list[ReleaseRead]]
     shipped: HomeShippedRead
     team_ids: list[str]
     today: str

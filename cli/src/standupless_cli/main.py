@@ -29,6 +29,8 @@ from standupless_cli._generated.models import (
     ChannelUpdate,
     CommentRead,
     CycleSettingsUpdate,
+    DocumentCreate,
+    DocumentPatch,
     InitiativeCreate,
     InitiativeUpdate,
     IssueCreate,
@@ -95,6 +97,7 @@ team_app = typer.Typer(help="Teams in the workspace.", no_args_is_help=True)
 cycle_app = typer.Typer(help="A team's cycles.", no_args_is_help=True)
 project_app = typer.Typer(help="Projects in the workspace.", no_args_is_help=True)
 initiative_app = typer.Typer(help="Initiatives: groups of projects across teams.", no_args_is_help=True)
+document_app = typer.Typer(help="Markdown documents under a project or an initiative.", no_args_is_help=True)
 release_app = typer.Typer(help="What shipped where: a team's releases and its release stages.", no_args_is_help=True)
 status_app = typer.Typer(
     help="Workflow statuses: the workspace set every team inherits, and each team's own.", no_args_is_help=True
@@ -116,6 +119,7 @@ app.add_typer(team_app, name="team")
 app.add_typer(cycle_app, name="cycle")
 app.add_typer(project_app, name="project")
 app.add_typer(initiative_app, name="initiative")
+app.add_typer(document_app, name="document")
 app.add_typer(release_app, name="release")
 app.add_typer(status_app, name="status")
 channel_app = typer.Typer(help="Slack and Discord channels a team posts its notifications to.", no_args_is_help=True)
@@ -481,7 +485,7 @@ def issue_list(
     search: Annotated[str | None, typer.Option("--search", "-q", help="Match text in the key or title.")] = None,
     include_closed: Annotated[bool, typer.Option("--all", help="Include completed and cancelled issues.")] = False,
     sort: Annotated[
-        str, typer.Option("--sort", help="updated_desc, created_desc, key_asc, priority_desc or due_asc.")
+        str, typer.Option("--sort", help="updated_desc, created_desc, key_asc, priority_desc, due_asc or sla_asc.")
     ] = "updated_desc",
     limit: Annotated[int, typer.Option("--limit", "-L", min=1, help="Most issues to fetch.")] = 50,
     as_json: JsonFlag = False,
@@ -2695,6 +2699,143 @@ def _print_release(context: Context, team: TeamRead, release: ReleaseDetailRead)
     output.console.print(f"[dim]{context.release_url(team, release['release_id'])}[/dim]", highlight=False)
 
 
+ProjectOption = Annotated[str | None, typer.Option("--project", "-p", help="Parent project name or id.")]
+
+InitiativeOption = Annotated[str | None, typer.Option("--initiative", "-i", help="Parent initiative name or id.")]
+
+
+def _document_parent(context: Context, project: str | None, initiative: str | None) -> tuple[str, str, str]:
+    """The parent kind, id and name a document command names, exactly one of the two."""
+    if bool(project) == bool(initiative):
+        raise typer.BadParameter("Pass exactly one of --project or --initiative.")
+    if project:
+        found = context.project(project)
+        return "project", found["project_id"], found["name"]
+    chosen = context.initiative(initiative or "")
+    return "initiative", chosen["initiative_id"], chosen["name"]
+
+
+@document_app.command("list")
+def document_list(
+    ctx: typer.Context,
+    project: ProjectOption = None,
+    initiative: InitiativeOption = None,
+    as_json: JsonFlag = False,
+) -> None:
+    """List a project's or an initiative's documents, most recently edited first."""
+    context = _state(ctx).context()
+    kind, parent_id, _ = _document_parent(context, project, initiative)
+    documents = context.client.list_documents(context.workspace_id, kind, parent_id)
+    if as_json:
+        output.print_json(documents)
+        return
+    people = context.member_names() if documents else {}
+    rows = [
+        [
+            document["title"],
+            people.get(document["updated_by"], document["updated_by"]),
+            document["updated_at"][:10],
+            document["document_id"],
+        ]
+        for document in documents
+    ]
+    output.table(["TITLE", "EDITED BY", "UPDATED", "ID"], rows, "No documents.")
+
+
+@document_app.command("view")
+def document_view(
+    ctx: typer.Context,
+    document_id: Annotated[str, typer.Argument(help="Document id.")],
+    web: Annotated[bool, typer.Option("--web", help="Open the document in the browser.")] = False,
+    as_json: JsonFlag = False,
+) -> None:
+    """Show a document's Markdown, or open it in the browser with --web."""
+    context = _state(ctx).context()
+    if web:
+        _open(context.document_url(document_id))
+        return
+    found = context.client.get_document(context.workspace_id, document_id)
+    if as_json:
+        output.print_json(found)
+        return
+    people = context.member_names()
+    output.console.print(f"[bold]{found['title']}[/bold]", highlight=False)
+    output.console.print(
+        f"[dim]{found.get('parent_name') or found['parent_id']}, edited by "
+        f"{people.get(found['updated_by'], found['updated_by'])} on {found['updated_at'][:10]}[/dim]",
+        highlight=False,
+    )
+    if found.get("body"):
+        output.console.print()
+        output.console.print(output.Markdown(found.get("body") or ""))
+
+
+@document_app.command("create")
+def document_create(
+    ctx: typer.Context,
+    title: Annotated[str, typer.Argument(help="Document title.")],
+    project: ProjectOption = None,
+    initiative: InitiativeOption = None,
+    body: Annotated[str | None, typer.Option("--body", "-b", help="The document in Markdown.")] = None,
+    body_file: Annotated[
+        Path | None, typer.Option("--body-file", "-F", help="Read the document from a file, or - for stdin.")
+    ] = None,
+    as_json: JsonFlag = False,
+) -> None:
+    """Write a new document under a project or an initiative."""
+    context = _state(ctx).context()
+    kind, parent_id, parent_name = _document_parent(context, project, initiative)
+    payload: DocumentCreate = {"title": title}
+    text = _read_body(body, body_file)
+    if text is not None:
+        payload["body"] = text
+    created = context.client.create_document(context.workspace_id, kind, parent_id, payload)
+    if as_json:
+        output.print_json(created)
+        return
+    output.success(f"Created {created['title']} in {parent_name}")
+    output.console.print(context.document_url(created["document_id"]), highlight=False)
+
+
+@document_app.command("edit")
+def document_edit(
+    ctx: typer.Context,
+    document_id: Annotated[str, typer.Argument(help="Document id.")],
+    title: Annotated[str | None, typer.Option("--title", help="New title.")] = None,
+    body: Annotated[str | None, typer.Option("--body", "-b", help="New Markdown body.")] = None,
+    body_file: Annotated[
+        Path | None, typer.Option("--body-file", "-F", help="Read the new body from a file, or - for stdin.")
+    ] = None,
+    as_json: JsonFlag = False,
+) -> None:
+    """Rename or rewrite a document; the earlier text stays in its history."""
+    context = _state(ctx).context()
+    payload: DocumentPatch = {}
+    if title is not None:
+        payload["title"] = title
+    text = _read_body(body, body_file)
+    if text is not None:
+        payload["body"] = text
+    if not payload:
+        raise typer.BadParameter("Give at least one option to change.")
+    updated = context.client.update_document(context.workspace_id, document_id, payload)
+    if as_json:
+        output.print_json(updated)
+        return
+    output.success(f"Updated {updated['title']}")
+
+
+@document_app.command("delete")
+def document_delete(
+    ctx: typer.Context,
+    document_id: Annotated[str, typer.Argument(help="Document id.")],
+) -> None:
+    """Delete a document and its version history."""
+    context = _state(ctx).context()
+    context.client.delete_document(context.workspace_id, document_id)
+    output.success(f"Deleted document {document_id}")
+
+
 @release_app.command("list")
 def release_list(
     ctx: typer.Context,
@@ -2945,12 +3086,19 @@ def release_backfill(
     ] = None,
     environment: Annotated[str, typer.Option("--environment", help="The GitHub environment to read.")] = "production",
     batch: Annotated[int, typer.Option("--batch", min=1, max=10, help="Deployments per request.")] = 5,
+    cursor: Annotated[
+        str | None, typer.Option("--cursor", help="Continue from the cursor a stopped backfill printed.")
+    ] = None,
     as_json: JsonFlag = False,
 ) -> None:
-    """Rebuild a team's releases from past successful GitHub deployments, newest first. Needs team admin."""
+    """Rebuild a team's releases from past successful GitHub deployments, newest first. Needs team admin.
+
+    Stops when the server pauses to keep the GitHub App's API budget for live sync,
+    printing the cursor to continue from once the budget resets.
+    """
     context = _state(ctx).context()
     chosen = context.team(team)
-    cursor: str | None = None
+    paused: str | None = None
     created = updated = scanned = 0
     release_ids: list[str] = []
     while True:
@@ -2971,6 +3119,9 @@ def release_backfill(
         cursor = result.get("next_cursor")
         if not cursor:
             break
+        if result.get("resume_after"):
+            paused = result.get("message") or "Paused to keep the GitHub App's API budget for live sync."
+            break
     if as_json:
         output.print_json(
             {
@@ -2980,8 +3131,13 @@ def release_backfill(
                 "releases_created": created,
                 "releases_updated": updated,
                 "release_ids": release_ids,
+                "next_cursor": cursor if paused else None,
+                "message": paused,
             }
         )
+        return
+    if paused:
+        output.console.print(f"{paused}\nContinue with --cursor {cursor}", highlight=False)
         return
     output.success(f"Backfilled {created + updated} releases from {scanned} {environment} deployments")
 

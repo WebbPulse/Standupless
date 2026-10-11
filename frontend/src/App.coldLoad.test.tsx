@@ -131,6 +131,8 @@ const answer = (url: URL): unknown => {
       },
       pulse: [],
       inbox: { unread_count: 0, items: [] },
+      pull_requests: [],
+      releases: [],
     };
   }
   if (/\/issues\/?$/.test(path)) {

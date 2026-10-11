@@ -472,7 +472,12 @@ export type IssuePriority = 'none' | 'urgent' | 'high' | 'medium' | 'low';
 
 /** The sort orders the issue list route accepts. */
 export type IssueSort =
-  'updated_desc' | 'created_desc' | 'key_asc' | 'priority_desc' | 'due_asc';
+  | 'updated_desc'
+  | 'created_desc'
+  | 'key_asc'
+  | 'priority_desc'
+  | 'due_asc'
+  | 'sla_asc';
 
 /** The kinds of link a pair of issues may hold. */
 export type LinkType = 'blocks' | 'blocked_by' | 'relates_to' | 'duplicate_of';
@@ -1061,6 +1066,8 @@ export interface SearchResultRead {
 /** The body the search route answers with. It is capped rather than paged. */
 export interface SearchListRead {
   results: SearchResultRead[];
+  /** Documents whose title or body matches, for a workspace wide search. */
+  documents?: DocumentSummaryRead[];
 }
 
 /**
@@ -1097,7 +1104,8 @@ export type NotificationKind =
   | 'overdue'
   | 'standup_digest'
   | 'sla_at_risk'
-  | 'sla_breached';
+  | 'sla_breached'
+  | 'review_requested';
 
 /**
  * Every kind an inbox row can carry: the ones a member can tune, the notice a
@@ -1139,6 +1147,8 @@ export interface NotificationRead {
   snoozed_until?: string | null;
   /** Which client made the change; absent on rows written before sources were recorded. */
   source?: ChangeSource | null;
+  /** The pull request a `review_requested` row points at; null on every other row. */
+  url?: string | null;
   created_at: string;
   expires_at: string;
 }
@@ -1885,6 +1895,47 @@ export type PullRequestReviewState =
 /** The combined result of a linked pull request's checks on its head commit. */
 export type PullRequestCiState = 'none' | 'pending' | 'success' | 'failure';
 
+/** Where a pull request sits on the caller's Reviews list. */
+export type ReviewGroup = 'needs_review' | 'changes_requested' | 'approved';
+
+/** One issue a pull request on the Reviews list links, among those the caller can see. */
+export interface ReviewIssueRead {
+  issue_id: string;
+  key: string;
+  title: string;
+  team_id: string;
+}
+
+/** One pull request waiting on the caller as a reviewer. */
+export interface ReviewItemRead {
+  repository_id: string;
+  repository_full_name: string;
+  number: number;
+  title: string;
+  url: string;
+  author_login: string;
+  state: 'open' | 'draft';
+  group: ReviewGroup;
+  review_state: PullRequestReviewState;
+  ci_state: PullRequestCiState;
+  created_at: string | null;
+  updated_at: string | null;
+  issues: ReviewIssueRead[];
+}
+
+/** How many pull requests sit in each Reviews group. */
+export type ReviewCountsRead = Record<ReviewGroup, number>;
+
+/**
+ * The caller's Reviews list, in the order the page draws it. `github_linked`
+ * is false when the caller has linked no GitHub account.
+ */
+export interface ReviewsRead {
+  github_linked: boolean;
+  counts: ReviewCountsRead;
+  items: ReviewItemRead[];
+}
+
 /**
  * Where a pull request sits in a stack of an issue's pull requests, counted
  * from the one based on the trunk. The state fields describe the whole stack.
@@ -2520,8 +2571,8 @@ export type ChannelEvent = (typeof CHANNEL_EVENTS)[number];
 /** The chat services a team channel can post to. */
 export type ChannelProvider = 'slack' | 'discord';
 
-/** How a team channel posts: through its incoming webhook, or as the installed Slack App's bot. */
-export type ChannelTransport = 'webhook' | 'slack_app';
+/** How a team channel posts: through its incoming webhook, or as the installed Slack or Discord App's bot. */
+export type ChannelTransport = 'webhook' | 'slack_app' | 'discord_app';
 
 /**
  * One Slack or Discord channel a team posts its notifications to. The webhook
@@ -2537,6 +2588,8 @@ export interface ChannelRead {
   transport?: ChannelTransport;
   /** The Slack channel id a `slack_app` channel posts to, empty for a webhook. */
   slack_channel_id?: string;
+  /** The Discord channel id a `discord_app` channel posts to, empty otherwise. */
+  discord_channel_id?: string;
   label: string;
   events: ChannelEvent[];
   enabled: boolean;
@@ -2629,13 +2682,16 @@ export interface ReleaseRead {
 }
 
 /**
- * What adding a team channel takes: either an incoming webhook `url`, or the
- * `slack_channel_id` the installed Slack App's bot posts to, never both.
+ * What adding a team channel takes: exactly one of an incoming webhook `url`,
+ * the `slack_channel_id` the installed Slack App's bot posts to, or the
+ * `discord_channel_id` the installed Discord App's bot posts to.
  */
 export interface ChannelCreate {
   url?: string;
   slack_channel_id?: string;
   slack_channel_name?: string;
+  discord_channel_id?: string;
+  discord_channel_name?: string;
   label?: string;
   events: ChannelEvent[];
   enabled?: boolean;
@@ -2664,6 +2720,22 @@ export interface SlackChannelRead {
   id: string;
   name: string;
   is_private: boolean;
+}
+
+/** Whether this environment has a Discord App and whether this workspace added it to a server. */
+export interface DiscordConnectionRead {
+  configured: boolean;
+  installed: boolean;
+  guild_id?: string | null;
+  guild_name?: string | null;
+  installed_by?: string | null;
+  installed_at?: string | null;
+}
+
+/** One Discord text or announcement channel the installed bot can post to. */
+export interface DiscordChannelRead {
+  id: string;
+  name: string;
 }
 
 /** What a test message got back. */
@@ -3031,6 +3103,12 @@ export interface HomePulseItem {
   update: ProjectUpdateRead;
 }
 
+/** One open or draft pull request on an issue assigned to the caller. */
+export interface HomePullRequestItem {
+  issue: IssueRead;
+  pull_request: PullRequestSummaryEntryRead;
+}
+
 /** The unread count, capped like the inbox badge, and the newest unread rows. */
 export interface HomeInboxRead {
   unread_count: number;
@@ -3053,4 +3131,78 @@ export interface HomeRead {
   shipped: HomeShippedRead;
   pulse: HomePulseItem[];
   inbox: HomeInboxRead;
+  pull_requests: HomePullRequestItem[];
+  releases: ReleaseRead[];
+}
+
+/** The two kinds of record a document can sit under. */
+export type DocumentParentKind = 'project' | 'initiative';
+
+/**
+ * One document without its body, as a listing answers it. `can_edit` and
+ * `can_delete` say what this caller may do with it.
+ */
+export interface DocumentSummaryRead {
+  document_id: string;
+  workspace_id: string;
+  parent_kind: DocumentParentKind;
+  parent_id: string;
+  parent_name: string;
+  title: string;
+  author_id: string;
+  updated_by: string;
+  source?: string | null;
+  created_at: string;
+  updated_at: string;
+  can_edit: boolean;
+  can_delete: boolean;
+}
+
+/** One issue a document mentions, as its key was written. */
+export interface DocumentMentionRead {
+  key: string;
+  issue_id: string;
+  team_id: string;
+}
+
+/** One document with its Markdown and the visible issues it mentions. */
+export interface DocumentRead extends DocumentSummaryRead {
+  body: string;
+  mentions: DocumentMentionRead[];
+}
+
+/** The body a document create takes; the parent comes from the path. */
+export interface DocumentCreate {
+  title: string;
+  body?: string;
+}
+
+/**
+ * The body a document edit takes. `base_updated_at` is the `updated_at` the
+ * editor last read, so an edit over someone else's newer one is a 409.
+ */
+export interface DocumentPatch {
+  title?: string;
+  body?: string;
+  base_updated_at?: string;
+}
+
+/** A list of documents, most recently edited first. */
+export interface DocumentListRead {
+  documents: DocumentSummaryRead[];
+}
+
+/** An earlier title and body of a document, as one edit session left it. */
+export interface DocumentVersionRead {
+  version_id: string;
+  document_id: string;
+  title: string;
+  body: string;
+  edited_by: string;
+  edited_at: string;
+}
+
+/** A document's kept versions, newest first. */
+export interface DocumentVersionListRead {
+  versions: DocumentVersionRead[];
 }

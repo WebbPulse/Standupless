@@ -95,6 +95,11 @@ standupless initiative remove Grow Launch
 standupless initiative updates Grow
 standupless initiative post-update Grow "Two projects slipped" --health at_risk
 standupless initiative delete Grow            # its projects stay
+standupless document list --project Launch      # or --initiative Grow
+standupless document view DOC_ID [--web]
+standupless document create "Launch plan" --project Launch [-b "Markdown" | -F plan.md]
+standupless document edit DOC_ID [--title "New title"] [-F plan.md]
+standupless document delete DOC_ID
 standupless insights [-t ENG | --view VIEW_ID] [-g status|assignee|priority|label|project|cycle|estimate]
                      [--segment-by priority] [-m count|points] [--open] [-c current] [-a me]
 standupless release list -t ENG
@@ -104,7 +109,7 @@ standupless release create -t ENG --name 1.3.0 -i ENG-12 -i ENG-14
 standupless release advance 1.3.0 Production -t ENG
 standupless release pipeline -t ENG [--stage Staging=staging --stage Production=production]
 standupless release pipeline -t ENG --status "Production=Done" --publish Production   # Stage= clears, --no-publish
-standupless release backfill -t ENG [--repository owner/name] [--environment production]
+standupless release backfill -t ENG [--repository owner/name] [--environment production] [--cursor CURSOR]
 standupless standup -t ENG [-d 2026-10-06] [--weekly] [--web]
 standupless standup note -t ENG "On ENG-12, blocked by the review" [-d 2026-10-07] [--clear]
 standupless standup settings -t ENG [--cadence off|daily|weekly] [--send-time 09:00]

@@ -91,7 +91,7 @@ def unprocessable(message: str, error_code: str = "VALIDATION_ERROR") -> HTTPExc
 
 
 def not_configured(app: str = "GitHub App") -> HTTPException:
-    """The 409 every GitHub or Slack route a person reaches gives when that App's credentials are absent.
+    """The 409 every GitHub, Slack or Discord route a person reaches gives when that App's credentials are absent.
 
     The App is created by hand and its values land in the secret out of band, so an
     environment without them is a normal state rather than a server fault, and it has

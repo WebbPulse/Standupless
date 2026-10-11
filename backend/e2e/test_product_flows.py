@@ -34,6 +34,7 @@ from urllib.parse import urlencode, urlsplit
 
 import httpx
 import pytest
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from webbpulse.e2e import worker_id
 from webbpulse.e2e.ephemeral import create_ephemeral_user, describe_delete_failure
 from webbpulse.e2e.identity import login
@@ -549,6 +550,19 @@ class TestViewsDomain:
         assert count.status_code == 200, count.text[:400]
 
     @WRITES
+    def test_the_reviews_list_answers(self, api: Any, workspace: "dict[str, Any]") -> None:
+        """The Reviews list answers for a caller with no pull requests awaiting them.
+
+        The sidebar badge reads it on every page load, so an empty answer has to be
+        a well formed one rather than an error.
+        """
+        response = api.get(f"/api/workspaces/{workspace['id']}/reviews")
+        assert response.status_code == 200, response.text[:400]
+        body = response.json()
+        assert body["items"] == []
+        assert set(body["counts"]) >= {"needs_review", "changes_requested", "approved"}
+
+    @WRITES
     def test_the_workspace_home_answers(self, api: Any, workspace: "dict[str, Any]") -> None:
         """The workspace home answers every section for the run's own workspace.
 
@@ -850,6 +864,79 @@ class TestPlanningDomain:
             removed = api.delete(f"{initiative_path}/projects/{project['id']}")
             assert removed.status_code == 200, removed.text[:400]
             assert removed.json()["initiative_id"] is None
+        finally:
+            deleted = api.delete(initiative_path)
+            assert deleted.status_code in (200, 204), deleted.text[:400]
+            api.delete(project_path)
+
+    @WRITES
+    def test_a_document_round_trips_with_its_backlink(
+        self,
+        api: Any,
+        run_scope: RunScope,
+        workspace: "dict[str, Any]",
+        team: "dict[str, Any]",
+        issue: "dict[str, Any]",
+    ) -> None:
+        """A document under a project and one under an initiative edit, keep history, backlink and delete."""
+        base = f"/api/workspaces/{workspace['id']}"
+        project = _created(
+            api.post(f"{base}/projects", json={"team_id": team["id"], "name": run_scope.name("doc-project")}),
+            "project",
+        )
+        project_path = f"{base}/projects/{project['id']}"
+        initiative = _created(api.post(f"{base}/initiatives", json={"name": run_scope.name("doc-init")}), "initiative")
+        initiative_path = f"{base}/initiatives/{initiative['id']}"
+        try:
+            document = _created(
+                api.post(
+                    f"{project_path}/documents",
+                    json={"title": run_scope.name("spec"), "body": f"Ships with {issue['key']}"},
+                ),
+                "document",
+            )
+            document_path = f"{base}/documents/{document['id']}"
+            assert [row["issue_id"] for row in document["mentions"]] == [issue["id"]]
+
+            listed = api.get(f"{project_path}/documents")
+            assert listed.status_code == 200, listed.text[:400]
+            assert [row["document_id"] for row in listed.json()["documents"]] == [document["id"]]
+
+            backlinks = api.get(f"{base}/issues/{issue['id']}/documents")
+            assert backlinks.status_code == 200, backlinks.text[:400]
+            assert document["id"] in [row["document_id"] for row in backlinks.json()["documents"]]
+
+            everything = api.get(f"{base}/documents")
+            assert everything.status_code == 200, everything.text[:400]
+            assert document["id"] in [row["document_id"] for row in everything.json()["documents"]]
+
+            edited = api.patch(document_path, json={"body": "Rewritten", "base_updated_at": document["updated_at"]})
+            assert edited.status_code == 200, edited.text[:400]
+            assert edited.json()["mentions"] == []
+            stale = api.patch(document_path, json={"title": "Late", "base_updated_at": document["updated_at"]})
+            assert stale.status_code == 409, stale.text[:400]
+
+            readback = api.get(document_path)
+            assert readback.status_code == 200, readback.text[:400]
+            assert readback.json()["body"] == "Rewritten"
+
+            versions = api.get(f"{document_path}/versions")
+            assert versions.status_code == 200, versions.text[:400]
+            assert isinstance(versions.json()["versions"], list)
+
+            unlinked = api.get(f"{base}/issues/{issue['id']}/documents").json()["documents"]
+            assert document["id"] not in [row["document_id"] for row in unlinked]
+
+            note = _created(
+                api.post(f"{initiative_path}/documents", json={"title": run_scope.name("brief")}), "document"
+            )
+            initiative_docs = api.get(f"{initiative_path}/documents")
+            assert initiative_docs.status_code == 200, initiative_docs.text[:400]
+            assert [row["document_id"] for row in initiative_docs.json()["documents"]] == [note["id"]]
+
+            removed = api.delete(document_path)
+            assert removed.status_code == 204, removed.text[:400]
+            assert api.get(document_path).status_code == 404
         finally:
             deleted = api.delete(initiative_path)
             assert deleted.status_code in (200, 204), deleted.text[:400]
@@ -1695,6 +1782,103 @@ class TestShareLinks:
         assert anon.get(f"/api/shared/{token}/issue").status_code == 404
 
 
+IMPORT_TIMEOUT_SECONDS = 180.0
+"""How long the import case waits for the queue consumer before it fails."""
+
+IMPORT_POLL_SECONDS = 3.0
+"""How often the import case reads the job while it waits."""
+
+
+@pytest.fixture(scope="class")
+def import_team(api: Any, run_scope: RunScope, workspace: "dict[str, Any]") -> "Any":
+    """A team the import flow owns, so the imported issues land where no other flow lists."""
+    path = f"/api/workspaces/{workspace['id']}/teams"
+    body = {"name": run_scope.name("import-team"), "key_prefix": "IMP"}
+    created = _created(api.post(path, json=body), "team")
+    yield created
+    api.delete(f"{path}/{created['id']}")
+
+
+class TestIssueImport:
+    """A CSV import runs through the deployed queue and its consumer, end to end.
+
+    The start route only queues the job, so the case proves the whole path: the
+    upload is stored, the page message reaches `integrations-import-consumer`, the
+    consumer writes the issues, marks the job completed and leaves the inbox notice.
+    It runs on staging only, because a local stack has no queue and production is
+    the read-only smoke.
+    """
+
+    @WRITES
+    def test_a_csv_import_completes_through_the_queue(
+        self,
+        api: Any,
+        e2e_env: Any,
+        run_scope: RunScope,
+        workspace: "dict[str, Any]",
+        import_team: "dict[str, Any]",
+    ) -> None:
+        """A three row Jira CSV is queued, completes within the timeout, and its issues exist."""
+        if e2e_env.environment != "staging":
+            pytest.skip("the import queue is exercised on staging only")
+        titles = [run_scope.name(f"imported-{index}") for index in range(1, 4)]
+        csv = "\n".join(
+            [
+                "Summary,Issue key,Status,Priority",
+                f"{titles[0]},E2E-1,To Do,High",
+                f"{titles[1]},E2E-2,In Progress,Medium",
+                f"{titles[2]},E2E-3,Done,Low",
+            ]
+        )
+        base = f"/api/workspaces/{workspace['id']}/imports"
+        request = {"team_id": import_team["id"], "preset": "jira", "csv": csv, "file_name": "e2e-import.csv"}
+
+        preview = api.post(f"{base}/preview", json=request)
+        assert preview.status_code == 200, preview.text[:400]
+        assert preview.json()["importable_rows"] == 3, preview.text[:400]
+
+        started = api.post(base, json=request)
+        assert started.status_code == 202, started.text[:400]
+        import_id = started.json()["import_id"]
+        assert started.json()["status"] in ("queued", "running", "completed"), started.text[:400]
+
+        deadline = time.monotonic() + IMPORT_TIMEOUT_SECONDS
+        job: "dict[str, Any]" = started.json()
+        while job["status"] in ("queued", "running"):
+            if time.monotonic() > deadline:
+                pytest.fail(
+                    f"import {import_id} was still {job['status']} after {IMPORT_TIMEOUT_SECONDS:.0f}s "
+                    f"with {job['processed_rows']} of {job['total_rows']} rows processed"
+                )
+            time.sleep(IMPORT_POLL_SECONDS)
+            polled = api.get(f"{base}/{import_id}")
+            assert polled.status_code == 200, polled.text[:400]
+            job = polled.json()
+
+        assert job["status"] == "completed", job
+        assert job["total_rows"] == 3, job
+        assert job["created_count"] == 3, job
+        assert job["skipped_count"] == 0, job
+
+        listed = api.get(base)
+        assert listed.status_code == 200, listed.text[:400]
+        assert import_id in [row["import_id"] for row in _items(listed.json(), "items")]
+
+        issues = api.get(f"/api/workspaces/{workspace['id']}/issues", params={"team_id": import_team["id"]})
+        assert issues.status_code == 200, issues.text[:400]
+        found = {row.get("title") for row in _items(issues.json(), "issues", "items") if isinstance(row, dict)}
+        assert set(titles) <= found, sorted(str(title) for title in found)
+
+        inbox = api.get(f"/api/workspaces/{workspace['id']}/inbox")
+        assert inbox.status_code == 200, inbox.text[:400]
+        notices = [
+            row
+            for row in _items(inbox.json(), "notifications", "items")
+            if isinstance(row, dict) and row.get("kind") == "import_ready" and row.get("issue_key") == import_id
+        ]
+        assert notices, inbox.text[:400]
+
+
 class TestDeletion:
     """Self serve deletion: a workspace scheduled, cancelled and scheduled again, and the account routes' guards."""
 
@@ -1905,4 +2089,100 @@ class TestSlackApp:
                     "x-slack-signature": _slack_signed(secret, challenge)["x-slack-signature"],
                 },
             )
+            assert stale.status_code == 401, stale.text[:400]
+
+
+DISCORD_PUBLIC_KEY_ENV = "DISCORD_PUBLIC_KEY"
+"""The variable a local stack sets the Discord public key in, which the runner then sees."""
+
+DISCORD_LOCAL_SEED = b"standupless-local-stack-discord"
+"""The seed of the throwaway Ed25519 key a local stack's Discord public key is derived from."""
+
+
+def _discord_signed(body: bytes, *, timestamp: int | None = None) -> dict[str, str]:
+    """The headers Discord would send with one body, signed with the local stack's throwaway key."""
+    key = Ed25519PrivateKey.from_private_bytes(hashlib.sha256(DISCORD_LOCAL_SEED).digest())
+    stamp = str(int(time.time()) if timestamp is None else timestamp)
+    return {"x-signature-timestamp": stamp, "x-signature-ed25519": key.sign(stamp.encode() + body).hex()}
+
+
+class TestDiscordApp:
+    """The Discord App's workspace routes and the two routes Discord calls.
+
+    A stage only offers the App once its keys are in the app secret, so every case
+    accepts both shapes: without them the public routes answer 404 and an install
+    link 409, and with them an unsigned interaction is refused with 401. No run can
+    complete an install, so the workspace routes are held to the not installed
+    answers.
+
+    A local stack's public key comes from a fixed throwaway seed, so there the
+    receiver is also driven with interactions signed the way Discord signs them.
+    """
+
+    @WRITES
+    def test_the_workspace_routes_answer_before_an_install(
+        self, api: Any, workspace: "dict[str, Any]", team: "dict[str, Any]"
+    ) -> None:
+        """The connection reads as not installed and nothing that needs an install pretends to work."""
+        base = f"/api/workspaces/{workspace['id']}/discord"
+        connection = api.get(base)
+        assert connection.status_code == 200, connection.text[:400]
+        assert connection.json()["installed"] is False, connection.json()
+
+        link = api.get(f"{base}/install-url", params={"team_id": team["id"]})
+        if connection.json()["configured"]:
+            assert link.status_code == 200, link.text[:400]
+            assert urlsplit(link.json()["url"]).netloc == "discord.com", link.json()
+        else:
+            assert link.status_code == 409, link.text[:400]
+
+        channels = api.get(f"/api/workspaces/{workspace['id']}/teams/{team['id']}/webhooks/discord-channels")
+        assert channels.status_code == 404, channels.text[:400]
+
+        removed = api.delete(base)
+        assert removed.status_code == 404, removed.text[:400]
+
+    def test_the_receiver_refuses_an_interaction_discord_did_not_sign(self, anon: Any) -> None:
+        """An unsigned ping is answered 401, or 404 where the App is off, and never with a pong."""
+        response = anon.post("/api/discord/interactions", json={"type": 1})
+        assert response.status_code in (401, 404), response.text[:300]
+
+    def test_the_callback_refuses_a_state_it_never_signed(self, anon: Any) -> None:
+        """A callback with a forged state binds nothing and sends the browser back with `invalid_state`."""
+        response = anon.get("/api/discord/oauth/callback", params={"state": "forged", "code": "forged"})
+        if response.status_code == 404:
+            return
+        assert response.status_code == 302, response.text[:400]
+        assert "discord=invalid_state" in response.headers.get("location", ""), response.headers.get("location")
+
+    def test_signed_interactions_are_answered_on_a_local_stack(self) -> None:
+        """A signed ping gets its pong, an unknown server is turned away, a stale one refused."""
+        base_url = os.environ.get("E2E_API_BASE_URL", "").rstrip("/")
+        if not os.environ.get(DISCORD_PUBLIC_KEY_ENV) or not base_url:
+            pytest.skip("only a local stack signs with a key the runner can derive")
+        with httpx.Client(base_url=base_url, timeout=10.0) as client:
+
+            def interact(payload: "dict[str, Any]", **kwargs: Any) -> httpx.Response:
+                """Post one signed interaction."""
+                body = json.dumps(payload).encode()
+                headers = {"content-type": "application/json", **_discord_signed(body, **kwargs)}
+                return client.post("/api/discord/interactions", content=body, headers=headers)
+
+            ping = interact({"type": 1})
+            assert ping.status_code == 200, ping.text[:400]
+            assert ping.json() == {"type": 1}
+
+            command = {
+                "id": f"{time.time_ns()}",
+                "type": 2,
+                "guild_id": "1999999999999999999",
+                "data": {"type": 1, "name": "standupless", "options": [{"type": 1, "name": "help"}]},
+                "member": {"user": {"id": "1999999999999999998"}},
+            }
+            replied = interact(command)
+            assert replied.status_code == 200, replied.text[:400]
+            assert replied.json()["data"]["flags"] == 64, replied.json()
+            assert "not connected" in replied.json()["data"]["content"], replied.json()
+
+            stale = interact({"type": 1}, timestamp=int(time.time()) - 600)
             assert stale.status_code == 401, stale.text[:400]

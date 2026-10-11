@@ -40,6 +40,8 @@ locals {
       "/api/workspaces/{workspace_id}/projects",
       "/api/workspaces/{workspace_id}/initiatives",
       "/api/workspaces/{workspace_id}/roadmap",
+      "/api/workspaces/{workspace_id}/documents",
+      "/api/workspaces/{workspace_id}/issues/{issue_id}/documents",
     ]
 
     # Five of these sit inside another domain's subtree and are reached on
@@ -58,8 +60,10 @@ locals {
       "/api/workspaces/{workspace_id}/teams/{team_id}/release-backfill",
       "/api/workspaces/{workspace_id}/github",
       "/api/workspaces/{workspace_id}/slack",
+      "/api/workspaces/{workspace_id}/discord",
       "/api/workspaces/{workspace_id}/webhooks",
       "/api/workspaces/{workspace_id}/imports",
+      "/api/workspaces/{workspace_id}/reviews",
     ]
 
     admin = ["/api/admin"]
@@ -140,6 +144,11 @@ locals {
     "POST /api/slack/interactions"  = { integration = "integrations", authorization_type = "NONE" }
   } : {}
 
+  discord_route_keys = contains(local.routed_lambda_domains, "integrations") ? {
+    "GET /api/discord/oauth/callback" = { integration = "integrations", authorization_type = "NONE" }
+    "POST /api/discord/interactions"  = { integration = "integrations", authorization_type = "NONE" }
+  } : {}
+
   # An anonymous reader following a share link has no workspace to name and no
   # membership that would let them name one: the token in the path is the whole
   # credential, and it resolves the one row it grants before anything else is
@@ -205,6 +214,7 @@ locals {
     local.domain_identity_jwt_route_keys,
     local.github_webhook_route_keys,
     local.slack_route_keys,
+    local.discord_route_keys,
     local.share_link_public_route_keys,
     local.attachment_content_route_keys,
     local.icon_content_route_keys,

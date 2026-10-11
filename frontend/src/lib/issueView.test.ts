@@ -19,6 +19,8 @@ import {
   matchesFilters,
   moveChange,
   narrowFilters,
+  ORDERING_LABELS,
+  ORDERINGS,
   orderKeyAt,
   parseViewState,
   sameViewState,
@@ -516,6 +518,42 @@ describe('grouping', () => {
     );
 
     expect(sorted.map((row) => row.id)).toEqual(['u1', 'u2', 'low']);
+  });
+
+  it('sorts by SLA breach with no running SLA last', () => {
+    const sorted = sortIssues(
+      [
+        issue({ id: 'none', sla_status: 'none', sla_breaches_at: null }),
+        issue({
+          id: 'later',
+          sla_status: 'on_track',
+          sla_breaches_at: '2026-10-20T00:00:00Z',
+        }),
+        issue({
+          id: 'stopped',
+          sla_status: 'none',
+          sla_breaches_at: '2026-10-01T00:00:00Z',
+        }),
+        issue({
+          id: 'breached',
+          sla_status: 'breached',
+          sla_breaches_at: '2026-10-02T00:00:00Z',
+        }),
+      ],
+      'sla_asc'
+    );
+
+    expect(sorted.map((row) => row.id)).toEqual([
+      'breached',
+      'later',
+      'none',
+      'stopped',
+    ]);
+  });
+
+  it('offers the SLA breach ordering in the display menu', () => {
+    expect(ORDERINGS).toContain('sla_asc');
+    expect(ORDERING_LABELS.sla_asc).toBe('SLA breach');
   });
 });
 

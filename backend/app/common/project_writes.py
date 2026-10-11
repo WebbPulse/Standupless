@@ -207,7 +207,7 @@ def update_project(
 def delete_project(
     repositories: Repositories, context: AuthzContext, project_id: str, team_id: Optional[str] = None
 ) -> None:
-    """Delete a project with its milestones and updates, leaving every issue that pointed at it in place.
+    """Delete a project with its milestones, updates and documents, leaving every issue that pointed at it in place.
 
     Takes an administrator of every one of the project's teams, because the
     delete detaches issues in each of them.
@@ -216,4 +216,5 @@ def delete_project(
     require_project_admin(repositories, context, project)
     repositories.planning.delete_project_milestones(context.workspace_id, project_id)
     repositories.planning.delete_project_updates(context.workspace_id, project_id)
+    repositories.documents.delete_for_parent(context.workspace_id, "project", project_id)
     repositories.planning.delete(context.workspace_id, project_key(project_id))

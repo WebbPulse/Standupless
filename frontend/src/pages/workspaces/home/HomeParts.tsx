@@ -1,9 +1,9 @@
 /**
  * The pieces the workspace home is drawn from: the section frame and the one
- * line rows for shipped issues, cycles, projects, project updates and inbox
- * notifications, plus the setup checklist a new workspace sees. Every row
- * takes the same keyboard props an issue row does, so j and k walk the whole
- * page as one list.
+ * line rows for open pull requests, shipped issues, releases, cycles,
+ * projects, project updates and inbox notifications, plus the setup
+ * checklist a new workspace sees. Every row takes the same keyboard props an
+ * issue row does, so j and k walk the whole page as one list.
  */
 
 import React from 'react';
@@ -13,6 +13,7 @@ import {
   LuChevronRight,
   LuCircleCheck,
   LuGithub,
+  LuRocket,
   LuUserPlus,
   LuUsers,
 } from 'react-icons/lu';
@@ -29,12 +30,20 @@ import {
   daysRemainingLabel,
   shortCountsLabel,
 } from '../../../lib/planningDisplay';
+import {
+  ciStateStyle,
+  reviewStateStyle,
+  type StatusStyle,
+} from '../../../lib/pullRequestStacks';
+import { pullRequestStateStyle } from '../../../lib/pullRequestState';
 import type {
   CycleRead,
+  HomePullRequestItem,
   HomeShippedItem,
   HomePulseItem,
   NotificationRead,
   ProjectRead,
+  ReleaseRead,
 } from '../../../types/Api';
 
 /** The keyboard props every home row takes. */
@@ -165,6 +174,116 @@ export const ShippedRow: React.FC<
       value={item.completed_at}
       className="w-14 shrink-0 text-right text-xs text-text-faint"
     />
+  </li>
+);
+
+/** One small review or check icon, named for screen readers. */
+const StatusGlyph: React.FC<{ style: StatusStyle | null; kind: string }> = ({
+  style,
+  kind,
+}) => {
+  if (style === null) return null;
+  const Icon = style.icon;
+  return (
+    <span
+      role="img"
+      aria-label={style.label}
+      title={style.label}
+      data-status={kind}
+      className="inline-flex shrink-0"
+    >
+      <Icon
+        aria-hidden="true"
+        className={cn('h-3.5 w-3.5', style.colorClass)}
+      />
+    </span>
+  );
+};
+
+/** An open pull request on the caller's work, with its review and checks. */
+export const PullRequestRow: React.FC<
+  HomeRowProps & { item: HomePullRequestItem; href: string }
+> = ({ item, href, isActive, rowRef, onPointerEnter }) => {
+  const pr = item.pull_request;
+  const state = pullRequestStateStyle(pr.state);
+  const StateIcon = state.icon;
+  const repo = pr.repository_full_name.split('/').pop() ?? '';
+  return (
+    <li
+      ref={rowRef}
+      aria-current={isActive ? 'true' : undefined}
+      onPointerEnter={onPointerEnter}
+      className={rowClass(isActive)}
+    >
+      <StateIcon
+        className={cn('h-3.5 w-3.5 shrink-0', state.colorClass)}
+        aria-label={state.label}
+        role="img"
+      />
+      <span className="w-16 shrink-0 truncate text-xs text-text-faint tabular-nums">
+        {item.issue.key}
+      </span>
+      <Link
+        to={href}
+        data-hover="parent"
+        className="min-w-0 flex-1 truncate text-text after:absolute after:inset-0"
+      >
+        {pr.title !== '' ? pr.title : item.issue.title}
+      </Link>
+      <StatusGlyph style={reviewStateStyle(pr.review_state)} kind="review" />
+      <StatusGlyph style={ciStateStyle(pr.ci_state)} kind="ci" />
+      <a
+        href={pr.url}
+        target="_blank"
+        rel="noreferrer"
+        className="relative z-10 hidden shrink-0 text-xs text-text-faint tabular-nums hover:text-text sm:inline"
+      >
+        {`${repo}#${String(pr.number)}`}
+      </a>
+    </li>
+  );
+};
+
+/** One release that reached its team's last stage this week. */
+export const ReleaseRow: React.FC<
+  HomeRowProps & {
+    release: ReleaseRead;
+    href: string | null;
+    teamName: string;
+  }
+> = ({ release, href, teamName, isActive, rowRef, onPointerEnter }) => (
+  <li
+    ref={rowRef}
+    aria-current={isActive ? 'true' : undefined}
+    onPointerEnter={onPointerEnter}
+    className={rowClass(isActive)}
+  >
+    <LuRocket className="h-3.5 w-3.5 shrink-0 text-merged" aria-hidden="true" />
+    {href === null ? (
+      <span className="min-w-0 flex-1 truncate text-text">{release.name}</span>
+    ) : (
+      <Link
+        to={href}
+        data-hover="parent"
+        className="min-w-0 flex-1 truncate text-text after:absolute after:inset-0"
+      >
+        {release.name}
+      </Link>
+    )}
+    <span className="hidden shrink-0 text-xs text-text-faint xl:inline">
+      {teamName}
+    </span>
+    <span className="shrink-0 text-xs whitespace-nowrap text-text-faint tabular-nums">
+      {release.issue_count === 1
+        ? '1 issue'
+        : `${String(release.issue_count)} issues`}
+    </span>
+    {release.current_stage != null && (
+      <RelativeTime
+        value={release.current_stage.reached_at}
+        className="w-14 shrink-0 text-right text-xs text-text-faint"
+      />
+    )}
   </li>
 );
 
@@ -314,6 +433,7 @@ const NOTIFICATION_VERBS: Partial<Record<NotificationRead['kind'], string>> = {
   standup_digest: 'Standup digest',
   sla_at_risk: 'SLA at risk',
   sla_breached: 'SLA breached',
+  review_requested: 'requested your review',
 };
 
 /** One unread notification. */

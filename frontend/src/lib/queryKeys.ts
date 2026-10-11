@@ -220,6 +220,12 @@ export const inboxCountKey = (workspaceId: string): QueryKey => [
   workspaceId,
 ];
 
+/** The caller's Reviews list, read by the page and the sidebar badge alike. */
+export const reviewsKey = (workspaceId: string): QueryKey => [
+  'reviews',
+  workspaceId,
+];
+
 /** One team's triage inbox, waiting or snoozed. */
 export const triageKey = (
   workspaceId: string,
@@ -282,6 +288,37 @@ export const initiativeUpdatesKey = (
   workspaceId: string,
   initiativeId: string
 ): QueryKey => ['initiativeUpdates', workspaceId, initiativeId];
+
+/** One project's or initiative's documents, most recently edited first. */
+export const documentsKey = (
+  workspaceId: string,
+  parentKind: string,
+  parentId: string
+): QueryKey => ['documents', workspaceId, parentKind, parentId];
+
+/** Every document the caller can read, as the command palette lists them. */
+export const workspaceDocumentsKey = (workspaceId: string): QueryKey => [
+  'workspaceDocuments',
+  workspaceId,
+];
+
+/** One document read by its id, as its page polls it. */
+export const documentKey = (
+  workspaceId: string,
+  documentId: string
+): QueryKey => ['document', workspaceId, documentId];
+
+/** One document's kept versions, newest first. */
+export const documentVersionsKey = (
+  workspaceId: string,
+  documentId: string
+): QueryKey => ['documentVersions', workspaceId, documentId];
+
+/** The documents that mention one issue, for its rail. */
+export const issueDocumentsKey = (
+  workspaceId: string,
+  issueId: string
+): QueryKey => ['issueDocuments', workspaceId, issueId];
 
 /** One project's milestones, in their manual order. */
 export const milestonesKey = (
@@ -361,6 +398,18 @@ export const slackChannelsKey = (
   workspaceId: string,
   teamId: string
 ): QueryKey => ['slack-channels', workspaceId, teamId];
+
+/** Whether the workspace added the Discord App, and to which Discord server. */
+export const discordConnectionKey = (workspaceId: string): QueryKey => [
+  'discord-connection',
+  workspaceId,
+];
+
+/** The Discord channels the installed bot can post to, offered when adding a team channel. */
+export const discordChannelsKey = (
+  workspaceId: string,
+  teamId: string
+): QueryKey => ['discord-channels', workspaceId, teamId];
 
 /**
  * The webhooks of a workspace, or of one team in it. The two are different

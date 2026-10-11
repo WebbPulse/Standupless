@@ -69,7 +69,12 @@ from app.domains.integrations.mcp.toolkit import (
 from app.domains.integrations.mcp.transport import ToolError
 from app.domains.integrations.service import link_reads
 
-SORTS: tuple[str, ...] = ("updated_desc", "created_desc", "key_asc", "priority_desc", "due_asc", "manual")
+SORTS: tuple[str, ...] = ("updated_desc", "created_desc", "key_asc", "priority_desc", "due_asc", "sla_asc", "manual")
+
+SORT_HELP = (
+    "The order, defaulting to updated_desc; sla_asc puts the soonest SLA breach first "
+    "and issues without a running SLA last"
+)
 
 LINK_TYPES: tuple[str, ...] = ("blocks", "blocked_by", "relates_to", "duplicate_of")
 
@@ -251,9 +256,10 @@ def _list_my_issues(call: ToolCall) -> Any:
 
 
 def _search_issues(call: ToolCall) -> Any:
-    """Issues whose title or body contains a text, newest first, in visible teams only.
+    """Issues whose key is a text or whose title or body contains it, newest first, in visible teams only.
 
-    Substring over title and body, unlike `list_issues`, whose `query` is the
+    A key matches whole and in any case, as Linear's search finds `ABC-12`; the
+    rest is a substring over title and body, unlike `list_issues`, whose `query` is the
     HTTP list's key or title prefix. Filtered after the team read rather than
     through the search index, because the index is a separate table this domain
     holds no grant on. Each team is walked through every page up to the list's
@@ -279,8 +285,13 @@ def _search_issues(call: ToolCall) -> Any:
                 categories[row.status_id] = row.category
 
     def keep(issue: Issue) -> bool:
-        """Whether one issue holds the text and passes the filters."""
-        if query and query not in issue.title.lower() and query not in (issue.body or "").lower():
+        """Whether one issue carries the key or holds the text, and passes the filters."""
+        if (
+            query
+            and query != issue.key.lower()
+            and query not in issue.title.lower()
+            and query not in (issue.body or "").lower()
+        ):
             return False
         return wanted.matches(issue, categories)
 
@@ -699,7 +710,7 @@ ISSUE_TOOLS: tuple[Tool, ...] = (
                 **_filter_properties(),
                 "query": string("A key or title prefix, such as ABC-12 or 'Fix login'"),
                 "include_archived": {"type": "boolean", "description": "Include archived issues, default false"},
-                "sort": enum(SORTS, "The order, defaulting to updated_desc"),
+                "sort": enum(SORTS, SORT_HELP),
                 **page_properties(),
             }
         ),
@@ -734,7 +745,7 @@ ISSUE_TOOLS: tuple[Tool, ...] = (
             {
                 **_filter_properties(with_assignee=False),
                 "include_archived": {"type": "boolean", "description": "Include archived issues, default false"},
-                "sort": enum(SORTS, "The order, defaulting to updated_desc"),
+                "sort": enum(SORTS, SORT_HELP),
                 **page_properties(),
             }
         ),
@@ -743,13 +754,14 @@ ISSUE_TOOLS: tuple[Tool, ...] = (
     Tool(
         name="search_issues",
         description=(
-            "Search issues whose title or body contains a text, with the issue list filters. "
+            "Search issues whose key is a text, such as ABC-123, or whose title or body contains it, "
+            "with the issue list filters. "
             "Answers summaries, newest first, and a next_cursor while more issues remain to search."
         ),
         scopes=("issues:read",),
         schema=object_schema(
             {
-                "query": string("Text to match against the title and body"),
+                "query": string("An issue key such as ABC-123, or text to match against the title and body"),
                 **_filter_properties(),
                 "include_archived": {"type": "boolean", "description": "Include archived issues, default true"},
                 **page_properties(),

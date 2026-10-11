@@ -20,7 +20,7 @@ import { sharedFetch } from './sharedFetch';
 
 const identityAuth = getIdentityClient();
 
-/** The one client every call site in this application goes through. */
+/** The one client every API call in this application goes through. */
 export const apiClient: ApiClient = createApiClient({
   baseUrl: appConfig.apiBaseUrl,
   credentials: 'include',

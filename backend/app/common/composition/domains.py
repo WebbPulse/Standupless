@@ -196,7 +196,7 @@ authorization never writes a membership, and a token can only ever be issued for
 workspace the consenting user already belongs to.
 """
 
-_WORKSPACES_REPOSITORIES = ("workspaces", "memberships", "invites", "api_keys", "idempotency", "audit")
+_WORKSPACES_REPOSITORIES = ("workspaces", "memberships", "invites", "api_keys", "counters", "idempotency", "audit")
 
 _WORKSPACES_READ_REPOSITORIES = ("users",)
 
@@ -239,12 +239,15 @@ _VIEWS_READ_REPOSITORIES = (
     "comments",
     "subscriptions",
     "planning",
+    "documents",
     "counters",
     "api_keys",
     "activity",
     "relations",
+    "releases",
 )
-"""What the views image reads. `counters` resolves a moved issue's old key in search, `relations` the link filters."""
+"""What the views image reads. `counters` resolves a moved issue's old key in search, `relations` the link filters,
+`releases` the home's recent releases, which live in the `planning` table already read."""
 
 
 def _discussion_routers() -> "Sequence[RouterSpec]":
@@ -280,10 +283,12 @@ def _integrations_routers() -> "Sequence[RouterSpec]":
     """
     from app.domains.integrations.endpoints import (
         channels,
+        discord,
         imports,
         install,
         links,
         release_backfill,
+        reviews,
         slack,
         standup,
         sync,
@@ -294,10 +299,12 @@ def _integrations_routers() -> "Sequence[RouterSpec]":
     return [
         (install.router, "/workspaces", ("integrations",)),
         (slack.router, "/workspaces", ("integrations",)),
+        (discord.router, "/workspaces", ("integrations",)),
         (channels.router, "/workspaces", ("integrations",)),
         (webhooks.router, "/workspaces", ("integrations",)),
         (transitions.router, "/workspaces", ("integrations",)),
         (links.router, "/workspaces", ("integrations",)),
+        (reviews.router, "/workspaces", ("integrations",)),
         (sync.router, "/workspaces", ("integrations",)),
         (standup.router, "/workspaces", ("integrations",)),
         (release_backfill.router, "/workspaces", ("integrations",)),
@@ -306,7 +313,7 @@ def _integrations_routers() -> "Sequence[RouterSpec]":
 
 
 def _integrations_unprefixed_routers(settings: "Any") -> "Sequence[APIRouter]":
-    """The routes GitHub and Slack themselves call, plus the three consumers.
+    """The routes GitHub, Slack and Discord themselves call, plus the three consumers.
 
     The callback and the webhook receiver are unprefixed here because they sit
     outside the workspace prefix: neither names a workspace, one being pre-install
@@ -316,12 +323,13 @@ def _integrations_unprefixed_routers(settings: "Any") -> "Sequence[APIRouter]":
     from app.domains.integrations.consumers.dispatch import build_router as build_dispatch_router
     from app.domains.integrations.consumers.events import build_router as build_events_router
     from app.domains.integrations.consumers.stream import build_router as build_stream_router
-    from app.domains.integrations.endpoints import github, slack
+    from app.domains.integrations.endpoints import discord, github, slack
     from app.domains.integrations.mcp import endpoint as mcp
 
     return [
         github.router,
         slack.public_router,
+        discord.public_router,
         mcp.router,
         build_events_router(),
         build_dispatch_router(),
@@ -343,6 +351,7 @@ _INTEGRATIONS_REPOSITORIES = (
     "activity",
     "planning",
     "releases",
+    "documents",
     "relations",
     "subscriptions",
     "teams",
@@ -379,6 +388,7 @@ def _planning_routers() -> "Sequence[RouterSpec]":
     """
     from app.domains.planning.endpoints import (
         cycles,
+        documents,
         initiatives,
         milestones,
         project_updates,
@@ -391,6 +401,7 @@ def _planning_routers() -> "Sequence[RouterSpec]":
         (projects.router, "/workspaces", ("planning",)),
         (milestones.router, "/workspaces", ("planning",)),
         (project_updates.router, "/workspaces", ("planning",)),
+        (documents.router, "/workspaces", ("planning",)),
         (initiatives.router, "/workspaces", ("planning",)),
         (roadmap.router, "/workspaces", ("planning",)),
     ]
@@ -409,7 +420,7 @@ def _planning_unprefixed_routers(settings: "Any") -> "Sequence[APIRouter]":
     return [build_router()]
 
 
-_PLANNING_REPOSITORIES = ("planning", "releases", "idempotency")
+_PLANNING_REPOSITORIES = ("planning", "releases", "documents", "idempotency")
 
 _PLANNING_READ_REPOSITORIES = (
     "memberships",

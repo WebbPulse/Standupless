@@ -59,10 +59,13 @@ def _team_id(call: ToolCall) -> str:
 
 
 def _release_id(call: ToolCall, team_id: str) -> str:
-    """A release id from an id, or a name unique among the team's newest releases."""
+    """A release id from an id, or a name: the team's claim on it, else unique among its newest releases."""
     reference = str(call.require("release_id")).strip()
     if call.repositories.releases.get(call.context.workspace_id, team_id, reference) is not None:
         return reference
+    claimed = call.repositories.releases.release_for_name(call.context.workspace_id, team_id, reference)
+    if claimed is not None and call.repositories.releases.get(call.context.workspace_id, team_id, claimed) is not None:
+        return claimed
     rows, _ = releases.list_releases(call.repositories, call.context, team_id, limit=NAME_LOOKUP_LIMIT)
     matches = [row for row in rows if row.name.casefold() == reference.casefold()]
     if len(matches) > 1:
@@ -429,7 +432,9 @@ RELEASE_TOOLS: tuple[Tool, ...] = (
         name="backfill_releases",
         description=(
             "Rebuild a team's releases from a GitHub environment's past successful deployments, newest first, "
-            "a few per call. Pass next_cursor back as cursor until it is null. Never moves issues or "
+            "a few per call. Pass next_cursor back as cursor until it is null. A call stops early, with "
+            "stopped_early and a message saying when to continue, rather than use more than half the GitHub "
+            "App's hourly API budget or outrun the request timeout. Never moves issues or "
             "publishes GitHub Releases. Team administrators only."
         ),
         scopes=("releases:write",),

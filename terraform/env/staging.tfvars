@@ -21,5 +21,7 @@ team_purge_enabled = true
 
 workspace_export_enabled = true
 
+issue_import_enabled = true
+
 oauth_github_client_id = "Ov23li7DuxrwV5286wDv"
 oauth_google_client_id = "1001009632870-3frfpiq3sbvb60jpv7p4jaempf6uomh9.apps.googleusercontent.com"

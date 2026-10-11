@@ -81,7 +81,17 @@ const KIND_COPY: Record<NotificationKind, { title: string; detail: string }> = {
     title: 'SLA breached',
     detail: 'An issue assigned to you has breached its SLA.',
   },
+  review_requested: {
+    title: 'Review requests',
+    detail:
+      'Someone asks you to review a pull request. These stay in your inbox and are not emailed.',
+  },
 };
+
+/** The kinds that only ever reach the inbox, so their email switch is off and locked. */
+const IN_APP_ONLY: ReadonlySet<NotificationKind> = new Set([
+  'review_requested',
+]);
 
 /** The switches a kind shows when the profile has no entry for it. */
 const ALL_ON: NotificationChannels = { in_app: true, email: true };
@@ -215,8 +225,10 @@ const NotificationsSettings: React.FC = () => {
                           type="checkbox"
                           aria-label={`${copy.title} by email`}
                           className="h-3.5 w-3.5 rounded-xs border-line-strong"
-                          checked={emailOn && channels.email}
-                          disabled={saving || !emailOn}
+                          checked={
+                            emailOn && channels.email && !IN_APP_ONLY.has(kind)
+                          }
+                          disabled={saving || !emailOn || IN_APP_ONLY.has(kind)}
                           onChange={(event) => {
                             save({
                               notification_preferences: {

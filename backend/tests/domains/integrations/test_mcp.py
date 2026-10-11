@@ -171,6 +171,7 @@ def test_the_contract_fixes_the_tool_set() -> None:
         "list_issues",
         "list_labels",
         "list_my_issues",
+        "list_my_reviews",
         "list_notifications",
         "list_project_milestones",
         "list_project_updates",
@@ -251,11 +252,16 @@ def test_the_contract_fixes_the_tool_set() -> None:
         "create_initiative_update",
         "update_initiative_update",
         "delete_initiative_update",
+        "list_documents",
+        "get_document",
+        "create_document",
+        "update_document",
+        "delete_document",
         "list_approved_domains",
         "add_approved_domain",
         "remove_approved_domain",
     }
-    assert len(TOOLS) == 141
+    assert len(TOOLS) == 147
 
 
 def test_a_notification_gets_no_body(client: TestClient, workspace: str, repositories: Any) -> None:

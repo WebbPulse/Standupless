@@ -1404,8 +1404,28 @@
       },
       "ChannelCreate": {
         "additionalProperties": false,
-        "description": "Add a channel: an incoming webhook URL or a Slack channel the App posts to, a label and its events.\n\nExactly one of `url` and `slack_channel_id` is given. `slack_channel_name` is\nonly the name the picker showed, kept so the list can say where it posts.",
+        "description": "Add a channel: an incoming webhook URL, or a Slack or Discord channel an App posts to, a label and its events.\n\nExactly one of `url`, `slack_channel_id` and `discord_channel_id` is given. The\n`*_channel_name` fields are only the name the picker showed, kept so the list\ncan say where it posts.",
         "properties": {
+          "discord_channel_id": {
+            "anyOf": [
+              {
+                "maxLength": 24,
+                "minLength": 1,
+                "pattern": "^[0-9]+$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Discord Channel Id"
+          },
+          "discord_channel_name": {
+            "default": "",
+            "maxLength": 100,
+            "title": "Discord Channel Name",
+            "type": "string"
+          },
           "enabled": {
             "default": true,
             "title": "Enabled",
@@ -1513,6 +1533,11 @@
             ],
             "title": "Disabled Reason"
           },
+          "discord_channel_id": {
+            "default": "",
+            "title": "Discord Channel Id",
+            "type": "string"
+          },
           "enabled": {
             "title": "Enabled",
             "type": "boolean"
@@ -1581,7 +1606,8 @@
             "default": "webhook",
             "enum": [
               "webhook",
-              "slack_app"
+              "slack_app",
+              "discord_app"
             ],
             "title": "Transport",
             "type": "string"
@@ -2804,6 +2830,487 @@
         "title": "DeliveryAttemptRead",
         "type": "object"
       },
+      "DiscordChannelRead": {
+        "description": "One Discord text or announcement channel the bot can post to.",
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ],
+        "title": "DiscordChannelRead",
+        "type": "object"
+      },
+      "DiscordConnectionRead": {
+        "description": "Whether this environment has a Discord App and whether this workspace installed it.",
+        "properties": {
+          "configured": {
+            "title": "Configured",
+            "type": "boolean"
+          },
+          "guild_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Guild Id"
+          },
+          "guild_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Guild Name"
+          },
+          "installed": {
+            "title": "Installed",
+            "type": "boolean"
+          },
+          "installed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Installed At"
+          },
+          "installed_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Installed By"
+          }
+        },
+        "required": [
+          "configured",
+          "installed"
+        ],
+        "title": "DiscordConnectionRead",
+        "type": "object"
+      },
+      "DiscordInstallUrlRead": {
+        "description": "Where to send a workspace admin to add the Discord App, and when that link stops working.",
+        "properties": {
+          "expires_at": {
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "url",
+          "expires_at"
+        ],
+        "title": "DiscordInstallUrlRead",
+        "type": "object"
+      },
+      "DocumentCreate": {
+        "description": "The body a document create takes; the parent comes from the path.",
+        "properties": {
+          "body": {
+            "default": "",
+            "title": "Body",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title"
+        ],
+        "title": "DocumentCreate",
+        "type": "object"
+      },
+      "DocumentListRead": {
+        "properties": {
+          "documents": {
+            "items": {
+              "$ref": "#/components/schemas/DocumentSummaryRead"
+            },
+            "title": "Documents",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "required": [
+          "documents"
+        ],
+        "title": "DocumentListRead",
+        "type": "object"
+      },
+      "DocumentMentionRead": {
+        "description": "One issue a document mentions, as its key was written.",
+        "properties": {
+          "issue_id": {
+            "title": "Issue Id",
+            "type": "string"
+          },
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "team_id": {
+            "title": "Team Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "issue_id",
+          "team_id"
+        ],
+        "title": "DocumentMentionRead",
+        "type": "object"
+      },
+      "DocumentPatch": {
+        "description": "The body a document patch takes; either field may be left out, neither cleared.\n\n`base_updated_at` is the `updated_at` the editor last read. When it is sent\nand the document has changed since, the patch is a 409 rather than writing\nover someone else's edit.",
+        "properties": {
+          "base_updated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Base Updated At"
+          },
+          "body": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Body"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          }
+        },
+        "title": "DocumentPatch",
+        "type": "object"
+      },
+      "DocumentRead": {
+        "description": "One document with its Markdown and the issues it mentions that this caller can see.",
+        "properties": {
+          "author_id": {
+            "title": "Author Id",
+            "type": "string"
+          },
+          "body": {
+            "title": "Body",
+            "type": "string"
+          },
+          "can_delete": {
+            "default": false,
+            "title": "Can Delete",
+            "type": "boolean"
+          },
+          "can_edit": {
+            "default": false,
+            "title": "Can Edit",
+            "type": "boolean"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "document_id": {
+            "title": "Document Id",
+            "type": "string"
+          },
+          "mentions": {
+            "items": {
+              "$ref": "#/components/schemas/DocumentMentionRead"
+            },
+            "title": "Mentions",
+            "type": "array"
+          },
+          "parent_id": {
+            "title": "Parent Id",
+            "type": "string"
+          },
+          "parent_kind": {
+            "enum": [
+              "project",
+              "initiative"
+            ],
+            "title": "Parent Kind",
+            "type": "string"
+          },
+          "parent_name": {
+            "default": "",
+            "title": "Parent Name",
+            "type": "string"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "enum": [
+                  "web",
+                  "mcp",
+                  "cli",
+                  "api",
+                  "github",
+                  "system"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "updated_by": {
+            "title": "Updated By",
+            "type": "string"
+          },
+          "workspace_id": {
+            "title": "Workspace Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "document_id",
+          "workspace_id",
+          "parent_kind",
+          "parent_id",
+          "title",
+          "author_id",
+          "updated_by",
+          "created_at",
+          "updated_at",
+          "body"
+        ],
+        "title": "DocumentRead",
+        "type": "object"
+      },
+      "DocumentSummaryRead": {
+        "description": "One document without its body, as a listing answers it.\n\n`can_edit` and `can_delete` say what this caller may do, so a client draws\nthe controls without repeating the rules.",
+        "properties": {
+          "author_id": {
+            "title": "Author Id",
+            "type": "string"
+          },
+          "can_delete": {
+            "default": false,
+            "title": "Can Delete",
+            "type": "boolean"
+          },
+          "can_edit": {
+            "default": false,
+            "title": "Can Edit",
+            "type": "boolean"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "document_id": {
+            "title": "Document Id",
+            "type": "string"
+          },
+          "parent_id": {
+            "title": "Parent Id",
+            "type": "string"
+          },
+          "parent_kind": {
+            "enum": [
+              "project",
+              "initiative"
+            ],
+            "title": "Parent Kind",
+            "type": "string"
+          },
+          "parent_name": {
+            "default": "",
+            "title": "Parent Name",
+            "type": "string"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "enum": [
+                  "web",
+                  "mcp",
+                  "cli",
+                  "api",
+                  "github",
+                  "system"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "updated_by": {
+            "title": "Updated By",
+            "type": "string"
+          },
+          "workspace_id": {
+            "title": "Workspace Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "document_id",
+          "workspace_id",
+          "parent_kind",
+          "parent_id",
+          "title",
+          "author_id",
+          "updated_by",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "DocumentSummaryRead",
+        "type": "object"
+      },
+      "DocumentVersionListRead": {
+        "properties": {
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          },
+          "versions": {
+            "items": {
+              "$ref": "#/components/schemas/DocumentVersionRead"
+            },
+            "title": "Versions",
+            "type": "array"
+          }
+        },
+        "required": [
+          "versions"
+        ],
+        "title": "DocumentVersionListRead",
+        "type": "object"
+      },
+      "DocumentVersionRead": {
+        "description": "An earlier title and body of a document, as it stood at the end of one edit session.",
+        "properties": {
+          "body": {
+            "title": "Body",
+            "type": "string"
+          },
+          "document_id": {
+            "title": "Document Id",
+            "type": "string"
+          },
+          "edited_at": {
+            "format": "date-time",
+            "title": "Edited At",
+            "type": "string"
+          },
+          "edited_by": {
+            "title": "Edited By",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "version_id": {
+            "title": "Version Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "version_id",
+          "document_id",
+          "title",
+          "body",
+          "edited_by",
+          "edited_at"
+        ],
+        "title": "DocumentVersionRead",
+        "type": "object"
+      },
       "DownloadRead": {
         "description": "A presigned GET and when it stops working.\n\nMinted per request and never stored or logged, so the window is the whole\nguard on a URL that is a bearer credential until it expires.",
         "properties": {
@@ -3038,6 +3545,23 @@
         "title": "HomeInboxRead",
         "type": "object"
       },
+      "HomePullRequestItem": {
+        "description": "One open or draft pull request linked to an issue assigned to the caller, and that issue.",
+        "properties": {
+          "issue": {
+            "$ref": "#/components/schemas/app__common__api__schemas__issues__IssueRead"
+          },
+          "pull_request": {
+            "$ref": "#/components/schemas/PullRequestSummaryEntryRead"
+          }
+        },
+        "required": [
+          "issue",
+          "pull_request"
+        ],
+        "title": "HomePullRequestItem",
+        "type": "object"
+      },
       "HomePulseItem": {
         "description": "The newest update of one project, named so the line reads without a lookup.",
         "properties": {
@@ -3062,7 +3586,7 @@
         "type": "object"
       },
       "HomeRead": {
-        "description": "Everything the workspace home draws, read in one request.\n\n`team_ids` is the scope the team sections were read over: the caller's own\nteams, or every team they can see when they belong to none.",
+        "description": "Everything the workspace home draws, read in one request.\n\n`team_ids` is the scope the team sections were read over: the caller's own\nteams, or every team they can see when they belong to none. `pull_requests`\nare the open ones linked to the caller's open assigned issues, and `releases`\nare the scope teams' releases that reached their pipeline's last stage in the\nshipped window, newest first.",
         "properties": {
           "cycles": {
             "items": {
@@ -3094,11 +3618,25 @@
             "title": "Projects Total",
             "type": "integer"
           },
+          "pull_requests": {
+            "items": {
+              "$ref": "#/components/schemas/HomePullRequestItem"
+            },
+            "title": "Pull Requests",
+            "type": "array"
+          },
           "pulse": {
             "items": {
               "$ref": "#/components/schemas/HomePulseItem"
             },
             "title": "Pulse",
+            "type": "array"
+          },
+          "releases": {
+            "items": {
+              "$ref": "#/components/schemas/ReleaseRead"
+            },
+            "title": "Releases",
             "type": "array"
           },
           "shipped": {
@@ -6436,7 +6974,7 @@
         "type": "object"
       },
       "NotificationRead": {
-        "description": "One inbox row as the API returns it.\n\nA `project_update` notification names its project and update and leaves the\nissue fields empty. A `standup_digest` carries the team key in `issue_key`,\nthe team name in `issue_title` and the digest date in `standup_date`.",
+        "description": "One inbox row as the API returns it.\n\nA `project_update` notification names its project and update and leaves the\nissue fields empty. A `standup_digest` carries the team key in `issue_key`,\nthe team name in `issue_title` and the digest date in `standup_date`. A\n`review_requested` notification carries the pull request's `owner/repo#number`\nin `issue_key`, its title in `issue_title` and its GitHub address in `url`.",
         "properties": {
           "actor_id": {
             "title": "Actor Id",
@@ -6568,6 +7106,17 @@
           "unread": {
             "title": "Unread",
             "type": "boolean"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
           },
           "workspace_id": {
             "title": "Workspace Id",
@@ -7826,15 +8375,36 @@
         "type": "object"
       },
       "ReleaseBackfillRead": {
-        "description": "What one backfill call did, and the cursor to continue from, null when it is done.",
+        "description": "What one backfill call did, and the cursor to continue from, null when it is done.\n\n`deployments_skipped` counts deployments whose release had already reached\nthe stage, which cost no GitHub call. A page that stopped before its limit to\nkeep half the GitHub App's hourly budget for live sync, or to answer inside\nthe request timeout, sets `stopped_early` and says in `message` when to pass\nthe cursor back; `resume_after` is GitHub's budget reset when that is the\nreason. `rate_limit_remaining` and `rate_limit` are GitHub's last word on the\ninstallation's budget, and `github_calls` what this page spent of it.",
         "properties": {
           "deployments_scanned": {
             "title": "Deployments Scanned",
             "type": "integer"
           },
+          "deployments_skipped": {
+            "default": 0,
+            "title": "Deployments Skipped",
+            "type": "integer"
+          },
           "environment": {
             "title": "Environment",
             "type": "string"
+          },
+          "github_calls": {
+            "default": 0,
+            "title": "Github Calls",
+            "type": "integer"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
           },
           "next_cursor": {
             "anyOf": [
@@ -7846,6 +8416,28 @@
               }
             ],
             "title": "Next Cursor"
+          },
+          "rate_limit": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rate Limit"
+          },
+          "rate_limit_remaining": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rate Limit Remaining"
           },
           "release_ids": {
             "items": {
@@ -7861,6 +8453,23 @@
           "releases_updated": {
             "title": "Releases Updated",
             "type": "integer"
+          },
+          "resume_after": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resume After"
+          },
+          "stopped_early": {
+            "default": false,
+            "title": "Stopped Early",
+            "type": "boolean"
           },
           "team_id": {
             "title": "Team Id",
@@ -8780,6 +9389,182 @@
         "title": "RepositoryRead",
         "type": "object"
       },
+      "ReviewCountsRead": {
+        "description": "How many pull requests sit in each group.",
+        "properties": {
+          "approved": {
+            "default": 0,
+            "title": "Approved",
+            "type": "integer"
+          },
+          "changes_requested": {
+            "default": 0,
+            "title": "Changes Requested",
+            "type": "integer"
+          },
+          "needs_review": {
+            "default": 0,
+            "title": "Needs Review",
+            "type": "integer"
+          }
+        },
+        "title": "ReviewCountsRead",
+        "type": "object"
+      },
+      "ReviewIssueRead": {
+        "description": "One issue a listed pull request links, among those the caller can see.",
+        "properties": {
+          "issue_id": {
+            "title": "Issue Id",
+            "type": "string"
+          },
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "team_id": {
+            "title": "Team Id",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "issue_id",
+          "key",
+          "title",
+          "team_id"
+        ],
+        "title": "ReviewIssueRead",
+        "type": "object"
+      },
+      "ReviewItemRead": {
+        "description": "One pull request on the caller's Reviews list.",
+        "properties": {
+          "author_login": {
+            "title": "Author Login",
+            "type": "string"
+          },
+          "ci_state": {
+            "title": "Ci State",
+            "type": "string"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "group": {
+            "enum": [
+              "needs_review",
+              "changes_requested",
+              "approved"
+            ],
+            "title": "Group",
+            "type": "string"
+          },
+          "issues": {
+            "items": {
+              "$ref": "#/components/schemas/ReviewIssueRead"
+            },
+            "title": "Issues",
+            "type": "array"
+          },
+          "number": {
+            "title": "Number",
+            "type": "integer"
+          },
+          "repository_full_name": {
+            "title": "Repository Full Name",
+            "type": "string"
+          },
+          "repository_id": {
+            "title": "Repository Id",
+            "type": "string"
+          },
+          "review_state": {
+            "title": "Review State",
+            "type": "string"
+          },
+          "state": {
+            "enum": [
+              "open",
+              "draft"
+            ],
+            "title": "State",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "repository_id",
+          "repository_full_name",
+          "number",
+          "title",
+          "url",
+          "author_login",
+          "state",
+          "group",
+          "review_state",
+          "ci_state"
+        ],
+        "title": "ReviewItemRead",
+        "type": "object"
+      },
+      "ReviewsRead": {
+        "description": "The caller's Reviews list, grouped in the order the page draws it.\n\n`github_linked` is false when the caller has linked no GitHub account, which is\nthe one reason the list can be empty while reviews exist on GitHub.",
+        "properties": {
+          "counts": {
+            "$ref": "#/components/schemas/ReviewCountsRead"
+          },
+          "github_linked": {
+            "title": "Github Linked",
+            "type": "boolean"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ReviewItemRead"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "github_linked",
+          "counts",
+          "items"
+        ],
+        "title": "ReviewsRead",
+        "type": "object"
+      },
       "RoadmapEntryRead": {
         "description": "One cycle or project as the roadmap draws it.\n\nA projection rather than the full row: the timeline renders a bar and a count,\nand a reader wanting the rest has the entity's own route. The icon, colour,\nhealth and priority are a project's alone, so a cycle answers them as null.",
         "properties": {
@@ -8963,8 +9748,15 @@
         "type": "object"
       },
       "SearchRead": {
-        "description": "Every search hit, ranked. No cursor, per the contract.",
+        "description": "Every search hit, ranked. No cursor, per the contract.\n\n`documents` holds the project and initiative documents whose title and body\nmatch every term, for a caller allowed to read projects.",
         "properties": {
+          "documents": {
+            "items": {
+              "$ref": "#/components/schemas/DocumentSummaryRead"
+            },
+            "title": "Documents",
+            "type": "array"
+          },
           "results": {
             "items": {
               "$ref": "#/components/schemas/SearchResultRead"
@@ -9069,6 +9861,7 @@
                   "key_asc",
                   "priority_desc",
                   "due_asc",
+                  "sla_asc",
                   "manual"
                 ],
                 "type": "string"
@@ -11994,7 +12787,8 @@
                     "overdue",
                     "standup_digest",
                     "sla_at_risk",
-                    "sla_breached"
+                    "sla_breached",
+                    "review_requested"
                   ]
                 },
                 "type": "object"
@@ -12313,6 +13107,7 @@
                   "key_asc",
                   "priority_desc",
                   "due_asc",
+                  "sla_asc",
                   "manual"
                 ],
                 "type": "string"
@@ -12351,6 +13146,7 @@
               "key_asc",
               "priority_desc",
               "due_asc",
+              "sla_asc",
               "manual"
             ],
             "title": "Sort",
@@ -12733,6 +13529,7 @@
                   "key_asc",
                   "priority_desc",
                   "due_asc",
+                  "sla_asc",
                   "manual"
                 ],
                 "type": "string"
@@ -12796,6 +13593,7 @@
                   "key_asc",
                   "priority_desc",
                   "due_asc",
+                  "sla_asc",
                   "manual"
                 ],
                 "type": "string"
@@ -14377,6 +15175,117 @@
         ]
       }
     },
+    "/api/discord/interactions": {
+      "post": {
+        "description": "Verify one interaction, then answer Discord's ping or act on a command, an autocomplete or a form once.",
+        "operationId": "receive_discord_interaction_api_discord_interactions_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "description": "The signed body could not be read."
+          },
+          "401": {
+            "description": "Discord did not sign the request, or it is too old."
+          },
+          "404": {
+            "description": "This environment has no Discord App."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "summary": "Receive Discord Interaction",
+        "tags": [
+          "integrations"
+        ]
+      }
+    },
+    "/api/discord/oauth/callback": {
+      "get": {
+        "description": "Finish a server install or a person's account link, whichever the signed state was minted for.\n\nThe workspace comes from the state alone, redeemed once, and the code is\nexchanged with the client secret before anything is written, so a callback\nnobody started from Standupless binds and links nothing.",
+        "operationId": "discord_oauth_callback_api_discord_oauth_callback_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "state",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "State",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "code",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "Code",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "error",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "Error",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "text/html": {}
+            },
+            "description": "A person's account link finished."
+          },
+          "302": {
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "text/html": {}
+            },
+            "description": "A person's account link was refused."
+          },
+          "404": {
+            "description": "This environment has no Discord App."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "summary": "Discord Oauth Callback",
+        "tags": [
+          "integrations"
+        ]
+      }
+    },
     "/api/github/callback": {
       "get": {
         "description": "Bind a finished GitHub install to the workspace whose admin started it.\n\nGitHub sends the browser here with `installation_id`, `setup_action` and the\n`state` the install url carried, either as the Setup URL or, with user\nauthorization during installation on, as the Callback URL with a `code` added.\nThe workspace comes from the signed state alone and never from a query\nparameter, the state is redeemed once, and the installation id is checked\nagainst GitHub with the App JWT before anything is written. Whenever user\nauthorization is configured, a `code` is required and exchanged to ask GitHub\nwhether the person who came back can reach the installation: yes binds it even\nwhen it predates the state, while no, no code or no answer refuses it. Only an\nenvironment without user authorization falls back to the freshness check, which\nreads the installation's `created_at` and never the caller's `setup_action`.\nAn `update` that GitHub sends with no state, because the change started on\nGitHub, only refreshes an installation that is already bound, and an install\nwith no state, as when an organization owner approves a member's request, binds\nnothing.",
@@ -14634,7 +15543,7 @@
     },
     "/api/invites/accept": {
       "post": {
-        "description": "Turn a token into a membership, idempotently for an existing member.\n\nThe token is looked up by hash, so no route in this product ever holds a\nreadable invite token. An expired or unknown token answers the same error, so\nthe response cannot tell one from the other. The token alone is not enough:\nthe caller's verified address must be the one the invite was sent to, so a\nforwarded or leaked link cannot join anyone else at the invited role.",
+        "description": "Turn a token into a membership, idempotently for an existing member.\n\nThe token is looked up by hash, so no route in this product ever holds a\nreadable invite token. An expired or unknown token answers the same error, so\nthe response cannot tell one from the other. The token alone is not enough:\nthe caller's verified address must be the one the invite was sent to, so a\nforwarded or leaked link cannot join anyone else at the invited role.\n\nThe membership takes its plan slot, and the invite gives back its pending one,\nin the same transaction as the two rows, so racing accepts at the last slot\nland one member and refuse the rest.",
         "operationId": "accept_invite_api_invites_accept_post",
         "requestBody": {
           "content": {
@@ -15760,7 +16669,7 @@
         ]
       },
       "post": {
-        "description": "Mint a key and show its plaintext, the only time it is ever shown.\n\nA workspace key acts as the synthetic principal `svc#<workspace_id>` rather\nthan as its minter, but it still only works while that minter is an owner or\nadmin of the workspace, so a departure or demotion disables it. Only an admin\nmay mint one because it acts for the workspace rather than for a person.\n\nThe limit is checked before the mint rather than enforced by a conditional\nwrite, because the count spans the partition and no single-item condition can\nexpress it. The race that leaves a workspace one key over is harmless: the\nlimit exists to stop unbounded growth, not to be exact.",
+        "description": "Mint a key and show its plaintext, the only time it is ever shown.\n\nA workspace key acts as the synthetic principal `svc#<workspace_id>` rather\nthan as its minter, but it still only works while that minter is an owner or\nadmin of the workspace, so a departure or demotion disables it. Only an admin\nmay mint one because it acts for the workspace rather than for a person.\n\nThe key row and the workspace's API key usage row are written in one\ntransaction, the usage row under a conditional increment, so two concurrent\nmints at the limit cannot both land.",
         "operationId": "create_api_key_api_workspaces__workspace_id__api_keys_post",
         "parameters": [
           {
@@ -18374,6 +19283,435 @@
         ]
       }
     },
+    "/api/workspaces/{workspace_id}/discord": {
+      "delete": {
+        "description": "Take the Discord App out of this workspace's server and turn off the channels that posted through it.",
+        "operationId": "delete_discord_connection_api_workspaces__workspace_id__discord_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Delete Discord Connection",
+        "tags": [
+          "integrations"
+        ]
+      },
+      "get": {
+        "description": "Whether the Discord App is available here and installed in this workspace.",
+        "operationId": "get_discord_connection_api_workspaces__workspace_id__discord_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DiscordConnectionRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Get Discord Connection",
+        "tags": [
+          "integrations"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/discord/install-url": {
+      "get": {
+        "description": "Where to send this admin to add the Discord App, returning to the team they started from.",
+        "operationId": "get_discord_install_url_api_workspaces__workspace_id__discord_install_url_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "team_id",
+            "required": false,
+            "schema": {
+              "default": "",
+              "maxLength": 64,
+              "title": "Team Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DiscordInstallUrlRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Get Discord Install Url",
+        "tags": [
+          "integrations"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/documents": {
+      "get": {
+        "description": "Every document the caller can read, most recently edited first, for the command palette.",
+        "operationId": "list_all_documents_api_workspaces__workspace_id__documents_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentListRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "List All Documents",
+        "tags": [
+          "planning"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/documents/{document_id}": {
+      "delete": {
+        "description": "Delete a document with its history, as its author or an admin.",
+        "operationId": "remove_document_api_workspaces__workspace_id__documents__document_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "document_id",
+            "required": true,
+            "schema": {
+              "title": "Document Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Remove Document",
+        "tags": [
+          "planning"
+        ]
+      },
+      "get": {
+        "description": "One document with its Markdown and the issues it mentions.",
+        "operationId": "read_document_api_workspaces__workspace_id__documents__document_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "document_id",
+            "required": true,
+            "schema": {
+              "title": "Document Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Read Document",
+        "tags": [
+          "planning"
+        ]
+      },
+      "patch": {
+        "description": "Rename or rewrite a document; a stale `base_updated_at` is a 409.",
+        "operationId": "edit_document_api_workspaces__workspace_id__documents__document_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "document_id",
+            "required": true,
+            "schema": {
+              "title": "Document Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DocumentPatch"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Edit Document",
+        "tags": [
+          "planning"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/documents/{document_id}/versions": {
+      "get": {
+        "description": "A document's earlier versions, newest first.",
+        "operationId": "list_versions_api_workspaces__workspace_id__documents__document_id__versions_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "document_id",
+            "required": true,
+            "schema": {
+              "title": "Document Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentVersionListRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "List Versions",
+        "tags": [
+          "planning"
+        ]
+      }
+    },
     "/api/workspaces/{workspace_id}/exports": {
       "get": {
         "description": "The workspace's most recent exports, newest first, without download links.",
@@ -19894,6 +21232,130 @@
         ]
       }
     },
+    "/api/workspaces/{workspace_id}/initiatives/{initiative_id}/documents": {
+      "get": {
+        "description": "An initiative's documents, most recently edited first.",
+        "operationId": "list_initiative_documents_api_workspaces__workspace_id__initiatives__initiative_id__documents_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "initiative_id",
+            "required": true,
+            "schema": {
+              "title": "Initiative Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentListRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "List Initiative Documents",
+        "tags": [
+          "planning"
+        ]
+      },
+      "post": {
+        "description": "Write a new document under an initiative, as a workspace member.",
+        "operationId": "create_initiative_document_api_workspaces__workspace_id__initiatives__initiative_id__documents_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "initiative_id",
+            "required": true,
+            "schema": {
+              "title": "Initiative Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DocumentCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Create Initiative Document",
+        "tags": [
+          "planning"
+        ]
+      }
+    },
     "/api/workspaces/{workspace_id}/initiatives/{initiative_id}/projects/{project_id}": {
       "delete": {
         "description": "Take a project out of an initiative; needs editor rights on the project.",
@@ -21189,6 +22651,7 @@
                 "key_asc",
                 "priority_desc",
                 "due_asc",
+                "sla_asc",
                 "manual"
               ],
               "title": "Sort",
@@ -22909,6 +24372,64 @@
         "summary": "Create Comment",
         "tags": [
           "discussion"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/issues/{issue_id}/documents": {
+      "get": {
+        "description": "The documents that mention one issue, for its page.",
+        "operationId": "list_backlinks_api_workspaces__workspace_id__issues__issue_id__documents_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "issue_id",
+            "required": true,
+            "schema": {
+              "title": "Issue Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentListRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "List Backlinks",
+        "tags": [
+          "planning"
         ]
       }
     },
@@ -24727,6 +26248,130 @@
         ]
       }
     },
+    "/api/workspaces/{workspace_id}/projects/{project_id}/documents": {
+      "get": {
+        "description": "A project's documents, most recently edited first.",
+        "operationId": "list_project_documents_api_workspaces__workspace_id__projects__project_id__documents_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentListRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "List Project Documents",
+        "tags": [
+          "planning"
+        ]
+      },
+      "post": {
+        "description": "Write a new document under a project, as a writer on one of its teams.",
+        "operationId": "create_project_document_api_workspaces__workspace_id__projects__project_id__documents_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DocumentCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Create Project Document",
+        "tags": [
+          "planning"
+        ]
+      }
+    },
     "/api/workspaces/{workspace_id}/projects/{project_id}/milestones": {
       "get": {
         "description": "Every milestone of one project, in its manual order, with progress counts.\n\nA project holds a bounded set, so the list is answered whole and never pages.",
@@ -25504,6 +27149,55 @@
         "summary": "Add Reaction",
         "tags": [
           "discussion"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/reviews": {
+      "get": {
+        "description": "Open pull requests asking the caller for a review, or holding their changes request or approval.",
+        "operationId": "get_reviews_api_workspaces__workspace_id__reviews_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewsRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Get Reviews",
+        "tags": [
+          "integrations"
         ]
       }
     },
@@ -30496,6 +32190,69 @@
           }
         ],
         "summary": "Test Team Channel",
+        "tags": [
+          "integrations"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/teams/{team_id}/webhooks/discord-channels": {
+      "get": {
+        "description": "The Discord channels the workspace's Discord App can post to, for the add channel picker.",
+        "operationId": "list_discord_channels_api_workspaces__workspace_id__teams__team_id__webhooks_discord_channels_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "team_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Team Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/DiscordChannelRead"
+                  },
+                  "title": "Response List Discord Channels Api Workspaces  Workspace Id  Teams  Team Id  Webhooks Discord Channels Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "List Discord Channels",
         "tags": [
           "integrations"
         ]

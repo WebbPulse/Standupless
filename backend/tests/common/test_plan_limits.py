@@ -1,25 +1,17 @@
-"""The plan limit hooks: the table, `check_limit`, and how each resource is counted.
+"""The plan limit table and its pure checks: `limit_for`, `check_limit`, storage and guests.
 
-The free tier's real numbers are far above anything a test should seed, so each
-count test lowers its resource's limit to two and seeds up to it. What these hold
-is that the count reads the right rows, that rows which no longer occupy a slot are
-left out, and that the refusal is the stable 403 the frontend renders.
+How each resource is counted and held to these numbers lives with the counters,
+in `test_plan_usage`.
 """
 
 from __future__ import annotations
 
-from datetime import timedelta
 from typing import Any, cast
 
 import pytest
 from fastapi import HTTPException
-from webbpulse.identity.api_keys import mint
 
-from app.common import plan_limits
 from app.common.core.config import settings
-from app.common.db.dynamo.base import utc_now
-from app.common.db.dynamo.github import WebhookEndpoint, new_webhook_id, webhook_key
-from app.common.db.dynamo.invites import Invite, hash_token, new_invite_token
 from app.common.db.dynamo.workspaces import Workspace
 from app.common.plan_limits import (
     FREE_MEMBERS,
@@ -35,38 +27,11 @@ from app.common.plan_limits import (
     check_guests,
     check_limit,
     check_storage,
-    enforce_guest_cap,
-    enforce_limit,
     guest_allowance,
     guests_per_seat_of,
     limit_for,
     storage_limit_of,
 )
-from tests.domains.helpers import ADMIN, MEMBER, OWNER, add_member, make_team, make_workspace
-
-WORKSPACE = "01JB00000000000000000000WS"
-
-TEST_LIMIT = 2
-
-
-@pytest.fixture
-def workspace(repositories: Any) -> str:
-    """A free workspace with its owner as the only member."""
-    make_workspace(repositories, WORKSPACE, "acme", OWNER)
-    return WORKSPACE
-
-
-def lower(monkeypatch: pytest.MonkeyPatch, resource: LimitedResource) -> None:
-    """Drop one resource's free limit to `TEST_LIMIT` for this test."""
-    monkeypatch.setitem(PREVIEW_FREE_LIMITS, resource, TEST_LIMIT)
-
-
-def refusal(repositories: Any, resource: LimitedResource) -> dict[str, Any]:
-    """The 403 body `enforce_limit` raises for this resource, failing if it raises none."""
-    with pytest.raises(HTTPException) as caught:
-        enforce_limit(repositories, WORKSPACE, resource)
-    assert caught.value.status_code == 403
-    return cast(dict[str, Any], caught.value.detail)
 
 
 def test_every_plan_caps_every_resource() -> None:
@@ -130,100 +95,6 @@ def test_an_unknown_or_missing_plan_reads_as_free() -> None:
     assert limit_for(None, LimitedResource.MEMBERS) == free
 
 
-def test_teams_count_live_teams(repositories: Any, workspace: str, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Teams stop at the limit, and a team being deleted frees its slot."""
-    lower(monkeypatch, LimitedResource.TEAMS)
-    make_team(repositories, WORKSPACE, "01JB000000000000000000PRJ1", "APO")
-    make_team(repositories, WORKSPACE, "01JB000000000000000000PRJ2", "GEM")
-
-    assert refusal(repositories, LimitedResource.TEAMS)["error_code"] == PLAN_LIMIT_REACHED
-
-    repositories.teams.mark_deleting(WORKSPACE, "01JB000000000000000000PRJ2")
-    enforce_limit(repositories, WORKSPACE, LimitedResource.TEAMS)
-
-
-def test_members_count_workspace_memberships_only(
-    repositories: Any, workspace: str, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """Workspace members stop at the limit, and team memberships are not people."""
-    lower(monkeypatch, LimitedResource.MEMBERS)
-    make_team(repositories, WORKSPACE, "01JB000000000000000000PRJ1", "APO")
-    enforce_limit(repositories, WORKSPACE, LimitedResource.MEMBERS)
-
-    add_member(repositories, WORKSPACE, MEMBER, "member")
-
-    assert refusal(repositories, LimitedResource.MEMBERS)["details"]["resource"] == "members"
-
-
-def test_invites_count_unexpired_ones(repositories: Any, workspace: str, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Pending invites stop at the limit, and one past its expiry holds no slot."""
-    lower(monkeypatch, LimitedResource.INVITES)
-
-    def invite(email: str, *, expired: bool = False) -> None:
-        """Store one invite, optionally already past its expiry."""
-        row = Invite(
-            workspace_id=WORKSPACE,
-            email=email,
-            role="member",
-            invited_by=OWNER,
-            token_hash=hash_token(new_invite_token()),
-        )
-        if expired:
-            row.expires_at = utc_now() - timedelta(days=1)
-        repositories.invites.create(row)
-
-    invite("one@example.com")
-    invite("old@example.com", expired=True)
-    enforce_limit(repositories, WORKSPACE, LimitedResource.INVITES)
-
-    invite("two@example.com")
-
-    assert refusal(repositories, LimitedResource.INVITES)["details"]["resource"] == "invites"
-
-
-def test_webhooks_count_every_endpoint(repositories: Any, workspace: str, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Webhooks stop at the limit, team scoped ones counting toward the workspace."""
-    lower(monkeypatch, LimitedResource.WEBHOOKS)
-    for team_id in (None, "01JB000000000000000000PRJ1"):
-        webhook_id = new_webhook_id()
-        repositories.github.create_endpoint(
-            WebhookEndpoint(
-                workspace_id=WORKSPACE,
-                github_key=webhook_key(webhook_id),
-                webhook_id=webhook_id,
-                url="https://example.test/hook",
-                team_id=team_id,
-                resource_types=["issues"],
-                created_by=ADMIN,
-                created_at=utc_now(),
-                updated_at=utc_now(),
-            )
-        )
-
-    assert refusal(repositories, LimitedResource.WEBHOOKS)["details"]["resource"] == "webhooks"
-
-
-def test_api_keys_count_unrevoked_ones(repositories: Any, workspace: str, monkeypatch: pytest.MonkeyPatch) -> None:
-    """API keys stop at the limit, and a revoked key frees its slot."""
-    lower(monkeypatch, LimitedResource.API_KEYS)
-    minted = [
-        mint(
-            user_id=MEMBER,
-            tenant_id=WORKSPACE,
-            scopes=["issues:read"],
-            name=f"Key {index}",
-            store=repositories.api_keys,
-            created_by=MEMBER,
-        )
-        for index in range(TEST_LIMIT)
-    ]
-
-    assert refusal(repositories, LimitedResource.API_KEYS)["details"]["resource"] == "api_keys"
-
-    repositories.api_keys.revoke_by_id(WORKSPACE, minted[0].record.key_id)
-    enforce_limit(repositories, WORKSPACE, LimitedResource.API_KEYS)
-
-
 def test_storage_and_guests_keep_preview_numbers_until_billing_is_on(monkeypatch: pytest.MonkeyPatch) -> None:
     """Free is generous on storage and guests until an upgrade exists, then reads its launch numbers."""
     assert storage_limit_of("free") == PREVIEW_FREE_STORAGE_BYTES
@@ -275,48 +146,3 @@ def test_free_admits_no_guests_once_billing_is_on(monkeypatch: pytest.MonkeyPatc
     detail = cast(dict[str, Any], caught.value.detail)
     assert detail["details"]["limit"] == 0
     assert "does not include guests" in detail["message"]
-
-
-def test_the_guest_cap_counts_guests_and_pending_guest_invites(
-    repositories: Any, workspace: str, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """Guests and unexpired guest invites fill the allowance; member invites and expired ones do not."""
-    monkeypatch.setattr(plan_limits, "PREVIEW_FREE_GUESTS_PER_SEAT", 2)
-    add_member(repositories, WORKSPACE, "01JB0000000000000000000GS1", "guest")
-
-    def invite(email: str, role: str, *, expired: bool = False) -> None:
-        """Store one invite, optionally already past its expiry."""
-        row = Invite(
-            workspace_id=WORKSPACE,
-            email=email,
-            role=role,
-            invited_by=OWNER,
-            token_hash=hash_token(new_invite_token()),
-        )
-        if expired:
-            row.expires_at = utc_now() - timedelta(days=1)
-        repositories.invites.create(row)
-
-    invite("member@example.com", "member")
-    invite("old@example.com", "guest", expired=True)
-    enforce_guest_cap(repositories, WORKSPACE, include_pending=True)
-
-    invite("guest@example.com", "guest")
-    with pytest.raises(HTTPException) as caught:
-        enforce_guest_cap(repositories, WORKSPACE, include_pending=True)
-    assert cast(dict[str, Any], caught.value.detail)["details"]["resource"] == "guests"
-
-    enforce_guest_cap(repositories, WORKSPACE, include_pending=False)
-
-
-def test_a_member_becoming_a_guest_gives_up_their_seat(
-    repositories: Any, workspace: str, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """The seat a demoted member held no longer earns guests, so it is counted out."""
-    monkeypatch.setattr(plan_limits, "PREVIEW_FREE_GUESTS_PER_SEAT", 1)
-    add_member(repositories, WORKSPACE, MEMBER, "member")
-    add_member(repositories, WORKSPACE, "01JB0000000000000000000GS1", "guest")
-
-    enforce_guest_cap(repositories, WORKSPACE, include_pending=False)
-    with pytest.raises(HTTPException):
-        enforce_guest_cap(repositories, WORKSPACE, include_pending=False, freeing_seat=True)
