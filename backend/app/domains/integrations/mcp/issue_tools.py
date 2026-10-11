@@ -69,7 +69,12 @@ from app.domains.integrations.mcp.toolkit import (
 from app.domains.integrations.mcp.transport import ToolError
 from app.domains.integrations.service import link_reads
 
-SORTS: tuple[str, ...] = ("updated_desc", "created_desc", "key_asc", "priority_desc", "due_asc", "manual")
+SORTS: tuple[str, ...] = ("updated_desc", "created_desc", "key_asc", "priority_desc", "due_asc", "sla_asc", "manual")
+
+SORT_HELP = (
+    "The order, defaulting to updated_desc; sla_asc puts the soonest SLA breach first "
+    "and issues without a running SLA last"
+)
 
 LINK_TYPES: tuple[str, ...] = ("blocks", "blocked_by", "relates_to", "duplicate_of")
 
@@ -699,7 +704,7 @@ ISSUE_TOOLS: tuple[Tool, ...] = (
                 **_filter_properties(),
                 "query": string("A key or title prefix, such as ABC-12 or 'Fix login'"),
                 "include_archived": {"type": "boolean", "description": "Include archived issues, default false"},
-                "sort": enum(SORTS, "The order, defaulting to updated_desc"),
+                "sort": enum(SORTS, SORT_HELP),
                 **page_properties(),
             }
         ),
@@ -734,7 +739,7 @@ ISSUE_TOOLS: tuple[Tool, ...] = (
             {
                 **_filter_properties(with_assignee=False),
                 "include_archived": {"type": "boolean", "description": "Include archived issues, default false"},
-                "sort": enum(SORTS, "The order, defaulting to updated_desc"),
+                "sort": enum(SORTS, SORT_HELP),
                 **page_properties(),
             }
         ),

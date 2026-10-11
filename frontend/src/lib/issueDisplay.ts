@@ -37,6 +37,7 @@ export const SORTS: IssueSort[] = [
   'key_asc',
   'priority_desc',
   'due_asc',
+  'sla_asc',
 ];
 
 /** How a sort order reads in the interface. */
@@ -46,6 +47,7 @@ export const SORT_LABELS: Record<IssueSort, string> = {
   key_asc: 'Key',
   priority_desc: 'Priority',
   due_asc: 'Due date',
+  sla_asc: 'SLA breach',
 };
 
 /** The link types a caller may write. The inverses arrive only on a read. */
