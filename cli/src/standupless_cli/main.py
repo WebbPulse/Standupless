@@ -3094,7 +3094,7 @@ def release_backfill(
     """Rebuild a team's releases from past successful GitHub deployments, newest first. Needs team admin.
 
     Stops when the server pauses to keep the GitHub App's API budget for live sync,
-    printing the cursor to continue from once the budget resets.
+    or when a request makes no progress, printing why and the cursor to continue from.
     """
     context = _state(ctx).context()
     chosen = context.team(team)
@@ -3119,7 +3119,7 @@ def release_backfill(
         cursor = result.get("next_cursor")
         if not cursor:
             break
-        if result.get("resume_after"):
+        if result.get("resume_after") or result.get("stalled"):
             paused = result.get("message") or "Paused to keep the GitHub App's API budget for live sync."
             break
     if as_json:
