@@ -311,7 +311,9 @@ def test_a_missing_scope_refuses_before_the_tool_runs(client: TestClient, worksp
     assert "issues:write" in str(body["error"])
     assert body["error"]["data"]["missing"] == ["issues:write"]
     assert "API key" in body["error"]["message"]
-    assert body["error"]["data"]["grant_url"].endswith("/settings/api-keys")
+    assert body["error"]["data"]["grant_url"].endswith("/settings/connected-apps")
+    assert body["error"]["data"]["api_keys_url"].endswith("/settings/api-keys")
+    assert body["error"]["data"]["api_keys_url"] in body["error"]["message"]
 
 
 def test_a_scope_the_role_cannot_hold_says_so(client: TestClient, workspace: str, repositories: Any) -> None:

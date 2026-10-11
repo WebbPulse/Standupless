@@ -159,6 +159,12 @@
     "auth": "authenticated",
     "domain": "identity",
     "method": "POST",
+    "path": "/api/users/me/connected-apps/{client_id}/scopes"
+  },
+  {
+    "auth": "authenticated",
+    "domain": "identity",
+    "method": "POST",
     "path": "/api/users/me/deletion"
   },
   {

@@ -295,8 +295,10 @@ def _insufficient_scope(
     """The refusal for a tool whose scopes the credential lacks, saying how to get them.
 
     A scope the caller's role cannot hold is named as that, because no grant would
-    help. Otherwise an MCP token is pointed at the connected apps page, where "Grant
-    new permissions" adds the scope to the existing grant and the client's next token
+    help. Otherwise the refusal names both ways to get it, because by now every
+    credential is attributed to MCP and an OAuth token cannot be told from an API key:
+    an OAuth client is pointed at the connected apps page, where "Grant new
+    permissions" adds the scope to the existing grant and the client's next token
     refresh carries it, and an API key at the API keys page, since a key's scopes are
     fixed when it is created.
     """
@@ -310,20 +312,16 @@ def _insufficient_scope(
         )
     workspace = repositories.workspaces.get(context.workspace_id)
     settings_url = f"{settings.frontend_base_url}/w/{workspace.slug}/settings" if workspace is not None else ""
-    if context.source == MCP:
-        grant_url = f"{settings_url}/connected-apps" if settings_url else ""
-        data["grant_url"] = grant_url
-        where = f" at {grant_url}" if grant_url else " under Settings, Connected apps"
-        message = (
-            f"Missing scope: {names}. Grant it without signing in again{where}: choose Grant new "
-            "permissions on this app. The client's next token refresh carries it, or reconnect "
-            "the client to pick it up at once."
-        )
-    else:
-        grant_url = f"{settings_url}/api-keys" if settings_url else ""
-        data["grant_url"] = grant_url
-        where = f" at {grant_url}" if grant_url else " under Settings, API keys"
-        message = f"Missing scope: {names}. Create an API key that carries it{where}."
+    grant_url = f"{settings_url}/connected-apps" if settings_url else ""
+    api_keys_url = f"{settings_url}/api-keys" if settings_url else ""
+    data["grant_url"] = grant_url
+    data["api_keys_url"] = api_keys_url
+    message = (
+        f"Missing scope: {names}. For an OAuth client, grant it without signing in again "
+        f"{f'at {grant_url}' if grant_url else 'under Settings, Connected apps'}: choose Grant new "
+        "permissions on this app, and the client's next token refresh carries it. For an API key, "
+        f"create a key that carries it {f'at {api_keys_url}' if api_keys_url else 'under Settings, API keys'}."
+    )
     return ProtocolError(INSUFFICIENT_SCOPE, message, data=data)
 
 
