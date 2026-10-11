@@ -62,8 +62,8 @@ describe('BootSplash', () => {
       renderedMark.getAttribute('viewBox')
     );
     for (const mark of [renderedMark, shippedMark]) {
-      expect(mark).toHaveAttribute('width', String(BOOT_SPLASH_MARK_SIZE));
-      expect(mark).toHaveAttribute('aria-hidden', 'true');
+      expect(mark.getAttribute('width')).toBe(String(BOOT_SPLASH_MARK_SIZE));
+      expect(mark.getAttribute('aria-hidden')).toBe('true');
     }
     expect(rendered.querySelector('.boot-splash-spinner')).not.toBeNull();
     expect(shipped.querySelector('.boot-splash-spinner')).not.toBeNull();
