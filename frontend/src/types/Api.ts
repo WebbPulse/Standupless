@@ -329,7 +329,8 @@ export interface TeamCreate {
   estimate_allow_zero?: boolean;
   estimate_count_unestimated?: boolean;
   /** Make the team private from the start. Needs the Business plan. */
-  private?: boolean;  /** A top-level team to sit under, inheriting its statuses and labels. */
+  private?: boolean;
+  /** A top-level team to sit under, inheriting its statuses and labels. */
   parent_team_id?: string | null;
 }
 
@@ -346,7 +347,8 @@ export interface TeamUpdate {
   /** Whether linked pull requests carry the labels of this team's issues. */
   sync_pr_labels?: boolean;
   /** Turning this on needs the Business plan; turning it off never does. */
-  private?: boolean;  /** A top-level team to sit under, or null to make the team top-level. */
+  private?: boolean;
+  /** A top-level team to sit under, or null to make the team top-level. */
   parent_team_id?: string | null;
 }
 
@@ -371,7 +373,7 @@ export interface TeamMemberUpdate {
   role: TeamRole;
 }
 
-/** Whether a status or label belongs to one team or is inherited from the workspace or the parent team. */
+/** Whether a status or label is a team's own or inherited from the workspace or parent team. */
 export type WorkflowScope = 'team' | 'workspace' | 'parent';
 
 /** One workflow status on a team or the workspace. */

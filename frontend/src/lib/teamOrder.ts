@@ -45,39 +45,28 @@ export const applyTeamOrder = <T extends { id: string }>(
     .map(({ team }) => team);
 };
 
+type Nestable = { id: string; parent_team_id?: string | null };
+
+/** Whether the team sits under a parent that is also in `teams`. */
+export const isNested = <T extends Nestable>(team: T, teams: T[]): boolean =>
+  typeof team.parent_team_id === 'string' &&
+  teams.some((other) => other.id === team.parent_team_id);
+
 /**
  * The teams with each sub-team moved to just after its parent, keeping their
  * order otherwise, so the sidebar can nest them. A sub-team whose parent is not
  * in the list stays where it is, at the top level.
  */
-export const nestTeams = <
-  T extends { id: string; parent_team_id?: string | null },
->(
-  teams: T[]
-): T[] => {
-  const present = new Set(teams.map((team) => team.id));
-  const nested = (team: T): boolean =>
-    typeof team.parent_team_id === 'string' &&
-    present.has(team.parent_team_id);
+export const nestTeams = <T extends Nestable>(teams: T[]): T[] => {
   const children = new Map<string, T[]>();
+  const top: T[] = [];
   for (const team of teams) {
-    if (!nested(team) || typeof team.parent_team_id !== 'string') continue;
-    children.set(team.parent_team_id, [
-      ...(children.get(team.parent_team_id) ?? []),
-      team,
-    ]);
+    const parent = team.parent_team_id;
+    if (typeof parent === 'string' && isNested(team, teams)) {
+      children.set(parent, [...(children.get(parent) ?? []), team]);
+    } else {
+      top.push(team);
+    }
   }
-  return teams
-    .filter((team) => !nested(team))
-    .flatMap((team) => [team, ...(children.get(team.id) ?? [])]);
+  return top.flatMap((team) => [team, ...(children.get(team.id) ?? [])]);
 };
-
-/** Whether the team sits under a parent that is also in `teams`. */
-export const isNested = <
-  T extends { id: string; parent_team_id?: string | null },
->(
-  team: T,
-  teams: T[]
-): boolean =>
-  typeof team.parent_team_id === 'string' &&
-  teams.some((other) => other.id === team.parent_team_id);
