@@ -2,8 +2,7 @@
  * The template chip in the new issue dialog's header. It names the template
  * the draft started from and opens a filterable list of the templates the
  * team offers, grouped by where each is kept, with "No template" first to go
- * back to a blank draft. Picking a different template leaves focus to the
- * caller, so the dialog can move it to the title.
+ * back to a blank draft.
  */
 
 import React from 'react';
@@ -70,9 +69,8 @@ export const TemplatePicker: React.FC<TemplatePickerProps> = ({
           options={options}
           selected={[value ?? NONE]}
           onSelect={(picked) => {
-            const unchanged = picked === (value ?? NONE);
-            close(unchanged);
-            if (unchanged) return;
+            close();
+            if (picked === (value ?? NONE)) return;
             onChange(
               templates.find((template) => template.id === picked) ?? null
             );

@@ -25,13 +25,8 @@ export interface PopoverTriggerProps {
 export interface PopoverProps {
   /** Renders the control that opens the panel, given the props it needs. */
   trigger: (props: PopoverTriggerProps) => React.ReactNode;
-  /**
-   * The panel content, or a renderer handed the close function, which hands
-   * focus back to the trigger unless told not to.
-   */
-  children:
-    | React.ReactNode
-    | ((close: (restoreFocus?: boolean) => void) => React.ReactNode);
+  /** The panel content, or a renderer handed the close function. */
+  children: React.ReactNode | ((close: () => void) => React.ReactNode);
   /** The name assistive technology announces for the panel. */
   label: string;
   /** Controlled open state. Leave unset to let the popover hold its own. */
@@ -156,8 +151,8 @@ export const Popover: React.FC<PopoverProps> = ({
           )}
         >
           {typeof children === 'function'
-            ? children((restoreFocus = true) => {
-                close(restoreFocus);
+            ? children(() => {
+                close();
               })
             : children}
         </div>
