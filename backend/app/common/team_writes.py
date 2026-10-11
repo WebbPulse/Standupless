@@ -1,4 +1,4 @@
-"""Team create, update and delete, and a team's cycle, auto-close, archive and SLA settings.
+"""Team create, update and delete, a team's parent, and its cycle, auto-close, archive and SLA settings.
 
 Shared by the team routes and the MCP tools, because the integrations image may
 not import another domain's code and a team an agent creates, edits or deletes
@@ -9,10 +9,12 @@ these run.
 
 from __future__ import annotations
 
+from typing import Callable
+
 from fastapi import HTTPException, status
 from webbpulse.dynamodb import ConditionFailed, TransactionCanceled
 
-from app.common import cycle_schedule, issue_keys, plan_usage, team_purge
+from app.common import cycle_schedule, issue_keys, plan_usage, team_purge, team_workflow
 from app.common.api.dependencies.repositories import Repositories
 from app.common.api.schemas.teams import (
     ArchiveSettingsUpdate,
@@ -25,6 +27,7 @@ from app.common.api.schemas.teams import (
 from app.common.db.dynamo.memberships import Membership, team_member_key
 from app.common.db.dynamo.team_config import (
     STATUS_CATEGORIES,
+    TEAM_SCOPE,
     ArchiveSettings,
     AutoCloseSettings,
     CycleSettings,
@@ -39,10 +42,16 @@ from app.common.db.dynamo.teams import Team, new_team_id
 from app.common.plan_features import Feature, enforce_feature
 from app.common.plan_limits import LimitedResource
 from app.common.planning_rules import unprocessable
+from app.common.sub_teams import check_parent, sub_team_ids
 
 NOT_FOUND = {"error_code": "NOT_FOUND", "message": "Resource not found"}
 
 PREFIX_TAKEN = {"error_code": "CONFLICT", "message": "That team key prefix is in use"}
+
+HAS_SUB_TEAMS = {
+    "error_code": "CONFLICT",
+    "message": "This team has sub-teams. Move them to another team or make them top-level teams first.",
+}
 
 
 def load_team(repositories: Repositories, workspace_id: str, team_id: str) -> Team:
@@ -53,7 +62,9 @@ def load_team(repositories: Repositories, workspace_id: str, team_id: str) -> Te
     return team
 
 
-def starting_statuses(repositories: Repositories, workspace_id: str, team_id: str) -> list[Status]:
+def starting_statuses(
+    repositories: Repositories, workspace_id: str, team_id: str, parent_team_id: str | None = None
+) -> list[Status]:
     """The status rows a new team's create writes, so the team starts with every category.
 
     A team inherits the workspace statuses live, so only the categories the
@@ -61,9 +72,16 @@ def starting_statuses(repositories: Repositories, workspace_id: str, team_id: st
     team of a workspace with no workspace statuses seeds the defaults as
     workspace statuses instead, so every later team inherits them. A workspace
     that already has teams but no workspace statuses keeps giving each new team
-    its own copies, as before workspace statuses existed.
+    its own copies, as before workspace statuses existed. A sub-team inherits its
+    parent's whole workflow, so it gets copies only of what the parent's visible
+    set leaves uncovered.
     """
     config = repositories.team_config
+    if parent_team_id is not None:
+        held = {row.category for row in config.list_statuses(workspace_id, parent_team_id, include_hidden=False)}
+        return config.default_statuses(
+            workspace_id, team_id, categories=[category for category in STATUS_CATEGORIES if category not in held]
+        )
     covered = {row.category for row in config.list_workspace_statuses(workspace_id)}
     if not covered and not repositories.teams.list_team_ids(workspace_id):
         return config.default_workspace_statuses(workspace_id)
@@ -71,7 +89,14 @@ def starting_statuses(repositories: Repositories, workspace_id: str, team_id: st
     return config.default_statuses(workspace_id, team_id, categories=missing)
 
 
-def create_team(repositories: Repositories, workspace_id: str, user_id: str, payload: TeamCreate) -> Team:
+def create_team(
+    repositories: Repositories,
+    workspace_id: str,
+    user_id: str,
+    payload: TeamCreate,
+    *,
+    can_see: Callable[[str], bool] | None = None,
+) -> Team:
     """Create a team, make the creator its admin and seed the statuses it lacks.
 
     All three land as one `TransactWriteItems`, because a team written without its
@@ -79,10 +104,13 @@ def create_team(repositories: Repositories, workspace_id: str, user_id: str, pay
     prefix is a 409 and leaves nothing behind. A private team's marker rides in the
     same transaction, so it is never visible to the workspace, even for a moment.
     The team takes its plan slot in that transaction too, so racing creates at the
-    last slot land one team and refuse the rest.
+    last slot land one team and refuse the rest. A sub-team's parent pointer rides
+    in it as well; `can_see` holds the parent to the teams the caller may read.
     """
     if payload.private:
         enforce_feature(repositories, workspace_id, Feature.PRIVATE_TEAMS)
+    if payload.parent_team_id is not None:
+        check_parent(repositories, workspace_id, None, payload.parent_team_id, can_see=can_see)
     team = Team(
         workspace_id=workspace_id,
         team_id=new_team_id(),
@@ -93,6 +121,7 @@ def create_team(repositories: Repositories, workspace_id: str, user_id: str, pay
         estimate_extended=payload.estimate_extended,
         estimate_allow_zero=payload.estimate_allow_zero,
         estimate_count_unestimated=payload.estimate_count_unestimated,
+        parent_team_id=payload.parent_team_id,
     )
     membership = Membership(
         workspace_id=workspace_id,
@@ -101,13 +130,15 @@ def create_team(repositories: Repositories, workspace_id: str, user_id: str, pay
         role="admin",
         team_id=team.team_id,
     )
-    statuses = starting_statuses(repositories, workspace_id, team.team_id)
+    statuses = starting_statuses(repositories, workspace_id, team.team_id, payload.parent_team_id)
     try:
         actions = [
             repositories.teams.create_action(team),
             repositories.memberships.put_action(membership),
             *(repositories.team_config.create_status_action(row) for row in statuses),
         ]
+        if payload.parent_team_id is not None:
+            actions.append(repositories.team_config.parent_action(workspace_id, team.team_id, payload.parent_team_id))
         if payload.private:
             actions.append(repositories.memberships.private_team_action(workspace_id, team.team_id))
         plan_usage.commit(repositories, workspace_id, actions, [plan_usage.Delta(LimitedResource.TEAMS, 1)])
@@ -120,8 +151,17 @@ def create_team(repositories: Repositories, workspace_id: str, user_id: str, pay
     return team
 
 
-def update_team(repositories: Repositories, workspace_id: str, team_id: str, payload: TeamUpdate) -> Team:
-    """Change a team's name, key prefix, description, estimate scale, label sync or privacy.
+def update_team(
+    repositories: Repositories,
+    workspace_id: str,
+    team_id: str,
+    payload: TeamUpdate,
+    *,
+    actor_id: str = "",
+    source: str | None = None,
+    can_see: Callable[[str], bool] | None = None,
+) -> Team:
+    """Change a team's name, key prefix, description, estimate scale, label sync, privacy or parent.
 
     A new key prefix is applied first, in its own transaction, so a 409 on a taken
     prefix leaves every other field of the patch unapplied too. Making a team
@@ -129,9 +169,16 @@ def update_team(repositories: Repositories, workspace_id: str, team_id: str, pay
     written; opening a private team again is always allowed, so a downgrade never
     traps a team. A scale change pins the extended toggle as it reads now, so a row
     stored before the toggle existed keeps its value rather than reading it afresh
-    from the new scale.
+    from the new scale. A new parent is checked before the prefix moves and
+    applied through `set_parent` after it.
     """
     attributes = payload.model_dump(exclude_unset=True, exclude_none=True)
+    attributes.pop("parent_team_id", None)
+    reparent = "parent_team_id" in payload.model_fields_set
+    if reparent and payload.parent_team_id is not None:
+        team = load_team(repositories, workspace_id, team_id)
+        if payload.parent_team_id != team.parent_team_id:
+            check_parent(repositories, workspace_id, team, payload.parent_team_id, can_see=can_see)
     private = attributes.pop("private", None)
     if private:
         enforce_feature(repositories, workspace_id, Feature.PRIVATE_TEAMS)
@@ -144,6 +191,16 @@ def update_team(repositories: Repositories, workspace_id: str, team_id: str, pay
         if moved is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=NOT_FOUND)
         issue_keys.forget(workspace_id, team_id)
+    if reparent:
+        set_parent(
+            repositories,
+            workspace_id,
+            team_id,
+            payload.parent_team_id,
+            actor_id=actor_id,
+            source=source,
+            can_see=can_see,
+        )
     if private is not None:
         load_team(repositories, workspace_id, team_id)
         repositories.memberships.set_team_private(workspace_id, team_id, private)
@@ -156,6 +213,90 @@ def update_team(repositories: Repositories, workspace_id: str, team_id: str, pay
     if updated is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=NOT_FOUND)
     return updated
+
+
+def set_parent(
+    repositories: Repositories,
+    workspace_id: str,
+    team_id: str,
+    parent_team_id: str | None,
+    *,
+    actor_id: str = "",
+    source: str | None = None,
+    can_see: Callable[[str], bool] | None = None,
+) -> Team:
+    """Put a team under `parent_team_id`, or make it a top-level team again with `None`.
+
+    The team row and the `team_config` pointer change in one transaction. A team
+    leaving a parent loses that parent's statuses and labels: it first gets its
+    own copies of any status category it would no longer cover, then its issues in
+    the parent's statuses move to its first visible status of the same category,
+    recorded as status changes, and the parent's labels come off its issues as a
+    deleted label does. Its overrides of the parent's rows go too.
+    """
+    team = load_team(repositories, workspace_id, team_id)
+    if parent_team_id == team.parent_team_id:
+        return team
+    if parent_team_id is not None:
+        check_parent(repositories, workspace_id, team, parent_team_id, can_see=can_see)
+    previous = team.parent_team_id
+    config = repositories.team_config
+    leaving_statuses = config.list_statuses(workspace_id, previous) if previous else []
+    leaving_labels = config.list_labels(workspace_id, previous) if previous else []
+    try:
+        repositories.teams.transact_write(
+            [
+                repositories.teams.parent_action(workspace_id, team_id, parent_team_id),
+                config.parent_action(workspace_id, team_id, parent_team_id),
+            ]
+        )
+    except TransactionCanceled as exc:
+        if not exc.conditional_check_failed:
+            raise
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=NOT_FOUND) from exc
+    if previous:
+        _leave_parent(
+            repositories,
+            workspace_id,
+            team_id,
+            [row for row in leaving_statuses if row.scope == TEAM_SCOPE],
+            [row.label_id for row in leaving_labels if row.scope == TEAM_SCOPE],
+            actor_id=actor_id,
+            source=source,
+        )
+    return load_team(repositories, workspace_id, team_id)
+
+
+def _leave_parent(
+    repositories: Repositories,
+    workspace_id: str,
+    team_id: str,
+    statuses: list[Status],
+    label_ids: list[str],
+    *,
+    actor_id: str,
+    source: str | None,
+) -> None:
+    """Carry a team's issues off the statuses and labels of the parent it just left."""
+    config = repositories.team_config
+    visible = config.list_statuses(workspace_id, team_id, include_hidden=False)
+    covered = {row.category for row in visible}
+    missing = [category for category in STATUS_CATEGORIES if category not in covered]
+    for row in config.default_statuses(workspace_id, team_id, categories=missing):
+        config.create_status(row)
+    if missing:
+        visible = config.list_statuses(workspace_id, team_id, include_hidden=False)
+    first = {}
+    for row in sorted(visible, key=lambda row: (row.position, row.status_id)):
+        first.setdefault(row.category, row.status_id)
+    for row in statuses:
+        issues = repositories.issues.iter_for_status(workspace_id, team_id, row.status_id, include_archived=True)
+        if issues and row.category in first:
+            team_workflow.move_issues(repositories, issues, first[row.category], actor_id, source)
+        config.delete_override(workspace_id, team_id, "status", row.status_id)
+    for label_id in label_ids:
+        team_workflow.strip_label(repositories, workspace_id, team_id, label_id)
+        config.delete_override(workspace_id, team_id, "label", label_id)
 
 
 def cycle_settings(repositories: Repositories, workspace_id: str, team_id: str) -> CycleSettings:
@@ -257,8 +398,11 @@ def delete_team(repositories: Repositories, workspace_id: str, team_id: str) -> 
     team purge chain, whose last stage removes the tombstoned row. Answers whether
     this call tombstoned the team, `False` when it was already gone. The tombstone
     frees the team's plan slot in the same transaction, once, so a retry resuming an
-    earlier delete frees nothing more.
+    earlier delete frees nothing more. A team with sub-teams is a 409, so no
+    sub-team is ever left pointing at a deleted parent.
     """
+    if sub_team_ids(repositories, workspace_id, team_id):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=HAS_SUB_TEAMS)
     try:
         plan_usage.commit(
             repositories,

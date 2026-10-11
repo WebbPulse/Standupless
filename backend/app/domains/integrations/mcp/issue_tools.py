@@ -218,6 +218,7 @@ def _page(call: ToolCall, **overrides: Any) -> dict[str, Any]:
         sort=_sort(call),
         cursor=call.optional("cursor"),
         limit=limit(call.optional("limit")),
+        include_sub_teams=call.optional("include_sub_teams", False) is True,
     )
     return {"issues": [summary_json(row) for row in rows], "next_cursor": next_cursor}
 
@@ -710,6 +711,10 @@ ISSUE_TOOLS: tuple[Tool, ...] = (
                 **_filter_properties(),
                 "query": string("A key or title prefix, such as ABC-12 or 'Fix login'"),
                 "include_archived": {"type": "boolean", "description": "Include archived issues, default false"},
+                "include_sub_teams": {
+                    "type": "boolean",
+                    "description": "With team_id, also list the issues of that team's sub-teams, default false",
+                },
                 "sort": enum(SORTS, SORT_HELP),
                 **page_properties(),
             }

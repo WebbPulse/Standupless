@@ -51,16 +51,15 @@ from app.common.issue_rules import (
     lands_in_triage,
     not_found,
     require_team_member,
-    require_team_reader,
     status_categories,
     subscribe_touched,
     unprocessable,
-    visible_team_ids,
 )
 from app.common.labels import replace_group_siblings
 from app.common.mentions import mentioned_user_ids
 from app.common.relation_effects import child_activity
 from app.common.sla import apply_sla, sla_breach_key
+from app.common.sub_teams import listed_teams
 
 PATCHABLE_FIELDS: tuple[str, ...] = (
     "title",
@@ -134,6 +133,7 @@ def list_issues(
     cursor: Optional[str],
     limit: int,
     subscribed: bool = False,
+    include_sub_teams: bool = False,
 ) -> tuple[list[Issue], Optional[str]]:
     """One page of the issues the caller may see, filtered and sorted, and the next cursor.
 
@@ -145,13 +145,10 @@ def list_issues(
 
     A filter on one person, or `subscribed` for the caller's own subscriptions,
     reads that person's index instead of every team; the mode is part of the
-    cursor scope, since the keyed and fanned out sets differ.
+    cursor scope, since the keyed and fanned out sets differ. `include_sub_teams`
+    rolls the named team's visible sub-teams into the list.
     """
-    if team_id is not None:
-        require_team_reader(repositories, context, team_id)
-        teams = [team_id]
-    else:
-        teams = visible_team_ids(repositories, context)
+    teams = listed_teams(repositories, context, team_id, include_sub_teams=include_sub_teams)
 
     if not teams:
         return [], None

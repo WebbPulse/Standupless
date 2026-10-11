@@ -32,6 +32,13 @@ A team hides or renames one locally with an override row at
 effective set is its own rows plus the workspace rows with its overrides applied,
 each tagged with the `scope` it came from.
 
+A sub-team's parent is mirrored here in a pointer row at `team#<pid>#parent`,
+written with the team row, so a status or label read resolves the parent without
+reaching the `teams` table. A sub-team's effective set is its own rows, the
+parent's own rows tagged with the `parent` scope, and the workspace rows with the
+parent's overrides applied and then its own. A sub-team hides or renames a
+parent row with the same override rows it uses for workspace ones.
+
 A label may be a group, `is_group`, holding child labels that name it in
 `parent_id`. Groups nest one level and live in the scope of their children, so a
 workspace group holds workspace labels and a team group that team's labels. A
@@ -194,6 +201,18 @@ TEAM_SCOPE = "team"
 
 WORKSPACE_SCOPE = "workspace"
 """The `scope` of a status or label every team inherits from the workspace."""
+
+PARENT_SCOPE = "parent"
+"""The `scope` of a status or label a sub-team inherits from its parent team."""
+
+TEAM_PARENT = "team_parent"
+"""The `kind` of a sub-team's pointer row naming its parent team."""
+
+
+def parent_key(team_id: str) -> str:
+    """The sort key of the pointer row naming one sub-team's parent."""
+    return f"team#{team_id}#parent"
+
 
 EFFECTIVE_FIELDS: tuple[str, ...] = ("scope", "hidden", "inherited_name")
 """Fields resolved at read time, never stored on a status or label row."""
@@ -499,15 +518,26 @@ def _override_item(override: Override) -> dict[str, Any]:
     return item
 
 
-def _inherit(row: Any, team_id: str, override: Override | None) -> Any:
-    """A workspace status or label as one team sees it, with the team's override applied."""
-    update: dict[str, Any] = {"team_id": team_id, "scope": WORKSPACE_SCOPE}
+def _inherit(row: Any, team_id: str, override: Override | None, scope: str = WORKSPACE_SCOPE) -> Any:
+    """An inherited status or label as one team sees it, with the team's override applied."""
+    update: dict[str, Any] = {"team_id": team_id, "scope": scope}
     if override is not None:
         update["hidden"] = override.hidden
         if override.name:
             update["inherited_name"] = row.name
             update["name"] = override.name
     return row.model_copy(update=update)
+
+
+def _layered(parent: Override | None, own: Override | None) -> Override | None:
+    """A parent's override of a workspace row with a sub-team's own on top.
+
+    What the parent hides stays hidden in the sub-team, and the sub-team's
+    rename wins over the parent's.
+    """
+    if parent is None or own is None:
+        return own or parent
+    return own.model_copy(update={"hidden": own.hidden or parent.hidden, "name": own.name or parent.name})
 
 
 def status_order(row: Status) -> tuple[bool, int, str]:
@@ -660,6 +690,22 @@ class TeamConfigRepository(StandupRows):
         """Delete every row this table holds for one workspace, for the workspace purge."""
         return delete_partition(self._repository, TEAM_CONFIG, workspace_id)
 
+    def get_parent_id(self, workspace_id: str, team_id: str) -> str | None:
+        """The parent team one sub-team inherits from, or `None` for a top-level team."""
+        if not workspace_id or not team_id:
+            return None
+        item = self._repository.get({"workspace_id": workspace_id, "config_key": parent_key(team_id)})
+        return str(item["parent_team_id"]) if item is not None and item.get("parent_team_id") else None
+
+    def parent_action(self, workspace_id: str, team_id: str, parent_team_id: str | None) -> dict[str, Any]:
+        """A transaction Put of one team's parent pointer, or its Delete when `parent_team_id` is `None`."""
+        key = {"workspace_id": workspace_id, "config_key": parent_key(team_id)}
+        if parent_team_id is None:
+            return self._repository.delete_action(key)
+        return self._repository.put_action(
+            {**key, "team_id": team_id, "kind": TEAM_PARENT, "parent_team_id": parent_team_id}
+        )
+
     def get_status(self, workspace_id: str, team_id: str, status_id: str) -> Status | None:
         """One status as a team sees it, its own or an inherited one, hidden included, or `None`."""
         if not workspace_id or not team_id or not status_id:
@@ -667,10 +713,26 @@ class TeamConfigRepository(StandupRows):
         item = self._repository.get({"workspace_id": workspace_id, "config_key": status_key(team_id, status_id)})
         if item is not None:
             return Status.model_validate(dict(item))
+        parent_id = self.get_parent_id(workspace_id, team_id)
+        if parent_id is not None:
+            item = self._repository.get({"workspace_id": workspace_id, "config_key": status_key(parent_id, status_id)})
+            if item is not None:
+                override = self.get_override(workspace_id, team_id, "status", status_id)
+                return _inherit(Status.model_validate(dict(item)), team_id, override, PARENT_SCOPE)
         inherited = self.get_workspace_status(workspace_id, status_id)
         if inherited is None:
             return None
-        return _inherit(inherited, team_id, self.get_override(workspace_id, team_id, "status", status_id))
+        override = self._override_through(workspace_id, team_id, parent_id, "status", status_id)
+        return _inherit(inherited, team_id, override)
+
+    def _override_through(
+        self, workspace_id: str, team_id: str, parent_id: str | None, target: str, target_id: str
+    ) -> Override | None:
+        """The override a team applies to one workspace row, its parent's layered under its own."""
+        own = self.get_override(workspace_id, team_id, target, target_id)
+        if parent_id is None:
+            return own
+        return _layered(self.get_override(workspace_id, parent_id, target, target_id), own)
 
     def get_label(self, workspace_id: str, team_id: str, label_id: str) -> Label | None:
         """One label as a team sees it, its own or an inherited one, hidden included, or `None`."""
@@ -687,10 +749,17 @@ class TeamConfigRepository(StandupRows):
         item = self._repository.get({"workspace_id": workspace_id, "config_key": label_key(team_id, label_id)})
         if item is not None:
             return Label.model_validate(dict(item))
+        parent_id = self.get_parent_id(workspace_id, team_id)
+        if parent_id is not None:
+            item = self._repository.get({"workspace_id": workspace_id, "config_key": label_key(parent_id, label_id)})
+            if item is not None:
+                override = self.get_override(workspace_id, team_id, "label", label_id)
+                return _inherit(Label.model_validate(dict(item)), team_id, override, PARENT_SCOPE)
         inherited = self.get_workspace_label(workspace_id, label_id)
         if inherited is None:
             return None
-        return _inherit(inherited, team_id, self.get_override(workspace_id, team_id, "label", label_id))
+        override = self._override_through(workspace_id, team_id, parent_id, "label", label_id)
+        return _inherit(inherited, team_id, override)
 
     def get_workspace_status(self, workspace_id: str, status_id: str) -> Status | None:
         """One workspace status as stored, or `None`."""
@@ -834,14 +903,17 @@ class TeamConfigRepository(StandupRows):
         lands on a visible one, and are left out when `include_hidden` is false.
         """
         own = [Status.model_validate(dict(item)) for item in self._query(workspace_id, status_prefix(team_id), limit)]
+        parent_id = self.get_parent_id(workspace_id, team_id)
+        from_parent = self._query(workspace_id, status_prefix(parent_id), limit) if parent_id else []
         inherited = self._query(workspace_id, WORKSPACE_STATUS_PREFIX, limit) if team_id else []
-        overrides = (
-            {row.target_id: row for row in self.list_overrides(workspace_id, team_id, "status")} if inherited else {}
-        )
-        rows = own + [
-            _inherit(Status.model_validate(dict(item)), team_id, overrides.get(str(item["status_id"])))
-            for item in inherited
-        ]
+        overrides, through = self._overrides_for(workspace_id, team_id, parent_id, "status", bool(inherited))
+        rows = list(own)
+        for item in from_parent:
+            row = Status.model_validate(dict(item))
+            rows.append(_inherit(row, team_id, overrides.get(row.status_id), PARENT_SCOPE))
+        for item in inherited:
+            row = Status.model_validate(dict(item))
+            rows.append(_inherit(row, team_id, _layered(through.get(row.status_id), overrides.get(row.status_id))))
         return sorted((row for row in rows if include_hidden or not row.hidden), key=status_order)
 
     def list_labels(
@@ -849,18 +921,33 @@ class TeamConfigRepository(StandupRows):
     ) -> list[Label]:
         """A team's effective labels: its own plus the inherited ones with its overrides applied, by name."""
         own = [Label.model_validate(dict(item)) for item in self._query(workspace_id, label_prefix(team_id), limit)]
+        parent_id = self.get_parent_id(workspace_id, team_id)
+        from_parent = self._query(workspace_id, label_prefix(parent_id), limit) if parent_id else []
         inherited = self._query(workspace_id, WORKSPACE_LABEL_PREFIX, limit) if team_id else []
-        overrides = (
-            {row.target_id: row for row in self.list_overrides(workspace_id, team_id, "label")} if inherited else {}
-        )
-        rows = _hide_children_of_hidden_groups(
-            own
-            + [
-                _inherit(Label.model_validate(dict(item)), team_id, overrides.get(str(item["label_id"])))
-                for item in inherited
-            ]
-        )
+        overrides, through = self._overrides_for(workspace_id, team_id, parent_id, "label", bool(inherited))
+        rows = list(own)
+        for item in from_parent:
+            row = Label.model_validate(dict(item))
+            rows.append(_inherit(row, team_id, overrides.get(row.label_id), PARENT_SCOPE))
+        for item in inherited:
+            row = Label.model_validate(dict(item))
+            rows.append(_inherit(row, team_id, _layered(through.get(row.label_id), overrides.get(row.label_id))))
+        rows = _hide_children_of_hidden_groups(rows)
         return sorted((row for row in rows if include_hidden or not row.hidden), key=label_order)
+
+    def _overrides_for(
+        self, workspace_id: str, team_id: str, parent_id: str | None, target: str, any_inherited: bool
+    ) -> tuple[dict[str, Override], dict[str, Override]]:
+        """A team's own overrides of one target kind, and its parent's, keyed by target id.
+
+        The parent's are read only when there are workspace rows they could apply to.
+        """
+        if not team_id:
+            return {}, {}
+        own = {row.target_id: row for row in self.list_overrides(workspace_id, team_id, target)}
+        if parent_id is None or not any_inherited:
+            return own, {}
+        return own, {row.target_id: row for row in self.list_overrides(workspace_id, parent_id, target)}
 
     def _query(self, workspace_id: str, prefix: str, limit: int) -> list[Mapping[str, Any]]:
         """Every config row of one team under a sort key prefix."""
@@ -1142,16 +1229,21 @@ class TeamConfigRepository(StandupRows):
         the sweep never has to enumerate teams or issues to find its work. A team
         with only a settings row and no finished status has nothing to archive
         and is left out. A finished workspace status belongs to every team of its
-        workspace, which `teams_of` names; without it those rows are skipped.
+        workspace, which `teams_of` names; without it those rows are skipped. A
+        sub-team also archives from its parent's finished statuses, found through
+        the parent pointer rows the same scan returns.
         """
         targets: dict[tuple[str, str], ArchiveTarget] = {}
         inherited: dict[str, list[str]] = {}
-        items = self._repository.iter_scan(
-            filter_expression=Attr("category").is_in(list(FINISHED_CATEGORIES)) | Attr("kind").eq(ARCHIVE_SETTINGS),
-            page_size=page_size,
-        )
+        parents: list[tuple[str, str, str]] = []
+        wanted = Attr("category").is_in(list(FINISHED_CATEGORIES)) | Attr("kind").is_in([ARCHIVE_SETTINGS, TEAM_PARENT])
+        items = self._repository.iter_scan(filter_expression=wanted, page_size=page_size)
         for item in items:
             workspace_id = str(item["workspace_id"])
+            if item.get("kind") == TEAM_PARENT:
+                if item.get("team_id") and item.get("parent_team_id"):
+                    parents.append((workspace_id, str(item["team_id"]), str(item["parent_team_id"])))
+                continue
             if not item.get("team_id"):
                 if item.get("status_id"):
                     inherited.setdefault(workspace_id, []).append(str(item["status_id"]))
@@ -1164,6 +1256,14 @@ class TeamConfigRepository(StandupRows):
                 target.period_months = int(item.get("period_months", DEFAULT_ARCHIVE_PERIOD_MONTHS))
             elif item.get("status_id"):
                 target.status_ids.append(str(item["status_id"]))
+        for workspace_id, team_id, parent_id in parents:
+            source = targets.get((workspace_id, parent_id))
+            if source is None:
+                continue
+            target = targets.setdefault(
+                (workspace_id, team_id), ArchiveTarget(workspace_id=workspace_id, team_id=team_id)
+            )
+            target.status_ids.extend(status_id for status_id in source.status_ids if status_id not in target.status_ids)
         for workspace_id, status_ids in inherited.items():
             for team_id in teams_of(workspace_id) if teams_of is not None else ():
                 target = targets.setdefault(
@@ -1198,6 +1298,9 @@ class TeamConfigRepository(StandupRows):
             removed += 1
         if self.get_auto_close_settings(workspace_id, team_id) is not None:
             self._repository.delete({"workspace_id": workspace_id, "config_key": auto_close_settings_key(team_id)})
+            removed += 1
+        if self.get_parent_id(workspace_id, team_id) is not None:
+            self._repository.delete({"workspace_id": workspace_id, "config_key": parent_key(team_id)})
             removed += 1
         for prefix in (
             status_prefix(team_id),

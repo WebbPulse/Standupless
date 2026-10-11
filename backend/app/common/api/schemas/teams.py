@@ -50,7 +50,11 @@ def _check_key_prefix(value: str) -> str:
 
 
 class TeamCreate(BaseModel):
-    """The body `POST /api/workspaces/{workspace_id}/teams` takes."""
+    """The body `POST /api/workspaces/{workspace_id}/teams` takes.
+
+    `parent_team_id` creates the team as a sub-team of a top-level team, whose
+    statuses and labels it inherits.
+    """
 
     name: str = Field(min_length=1, max_length=80)
     key_prefix: str = Field(min_length=2, max_length=6)
@@ -60,6 +64,7 @@ class TeamCreate(BaseModel):
     estimate_allow_zero: bool = False
     estimate_count_unestimated: bool = False
     private: bool = False
+    parent_team_id: Optional[str] = Field(default=None, min_length=1)
 
     @field_validator("key_prefix")
     @classmethod
@@ -91,6 +96,8 @@ class TeamUpdate(BaseModel):
     `estimate_extended` adds the larger values to the scale, `estimate_allow_zero`
     adds 0, and `estimate_count_unestimated` counts an unestimated issue as one
     point in cycle and project progress instead of skipping it.
+    `parent_team_id` puts the team under a top-level parent team, and an explicit
+    null makes it a top-level team again.
     """
 
     name: Optional[str] = Field(default=None, min_length=1, max_length=80)
@@ -102,6 +109,7 @@ class TeamUpdate(BaseModel):
     description: Optional[str] = Field(default=None, max_length=2000)
     sync_pr_labels: Optional[bool] = None
     private: Optional[bool] = None
+    parent_team_id: Optional[str] = Field(default=None, min_length=1)
 
     @field_validator("key_prefix")
     @classmethod
@@ -124,7 +132,10 @@ class TeamUpdate(BaseModel):
 
 
 class TeamRead(BaseModel):
-    """One team as the API returns it, carrying the caller's team role."""
+    """One team as the API returns it, carrying the caller's team role.
+
+    `parent_team_id` names the team this one sits under, `null` for a top-level team.
+    """
 
     id: str
     workspace_id: str
@@ -144,6 +155,7 @@ class TeamRead(BaseModel):
     member_count: int = 0
     is_member: bool = False
     retired_key_prefixes: list[str] = Field(default_factory=list)
+    parent_team_id: Optional[str] = None
 
     @classmethod
     def from_row(
@@ -181,6 +193,7 @@ class TeamRead(BaseModel):
             member_count=member_count,
             is_member=is_member,
             retired_key_prefixes=retired_key_prefixes or [],
+            parent_team_id=team.parent_team_id,
         )
 
 
@@ -274,15 +287,15 @@ class StatusUpdate(BaseModel):
     icon: Optional[StatusIcon] = None
 
 
-ConfigScope = Literal["team", "workspace"]
+ConfigScope = Literal["team", "parent", "workspace"]
 
 
 class StatusRead(BaseModel):
     """One workflow status as the API returns it, `null` color and icon meaning the default.
 
-    `scope` says whether the team owns it or inherits it from the workspace. An
-    inherited status the team hid carries `hidden`, and one it renamed locally
-    carries the workspace name in `inherited_name`.
+    `scope` says whether the team owns it or inherits it from its parent team or
+    the workspace. An inherited status the team hid carries `hidden`, and one it
+    renamed locally carries the inherited name in `inherited_name`.
     """
 
     id: str

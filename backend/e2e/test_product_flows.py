@@ -361,6 +361,45 @@ class TestTeamsDomain:
         assert response.status_code == 200, response.text[:400]
         assert _items(response.json(), "statuses", "items") != []
 
+    @WRITES
+    def test_a_sub_team_inherits_and_rolls_up_into_its_parent(
+        self, api: Any, run_scope: RunScope, workspace: "dict[str, Any]", team: "dict[str, Any]"
+    ) -> None:
+        """A sub-team reads its parent's statuses, and the parent's list rolls up its issues on request.
+
+        A sub-team of its own under the shared team, deleted before the shared
+        team's teardown, which refuses a parent that still has sub-teams.
+        """
+        base = f"/api/workspaces/{workspace['id']}"
+        body = {"name": run_scope.name("sub-team"), "key_prefix": "SUB", "parent_team_id": team["id"]}
+        sub = _created(api.post(f"{base}/teams", json=body), "team")
+        created: "dict[str, Any] | None" = None
+        try:
+            assert sub["parent_team_id"] == team["id"]
+            listed = api.get(f"{base}/teams", params={"parent_team_id": team["id"]})
+            assert listed.status_code == 200, listed.text[:400]
+            assert _ids(listed.json(), "team", "teams") == [sub["id"]]
+
+            statuses = api.get(f"{base}/teams/{sub['id']}/statuses")
+            assert statuses.status_code == 200, statuses.text[:400]
+            rows = _items(statuses.json(), "statuses")
+            parent_rows = _items(api.get(f"{base}/teams/{team['id']}/statuses").json(), "statuses")
+            assert rows and {row["id"] for row in rows} == {row["id"] for row in parent_rows}, rows
+            assert "team" not in {row["scope"] for row in rows}, rows
+
+            created = _created(
+                api.post(f"{base}/issues", json={"team_id": sub["id"], "title": run_scope.name("sub-issue")}), "issue"
+            )
+            alone = api.get(f"{base}/issues", params={"team_id": team["id"]})
+            assert created["id"] not in _ids(alone.json(), "issue", "issues")
+            rolled = api.get(f"{base}/issues", params={"team_id": team["id"], "include_sub_teams": "true"})
+            assert rolled.status_code == 200, rolled.text[:400]
+            assert created["id"] in _ids(rolled.json(), "issue", "issues")
+        finally:
+            if created is not None:
+                api.delete(f"{base}/issues/{created['id']}")
+            api.delete(f"{base}/teams/{sub['id']}")
+
 
 class TestIssuesDomain:
     """Issues: the create, the read back by id and by key, and the list."""

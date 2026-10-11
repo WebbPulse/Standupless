@@ -70,6 +70,7 @@ def list_issues(
     context: Annotated[AuthzContext, Depends(require(Capability.WORKSPACE_READ))],
     repositories: Annotated[Repositories, Depends(get_repositories)],
     team_id: Annotated[Optional[str], Query()] = None,
+    include_sub_teams: Annotated[bool, Query()] = False,
     status_id: Values = None,
     status_id_not: Values = None,
     status_category: Values = None,
@@ -134,6 +135,9 @@ def list_issues(
     triage are left out the same way unless `include_triage` is set, and
     `triage_only` lists nothing but them.
 
+    `include_sub_teams` with a `team_id` rolls that team's sub-teams the caller
+    may see into the list, so a parent team's views show its sub-teams' issues.
+
     Every body carries `synced_at`. Sent back as `updated_since` with the same
     filter, it turns the read into a delta: only the issues changed since, every
     one in the list's sort order and unpaged, plus `removed_ids` for issues that
@@ -197,7 +201,14 @@ def list_issues(
 
     if updated_since is not None:
         changes = list_issue_changes(
-            repositories, context, wanted, team_id=team_id, sort=sort, since=updated_since, subscribed=subscribed
+            repositories,
+            context,
+            wanted,
+            team_id=team_id,
+            sort=sort,
+            since=updated_since,
+            subscribed=subscribed,
+            include_sub_teams=include_sub_teams,
         )
         delta = IssueSyncListRead(
             items=[IssueRead.from_row(issue) for issue in changes.issues],
@@ -218,6 +229,7 @@ def list_issues(
         cursor=cursor,
         limit=limit,
         subscribed=subscribed,
+        include_sub_teams=include_sub_teams,
     )
     return IssueSyncListRead(
         items=[IssueRead.from_row(issue) for issue in rows], next_cursor=next_cursor, synced_at=synced_at

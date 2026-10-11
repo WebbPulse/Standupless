@@ -27,8 +27,9 @@ from app.common.db.dynamo.issues import Issue
 from app.common.filter_resolution import resolve_issue_filter
 from app.common.issue_filters import IssueFilter
 from app.common.issue_keys import current_all
-from app.common.issue_rules import require_team_reader, status_categories, visible_team_ids
+from app.common.issue_rules import status_categories
 from app.common.issue_writes import descending, sort_key
+from app.common.sub_teams import listed_teams
 
 SYNC_OVERLAP = timedelta(seconds=10)
 """How far behind the newest change a cursor is set.
@@ -77,6 +78,7 @@ def list_issue_changes(
     sort: str,
     since: datetime,
     subscribed: bool = False,
+    include_sub_teams: bool = False,
 ) -> IssueChanges:
     """What changed in the caller's filtered issue list after `since`.
 
@@ -84,17 +86,14 @@ def list_issue_changes(
     it drops, archived ones included, and deleted issues come back as ids. A
     cursor older than the tombstone retention, or a delta too large to carry,
     answers `resync_required` and nothing else, since a partial answer there would
-    be silently wrong.
+    be silently wrong. `include_sub_teams` rolls the named team's visible
+    sub-teams in, as the full read does.
     """
     since = normalize(since)
     if since < utc_now() - TOMBSTONE_RETENTION + SYNC_OVERLAP:
         return IssueChanges(synced_at=since, resync_required=True)
 
-    if team_id is not None:
-        require_team_reader(repositories, context, team_id)
-        teams = [team_id]
-    else:
-        teams = visible_team_ids(repositories, context)
+    teams = listed_teams(repositories, context, team_id, include_sub_teams=include_sub_teams)
     if not teams:
         return IssueChanges(synced_at=since)
 
