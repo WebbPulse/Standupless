@@ -3,9 +3,10 @@
  * assignee and team are icon and value rows with no label column, because
  * the icon already says which property a row is; labels, project and cycle
  * follow as small sections. Everything that most issues leave empty, the
- * estimate, the dates, the parent, relations, links, pull requests, releases
- * and subscribers, appears only once it holds something, or when the "+" menu
- * asks for it, so a fresh issue reads as four rows rather than a form.
+ * estimate, the dates, the parent, relations, links, pull requests and
+ * releases, appears only once it holds something, or when the "+" menu asks
+ * for it, so a fresh issue reads as four rows rather than a form. Subscribers
+ * always show, so the subscribe toggle is never hidden.
  *
  * Every row is the same inline picker the rest of the app uses, writing
  * through the page's optimistic update, and the keyboard commands bound by the
@@ -24,6 +25,7 @@ import {
   LuPlus,
   LuTriangle,
 } from 'react-icons/lu';
+import type { IssueSubscription } from '../../hooks/useIssueSubscription';
 import { cn } from '../../lib/cn';
 import { timestampLabel } from '../../lib/issueDisplay';
 import type { Assignable } from '../../lib/issuePeople';
@@ -105,6 +107,8 @@ export interface IssuePropertiesPanelProps {
   onAddRelation: () => void;
   onAddLink: () => void;
   onAttachFiles: (files: File[]) => void;
+  /** The caller's subscription, shared with the issue bar's bell. */
+  subscription: IssueSubscription;
   className?: string;
 }
 
@@ -148,6 +152,7 @@ export const IssuePropertiesPanel: React.FC<IssuePropertiesPanelProps> = ({
   onAddRelation,
   onAddLink,
   onAttachFiles,
+  subscription,
   className = '',
 }) => {
   const panel = useRef<HTMLElement>(null);
@@ -476,11 +481,7 @@ export const IssuePropertiesPanel: React.FC<IssuePropertiesPanelProps> = ({
           issueId={issue.id}
           slug={slug}
         />
-        <IssueSubscribers
-          workspaceId={workspaceId}
-          issueId={issue.id}
-          hideEmpty
-        />
+        <IssueSubscribers subscription={subscription} />
       </div>
 
       <p className="px-2 pt-2 text-2xs text-text-faint">
