@@ -128,4 +128,45 @@ describe('the template editor', () => {
       screen.queryByRole('button', { name: 'Edit Bug report' })
     ).not.toBeInTheDocument();
   });
+
+  it('offers make recurring on own and inherited rows when asked', async () => {
+    const user = userEvent.setup();
+    const onMakeRecurring = vi.fn<(template: TemplateRead) => void>();
+    render(
+      <TemplateEditor
+        templates={[
+          template({}),
+          template({
+            id: 'tp-2',
+            name: 'Workspace review',
+            scope: 'workspace',
+          }),
+        ]}
+        scope="team"
+        canEdit
+        options={{ statuses: [], labels: [] }}
+        actions={actions}
+        onMakeRecurring={onMakeRecurring}
+      />
+    );
+
+    await user.click(
+      screen.getByRole('button', { name: 'Make Bug report recurring' })
+    );
+    await user.click(
+      screen.getByRole('button', { name: 'Make Workspace review recurring' })
+    );
+
+    expect(onMakeRecurring.mock.calls.map(([row]) => row.id)).toEqual([
+      'tp-1',
+      'tp-2',
+    ]);
+  });
+
+  it('shows no make recurring button without the callback', () => {
+    renderEditor([template({})]);
+    expect(
+      screen.queryByRole('button', { name: 'Make Bug report recurring' })
+    ).not.toBeInTheDocument();
+  });
 });

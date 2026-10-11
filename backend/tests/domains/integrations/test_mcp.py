@@ -264,8 +264,12 @@ def test_the_contract_fixes_the_tool_set() -> None:
         "create_template",
         "update_template",
         "delete_template",
+        "list_recurring_issues",
+        "create_recurring_issue",
+        "update_recurring_issue",
+        "delete_recurring_issue",
     }
-    assert len(TOOLS) == 151
+    assert len(TOOLS) == 155
 
 
 def test_a_notification_gets_no_body(client: TestClient, workspace: str, repositories: Any) -> None:

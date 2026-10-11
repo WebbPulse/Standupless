@@ -85,7 +85,7 @@ def _workspaces_routers() -> "Sequence[RouterSpec]":
 
 
 def _teams_routers() -> "Sequence[RouterSpec]":
-    """The teams domain: teams, their members, statuses, labels and templates, and the workspace set teams inherit.
+    """The teams domain: teams, members, statuses, labels, templates and recurring issues, and the workspace set.
 
     Every path is nested under a workspace, so the tenant is in the path of each
     one and the authorization dependency reads it from there.
@@ -93,6 +93,7 @@ def _teams_routers() -> "Sequence[RouterSpec]":
     from app.domains.teams.endpoints import (
         labels,
         members,
+        recurring,
         releases,
         statuses,
         teams,
@@ -110,6 +111,7 @@ def _teams_routers() -> "Sequence[RouterSpec]":
         (labels.router, "/workspaces", ("teams",)),
         (workspace_workflow.router, "/workspaces", ("teams",)),
         (templates.router, "/workspaces", ("teams",)),
+        (recurring.router, "/workspaces", ("teams",)),
     ]
 
 
@@ -216,15 +218,18 @@ _TEAMS_REPOSITORIES = (
 
 _TEAMS_READ_REPOSITORIES = ("workspaces", "users", "api_keys")
 
-_ISSUES_REPOSITORIES = ("issues", "relations", "activity", "counters", "subscriptions", "planning")
-"""What the issues image writes. `planning` is for a move adding the target team to the issue's project."""
+_ISSUES_REPOSITORIES = ("issues", "relations", "activity", "counters", "subscriptions", "planning", "team_config")
+"""What the issues image writes.
+
+`planning` is for a move adding the target team to the issue's project, and
+`team_config` for the recurring issue sweep moving each schedule to its next run.
+"""
 
 _ISSUES_READ_REPOSITORIES = (
     "memberships",
     "workspaces",
     "users",
     "teams",
-    "team_config",
     "releases",
     "api_keys",
 )

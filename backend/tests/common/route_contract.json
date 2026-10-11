@@ -1239,6 +1239,36 @@
     "auth": "team:read",
     "domain": "teams",
     "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/teams/{team_id}/recurring-issues"
+  },
+  {
+    "auth": "team:read",
+    "domain": "teams",
+    "method": "POST",
+    "path": "/api/workspaces/{workspace_id}/teams/{team_id}/recurring-issues"
+  },
+  {
+    "auth": "team:read",
+    "domain": "teams",
+    "method": "DELETE",
+    "path": "/api/workspaces/{workspace_id}/teams/{team_id}/recurring-issues/{recurring_id}"
+  },
+  {
+    "auth": "team:read",
+    "domain": "teams",
+    "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/teams/{team_id}/recurring-issues/{recurring_id}"
+  },
+  {
+    "auth": "team:read",
+    "domain": "teams",
+    "method": "PATCH",
+    "path": "/api/workspaces/{workspace_id}/teams/{team_id}/recurring-issues/{recurring_id}"
+  },
+  {
+    "auth": "team:read",
+    "domain": "teams",
+    "method": "GET",
     "path": "/api/workspaces/{workspace_id}/teams/{team_id}/release-pipeline"
   },
   {

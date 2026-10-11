@@ -16,6 +16,7 @@ from tests.domains.integrations.mcp_isolation import (
     initiatives,
     issues,
     planning,
+    recurring,
     releases,
     reviews,
     sync,
@@ -44,6 +45,7 @@ AREAS = (
     workspace,
     workflow,
     templates,
+    recurring,
 )
 
 AREA_ARGUMENTS: tuple[Callable[[dict[str, str], str], dict[str, dict[str, Any]]], ...] = tuple(

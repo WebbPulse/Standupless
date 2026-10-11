@@ -116,6 +116,14 @@ vi.mock('../../api/templates', () => ({
   updateTemplateSettings: vi.fn(),
 }));
 
+vi.mock('../../api/recurring', () => ({
+  listRecurringIssues: () =>
+    Promise.resolve({ recurring_issues: [], default_timezone: 'UTC' }),
+  createRecurringIssue: vi.fn(),
+  updateRecurringIssue: vi.fn(),
+  deleteRecurringIssue: vi.fn(),
+}));
+
 vi.mock('../../api/planning', () => ({
   listCycles: () => Promise.resolve({ cycles: [], next_cursor: null }),
   listProjects: () => Promise.resolve({ projects: [], next_cursor: null }),

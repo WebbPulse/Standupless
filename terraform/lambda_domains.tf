@@ -25,8 +25,8 @@ locals {
       secrets     = false
       ses         = false
       memory      = 512
-      tables      = ["issues", "relations", "activity", "counters", "subscriptions", "planning", "rate-limits"]
-      read_tables = ["memberships", "workspaces", "users", "teams", "team_config", "api-keys"]
+      tables      = ["issues", "relations", "activity", "counters", "subscriptions", "planning", "team_config", "rate-limits"]
+      read_tables = ["memberships", "workspaces", "users", "teams", "api-keys"]
     }
     views = {
       secrets     = true
