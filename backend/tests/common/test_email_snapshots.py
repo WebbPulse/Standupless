@@ -13,9 +13,9 @@ import functools
 import os
 import pathlib
 import re
-from html import unescape as html_unescape
 from collections.abc import Callable, Iterator
 from datetime import datetime, timezone
+from html import unescape as html_unescape
 
 import pytest
 from webbpulse.identity import IdentitySettings
