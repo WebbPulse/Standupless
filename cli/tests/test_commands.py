@@ -594,6 +594,52 @@ def test_initiative_create_edit_and_post_update(runner: CliRunner, api: respx.Mo
     assert deleted.called
 
 
+def test_document_list_view_create_edit_and_delete(runner: CliRunner, api: respx.MockRouter) -> None:
+    """Documents resolve their parent by name, and edit sends only the fields given."""
+    project = {"project_id": "pr-1", "name": "Launch", "status": "in_progress", "team_ids": [], "counts": {}}
+    initiative = {"initiative_id": "in-1", "name": "Grow", "status": "active"}
+    document = {
+        "document_id": "doc-1",
+        "workspace_id": WS,
+        "parent_kind": "project",
+        "parent_id": "pr-1",
+        "parent_name": "Launch",
+        "title": "Spec",
+        "author_id": "u-ada",
+        "updated_by": "u-ada",
+        "created_at": "2026-10-10T00:00:00Z",
+        "updated_at": "2026-10-10T00:00:00Z",
+        "body": "Ships with ABC-1",
+        "mentions": [],
+    }
+    api.get(f"/api/workspaces/{WS}/projects").respond(json={"projects": [project]})
+    api.get(f"/api/workspaces/{WS}/initiatives").respond(json={"initiatives": [initiative]})
+    listed = api.get(f"/api/workspaces/{WS}/projects/pr-1/documents").respond(json={"documents": [document]})
+    created = api.post(f"/api/workspaces/{WS}/initiatives/in-1/documents").respond(json=document)
+    api.get(f"/api/workspaces/{WS}/documents/doc-1").respond(json=document)
+    patched = api.patch(f"/api/workspaces/{WS}/documents/doc-1").respond(json=document)
+    deleted = api.delete(f"/api/workspaces/{WS}/documents/doc-1").respond(status_code=204)
+
+    shown = invoke(runner, "document", "list", "--project", "launch")
+    assert shown.exit_code == 0, shown.output
+    assert "Spec" in shown.stdout
+    assert "Ada" in shown.stdout
+    assert listed.called
+    viewed = invoke(runner, "document", "view", "doc-1")
+    assert viewed.exit_code == 0, viewed.output
+    assert "Ships with ABC-1" in viewed.stdout
+    made = invoke(runner, "document", "create", "Spec", "--initiative", "Grow", "--body", "Draft")
+    assert made.exit_code == 0, made.output
+    assert _json(created) == {"title": "Spec", "body": "Draft"}
+    edited = invoke(runner, "document", "edit", "doc-1", "--title", "Plan")
+    assert edited.exit_code == 0, edited.output
+    assert _json(patched) == {"title": "Plan"}
+    assert invoke(runner, "document", "delete", "doc-1").exit_code == 0
+    assert deleted.called
+    both = invoke(runner, "document", "list", "--project", "launch", "--initiative", "Grow")
+    assert both.exit_code != 0
+
+
 def test_project_update_cadence(runner: CliRunner, api: respx.MockRouter) -> None:
     """The due state shows in the list and view, and `project cadence` patches the interval."""
     project = {

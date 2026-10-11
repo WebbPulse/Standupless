@@ -76,6 +76,7 @@ within each team.
 | `cycles.ndjson` | Cycles of each included team |
 | `views.ndjson` | Team views, plus the requester's personal views |
 | `releases.ndjson` | Releases of each included team |
+| `documents.ndjson` | Documents of the included projects and of every initiative, each with its Markdown `body`. A guest requester gets no initiative documents. |
 
 ### Attachments
 

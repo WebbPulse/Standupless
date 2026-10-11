@@ -857,6 +857,79 @@ class TestPlanningDomain:
             api.delete(project_path)
 
     @WRITES
+    def test_a_document_round_trips_with_its_backlink(
+        self,
+        api: Any,
+        run_scope: RunScope,
+        workspace: "dict[str, Any]",
+        team: "dict[str, Any]",
+        issue: "dict[str, Any]",
+    ) -> None:
+        """A document under a project and one under an initiative edit, keep history, backlink and delete."""
+        base = f"/api/workspaces/{workspace['id']}"
+        project = _created(
+            api.post(f"{base}/projects", json={"team_id": team["id"], "name": run_scope.name("doc-project")}),
+            "project",
+        )
+        project_path = f"{base}/projects/{project['id']}"
+        initiative = _created(api.post(f"{base}/initiatives", json={"name": run_scope.name("doc-init")}), "initiative")
+        initiative_path = f"{base}/initiatives/{initiative['id']}"
+        try:
+            document = _created(
+                api.post(
+                    f"{project_path}/documents",
+                    json={"title": run_scope.name("spec"), "body": f"Ships with {issue['key']}"},
+                ),
+                "document",
+            )
+            document_path = f"{base}/documents/{document['id']}"
+            assert [row["issue_id"] for row in document["mentions"]] == [issue["id"]]
+
+            listed = api.get(f"{project_path}/documents")
+            assert listed.status_code == 200, listed.text[:400]
+            assert [row["document_id"] for row in listed.json()["documents"]] == [document["id"]]
+
+            backlinks = api.get(f"{base}/issues/{issue['id']}/documents")
+            assert backlinks.status_code == 200, backlinks.text[:400]
+            assert document["id"] in [row["document_id"] for row in backlinks.json()["documents"]]
+
+            everything = api.get(f"{base}/documents")
+            assert everything.status_code == 200, everything.text[:400]
+            assert document["id"] in [row["document_id"] for row in everything.json()["documents"]]
+
+            edited = api.patch(document_path, json={"body": "Rewritten", "base_updated_at": document["updated_at"]})
+            assert edited.status_code == 200, edited.text[:400]
+            assert edited.json()["mentions"] == []
+            stale = api.patch(document_path, json={"title": "Late", "base_updated_at": document["updated_at"]})
+            assert stale.status_code == 409, stale.text[:400]
+
+            readback = api.get(document_path)
+            assert readback.status_code == 200, readback.text[:400]
+            assert readback.json()["body"] == "Rewritten"
+
+            versions = api.get(f"{document_path}/versions")
+            assert versions.status_code == 200, versions.text[:400]
+            assert isinstance(versions.json()["versions"], list)
+
+            unlinked = api.get(f"{base}/issues/{issue['id']}/documents").json()["documents"]
+            assert document["id"] not in [row["document_id"] for row in unlinked]
+
+            note = _created(
+                api.post(f"{initiative_path}/documents", json={"title": run_scope.name("brief")}), "document"
+            )
+            initiative_docs = api.get(f"{initiative_path}/documents")
+            assert initiative_docs.status_code == 200, initiative_docs.text[:400]
+            assert [row["document_id"] for row in initiative_docs.json()["documents"]] == [note["id"]]
+
+            removed = api.delete(document_path)
+            assert removed.status_code == 204, removed.text[:400]
+            assert api.get(document_path).status_code == 404
+        finally:
+            deleted = api.delete(initiative_path)
+            assert deleted.status_code in (200, 204), deleted.text[:400]
+            api.delete(project_path)
+
+    @WRITES
     def test_a_project_keeps_its_linear_properties(
         self,
         api: Any,

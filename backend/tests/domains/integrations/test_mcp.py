@@ -251,11 +251,16 @@ def test_the_contract_fixes_the_tool_set() -> None:
         "create_initiative_update",
         "update_initiative_update",
         "delete_initiative_update",
+        "list_documents",
+        "get_document",
+        "create_document",
+        "update_document",
+        "delete_document",
         "list_approved_domains",
         "add_approved_domain",
         "remove_approved_domain",
     }
-    assert len(TOOLS) == 141
+    assert len(TOOLS) == 146
 
 
 def test_a_notification_gets_no_body(client: TestClient, workspace: str, repositories: Any) -> None:

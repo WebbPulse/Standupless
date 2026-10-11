@@ -193,7 +193,7 @@ def can_delete_initiative(context: AuthzContext, initiative: Initiative) -> bool
 
 
 def delete_initiative(repositories: Repositories, context: AuthzContext, initiative_id: str) -> None:
-    """Delete an initiative and its updates, leaving every project it held in place outside it.
+    """Delete an initiative with its updates and documents, leaving every project it held in place outside it.
 
     Every project carrying it is detached, the ones on teams the caller cannot
     see included, so no project is left pointing at an initiative that is gone.
@@ -205,6 +205,7 @@ def delete_initiative(repositories: Repositories, context: AuthzContext, initiat
         if project.initiative_id == initiative.initiative_id:
             repositories.planning.set_project_initiative(context.workspace_id, project.project_id, None)
     repositories.planning.delete_initiative_updates(context.workspace_id, initiative.initiative_id)
+    repositories.documents.delete_for_parent(context.workspace_id, "initiative", initiative.initiative_id)
     repositories.planning.delete(context.workspace_id, initiative.planning_key)
 
 

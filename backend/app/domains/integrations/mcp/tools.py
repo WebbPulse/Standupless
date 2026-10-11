@@ -18,6 +18,7 @@ from typing import Any
 
 from app.domains.integrations.mcp.audit_tools import AUDIT_TOOLS
 from app.domains.integrations.mcp.channel_tools import CHANNEL_TOOLS
+from app.domains.integrations.mcp.document_tools import DOCUMENT_TOOLS
 from app.domains.integrations.mcp.export_tools import EXPORT_TOOLS
 from app.domains.integrations.mcp.initiative_tools import INITIATIVE_TOOLS
 from app.domains.integrations.mcp.issue_tools import ISSUE_TOOLS
@@ -43,6 +44,7 @@ TOOLS: tuple[Tool, ...] = (
     *STANDUP_TOOLS,
     *PLANNING_TOOLS,
     *INITIATIVE_TOOLS,
+    *DOCUMENT_TOOLS,
     *RELEASE_TOOLS,
     *VIEW_TOOLS,
     *WORKSPACE_TOOLS,

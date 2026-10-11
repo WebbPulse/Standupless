@@ -27,10 +27,13 @@ from typing import Iterator, Optional
 
 from fastapi import APIRouter, Depends, Path, Query
 
-from app.common.api.dependencies.authz import AuthzContext, Capability, require
+from app.common.api.dependencies.authz import ActorKind, AuthzContext, Capability, missing_scopes, require
 from app.common.api.dependencies.repositories import Repositories, get_repositories
+from app.common.api.dependencies.scopes import PROJECTS_READ
+from app.common.api.schemas.documents import DocumentSummaryRead
 from app.common.db.dynamo.issues import Issue
 from app.common.db.dynamo.search_index import tokenize
+from app.common.documents import search_documents
 from app.common.issue_keys import current
 from app.common.issue_move import find_issue_by_number
 from app.common.similar_issues import DEFAULT_LIMIT as SIMILAR_DEFAULT_LIMIT
@@ -168,6 +171,22 @@ def _first_hits(
     return hits
 
 
+def _document_hits(
+    repositories: Repositories, context: AuthzContext, team_id: Optional[str], terms: set[str], limit: int
+) -> list[DocumentSummaryRead]:
+    """Documents matching every term, for a workspace-wide search by a caller who may read projects.
+
+    A search narrowed to one team skips them, since a document belongs to a
+    project or an initiative rather than a team, and a key without the projects
+    scope never sees them.
+    """
+    if team_id:
+        return []
+    if context.actor is not ActorKind.USER and missing_scopes(context.scopes, PROJECTS_READ):
+        return []
+    return search_documents(repositories, context, terms, limit)
+
+
 @router.get("/{workspace_id}/search", response_model=SearchRead)
 def search(
     workspace_id: str = Path(..., min_length=1),
@@ -179,11 +198,10 @@ def search(
 ) -> SearchRead:
     """Ranked search hits, by matched term count and then by recency."""
     teams = readable_teams(repositories, context, team_id)
-    if not teams:
-        return SearchRead(results=[])
-
     parsed = parse_key(q)
     if parsed is not None:
+        if not teams:
+            return SearchRead(results=[])
         prefix, number = parsed
         hits = _key_hit(repositories, context, teams, number, prefix)
         return SearchRead(
@@ -192,7 +210,13 @@ def search(
 
     terms = tokenize(q)
     if not terms:
+        if not teams:
+            return SearchRead(results=[])
         raise query_too_short()
+
+    documents = _document_hits(repositories, context, team_id, terms, limit)
+    if not teams:
+        return SearchRead(results=[], documents=documents)
 
     score = len(terms)
     hits = _first_hits(
@@ -200,7 +224,8 @@ def search(
     )
     ordered = sorted(hits, key=lambda row: row.updated_at, reverse=True)
     return SearchRead(
-        results=[SearchResultRead.from_row(current(repositories.teams, issue), score=score) for issue in ordered]
+        results=[SearchResultRead.from_row(current(repositories.teams, issue), score=score) for issue in ordered],
+        documents=documents,
     )
 
 

@@ -40,6 +40,8 @@ locals {
       "/api/workspaces/{workspace_id}/projects",
       "/api/workspaces/{workspace_id}/initiatives",
       "/api/workspaces/{workspace_id}/roadmap",
+      "/api/workspaces/{workspace_id}/documents",
+      "/api/workspaces/{workspace_id}/issues/{issue_id}/documents",
     ]
 
     # Five of these sit inside another domain's subtree and are reached on
