@@ -786,7 +786,8 @@ class IssueCreate(TypedDict):
     start_date: NotRequired[str | None]
     status_id: NotRequired[str | None]
     team_id: str
-    title: str
+    template_id: NotRequired[str | None]
+    title: NotRequired[str]
     triage: NotRequired[bool]
 
 
@@ -1769,6 +1770,67 @@ class TeamUpdate(TypedDict):
     sync_pr_labels: NotRequired[bool | None]
 
 
+class TemplateCreate(TypedDict):
+    assignee_id: NotRequired[str | None]
+    body: NotRequired[str | None]
+    cycle_id: NotRequired[str | None]
+    estimate: NotRequired[str | None]
+    label_ids: NotRequired[list[str]]
+    name: str
+    position: NotRequired[int | None]
+    priority: NotRequired[Literal["none", "urgent", "high", "medium", "low"] | None]
+    project_id: NotRequired[str | None]
+    project_milestone_id: NotRequired[str | None]
+    status_id: NotRequired[str | None]
+    title: NotRequired[str | None]
+
+
+class TemplateRead(TypedDict):
+    assignee_id: NotRequired[str | None]
+    body: NotRequired[str | None]
+    created_at: str
+    created_by: NotRequired[str | None]
+    cycle_id: NotRequired[str | None]
+    estimate: NotRequired[str | None]
+    id: str
+    label_ids: NotRequired[list[str]]
+    name: str
+    position: NotRequired[int]
+    priority: NotRequired[Literal["none", "urgent", "high", "medium", "low"] | None]
+    project_id: NotRequired[str | None]
+    project_milestone_id: NotRequired[str | None]
+    scope: NotRequired[Literal["team", "parent", "workspace"]]
+    status_id: NotRequired[str | None]
+    team_id: NotRequired[str | None]
+    title: NotRequired[str | None]
+    updated_at: str
+
+
+class TemplateSettingsRead(TypedDict):
+    default_template_id: NotRequired[str | None]
+    effective_default_template_id: NotRequired[str | None]
+    team_id: str
+
+
+class TemplateSettingsUpdate(TypedDict):
+    default_template_id: NotRequired[str | None]
+
+
+class TemplateUpdate(TypedDict):
+    assignee_id: NotRequired[str | None]
+    body: NotRequired[str | None]
+    cycle_id: NotRequired[str | None]
+    estimate: NotRequired[str | None]
+    label_ids: NotRequired[list[str] | None]
+    name: NotRequired[str | None]
+    position: NotRequired[int | None]
+    priority: NotRequired[Literal["none", "urgent", "high", "medium", "low"] | None]
+    project_id: NotRequired[str | None]
+    project_milestone_id: NotRequired[str | None]
+    status_id: NotRequired[str | None]
+    title: NotRequired[str | None]
+
+
 class TransitionCreate(TypedDict, closed=True):
     branch_pattern: NotRequired[str | None]
     status_id: NotRequired[str | None]
@@ -2615,6 +2677,11 @@ class TeamListRead(TypedDict):
 
 class TeamMemberListRead(TypedDict):
     members: list[TeamMemberRead]
+
+
+class TemplateListRead(TypedDict):
+    default_template_id: NotRequired[str | None]
+    templates: list[TemplateRead]
 
 
 class TriageSummaryRead(TypedDict):

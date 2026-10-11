@@ -1347,6 +1347,42 @@
     "auth": "team:read",
     "domain": "teams",
     "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/teams/{team_id}/template-settings"
+  },
+  {
+    "auth": "team:read",
+    "domain": "teams",
+    "method": "PATCH",
+    "path": "/api/workspaces/{workspace_id}/teams/{team_id}/template-settings"
+  },
+  {
+    "auth": "team:read",
+    "domain": "teams",
+    "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/teams/{team_id}/templates"
+  },
+  {
+    "auth": "team:read",
+    "domain": "teams",
+    "method": "POST",
+    "path": "/api/workspaces/{workspace_id}/teams/{team_id}/templates"
+  },
+  {
+    "auth": "team:read",
+    "domain": "teams",
+    "method": "DELETE",
+    "path": "/api/workspaces/{workspace_id}/teams/{team_id}/templates/{template_id}"
+  },
+  {
+    "auth": "team:read",
+    "domain": "teams",
+    "method": "PATCH",
+    "path": "/api/workspaces/{workspace_id}/teams/{team_id}/templates/{template_id}"
+  },
+  {
+    "auth": "team:read",
+    "domain": "teams",
+    "method": "GET",
     "path": "/api/workspaces/{workspace_id}/teams/{team_id}/triage-settings"
   },
   {
@@ -1354,6 +1390,30 @@
     "domain": "teams",
     "method": "PATCH",
     "path": "/api/workspaces/{workspace_id}/teams/{team_id}/triage-settings"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "teams",
+    "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/templates"
+  },
+  {
+    "auth": "workspace:admin",
+    "domain": "teams",
+    "method": "POST",
+    "path": "/api/workspaces/{workspace_id}/templates"
+  },
+  {
+    "auth": "workspace:admin",
+    "domain": "teams",
+    "method": "DELETE",
+    "path": "/api/workspaces/{workspace_id}/templates/{template_id}"
+  },
+  {
+    "auth": "workspace:admin",
+    "domain": "teams",
+    "method": "PATCH",
+    "path": "/api/workspaces/{workspace_id}/templates/{template_id}"
   },
   {
     "auth": "public",

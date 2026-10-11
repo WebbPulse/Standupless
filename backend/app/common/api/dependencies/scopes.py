@@ -99,6 +99,9 @@ STATUSES_WRITE_ADMIN = ("statuses:write", "admin")
 LABELS_WRITE_ADMIN = ("labels:write", "admin")
 """Workspace label writes, which every team inherits, so held to workspace administration."""
 
+TEAMS_WRITE_ADMIN = ("teams:write", "admin")
+"""Workspace template writes, which every team offers, so held to workspace administration."""
+
 ROUTE_SCOPES: Mapping[tuple[str, str], tuple[str, ...]] = {
     ("GET", "/{workspace_id}"): SETTINGS_READ,
     ("PATCH", "/{workspace_id}"): SETTINGS_WRITE_ADMIN,
@@ -156,6 +159,16 @@ ROUTE_SCOPES: Mapping[tuple[str, str], tuple[str, ...]] = {
     ("PATCH", "/{workspace_id}/teams/{team_id}/sla-settings"): TEAMS_WRITE,
     ("GET", "/{workspace_id}/teams/{team_id}/triage-settings"): TEAMS_READ,
     ("PATCH", "/{workspace_id}/teams/{team_id}/triage-settings"): TEAMS_WRITE,
+    ("GET", "/{workspace_id}/teams/{team_id}/templates"): TEAMS_READ,
+    ("POST", "/{workspace_id}/teams/{team_id}/templates"): TEAMS_WRITE,
+    ("PATCH", "/{workspace_id}/teams/{team_id}/templates/{template_id}"): TEAMS_WRITE,
+    ("DELETE", "/{workspace_id}/teams/{team_id}/templates/{template_id}"): TEAMS_WRITE,
+    ("GET", "/{workspace_id}/teams/{team_id}/template-settings"): TEAMS_READ,
+    ("PATCH", "/{workspace_id}/teams/{team_id}/template-settings"): TEAMS_WRITE,
+    ("GET", "/{workspace_id}/templates"): TEAMS_READ,
+    ("POST", "/{workspace_id}/templates"): TEAMS_WRITE_ADMIN,
+    ("PATCH", "/{workspace_id}/templates/{template_id}"): TEAMS_WRITE_ADMIN,
+    ("DELETE", "/{workspace_id}/templates/{template_id}"): TEAMS_WRITE_ADMIN,
     ("GET", "/{workspace_id}/teams/{team_id}/members"): MEMBERS_READ,
     ("PUT", "/{workspace_id}/teams/{team_id}/members/{user_id}"): MEMBERS_WRITE,
     ("DELETE", "/{workspace_id}/teams/{team_id}/members/{user_id}"): MEMBERS_WRITE,

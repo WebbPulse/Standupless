@@ -74,6 +74,9 @@ from standupless_cli._generated.models import (
     TeamSyncRead,
     TeamSyncWrite,
     TeamUpdate,
+    TemplateCreate,
+    TemplateListRead,
+    TemplateRead,
     TriageAccept,
     TriageDecline,
     TriageSettingsRead,
@@ -412,6 +415,29 @@ class StanduplessClient:
     def delete_workspace_label(self, workspace_id: str, label_id: str) -> None:
         """Delete a workspace label from every team."""
         self._request("DELETE", f"/api/workspaces/{workspace_id}/labels/{label_id}")
+
+    def list_templates(self, workspace_id: str, team_id: str | None) -> TemplateListRead:
+        """The templates a team offers and its default, or the workspace templates with no team."""
+        if team_id is None:
+            return cast(TemplateListRead, self._request("GET", f"/api/workspaces/{workspace_id}/templates"))
+        path = f"/api/workspaces/{workspace_id}/teams/{team_id}/templates"
+        return cast(TemplateListRead, self._request("GET", path))
+
+    def create_template(self, workspace_id: str, team_id: str | None, body: TemplateCreate) -> TemplateRead:
+        """Save a template on a team, or on the workspace with no team."""
+        if team_id is None:
+            path = f"/api/workspaces/{workspace_id}/templates"
+        else:
+            path = f"/api/workspaces/{workspace_id}/teams/{team_id}/templates"
+        return cast(TemplateRead, self._request("POST", path, json=body))
+
+    def delete_template(self, workspace_id: str, team_id: str | None, template_id: str) -> None:
+        """Delete one of a team's own templates, or a workspace template with no team."""
+        if team_id is None:
+            path = f"/api/workspaces/{workspace_id}/templates/{template_id}"
+        else:
+            path = f"/api/workspaces/{workspace_id}/teams/{team_id}/templates/{template_id}"
+        self._request("DELETE", path)
 
     def list_members(self, workspace_id: str) -> list[MemberRead]:
         """The workspace's members."""

@@ -45,6 +45,7 @@ from app.common.issue_rules import require_team_reader, visible_team_ids
 from app.common.issue_subscribers import list_subscribers, subscribe, unsubscribe
 from app.common.issue_writes import bulk_update_issues, create_issue, list_issues, update_issue, walk_page
 from app.common.similar_issues import find_similar
+from app.domains.integrations.mcp.template_tools import template_ref
 from app.domains.integrations.mcp.toolkit import (
     PRIORITIES,
     Tool,
@@ -353,7 +354,11 @@ def _possible_duplicates(call: ToolCall, issue: Issue) -> list[dict[str, Any]]:
 
 
 def _create_issue(call: ToolCall) -> Any:
-    """Create an issue through the route's own create path, naming any possible duplicates."""
+    """Create an issue through the route's own create path, naming any possible duplicates.
+
+    A template fills every field the caller left out, so an argument sent always
+    wins over the template's value, as it does in the create dialog.
+    """
     fields = (
         "team_id",
         "title",
@@ -369,8 +374,12 @@ def _create_issue(call: ToolCall) -> Any:
         "project_milestone_id",
     )
     payload: dict[str, Any] = {name: call.arguments[name] for name in fields if call.optional(name) is not None}
-    payload["assignee_id"] = resolve_user(call, call.optional("assignee_id"))
-    payload["parent_id"] = issue_id_ref(call, call.optional("parent_id"))
+    if call.optional("assignee_id") is not None:
+        payload["assignee_id"] = resolve_user(call, call.optional("assignee_id"))
+    if call.optional("parent_id") is not None:
+        payload["parent_id"] = issue_id_ref(call, call.optional("parent_id"))
+    if call.optional("template_id") is not None:
+        payload["template_id"] = template_ref(call, str(payload["team_id"]), call.optional("template_id")).template_id
     if payload.get("status_id"):
         payload["status_id"] = _status_ref(call, str(payload["team_id"]), str(payload["status_id"]))
     created = create_issue(call.repositories, call.context, IssueCreate.model_validate(payload))
@@ -794,6 +803,8 @@ ISSUE_TOOLS: tuple[Tool, ...] = (
         description=(
             "Create an issue in a team, allocating its key. The status defaults to the team's first. "
             "parent_id makes it a sub-issue; cycle_id, project_id and project_milestone_id place it. "
+            "template_id fills every field not passed from one of the team's templates (see list_templates), "
+            "and title may then be omitted when the template has one. "
             "The answer lists possible_duplicates: open issues whose titles share its terms."
         ),
         scopes=("issues:write",),
@@ -813,8 +824,9 @@ ISSUE_TOOLS: tuple[Tool, ...] = (
                 "cycle_id": string("A cycle of the same team"),
                 "project_id": string("A project the team is on"),
                 "project_milestone_id": string("A milestone of that project"),
+                "template_id": string("A template the team offers, by id or name, filling the fields not passed"),
             },
-            required=("team_id", "title"),
+            required=("team_id",),
         ),
         handler=_create_issue,
     ),

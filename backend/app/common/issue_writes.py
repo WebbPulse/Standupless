@@ -36,6 +36,7 @@ from app.common.issue_archive import archive_issue, unarchive_issue
 from app.common.issue_filters import ME, NONE, IssueFilter, estimate_value
 from app.common.issue_keyed_reads import keyed_rows
 from app.common.issue_keys import current_all
+from app.common.issue_templates import apply_template
 from app.common.issue_rules import (
     changed_fields,
     check_assignee,
@@ -290,7 +291,8 @@ def resolve_me(context: AuthzContext, user_id: Optional[str]) -> Optional[str]:
 def create_issue(repositories: Repositories, context: AuthzContext, payload: IssueCreate) -> Issue:
     """Create an issue, allocating its key from the team's counter.
 
-    The counter is allocated after every validation has passed, because a number is
+    A named template fills the fields the payload leaves out before anything is
+    validated, so a template's rows are held to the same checks as typed ones. The counter is allocated after every validation has passed, because a number is
     consumed whether or not the write lands and the contract accepts gaps but not
     wasted ones.
     """
@@ -298,6 +300,7 @@ def create_issue(repositories: Repositories, context: AuthzContext, payload: Iss
     team = repositories.teams.get(context.workspace_id, payload.team_id)
     if team is None:
         raise not_found()
+    payload = apply_template(repositories, context, payload)
 
     if payload.status_id:
         chosen = check_status(repositories, context.workspace_id, payload.team_id, payload.status_id)
