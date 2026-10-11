@@ -1498,6 +1498,8 @@ export interface TriageSnooze {
 export interface CycleListQuery {
   team_id: string;
   status?: CycleStatus;
+  /** Also list the cycles of the team's sub-teams the caller can see. */
+  include_sub_teams?: boolean;
   cursor?: string;
   limit?: number;
 }
@@ -1809,6 +1811,8 @@ export interface ProjectListQuery {
   status?: ProjectStatus;
   /** Only the projects in this initiative. */
   initiative_id?: string;
+  /** With `team_id`, also list the projects of its sub-teams the caller can see. */
+  include_sub_teams?: boolean;
   cursor?: string;
   limit?: number;
 }

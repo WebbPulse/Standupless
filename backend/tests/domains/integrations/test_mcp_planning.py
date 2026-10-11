@@ -15,6 +15,7 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 
+from app.common import team_writes
 from app.common.db.dynamo.issues import Issue
 from app.common.db.dynamo.planning import ProjectUpdateRow, project_update_key
 from app.common.team_refs import team_not_found_message
@@ -496,6 +497,30 @@ def test_delete_project_update_refuses_another_member(
 
     assert text.startswith("This credential may not write there")
     assert repositories.planning.get_project_update(WORKSPACE, planning["project_id"], update_id) is not None
+
+
+def test_cycle_and_project_lists_roll_up_only_visible_sub_teams(
+    client: TestClient, repositories: Any, planning: dict[str, str], elsewhere: dict[str, str]
+) -> None:
+    """include_sub_teams adds a public sub-team's cycles and projects and leaves a private one out."""
+    team_writes.set_parent(repositories, WORKSPACE, OTHER_TEAM, TEAM)
+    secret = mint_for(repositories, MEMBER, ("cycles:read", "projects:read"))
+    rolled = {"team_id": TEAM, "include_sub_teams": True}
+
+    def listed() -> tuple[set[str], set[str]]:
+        """The cycle and project ids the rolled-up lists answer."""
+        cycles = answer(tool(client, secret, "list_cycles", rolled))["cycles"]
+        projects = answer(tool(client, secret, "list_projects", rolled))["projects"]
+        return {row["cycle_id"] for row in cycles}, {row["project_id"] for row in projects}
+
+    assert listed() == (
+        {planning["cycle_id"], elsewhere["cycle_id"]},
+        {planning["project_id"], elsewhere["project_id"]},
+    )
+
+    repositories.memberships.set_team_private(WORKSPACE, OTHER_TEAM, True)
+
+    assert listed() == ({planning["cycle_id"]}, {planning["project_id"]})
 
 
 def test_existing_reads_accept_a_team_key_and_a_project_name(

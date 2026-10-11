@@ -47,6 +47,7 @@ def list_projects(
     initiative_id: Annotated[Optional[str], Query()] = None,
     cursor: Annotated[Optional[str], Query()] = None,
     limit: Annotated[int, Query(ge=1, le=MAX_LIMIT)] = DEFAULT_LIMIT,
+    include_sub_teams: Annotated[bool, Query()] = False,
 ) -> CursorPage[ProjectRead]:
     """One page of the workspace's projects the caller can see, by target date, undated last.
 
@@ -55,7 +56,9 @@ def list_projects(
     ones in that initiative. The rows are read whole and paged over the filtered
     order, so a page is never left short by projects the caller cannot see.
     Undated projects sort last, because an absent target is a project nobody has
-    committed to yet.
+    committed to yet. `include_sub_teams` with `team_id` also lists the projects
+    of the team's sub-teams the caller may read, so a private sub-team stays out
+    for outsiders.
     """
     window, next_cursor = list_project_page(
         repositories,
@@ -65,6 +68,7 @@ def list_projects(
         cursor=cursor,
         limit=limit,
         initiative_id=initiative_id,
+        include_sub_teams=include_sub_teams,
     )
     return ProjectListRead(items=window, next_cursor=next_cursor)
 

@@ -33,6 +33,7 @@ from app.common.planning_rules import (
     visible_team_ids,
 )
 from app.common.project_cadence import workspace_interval
+from app.common.sub_teams import listed_teams
 
 NOT_NULLABLE = ("name", "status", "team_ids", "priority", "member_ids")
 """Patch fields that may be omitted but never cleared, because every project has one."""
@@ -65,6 +66,7 @@ def list_projects(
     cursor: Optional[str],
     limit: int,
     initiative_id: Optional[str] = None,
+    include_sub_teams: bool = False,
 ) -> tuple[list[ProjectRead], Optional[str]]:
     """One page of the workspace's projects the caller can see, and the next cursor.
 
@@ -72,13 +74,16 @@ def list_projects(
     `team_id` narrows to the projects that team is on and `initiative_id` to the
     ones in that initiative, which a guest may not filter by. The rows are read whole
     and paged over the filtered order, so a page is never left short by projects
-    the caller cannot see.
+    the caller cannot see. `include_sub_teams` widens `team_id` to the team and
+    its sub-teams the caller may read, as the issue list does.
     """
     wanted_status = None if status_filter is None else normalise_project_status(status_filter)
     if status_filter is not None and status_filter not in STATUS_VALUES:
         raise unprocessable(f"Unknown project status: {status_filter}")
+    wanted_teams: set[str] | None = None
     if team_id is not None:
         require_team_reader(repositories, context, team_id)
+        wanted_teams = set(listed_teams(repositories, context, team_id, include_sub_teams=include_sub_teams))
     if initiative_id is not None:
         require_initiative_access(context)
 
@@ -89,7 +94,7 @@ def list_projects(
         teams = visible_project_teams(row, visible)
         if not teams:
             continue
-        if team_id is not None and team_id not in teams:
+        if wanted_teams is not None and wanted_teams.isdisjoint(teams):
             continue
         if wanted_status is not None and row.status != wanted_status:
             continue
@@ -97,7 +102,8 @@ def list_projects(
             continue
         bodies.append(ProjectRead.from_row(row, teams, default_interval_days=default_days))
 
-    scope = f"projects:{context.workspace_id}:{team_id or 'all'}:{wanted_status or 'all'}:{initiative_id or 'all'}"
+    narrowed = f"{team_id}:subs" if include_sub_teams and team_id is not None else team_id or "all"
+    scope = f"projects:{context.workspace_id}:{narrowed}:{wanted_status or 'all'}:{initiative_id or 'all'}"
     offset = decode_offset_cursor(cursor, scope)
     window = bodies[offset : offset + limit]
     next_offset = offset + len(window)
