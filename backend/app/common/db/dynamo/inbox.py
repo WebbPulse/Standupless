@@ -71,6 +71,9 @@ carrying its own shape so the two can never collide.
 STANDUP_PREFIX = "standup#"
 """The partition prefix standup digest delivery markers live under, which no inbox can name."""
 
+SWEEP_PARTITION = "sweep#passes"
+"""The partition the scheduled sweeps record their last pass in, which no inbox can name."""
+
 RETENTION = timedelta(days=90)
 
 UNREAD_INDEX = "ws_user-unread-index"
@@ -460,6 +463,36 @@ class InboxRepository:
         except ConditionFailed:
             return False
         return True
+
+    def claim_sweep(self, name: str, slot: int, now: datetime) -> bool:
+        """Claim one sweep's pass for the window starting at epoch second `slot`.
+
+        Answers true when the last recorded pass is from an earlier window, or there
+        is none, and false when this window's pass is already claimed. The put is
+        conditional, so two ticks racing on one window cannot both run the sweep,
+        and a late tick still claims the window it lands in.
+        """
+        try:
+            self._repository.put(
+                {
+                    "ws_user": SWEEP_PARTITION,
+                    "notification_id": name,
+                    "slot": slot,
+                    "claimed_at": instant(now),
+                    "expires_at": expires_at(now),
+                },
+                condition=Attr("notification_id").not_exists() | Attr("slot").lt(slot),
+            )
+        except ConditionFailed:
+            return False
+        return True
+
+    def last_sweep(self, name: str) -> int | None:
+        """The window one sweep last claimed, as its starting epoch second, or `None`."""
+        item = self._repository.get({"ws_user": SWEEP_PARTITION, "notification_id": name})
+        if item is None:
+            return None
+        return int(item["slot"])
 
     def delete(self, workspace_id: str, user_id: str, notification_id: str) -> bool:
         """Remove one notification, reporting whether one was there."""

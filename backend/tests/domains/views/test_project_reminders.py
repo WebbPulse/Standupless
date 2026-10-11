@@ -215,17 +215,26 @@ def test_the_in_app_preference_is_honoured(repositories: Any, workspace: str, re
     assert recorder.sent == []
 
 
-def test_the_sweep_runs_every_quarter_hour() -> None:
-    """The minute flush runs the sweep at minutes 0, 15, 30 and 45 alone."""
+def test_the_sweep_runs_every_quarter_hour(repositories: Any) -> None:
+    """The minute flush runs the sweep on the first tick of each quarter hour alone."""
     hour = datetime(2026, 9, 1, 12, 0, tzinfo=timezone.utc)
-    ran = [minute for minute in range(60) if sweep_due(hour.replace(minute=minute))]
+    ran = [minute for minute in range(60) if sweep_due(repositories, hour.replace(minute=minute))]
     assert ran == [0, 15, 30, 45]
+
+
+def test_a_late_tick_still_runs_the_sweep(repositories: Any) -> None:
+    """A quarter hour whose first tick is late still gets its pass."""
+    hour = datetime(2026, 9, 1, 12, 0, tzinfo=timezone.utc)
+    assert sweep_due(repositories, hour)
+
+    assert sweep_due(repositories, hour.replace(minute=17))
+    assert not sweep_due(repositories, hour.replace(minute=18))
 
 
 def test_the_schedule_record_runs_the_sweep(repositories: Any, workspace: str, monkeypatch: pytest.MonkeyPatch) -> None:
     """The flush schedule's synthetic record reaches the sweep on a quarter hour."""
     _project(repositories, workspace, created_at=datetime.now(timezone.utc) - timedelta(days=7, hours=1))
-    monkeypatch.setattr("app.domains.views.consumers.project_reminders.sweep_due", lambda now: True)
+    monkeypatch.setattr("app.domains.views.consumers.project_reminders.sweep_due", lambda repositories, now: True)
 
     handle_record(repositories, {"eventSource": NOTIFY_DIGEST_SOURCE, "eventName": "FLUSH", "eventID": "x"})
 

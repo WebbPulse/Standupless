@@ -61,6 +61,7 @@ class User(BaseModel):
     email_verified: bool = False
     email_notifications: bool = True
     notification_preferences: dict[str, dict[str, bool]] = Field(default_factory=dict)
+    timezone: Optional[str] = None
     disabled: bool = False
     is_admin: bool = False
     created_at: datetime = Field(default_factory=utc_now)

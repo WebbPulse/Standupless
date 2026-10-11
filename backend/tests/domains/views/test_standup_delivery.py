@@ -118,11 +118,20 @@ def test_an_off_cadence_or_a_bad_timezone_is_never_due(workspace: str) -> None:
     assert due_date(schedule(workspace, timezone="Mars/Olympus"), AFTER_SEND) is None
 
 
-def test_the_sweep_runs_every_five_minutes() -> None:
-    """The flush schedule ticks every minute and the sweep rides one tick in five."""
+def test_the_sweep_runs_every_five_minutes(repositories: Any) -> None:
+    """The flush schedule ticks every minute and the sweep rides the first tick in each five."""
     hour = datetime(2026, 10, 6, 13, 0, tzinfo=timezone.utc)
-    ran = [minute for minute in range(60) if sweep_due(hour.replace(minute=minute))]
+    ran = [minute for minute in range(60) if sweep_due(repositories, hour.replace(minute=minute))]
     assert ran == list(range(0, 60, 5))
+
+
+def test_a_late_tick_still_runs_the_sweep(repositories: Any) -> None:
+    """A five minute window whose first tick is late still gets its pass."""
+    hour = datetime(2026, 10, 6, 13, 0, tzinfo=timezone.utc)
+    assert sweep_due(repositories, hour)
+
+    assert sweep_due(repositories, hour.replace(minute=6, second=40))
+    assert not sweep_due(repositories, hour.replace(minute=9))
 
 
 def test_each_member_gets_the_digest_in_the_inbox_and_by_email(
@@ -243,7 +252,7 @@ def test_turning_off_both_channels_sends_nothing(
 def test_the_schedule_record_runs_the_standup_sweep(repositories: Any, monkeypatch: pytest.MonkeyPatch) -> None:
     """The flush schedule's synthetic record also runs the standup sweep when its tick is due."""
     calls: list[datetime] = []
-    monkeypatch.setattr(standups, "sweep_due", lambda now: True)
+    monkeypatch.setattr(standups, "sweep_due", lambda repositories, now: True)
     monkeypatch.setattr(standups, "run_standups", lambda repositories, now: calls.append(now))
 
     handle_record(repositories, {"eventSource": NOTIFY_DIGEST_SOURCE, "eventName": "FLUSH", "eventID": "x"})
