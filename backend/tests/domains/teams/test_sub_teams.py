@@ -197,6 +197,22 @@ def test_an_existing_team_joins_a_parent(client: TestClient, workspace: str) -> 
     assert {row["id"] for row in rows if row["scope"] == "parent"} == {row["id"] for row in _statuses(client, PARENT)}
 
 
+def test_a_change_of_parent_is_audited(client: TestClient, workspace: str, repositories: Any) -> None:
+    """Joining and leaving a parent each record the parent before and after; other edits record nothing."""
+    sign_in(client, OWNER)
+    assert client.patch(f"{BASE}/teams/{LONER}", json={"parent_team_id": PARENT}).status_code == 200
+    assert client.patch(f"{BASE}/teams/{LONER}", json={"parent_team_id": PARENT}).status_code == 200
+    assert client.patch(f"{BASE}/teams/{LONER}", json={"description": "Gems"}).status_code == 200
+    assert client.patch(f"{BASE}/teams/{LONER}", json={"parent_team_id": None}).status_code == 200
+
+    rows = [row for row in repositories.audit.list_events(WORKSPACE).events if row.action == "team.parent_changed"]
+    assert [(row.before, row.after) for row in reversed(rows)] == [
+        ({"parent_team_id": None}, {"parent_team_id": PARENT}),
+        ({"parent_team_id": PARENT}, {"parent_team_id": None}),
+    ]
+    assert {(row.target.id, row.actor.id) for row in rows} == {(LONER, OWNER)}
+
+
 def test_a_member_cannot_move_a_team(client: TestClient, workspace: str) -> None:
     """Changing the parent is a team admin write like any other team setting."""
     sign_in(client, MEMBER)

@@ -439,7 +439,10 @@ def _create_team(call: ToolCall) -> Any:
 
 
 def _update_team(call: ToolCall) -> Any:
-    """Change a team's name, key prefix, description, estimate settings, label sync, privacy or parent team."""
+    """Change a team's name, key prefix, description, estimate settings, label sync, privacy or parent team.
+
+    A change of parent is recorded in the audit log, as the REST patch records it.
+    """
     team = admin_team(call)
     arguments = given_arguments(
         call, ("name", "key_prefix", "description", *ESTIMATE_ARGUMENTS, "sync_pr_labels", "private")
@@ -454,6 +457,7 @@ def _update_team(call: ToolCall) -> Any:
         source=call.context.source,
         can_see=call.context.can_find_team,
     )
+    audit.record_parent_change(call.repositories, call.context, updated, team.parent_team_id)
     body = _team_json(call, updated)
     body["retired_key_prefixes"] = call.repositories.teams.list_aliases(call.context.workspace_id, team.team_id)
     return body

@@ -18,7 +18,7 @@ from typing import Any, Iterator
 import pytest
 from fastapi.testclient import TestClient
 
-from app.common import workspace_export
+from app.common import team_writes, workspace_export
 from app.common.composition.domains import DOMAINS
 from app.common.composition.wiring import build_domain_app
 from app.common.db.dynamo.attachments import build_attachment
@@ -54,6 +54,8 @@ from tests.domains.helpers import (
 WORKSPACE = "01JB00000000000000000000WS"
 
 TEAM = "01JB000000000000000000PRJ1"
+
+SUB_TEAM = "01JB000000000000000000PRJ2"
 
 BUCKET = "standupless-test-exports"
 
@@ -312,6 +314,18 @@ def test_an_admin_exports_every_entity(client: TestClient, repositories: Any, wo
     for line in rows(bundle, "comments") + rows(bundle, "issues"):
         assert not set(line) & workspace_export.STORAGE_KEYS
     assert job["counts"]["issues"] == 2
+
+
+def test_a_sub_team_row_links_its_parent(client: TestClient, repositories: Any, workspace: str, bucket: str) -> None:
+    """Each team row carries `parent_team_id`, so the bundle keeps the team hierarchy."""
+    make_team(repositories, WORKSPACE, SUB_TEAM, "SUB")
+    team_writes.set_parent(repositories, WORKSPACE, SUB_TEAM, TEAM)
+    sign_in(client, OWNER)
+
+    job = start(client).json()
+    teams = {row["team_id"]: row for row in rows(open_bundle(workspace, job["export_id"]), "teams")}
+    assert teams[SUB_TEAM]["parent_team_id"] == TEAM
+    assert teams[TEAM]["parent_team_id"] is None
 
 
 @pytest.mark.parametrize("role_user", [MEMBER, GUEST])
