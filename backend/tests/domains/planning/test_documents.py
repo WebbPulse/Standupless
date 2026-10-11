@@ -189,9 +189,9 @@ def test_issue_keys_backlink_from_the_issue(client: TestClient, issues_client: T
     issue = seed_issue(issues_client, workspace)
     project_id = seed_project(client, workspace)["project_id"]
     created = _create(client, workspace, "project", project_id, body=f"Blocked on {issue['key']} and NOPE-9.")
-    backlinks = f"{_base(workspace)}/issues/{issue['issue_id']}/documents"
+    backlinks = f"{_base(workspace)}/issues/{issue['id']}/documents"
 
-    assert [row["issue_id"] for row in created["mentions"]] == [issue["issue_id"]]
+    assert [row["issue_id"] for row in created["mentions"]] == [issue["id"]]
     assert [row["document_id"] for row in client.get(backlinks).json()["documents"]] == [created["document_id"]]
 
     path = f"{_base(workspace)}/documents/{created['document_id']}"
