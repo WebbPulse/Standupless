@@ -813,7 +813,8 @@ export const stateToViewFilter = (
       key !== 'cursor' &&
       key !== 'limit' &&
       key !== 'include_archived' &&
-      key !== 'archived_only'
+      key !== 'archived_only' &&
+      key !== 'include_sub_teams'
     )
       filter[key] = value;
   }
