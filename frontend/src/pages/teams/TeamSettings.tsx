@@ -5,7 +5,8 @@
  * rules, the rules that move an issue when a pull request changes, whether
  * linked pull requests carry its issue labels, the GitHub repository its issues sync with, the release
  * pipeline its releases move through, the Slack and Discord channels it
- * posts notifications to, and its outbound webhooks. These are a route of
+ * posts notifications to, its outbound webhooks, and a danger zone for
+ * deleting it. These are a route of
  * their own so a link to them survives being sent to someone else.
  *
  * The sections sit on one scrolling page with a list of anchors beside them
@@ -28,6 +29,7 @@ import TeamGeneralSection from '../../components/team/TeamGeneralSection';
 import TeamMembersSection from '../../components/team/TeamMembersSection';
 import TeamParentSection from '../../components/team/TeamParentSection';
 import TeamChannelsSection from '../../components/team/TeamChannelsSection';
+import TeamDangerZoneSection from '../../components/team/TeamDangerZoneSection';
 import DiscordReturnToast from '../../components/team/DiscordReturnToast';
 import SlackReturnToast from '../../components/team/SlackReturnToast';
 import TeamPrivacySection from '../../components/team/TeamPrivacySection';
@@ -69,6 +71,7 @@ const SECTIONS = [
   { id: 'releases', label: 'Releases' },
   { id: 'notifications', label: 'Notifications' },
   { id: 'webhooks', label: 'Webhooks' },
+  { id: 'danger', label: 'Danger zone' },
 ] as const;
 
 /**
@@ -129,6 +132,10 @@ const TeamSettings: React.FC = () => {
     parent === undefined
       ? undefined
       : teamSettingsPath(slug ?? '', parent.key_prefix);
+  const canDelete = canDeleteTeam(workspace?.role);
+  const sections = SECTIONS.filter(
+    (section) => section.id !== 'danger' || canDelete
+  );
 
   const frame = (
     id: (typeof SECTIONS)[number]['id'],
@@ -168,7 +175,7 @@ const TeamSettings: React.FC = () => {
             {team.name}
           </p>
           <ul className="space-y-px">
-            {SECTIONS.map((section) => (
+            {sections.map((section) => (
               <li key={section.id}>
                 <a
                   href={`#team-settings-${section.id}`}
@@ -190,13 +197,13 @@ const TeamSettings: React.FC = () => {
             <div className="space-y-6">
               <TeamGeneralSection
                 workspaceId={workspaceId}
-                slug={slug ?? ''}
                 team={team}
                 canEdit={editable}
-                canDelete={canDeleteTeam(workspace?.role)}
+                parentSettingsPath={parentSettings}
               />
               <TeamParentSection
                 workspaceId={workspaceId}
+                slug={slug ?? ''}
                 team={team}
                 canEdit={editable}
               />
@@ -242,6 +249,7 @@ const TeamSettings: React.FC = () => {
               workspaceId={workspaceId}
               teamId={team.id}
               canEdit={editable}
+              parentSettingsPath={parentSettings}
               inherited={
                 team.parent_team_id !== undefined &&
                 team.parent_team_id !== null
@@ -342,6 +350,15 @@ const TeamSettings: React.FC = () => {
               canEdit={editable}
             />
           )}
+          {canDelete &&
+            frame(
+              'danger',
+              <TeamDangerZoneSection
+                workspaceId={workspaceId}
+                slug={slug ?? ''}
+                team={team}
+              />
+            )}
         </div>
       </div>
     </WorkspaceShell>

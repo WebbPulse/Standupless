@@ -687,15 +687,25 @@ describe('sub-teams', () => {
     expect(shownOrder()).toEqual(['proj-1', 'proj-3', 'proj-2']);
   });
 
-  it('shows the sub-team the route is in with its parent closed', async () => {
+  it('expands the collapsed parent of the sub-team the route is in', async () => {
+    const user = userEvent.setup();
     renderSidebar('owner', '/w/mine/team/WEB');
     await screen.findByRole('button', { name: /Web/ });
 
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /Engine/ })).toHaveAttribute(
+        'aria-expanded',
+        'true'
+      );
+    });
     expect(shownOrder()).toEqual(['proj-1', 'proj-3', 'proj-2']);
-    expect(screen.getByRole('button', { name: /Engine/ })).toHaveAttribute(
-      'aria-expanded',
-      'false'
-    );
+    expect(
+      globalThis.localStorage.getItem('standupless.sidebar.teams.ws-1')
+    ).toBe(JSON.stringify(['ENG']));
+
+    await user.click(screen.getByRole('button', { name: /Engine/ }));
+
+    expect(shownOrder()).toEqual(['proj-1', 'proj-2']);
   });
 
   it('moves a parent past the next team with its sub-team along', async () => {

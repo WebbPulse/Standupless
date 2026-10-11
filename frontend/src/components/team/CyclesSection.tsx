@@ -17,6 +17,7 @@ import {
   useMutationWithRefetch,
   type QueryKey,
 } from '@webbpulse/api-client/react';
+import { Link } from 'react-router-dom';
 import { getCycleSettings, updateCycleSettings } from '../../api/teams';
 import {
   COOLDOWN_WEEKS,
@@ -48,6 +49,8 @@ export interface CyclesSectionProps {
   canEdit: boolean;
   /** Whether the team is a sub-team, which runs on its parent's schedule. */
   inherited?: boolean | undefined;
+  /** The parent team's settings page, linked from a sub-team's note. */
+  parentSettingsPath?: string | undefined;
 }
 
 /** How often the schedule is re-read while the settings tab is open. */
@@ -136,6 +139,7 @@ export const CyclesSection: React.FC<CyclesSectionProps> = ({
   teamId,
   canEdit,
   inherited = false,
+  parentSettingsPath,
 }) => {
   const auth = useQueryAuth();
   const prefix = useId();
@@ -212,8 +216,18 @@ export const CyclesSection: React.FC<CyclesSectionProps> = ({
         </p>
         {inherited && (
           <p className="text-xs text-text-faint">
-            This sub-team uses its parent team's cycles. Change them in the
-            parent team's settings.
+            This sub-team uses its parent team's cycles. Change them in the{' '}
+            {parentSettingsPath === undefined ? (
+              "parent team's settings"
+            ) : (
+              <Link
+                to={`${parentSettingsPath}#team-settings-cycles`}
+                className="text-accent hover:underline"
+              >
+                parent team's settings
+              </Link>
+            )}
+            .
           </p>
         )}
       </div>

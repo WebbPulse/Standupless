@@ -1,8 +1,9 @@
 /**
- * The team settings route: the General section's rename and typed-confirm
- * delete, and the status, label and team member sections, including the
- * reorder that the contract makes two position PATCHes because it exposes no
- * bulk route, and the pull request labels switch.
+ * The team settings route: the General section's rename, the typed-confirm
+ * delete in the danger zone at the bottom of the page, and the status, label
+ * and team member sections, including the reorder that the contract makes two
+ * position PATCHes because it exposes no bulk route, and the pull request
+ * labels switch.
  */
 
 import { render, screen, waitFor, within } from '@testing-library/react';
@@ -298,6 +299,20 @@ describe('the general section', () => {
     expect(navigate).toHaveBeenCalledWith('/w/mine/settings/teams');
   });
 
+  it('puts the danger zone last on the page and in the section list', async () => {
+    renderPage();
+
+    const danger = (
+      await screen.findByRole('button', { name: 'Delete team' })
+    ).closest('[id^="team-settings-"]');
+    const frames = document.querySelectorAll('[id^="team-settings-"]');
+    expect(danger).toBe(frames[frames.length - 1]);
+    const links = within(
+      screen.getByRole('navigation', { name: 'Team settings sections' })
+    ).getAllByRole('link');
+    expect(links[links.length - 1]).toHaveTextContent('Danger zone');
+  });
+
   it('offers delete only to a workspace owner or admin, as the route checks', async () => {
     useWorkspaceMock.mockReturnValue(resolved('member'));
     renderPage();
@@ -307,6 +322,9 @@ describe('the general section', () => {
     ).toBeInTheDocument();
     expect(
       screen.queryByRole('button', { name: 'Delete team' })
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('link', { name: 'Danger zone' })
     ).not.toBeInTheDocument();
   });
 });

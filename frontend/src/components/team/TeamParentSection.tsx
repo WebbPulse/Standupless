@@ -15,10 +15,12 @@
 
 import React, { useState } from 'react';
 import { invalidateQueries } from '@webbpulse/api-client/react';
+import { Link } from 'react-router-dom';
 import { updateTeam } from '../../api/teams';
 import { useCreateTeam } from '../../hooks/useCreateTeam';
 import { useTeamsFor } from '../../hooks/useTeams';
 import { errorMessage } from '../../lib/errors';
+import { teamSettingsPath } from '../../lib/paths';
 import {
   allLabelsKey,
   allStatusesKey,
@@ -34,6 +36,8 @@ import { SelectField } from '../ui/select';
 /** Props for TeamParentSection. */
 export interface TeamParentSectionProps {
   workspaceId: string;
+  /** The workspace slug, for the links to related teams' settings. */
+  slug: string;
   team: TeamRead;
   /** Whether the caller administers the team. */
   canEdit: boolean;
@@ -45,6 +49,7 @@ const NONE = '';
 /** Shows the team's parent team and lets a team admin set or clear it. */
 export const TeamParentSection: React.FC<TeamParentSectionProps> = ({
   workspaceId,
+  slug,
   team,
   canEdit,
 }) => {
@@ -85,13 +90,39 @@ export const TeamParentSection: React.FC<TeamParentSectionProps> = ({
     }
   };
 
-  const summary = (): string => {
+  const settingsLink = (other: TeamRead): React.ReactNode => (
+    <Link
+      key={other.id}
+      to={teamSettingsPath(slug, other.key_prefix)}
+      className="text-accent hover:underline"
+    >
+      {other.name}
+    </Link>
+  );
+
+  const summary = (): React.ReactNode => {
     if (subTeams.length > 0) {
-      const names = subTeams.map((other) => other.name).join(', ');
-      return `Sub-teams: ${names}. Their issues can roll up into this team's views, and they inherit its statuses and labels.`;
+      return (
+        <>
+          Sub-teams:{' '}
+          {subTeams.map((other, index) => (
+            <React.Fragment key={other.id}>
+              {index > 0 && ', '}
+              {settingsLink(other)}
+            </React.Fragment>
+          ))}
+          . Their issues can roll up into this team's views, and they inherit
+          its statuses and labels.
+        </>
+      );
     }
     if (parent !== undefined) {
-      return `This team sits under ${parent.name} and inherits its statuses and labels.`;
+      return (
+        <>
+          This team sits under {settingsLink(parent)} and inherits its statuses
+          and labels.
+        </>
+      );
     }
     return "This team is top-level. Put it under another team to inherit that team's statuses and labels.";
   };

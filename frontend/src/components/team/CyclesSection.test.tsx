@@ -2,11 +2,13 @@
  * The cycles section. Covers a team that never set a schedule reading as the
  * defaults with cycles off, that turning cycles on reveals the schedule and
  * its preview, that saving patches only what changed and refreshes the cycle
- * lists, and that a reader sees the schedule without being able to change it.
+ * lists, that a reader sees the schedule without being able to change it,
+ * and that a sub-team links to its parent's cycle settings.
  */
 
 import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { clearToasts, currentToasts } from '../../lib/toast';
 import type { CycleSettingsRead, CycleSettingsUpdate } from '../../types/Api';
@@ -259,5 +261,23 @@ describe('the cycles section', () => {
     expect(
       screen.queryByRole('button', { name: 'Save' })
     ).not.toBeInTheDocument();
+  });
+
+  it('links a sub-team to the cycles in its parent team settings', async () => {
+    render(
+      <MemoryRouter>
+        <CyclesSection
+          workspaceId="ws-1"
+          teamId="team-1"
+          canEdit={true}
+          inherited={true}
+          parentSettingsPath="/w/acme/team/ENG/settings"
+        />
+      </MemoryRouter>
+    );
+
+    expect(
+      await screen.findByRole('link', { name: "parent team's settings" })
+    ).toHaveAttribute('href', '/w/acme/team/ENG/settings#team-settings-cycles');
   });
 });
