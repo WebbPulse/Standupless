@@ -308,7 +308,11 @@ class Label(BaseModel):
 
 
 class Override(BaseModel):
-    """One team's local change to a workspace status or label: hidden, renamed, or both."""
+    """One team's local change to a workspace status or label: hidden, renamed, or both.
+
+    `shown` is a sub-team showing a workspace row its parent team hides. It is
+    absent on rows written before it existed, which read as not shown.
+    """
 
     workspace_id: str
     config_key: str
@@ -316,6 +320,7 @@ class Override(BaseModel):
     target: str
     target_id: str
     hidden: bool = False
+    shown: bool = False
     name: str | None = None
     updated_at: datetime = Field(default_factory=utc_now)
 
@@ -515,6 +520,8 @@ def _override_item(override: Override) -> dict[str, Any]:
     item = as_item(override)
     if item.get("name") is None:
         item.pop("name", None)
+    if not item.get("shown"):
+        item.pop("shown", None)
     return item
 
 
@@ -532,12 +539,13 @@ def _inherit(row: Any, team_id: str, override: Override | None, scope: str = WOR
 def _layered(parent: Override | None, own: Override | None) -> Override | None:
     """A parent's override of a workspace row with a sub-team's own on top.
 
-    What the parent hides stays hidden in the sub-team, and the sub-team's
-    rename wins over the parent's.
+    What the parent hides stays hidden in the sub-team unless the sub-team
+    shows it, and the sub-team's rename wins over the parent's.
     """
     if parent is None or own is None:
         return own or parent
-    return own.model_copy(update={"hidden": own.hidden or parent.hidden, "name": own.name or parent.name})
+    hidden = own.hidden or (parent.hidden and not own.shown)
+    return own.model_copy(update={"hidden": hidden, "name": own.name or parent.name})
 
 
 def status_order(row: Status) -> tuple[bool, int, str]:
