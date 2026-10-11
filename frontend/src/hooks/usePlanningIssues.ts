@@ -6,7 +6,7 @@
 
 import { useCallback } from 'react';
 import type { QueryKey } from '@webbpulse/api-client/react';
-import { appendIssues, listIssues } from '../api/issues';
+import { appendIssues, listIssues, type IssueListFilters } from '../api/issues';
 import type { IssueListQuery, IssueRead } from '../types/Api';
 import {
   useCursorPages,
@@ -26,7 +26,7 @@ const POLL_MS = 30000;
  */
 export const usePlanningIssues = (
   workspaceId: string,
-  query: IssueListQuery,
+  query: IssueListQuery | IssueListFilters,
   queryKey: QueryKey,
   enabled: boolean
 ): CursorPagesResult<IssueRead> => {
@@ -40,7 +40,7 @@ export const usePlanningIssues = (
       const page = await listIssues(
         workspaceId,
         {
-          ...(JSON.parse(serialised) as IssueListQuery),
+          ...(JSON.parse(serialised) as IssueListFilters),
           limit: PAGE_SIZE,
           ...(cursor === undefined ? {} : { cursor }),
         },

@@ -4,7 +4,10 @@
  * burn-up, that its issues are read by cycle, and that a new issue opens
  * the dialog filed into the cycle. The burn-up reads the recorded history
  * with a projection, switches to points for a team that estimates, and the
- * carry-over reads in a line under the stats.
+ * carry-over reads in a line under the stats. A parent team's cycle rolls up
+ * its sub-teams' cycles on the same dates, in the header, the chart and the
+ * issues, until the toggle narrows it to the team alone, and an empty cycle
+ * says so rather than drawing an empty chart.
  */
 
 import { render, screen, waitFor } from '@testing-library/react';
@@ -14,8 +17,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { WorkspaceContextType } from '../../contexts/WorkspaceContextDefinition';
 import type {
   CycleHistoryRead,
+  CycleListRead,
   CycleRead,
   IssueListRead,
+  IssueRead,
   StatusRead,
   TeamRead,
   WorkspaceRead,
@@ -27,6 +32,7 @@ const getCycle =
   vi.fn<(id: string, teamId: string) => Promise<CycleRead | null>>();
 const getCycleHistory =
   vi.fn<(id: string, teamId: string) => Promise<CycleHistoryRead>>();
+const listCycles = vi.fn<(query: unknown) => Promise<CycleListRead>>();
 const listIssues = vi.fn<(query: unknown) => Promise<IssueListRead>>();
 const listTeams = vi.fn<() => Promise<TeamRead[]>>();
 
@@ -51,6 +57,7 @@ vi.mock('../../api/planning', () => ({
   getCycle: (_w: string, id: string, teamId: string) => getCycle(id, teamId),
   getCycleHistory: (_w: string, id: string, teamId: string) =>
     getCycleHistory(id, teamId),
+  listCycles: (_w: string, query: unknown) => listCycles(query),
 }));
 
 vi.mock('../../api/teams', () => ({
@@ -105,6 +112,15 @@ const team: TeamRead = {
   role: 'member',
 };
 
+/** A sub-team of the team above, so its cycles roll up into the parent's. */
+const subTeam: TeamRead = {
+  ...team,
+  id: 'proj-2',
+  name: 'Engine API',
+  key_prefix: 'API',
+  parent_team_id: 'proj-1',
+};
+
 const cycle: CycleRead = {
   cycle_id: 'cyc-1',
   workspace_id: 'ws-1',
@@ -152,6 +168,53 @@ const history: CycleHistoryRead = {
   ],
 };
 
+/** The sub-team's cycle over the same days, with two done issues. */
+const subCycle: CycleRead = {
+  ...cycle,
+  cycle_id: 'cyc-2',
+  team_id: 'proj-2',
+  goal: null,
+  counts: { todo: 0, in_progress: 0, done: 2, cancelled: 0, total: 2 },
+};
+
+/** The sub-team's history over the same days, both issues done on the second. */
+const subHistory: CycleHistoryRead = {
+  ...history,
+  cycle_id: 'cyc-2',
+  team_id: 'proj-2',
+  days: [
+    day('2026-09-01', 2, 0, 0),
+    day('2026-09-02', 2, 2, 2),
+    day('2026-09-03', 2, 2, 2),
+    day('2026-09-04', 2, 2, 2),
+  ],
+};
+
+/** One open issue in the cycle, created on its first day. */
+const openIssue: IssueRead = {
+  id: 'iss-1',
+  workspace_id: 'ws-1',
+  team_id: 'proj-1',
+  key: 'ENG-1',
+  number: 1,
+  title: 'Tune the engine',
+  body: null,
+  status_id: 'todo',
+  priority: 'none',
+  assignee_id: null,
+  label_ids: [],
+  estimate: null,
+  start_date: null,
+  due_date: null,
+  parent_id: null,
+  cycle_id: 'cyc-1',
+  project_id: null,
+  progress: { total: 0, completed: 0 },
+  created_by: 'user-1',
+  created_at: '2026-09-01T09:00:00Z',
+  updated_at: '2026-09-01T09:00:00Z',
+};
+
 const resolved = (role: WorkspaceRole): WorkspaceContextType => {
   const workspace: WorkspaceRead = {
     id: 'ws-1',
@@ -170,9 +233,9 @@ const resolved = (role: WorkspaceRole): WorkspaceContextType => {
   };
 };
 
-const renderPage = () =>
+const renderPage = (entry = '/w/mine/team/ENG/cycles/cyc-1') =>
   render(
-    <MemoryRouter initialEntries={['/w/mine/team/ENG/cycles/cyc-1']}>
+    <MemoryRouter initialEntries={[entry]}>
       <Routes>
         <Route
           path="/w/:slug/team/:keyPrefix/cycles/:cycleId"
@@ -203,6 +266,7 @@ describe('CycleDetail', () => {
     getCycle.mockResolvedValue(cycle);
     getCycleHistory.mockResolvedValue(history);
     listIssues.mockResolvedValue({ issues: [], next_cursor: null });
+    listCycles.mockResolvedValue({ cycles: [cycle], next_cursor: null });
   });
 
   it('draws the recorded history with a projection once a few days are in', async () => {
@@ -274,6 +338,7 @@ describe('CycleDetail', () => {
 
   it('falls back to the issues when the history cannot be read', async () => {
     getCycleHistory.mockRejectedValue(new Error('offline'));
+    listIssues.mockResolvedValue({ issues: [openIssue], next_cursor: null });
     renderPage();
 
     await historyRequested();
@@ -347,5 +412,129 @@ describe('CycleDetail', () => {
     expect(
       await screen.findByText(/That cycle does not exist/)
     ).toBeInTheDocument();
+  });
+
+  it('says an empty cycle has nothing to chart', async () => {
+    getCycle.mockResolvedValue({
+      ...cycle,
+      counts: { todo: 0, in_progress: 0, done: 0, cancelled: 0, total: 0 },
+    });
+    getCycleHistory.mockResolvedValue({
+      ...history,
+      days: history.days.map((row) => day(row.date, 0, 0, 0)),
+    });
+    renderPage();
+
+    expect(await screen.findByTestId('burn-up-empty')).toHaveTextContent(
+      'No issues in this cycle yet'
+    );
+    expect(screen.queryByRole('img', { name: /^Burn-up chart/ })).toBeNull();
+  });
+
+  it('labels a one-issue cycle 0 and 1 on the y axis', async () => {
+    getCycle.mockResolvedValue({
+      ...cycle,
+      counts: { todo: 1, in_progress: 0, done: 0, cancelled: 0, total: 1 },
+    });
+    getCycleHistory.mockResolvedValue({
+      ...history,
+      days: history.days.map((row) => day(row.date, 1, 0, 0)),
+    });
+    renderPage();
+
+    await screen.findByRole('img', { name: /^Burn-up chart/ });
+    expect(
+      screen.getAllByTestId('burn-up-tick').map((node) => node.textContent)
+    ).toEqual(['0', '1']);
+  });
+
+  describe('with a sub-team', () => {
+    beforeEach(() => {
+      listTeams.mockResolvedValue([team, subTeam]);
+      listCycles.mockResolvedValue({
+        cycles: [cycle, subCycle],
+        next_cursor: null,
+      });
+      getCycleHistory.mockImplementation((id) =>
+        Promise.resolve(id === 'cyc-2' ? subHistory : history)
+      );
+    });
+
+    it('rolls the sub-team cycle on the same dates into the header, chart and issues', async () => {
+      renderPage();
+
+      expect(await screen.findByText('67% complete')).toBeInTheDocument();
+      expect(listCycles).toHaveBeenCalledWith(
+        expect.objectContaining({ team_id: 'proj-1', include_sub_teams: true })
+      );
+      await waitFor(() => {
+        expect(getCycleHistory).toHaveBeenCalledWith('cyc-2', 'proj-2');
+      });
+      expect(
+        await screen.findByRole('img', {
+          name: /Scope 6, started 5, completed 4 issues as of 2026-09-04/,
+        })
+      ).toBeInTheDocument();
+      await waitFor(() => {
+        expect(listIssues).toHaveBeenCalledWith(
+          expect.objectContaining({
+            team_id: 'proj-1',
+            include_sub_teams: true,
+            cycle_id: ['cyc-1', 'cyc-2'],
+          })
+        );
+      });
+      expect(
+        screen.getByRole('button', { name: 'Including sub-teams' })
+      ).toHaveAttribute('aria-pressed', 'true');
+    });
+
+    it('ignores a sub-team cycle on other dates', async () => {
+      listCycles.mockResolvedValue({
+        cycles: [cycle, { ...subCycle, start_date: '2026-09-15' }],
+        next_cursor: null,
+      });
+      renderPage();
+
+      await screen.findByRole('button', { name: 'Including sub-teams' });
+      await waitFor(() => {
+        expect(listCycles).toHaveBeenCalled();
+      });
+      expect(await screen.findByText('50% complete')).toBeInTheDocument();
+      expect(getCycleHistory).not.toHaveBeenCalledWith('cyc-2', 'proj-2');
+    });
+
+    it('narrows to the team alone from the toggle', async () => {
+      const user = userEvent.setup();
+      renderPage();
+
+      await screen.findByText('67% complete');
+      await user.click(
+        screen.getByRole('button', { name: 'Including sub-teams' })
+      );
+
+      expect(await screen.findByText('50% complete')).toBeInTheDocument();
+      expect(
+        screen.getByRole('button', { name: 'This team only' })
+      ).toHaveAttribute('aria-pressed', 'false');
+      await waitFor(() => {
+        expect(listIssues).toHaveBeenLastCalledWith(
+          expect.objectContaining({ team_id: 'proj-1', cycle_id: 'cyc-1' })
+        );
+      });
+      expect(listIssues.mock.lastCall?.[0]).not.toHaveProperty(
+        'include_sub_teams'
+      );
+    });
+
+    it('reads the team alone from a narrowed link', async () => {
+      renderPage('/w/mine/team/ENG/cycles/cyc-1?subteams=0');
+
+      expect(await screen.findByText('50% complete')).toBeInTheDocument();
+      expect(listCycles).not.toHaveBeenCalled();
+      expect(
+        screen.getByRole('button', { name: 'This team only' })
+      ).toBeInTheDocument();
+    });
   });
 });

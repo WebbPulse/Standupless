@@ -3,6 +3,8 @@
  * can see in one cursor walk, groups them by status, narrows by team and
  * status from the URL, links each row to its project, edits the status and
  * health in place, draws each project's own icon, and only offers creating to a role that may write.
+ * Filtered to a parent team, the list rolls in its sub-teams' projects until
+ * the toggle narrows it to the team alone.
  */
 
 import { render, screen, waitFor, within } from '@testing-library/react';
@@ -23,7 +25,11 @@ import Projects from './Projects';
 
 const listProjects =
   vi.fn<
-    (query: { team_id?: string; cursor?: string }) => Promise<ProjectListRead>
+    (query: {
+      team_id?: string;
+      include_sub_teams?: boolean;
+      cursor?: string;
+    }) => Promise<ProjectListRead>
   >();
 const updateProject =
   vi.fn<(id: string, patch: ProjectUpdate) => Promise<ProjectRead>>();
@@ -43,8 +49,10 @@ vi.mock('../../hooks/useAuth', () => ({
 }));
 
 vi.mock('../../api/planning', () => ({
-  listProjects: (_w: string, query: { team_id?: string; cursor?: string }) =>
-    listProjects(query),
+  listProjects: (
+    _w: string,
+    query: { team_id?: string; include_sub_teams?: boolean; cursor?: string }
+  ) => listProjects(query),
   createProject: (_w: string, body: ProjectCreate) => createProject(body),
   updateProject: (_w: string, id: string, patch: ProjectUpdate) =>
     updateProject(id, patch),
@@ -418,5 +426,64 @@ describe('Projects', () => {
     expect(
       await screen.findByRole('button', { name: 'New project' })
     ).toBeInTheDocument();
+  });
+
+  describe('with a sub-team', () => {
+    /** Design as a sub-team of Engine. */
+    const designUnderEngine: TeamRead = { ...design, parent_team_id: 'team-1' };
+
+    beforeEach(() => {
+      listTeams.mockResolvedValue([engine, designUnderEngine]);
+      listProjects.mockImplementation((query) =>
+        Promise.resolve({
+          projects:
+            query.include_sub_teams === true ? [launch, rebrand] : [launch],
+          next_cursor: null,
+        })
+      );
+    });
+
+    it('rolls the sub-team projects into the parent team filter', async () => {
+      renderPage('/w/mine/projects?team=ENG');
+
+      expect(
+        await screen.findByRole('link', { name: 'Rebrand' })
+      ).toBeInTheDocument();
+      expect(screen.getByRole('link', { name: 'Launch' })).toBeInTheDocument();
+      expect(listProjects).toHaveBeenCalledWith({
+        team_id: 'team-1',
+        include_sub_teams: true,
+      });
+      expect(
+        screen.getByRole('button', { name: 'Including sub-teams' })
+      ).toHaveAttribute('aria-pressed', 'true');
+    });
+
+    it('narrows to the team alone from the toggle', async () => {
+      const user = userEvent.setup();
+      renderPage('/w/mine/projects?team=ENG');
+
+      await screen.findByRole('link', { name: 'Rebrand' });
+      await user.click(
+        screen.getByRole('button', { name: 'Including sub-teams' })
+      );
+
+      await waitFor(() => {
+        expect(screen.queryByRole('link', { name: 'Rebrand' })).toBeNull();
+      });
+      expect(listProjects).toHaveBeenCalledWith({ team_id: 'team-1' });
+      expect(
+        screen.getByRole('button', { name: 'This team only' })
+      ).toHaveAttribute('aria-pressed', 'false');
+    });
+
+    it('offers no toggle on the sub-team itself', async () => {
+      renderPage('/w/mine/projects?team=DES');
+
+      await waitFor(() => {
+        expect(listProjects).toHaveBeenCalledWith({ team_id: 'team-2' });
+      });
+      expect(screen.queryByTestId('sub-team-roll-up')).toBeNull();
+    });
   });
 });
