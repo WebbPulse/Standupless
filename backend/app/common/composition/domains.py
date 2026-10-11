@@ -85,7 +85,7 @@ def _workspaces_routers() -> "Sequence[RouterSpec]":
 
 
 def _teams_routers() -> "Sequence[RouterSpec]":
-    """The teams domain: teams, their members, statuses and labels, and the workspace set teams inherit.
+    """The teams domain: teams, their members, statuses, labels and templates, and the workspace set teams inherit.
 
     Every path is nested under a workspace, so the tenant is in the path of each
     one and the authorization dependency reads it from there.
@@ -96,6 +96,7 @@ def _teams_routers() -> "Sequence[RouterSpec]":
         releases,
         statuses,
         teams,
+        templates,
         triage_settings,
         workspace_workflow,
     )
@@ -108,6 +109,7 @@ def _teams_routers() -> "Sequence[RouterSpec]":
         (statuses.router, "/workspaces", ("teams",)),
         (labels.router, "/workspaces", ("teams",)),
         (workspace_workflow.router, "/workspaces", ("teams",)),
+        (templates.router, "/workspaces", ("teams",)),
     ]
 
 

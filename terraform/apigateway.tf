@@ -13,6 +13,7 @@ locals {
       "/api/workspaces/{workspace_id}/teams",
       "/api/workspaces/{workspace_id}/statuses",
       "/api/workspaces/{workspace_id}/labels",
+      "/api/workspaces/{workspace_id}/templates",
     ]
     issues = ["/api/workspaces/{workspace_id}/issues"]
     views = [

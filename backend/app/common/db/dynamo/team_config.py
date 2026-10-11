@@ -56,6 +56,7 @@ from webbpulse.dynamodb import ConditionFailed, Repository, new_ulid
 
 from app.common.db.dynamo.base import as_item, build_repository, delete_partition, utc_now
 from app.common.db.dynamo.tables import TEAM_CONFIG
+from app.common.db.dynamo.team_templates import TemplateRows
 
 StatusCategory = Literal["backlog", "unstarted", "started", "completed", "cancelled"]
 
@@ -687,7 +688,7 @@ class StandupRows:
         return True
 
 
-class TeamConfigRepository(StandupRows):
+class TeamConfigRepository(StandupRows, TemplateRows):
     """Reads and writes `team_config` rows, every method workspace first."""
 
     def __init__(self, repository: Repository | None = None) -> None:
@@ -1284,7 +1285,7 @@ class TeamConfigRepository(StandupRows):
         )
 
     def delete_for_team(self, workspace_id: str, team_id: str, *, batch: int = 100) -> int:
-        """Remove every status, label, override, transition, standup row and setting of one team.
+        """Remove every status, label, override, transition, standup row, template and setting of one team.
 
         Deletes a page at a time until each prefix reads empty, so a team of any
         size is purged and a retry after a crash resumes where the last one stopped.
@@ -1310,6 +1311,7 @@ class TeamConfigRepository(StandupRows):
         if self.get_parent_id(workspace_id, team_id) is not None:
             self._repository.delete({"workspace_id": workspace_id, "config_key": parent_key(team_id)})
             removed += 1
+        removed += self.delete_team_templates(workspace_id, team_id, batch=batch)
         for prefix in (
             status_prefix(team_id),
             label_prefix(team_id),
