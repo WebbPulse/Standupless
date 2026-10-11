@@ -30,6 +30,7 @@ import {
   LuChevronRight,
   LuChevronsUpDown,
   LuEllipsis,
+  LuGitPullRequest,
   LuGoal,
   LuHouse,
   LuInbox,
@@ -61,6 +62,7 @@ import {
   myIssuesPath,
   projectsPath,
   initiativesPath,
+  reviewsPath,
   roadmapPath,
   routeTeamPrefix,
   searchPath,
@@ -86,6 +88,7 @@ import Menu, { MenuItem, MenuSeparator } from '../ui/menu';
 import { Skeleton } from '../ui/skeleton';
 import ThemeToggle from '../ui/theme-toggle';
 import InboxBadge from '../views/InboxBadge';
+import ReviewsBadge from '../views/ReviewsBadge';
 import ViewIcon from '../views/ViewIcon';
 import { useTeamsFor } from '../../hooks/useTeams';
 
@@ -671,6 +674,16 @@ export const Sidebar: React.FC<SidebarProps> = ({ workspace, onNavigate }) => {
           >
             <LuUserRound className={ICON} aria-hidden="true" />
             My issues
+          </NavLink>
+          <NavLink
+            to={reviewsPath(slug)}
+            end
+            className={itemClass}
+            onClick={onNavigate}
+          >
+            <LuGitPullRequest className={ICON} aria-hidden="true" />
+            <span className="flex-1">Reviews</span>
+            <ReviewsBadge workspaceId={workspace.id} />
           </NavLink>
         </div>
 

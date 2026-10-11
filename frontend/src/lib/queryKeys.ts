@@ -220,6 +220,12 @@ export const inboxCountKey = (workspaceId: string): QueryKey => [
   workspaceId,
 ];
 
+/** The caller's Reviews list, read by the page and the sidebar badge alike. */
+export const reviewsKey = (workspaceId: string): QueryKey => [
+  'reviews',
+  workspaceId,
+];
+
 /** One team's triage inbox, waiting or snoozed. */
 export const triageKey = (
   workspaceId: string,

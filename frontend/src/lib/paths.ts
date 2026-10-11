@@ -151,6 +151,10 @@ export const issuePath = (slug: string, issueKey: string): string =>
 export const inboxPath = (slug: string): string =>
   `${workspacePath(slug)}/inbox`;
 
+/** The pull requests waiting on the caller as a reviewer. */
+export const reviewsPath = (slug: string): string =>
+  `${workspacePath(slug)}/reviews`;
+
 /** Workspace search. */
 export const searchPath = (slug: string): string =>
   `${workspacePath(slug)}/search`;

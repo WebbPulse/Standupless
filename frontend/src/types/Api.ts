@@ -1104,7 +1104,8 @@ export type NotificationKind =
   | 'overdue'
   | 'standup_digest'
   | 'sla_at_risk'
-  | 'sla_breached';
+  | 'sla_breached'
+  | 'review_requested';
 
 /**
  * Every kind an inbox row can carry: the ones a member can tune, the notice a
@@ -1146,6 +1147,8 @@ export interface NotificationRead {
   snoozed_until?: string | null;
   /** Which client made the change; absent on rows written before sources were recorded. */
   source?: ChangeSource | null;
+  /** The pull request a `review_requested` row points at; null on every other row. */
+  url?: string | null;
   created_at: string;
   expires_at: string;
 }
@@ -1891,6 +1894,47 @@ export type PullRequestReviewState =
 
 /** The combined result of a linked pull request's checks on its head commit. */
 export type PullRequestCiState = 'none' | 'pending' | 'success' | 'failure';
+
+/** Where a pull request sits on the caller's Reviews list. */
+export type ReviewGroup = 'needs_review' | 'changes_requested' | 'approved';
+
+/** One issue a pull request on the Reviews list links, among those the caller can see. */
+export interface ReviewIssueRead {
+  issue_id: string;
+  key: string;
+  title: string;
+  team_id: string;
+}
+
+/** One pull request waiting on the caller as a reviewer. */
+export interface ReviewItemRead {
+  repository_id: string;
+  repository_full_name: string;
+  number: number;
+  title: string;
+  url: string;
+  author_login: string;
+  state: 'open' | 'draft';
+  group: ReviewGroup;
+  review_state: PullRequestReviewState;
+  ci_state: PullRequestCiState;
+  created_at: string | null;
+  updated_at: string | null;
+  issues: ReviewIssueRead[];
+}
+
+/** How many pull requests sit in each Reviews group. */
+export type ReviewCountsRead = Record<ReviewGroup, number>;
+
+/**
+ * The caller's Reviews list, in the order the page draws it. `github_linked`
+ * is false when the caller has linked no GitHub account.
+ */
+export interface ReviewsRead {
+  github_linked: boolean;
+  counts: ReviewCountsRead;
+  items: ReviewItemRead[];
+}
 
 /**
  * Where a pull request sits in a stack of an issue's pull requests, counted
