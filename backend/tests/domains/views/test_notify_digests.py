@@ -99,8 +99,8 @@ def test_a_burst_on_one_issue_becomes_one_email(
 def test_a_digest_is_drawn_in_the_workspace_accent(
     issues_client: TestClient, workspace: str, repositories: Any, statuses: Any, recorder: RecordingEmailSender
 ) -> None:
-    """A workspace with an accent mails its digests in that colour rather than the brand orange."""
-    from app.common.email.brand import BRAND_ACCENT
+    """A workspace accent replaces the brand orange, lightened for the dark card as the app derives it."""
+    from app.common.email.brand import BRAND_ACCENT, BRAND_ACCENT_DARK, email_brand
 
     repositories.workspaces.set_accent_color(workspace, "#1d4ed8")
     sign_in(issues_client, OWNER)
@@ -110,15 +110,16 @@ def test_a_digest_is_drawn_in_the_workspace_accent(
     flush_digests(repositories)
 
     [message] = recorder.sent
-    assert 'bgcolor="#1d4ed8"' in message.html
+    assert f'bgcolor="{email_brand("#1d4ed8").dark_accent}"' in message.html
     assert BRAND_ACCENT not in message.html
+    assert BRAND_ACCENT_DARK not in message.html
 
 
 def test_a_digest_without_an_accent_keeps_the_brand_orange(
     issues_client: TestClient, workspace: str, repositories: Any, statuses: Any, recorder: RecordingEmailSender
 ) -> None:
-    """No accent on the workspace means the default Standupless orange."""
-    from app.common.email.brand import BRAND_ACCENT
+    """No accent on the workspace means the default Standupless orange, in its dark-theme shade."""
+    from app.common.email.brand import BRAND_ACCENT_DARK
 
     sign_in(issues_client, OWNER)
     issue = seed_issue(issues_client, workspace, title="Orange", assignee_id=MEMBER)
@@ -127,7 +128,7 @@ def test_a_digest_without_an_accent_keeps_the_brand_orange(
     flush_digests(repositories)
 
     [message] = recorder.sent
-    assert f'bgcolor="{BRAND_ACCENT}"' in message.html
+    assert f'bgcolor="{BRAND_ACCENT_DARK}"' in message.html
 
 
 def test_activity_on_two_issues_is_listed_under_each(

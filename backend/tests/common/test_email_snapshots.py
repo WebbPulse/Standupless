@@ -12,6 +12,8 @@ from __future__ import annotations
 import functools
 import os
 import pathlib
+import re
+from html import unescape as html_unescape
 from collections.abc import Callable, Iterator
 from datetime import datetime, timezone
 
@@ -27,7 +29,7 @@ from webbpulse.identity.email import (
 
 from app.common.core.config import settings
 from app.common.db.dynamo.notify_digests import DigestEntry
-from app.common.email.brand import BRAND_ACCENT, logo_url
+from app.common.email.brand import BRAND_ACCENT, BRAND_ACCENT_DARK, EMAIL_THEME, logo_url
 from app.common.email.invite import render_invite
 from app.common.standup import StandupDigest, StandupItem, StandupPerson, StandupProjectUpdate
 from app.domains.identity.email import render_account_deletion
@@ -236,17 +238,56 @@ def test_every_email_is_branded_and_follows_house_style(name: str) -> None:
 
 
 def test_brand_orange_is_the_default_and_a_workspace_accent_replaces_it() -> None:
-    """Product emails use the brand orange unless a workspace accent is passed."""
-    assert f'bgcolor="{BRAND_ACCENT}"' in _cases()["notification_digest"]().html
+    """Product emails use the dark brand orange unless a workspace accent is passed."""
+    assert f'bgcolor="{BRAND_ACCENT_DARK}"' in _cases()["notification_digest"]().html
     themed = _cases()["notification_digest_workspace_accent"]().html
     assert 'bgcolor="#3b82f6"' in themed
-    assert f'bgcolor="{BRAND_ACCENT}"' not in themed
+    assert f'bgcolor="{BRAND_ACCENT_DARK}"' not in themed
 
 
 def test_an_unusable_workspace_accent_falls_back_to_brand_orange() -> None:
     """A stored colour that is not a colour still mails, in the brand orange."""
     message = render_digest([_entry(1), _entry(2)], to=TO, workspace_slug="acme", accent="orange")
-    assert f'bgcolor="{BRAND_ACCENT}"' in message.html
+    assert f'bgcolor="{BRAND_ACCENT_DARK}"' in message.html
+
+
+@pytest.mark.parametrize("name", sorted(_cases()))
+def test_every_email_is_dark_first_and_keeps_a_plain_text_part(name: str) -> None:
+    """Every email, the identity ones included, is dark in every client, pinned against inversion, with text."""
+    message = _cases()[name]()
+    page, card = EMAIL_THEME.dark.page, EMAIL_THEME.dark.card
+    html = message.html
+
+    assert '<meta name="color-scheme" content="dark light">' in html
+    assert '<meta name="supported-color-schemes" content="dark light">' in html
+    assert f'<body class="wp-bg" bgcolor="{page}" style="margin:0;padding:0;background-color:{page};">' in html
+    assert f'class="wp-bg" bgcolor="{page}" style="background-color:{page};"' in html
+    assert f'bgcolor="{card}" style="background-color:{card};' in html
+    assert "@media (prefers-color-scheme:dark)" in html
+    assert f"[data-ogsc] .wp-text{{color:{EMAIL_THEME.dark.text} !important;}}" in html
+    assert f"[data-ogsb] .wp-bg{{background-color:{page} !important;}}" in html
+    for light in (EMAIL_THEME.light.page, EMAIL_THEME.light.card, EMAIL_THEME.light.muted, BRAND_ACCENT):
+        assert light not in html
+    assert message.text.strip()
+    assert "<table" not in message.text
+
+
+BUTTON = re.compile(r'<td class="wp-button" align="center" bgcolor="(#[0-9a-f]{6})" style="([^"]*)"><a ([^>]*)>')
+"""One rendered call to action: its fill colour, the cell's style and the link's attributes."""
+
+
+@pytest.mark.parametrize("name", sorted(_cases()))
+def test_every_call_to_action_is_a_bulletproof_button(name: str) -> None:
+    """A button is a cell filled by `bgcolor` and inline style around a padded link, and its URL is in the text."""
+    message = _cases()[name]()
+    for match in BUTTON.finditer(message.html):
+        color, style, anchor = match.groups()
+        assert f"background-color:{color};" in style
+        assert 'href="https://' in anchor
+        assert "display:inline-block;padding:12px 22px;" in anchor
+        href = re.search(r'href="([^"]+)"', anchor)
+        assert href is not None
+        assert html_unescape(href.group(1)) in message.text
 
 
 def test_the_identity_emails_carry_the_product_logo_and_accent() -> None:

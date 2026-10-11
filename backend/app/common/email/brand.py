@@ -3,7 +3,8 @@
 The layout itself is `webbpulse.email_layout`, shared with the identity emails, so
 what lives here is only what makes it Standupless: the name, the hosted PNG logo,
 the brand orange, the app's design tokens as an email theme and the links a footer
-carries. Every URL is built from
+carries. The theme is dark first, as the app is: every client shows the dark palette,
+whatever its own mode, and the light palette is kept only as the documented token map. Every URL is built from
 `settings.frontend_base_url`, so each environment mails links and a logo on its
 own domain without any new setting.
 """
@@ -50,6 +51,7 @@ EMAIL_THEME = EmailTheme(
     card_radius=8,
     button_radius=6,
     inline_radius=4,
+    scheme="dark",
 )
 """The app's tokens from `frontend/src/index.css` and `brand/tokens.css`, as email-safe hex.
 
@@ -57,7 +59,8 @@ Page is `--surface`, the card `--bg` in light and `--surface` in dark, borders
 `--line`, text `--text` and `--text-muted`, quotes the `--surface` and `--raised`
 fills with muted text as the app draws a blockquote, the stacks `--font-sans` and
 `--font-mono`, text on the accent `--brand-accent-foreground`, and the radii
-`--radius-lg`, `--radius-md` and `--radius-sm`.
+`--radius-lg`, `--radius-md` and `--radius-sm`. `scheme` is dark because the app
+defaults to dark, so the dark palette and dark accent are what every message draws inline.
 """
 
 LOGO_PATH = "/email-logo.png"
@@ -82,8 +85,8 @@ def email_brand(accent: str | None = None) -> EmailBrand:
 
     An unusable accent falls back to the brand orange rather than raising, because
     a stored colour is user input and a notification should still mail. A workspace
-    accent is lightened for dark-mode clients until links read on the dark card, as
-    the app derives its dark accent.
+    accent is lightened until links read on the dark card, as the app derives its dark
+    accent, and that lightened colour is what the dark-first theme draws.
     """
     base = settings.frontend_base_url
     brand = EmailBrand(
