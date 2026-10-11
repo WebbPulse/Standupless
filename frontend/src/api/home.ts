@@ -67,11 +67,4 @@ export const getHome = async (
   };
 };
 
-/** The caller's IANA timezone, or UTC where the runtime cannot say. */
-export const browserTimezone = (): string => {
-  try {
-    return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
-  } catch {
-    return 'UTC';
-  }
-};
+export { browserTimezone } from '../lib/viewerTimezone';

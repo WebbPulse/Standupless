@@ -11,12 +11,10 @@ import {
   type AnyAuthClient,
 } from '@webbpulse/auth/react';
 import { useNavigate } from 'react-router-dom';
-import { browserTimezone } from '../api/home';
 import { getIdentityClient } from '../api/identityClient';
-import { updatePreferences } from '../api/notifications';
 import { clearIssueContextCache } from '../lib/issueContextCache';
 import { clearSignedIn, useSignedInHint } from '../lib/signedInHint';
-import { setViewerTimezone } from '../lib/viewerTimezone';
+import { browserTimezone, setViewerTimezone } from '../lib/viewerTimezone';
 import type { UserRead } from '../types/Api';
 import {
   AuthExtrasContext,
@@ -45,7 +43,10 @@ const useTimezoneCapture = (
       return;
     }
     captured.current = true;
-    void updatePreferences({ timezone: browserTimezone() })
+    void import('../api/notifications')
+      .then(({ updatePreferences }) =>
+        updatePreferences({ timezone: browserTimezone() })
+      )
       .then((profile) => {
         if (user !== null && typeof profile.timezone === 'string') {
           setUser({ ...user, timezone: profile.timezone });

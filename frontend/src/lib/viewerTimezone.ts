@@ -6,9 +6,17 @@
  * with none stored, the browser's zone stands in.
  */
 
-import { browserTimezone } from '../api/home';
 
 let stored: string | null = null;
+
+/** The caller's IANA timezone, or UTC where the runtime cannot say. */
+export const browserTimezone = (): string => {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+  } catch {
+    return 'UTC';
+  }
+};
 
 /** Records the zone stored on the signed in profile, or clears it with null. */
 export const setViewerTimezone = (zone: string | null | undefined): void => {

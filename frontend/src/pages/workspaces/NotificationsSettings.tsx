@@ -23,10 +23,10 @@ import { Select } from '../../components/ui/select';
 import Spinner from '../../components/ui/spinner';
 import SettingsNav from '../../components/workspace/SettingsNav';
 import WorkspaceShell from '../../components/workspace/WorkspaceShell';
-import { browserTimezone } from '../../api/home';
 import { useWorkspace } from '../../hooks/useWorkspace';
 import { errorMessage } from '../../lib/errors';
 import { CURRENT_USER_KEY } from '../../lib/queryKeys';
+import { browserTimezone } from '../../lib/viewerTimezone';
 import type {
   NotificationChannels,
   NotificationKind,
