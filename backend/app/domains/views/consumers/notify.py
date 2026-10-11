@@ -34,7 +34,6 @@ rather than a duplicate badge.
 
 from __future__ import annotations
 
-import hashlib
 import logging
 from datetime import datetime, timezone
 from typing import Any, Mapping
@@ -47,7 +46,7 @@ from app.common.api.dependencies.repositories import Repositories
 from app.common.bulk_import import from_bulk_import
 from app.common.composition.consumers import CONSUMERS
 from app.common.core.config import settings
-from app.common.db.dynamo.inbox import Notification, expires_at, inbox_partition
+from app.common.db.dynamo.inbox import Notification, expires_at, inbox_partition, notification_id
 from app.common.db.dynamo.notify_digests import DigestEntry
 from app.common.db.dynamo.planning import PROJECT_UPDATE, Project
 from app.common.issue_keys import display_key
@@ -88,13 +87,6 @@ cap gets neither an inbox row nor an email for that record, and the overflow is
 logged as `views.notify.recipients_capped` with the number dropped.
 """
 
-_ULID_ALPHABET = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
-
-_ULID_TIME_CHARS = 10
-
-_ULID_HASH_CHARS = 16
-
-
 def _text(image: Mapping[str, Any], name: str) -> str:
     """One attribute of a stream image as a string, empty when absent or null."""
     value = image.get(name)
@@ -107,46 +99,6 @@ def _strings(image: Mapping[str, Any], name: str) -> list[str]:
     if not isinstance(value, (list, tuple, set)):
         return []
     return [str(item).strip() for item in value if str(item).strip()]
-
-
-def _ulid_time(moment: datetime) -> str:
-    """The time half of a ULID for one moment, so ids still sort chronologically.
-
-    Only the timestamp is taken from the ULID format; the random half is replaced by
-    a hash of what the notification is about, which is what makes the id a function
-    of the record rather than of when it was handled.
-    """
-    milliseconds = int(moment.timestamp() * 1000)
-    encoded = ""
-    for _ in range(_ULID_TIME_CHARS):
-        encoded = _ULID_ALPHABET[milliseconds & 0x1F] + encoded
-        milliseconds >>= 5
-    return encoded
-
-
-def notification_id(created_at: datetime | None, kind: str, recipient_id: str, source_id: str) -> str:
-    """A notification id that is a function of what the notification is about.
-
-    Chronological by its ULID timestamp prefix, so an inbox partition still reads
-    newest first, and deterministic in its tail, so a redelivered record produces
-    the same key and the conditional put drops it. Truncated because the tail only
-    has to separate the notifications of one millisecond, not resist an attacker:
-    nothing is authorized by this id.
-
-    `created_at` is the moment the record itself carries, or `None` when it carries
-    none. It is never the wall clock: a clock reading would move between the first
-    delivery and a replay, and the whole id has to be stable for the conditional put
-    to recognise the replay. Without one, the timestamp half falls back to the epoch,
-    which sorts such a notification oldest rather than making it a duplicate.
-    """
-    digest = hashlib.sha256(f"{kind}\x00{recipient_id}\x00{source_id}".encode("utf-8")).digest()
-    value = int.from_bytes(digest, "big")
-    tail = ""
-    for _ in range(_ULID_HASH_CHARS):
-        tail = _ULID_ALPHABET[value & 0x1F] + tail
-        value >>= 5
-    moment = created_at if created_at is not None else datetime.fromtimestamp(0, tz=timezone.utc)
-    return _ulid_time(moment) + tail
 
 
 def _stamped_at(image: Mapping[str, Any]) -> datetime | None:

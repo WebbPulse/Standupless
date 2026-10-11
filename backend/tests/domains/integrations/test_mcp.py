@@ -171,6 +171,7 @@ def test_the_contract_fixes_the_tool_set() -> None:
         "list_issues",
         "list_labels",
         "list_my_issues",
+        "list_my_reviews",
         "list_notifications",
         "list_project_milestones",
         "list_project_updates",

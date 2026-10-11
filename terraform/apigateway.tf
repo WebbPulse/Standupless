@@ -63,6 +63,7 @@ locals {
       "/api/workspaces/{workspace_id}/discord",
       "/api/workspaces/{workspace_id}/webhooks",
       "/api/workspaces/{workspace_id}/imports",
+      "/api/workspaces/{workspace_id}/reviews",
     ]
 
     admin = ["/api/admin"]

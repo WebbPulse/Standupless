@@ -6974,7 +6974,7 @@
         "type": "object"
       },
       "NotificationRead": {
-        "description": "One inbox row as the API returns it.\n\nA `project_update` notification names its project and update and leaves the\nissue fields empty. A `standup_digest` carries the team key in `issue_key`,\nthe team name in `issue_title` and the digest date in `standup_date`.",
+        "description": "One inbox row as the API returns it.\n\nA `project_update` notification names its project and update and leaves the\nissue fields empty. A `standup_digest` carries the team key in `issue_key`,\nthe team name in `issue_title` and the digest date in `standup_date`. A\n`review_requested` notification carries the pull request's `owner/repo#number`\nin `issue_key`, its title in `issue_title` and its GitHub address in `url`.",
         "properties": {
           "actor_id": {
             "title": "Actor Id",
@@ -7106,6 +7106,17 @@
           "unread": {
             "title": "Unread",
             "type": "boolean"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
           },
           "workspace_id": {
             "title": "Workspace Id",
@@ -9376,6 +9387,182 @@
           "linked_at"
         ],
         "title": "RepositoryRead",
+        "type": "object"
+      },
+      "ReviewCountsRead": {
+        "description": "How many pull requests sit in each group.",
+        "properties": {
+          "approved": {
+            "default": 0,
+            "title": "Approved",
+            "type": "integer"
+          },
+          "changes_requested": {
+            "default": 0,
+            "title": "Changes Requested",
+            "type": "integer"
+          },
+          "needs_review": {
+            "default": 0,
+            "title": "Needs Review",
+            "type": "integer"
+          }
+        },
+        "title": "ReviewCountsRead",
+        "type": "object"
+      },
+      "ReviewIssueRead": {
+        "description": "One issue a listed pull request links, among those the caller can see.",
+        "properties": {
+          "issue_id": {
+            "title": "Issue Id",
+            "type": "string"
+          },
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "team_id": {
+            "title": "Team Id",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "issue_id",
+          "key",
+          "title",
+          "team_id"
+        ],
+        "title": "ReviewIssueRead",
+        "type": "object"
+      },
+      "ReviewItemRead": {
+        "description": "One pull request on the caller's Reviews list.",
+        "properties": {
+          "author_login": {
+            "title": "Author Login",
+            "type": "string"
+          },
+          "ci_state": {
+            "title": "Ci State",
+            "type": "string"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "group": {
+            "enum": [
+              "needs_review",
+              "changes_requested",
+              "approved"
+            ],
+            "title": "Group",
+            "type": "string"
+          },
+          "issues": {
+            "items": {
+              "$ref": "#/components/schemas/ReviewIssueRead"
+            },
+            "title": "Issues",
+            "type": "array"
+          },
+          "number": {
+            "title": "Number",
+            "type": "integer"
+          },
+          "repository_full_name": {
+            "title": "Repository Full Name",
+            "type": "string"
+          },
+          "repository_id": {
+            "title": "Repository Id",
+            "type": "string"
+          },
+          "review_state": {
+            "title": "Review State",
+            "type": "string"
+          },
+          "state": {
+            "enum": [
+              "open",
+              "draft"
+            ],
+            "title": "State",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "repository_id",
+          "repository_full_name",
+          "number",
+          "title",
+          "url",
+          "author_login",
+          "state",
+          "group",
+          "review_state",
+          "ci_state"
+        ],
+        "title": "ReviewItemRead",
+        "type": "object"
+      },
+      "ReviewsRead": {
+        "description": "The caller's Reviews list, grouped in the order the page draws it.\n\n`github_linked` is false when the caller has linked no GitHub account, which is\nthe one reason the list can be empty while reviews exist on GitHub.",
+        "properties": {
+          "counts": {
+            "$ref": "#/components/schemas/ReviewCountsRead"
+          },
+          "github_linked": {
+            "title": "Github Linked",
+            "type": "boolean"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ReviewItemRead"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "github_linked",
+          "counts",
+          "items"
+        ],
+        "title": "ReviewsRead",
         "type": "object"
       },
       "RoadmapEntryRead": {
@@ -12600,7 +12787,8 @@
                     "overdue",
                     "standup_digest",
                     "sla_at_risk",
-                    "sla_breached"
+                    "sla_breached",
+                    "review_requested"
                   ]
                 },
                 "type": "object"
@@ -26961,6 +27149,55 @@
         "summary": "Add Reaction",
         "tags": [
           "discussion"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/reviews": {
+      "get": {
+        "description": "Open pull requests asking the caller for a review, or holding their changes request or approval.",
+        "operationId": "get_reviews_api_workspaces__workspace_id__reviews_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewsRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Get Reviews",
+        "tags": [
+          "integrations"
         ]
       }
     },

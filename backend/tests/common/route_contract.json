@@ -336,6 +336,12 @@
     "path": "/api/workspaces/{workspace_id}/issues/{issue_id}/github-sync"
   },
   {
+    "auth": "workspace:read",
+    "domain": "integrations",
+    "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/reviews"
+  },
+  {
     "auth": "workspace:admin",
     "domain": "integrations",
     "method": "DELETE",
