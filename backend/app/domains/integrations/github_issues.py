@@ -54,6 +54,7 @@ __all__ = [
     "create_label",
     "get_issue",
     "installation_token",
+    "list_check_runs",
     "list_comments",
     "pull_request_commit_messages",
     "remove_label",
@@ -401,6 +402,39 @@ def pull_request_commit_messages(
         if len(batch) < COMMIT_PAGE_SIZE:
             break
     return compared if len(compared) > len(messages) else messages
+
+
+CHECK_RUN_PAGES = 10
+"""How many pages of a commit's check runs are read, a thousand runs, far beyond any real pipeline."""
+
+
+def list_check_runs(
+    token: str,
+    repository_id: int | str,
+    head_sha: str,
+    *,
+    client: httpx.Client | None = None,
+) -> list[Mapping[str, Any]]:
+    """The latest run of every check on one commit, paged through.
+
+    GitHub answers the newest run per check name by default, which is the run a
+    pull request's check state follows.
+    """
+    if not _is_sha(head_sha):
+        raise ValueError("head_sha must be a git object id")
+    path = f"{repository_path(repository_id)}/commits/{head_sha}/check-runs"
+    runs: list[Mapping[str, Any]] = []
+    for page in range(1, CHECK_RUN_PAGES + 1):
+        body = _object(
+            _request("GET", f"{path}?per_page={COMMIT_PAGE_SIZE}&page={page}", token=token, client=client),
+            "check runs",
+        )
+        raw = body.get("check_runs")
+        batch = [run for run in raw if isinstance(run, Mapping)] if isinstance(raw, list) else []
+        runs.extend(batch)
+        if len(batch) < COMMIT_PAGE_SIZE:
+            break
+    return runs
 
 
 COMPARE_COMMITS_LIMIT = 1000

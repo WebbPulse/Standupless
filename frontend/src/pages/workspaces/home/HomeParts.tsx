@@ -231,7 +231,7 @@ export const PullRequestRow: React.FC<
         {pr.title !== '' ? pr.title : item.issue.title}
       </Link>
       <StatusGlyph style={reviewStateStyle(pr.review_state)} kind="review" />
-      <StatusGlyph style={ciStateStyle(pr.ci_state)} kind="ci" />
+      <StatusGlyph style={ciStateStyle(pr.ci_state, pr.state)} kind="ci" />
       <a
         href={pr.url}
         target="_blank"

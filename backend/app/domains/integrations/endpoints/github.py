@@ -67,12 +67,15 @@ RELEVANT_EVENTS = frozenset(
 def _check_run_matters(payload: Any) -> bool:
     """Whether a `check_run` delivery could move a linked pull request's check state.
 
-    A run on a commit no pull request heads, such as a push to the trunk, and the
-    App's own run listing linked issues are answered without queueing, which keeps
-    a busy repository's checks off the queue.
+    The App's own run listing linked issues is answered without queueing. A run
+    naming no pull request is queued only once it completes: that is how a check
+    finishing after its pull request merged and its branch went arrives, while a
+    trunk commit's runs starting and progressing stay off the queue.
     """
     check_run = payload.get("check_run") if isinstance(payload, dict) else None
-    if not isinstance(check_run, dict) or not check_run.get("pull_requests"):
+    if not isinstance(check_run, dict):
+        return False
+    if not check_run.get("pull_requests") and check_run.get("status") != "completed":
         return False
     return not is_own_check(check_run, settings.GITHUB_APP_SLUG)
 

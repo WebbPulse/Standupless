@@ -45,6 +45,7 @@ from app.common.issue_rules import require_team_reader, visible_team_ids
 from app.common.issue_subscribers import list_subscribers, subscribe, unsubscribe
 from app.common.issue_writes import bulk_update_issues, create_issue, list_issues, update_issue, walk_page
 from app.common.similar_issues import find_similar
+from app.domains.integrations import pr_status
 from app.domains.integrations.mcp.template_tools import template_ref
 from app.domains.integrations.mcp.toolkit import (
     PRIORITIES,
@@ -324,6 +325,7 @@ def _pull_requests(call: ToolCall, issue: Issue) -> list[dict[str, Any]]:
         call.context.workspace_id, issue.issue_id, limit=PULL_REQUEST_LIMIT
     )
     links = [IssueLink.model_validate({**dict(row), "issue_key": issue.key}) for row in page.items]
+    pr_status.request_reconcile(call.repositories, call.context.workspace_id, links)
     return [read.model_dump(mode="json") for read in link_reads(links)]
 
 
