@@ -621,6 +621,7 @@ def _delete_status(call: ToolCall) -> Any:
         actor_id=call.context.user_id,
         source=call.context.source,
         replacement_status_id=replacement.status_id if replacement else None,
+        can_see=call.context.can_see_team,
     )
     return {
         "deleted": True,
@@ -668,7 +669,9 @@ def _create_label(call: ToolCall) -> Any:
             "parent_id": group_id,
         }
     )
-    return label_json(create_label(call.repositories, call.context.workspace_id, team_id, payload))
+    return label_json(
+        create_label(call.repositories, call.context.workspace_id, team_id, payload, can_see=call.context.can_see_team)
+    )
 
 
 def _update_label(call: ToolCall) -> Any:
@@ -686,7 +689,12 @@ def _update_label(call: ToolCall) -> Any:
         fields["parent_id"] = group_id
     payload = LabelUpdate.model_validate(fields)
     updated = team_workflow.update_label(
-        call.repositories, call.context.workspace_id, team.team_id, found.label_id, payload
+        call.repositories,
+        call.context.workspace_id,
+        team.team_id,
+        found.label_id,
+        payload,
+        can_see=call.context.can_see_team,
     )
     return label_json(updated)
 

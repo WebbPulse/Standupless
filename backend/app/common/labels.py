@@ -23,7 +23,7 @@ from app.common.api.dependencies.repositories import Repositories
 from app.common.api.schemas.teams import LabelCreate
 from app.common.db.dynamo.team_config import TEAM_SCOPE, WORKSPACE_SCOPE, Label, label_key, new_config_id
 from app.common.issue_rules import unprocessable
-from app.common.sub_teams import family
+from app.common.sub_teams import UNSEEN_SUB_TEAM, TeamFilter, family, unseen
 
 GITHUB_LABEL_MAX = 50
 """The longest label name GitHub accepts."""
@@ -37,6 +37,11 @@ DUPLICATE_NAME = "A label named {name} already exists{where}. Use that label or 
 GROUP_CONFLICT = (
     "{count} {label} and another label of the {group} group. "
     "An issue can carry one label from a group, so change those issues first."
+)
+
+UNSEEN_GROUP_CONFLICT = (
+    "Issues in {where} carry {label} and another label of the {group} group. "
+    "An issue can carry one label from a group, so its members must change those issues first."
 )
 
 
@@ -64,18 +69,26 @@ def workspace_group(repositories: Repositories, workspace_id: str, parent_id: st
     return row
 
 
-def create_label(repositories: Repositories, workspace_id: str, team_id: str, payload: LabelCreate) -> Label:
+def create_label(
+    repositories: Repositories,
+    workspace_id: str,
+    team_id: str,
+    payload: LabelCreate,
+    *,
+    can_see: TeamFilter | None = None,
+) -> Label:
     """Add a label or a label group to one team, in one of the team's own groups when `parent_id` names one.
 
     The caller has already been held to team admin, by the route's dependency or
     by the tool, because the label set is a team setting every issue draws on.
+    `can_see` keeps a name clash in a sub-team the caller cannot read anonymous.
     """
     if payload.parent_id is not None:
         if payload.is_group:
             raise unprocessable(GROUP_IN_GROUP)
         team_group(repositories, workspace_id, team_id, payload.parent_id)
     team_ids = family(repositories, workspace_id, team_id)
-    check_unique_name(repositories, workspace_id, team_ids, payload.name, payload.parent_id)
+    check_unique_name(repositories, workspace_id, team_ids, payload.name, payload.parent_id, can_see=can_see)
     label_id = new_config_id()
     return repositories.team_config.create_label(
         Label(
@@ -104,13 +117,15 @@ def check_unique_name(
     parent_id: str | None,
     *,
     exclude_label_id: str | None = None,
+    can_see: TeamFilter | None = None,
 ) -> None:
     """Refuse with a 409 a label name another label already holds in the same place.
 
     Every workspace label and every label the named teams see is compared, hidden
     ones and team renames of inherited ones included, so no team ends up with two
     labels it cannot tell apart. Existing duplicates are left as they are: only a
-    write that sets a name or a group is checked.
+    write that sets a name or a group is checked. A clash in a team `can_see`
+    refuses is reported without that team's name or the label's id.
     """
     wanted = name_key(name)
     rows = list(repositories.team_config.list_workspace_labels(workspace_id))
@@ -123,6 +138,15 @@ def check_unique_name(
             continue
         local = row.team_id and (row.scope != WORKSPACE_SCOPE or row.inherited_name)
         owner = _owning_team(repositories, workspace_id, row)
+        if local and unseen(can_see, owner):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail={
+                    "error_code": "CONFLICT",
+                    "message": DUPLICATE_NAME.format(name=name.strip(), where=f" in {UNSEEN_SUB_TEAM}"),
+                    "details": {"name": name.strip(), "scope": TEAM_SCOPE, "hidden_teams": True},
+                },
+            )
         where = f" in the {_team_name(repositories, workspace_id, owner)} team" if local else " in the workspace"
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -153,14 +177,22 @@ def _issues_phrase(count: int) -> str:
 
 
 def check_move_into_group(
-    repositories: Repositories, workspace_id: str, team_ids: Iterable[str], label: Label, group: Label
+    repositories: Repositories,
+    workspace_id: str,
+    team_ids: Iterable[str],
+    label: Label,
+    group: Label,
+    *,
+    can_see: TeamFilter | None = None,
 ) -> None:
     """Refuse with a 409 a move into `group` that would leave an issue carrying two of its labels.
 
     Linear refuses the same move, because otherwise the one-label rule would hold
     for new writes only and every later label edit of those issues would fail.
+    Issues in a team `can_see` refuses still block the move but are not counted.
     """
     count = 0
+    hidden = False
     for team_id in dict.fromkeys(team_ids):
         siblings = {
             row.label_id
@@ -170,15 +202,28 @@ def check_move_into_group(
         if not siblings:
             continue
         for issue in repositories.issues.iter_with_label(workspace_id, team_id, label.label_id):
-            if siblings.intersection(issue.label_ids):
+            if not siblings.intersection(issue.label_ids):
+                continue
+            if unseen(can_see, team_id):
+                hidden = True
+            else:
                 count += 1
+    if hidden and not count:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "error_code": "CONFLICT",
+                "message": UNSEEN_GROUP_CONFLICT.format(where=UNSEEN_SUB_TEAM, label=label.name, group=group.name),
+                "details": {"issue_count": 0, "hidden_teams": True},
+            },
+        )
     if count:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail={
                 "error_code": "CONFLICT",
                 "message": GROUP_CONFLICT.format(count=_issues_phrase(count), label=label.name, group=group.name),
-                "details": {"issue_count": count},
+                "details": {"issue_count": count, **({"hidden_teams": True} if hidden else {})},
             },
         )
 
