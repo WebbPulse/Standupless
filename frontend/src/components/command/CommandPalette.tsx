@@ -653,7 +653,10 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
             : {}),
           icon: <LuFileText className={ICON} />,
           run: () => {
-            createIssue.open({ teamId: team?.id, templateId: template.id });
+            createIssue.open({
+              ...(team === undefined ? {} : { teamId: team.id }),
+              templateId: template.id,
+            });
           },
         }))
         .filter((command) => matches(command, deferred));
