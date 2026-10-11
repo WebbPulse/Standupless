@@ -523,7 +523,11 @@ describe('grouping', () => {
           created_at: '2026-09-18T00:00:00Z',
           updated_at: '2026-09-18T00:00:00Z',
         }),
-        issue({ id: 'u0', priority: 'urgent', created_at: '2026-09-17T00:00:00Z' }),
+        issue({
+          id: 'u0',
+          priority: 'urgent',
+          created_at: '2026-09-17T00:00:00Z',
+        }),
       ],
       'priority_desc'
     );
