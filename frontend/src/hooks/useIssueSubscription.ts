@@ -101,9 +101,7 @@ export const useIssueSubscription = (
         .then(() => {
           invalidateQueries(subscribersKey(workspaceId, issueId));
           invalidateQueries(activityKey(issueId));
-          showToast(
-            adding ? `Subscribed ${name}.` : `Unsubscribed ${name}.`
-          );
+          showToast(adding ? `Subscribed ${name}.` : `Unsubscribed ${name}.`);
         })
         .catch((failure: unknown) => {
           showErrorToast(

@@ -66,21 +66,17 @@ const subscriberOptions = (
   const me = people.find((person) => person.user_id === currentUserId);
   const others = people.filter((person) => person.user_id !== currentUserId);
   const known = new Set(people.map((person) => person.user_id));
-  const rows: ComboboxOption[] = (me === undefined ? others : [me, ...others]).map(
-    (person) => ({
-      value: person.user_id,
-      label: personLabel(person),
-      icon: (
-        <Avatar
-          name={personLabel(person)}
-          src={personAvatar(person)}
-          size="xs"
-        />
-      ),
-      keywords: [person.email],
-      ...(person === me ? { detail: 'You' } : {}),
-    })
-  );
+  const rows: ComboboxOption[] = (
+    me === undefined ? others : [me, ...others]
+  ).map((person) => ({
+    value: person.user_id,
+    label: personLabel(person),
+    icon: (
+      <Avatar name={personLabel(person)} src={personAvatar(person)} size="xs" />
+    ),
+    keywords: [person.email],
+    ...(person === me ? { detail: 'You' } : {}),
+  }));
   const extra = subscribers
     .filter((subscriber) => !known.has(subscriber.user_id))
     .map((subscriber) => ({
