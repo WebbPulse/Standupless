@@ -8388,6 +8388,427 @@
         "title": "ReactionWrite",
         "type": "object"
       },
+      "RecurringCreate": {
+        "description": "The body a recurring issue create takes.\n\n`timezone` defaults to the team's standup timezone, else UTC, and\n`starts_on` to today there. A weekly rule needs `weekdays` and a monthly\none `day_of_month`.",
+        "properties": {
+          "day_of_month": {
+            "anyOf": [
+              {
+                "maximum": 31.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Day Of Month"
+          },
+          "frequency": {
+            "enum": [
+              "daily",
+              "weekly",
+              "monthly"
+            ],
+            "title": "Frequency",
+            "type": "string"
+          },
+          "interval": {
+            "anyOf": [
+              {
+                "maximum": 365.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Interval"
+          },
+          "paused": {
+            "default": false,
+            "title": "Paused",
+            "type": "boolean"
+          },
+          "starts_on": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Starts On"
+          },
+          "template_id": {
+            "minLength": 1,
+            "title": "Template Id",
+            "type": "string"
+          },
+          "time": {
+            "anyOf": [
+              {
+                "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Time"
+          },
+          "timezone": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Timezone"
+          },
+          "weekdays": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "integer"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Weekdays"
+          }
+        },
+        "required": [
+          "template_id",
+          "frequency"
+        ],
+        "title": "RecurringCreate",
+        "type": "object"
+      },
+      "RecurringListRead": {
+        "description": "The body a recurring issue list answers with, and the team's default timezone.",
+        "properties": {
+          "default_timezone": {
+            "title": "Default Timezone",
+            "type": "string"
+          },
+          "recurring_issues": {
+            "items": {
+              "$ref": "#/components/schemas/RecurringRead"
+            },
+            "title": "Recurring Issues",
+            "type": "array"
+          }
+        },
+        "required": [
+          "recurring_issues",
+          "default_timezone"
+        ],
+        "title": "RecurringListRead",
+        "type": "object"
+      },
+      "RecurringRead": {
+        "description": "One recurring issue as the API returns it.\n\n`next_run_at` is when the next issue is due, `None` while paused; the hourly\nsweep creates it within the hour after. `upcoming_runs` previews the runs\nafter that. `paused_reason` says why the system paused it, if it did.",
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "created_by": {
+            "title": "Created By",
+            "type": "string"
+          },
+          "day_of_month": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Day Of Month"
+          },
+          "frequency": {
+            "enum": [
+              "daily",
+              "weekly",
+              "monthly"
+            ],
+            "title": "Frequency",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "interval": {
+            "title": "Interval",
+            "type": "integer"
+          },
+          "last_issue_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Issue Id"
+          },
+          "last_issue_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Issue Key"
+          },
+          "last_run_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Run At"
+          },
+          "next_run_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Run At"
+          },
+          "paused": {
+            "title": "Paused",
+            "type": "boolean"
+          },
+          "paused_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Paused Reason"
+          },
+          "starts_on": {
+            "format": "date",
+            "title": "Starts On",
+            "type": "string"
+          },
+          "team_id": {
+            "title": "Team Id",
+            "type": "string"
+          },
+          "template_id": {
+            "title": "Template Id",
+            "type": "string"
+          },
+          "template_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Template Name"
+          },
+          "time": {
+            "title": "Time",
+            "type": "string"
+          },
+          "timezone": {
+            "title": "Timezone",
+            "type": "string"
+          },
+          "upcoming_runs": {
+            "items": {
+              "format": "date-time",
+              "type": "string"
+            },
+            "title": "Upcoming Runs",
+            "type": "array"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "weekdays": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Weekdays",
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "team_id",
+          "template_id",
+          "frequency",
+          "interval",
+          "time",
+          "timezone",
+          "starts_on",
+          "paused",
+          "created_by",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "RecurringRead",
+        "type": "object"
+      },
+      "RecurringUpdate": {
+        "description": "The body a recurring issue patch takes: only the fields sent change.\n\n`paused` pauses or resumes it. Resuming, or changing the rule, sets the next\nrun from now, so a paused schedule never catches up on what it skipped.",
+        "properties": {
+          "day_of_month": {
+            "anyOf": [
+              {
+                "maximum": 31.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Day Of Month"
+          },
+          "frequency": {
+            "anyOf": [
+              {
+                "enum": [
+                  "daily",
+                  "weekly",
+                  "monthly"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Frequency"
+          },
+          "interval": {
+            "anyOf": [
+              {
+                "maximum": 365.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Interval"
+          },
+          "paused": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Paused"
+          },
+          "starts_on": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Starts On"
+          },
+          "template_id": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Template Id"
+          },
+          "time": {
+            "anyOf": [
+              {
+                "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Time"
+          },
+          "timezone": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Timezone"
+          },
+          "weekdays": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "integer"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Weekdays"
+          }
+        },
+        "title": "RecurringUpdate",
+        "type": "object"
+      },
       "ReleaseBackfill": {
         "description": "The body `POST .../teams/{team_id}/release-backfill` takes.\n\nRebuilds releases from one GitHub environment's past successful deployments,\nnewest first, a few per call. `repository` is a full name or id and defaults to\nevery repository pinned to the team. Pass `cursor` back until it comes back\nnull. A deployment that already has a release only gains missing issues, and\nthe backfill never moves issues or publishes GitHub Releases.",
         "properties": {
@@ -30841,6 +31262,288 @@
           }
         ],
         "summary": "Put Team Member",
+        "tags": [
+          "teams"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/teams/{team_id}/recurring-issues": {
+      "get": {
+        "description": "Every recurring issue of the team, oldest first, and the timezone new ones default to.",
+        "operationId": "list_recurring_issues_api_workspaces__workspace_id__teams__team_id__recurring_issues_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecurringListRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "List Recurring Issues",
+        "tags": [
+          "teams"
+        ]
+      },
+      "post": {
+        "description": "Schedule an issue from one of the team's templates.",
+        "operationId": "create_recurring_issue_api_workspaces__workspace_id__teams__team_id__recurring_issues_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RecurringCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecurringRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Create Recurring Issue",
+        "tags": [
+          "teams"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/teams/{team_id}/recurring-issues/{recurring_id}": {
+      "delete": {
+        "description": "Delete one recurring issue; issues it already created stay.",
+        "operationId": "delete_recurring_issue_api_workspaces__workspace_id__teams__team_id__recurring_issues__recurring_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "recurring_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Recurring Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Delete Recurring Issue",
+        "tags": [
+          "teams"
+        ]
+      },
+      "get": {
+        "description": "One recurring issue of the team, with its next runs.",
+        "operationId": "read_recurring_issue_api_workspaces__workspace_id__teams__team_id__recurring_issues__recurring_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "recurring_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Recurring Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecurringRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Read Recurring Issue",
+        "tags": [
+          "teams"
+        ]
+      },
+      "patch": {
+        "description": "Change, pause or resume one recurring issue.",
+        "operationId": "update_recurring_issue_api_workspaces__workspace_id__teams__team_id__recurring_issues__recurring_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "recurring_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Recurring Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RecurringUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecurringRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Update Recurring Issue",
         "tags": [
           "teams"
         ]

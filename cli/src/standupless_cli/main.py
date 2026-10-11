@@ -135,6 +135,10 @@ app.add_typer(triage_app, name="triage")
 app.add_typer(channel_app, name="channel")
 app.add_typer(standup_app, name="standup")
 app.add_typer(template_app, name="template")
+recurring_app = typer.Typer(
+    help="Recurring issues: a team's schedules that create an issue from a template.", no_args_is_help=True
+)
+app.add_typer(recurring_app, name="recurring")
 
 
 class Source(StrEnum):
@@ -3541,6 +3545,189 @@ def template_delete(
         raise ConfigError(f"{found['name']} is inherited; delete it where it lives.")
     context.client.delete_template(context.workspace_id, team_id, found["id"])
     output.success(f"Deleted template {found['name']}.")
+
+
+RECURRING_COLUMNS = ["TEMPLATE", "REPEATS", "AT", "NEXT RUN", "LAST ISSUE", "ID"]
+
+FrequencyOption = Annotated[str | None, typer.Option("--every", help="daily, weekly or monthly.")]
+IntervalOption = Annotated[int | None, typer.Option("--interval", help="Every N days, weeks or months.", min=1)]
+WeekdayOption = Annotated[
+    list[str] | None, typer.Option("--on", help="Weekly: a day name such as monday; repeat for several.")
+]
+DayOfMonthOption = Annotated[
+    int | None, typer.Option("--day", help="Monthly: the day of the month; a short month runs on its last day.")
+]
+TimeOption = Annotated[str | None, typer.Option("--at", help="Local time as HH:MM, 09:00 by default.")]
+ZoneOption = Annotated[
+    str | None, typer.Option("--timezone", help="IANA timezone; the team's standup timezone by default.")
+]
+StartsOption = Annotated[str | None, typer.Option("--starts", help="First local date as YYYY-MM-DD.")]
+
+
+def _repeats(row: Mapping[str, Any]) -> str:
+    """A schedule's rule as people read it, such as every 2 weeks on Mon, Fri."""
+    interval = row.get("interval") or 1
+    unit = {"daily": "day", "weekly": "week", "monthly": "month"}[row["frequency"]]
+    text = f"every {unit}" if interval == 1 else f"every {interval} {unit}s"
+    if row["frequency"] == "weekly":
+        text += " on " + ", ".join(WEEKDAYS[day][:3] for day in row.get("weekdays") or [])
+    if row["frequency"] == "monthly":
+        text += f" on day {row.get('day_of_month')}"
+    return text
+
+
+def _recurring_rule(
+    frequency: str | None,
+    interval: int | None,
+    weekdays: list[str] | None,
+    day_of_month: int | None,
+    at: str | None,
+    timezone: str | None,
+    starts: str | None,
+) -> dict[str, Any]:
+    """The rule fields a recurring create or update sends, weekday names read as numbers."""
+    if frequency is not None and frequency not in ("daily", "weekly", "monthly"):
+        raise ConfigError("--every is daily, weekly or monthly.")
+    payload = compact(
+        {
+            "frequency": frequency,
+            "interval": interval,
+            "day_of_month": day_of_month,
+            "time": at,
+            "timezone": timezone,
+            "starts_on": starts,
+        }
+    )
+    if weekdays:
+        days: list[int] = []
+        for name in weekdays:
+            folded = name.lower()
+            matched = [
+                index for index, day in enumerate(STANDUP_WEEKDAYS) if len(folded) >= 3 and day.startswith(folded)
+            ]
+            if not matched:
+                raise ConfigError(f"--on {name} is not a day name such as monday.")
+            days.append(matched[0])
+        payload["weekdays"] = days
+    return payload
+
+
+def _print_recurring(found: Mapping[str, Any], row: Mapping[str, Any], verb: str) -> None:
+    """Confirm a recurring issue change with when it next runs."""
+    name = row.get("template_name") or row["template_id"]
+    if row.get("paused"):
+        output.success(f"{verb} {name} for {found['key_prefix']}, {_repeats(row)}. It is paused.")
+        return
+    output.success(
+        f"{verb} {name} for {found['key_prefix']}, {_repeats(row)} at {row['time']} {row['timezone']}. "
+        f"Next run {row['next_run_at']}; the issue is created within the hour after."
+    )
+
+
+@recurring_app.command("list")
+def recurring_list(ctx: typer.Context, team: TeamOption, as_json: JsonFlag = False) -> None:
+    """List a team's recurring issues and when each next runs."""
+    context = _state(ctx).context()
+    found = context.team(team)
+    listed = context.client.list_recurring(context.workspace_id, found["id"])
+    if as_json:
+        output.print_json(listed)
+        return
+    rows = [
+        [
+            row.get("template_name") or "(deleted template)",
+            _repeats(row),
+            f"{row['time']} {row['timezone']}",
+            "paused" if row.get("paused") else (row.get("next_run_at") or ""),
+            row.get("last_issue_key") or "",
+            row["id"],
+        ]
+        for row in listed["recurring_issues"]
+    ]
+    output.table(RECURRING_COLUMNS, rows, "No recurring issues.")
+
+
+@recurring_app.command("create")
+def recurring_create(
+    ctx: typer.Context,
+    template: Annotated[str, typer.Argument(help="Template name or id the issue is created from.")],
+    team: TeamOption,
+    frequency: FrequencyOption = None,
+    interval: IntervalOption = None,
+    weekdays: WeekdayOption = None,
+    day_of_month: DayOfMonthOption = None,
+    at: TimeOption = None,
+    timezone: ZoneOption = None,
+    starts: StartsOption = None,
+    paused: Annotated[bool, typer.Option("--paused", help="Save it paused.")] = False,
+    as_json: JsonFlag = False,
+) -> None:
+    """Create an issue from a team template on a schedule, such as --every weekly --on monday."""
+    if frequency is None:
+        raise ConfigError("Pass --every daily, weekly or monthly.")
+    context = _state(ctx).context()
+    found = context.team(team)
+    chosen = _find_template(context, found["id"], template)
+    payload = _recurring_rule(frequency, interval, weekdays, day_of_month, at, timezone, starts)
+    payload["template_id"] = chosen["id"]
+    if paused:
+        payload["paused"] = True
+    created = context.client.create_recurring(context.workspace_id, found["id"], cast(Any, payload))
+    if as_json:
+        output.print_json(created)
+        return
+    _print_recurring(found, created, "Scheduled")
+
+
+@recurring_app.command("update")
+def recurring_update(
+    ctx: typer.Context,
+    recurring_id: Annotated[str, typer.Argument(help="The recurring issue id, from recurring list.")],
+    team: TeamOption,
+    template: Annotated[str | None, typer.Option("--template", help="A new template name or id.")] = None,
+    frequency: FrequencyOption = None,
+    interval: IntervalOption = None,
+    weekdays: WeekdayOption = None,
+    day_of_month: DayOfMonthOption = None,
+    at: TimeOption = None,
+    timezone: ZoneOption = None,
+    starts: StartsOption = None,
+    pause: Annotated[bool, typer.Option("--pause", help="Pause it.")] = False,
+    resume: Annotated[
+        bool, typer.Option("--resume", help="Resume it from now; skipped runs are not caught up.")
+    ] = False,
+    as_json: JsonFlag = False,
+) -> None:
+    """Change, pause or resume one recurring issue."""
+    if pause and resume:
+        raise ConfigError("Pass either --pause or --resume, not both.")
+    context = _state(ctx).context()
+    found = context.team(team)
+    payload = _recurring_rule(frequency, interval, weekdays, day_of_month, at, timezone, starts)
+    if template is not None:
+        payload["template_id"] = _find_template(context, found["id"], template)["id"]
+    if pause or resume:
+        payload["paused"] = pause
+    if not payload:
+        raise ConfigError("Nothing to change.")
+    updated = context.client.update_recurring(context.workspace_id, found["id"], recurring_id, cast(Any, payload))
+    if as_json:
+        output.print_json(updated)
+        return
+    _print_recurring(found, updated, "Updated")
+
+
+@recurring_app.command("delete")
+def recurring_delete(
+    ctx: typer.Context,
+    recurring_id: Annotated[str, typer.Argument(help="The recurring issue id, from recurring list.")],
+    team: TeamOption,
+) -> None:
+    """Delete one recurring issue; the issues it already created stay."""
+    context = _state(ctx).context()
+    found = context.team(team)
+    context.client.delete_recurring(context.workspace_id, found["id"], recurring_id)
+    output.success(f"Deleted recurring issue {recurring_id}.")
 
 
 def run() -> None:

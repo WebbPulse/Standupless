@@ -723,6 +723,77 @@ export interface TemplateSettingsUpdate {
   default_template_id: string | null;
 }
 
+/** How often a recurring issue repeats. */
+export type RecurringFrequency = 'daily' | 'weekly' | 'monthly';
+
+/** Why the system paused a recurring issue, or null when a person did. */
+export type RecurringPausedReason =
+  'template_deleted' | 'creator_cannot_write' | 'create_failed';
+
+/** The rule fields a recurring issue create and patch share. */
+export interface RecurringIssueFields {
+  interval?: number;
+  /** Weekly days to run, 0 (Monday) to 6 (Sunday). */
+  weekdays?: number[];
+  /** Monthly day to run; past a short month's end it runs on the last day. */
+  day_of_month?: number | null;
+  /** Local time of day as HH:MM. */
+  time?: string;
+  /** IANA timezone; a create without one takes the team's standup timezone. */
+  timezone?: string;
+  /** First local date as YYYY-MM-DD. */
+  starts_on?: string;
+}
+
+/** A new recurring issue: a template, a rule, and whether it starts paused. */
+export interface RecurringIssueCreate extends RecurringIssueFields {
+  template_id: string;
+  frequency: RecurringFrequency;
+  paused?: boolean;
+}
+
+/** A recurring issue patch: only the fields sent change; `paused` pauses or resumes. */
+export interface RecurringIssueUpdate extends RecurringIssueFields {
+  template_id?: string;
+  frequency?: RecurringFrequency;
+  paused?: boolean;
+}
+
+/**
+ * One recurring issue. `next_run_at` is when the next issue is due, null while
+ * paused; the hourly sweep creates it within the hour after.
+ */
+export interface RecurringIssueRead {
+  id: string;
+  team_id: string;
+  template_id: string;
+  /** The template's name, null once it is deleted. */
+  template_name: string | null;
+  frequency: RecurringFrequency;
+  interval: number;
+  weekdays: number[];
+  day_of_month: number | null;
+  time: string;
+  timezone: string;
+  starts_on: string;
+  paused: boolean;
+  paused_reason: RecurringPausedReason | null;
+  next_run_at: string | null;
+  upcoming_runs: string[];
+  last_run_at: string | null;
+  last_issue_id: string | null;
+  last_issue_key: string | null;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+}
+
+/** A team's recurring issues and the timezone new ones default to. */
+export interface RecurringIssueListRead {
+  recurring_issues: RecurringIssueRead[];
+  default_timezone: string;
+}
+
 /** The body that moves an issue to another team, which gives it a new key. */
 export interface IssueMove {
   team_id: string;

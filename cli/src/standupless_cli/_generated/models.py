@@ -1159,6 +1159,54 @@ class ReactionWrite(TypedDict):
     target_kind: Literal["issue", "comment"]
 
 
+class RecurringCreate(TypedDict):
+    day_of_month: NotRequired[int | None]
+    frequency: Literal["daily", "weekly", "monthly"]
+    interval: NotRequired[int | None]
+    paused: NotRequired[bool]
+    starts_on: NotRequired[str | None]
+    template_id: str
+    time: NotRequired[str | None]
+    timezone: NotRequired[str | None]
+    weekdays: NotRequired[list[int] | None]
+
+
+class RecurringRead(TypedDict):
+    created_at: str
+    created_by: str
+    day_of_month: NotRequired[int | None]
+    frequency: Literal["daily", "weekly", "monthly"]
+    id: str
+    interval: int
+    last_issue_id: NotRequired[str | None]
+    last_issue_key: NotRequired[str | None]
+    last_run_at: NotRequired[str | None]
+    next_run_at: NotRequired[str | None]
+    paused: bool
+    paused_reason: NotRequired[str | None]
+    starts_on: str
+    team_id: str
+    template_id: str
+    template_name: NotRequired[str | None]
+    time: str
+    timezone: str
+    upcoming_runs: NotRequired[list[str]]
+    updated_at: str
+    weekdays: NotRequired[list[int]]
+
+
+class RecurringUpdate(TypedDict):
+    day_of_month: NotRequired[int | None]
+    frequency: NotRequired[Literal["daily", "weekly", "monthly"] | None]
+    interval: NotRequired[int | None]
+    paused: NotRequired[bool | None]
+    starts_on: NotRequired[str | None]
+    template_id: NotRequired[str | None]
+    time: NotRequired[str | None]
+    timezone: NotRequired[str | None]
+    weekdays: NotRequired[list[int] | None]
+
+
 class ReleaseBackfill(TypedDict):
     cursor: NotRequired[str | None]
     environment: NotRequired[str]
@@ -2564,6 +2612,11 @@ class ProjectListRead(TypedDict):
 class ProjectUpdateListRead(TypedDict):
     next_cursor: NotRequired[str | None]
     updates: list[ProjectUpdateRead]
+
+
+class RecurringListRead(TypedDict):
+    default_timezone: str
+    recurring_issues: list[RecurringRead]
 
 
 class ReleaseDetailRead(TypedDict):

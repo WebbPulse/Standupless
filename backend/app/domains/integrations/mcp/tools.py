@@ -23,6 +23,7 @@ from app.domains.integrations.mcp.export_tools import EXPORT_TOOLS
 from app.domains.integrations.mcp.initiative_tools import INITIATIVE_TOOLS
 from app.domains.integrations.mcp.issue_tools import ISSUE_TOOLS
 from app.domains.integrations.mcp.planning_tools import PLANNING_TOOLS
+from app.domains.integrations.mcp.recurring_tools import RECURRING_TOOLS
 from app.domains.integrations.mcp.release_tools import RELEASE_TOOLS
 from app.domains.integrations.mcp.review_tools import REVIEW_TOOLS
 from app.domains.integrations.mcp.standup_tools import STANDUP_TOOLS
@@ -42,6 +43,7 @@ TOOLS: tuple[Tool, ...] = (
     *TEAM_TOOLS,
     *WORKFLOW_TOOLS,
     *TEMPLATE_TOOLS,
+    *RECURRING_TOOLS,
     *TRANSITION_TOOLS,
     *SYNC_TOOLS,
     *CHANNEL_TOOLS,

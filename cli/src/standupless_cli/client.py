@@ -50,6 +50,10 @@ from standupless_cli._generated.models import (
     OverrideUpdate,
     ProjectRead,
     ProjectUpdate,
+    RecurringCreate,
+    RecurringListRead,
+    RecurringRead,
+    RecurringUpdate,
     ReleaseBackfill,
     ReleaseBackfillRead,
     ReleaseCreate,
@@ -439,6 +443,27 @@ class StanduplessClient:
         else:
             path = f"/api/workspaces/{workspace_id}/teams/{team_id}/templates/{template_id}"
         self._request("DELETE", path)
+
+    def list_recurring(self, workspace_id: str, team_id: str) -> RecurringListRead:
+        """A team's recurring issues and the timezone new ones default to."""
+        path = f"/api/workspaces/{workspace_id}/teams/{team_id}/recurring-issues"
+        return cast(RecurringListRead, self._request("GET", path))
+
+    def create_recurring(self, workspace_id: str, team_id: str, body: RecurringCreate) -> RecurringRead:
+        """Schedule an issue from one of a team's templates."""
+        path = f"/api/workspaces/{workspace_id}/teams/{team_id}/recurring-issues"
+        return cast(RecurringRead, self._request("POST", path, json=body))
+
+    def update_recurring(
+        self, workspace_id: str, team_id: str, recurring_id: str, body: RecurringUpdate
+    ) -> RecurringRead:
+        """Change, pause or resume one recurring issue."""
+        path = f"/api/workspaces/{workspace_id}/teams/{team_id}/recurring-issues/{recurring_id}"
+        return cast(RecurringRead, self._request("PATCH", path, json=body))
+
+    def delete_recurring(self, workspace_id: str, team_id: str, recurring_id: str) -> None:
+        """Delete one recurring issue; the issues it created stay."""
+        self._request("DELETE", f"/api/workspaces/{workspace_id}/teams/{team_id}/recurring-issues/{recurring_id}")
 
     def list_members(self, workspace_id: str) -> list[MemberRead]:
         """The workspace's members."""

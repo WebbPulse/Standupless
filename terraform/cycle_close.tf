@@ -57,9 +57,9 @@ resource "aws_scheduler_schedule" "cycle_close" {
   count = local.cycle_close_enabled ? 1 : 0
 
   name        = "${local.prefix}-cycle-close"
-  description = "Hourly cycle close sweep - rolls unfinished issues of ended cycles into the next cycle."
+  description = "Hourly sweep on the hour - creates due recurring issues and rolls unfinished issues of ended cycles into the next cycle."
 
-  schedule_expression          = "rate(1 hour)"
+  schedule_expression          = "cron(0 * * * ? *)"
   schedule_expression_timezone = "UTC"
 
   flexible_time_window {

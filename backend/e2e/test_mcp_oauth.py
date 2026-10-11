@@ -206,6 +206,10 @@ EXPECTED_TOOLS = frozenset(
         "create_template",
         "update_template",
         "delete_template",
+        "list_recurring_issues",
+        "create_recurring_issue",
+        "update_recurring_issue",
+        "delete_recurring_issue",
     }
 )
 """The tools `docs/api/m6.md` fixes, named here so a silent addition fails.
