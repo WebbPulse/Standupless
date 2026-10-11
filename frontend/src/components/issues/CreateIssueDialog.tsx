@@ -63,6 +63,7 @@ import {
 } from './PropertyPickers';
 import { useTeams } from '../../hooks/useTeams';
 import { SimilarIssues, useSimilarIssues } from './SimilarIssues';
+import { teamTree } from '../../lib/teamOrder';
 
 /** Props for CreateIssueDialog: where the issue lands and what it may carry. */
 export interface CreateIssueDialogProps {
@@ -194,12 +195,18 @@ const TeamSwitcher: React.FC<TeamSwitcherProps> = ({
 }) => {
   const current = teams.find((team) => team.id === value);
   const name = current?.name ?? fallbackName;
-  const options: ComboboxOption[] = teams.map((team) => ({
-    value: team.id,
-    label: team.name,
-    detail: team.key_prefix,
-    keywords: [team.key_prefix],
-  }));
+  const options: ComboboxOption[] = teamTree(teams).map(
+    ({ team, nested, parentName }) => ({
+      value: team.id,
+      label: team.name,
+      detail: team.key_prefix,
+      keywords: [
+        team.key_prefix,
+        ...(parentName === undefined ? [] : [parentName]),
+      ],
+      indent: nested,
+    })
+  );
   const chip =
     'inline-flex h-6 max-w-48 items-center gap-1.5 truncate rounded-sm border border-line px-2 text-xs text-text-muted';
   if (teams.length < 2) {

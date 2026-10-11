@@ -13,8 +13,8 @@
  * a new team walks through them in order.
  */
 
-import React from 'react';
-import { useParams } from 'react-router-dom';
+import React, { useEffect } from 'react';
+import { useLocation, useParams } from 'react-router-dom';
 import AutoArchiveSection from '../../components/team/AutoArchiveSection';
 import AutoCloseSection from '../../components/team/AutoCloseSection';
 import CyclesSection from '../../components/team/CyclesSection';
@@ -42,6 +42,7 @@ import WorkspaceShell from '../../components/workspace/WorkspaceShell';
 import TeamTabs from '../../components/workspace/TeamTabs';
 import TeamTitle from '../../components/workspace/TeamTitle';
 import { useTeam } from '../../hooks/useTeam';
+import { useTeamsFor } from '../../hooks/useTeams';
 import { useWorkspace } from '../../hooks/useWorkspace';
 import { planIncludes } from '../../lib/billing';
 import {
@@ -50,6 +51,7 @@ import {
   isTeamAdmin,
 } from '../../lib/capabilities';
 import { errorMessage } from '../../lib/errors';
+import { teamSettingsPath } from '../../lib/paths';
 
 /** The sections in page order, as the anchor list names them. */
 const SECTIONS = [
@@ -88,6 +90,17 @@ const TeamSettings: React.FC = () => {
   const { keyPrefix, slug } = useParams<{ keyPrefix: string; slug: string }>();
   const { workspace } = useWorkspace();
   const { team, workspaceId, isLoading, notFound, error } = useTeam(keyPrefix);
+  const { data: teams } = useTeamsFor(workspaceId);
+  const { hash } = useLocation();
+  const loaded = team !== null;
+
+  useEffect(() => {
+    if (!loaded || !hash.startsWith('#team-settings-')) return;
+    const target = globalThis.document.getElementById(hash.slice(1));
+    if (target !== null && typeof target.scrollIntoView === 'function') {
+      target.scrollIntoView({ block: 'start' });
+    }
+  }, [loaded, hash]);
 
   if (isLoading) {
     return (
@@ -111,6 +124,11 @@ const TeamSettings: React.FC = () => {
   }
 
   const editable = isTeamAdmin(workspace?.role, team.role);
+  const parent = (teams ?? []).find((row) => row.id === team.parent_team_id);
+  const parentSettings =
+    parent === undefined
+      ? undefined
+      : teamSettingsPath(slug ?? '', parent.key_prefix);
 
   const frame = (
     id: (typeof SECTIONS)[number]['id'],
@@ -204,6 +222,7 @@ const TeamSettings: React.FC = () => {
               workspaceId={workspaceId}
               teamId={team.id}
               slug={slug ?? ''}
+              parentSettingsPath={parentSettings}
               canEdit={editable}
             />
           )}
@@ -213,6 +232,7 @@ const TeamSettings: React.FC = () => {
               workspaceId={workspaceId}
               teamId={team.id}
               slug={slug ?? ''}
+              parentSettingsPath={parentSettings}
               canEdit={editable}
             />
           )}

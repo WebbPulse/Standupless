@@ -14,6 +14,7 @@ import { showErrorToast, showToast } from '../../lib/toast';
 import type { IssueRead, TeamRead, WorkspaceRole } from '../../types/Api';
 import { Combobox, type ComboboxOption } from '../ui/combobox';
 import Dialog from '../ui/dialog';
+import { teamTree } from '../../lib/teamOrder';
 
 /** The command's name, in the dialog, the menu and the palette. */
 export const MOVE_ISSUE_LABEL = 'Move to team';
@@ -55,14 +56,19 @@ export const MoveIssueDialog: React.FC<MoveIssueDialogProps> = ({
   const [busy, setBusy] = useState(false);
   if (!open) return null;
 
-  const options: ComboboxOption[] = moveTargets(teams, workspaceRole).map(
-    (team) => ({
+  const targets = teamTree(moveTargets(teams, workspaceRole));
+  const options: ComboboxOption[] = targets.map(
+    ({ team, nested, parentName }) => ({
       value: team.id,
       label: team.name,
       detail: team.key_prefix,
-      keywords: [team.key_prefix],
+      keywords: [
+        team.key_prefix,
+        ...(parentName === undefined ? [] : [parentName]),
+      ],
       icon: <LuUsers className="h-3.5 w-3.5" />,
       disabled: busy,
+      indent: nested,
     })
   );
 

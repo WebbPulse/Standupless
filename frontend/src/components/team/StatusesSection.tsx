@@ -39,6 +39,8 @@ export interface StatusesSectionProps {
   teamId: string;
   /** The workspace slug, for the link to the workspace's own statuses. */
   slug?: string;
+  /** The parent team's settings page, for a sub-team whose statuses include the parent's. */
+  parentSettingsPath?: string;
   canEdit: boolean;
 }
 
@@ -50,6 +52,7 @@ export const StatusesSection: React.FC<StatusesSectionProps> = ({
   workspaceId,
   teamId,
   slug = '',
+  parentSettingsPath,
   canEdit,
 }) => {
   const auth = useQueryAuth();
@@ -125,6 +128,11 @@ export const StatusesSection: React.FC<StatusesSectionProps> = ({
           scope="team"
           canEdit={canEdit}
           workspaceSettingsPath={workflowSettingsPath(slug)}
+          parentSettingsPath={
+            parentSettingsPath === undefined
+              ? undefined
+              : `${parentSettingsPath}#team-settings-workflow`
+          }
           actions={{ create, update, swap, remove, override, reset }}
         />
       )}

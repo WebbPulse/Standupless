@@ -51,6 +51,8 @@ export interface LabelWorkflowEditorProps {
   actions: LabelEditorActions;
   /** Where an inherited label is edited, for the team page's menu. */
   workspaceSettingsPath?: string;
+  /** Where a label the team inherits from its parent team is edited. */
+  parentSettingsPath?: string;
 }
 
 /** The color a new label starts on. */
@@ -63,6 +65,7 @@ export const LabelWorkflowEditor: React.FC<LabelWorkflowEditorProps> = ({
   canEdit,
   actions,
   workspaceSettingsPath = '',
+  parentSettingsPath,
 }) => {
   const [error, setError] = useState<string | null>(null);
   const [showHidden, setShowHidden] = useState(false);
@@ -262,6 +265,7 @@ export const LabelWorkflowEditor: React.FC<LabelWorkflowEditorProps> = ({
                   row={label}
                   noun="label"
                   workspaceSettingsPath={workspaceSettingsPath}
+                  parentSettingsPath={parentSettingsPath}
                   onOverride={(body) => {
                     run(
                       override(label, body),

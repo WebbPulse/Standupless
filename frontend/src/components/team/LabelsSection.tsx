@@ -39,6 +39,8 @@ export interface LabelsSectionProps {
   teamId: string;
   /** The workspace slug, for the link to the workspace's own labels. */
   slug?: string;
+  /** The parent team's settings page, for a sub-team whose labels include the parent's. */
+  parentSettingsPath?: string;
   canEdit: boolean;
 }
 
@@ -50,6 +52,7 @@ export const LabelsSection: React.FC<LabelsSectionProps> = ({
   workspaceId,
   teamId,
   slug = '',
+  parentSettingsPath,
   canEdit,
 }) => {
   const auth = useQueryAuth();
@@ -112,6 +115,11 @@ export const LabelsSection: React.FC<LabelsSectionProps> = ({
           scope="team"
           canEdit={canEdit}
           workspaceSettingsPath={labelsSettingsPath(slug)}
+          parentSettingsPath={
+            parentSettingsPath === undefined
+              ? undefined
+              : `${parentSettingsPath}#team-settings-labels`
+          }
           actions={{ create, update, remove, override, reset }}
         />
       )}

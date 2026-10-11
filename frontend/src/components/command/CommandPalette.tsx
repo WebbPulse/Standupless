@@ -105,6 +105,7 @@ import {
   isPartialIssueKey,
   MIN_TERM,
 } from '../../lib/searchTerms';
+import { teamTree } from '../../lib/teamOrder';
 import type { Theme } from '../../lib/theme';
 import { currentOrFirstTeam, settingsLanding } from '../../lib/workspaceNav';
 import type { TeamRead, WorkspaceRead } from '../../types/Api';
@@ -147,6 +148,8 @@ interface Command {
   to?: string;
   run?: () => void;
   page?: Page;
+  /** Draws the row one step in, as a sub-team under its parent. */
+  indent?: boolean;
 }
 
 /** A run of commands under one heading. */
@@ -536,12 +539,14 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
         icon: <LuTerminal className={ICON} />,
         to: cliSetupPath(slug),
       },
-      ...teams.map((row) => ({
+      ...teamTree(teams).map(({ team: row, nested, parentName }) => ({
         id: `nav-team-${row.id}`,
         label: `Go to ${row.name}`,
+        keywords: parentName ?? '',
         hint: row.key_prefix,
         icon: <LuUsers className={ICON} />,
         to: teamPath(slug, row.key_prefix),
+        indent: nested,
       }))
     );
     return built;
@@ -549,24 +554,27 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
 
   const teamSettings = useMemo<Command[]>(
     () =>
-      teams.map((row) => ({
+      teamTree(teams).map(({ team: row, nested, parentName }) => ({
         id: `settings-team-${row.id}`,
         label: `${row.name} settings`,
-        keywords: 'team settings members labels statuses workflow',
+        keywords: `team settings members labels statuses workflow ${parentName ?? ''}`,
         hint: row.key_prefix,
         icon: <LuSettings className={ICON} />,
         to: teamSettingsPath(slug, row.key_prefix),
+        indent: nested,
       })),
     [teams, slug]
   );
 
   const groups = useMemo<CommandGroup[]>(() => {
     if (page === 'teams') {
-      const rows = teams
-        .map((row) => ({
+      const rows = teamTree(teams)
+        .map(({ team: row, nested, parentName }) => ({
           id: `switch-${row.id}`,
           label: row.name,
+          keywords: parentName ?? '',
           hint: row.key_prefix,
+          indent: nested,
           icon: <LuUsers className={ICON} />,
           to: switchTeamPath(
             location.pathname,
@@ -924,8 +932,11 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
                           aria-selected={selected}
                           data-active={selected}
                           className={cn(
-                            'mx-1.5 flex h-9 cursor-pointer pointer-coarse:h-11 items-center gap-2.5 rounded-sm px-2 text-sm hover:bg-raised hover:text-text active:bg-line',
-                            selected ? 'bg-raised text-text' : 'text-text-muted'
+                            'mx-1.5 flex h-9 cursor-pointer pointer-coarse:h-11 items-center gap-2.5 rounded-sm text-sm hover:bg-raised hover:text-text active:bg-line',
+                            selected
+                              ? 'bg-raised text-text'
+                              : 'text-text-muted',
+                            command.indent === true ? 'pr-2 pl-7' : 'px-2'
                           )}
                           onMouseMove={() => {
                             setActive(at);

@@ -87,6 +87,7 @@ import type {
   TeamRead,
   WorkspaceRole,
 } from '../../types/Api';
+import { teamTree } from '../../lib/teamOrder';
 
 /** The width of the pinned name column, in pixels. */
 const NAME_WIDTH = 280;
@@ -663,10 +664,11 @@ export const Roadmap: React.FC = () => {
                 placeholder="Filter by team"
                 options={[
                   { value: '', label: 'All teams' },
-                  ...teams.map((team) => ({
+                  ...teamTree(teams).map(({ team, nested }) => ({
                     value: team.key_prefix,
                     label: team.name,
                     icon: <TeamKey keyPrefix={team.key_prefix} />,
+                    indent: nested,
                   })),
                 ]}
                 selected={[teamFilter]}
