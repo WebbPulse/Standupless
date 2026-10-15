@@ -25,6 +25,7 @@ import React, {
   useLayoutEffect,
   useRef,
   useState,
+  useSyncExternalStore,
 } from 'react';
 import { createPortal } from 'react-dom';
 import { cn } from '../../lib/cn';
@@ -41,6 +42,9 @@ export interface TooltipProps {
   side?: 'top' | 'bottom';
   className?: string;
 }
+
+/** A store subscription that never fires, so only server and client differ. */
+const subscribeNothing = (): (() => void) => () => undefined;
 
 /** Whether focus on an element came from the keyboard rather than a click. */
 const focusIsVisible = (element: Element): boolean => {
@@ -59,6 +63,11 @@ export const Tooltip: React.FC<TooltipProps> = ({
   className = '',
 }) => {
   const [open, setOpen] = useState(false);
+  const mounted = useSyncExternalStore(
+    subscribeNothing,
+    () => true,
+    () => false
+  );
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const pressed = useRef(false);
   const bubble = useRef<HTMLSpanElement>(null);
@@ -142,18 +151,19 @@ export const Tooltip: React.FC<TooltipProps> = ({
       }}
     >
       {children}
-      {createPortal(
-        <span
-          ref={bubble}
-          role="tooltip"
-          aria-hidden="true"
-          data-open={open ? '' : undefined}
-          className="pointer-events-none fixed top-0 left-0 z-70 rounded-sm bg-text px-2 py-1 text-2xs font-medium whitespace-pre text-bg shadow-overlay transition-opacity duration-100 not-data-open:hidden starting:opacity-0"
-        >
-          {text}
-        </span>,
-        document.body
-      )}
+      {mounted &&
+        createPortal(
+          <span
+            ref={bubble}
+            role="tooltip"
+            aria-hidden="true"
+            data-open={open ? '' : undefined}
+            className="pointer-events-none fixed top-0 left-0 z-70 rounded-sm bg-text px-2 py-1 text-2xs font-medium whitespace-pre text-bg shadow-overlay transition-opacity duration-100 not-data-open:hidden starting:opacity-0"
+          >
+            {text}
+          </span>,
+          document.body
+        )}
     </span>
   );
 };
