@@ -11,23 +11,14 @@
  */
 
 import React, { useState } from 'react';
-import {
-  LuEllipsis,
-  LuFileText,
-  LuGoal,
-  LuRefreshCcw,
-} from 'react-icons/lu';
+import { LuEllipsis, LuFileText, LuGoal, LuRefreshCcw } from 'react-icons/lu';
 import { NavLink } from 'react-router-dom';
 import { useFavorites } from '../../hooks/useFavorites';
 import { cn } from '../../lib/cn';
 import { favoriteHref } from '../../lib/favorites';
 import { PROJECT_ICON_GLYPHS } from '../../lib/projectLook';
 import type { ViewColor } from '../../api/views';
-import type {
-  FavoriteRead,
-  ProjectIconName,
-  TeamRead,
-} from '../../types/Api';
+import type { FavoriteRead, ProjectIconName, TeamRead } from '../../types/Api';
 import Avatar from '../ui/avatar';
 import { IconButton } from '../ui/button';
 import Menu, { MenuItem, MenuSeparator } from '../ui/menu';
@@ -55,7 +46,9 @@ const rowId = (favorite: FavoriteRead): string =>
   `favorite-${favorite.kind}-${favorite.target_id}`;
 
 /** Whether a stored project icon name is one this client can draw. */
-const isProjectIcon = (icon: string | null | undefined): icon is ProjectIconName =>
+const isProjectIcon = (
+  icon: string | null | undefined
+): icon is ProjectIconName =>
   typeof icon === 'string' && icon in PROJECT_ICON_GLYPHS;
 
 /** The small mark a favorite leads with, matching where it lives elsewhere in the app. */
@@ -66,10 +59,7 @@ const FavoriteGlyph: React.FC<{
   switch (favorite.kind) {
     case 'issue':
       return (
-        <StatusIcon
-          status={favorite.status ?? undefined}
-          className={GLYPH}
-        />
+        <StatusIcon status={favorite.status ?? undefined} className={GLYPH} />
       );
     case 'project':
       return (
@@ -223,10 +213,7 @@ export const FavoritesSection: React.FC<FavoritesSectionProps> = ({
                     : favorite.title
                 }
                 className={(state) =>
-                  cn(
-                    rowClass(state),
-                    'pr-8 pointer-coarse:pr-12'
-                  )
+                  cn(rowClass(state), 'pr-8 pointer-coarse:pr-12')
                 }
                 onClick={onNavigate}
                 onKeyDown={(event) => {

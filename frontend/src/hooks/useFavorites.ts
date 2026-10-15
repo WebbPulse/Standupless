@@ -7,10 +7,7 @@
 
 import { useCallback, useContext, useMemo, useState } from 'react';
 import { useQueryAuth } from '@webbpulse/auth/react';
-import {
-  invalidateQueries,
-  usePolledQuery,
-} from '@webbpulse/api-client/react';
+import { invalidateQueries, usePolledQuery } from '@webbpulse/api-client/react';
 import {
   addFavorite,
   listFavorites,

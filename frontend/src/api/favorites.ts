@@ -38,9 +38,7 @@ export const listFavorites = async (
     favoritesPath(workspaceId),
     signal === undefined ? undefined : { signal }
   );
-  return Array.isArray(response.data?.favorites)
-    ? response.data.favorites
-    : [];
+  return Array.isArray(response.data?.favorites) ? response.data.favorites : [];
 };
 
 /** Stars one target. Starring one already starred keeps its place. */
@@ -73,7 +71,5 @@ export const reorderFavorites = async (
     favoritesOrderPath(workspaceId),
     order
   );
-  return Array.isArray(response.data?.favorites)
-    ? response.data.favorites
-    : [];
+  return Array.isArray(response.data?.favorites) ? response.data.favorites : [];
 };

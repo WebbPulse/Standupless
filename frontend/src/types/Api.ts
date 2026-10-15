@@ -3394,13 +3394,7 @@ export interface DocumentVersionListRead {
 
 /** What a favorite stars. */
 export type FavoriteKind =
-  | 'issue'
-  | 'project'
-  | 'cycle'
-  | 'view'
-  | 'team'
-  | 'document'
-  | 'initiative';
+  'issue' | 'project' | 'cycle' | 'view' | 'team' | 'document' | 'initiative';
 
 /** One favorite named by its kind and id, as an add or a reorder sends it. */
 export interface FavoriteRef {
