@@ -1,11 +1,7 @@
 import { ApiError } from '@webbpulse/api-client';
 import { describe, expect, it } from 'vitest';
 
-import {
-  errorMessage,
-  isPlanFeatureUnavailable,
-  isPlanLimit,
-} from './errors';
+import { errorMessage, isPlanFeatureUnavailable, isPlanLimit } from './errors';
 
 /** A refusal carrying the given envelope body, as the shared client throws it. */
 const refusal = (status: number, body: unknown): ApiError =>
