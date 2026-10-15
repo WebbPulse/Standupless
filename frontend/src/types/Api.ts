@@ -2054,6 +2054,18 @@ export interface GithubRepositoryRead {
   default_branch: string;
   team_id: string | null;
   linked_at: string;
+  /** What records the pinned team's releases from this repository. */
+  release_source?: RepositoryReleaseSource;
+}
+
+/** What records a repository's releases: its deployments, its tags, or its published GitHub Releases. */
+export interface RepositoryReleaseSource {
+  kind: 'deployments' | 'tags' | 'github_releases';
+  /** A glob the tags must match, such as `v*`, or null for every tag. */
+  tag_pattern: string | null;
+  /** The status a tag release moves the issues it closes to, or null for the team's Done. */
+  status_id: string | null;
+  move_issues: boolean;
 }
 
 /** The GitHub App installation backing a workspace, when there is one. */
@@ -2865,7 +2877,12 @@ export interface ReleasePipelineUpdate {
 }
 
 /** What reported a release or a stage reached. */
-export type ReleaseSource = 'manual' | 'api' | 'github_deployment';
+export type ReleaseSource =
+  | 'manual'
+  | 'api'
+  | 'github_deployment'
+  | 'github_tag'
+  | 'github_release';
 
 /** One stage a release reached, when, and what reported it. */
 export interface ReleaseStageRead {

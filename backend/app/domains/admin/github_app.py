@@ -65,6 +65,8 @@ EVENTS: tuple[str, ...] = (
     "deployment_status",
     "pull_request_review",
     "check_run",
+    "create",
+    "release",
 )
 """The subscribed events. `installation` and `installation_repositories` reach every App without one."""
 

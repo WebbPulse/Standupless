@@ -1293,6 +1293,7 @@ class ReleaseBackfillRead(TypedDict):
     releases_created: int
     releases_updated: int
     resume_after: NotRequired[str | None]
+    source: NotRequired[str]
     stalled: NotRequired[bool]
     stopped_early: NotRequired[bool]
     team_id: str
@@ -1358,18 +1359,18 @@ class ReleaseUpdate(TypedDict):
     version: NotRequired[str | None]
 
 
-class RepositoryLinkWrite(TypedDict):
-    team_id: NotRequired[str | None]
+class RepositoryReleaseSourceRead(TypedDict):
+    kind: NotRequired[Literal["deployments", "tags", "github_releases"]]
+    move_issues: NotRequired[bool]
+    status_id: NotRequired[str | None]
+    tag_pattern: NotRequired[str | None]
 
 
-class RepositoryRead(TypedDict):
-    default_branch: str
-    full_name: str
-    linked_at: str
-    name: str
-    private: bool
-    repository_id: str
-    team_id: NotRequired[str | None]
+class RepositoryReleaseSourceWrite(TypedDict):
+    kind: NotRequired[Literal["deployments", "tags", "github_releases"]]
+    move_issues: NotRequired[bool]
+    status: NotRequired[str | None]
+    tag_pattern: NotRequired[str | None]
 
 
 class ReviewCountsRead(TypedDict):
@@ -2804,6 +2805,22 @@ class ReleaseRead(TypedDict):
     url: NotRequired[str | None]
     version: NotRequired[str | None]
     workspace_id: str
+
+
+class RepositoryLinkWrite(TypedDict):
+    release_source: NotRequired[RepositoryReleaseSourceWrite | None]
+    team_id: NotRequired[str | None]
+
+
+class RepositoryRead(TypedDict):
+    default_branch: str
+    full_name: str
+    linked_at: str
+    name: str
+    private: bool
+    release_source: NotRequired[RepositoryReleaseSourceRead]
+    repository_id: str
+    team_id: NotRequired[str | None]
 
 
 class SearchRead(TypedDict):

@@ -144,6 +144,8 @@ def test_the_manifest_matches_the_documented_app(client: TestClient, store: Fake
         "deployment_status",
         "pull_request_review",
         "check_run",
+        "create",
+        "release",
     ]
     assert manifest["hook_attributes"] == {"url": f"{settings.api_base_url}/api/github/webhooks", "active": True}
     assert manifest["callback_urls"] == [f"{settings.api_base_url}/api/github/callback"]

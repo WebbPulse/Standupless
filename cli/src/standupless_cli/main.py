@@ -3265,7 +3265,9 @@ def release_backfill(
 
     Stops when the server pauses to keep the GitHub App's API budget for live sync,
     or when a request makes no progress, printing why and the cursor to continue from.
-    With --deployment-id it retries only those deployments, in one request.
+    With --deployment-id it retries only those deployments, in one request. A repository
+    that records releases from tags or GitHub Releases is rebuilt from its matching tags,
+    counted as deployments read.
     """
     context = _state(ctx).context()
     chosen = context.team(team)

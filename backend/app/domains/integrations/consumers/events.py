@@ -237,6 +237,14 @@ def handle_record(repositories: Repositories, record: Mapping[str, Any]) -> None
         from app.domains.integrations.deployments import handle_deployment_status
 
         handle_deployment_status(repositories, workspace_id, body)
+    elif event == "create":
+        from app.domains.integrations.tag_releases import handle_create
+
+        handle_create(repositories, workspace_id, body)
+    elif event == "release":
+        from app.domains.integrations.tag_releases import handle_release
+
+        handle_release(repositories, workspace_id, body)
 
 
 def _reconcile_on_close(

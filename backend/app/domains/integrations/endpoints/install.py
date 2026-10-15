@@ -112,29 +112,46 @@ def link_repository(
     context: Annotated[AuthzContext, Depends(require(Capability.WORKSPACE_ADMIN))],
     repositories: Annotated[Repositories, Depends(get_repositories)],
 ) -> RepositoryRead:
-    """Point one repository at one team, or clear the link.
+    """Point one repository at one team, or clear the link, and choose what records its releases.
 
     A repository links issues by matching every team's prefix, pinned or not;
-    naming a team only chooses whose releases its deployments feed.
+    naming a team only chooses whose releases it feeds. A body naming only
+    `release_source` keeps the team.
     """
-    if payload.team_id is not None:
+    from app.domains.integrations.tag_releases import resolve_release_source
+
+    sets_team = "team_id" in payload.model_fields_set or payload.release_source is None
+    if sets_team and payload.team_id is not None:
         team = repositories.teams.get(context.workspace_id, payload.team_id)
         if team is None:
             raise not_found()
         require_team_content(context, payload.team_id)
     current = repositories.github.get_repository(context.workspace_id, repository_id)
-    updated = repositories.github.set_repository_team(context.workspace_id, repository_id, payload.team_id)
-    if not updated:
+    if current is None:
+        raise not_found()
+    team_id = payload.team_id if sets_team else current.team_id
+    source = None
+    if payload.release_source is not None:
+        if team_id is not None:
+            require_team_content(context, team_id)
+        source = resolve_release_source(
+            repositories,
+            context.workspace_id,
+            team_id,
+            kind=payload.release_source.kind,
+            tag_pattern=payload.release_source.tag_pattern,
+            status=payload.release_source.status,
+            move_issues=payload.release_source.move_issues,
+        )
+    if sets_team and not repositories.github.set_repository_team(context.workspace_id, repository_id, team_id):
+        raise not_found()
+    if source is not None and not repositories.github.set_repository_release_source(
+        context.workspace_id, repository_id, source
+    ):
         raise not_found()
     row = repositories.github.get_repository(context.workspace_id, repository_id)
     if row is None:
         raise not_found()
-    record_pin(
-        repositories,
-        context,
-        repository_id,
-        row.full_name,
-        current.team_id if current is not None else None,
-        row.team_id,
-    )
+    if sets_team:
+        record_pin(repositories, context, repository_id, row.full_name, current.team_id, row.team_id)
     return repository_read(row)

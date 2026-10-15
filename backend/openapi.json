@@ -9611,7 +9611,7 @@
         "type": "object"
       },
       "ReleaseBackfillRead": {
-        "description": "What one backfill call did, and the cursor to continue from, null when it is done.\n\n`deployments_skipped` counts deployments whose release had already reached\nthe stage, which cost no GitHub call. A page that stopped before its limit to\nkeep half the GitHub App's hourly budget for live sync, or to answer inside\nthe request timeout, sets `stopped_early` and says in `message` when to pass\nthe cursor back; `resume_after` is GitHub's budget reset when that is the\nreason. `rate_limit_remaining` and `rate_limit` are GitHub's last word on the\ninstallation's budget, and `github_calls` what this page spent of it.\n\n`stalled` is set when the page recorded and skipped nothing, so passing the\ncursor back moves only once the message's reason has passed.\n`unreadable_deployment_ids` names deployments passed over because their range\ncould not be read inside the request timeout, and `pull_reads_skipped` counts\npull requests a recorded deployment did not read for keys for the same reason.\nPass `unreadable_deployment_ids` back as `deployment_ids` to retry only those.\nA retry names in `deployments_not_found` the ids that are no successful\ndeployment of the environment in the repository.",
+        "description": "What one backfill call did, and the cursor to continue from, null when it is done.\n\n`deployments_skipped` counts deployments whose release had already reached\nthe stage, which cost no GitHub call. A page that stopped before its limit to\nkeep half the GitHub App's hourly budget for live sync, or to answer inside\nthe request timeout, sets `stopped_early` and says in `message` when to pass\nthe cursor back; `resume_after` is GitHub's budget reset when that is the\nreason. `rate_limit_remaining` and `rate_limit` are GitHub's last word on the\ninstallation's budget, and `github_calls` what this page spent of it.\n\n`stalled` is set when the page recorded and skipped nothing, so passing the\ncursor back moves only once the message's reason has passed.\n`unreadable_deployment_ids` names deployments passed over because their range\ncould not be read inside the request timeout, and `pull_reads_skipped` counts\npull requests a recorded deployment did not read for keys for the same reason.\nPass `unreadable_deployment_ids` back as `deployment_ids` to retry only those.\nA retry names in `deployments_not_found` the ids that are no successful\ndeployment of the environment in the repository.\n\n`source` is `github_tag` or `github_release` for a page read from a\nrepository that records its releases from tags or GitHub Releases; its\ndeployment counts then count tags.",
         "properties": {
           "deployments_not_found": {
             "items": {
@@ -9713,6 +9713,11 @@
               }
             ],
             "title": "Resume After"
+          },
+          "source": {
+            "default": "github_deployment",
+            "title": "Source",
+            "type": "string"
           },
           "stalled": {
             "default": false,
@@ -10630,8 +10635,18 @@
         "type": "object"
       },
       "RepositoryLinkWrite": {
-        "description": "Point one repository at one team, or clear it.",
+        "description": "Point one repository at one team, or clear it, and choose what records its releases.\n\nA body naming only `release_source` keeps the team; any other body sets the\nteam, so an empty one clears it as it always has.",
         "properties": {
+          "release_source": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RepositoryReleaseSourceWrite"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "team_id": {
             "anyOf": [
               {
@@ -10648,7 +10663,7 @@
         "type": "object"
       },
       "RepositoryRead": {
-        "description": "One repository the installation can see.",
+        "description": "One repository the installation can see, the team it feeds and what records that team's releases.",
         "properties": {
           "default_branch": {
             "title": "Default Branch",
@@ -10670,6 +10685,9 @@
           "private": {
             "title": "Private",
             "type": "boolean"
+          },
+          "release_source": {
+            "$ref": "#/components/schemas/RepositoryReleaseSourceRead"
           },
           "repository_id": {
             "title": "Repository Id",
@@ -10696,6 +10714,96 @@
           "linked_at"
         ],
         "title": "RepositoryRead",
+        "type": "object"
+      },
+      "RepositoryReleaseSourceRead": {
+        "description": "What records a repository's releases, and the status its tags move closed issues to.",
+        "properties": {
+          "kind": {
+            "default": "deployments",
+            "enum": [
+              "deployments",
+              "tags",
+              "github_releases"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "move_issues": {
+            "default": true,
+            "title": "Move Issues",
+            "type": "boolean"
+          },
+          "status_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status Id"
+          },
+          "tag_pattern": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tag Pattern"
+          }
+        },
+        "title": "RepositoryReleaseSourceRead",
+        "type": "object"
+      },
+      "RepositoryReleaseSourceWrite": {
+        "description": "What records a pinned repository's releases, replacing the whole setting.\n\n`tag_pattern` is a glob such as `v*` or `python-v*`; none records every tag.\n`status` names the team status, by id or name, that a tag or Release moves\nthe issues it closes to, the team's Done when absent. `move_issues` false\nrecords releases without moving issues.",
+        "properties": {
+          "kind": {
+            "default": "deployments",
+            "enum": [
+              "deployments",
+              "tags",
+              "github_releases"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "move_issues": {
+            "default": true,
+            "title": "Move Issues",
+            "type": "boolean"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
+          },
+          "tag_pattern": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tag Pattern"
+          }
+        },
+        "title": "RepositoryReleaseSourceWrite",
         "type": "object"
       },
       "ReviewCountsRead": {
@@ -22593,7 +22701,7 @@
     },
     "/api/workspaces/{workspace_id}/github/repositories/{repository_id}": {
       "patch": {
-        "description": "Point one repository at one team, or clear the link.\n\nA repository links issues by matching every team's prefix, pinned or not;\nnaming a team only chooses whose releases its deployments feed.",
+        "description": "Point one repository at one team, or clear the link, and choose what records its releases.\n\nA repository links issues by matching every team's prefix, pinned or not;\nnaming a team only chooses whose releases it feeds. A body naming only\n`release_source` keeps the team.",
         "operationId": "link_repository_api_workspaces__workspace_id__github_repositories__repository_id__patch",
         "parameters": [
           {

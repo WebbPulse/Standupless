@@ -60,8 +60,22 @@ RELEVANT_EVENTS = frozenset(
         "deployment_status",
         "pull_request_review",
         "check_run",
+        "create",
+        "release",
     }
 )
+
+
+def _tag_matters(event: str, payload: Any) -> bool:
+    """Whether a `create` or `release` delivery could record a release: a tag created, a Release published.
+
+    A branch created and a Release edited, deleted or saved as a draft stay off the queue.
+    """
+    if not isinstance(payload, dict):
+        return False
+    if event == "create":
+        return payload.get("ref_type") == "tag"
+    return payload.get("action") == "published"
 
 
 def _check_run_matters(payload: Any) -> bool:
@@ -270,6 +284,13 @@ async def receive_webhook(
     except ValueError:
         return Response(
             content=json.dumps({"accepted": False, "reason": "unparseable"}),
+            media_type="application/json",
+            status_code=status.HTTP_200_OK,
+        )
+
+    if event in ("create", "release") and not _tag_matters(event, payload):
+        return Response(
+            content=json.dumps({"accepted": False, "reason": "ignored"}),
             media_type="application/json",
             status_code=status.HTTP_200_OK,
         )

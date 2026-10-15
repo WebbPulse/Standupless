@@ -6,6 +6,8 @@
 
 const SOURCE_LABELS: Record<string, string> = {
   github_deployment: 'GitHub deployment',
+  github_tag: 'GitHub tag',
+  github_release: 'GitHub Release',
   api: 'API',
   manual: 'Manual',
 };

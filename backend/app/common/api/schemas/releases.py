@@ -18,7 +18,7 @@ from webbpulse.http import cursor_page
 
 from app.common.db.dynamo.releases import PipelineStage, Release, ReleasePipeline, ReleaseStageReached
 
-ReleaseSourceField = Literal["manual", "api", "github_deployment"]
+ReleaseSourceField = Literal["manual", "api", "github_deployment", "github_tag", "github_release"]
 
 NAME_MAX = 120
 
@@ -516,10 +516,15 @@ class ReleaseBackfillRead(BaseModel):
     Pass `unreadable_deployment_ids` back as `deployment_ids` to retry only those.
     A retry names in `deployments_not_found` the ids that are no successful
     deployment of the environment in the repository.
+
+    `source` is `github_tag` or `github_release` for a page read from a
+    repository that records its releases from tags or GitHub Releases; its
+    deployment counts then count tags.
     """
 
     team_id: str
     environment: str
+    source: str = "github_deployment"
     deployments_scanned: int
     deployments_skipped: int = 0
     releases_created: int

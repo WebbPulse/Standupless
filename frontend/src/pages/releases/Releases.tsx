@@ -210,18 +210,26 @@ const FilterButton: React.FC<FilterButtonProps> = ({
 /** How a release with no known person reads in the creator tooltip. */
 const RECORDED_BY: Record<string, string> = {
   github_deployment: 'Recorded from a GitHub deployment',
+  github_tag: 'Recorded from a GitHub tag',
+  github_release: 'Recorded from a GitHub Release',
   api: 'Recorded through the API',
   manual: 'Recorded by hand',
 };
 
+/** The sources GitHub reports a release through, which share its mark. */
+const GITHUB_SOURCES = new Set([
+  'github_deployment',
+  'github_tag',
+  'github_release',
+]);
+
 /** The icon that stands for what recorded a release with no known person. */
 const SourceIcon: React.FC<{ source: string }> = ({ source }) => {
-  const Icon =
-    source === 'github_deployment'
-      ? LuGithub
-      : source === 'manual'
-        ? LuPencilLine
-        : LuTerminal;
+  const Icon = GITHUB_SOURCES.has(source)
+    ? LuGithub
+    : source === 'manual'
+      ? LuPencilLine
+      : LuTerminal;
   return (
     <span className="flex h-5 w-5 items-center justify-center rounded-full border border-line text-text-faint">
       <Icon aria-hidden="true" className="h-3 w-3" />
