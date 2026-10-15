@@ -1056,6 +1056,12 @@
     "path": "/api/workspaces/{workspace_id}/labels/{label_id}"
   },
   {
+    "auth": "workspace:admin",
+    "domain": "teams",
+    "method": "POST",
+    "path": "/api/workspaces/{workspace_id}/labels/{label_id}/merge"
+  },
+  {
     "auth": "workspace:read",
     "domain": "teams",
     "method": "GET",
@@ -1198,6 +1204,12 @@
     "domain": "teams",
     "method": "PATCH",
     "path": "/api/workspaces/{workspace_id}/teams/{team_id}/labels/{label_id}"
+  },
+  {
+    "auth": "team:admin",
+    "domain": "teams",
+    "method": "POST",
+    "path": "/api/workspaces/{workspace_id}/teams/{team_id}/labels/{label_id}/merge"
   },
   {
     "auth": "team:admin",

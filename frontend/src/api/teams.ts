@@ -5,7 +5,7 @@
  */
 
 import apiClient, { type RequestOptions } from './client';
-import { runLabelMerge } from './labelMerge';
+import { untilMergeComplete } from '../lib/labelMerge';
 import type {
   ArchiveSettingsRead,
   ArchiveSettingsUpdate,
@@ -365,10 +365,13 @@ export const mergeLabel = (
   labelId: string,
   targetLabelId: string
 ): Promise<LabelMergeRead> =>
-  runLabelMerge(
-    `${labelsPath(workspaceId, teamId)}/${labelId}/merge`,
-    targetLabelId
-  );
+  untilMergeComplete(async () => {
+    const response = await apiClient.post<LabelMergeRead>(
+      `${labelsPath(workspaceId, teamId)}/${labelId}/merge`,
+      { target_label_id: targetLabelId }
+    );
+    return response.data;
+  });
 
 /**
  * Hides, shows or locally renames an inherited workspace status in one team.

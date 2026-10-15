@@ -5,7 +5,7 @@
  */
 
 import apiClient from './client';
-import { runLabelMerge } from './labelMerge';
+import { untilMergeComplete } from '../lib/labelMerge';
 import type {
   LabelCreate,
   LabelListRead,
@@ -142,7 +142,10 @@ export const mergeWorkspaceLabel = (
   labelId: string,
   targetLabelId: string
 ): Promise<LabelMergeRead> =>
-  runLabelMerge(
-    `${workspaceLabelsPath(workspaceId)}/${labelId}/merge`,
-    targetLabelId
-  );
+  untilMergeComplete(async () => {
+    const response = await apiClient.post<LabelMergeRead>(
+      `${workspaceLabelsPath(workspaceId)}/${labelId}/merge`,
+      { target_label_id: targetLabelId }
+    );
+    return response.data;
+  });

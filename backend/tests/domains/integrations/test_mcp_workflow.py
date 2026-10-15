@@ -96,10 +96,10 @@ def test_merge_workspace_labels_needs_admin_and_folds_the_label(
     bug = answer(tool(client, owner, "create_workspace_label", {"name": "Bug", "color": "#eb5757"}))
     answer(tool(client, owner, "create_workspace_label", {"name": "Defect", "color": "#eb5757"}))
 
-    refused = refusal(tool(client, member, "merge_workspace_labels", {"label": "Defect", "into": "Bug"}))
+    refused = tool(client, member, "merge_workspace_labels", {"label": "Defect", "into": "Bug"})
     merged = answer(tool(client, owner, "merge_workspace_labels", {"label": "defect", "into": "bug"}))
 
-    assert "may not" in refused
+    assert refused.json()["error"]["code"] == INSUFFICIENT_SCOPE
     assert merged["complete"] is True
     assert merged["target"]["label_id"] == bug["label_id"]
     assert [row.label_id for row in repositories.team_config.list_workspace_labels(WORKSPACE)] == [bug["label_id"]]
