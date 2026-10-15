@@ -76,10 +76,12 @@ describe('IssueReleasesSection', () => {
   });
 
   it('lists every release as its own linked row with its date', async () => {
-    const promotedAt = reached('Production').reached_at;
+    const promotedAt = daysAgo(3);
     listIssueReleases.mockResolvedValue({
       releases: [
-        release('rel-2', 'v1.3.0'),
+        release('rel-2', 'v1.3.0', {
+          current_stage: reached('Production', promotedAt),
+        }),
         release('rel-1', 'v1.2.0', {
           current_stage: reached('Staging', daysAgo(5)),
           included_in: 'rel-2',
