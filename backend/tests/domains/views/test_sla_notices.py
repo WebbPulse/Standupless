@@ -1,7 +1,8 @@
 """SLA notices: the assignee hears once when an SLA turns at risk and once when it breaches.
 
-They ride the hourly due date sweep, so these drive `run_due_reminders` with a
-fixed clock against issues whose timers are set straight in the table.
+They ride the hourly due date sweep and skip finished issues, so these drive
+`run_due_reminders` with a fixed clock against issues whose timers are set
+straight in the table.
 """
 
 from __future__ import annotations
@@ -138,3 +139,17 @@ def test_a_moved_deadline_arms_fresh_notices(
 
     assert summary.sla_at_risk == 1
     assert [row["kind"] for row in _notices(repositories, workspace, MEMBER)] == [SLA_AT_RISK, SLA_AT_RISK]
+
+
+@pytest.mark.parametrize("category", ["completed", "cancelled"])
+def test_a_finished_issue_with_a_stale_timer_sends_nothing(
+    issues_client: TestClient, repositories: Any, workspace: str, statuses: Any, category: str
+) -> None:
+    """A Done or cancelled issue still carrying a timer is never warned about, at risk or breached."""
+    _timed_issue(issues_client, repositories, workspace, status_id=statuses[category].status_id)
+
+    at_risk = run_due_reminders(repositories, AT_RISK + timedelta(minutes=5))
+    breached = run_due_reminders(repositories, BREACH + timedelta(hours=1))
+
+    assert (at_risk.sla_at_risk, breached.sla_breached) == (0, 0)
+    assert _notices(repositories, workspace, MEMBER) == []

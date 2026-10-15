@@ -156,6 +156,34 @@ def test_a_merge_with_a_magic_word_closes_the_issue(
     assert moved.status_id == status_ids["completed"]
 
 
+def test_a_merge_that_closes_the_issue_drops_its_sla_timer(
+    repositories: Any,
+    installed: str,
+    issue: Any,
+    status_ids: dict[str, str],
+    enqueued: list[tuple[str, Any]],
+    github_env: None,
+) -> None:
+    """A merge that moves the issue to Done leaves no running SLA timer behind."""
+    row = repositories.issues.get(WORKSPACE, issue.issue_id)
+    assert row is not None
+    started = utc_now() - timedelta(hours=1)
+    repositories.issues.replace(
+        row.model_copy(update={"sla_started_at": started, "sla_breaches_at": started + timedelta(hours=24)})
+    )
+
+    events.handle_record(
+        repositories,
+        sqs_record(pull_request_event(action="closed", merged=True, state="closed", title="Fixes ABC-1")),
+    )
+
+    moved = repositories.issues.get(WORKSPACE, issue.issue_id)
+    assert moved is not None
+    assert moved.status_id == status_ids["completed"]
+    assert moved.sla_started_at is None
+    assert moved.sla_breaches_at is None
+
+
 def test_a_configured_rule_replaces_the_defaults(
     repositories: Any,
     installed: str,
