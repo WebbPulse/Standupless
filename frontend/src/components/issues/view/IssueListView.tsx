@@ -6,7 +6,9 @@
  * viewer or back off them, # archives or restores them, and Cmd or
  * Ctrl+Delete deletes them after a confirmation. On a board j and k stay in
  * the focused column, h and l or the side arrows cross to the next column
- * holding a card, and labels move to Shift+L. A right
+ * holding a card, and labels move to Shift+L. In a list that nests
+ * sub-issues, the right arrow unfolds a parent or steps into its first
+ * sub-issue and the left arrow folds it or steps back out to the parent. A right
  * click on a row or a card opens the same commands as a menu. Opening an
  * issue remembers the view's order, so the issue page can step through it.
  * The keys go through the workspace
@@ -65,6 +67,7 @@ import {
 import { allArchived } from '../../../lib/issueDisplay';
 import { boardStep } from '../../../lib/boardNav';
 import { rememberTrail } from '../../../lib/issueTrail';
+import { foldedParentKey, treeRows } from '../../../lib/issueTree';
 import { issuePath } from '../../../lib/paths';
 import type { EstimateOptions } from '../../../lib/validation';
 import type { EstimateScale } from '../../../types/Api';
@@ -142,6 +145,12 @@ interface OpenMenu {
   x: number;
   y: number;
   ids: string[];
+}
+
+/** Where an issue sits in the list's sub-issue tree. */
+interface TreeNode {
+  parentId: string | null;
+  childCount: number;
 }
 
 /** Binds one property key to opening its command, while it can act. */
@@ -270,15 +279,22 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
     state.subGroupBy,
   ]);
 
-  const order = useMemo(() => {
-    if (board !== null) return board.flat(2);
+  const nest = state.layout === 'list' && showSubIssues;
+  const { order, tree } = useMemo(() => {
+    const nodes = new Map<string, TreeNode>();
+    if (board !== null) return { order: board.flat(2), tree: nodes };
     const seen = new Set<string>();
     const ids: string[] = [];
     const take = (issues: OrderedIssueRead[]): void => {
-      for (const issue of issues) {
-        if (seen.has(issue.id)) continue;
-        seen.add(issue.id);
-        ids.push(issue.id);
+      const rows = treeRows(issues, nest, (id) =>
+        collapsed.has(foldedParentKey(id))
+      );
+      for (const row of rows) {
+        const id = row.issue.id;
+        if (seen.has(id)) continue;
+        seen.add(id);
+        ids.push(id);
+        nodes.set(id, { parentId: row.parentId, childCount: row.childCount });
       }
     };
     for (const { group, subs } of sections) {
@@ -291,8 +307,8 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
         if (!collapsed.has(`${group.key}/${sub.key}`)) take(sub.issues);
       }
     }
-    return ids;
-  }, [board, sections, collapsed]);
+    return { order: ids, tree: nodes };
+  }, [board, sections, collapsed, nest]);
 
   const from = `${location.pathname}${location.search}`;
   const rememberOrder = useCallback(() => {
@@ -424,6 +440,32 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
     if (next !== undefined) focusOn(next, false);
   };
 
+  const focusedNode = focused === null ? undefined : tree.get(focused);
+  const onTree =
+    board === null &&
+    focusedNode !== undefined &&
+    (focusedNode.childCount > 0 || focusedNode.parentId !== null);
+  const stepTree = (direction: 'left' | 'right'): void => {
+    if (focused === null || focusedNode === undefined) return;
+    const folded = collapsed.has(foldedParentKey(focused));
+    if (direction === 'right') {
+      if (focusedNode.childCount === 0) return;
+      if (folded) {
+        onToggle(foldedParentKey(focused));
+        return;
+      }
+      const child = order[order.indexOf(focused) + 1];
+      if (child !== undefined && tree.get(child)?.parentId === focused)
+        focusOn(child, false);
+      return;
+    }
+    if (focusedNode.childCount > 0 && !folded) {
+      onToggle(foldedParentKey(focused));
+      return;
+    }
+    if (focusedNode.parentId !== null) focusOn(focusedNode.parentId, false);
+  };
+
   const hasRows = order.length > 0;
   useShortcut({
     keys: 'j',
@@ -502,20 +544,22 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
   });
   useShortcut({
     keys: 'arrowleft',
-    label: 'Previous column',
-    group: 'Board',
-    enabled: onBoard,
+    label: onBoard ? 'Previous column' : 'Collapse sub-issues',
+    group: onBoard ? 'Board' : 'List',
+    enabled: onBoard || onTree,
     handler: () => {
-      moveAcross('left');
+      if (onBoard) moveAcross('left');
+      else stepTree('left');
     },
   });
   useShortcut({
     keys: 'arrowright',
-    label: 'Next column',
-    group: 'Board',
-    enabled: onBoard,
+    label: onBoard ? 'Next column' : 'Expand sub-issues',
+    group: onBoard ? 'Board' : 'List',
+    enabled: onBoard || onTree,
     handler: () => {
-      moveAcross('right');
+      if (onBoard) moveAcross('right');
+      else stepTree('right');
     },
   });
   useShortcut({
@@ -889,6 +933,7 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
           sections={sections}
           collapsed={collapsed}
           onToggle={onToggle}
+          nest={nest}
           createIn={createIn}
         />
         {collection.truncated && (
