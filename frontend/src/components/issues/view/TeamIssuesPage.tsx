@@ -130,6 +130,7 @@ export const TeamIssuesPage: React.FC<TeamIssuesPageProps> = ({
           <TeamTabs
             slug={slug}
             keyPrefix={team.key_prefix}
+            teamId={team.id}
             current={layout === 'board' ? 'board' : 'issues'}
           />
           {subTeams.length > 0 && (

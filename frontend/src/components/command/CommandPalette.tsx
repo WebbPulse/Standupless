@@ -42,6 +42,7 @@ import {
   LuLayers,
   LuLayoutList,
   LuLink,
+  LuList,
   LuMap,
   LuMonitor,
   LuMoon,
@@ -92,6 +93,7 @@ import {
   teamPath,
   teamReleasesPath,
   teamSettingsPath,
+  teamTriagePath,
   viewsPath,
 } from '../../lib/paths';
 import { COPY_ISSUE_URL_KEYS } from '../../lib/copyIssue';
@@ -501,6 +503,22 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
       },
     ];
     if (team !== undefined) {
+      built.push({
+        id: 'nav-triage',
+        label: `${team.name} triage`,
+        keywords: 'triage inbox waiting incoming',
+        hint: 'G then T',
+        icon: <LuInbox className={ICON} />,
+        to: teamTriagePath(slug, team.key_prefix),
+      });
+      built.push({
+        id: 'nav-team-issues',
+        label: `${team.name} issues`,
+        keywords: 'team issues all',
+        hint: 'G then E',
+        icon: <LuList className={ICON} />,
+        to: teamPath(slug, team.key_prefix),
+      });
       built.push({
         id: 'nav-cycles',
         label: `${team.name} cycles`,

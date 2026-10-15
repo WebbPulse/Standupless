@@ -20,6 +20,7 @@ import {
   searchPath,
   teamCyclesPath,
   teamPath,
+  teamTriagePath,
   viewsPath,
 } from '../../lib/paths';
 import type { TeamRead, WorkspaceRead } from '../../types/Api';
@@ -92,6 +93,15 @@ export const GlobalShortcuts: React.FC<GlobalShortcutsProps> = ({
   });
   useShortcut({
     keys: 'g t',
+    label: 'Go to triage',
+    group: NAVIGATION,
+    handler: go(
+      team === undefined ? '' : teamTriagePath(slug, team.key_prefix)
+    ),
+    enabled: team !== undefined,
+  });
+  useShortcut({
+    keys: 'g e',
     label: 'Go to team issues',
     group: NAVIGATION,
     handler: go(team === undefined ? '' : teamPath(slug, team.key_prefix)),

@@ -182,6 +182,7 @@ const TeamSettings: React.FC = () => {
         <TeamTabs
           slug={slug ?? ''}
           keyPrefix={team.key_prefix}
+          teamId={team.id}
           current="settings"
         />
       }
