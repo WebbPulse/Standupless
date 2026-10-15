@@ -618,6 +618,7 @@ class ImportRowRead(TypedDict):
     estimate: NotRequired[str | None]
     importable: bool
     labels: list[str]
+    parent_row: NotRequired[int | None]
     priority: str
     row: int
     source_key: NotRequired[str | None]
@@ -2616,6 +2617,7 @@ class IssueImportPreviewRead(TypedDict):
     importable_rows: int
     mapping: dict[str, str | None]
     new_labels: list[str]
+    parent_links: NotRequired[int]
     problems: list[RowProblemRead]
     problems_truncated: bool
     rows: list[ImportRowRead]
@@ -2631,6 +2633,7 @@ class IssueImportRead(TypedDict):
     finished_at: NotRequired[str | None]
     import_id: str
     labels_created: int
+    linked_count: NotRequired[int]
     preset: str
     problem_count: int
     problems: list[RowProblemRead]

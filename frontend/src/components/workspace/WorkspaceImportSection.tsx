@@ -70,6 +70,7 @@ const FIELDS: { field: ImportField; label: string }[] = [
   { field: 'due_date', label: 'Due date' },
   { field: 'source_key', label: 'Source key' },
   { field: 'created_at', label: 'Created' },
+  { field: 'parent', label: 'Parent' },
 ];
 
 /** The select value that means a field reads no column. */
@@ -124,6 +125,8 @@ const jobSummary = (job: IssueImportRead): string => {
     if (job.skipped_count > 0) parts.push(`${job.skipped_count} skipped`);
     if (job.labels_created > 0)
       parts.push(count(job.labels_created, 'new label'));
+    const linked = job.linked_count ?? 0;
+    if (linked > 0) parts.push(`${count(linked, 'sub-issue')} linked`);
     return parts.join(', ');
   }
   return `${job.processed_rows} of ${job.total_rows} rows`;
@@ -138,11 +141,13 @@ interface ImportSummaryProps {
 const ImportSummary: React.FC<ImportSummaryProps> = ({ preview }) => {
   const errors = preview.problems.filter((p) => p.severity === 'error').length;
   const warnings = preview.problems.length - errors;
+  const links = preview.parent_links ?? 0;
   return (
     <div className="space-y-4" aria-label="Dry run">
       <p className="text-sm text-text">
         {`${count(preview.importable_rows, 'issue')} will be created from ${count(preview.total_rows, 'row')}.`}
         {errors > 0 && ` ${count(errors, 'row')} will be skipped.`}
+        {links > 0 && ` ${count(links, 'sub-issue')} will be linked.`}
         {warnings > 0 && ` ${count(warnings, 'warning')}.`}
       </p>
 

@@ -675,6 +675,45 @@ class IssueRepository:
             return None
         return as_issue(item) if item is not None else None
 
+    def link_imported_parent(self, workspace_id: str, issue_id: str, parent_id: str, import_batch_id: str) -> bool:
+        """Set the parent of an issue one import wrote, answering whether this call set it.
+
+        The import's link pass is the only caller. Unlike `replace`, it keeps
+        `import_batch_id` on the row, so the stream consumers still read the write
+        as part of the import and stay quiet, while the rollup counts the child. It
+        only lands while the row carries that import's marker and no parent, so a
+        re-run links nothing twice and an issue someone edited since is left alone.
+        `updated_at` stays put, because the link completes the import rather than
+        editing the issue.
+        """
+        if not workspace_id or not issue_id or not parent_id or not import_batch_id:
+            return False
+        try:
+            self._repository.update(
+                {"workspace_id": workspace_id, "issue_id": issue_id},
+                update_expression="SET #parent = :parent, #ws_parent = :ws_parent, #changed = :changed, "
+                + REVISION_BUMP,
+                expression_names={
+                    "#parent": "parent_id",
+                    "#ws_parent": "ws_parent",
+                    "#changed": CHANGED_AT,
+                    "#rev": REVISION,
+                },
+                expression_values={
+                    ":parent": parent_id,
+                    ":ws_parent": ws_parent(workspace_id, parent_id),
+                    ":changed": changed_stamp(),
+                    **REVISION_STEP,
+                },
+                condition=Attr("issue_id").exists()
+                & Attr("import_batch_id").eq(import_batch_id)
+                & (Attr("parent_id").not_exists() | Attr("parent_id").attribute_type("NULL")),
+                return_values="ALL_NEW",
+            )
+        except ConditionFailed:
+            return False
+        return True
+
     def clear_project_milestone(self, workspace_id: str, issue_id: str, milestone_id: str) -> Issue | None:
         """Take one milestone off one issue, or `None` when it no longer carries it.
 

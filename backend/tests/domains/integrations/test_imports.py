@@ -7,8 +7,9 @@ tests watch: the dry run reports per-row problems and writes nothing, an import
 writes new keys with the source key kept and the bulk marker stamped, statuses
 map by name then by category, assignees match by email, unknown labels are made
 on the team, a page run twice writes each issue once, a page that keeps failing
-fails the job, one import runs per workspace, and only an owner or admin may
-import at all.
+fails the job, one import runs per workspace, only an owner or admin may
+import at all, and a parent column links sub-issues in a pass after every row is
+written, warning on a parent it cannot find and linking nothing twice.
 """
 
 from __future__ import annotations
@@ -483,3 +484,128 @@ def test_the_first_edit_of_an_imported_issue_clears_the_marker(
     assert edited.title == "Fix login for real"
     assert edited.import_batch_id is None
     assert edited.external_ref == "PROJ-1"
+
+
+JIRA_TREE = (
+    "Summary,Issue key,Issue id,Parent,Parent summary\n"
+    "Login fails on Safari,PROJ-3,10003,10001,Auth epic\n"
+    "Auth epic,PROJ-1,10001,,\n"
+    "Reset password,PROJ-2,10002,PROJ-1,Auth epic\n"
+    "Orphan,PROJ-4,10004,PROJ-99,Gone\n"
+)
+
+LINEAR_TREE = "ID,Title,Parent issue\nENG-2,Child by key,ENG-1\nENG-1,Parent,\nENG-3,Child by title,Parent\n"
+
+
+def test_a_jira_import_links_sub_issues_after_every_row_is_written(
+    client: TestClient, repositories: Any, workspace: str, bucket: str
+) -> None:
+    """A child above its parent still links, and the link keeps the bulk marker so nobody is notified."""
+    sign_in(client, ADMIN)
+
+    job = client.post(f"/api/workspaces/{WORKSPACE}/imports", json=body(JIRA_TREE)).json()
+
+    assert job["status"] == "completed"
+    assert (job["processed_rows"], job["created_count"], job["linked_count"]) == (4, 4, 2)
+    import_id = job["import_id"]
+    parent = imported(repositories, import_id, 3)
+    first = imported(repositories, import_id, 2)
+    second = imported(repositories, import_id, 4)
+    assert first.parent_id == parent.issue_id
+    assert second.parent_id == parent.issue_id
+    assert parent.parent_id is None
+    assert first.import_batch_id == import_id
+    children = repositories.issues.list_children(WORKSPACE, parent.issue_id).items
+    assert {child["issue_id"] for child in children} == {first.issue_id, second.issue_id}
+    kinds = [row["kind"] for row in repositories.activity.list_for_issue(WORKSPACE, parent.issue_id).items]
+    assert kinds.count("child_added") == 2
+    inbox = [dict(row) for row in repositories.inbox.list(WORKSPACE, ADMIN).items]
+    assert [row["kind"] for row in inbox] == ["import_ready"]
+
+
+def test_a_parent_missing_from_the_file_is_a_row_warning(
+    client: TestClient, repositories: Any, workspace: str, bucket: str
+) -> None:
+    """The orphan imports at the top level, and both the dry run and the job say why."""
+    sign_in(client, ADMIN)
+
+    preview = client.post(f"/api/workspaces/{WORKSPACE}/imports/preview", json=body(JIRA_TREE)).json()
+    job = client.post(f"/api/workspaces/{WORKSPACE}/imports", json=body(JIRA_TREE)).json()
+
+    assert preview["parent_links"] == 2
+    assert [row["parent_row"] for row in preview["rows"]] == [3, None, 3, None]
+    for problems in (preview["problems"], job["problems"]):
+        [problem] = [problem for problem in problems if problem["field"] == "parent"]
+        assert (problem["row"], problem["severity"]) == (5, "warning")
+        assert "PROJ-99" in problem["message"]
+    assert imported(repositories, job["import_id"], 5).parent_id is None
+
+
+def test_a_linear_import_links_by_identifier_and_title(
+    client: TestClient, repositories: Any, workspace: str, bucket: str
+) -> None:
+    """Linear's `Parent issue` names the parent's identifier, and a title finds it too."""
+    sign_in(client, ADMIN)
+
+    job = client.post(f"/api/workspaces/{WORKSPACE}/imports", json=body(LINEAR_TREE, preset="linear")).json()
+
+    assert job["linked_count"] == 2
+    parent = imported(repositories, job["import_id"], 3)
+    assert imported(repositories, job["import_id"], 2).parent_id == parent.issue_id
+    assert imported(repositories, job["import_id"], 4).parent_id == parent.issue_id
+
+
+def test_the_link_pass_pages_through_the_queue_and_runs_again_safely(
+    client: TestClient,
+    repositories: Any,
+    workspace: str,
+    queued: list[tuple[str, Any]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The link pages follow the write pages, and a link page run twice links each issue once."""
+    monkeypatch.setattr(issue_import, "PAGE_SIZE", 2)
+    sign_in(client, ADMIN)
+    import_id = client.post(f"/api/workspaces/{WORKSPACE}/imports", json=body(JIRA_TREE)).json()["import_id"]
+
+    for index in range(4):
+        import_jobs.handle_record(repositories, sqs_record(dict(queued[index][1].payload)))
+    assert [envelope.payload["cursor"] for _, envelope in queued] == [0, 2, 4, 6]
+    done = issue_import.load_job(WORKSPACE, import_id)
+    assert done is not None
+    assert (done.status, done.cursor, done.processed_rows, done.linked_count) == ("completed", 8, 4, 2)
+
+    issue_import.save_job(done.model_copy(update={"status": "running", "cursor": 4, "linked_count": 0}))
+    issue_import.run_page(repositories, WORKSPACE, import_id, 4)
+    issue_import.run_page(repositories, WORKSPACE, import_id, 6)
+
+    again = issue_import.load_job(WORKSPACE, import_id)
+    assert again is not None
+    assert (again.status, again.linked_count) == ("completed", 2)
+    parent = imported(repositories, import_id, 3)
+    kinds = [row["kind"] for row in repositories.activity.list_for_issue(WORKSPACE, parent.issue_id).items]
+    assert kinds.count("child_added") == 2
+    assert imported(repositories, import_id, 2).import_batch_id == import_id
+
+
+def test_an_issue_edited_before_the_link_pass_is_left_alone(
+    client: TestClient,
+    repositories: Any,
+    workspace: str,
+    queued: list[tuple[str, Any]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Once someone changes an imported issue the link pass does not overwrite it, and says so."""
+    monkeypatch.setattr(issue_import, "PAGE_SIZE", 4)
+    sign_in(client, ADMIN)
+    import_id = client.post(f"/api/workspaces/{WORKSPACE}/imports", json=body(JIRA_TREE)).json()["import_id"]
+    import_jobs.handle_record(repositories, sqs_record(dict(queued[0][1].payload)))
+    child = imported(repositories, import_id, 2)
+    repositories.issues.replace(child.model_copy(update={"title": "Edited"}))
+
+    import_jobs.handle_record(repositories, sqs_record(dict(queued[1][1].payload)))
+
+    job = issue_import.load_job(WORKSPACE, import_id)
+    assert job is not None
+    assert (job.status, job.linked_count) == ("completed", 1)
+    assert imported(repositories, import_id, 2).parent_id is None
+    assert any(problem.row == 2 and problem.field == "parent" for problem in job.problems)
