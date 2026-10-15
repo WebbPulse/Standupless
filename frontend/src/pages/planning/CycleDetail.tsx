@@ -1,8 +1,10 @@
 /**
- * One cycle. The header carries the dates and the days left, the progress
- * section shows scope against what is started and completed with a burn-up
- * over the cycle's days, and the issues below are grouped by where they are
- * in the workflow.
+ * One cycle. The header names the cycle, its state, dates and days left, and
+ * its goal. A side panel holds scope against what is started and completed,
+ * the burn-up over the cycle's days and a breakdown of the issues by
+ * assignee, label and project, and the cycle's issues fill the rest as the
+ * same dense list a team's issues use, with its filters, display options and
+ * inline editing. On a narrow screen the panel stacks above the list.
  *
  * The burn-up reads the cycle's recorded daily history, in issues or in
  * estimate points, with a projection once a few days are in. While that
@@ -10,19 +12,23 @@
  * they are now, so the chart never goes blank on a slow or older backend.
  *
  * On a parent team the cycle rolls up its visible sub-teams' cycles with the
- * same dates: the header, the burn-up and the issues all cover the same set,
- * with the issue list's toggle to show the team alone.
+ * same dates: the header, the burn-up, the breakdown and the issues all cover
+ * the same set, with the toolbar's toggle to show the team alone.
  */
 
 import React, { useCallback, useMemo, useState } from 'react';
 import { useQueryAuth } from '@webbpulse/auth/react';
-import { usePolledQuery } from '@webbpulse/api-client/react';
+import { invalidateQueries, usePolledQuery } from '@webbpulse/api-client/react';
 import { LuChevronRight, LuPlus } from 'react-icons/lu';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { getCycle, getCycleHistory } from '../../api/planning';
-import BurnUpChart from '../../components/planning/BurnUpChart';
-import GroupedIssueList from '../../components/planning/GroupedIssueList';
-import MeasureToggle from '../../components/planning/MeasureToggle';
+import DisplayMenu from '../../components/issues/view/DisplayMenu';
+import {
+  FilterButton,
+  FilterChips,
+} from '../../components/issues/view/FilterBar';
+import IssueListView from '../../components/issues/view/IssueListView';
+import CycleProgressPanel from '../../components/planning/CycleProgressPanel';
 import ProgressRing from '../../components/planning/ProgressRing';
 import { ErrorAlert } from '../../components/ui/alert';
 import Badge from '../../components/ui/badge';
@@ -32,14 +38,17 @@ import { SkeletonRows } from '../../components/ui/skeleton';
 import SubTeamToggle from '../../components/workspace/SubTeamToggle';
 import TeamTabs from '../../components/workspace/TeamTabs';
 import WorkspaceShell from '../../components/workspace/WorkspaceShell';
-import { useCreatePlannedIssue } from '../../hooks/useCreatePlannedIssue';
+import { useAuth } from '../../hooks/useAuth';
+import { useCreateIssue } from '../../hooks/useCreateIssue';
+import { useIssueCollection } from '../../hooks/useIssueCollection';
+import { useIssueContext } from '../../hooks/useIssueContext';
 import { usePlanningIssues } from '../../hooks/usePlanningIssues';
-import { usePlanningTeamLists } from '../../hooks/usePlanningTeamLists';
 import { useShortcut } from '../../hooks/useShortcuts';
 import { useSubTeamRollUp } from '../../hooks/useSubTeamRollUp';
 import { useTeam } from '../../hooks/useTeam';
 import { useWorkspace } from '../../hooks/useWorkspace';
 import { canWriteIssues } from '../../lib/capabilities';
+import { cycleTitle, type BreakdownField } from '../../lib/cycleBreakdown';
 import {
   matchingCycles,
   mergeCycles,
@@ -47,11 +56,22 @@ import {
   readRolledUpCycles,
 } from '../../lib/cycleRollUp';
 import { errorMessage } from '../../lib/errors';
+import {
+  GROUP_FIELDS,
+  defaultViewState,
+  fieldsFor,
+  filterValuesFor,
+  narrowFilters,
+  parseViewState,
+  sameViewState,
+  viewStateQuery,
+  writeViewState,
+  type ViewState,
+} from '../../lib/issueView';
 import { teamCyclesPath } from '../../lib/paths';
 import {
   CYCLE_STATUS_LABELS,
   completionPercent,
-  cycleDatesLabel,
   daysRemainingLabel,
 } from '../../lib/planningDisplay';
 import {
@@ -59,58 +79,25 @@ import {
   daysBetween,
   historySeries,
   projectCompletion,
-  projectionLabel,
   type PlanningMeasure,
 } from '../../lib/planningModel';
+import { shortDateLabel } from '../../lib/propertyOptions';
 import { dayValue, todayNumber } from '../../lib/timeline';
+import { estimateOptionsOf } from '../../lib/validation';
 import type { CycleHistoryRead, CycleRead } from '../../types/Api';
 
 /** How often the cycle re-reads. */
 const POLL_MS = 30000;
 
-/** Props for CycleStats: the cycle whose rollup the cards show, and in what. */
-interface CycleStatsProps {
-  cycle: CycleRead;
-  measure: PlanningMeasure;
-}
+/** The settings a cycle's issues open with. */
+const CYCLE_VIEW_BASE: ViewState = defaultViewState('list');
 
-/** Scope, started and completed as three cards, each with its share. */
-const CycleStats: React.FC<CycleStatsProps> = ({ cycle, measure }) => {
-  const counts =
-    measure === 'points' && cycle.points !== undefined
-      ? cycle.points
-      : cycle.counts;
-  const unit = measure === 'points' ? 'points' : 'issues';
-  const scope = counts.total - counts.cancelled;
-  const started = counts.in_progress + counts.done;
-  const share = (value: number): string =>
-    scope <= 0 ? '0%' : `${String(Math.round((value / scope) * 100))}%`;
-  const stats = [
-    { label: 'Scope', value: scope, detail: `${String(scope)} ${unit}` },
-    { label: 'Started', value: started, detail: share(started) },
-    { label: 'Completed', value: counts.done, detail: share(counts.done) },
-  ];
-  return (
-    <dl className="grid grid-cols-3 gap-2">
-      {stats.map((stat) => (
-        <div
-          key={stat.label}
-          className="rounded-md border border-line bg-surface px-3 py-2"
-        >
-          <dt className="text-xs text-text-muted">{stat.label}</dt>
-          <dd className="mt-0.5 flex items-baseline gap-2">
-            <span className="text-lg font-semibold tabular-nums">
-              {stat.value}
-            </span>
-            <span className="text-xs text-text-faint tabular-nums">
-              {stat.detail}
-            </span>
-          </dd>
-        </div>
-      ))}
-    </dl>
-  );
-};
+/** The breakdown fields, which the side panel can filter the list by. */
+const BREAKDOWN_FIELDS: readonly BreakdownField[] = [
+  'assignee',
+  'label',
+  'project',
+];
 
 /** Props for CarryOverLine: the cycle whose carry-over is described. */
 interface CarryOverLineProps {
@@ -151,13 +138,66 @@ const CarryOverLine: React.FC<CarryOverLineProps> = ({ cycle, measure }) => {
   );
 };
 
-/** One cycle's progress, burn-up and issues. */
+/** Props for CycleHeader: the cycle the header describes. */
+interface CycleHeaderProps {
+  cycle: CycleRead;
+  measure: PlanningMeasure;
+}
+
+/**
+ * The cycle's title, state, dates and goal. A cycle left with its generated
+ * name reads as its number, and a named cycle keeps its number beside it.
+ */
+const CycleHeader: React.FC<CycleHeaderProps> = ({ cycle, measure }) => {
+  const title = cycleTitle(cycle);
+  const percent = completionPercent(cycle.counts);
+  const isCurrent = cycle.status === 'active';
+  const numbered =
+    cycle.number !== undefined && cycle.number !== null
+      ? `Cycle ${String(cycle.number)}`
+      : null;
+  return (
+    <header className="space-y-2 border-b border-line px-4 py-4 lg:col-start-1 lg:row-start-1 lg:px-6">
+      <div className="flex min-w-0 items-center gap-2.5">
+        <ProgressRing percent={percent} />
+        <h2
+          className="min-w-0 truncate text-lg font-semibold text-text"
+          data-testid="cycle-title"
+        >
+          {title}
+        </h2>
+        {numbered !== null && numbered !== title && (
+          <span className="shrink-0 text-sm text-text-faint tabular-nums">
+            {numbered}
+          </span>
+        )}
+      </div>
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-text-muted">
+        <Badge tone={isCurrent ? 'accent' : 'neutral'}>
+          {isCurrent ? 'Current' : CYCLE_STATUS_LABELS[cycle.status]}
+        </Badge>
+        <span className="tabular-nums" data-testid="cycle-dates">
+          {`${shortDateLabel(cycle.start_date)} to ${shortDateLabel(cycle.end_date)}`}
+        </span>
+        {isCurrent && <span>{daysRemainingLabel(cycle.end_date)}</span>}
+        <span className="tabular-nums">{`${String(percent)}% complete`}</span>
+      </div>
+      {cycle.goal !== null && cycle.goal !== '' && (
+        <p className="text-sm text-text-muted">{cycle.goal}</p>
+      )}
+      <CarryOverLine cycle={cycle} measure={measure} />
+    </header>
+  );
+};
+
+/** One cycle's header, progress panel and issues. */
 export const CycleDetail: React.FC = () => {
   const { keyPrefix, cycleId } = useParams<{
     keyPrefix: string;
     cycleId: string;
   }>();
   const { workspace } = useWorkspace();
+  const { user } = useAuth();
   const slug = workspace?.slug ?? '';
   const auth = useQueryAuth();
   const {
@@ -250,14 +290,17 @@ export const CycleDetail: React.FC = () => {
   const [chosenMeasure, setChosenMeasure] = useState<PlanningMeasure>('issues');
   const measure: PlanningMeasure = hasPoints ? chosenMeasure : 'issues';
 
+  const listTeams = useMemo(
+    () => (team === null ? [] : rollUp ? [team, ...subTeams] : [team]),
+    [team, rollUp, subTeams]
+  );
   const listTeamIds = useMemo(
-    () => (teamId === '' ? [] : rollUp ? [teamId, ...subTeamIds] : [teamId]),
-    [teamId, rollUp, subTeamIds]
+    () => listTeams.map((member) => member.id),
+    [listTeams]
   );
-  const { statuses, labels, people } = usePlanningTeamLists(
-    workspaceId,
-    listTeamIds
-  );
+  const lists = useIssueContext(workspaceId, listTeamIds, user?.id);
+  const statuses = lists.context.statuses;
+
   const cycleIds = useMemo(
     () => [id, ...matches.map((row) => row.cycle_id)],
     [id, matches]
@@ -276,17 +319,59 @@ export const CycleDetail: React.FC = () => {
         : { team_id: teamId, cycle_id: id },
     [teamId, id, cycleIds]
   );
+  const issuesEnabled = teamId !== '' && id !== '';
   const issues = usePlanningIssues(
     workspaceId,
     issueQuery,
     issuesKey,
-    teamId !== '' && id !== ''
+    issuesEnabled
   );
 
-  const { open: openCreate, canCreate } = useCreatePlannedIssue(
-    workspaceId,
-    issuesKey
+  const [params, setParams] = useSearchParams();
+  const base = CYCLE_VIEW_BASE;
+  const state = useMemo(() => parseViewState(params, base), [params, base]);
+  const setState = useCallback(
+    (next: ViewState) => {
+      setParams(writeViewState(next, base, params), { replace: true });
+    },
+    [setParams, base, params]
   );
+  const setFilters = (filters: ViewState['filters']): void => {
+    setState({ ...state, filters });
+  };
+  const collection = useIssueCollection(
+    workspaceId,
+    `cycle:${teamId}:${cycleIds.join(',')}`,
+    viewStateQuery(state, issueQuery),
+    workspaceId !== '' && issuesEnabled
+  );
+
+  const activeFilters = useMemo(() => {
+    const held: Partial<Record<BreakdownField, string[]>> = {};
+    for (const clause of state.filters) {
+      if (
+        clause.op === 'is' &&
+        (BREAKDOWN_FIELDS as readonly string[]).includes(clause.field)
+      ) {
+        held[clause.field as BreakdownField] = clause.values;
+      }
+    }
+    return held;
+  }, [state.filters]);
+  const filterBy = (field: BreakdownField, value: string | null): void => {
+    setFilters(
+      value === null
+        ? state.filters.filter((clause) => clause.field !== field)
+        : narrowFilters(
+            state.filters,
+            field,
+            filterValuesFor(field, value, lists.context)
+          )
+    );
+  };
+
+  const refreshKey = JSON.stringify([issuesKey, collection.queryKey]);
+  const { open: openCreate, canCreate } = useCreateIssue();
   const mayCreate =
     canCreate &&
     team !== null &&
@@ -296,8 +381,16 @@ export const CycleDetail: React.FC = () => {
     cycle.status !== 'completed';
   const createIssue = useCallback((): void => {
     if (teamId === '') return;
-    openCreate({ teamId, cycleId: id });
-  }, [openCreate, teamId, id]);
+    openCreate({
+      teamId,
+      cycleId: id,
+      onCreated: () => {
+        for (const key of JSON.parse(refreshKey) as string[][]) {
+          invalidateQueries(key);
+        }
+      },
+    });
+  }, [openCreate, teamId, id, refreshKey]);
 
   useShortcut({
     keys: 'c',
@@ -309,6 +402,23 @@ export const CycleDetail: React.FC = () => {
       createIssue();
     },
   });
+
+  const scaleFor = useCallback(
+    (memberId: string) =>
+      listTeams.find((member) => member.id === memberId)?.estimate_scale ??
+      'off',
+    [listTeams]
+  );
+  const estimateOptionsFor = useCallback(
+    (memberId: string) =>
+      estimateOptionsOf(listTeams.find((member) => member.id === memberId)),
+    [listTeams]
+  );
+  const teamNameFor = useCallback(
+    (memberId: string) =>
+      listTeams.find((member) => member.id === memberId)?.name,
+    [listTeams]
+  );
 
   const today = dayValue(todayNumber());
   const days = useMemo(
@@ -340,7 +450,6 @@ export const CycleDetail: React.FC = () => {
     today,
   ]);
   const projection = recorded ? projectCompletion(points, days.length) : null;
-  const lastPoint = points[points.length - 1];
 
   const cyclesHref = teamCyclesPath(slug, keyPrefix ?? '');
   const crumbs = (
@@ -384,18 +493,13 @@ export const CycleDetail: React.FC = () => {
     );
   }
 
-  const percent = completionPercent(cycle.counts);
-  const isCurrent = cycle.status === 'active';
+  const canEdit = canWriteIssues(workspace?.role, team.role);
 
   return (
     <WorkspaceShell
-      title={
-        <span className="flex min-w-0 items-center gap-2">
-          <ProgressRing percent={percent} />
-          <span className="truncate">{cycle.name}</span>
-        </span>
-      }
+      title={<span className="truncate">{cycleTitle(cycle)}</span>}
       leading={crumbs}
+      flush
       toolbar={
         <div className="flex items-center gap-2">
           <TeamTabs slug={slug} keyPrefix={team.key_prefix} current="cycles" />
@@ -413,84 +517,84 @@ export const CycleDetail: React.FC = () => {
         ) : undefined
       }
     >
-      <div className="space-y-8">
-        <section aria-labelledby="cycle-progress" className="space-y-4">
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-            <h2 id="cycle-progress" className="text-sm font-medium">
-              Progress
-            </h2>
-            <Badge tone={isCurrent ? 'accent' : 'neutral'}>
-              {isCurrent ? 'Current' : CYCLE_STATUS_LABELS[cycle.status]}
-            </Badge>
-            <span className="text-xs text-text-muted tabular-nums">
-              {cycleDatesLabel(cycle.start_date, cycle.end_date)}
-            </span>
-            {isCurrent && (
-              <span className="text-xs text-text-muted">
-                {daysRemainingLabel(cycle.end_date)}
-              </span>
-            )}
-            <span className="ml-auto text-xs text-text-muted tabular-nums">
-              {`${String(percent)}% complete`}
-            </span>
-          </div>
-          {cycle.goal !== null && (
-            <p className="text-sm text-text-muted">{cycle.goal}</p>
-          )}
-          <CycleStats cycle={cycle} measure={measure} />
-          <CarryOverLine cycle={cycle} measure={measure} />
-          <div className="space-y-3 rounded-md border border-line bg-surface p-4">
-            {(hasPoints || (projection !== null && lastPoint !== undefined)) &&
-              cycle.status !== 'upcoming' && (
-                <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                  {projection !== null && lastPoint !== undefined && (
-                    <span
-                      className="text-xs text-text-muted"
-                      data-testid="projection-label"
-                    >
-                      {projectionLabel(projection, lastPoint.scope, measure)}
-                    </span>
-                  )}
-                  {hasPoints && (
-                    <span className="ml-auto">
-                      <MeasureToggle
-                        value={measure}
-                        onChange={setChosenMeasure}
-                        label="Burn-up measure"
-                      />
-                    </span>
-                  )}
-                </div>
-              )}
-            {cycle.status === 'upcoming' ? (
-              <p className="text-sm text-text-muted">
-                The burn-up starts drawing once the cycle begins.
-              </p>
-            ) : (
-              <BurnUpChart
-                points={points}
-                days={days}
-                projection={projection}
-                unit={measure === 'points' ? 'points' : 'issues'}
-                emptyMessage="No issues in this cycle yet, so there is nothing to chart."
+      <div className="min-h-0 flex-1 overflow-y-auto lg:grid lg:grid-cols-[minmax(0,1fr)_20rem] lg:grid-rows-[auto_minmax(0,1fr)] lg:overflow-hidden">
+        <CycleHeader cycle={cycle} measure={measure} />
+        <div className="border-b border-line px-4 py-4 lg:col-start-2 lg:row-span-2 lg:row-start-1 lg:overflow-y-auto lg:border-b-0 lg:border-l lg:px-5">
+          <CycleProgressPanel
+            cycle={cycle}
+            measure={measure}
+            hasPoints={hasPoints}
+            onMeasureChange={setChosenMeasure}
+            points={points}
+            days={days}
+            projection={projection}
+            issues={issues.rows}
+            statuses={statuses}
+            context={lists.context}
+            complete={!issues.hasMore}
+            isLoadingIssues={issues.isLoading}
+            activeFilters={activeFilters}
+            onFilter={filterBy}
+          />
+        </div>
+        <section
+          aria-label="Cycle issues"
+          className="flex min-h-[24rem] flex-col lg:col-start-1 lg:row-start-2 lg:min-h-0"
+        >
+          <div className="flex flex-col gap-2 border-b border-line px-4 py-2 lg:px-6">
+            <div className="flex flex-wrap items-center gap-2">
+              <FilterButton
+                filters={state.filters}
+                context={lists.context}
+                onChange={setFilters}
               />
-            )}
+              <span className="flex-1" />
+              <DisplayMenu
+                state={state}
+                onChange={setState}
+                groupFields={fieldsFor(GROUP_FIELDS, lists.context)}
+                onReset={
+                  sameViewState(
+                    { ...state, filters: base.filters, q: base.q },
+                    base
+                  )
+                    ? undefined
+                    : () => {
+                        setState({
+                          ...base,
+                          filters: state.filters,
+                          q: state.q,
+                        });
+                      }
+                }
+              />
+            </div>
+            <FilterChips
+              filters={state.filters}
+              context={lists.context}
+              onChange={setFilters}
+            />
           </div>
+          <IssueListView
+            slug={slug}
+            state={state}
+            onStateChange={setState}
+            collection={collection}
+            lists={lists}
+            scaleFor={scaleFor}
+            estimateOptionsFor={estimateOptionsFor}
+            {...(listTeams.length > 1 ? { teamNameFor } : {})}
+            canEdit={canEdit}
+            createTeamId={mayCreate ? teamId : undefined}
+            createCycleId={mayCreate ? id : undefined}
+            collapseKey={`${workspaceId}.cycle:${id}`}
+            emptyMessage={
+              state.filters.length === 0
+                ? 'No issues in this cycle yet.'
+                : 'No issues in this cycle match these filters.'
+            }
+          />
         </section>
-        <GroupedIssueList
-          issues={issues.rows}
-          isLoading={issues.isLoading}
-          error={issues.error}
-          hasMore={issues.hasMore}
-          isPaging={issues.isPaging}
-          loadMore={issues.loadMore}
-          slug={slug}
-          statuses={statuses}
-          labels={labels}
-          people={people}
-          emptyMessage="No issues in this cycle yet."
-          {...(mayCreate ? { onCreate: createIssue } : {})}
-        />
       </div>
     </WorkspaceShell>
   );
