@@ -48,7 +48,12 @@ import { useWorkspaceMembers } from '../../hooks/useWorkspaceMembers';
 import { errorMessage } from '../../lib/errors';
 import { sharedChange, viewVisibility } from '../../lib/issueView';
 import { newViewPath, viewPath } from '../../lib/paths';
-import { viewCountKey, viewKey, viewsKey } from '../../lib/queryKeys';
+import {
+  favoritesKey,
+  viewCountKey,
+  viewKey,
+  viewsKey,
+} from '../../lib/queryKeys';
 import { showErrorToast, showToast } from '../../lib/toast';
 import type { ViewListScope } from '../../types/Api';
 
@@ -196,6 +201,7 @@ export const Views: React.FC = () => {
     try {
       await setViewFavorite(workspaceId, view.view_id, view.favorite !== true);
       refreshViewLists(workspaceId, view);
+      invalidateQueries(favoritesKey(workspaceId));
     } catch (failure) {
       showErrorToast(errorMessage(failure, 'Could not change the favorite.'));
     }

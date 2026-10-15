@@ -110,6 +110,7 @@ import IssueBody from './IssueBody';
 import IssuePageCommands from './IssuePageCommands';
 import IssuePropertiesPanel from './IssuePropertiesPanel';
 import IssueSubscribeButton from './IssueSubscribeButton';
+import FavoriteButton from '../ui/FavoriteButton';
 import IssueTimeline from './IssueTimeline';
 import IssueTrailNav from './IssueTrailNav';
 import MoveIssueDialog, {
@@ -526,6 +527,13 @@ export const IssueView: React.FC<IssueViewProps> = ({
             <IssueTrailNav slug={slug} issueKey={issueRef} />
           </span>
         )}
+        <FavoriteButton
+          workspaceId={workspaceId}
+          kind="issue"
+          targetId={issue.id}
+          title={issue.title}
+          scope="issue"
+        />
         <IssueSubscribeButton subscription={subscription} />
         {canEdit && (
           <ShareButton

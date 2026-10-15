@@ -14,6 +14,8 @@ export interface PageHeaderProps {
   actions?: React.ReactNode;
   /** A second row under the title, for filters and view switches. */
   toolbar?: React.ReactNode;
+  /** A control right after the title, such as the favorite star, kept out of the heading's name. */
+  titleAccessory?: React.ReactNode;
   /** Something before the title, such as a breadcrumb or a glyph. */
   leading?: React.ReactNode;
   /** The heading level. Pages use 1; sections inside a page use 2. */
@@ -27,6 +29,7 @@ export const PageHeader: React.FC<PageHeaderProps> = ({
   actions,
   toolbar,
   leading,
+  titleAccessory,
   level = 1,
   className = '',
 }) => {
@@ -35,9 +38,18 @@ export const PageHeader: React.FC<PageHeaderProps> = ({
     <header className={cn('border-b border-line', className)}>
       <div className="flex h-topbar items-center gap-3 px-4 lg:px-6">
         {leading}
-        <Heading className="min-w-0 flex-1 truncate text-sm font-medium">
-          {title}
-        </Heading>
+        {titleAccessory === undefined ? (
+          <Heading className="min-w-0 flex-1 truncate text-sm font-medium">
+            {title}
+          </Heading>
+        ) : (
+          <div className="flex min-w-0 flex-1 items-center gap-1">
+            <Heading className="min-w-0 truncate text-sm font-medium">
+              {title}
+            </Heading>
+            {titleAccessory}
+          </div>
+        )}
         {actions !== undefined && (
           <div className="flex shrink-0 items-center gap-1.5">{actions}</div>
         )}

@@ -235,6 +235,12 @@ export const inboxCountKey = (workspaceId: string): QueryKey => [
   workspaceId,
 ];
 
+/** The caller's favorites, read by the sidebar and every star toggle alike. */
+export const favoritesKey = (workspaceId: string): QueryKey => [
+  'favorites',
+  workspaceId,
+];
+
 /** The caller's Reviews list, read by the page and the sidebar badge alike. */
 export const reviewsKey = (workspaceId: string): QueryKey => [
   'reviews',

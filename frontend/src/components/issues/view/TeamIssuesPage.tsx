@@ -22,6 +22,7 @@ import type { ViewLayout } from '../../../api/views';
 import { defaultViewState } from '../../../lib/issueView';
 import { ErrorAlert } from '../../ui/alert';
 import EmptyState from '../../ui/empty-state';
+import FavoriteButton from '../../ui/FavoriteButton';
 import Spinner from '../../ui/spinner';
 import SubTeamToggle from '../../workspace/SubTeamToggle';
 import TeamTabs from '../../workspace/TeamTabs';
@@ -125,6 +126,14 @@ export const TeamIssuesPage: React.FC<TeamIssuesPageProps> = ({
       workspaceId={workspaceId}
       slug={slug}
       title={<TeamTitle name={team.name} keyPrefix={team.key_prefix} />}
+      titleAccessory={
+        <FavoriteButton
+          workspaceId={workspaceId}
+          kind="team"
+          targetId={team.id}
+          title={team.name}
+        />
+      }
       tabs={
         <>
           <TeamTabs

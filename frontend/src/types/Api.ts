@@ -3391,3 +3391,49 @@ export interface DocumentVersionRead {
 export interface DocumentVersionListRead {
   versions: DocumentVersionRead[];
 }
+
+/** What a favorite stars. */
+export type FavoriteKind =
+  | 'issue'
+  | 'project'
+  | 'cycle'
+  | 'view'
+  | 'team'
+  | 'document'
+  | 'initiative';
+
+/** One favorite named by its kind and id, as an add or a reorder sends it. */
+export interface FavoriteRef {
+  kind: FavoriteKind;
+  target_id: string;
+  /** The cycle's team, needed only for a cycle. */
+  team_id?: string | null;
+}
+
+/** The caller's favorites in their new order. */
+export interface FavoriteOrder {
+  items: FavoriteRef[];
+}
+
+/** One favorite as the sidebar draws it, resolved against its target at read time. */
+export interface FavoriteRead {
+  kind: FavoriteKind;
+  target_id: string;
+  /** The issue title, or the name of the project, cycle, view, team, document or initiative. */
+  title: string;
+  team_id?: string | null;
+  /** The key prefix of the team the target belongs to, which team and cycle links are built from. */
+  team_key_prefix?: string | null;
+  issue_key?: string | null;
+  status?: StatusRead | null;
+  icon?: string | null;
+  color?: string | null;
+  /** For a document, whether it hangs off a project or an initiative. */
+  parent_kind?: string | null;
+  parent_id?: string | null;
+}
+
+/** The caller's favorites in their order. */
+export interface FavoriteListRead {
+  favorites: FavoriteRead[];
+}

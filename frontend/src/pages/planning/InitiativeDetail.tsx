@@ -69,6 +69,7 @@ import { canEditProject } from '../../lib/planningModel';
 import { shortDateLabel } from '../../lib/propertyOptions';
 import { initiativeDetailKey, initiativesKey } from '../../lib/queryKeys';
 import { showToast } from '../../lib/toast';
+import FavoriteButton from '../../components/ui/FavoriteButton';
 import type {
   HealthBreakdownRead,
   InitiativeRead,
@@ -422,6 +423,14 @@ export const InitiativeDetail: React.FC = () => {
   return (
     <WorkspaceShell
       title={<span className="truncate">{initiative.name}</span>}
+      titleAccessory={
+        <FavoriteButton
+          workspaceId={workspaceId}
+          kind="initiative"
+          targetId={initiative.initiative_id}
+          title={initiative.name}
+        />
+      }
       leading={crumbs}
       flush
       toolbar={
