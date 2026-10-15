@@ -15,6 +15,7 @@ import {
   createWorkspaceLabel,
   deleteWorkspaceLabel,
   listWorkspaceLabels,
+  mergeWorkspaceLabel,
   updateWorkspaceLabel,
 } from '../../api/workflow';
 import { ErrorAlert } from '../../components/ui/alert';
@@ -71,6 +72,11 @@ const WorkspaceLabelsSettings: React.FC = () => {
     (label: LabelRead) => deleteWorkspaceLabel(workspaceId, label.id),
     keys
   );
+  const { mutate: merge } = useMutationWithRefetch(
+    (label: LabelRead, into: LabelRead) =>
+      mergeWorkspaceLabel(workspaceId, label.id, into.id),
+    keys
+  );
 
   return (
     <WorkspaceShell
@@ -102,7 +108,7 @@ const WorkspaceLabelsSettings: React.FC = () => {
             labels={data}
             scope="workspace"
             canEdit={canEdit}
-            actions={{ create, update, remove }}
+            actions={{ create, update, remove, merge }}
           />
         )}
       </div>

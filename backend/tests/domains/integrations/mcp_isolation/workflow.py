@@ -37,6 +37,7 @@ def arguments(foreign: dict[str, str], home_issue: str) -> dict[str, dict[str, A
         "create_workspace_label": {"name": "Home only", "color": "#5e6ad2"},
         "update_workspace_label": {"label": label, "name": "Should not land"},
         "delete_workspace_label": {"label": label},
+        "merge_workspace_labels": {"label": label, "into": label},
         "override_team_status": {"team_id": team, "status": status, "hidden": True},
         "reset_team_status_override": {"team_id": team, "status": status},
         "override_team_label": {"team_id": team, "label": label, "hidden": True},

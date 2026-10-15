@@ -16,6 +16,7 @@ import {
   createLabel,
   deleteLabel,
   listLabels,
+  mergeLabel,
   overrideLabel,
   resetLabelOverride,
   updateLabel,
@@ -81,6 +82,11 @@ export const LabelsSection: React.FC<LabelsSectionProps> = ({
     (label: LabelRead) => deleteLabel(workspaceId, teamId, label.id),
     keys
   );
+  const { mutate: merge } = useMutationWithRefetch(
+    (label: LabelRead, into: LabelRead) =>
+      mergeLabel(workspaceId, teamId, label.id, into.id),
+    keys
+  );
   const { mutate: override } = useMutationWithRefetch(
     (label: LabelRead, body: OverrideUpdate) =>
       overrideLabel(workspaceId, teamId, label.id, body),
@@ -120,7 +126,7 @@ export const LabelsSection: React.FC<LabelsSectionProps> = ({
               ? undefined
               : `${parentSettingsPath}#team-settings-labels`
           }
-          actions={{ create, update, remove, override, reset }}
+          actions={{ create, update, remove, override, reset, merge }}
         />
       )}
     </section>
