@@ -8,6 +8,7 @@ import { render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { describe, expect, it } from 'vitest';
 import { SidebarDataContext } from '../../contexts/SidebarDataContextDefinition';
+import { EMPTY_FAVORITES } from '../../lib/favorites';
 import TeamTabs, { type TeamTab } from './TeamTabs';
 
 /** Renders the switch for one team with `current` showing. */
@@ -84,6 +85,7 @@ describe('TeamTabs', () => {
             views: null,
             inboxCount: null,
             reviews: null,
+            favorites: EMPTY_FAVORITES,
           }}
         >
           <TeamTabs
