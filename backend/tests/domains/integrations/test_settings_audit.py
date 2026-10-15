@@ -106,9 +106,7 @@ def test_github_sync_settings_are_recorded(
     assert removed.actor.id == ADMIN and removed.before is not None and removed.before["sync_labels"] is True
 
 
-def test_transition_rules_are_recorded_as_readable_lines(
-    client: TestClient, workspace: str, repositories: Any
-) -> None:
+def test_transition_rules_are_recorded_as_readable_lines(client: TestClient, workspace: str, repositories: Any) -> None:
     """Replacing the defaults names each rule's trigger, branch and status, before and after."""
     statuses = {row.category: row for row in repositories.team_config.list_statuses(WORKSPACE, TEAM)}
     done = statuses["completed"]

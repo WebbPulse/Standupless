@@ -75,9 +75,7 @@ def test_an_admin_adding_changing_and_removing_a_member_is_recorded(
     assert removed.before == {"team_id": TEAM, "team": "Sec", "role": "admin"}
 
 
-def test_joining_and_leaving_are_recorded_as_the_member(
-    client: TestClient, workspace: str, repositories: Any
-) -> None:
+def test_joining_and_leaving_are_recorded_as_the_member(client: TestClient, workspace: str, repositories: Any) -> None:
     """A member joining an open team and leaving it is the actor and the target of both entries."""
     sign_in(client, MEMBER)
     assert client.post(f"/api/workspaces/{WORKSPACE}/teams/{TEAM}/join").status_code == 200

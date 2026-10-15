@@ -17720,7 +17720,7 @@
         ]
       },
       "post": {
-        "description": "Create a workspace and make the caller its first owner.\n\nThe membership is written after the workspace, because a workspace with no\nowner is recoverable while an owner row pointing at nothing is not.",
+        "description": "Create a workspace and make the caller its first owner.\n\nThe membership is written after the workspace, because a workspace with no\nowner is recoverable while an owner row pointing at nothing is not. The\ncreation opens the new workspace's audit log with its creator as the actor,\nsince there is no earlier admin to act for.",
         "operationId": "create_workspace_api_workspaces_post",
         "requestBody": {
           "content": {
@@ -29713,7 +29713,7 @@
         ]
       },
       "patch": {
-        "description": "Change a team's name, key prefix, description, estimate scale or parent team.\n\nA new key prefix is applied first, in its own transaction, so a 409 on a\ntaken prefix leaves every other field of the patch unapplied too. An\nexplicit null `parent_team_id` makes the team top-level again, and any\nchange of parent is recorded in the audit log.",
+        "description": "Change a team's name, key prefix, description, estimate scale or parent team.\n\nA new key prefix is applied first, in its own transaction, so a 409 on a\ntaken prefix leaves every other field of the patch unapplied too. An\nexplicit null `parent_team_id` makes the team top-level again, and any\nchange of parent or of privacy is recorded in the audit log.",
         "operationId": "update_team_api_workspaces__workspace_id__teams__team_id__patch",
         "parameters": [
           {
