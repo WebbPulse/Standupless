@@ -255,7 +255,7 @@ def remind_initiative(
 
 
 def run_reminders(repositories: Repositories, now: datetime | None = None) -> ReminderSummary:
-    """Remind the lead of every project and the owner of every initiative across live workspaces whose update has come due."""
+    """Remind every project lead and initiative owner across live workspaces whose update has come due."""
     moment = now or datetime.now(timezone.utc)
     summary = ReminderSummary()
     for workspace in repositories.workspaces.list_active():
