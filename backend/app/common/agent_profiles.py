@@ -356,9 +356,7 @@ def _context(user_id: str, name: str, version: int) -> str:
 
 def _seal(user_id: str, name: str, version: int, canonical: bytes) -> tuple[SealedSecret, list[str]]:
     """A version's manifest sealed, and its ciphertext cut into row-sized chunks."""
-    sealed = _cipher().seal(
-        zlib.compress(canonical, 9), user_id=_context(user_id, name, version), purpose=SEAL_PURPOSE
-    )
+    sealed = _cipher().seal(zlib.compress(canonical, 9), user_id=_context(user_id, name, version), purpose=SEAL_PURPOSE)
     text = sealed.ciphertext
     chunks = [text[start : start + CHUNK_CHARACTERS] for start in range(0, len(text), CHUNK_CHARACTERS)] or [""]
     return sealed, chunks
@@ -634,4 +632,3 @@ def delete_for_user(repositories: Repositories, user_id: str) -> None:
             repositories.audit.purge_tenant(audit_tenant(user_id))
         except Exception:
             _log.exception("agent_profile_trail_delete_failed")
-
