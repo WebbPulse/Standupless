@@ -4072,6 +4072,79 @@
         "title": "InboxUnreadRequest",
         "type": "object"
       },
+      "IncludedReleaseRead": {
+        "description": "One release a promotion carried, or the promotion that carried one, as a detail page links it.",
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "current_stage": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ReleaseStageRead"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "issue_count": {
+            "title": "Issue Count",
+            "type": "integer"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "pr_number": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pr Number"
+          },
+          "pr_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pr Url"
+          },
+          "release_id": {
+            "title": "Release Id",
+            "type": "string"
+          },
+          "sha": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sha"
+          }
+        },
+        "required": [
+          "release_id",
+          "name",
+          "issue_count",
+          "created_at"
+        ],
+        "title": "IncludedReleaseRead",
+        "type": "object"
+      },
       "InitiativeCreate": {
         "description": "The body `POST /api/workspaces/{workspace_id}/initiatives` takes.",
         "properties": {
@@ -9114,7 +9187,7 @@
         "type": "object"
       },
       "ReleaseDetailRead": {
-        "description": "One release with its issues and the notes built from them.\n\nThe notes are deterministic: one line per visible issue, `KEY title`, in key\norder, so the same release always reads the same way. `skipped_issues` echoes\nthe references a write named that matched no issue of the team, so a CI job can\nreport a typo without the release being refused.",
+        "description": "One release with its issues and the notes built from them.\n\nThe notes are deterministic: one line per visible issue, `KEY title`, in key\norder, so the same release always reads the same way. `skipped_issues` echoes\nthe references a write named that matched no issue of the team, so a CI job can\nreport a typo without the release being refused. `included_releases` are the\nearlier releases a promotion carried, newest first, and `included_in_release`\nis the promotion that carried this one.",
         "properties": {
           "created_at": {
             "format": "date-time",
@@ -9163,6 +9236,39 @@
               }
             ],
             "title": "Github Release Url"
+          },
+          "included_count": {
+            "default": 0,
+            "title": "Included Count",
+            "type": "integer"
+          },
+          "included_in": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Included In"
+          },
+          "included_in_release": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/IncludedReleaseRead"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "included_releases": {
+            "items": {
+              "$ref": "#/components/schemas/IncludedReleaseRead"
+            },
+            "title": "Included Releases",
+            "type": "array"
           },
           "issue_count": {
             "title": "Issue Count",
@@ -9463,7 +9569,7 @@
         "type": "object"
       },
       "ReleaseRead": {
-        "description": "One release as a listing shows it.\n\n`current_stage` is the furthest stage of the pipeline the release reached, so a\nreader sees \"Released to Production\" without ordering the stages itself.\n`status_counts` tallies the issues the caller can see by status category, so a\nlisting draws each release's progress without reading its issues.",
+        "description": "One release as a listing shows it.\n\n`current_stage` is the furthest stage of the pipeline the release reached, so a\nreader sees \"Released to Production\" without ordering the stages itself.\n`status_counts` tallies the issues the caller can see by status category, so a\nlisting draws each release's progress without reading its issues.\n`included_in` names the promotion that carried this release to a later stage,\nand `included_count` is how many earlier releases a promotion carried.",
         "properties": {
           "created_at": {
             "format": "date-time",
@@ -9512,6 +9618,22 @@
               }
             ],
             "title": "Github Release Url"
+          },
+          "included_count": {
+            "default": 0,
+            "title": "Included Count",
+            "type": "integer"
+          },
+          "included_in": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Included In"
           },
           "issue_count": {
             "title": "Issue Count",
@@ -31716,7 +31838,7 @@
     },
     "/api/workspaces/{workspace_id}/teams/{team_id}/releases": {
       "get": {
-        "description": "One page of the team's releases, newest first.",
+        "description": "One page of the team's releases, newest first; releases a promotion carried only with `show_included`.",
         "operationId": "list_releases_api_workspaces__workspace_id__teams__team_id__releases_get",
         "parameters": [
           {
@@ -31755,6 +31877,16 @@
               "minimum": 1,
               "title": "Limit",
               "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "show_included",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Show Included",
+              "type": "boolean"
             }
           }
         ],

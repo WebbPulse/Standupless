@@ -8,7 +8,9 @@
  * Most releases arrive on their own from GitHub deployments, the API, the
  * CLI or MCP, so the page is a ledger first. The repository and stage
  * filters live in the URL so a filtered list can be shared, j and k move
- * through the rows and Enter opens one. A release can still be recorded by
+ * through the rows and Enter opens one. A promotion that carried earlier
+ * releases to a later stage lists once, with a count of what it included;
+ * Show included lists those releases too. A release can still be recorded by
  * hand, which opens it once it lands so the stages and issues can be checked.
  */
 
@@ -24,6 +26,7 @@ import {
   LuCircleDashed,
   LuGitCommitHorizontal,
   LuGithub,
+  LuLayers,
   LuListFilter,
   LuPencilLine,
   LuPlus,
@@ -256,6 +259,7 @@ const ReleaseRow: React.FC<ReleaseRowProps> = ({
       : null;
   const repository = release.repository ?? null;
   const sha = release.sha ?? null;
+  const included = release.included_count ?? 0;
   const source = releaseSourceLabel(release.source);
   const createdBy =
     creator === undefined
@@ -286,6 +290,14 @@ const ReleaseRow: React.FC<ReleaseRowProps> = ({
         <span className="truncate font-medium text-text">{release.name}</span>
         {version !== null && (
           <span className="shrink-0 text-xs text-text-muted">{version}</span>
+        )}
+        {included > 0 && (
+          <span className="shrink-0 text-xs text-text-muted">
+            {included === 1 ? '1 release' : `${String(included)} releases`}
+          </span>
+        )}
+        {release.included_in !== null && release.included_in !== undefined && (
+          <span className="shrink-0 text-xs text-text-faint">Included</span>
         )}
       </div>
       <div className="hidden md:flex">
@@ -551,27 +563,31 @@ export const Releases: React.FC = () => {
   const teamId = team?.id ?? '';
   const enabled = workspaceId !== '' && teamId !== '';
   const isMember = workspace !== null && workspace.role !== 'guest';
+  const showIncluded = params.get('included') === '1';
 
   const read = useCallback(
     async (
       cursor: string | undefined,
       signal?: AbortSignal
     ): Promise<CursorPage<ReleaseRead>> => {
+      const paging = showIncluded ? { show_included: true } : {};
       const page = await listReleases(
         workspaceId,
         teamId,
         cursor === undefined
-          ? { limit: PAGE_SIZE }
-          : { cursor, limit: PAGE_SIZE },
+          ? { ...paging, limit: PAGE_SIZE }
+          : { ...paging, cursor, limit: PAGE_SIZE },
         signal
       );
       return { rows: page.releases, nextCursor: page.next_cursor ?? null };
     },
-    [workspaceId, teamId]
+    [workspaceId, teamId, showIncluded]
   );
 
   const releases = useCursorPages(read, mergeReleases, {
-    queryKey: releasesKey(workspaceId, teamId),
+    queryKey: showIncluded
+      ? [...releasesKey(workspaceId, teamId), 'included']
+      : releasesKey(workspaceId, teamId),
     enabled,
     intervalMs: POLL_MS,
   });
@@ -819,9 +835,24 @@ export const Releases: React.FC = () => {
             Clear
           </Button>
         )}
+        <Button
+          variant="ghost"
+          size="sm"
+          className="ml-auto"
+          aria-pressed={showIncluded}
+          onClick={() => {
+            const next = new URLSearchParams(params);
+            if (showIncluded) next.delete('included');
+            else next.set('included', '1');
+            setParams(next, { replace: true });
+          }}
+        >
+          <LuLayers aria-hidden="true" />
+          {showIncluded ? 'Hide included' : 'Show included'}
+        </Button>
         <Link
           to={settingsHref}
-          className="ml-auto inline-flex h-7 items-center gap-1.5 rounded-sm px-2 text-xs text-text-muted transition-colors duration-100 hover:bg-hover hover:text-text focus-visible:ring-1 focus-visible:ring-accent focus-visible:outline-none"
+          className="inline-flex h-7 items-center gap-1.5 rounded-sm px-2 text-xs text-text-muted transition-colors duration-100 hover:bg-hover hover:text-text focus-visible:ring-1 focus-visible:ring-accent focus-visible:outline-none"
         >
           <LuSettings aria-hidden="true" className="h-3.5 w-3.5" />
           Pipeline

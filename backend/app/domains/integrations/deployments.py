@@ -345,7 +345,9 @@ def _record_for_team(
 
     Answers the release of the deployed commit, or `None` when the deployment
     made none. A deployed pull request merge names its release and carries every
-    issue of the range, so a promotion reads as one release in the later stage.
+    issue of the range, so a promotion reads as one release in the later stage,
+    and the earlier releases it advanced are recorded as included in it rather
+    than listed beside it.
     """
     shas = [*(commit_sha for commit_sha, _ in commits), sha]
     known = repositories.releases.releases_for_shas(workspace_id, team_id, repository_id, shas)
@@ -376,7 +378,7 @@ def _record_for_team(
         return None
     from app.domains.integrations import github_deployments
 
-    release, _ = releases.record_release(
+    release, created = releases.record_release(
         repositories,
         workspace_id,
         team_id,
@@ -396,6 +398,9 @@ def _record_for_team(
         automate=automate,
         referenced=referenced,
     )
+    if pull is not None and created and earlier:
+        pipeline, _ = releases.pipeline_for(repositories, workspace_id, team_id)
+        release = releases.include_releases(repositories, release, earlier, pipeline)
     return release
 
 

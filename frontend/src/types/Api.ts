@@ -2837,6 +2837,10 @@ export interface ReleaseRead {
   stages: ReleaseStageRead[];
   /** The furthest pipeline stage the release reached. */
   current_stage?: ReleaseStageRead | null;
+  /** The promotion release that carried this one to a later stage, when one did. */
+  included_in?: string | null;
+  /** How many earlier releases this promotion carried. */
+  included_count?: number;
   created_by?: string | null;
   created_at: string;
   updated_at: string;
@@ -2915,6 +2919,18 @@ export interface ReleaseIssueRead {
   status_category?: StatusCategory | null;
 }
 
+/** One release a promotion carried, or the promotion that carried one. */
+export interface IncludedReleaseRead {
+  release_id: string;
+  name: string;
+  sha?: string | null;
+  pr_number?: number | null;
+  pr_url?: string | null;
+  issue_count: number;
+  current_stage?: ReleaseStageRead | null;
+  created_at: string;
+}
+
 /** One release with its issues and the notes built from them. */
 export interface ReleaseDetailRead extends ReleaseRead {
   issues: ReleaseIssueRead[];
@@ -2922,6 +2938,10 @@ export interface ReleaseDetailRead extends ReleaseRead {
   notes: string;
   /** The references a write named that matched no issue of the team. */
   skipped_issues?: string[];
+  /** The earlier releases this promotion carried, newest first. */
+  included_releases?: IncludedReleaseRead[];
+  /** The promotion that carried this release to a later stage. */
+  included_in_release?: IncludedReleaseRead | null;
 }
 
 /** One cursor page of a team's releases, newest first. */
@@ -2930,10 +2950,14 @@ export interface ReleaseListRead {
   next_cursor?: string | null;
 }
 
-/** The paging a release list takes. */
+/**
+ * The paging a release list takes. `show_included` also lists the releases a
+ * promotion carried, which the default listing leaves out.
+ */
 export interface ReleaseListQuery {
   cursor?: string;
   limit?: number;
+  show_included?: boolean;
 }
 
 /** The body `POST .../teams/{team_id}/releases` takes. Every field is optional. */

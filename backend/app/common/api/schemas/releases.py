@@ -231,6 +231,8 @@ class ReleaseRead(BaseModel):
     reader sees "Released to Production" without ordering the stages itself.
     `status_counts` tallies the issues the caller can see by status category, so a
     listing draws each release's progress without reading its issues.
+    `included_in` names the promotion that carried this release to a later stage,
+    and `included_count` is how many earlier releases a promotion carried.
     """
 
     release_id: str
@@ -250,6 +252,8 @@ class ReleaseRead(BaseModel):
     github_release_url: Optional[str] = None
     issue_count: int
     status_counts: dict[str, int] = Field(default_factory=dict)
+    included_in: Optional[str] = None
+    included_count: int = 0
     stages: list[ReleaseStageRead]
     current_stage: Optional[ReleaseStageRead] = None
     created_by: Optional[str] = None
@@ -284,11 +288,40 @@ class ReleaseRead(BaseModel):
             pr_url=release.pr_url,
             github_release_url=release.github_release_url,
             issue_count=len(release.issue_ids),
+            included_in=release.included_in,
+            included_count=len(release.included_release_ids),
             stages=stages,
             current_stage=current,
             created_by=release.created_by,
             created_at=release.created_at,
             updated_at=release.updated_at,
+        )
+
+
+class IncludedReleaseRead(BaseModel):
+    """One release a promotion carried, or the promotion that carried one, as a detail page links it."""
+
+    release_id: str
+    name: str
+    sha: Optional[str] = None
+    pr_number: Optional[int] = None
+    pr_url: Optional[str] = None
+    issue_count: int
+    current_stage: Optional[ReleaseStageRead] = None
+    created_at: datetime
+
+    @classmethod
+    def from_read(cls, release: "ReleaseRead") -> "IncludedReleaseRead":
+        """The short shape of a release already built for a listing."""
+        return cls(
+            release_id=release.release_id,
+            name=release.name,
+            sha=release.sha,
+            pr_number=release.pr_number,
+            pr_url=release.pr_url,
+            issue_count=release.issue_count,
+            current_stage=release.current_stage,
+            created_at=release.created_at,
         )
 
 
@@ -298,12 +331,16 @@ class ReleaseDetailRead(ReleaseRead):
     The notes are deterministic: one line per visible issue, `KEY title`, in key
     order, so the same release always reads the same way. `skipped_issues` echoes
     the references a write named that matched no issue of the team, so a CI job can
-    report a typo without the release being refused.
+    report a typo without the release being refused. `included_releases` are the
+    earlier releases a promotion carried, newest first, and `included_in_release`
+    is the promotion that carried this one.
     """
 
     issues: list[ReleaseIssueRead]
     notes: str
     skipped_issues: list[str] = Field(default_factory=list)
+    included_releases: list[IncludedReleaseRead] = Field(default_factory=list)
+    included_in_release: Optional[IncludedReleaseRead] = None
 
 
 ReleaseListRead = cursor_page(ReleaseRead, "releases", model_name="ReleaseListRead")

@@ -85,6 +85,10 @@ const withDetail = (body: ReleaseDetailRead): ReleaseDetailRead => ({
   skipped_issues: Array.isArray(body?.skipped_issues)
     ? body.skipped_issues
     : [],
+  included_releases: Array.isArray(body?.included_releases)
+    ? body.included_releases
+    : [],
+  included_in_release: body?.included_in_release ?? null,
 });
 
 /**
@@ -121,7 +125,10 @@ export const updateReleasePipeline = async (
   return response.data;
 };
 
-/** Lists one page of a team's releases, newest first. */
+/**
+ * Lists one page of a team's releases, newest first. Releases a promotion
+ * carried are left out unless `show_included` asks for them.
+ */
 export const listReleases = async (
   workspaceId: string,
   teamId: string,

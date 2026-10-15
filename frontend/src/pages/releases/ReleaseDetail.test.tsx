@@ -3,7 +3,8 @@
  * offers the rest, that advancing sends the stage id, that the commit links
  * to GitHub, that the pull request and published GitHub Release link out,
  * that adding issues names the ones that matched nothing, that an
- * issue can be removed, and that a refused delete says who may delete.
+ * issue can be removed, that a refused delete says who may delete, and that
+ * a promotion lists the releases it included while each links back to it.
  */
 
 import { render, screen, waitFor, within } from '@testing-library/react';
@@ -233,6 +234,64 @@ describe('ReleaseDetail', () => {
     await waitFor(() => {
       expect(advanceRelease).toHaveBeenCalledWith({ stage: 'stg-2' });
     });
+  });
+
+  it('lists the releases a promotion included and links each one', async () => {
+    getRelease.mockResolvedValue(
+      detail({
+        name: '2026-10-11-e',
+        included_count: 2,
+        included_releases: [
+          {
+            release_id: 'rel-3',
+            name: 'Add export',
+            pr_number: 229,
+            sha: 'bbbbbbb1234567',
+            issue_count: 2,
+            created_at: '2026-10-11T00:00:00Z',
+          },
+          {
+            release_id: 'rel-2',
+            name: 'Fix login',
+            pr_number: 228,
+            issue_count: 1,
+            created_at: '2026-10-10T00:00:00Z',
+          },
+        ],
+      })
+    );
+    renderPage();
+
+    const section = await screen.findByRole('region', {
+      name: /Included releases/,
+    });
+    expect(
+      within(section).getByRole('link', { name: 'Add export' })
+    ).toHaveAttribute('href', '/w/mine/team/ENG/releases/rel-3');
+    expect(section).toHaveTextContent('#228');
+    expect(section).toHaveTextContent('2 issues');
+  });
+
+  it('links an included release to the promotion that carried it', async () => {
+    getRelease.mockResolvedValue(
+      detail({
+        included_in: 'rel-9',
+        included_in_release: {
+          release_id: 'rel-9',
+          name: '2026-10-11-e',
+          issue_count: 35,
+          created_at: '2026-10-11T00:00:00Z',
+        },
+      })
+    );
+    renderPage();
+
+    expect(
+      await screen.findByRole('link', { name: 'Included in 2026-10-11-e' })
+    ).toHaveAttribute('href', '/w/mine/team/ENG/releases/rel-9');
+    expect(
+      screen.queryByRole('region', { name: /Included releases/ })
+    ).not.toBeInTheDocument();
   });
 
   it('links the commit and the compare view on GitHub', async () => {

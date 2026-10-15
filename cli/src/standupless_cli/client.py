@@ -711,10 +711,13 @@ class StanduplessClient:
         path = f"/api/workspaces/{workspace_id}/teams/{team_id}/release-backfill"
         return cast(ReleaseBackfillRead, self._request("POST", path, json=body))
 
-    def list_releases(self, workspace_id: str, team_id: str, limit: int | None = None) -> list[ReleaseRead]:
-        """A team's releases, newest first."""
+    def list_releases(
+        self, workspace_id: str, team_id: str, limit: int | None = None, show_included: bool = False
+    ) -> list[ReleaseRead]:
+        """A team's releases, newest first, leaving out those a promotion carried unless `show_included`."""
         path = f"/api/workspaces/{workspace_id}/teams/{team_id}/releases"
-        return list(self._pages(path, "releases", {}, limit))
+        params = {"show_included": "true"} if show_included else {}
+        return list(self._pages(path, "releases", params, limit))
 
     def get_release(self, workspace_id: str, team_id: str, release_id: str) -> ReleaseDetailRead:
         """One release with its issues and notes."""

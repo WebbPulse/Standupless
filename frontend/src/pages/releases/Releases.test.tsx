@@ -3,8 +3,10 @@
  * repository and creator, that rows group by whether they reached the final
  * stage and a group folds, that the URL filters narrow the list, that j and
  * Enter open a release, that a team with none sees the empty state with a
- * pipeline link, that a further page loads on request, and that recording a
- * release sends the parsed issue keys and opens the new release.
+ * pipeline link, that a further page loads on request, that a promotion
+ * counts what it included and Show included asks for those releases, and
+ * that recording a release sends the parsed issue keys and opens the new
+ * release.
  */
 
 import { render, screen, waitFor, within } from '@testing-library/react';
@@ -236,6 +238,48 @@ describe('Releases', () => {
       scope.getByLabelText('Recorded from a GitHub deployment')
     ).toBeInTheDocument();
     expect(listReleases).toHaveBeenCalledWith('proj-1', { limit: 50 });
+  });
+
+  it('counts what a promotion included and asks for those releases on request', async () => {
+    const user = userEvent.setup();
+    listReleases.mockResolvedValue({
+      releases: [{ ...shipped(), name: '2026-10-11-e', included_count: 2 }],
+      next_cursor: null,
+    });
+    renderPage();
+
+    const row = (
+      await screen.findByRole('link', { name: '2026-10-11-e' })
+    ).closest('li') as HTMLElement;
+    expect(within(row).getByText('2 releases')).toBeInTheDocument();
+    expect(listReleases).toHaveBeenCalledWith('proj-1', { limit: 50 });
+
+    listReleases.mockResolvedValue({
+      releases: [
+        { ...shipped(), name: '2026-10-11-e', included_count: 2 },
+        release({
+          release_id: 'rel-3',
+          name: 'Fix login',
+          included_in: 'rel-2',
+        }),
+      ],
+      next_cursor: null,
+    });
+    await user.click(screen.getByRole('button', { name: 'Show included' }));
+
+    await waitFor(() => {
+      expect(listReleases).toHaveBeenCalledWith('proj-1', {
+        show_included: true,
+        limit: 50,
+      });
+    });
+    const included = (
+      await screen.findByRole('link', { name: 'Fix login' })
+    ).closest('li') as HTMLElement;
+    expect(within(included).getByText('Included')).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'Hide included' })
+    ).toHaveAttribute('aria-pressed', 'true');
   });
 
   it('groups releases by stage and folds a group', async () => {

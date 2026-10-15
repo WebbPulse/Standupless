@@ -2,7 +2,7 @@
 
 A release is filed under its team in the workspace partition, beside the team's
 cycles, so "this team's releases" is one query and the team purge clears them with
-the rest of the team's planning rows. Five row shapes share the release prefix:
+the rest of the team's planning rows. Six row shapes share the release prefix:
 
 - `team#<team>#release#<release>` is the release itself, newest first by its ULID.
 - `team#<team>#releasepipe` is the team's ordered pipeline of stages.
@@ -13,6 +13,8 @@ the rest of the team's planning rows. Five row shapes share the release prefix:
   another.
 - `team#<team>#releasename#<name>` claims one name, folded, for the release that
   holds it, so two releases of a team never share a name however they race.
+- `team#<team>#releasefold` marks the team's releases as swept once for staging
+  releases a promotion carried, which predate `included_in` being recorded live.
 
 The issue side is `release_issue#<issue>#<release>`, filed under the workspace rather
 than the team so an issue's releases are one query even after it moves team.
@@ -43,6 +45,8 @@ RELEASE_SHA = "release_sha"
 RELEASE_NAME = "release_name"
 
 RELEASE_ISSUE = "release_issue"
+
+RELEASE_FOLD = "release_fold"
 
 RELEASE_ISSUE_PREFIX = "release_issue#"
 
@@ -102,6 +106,11 @@ def name_key(team_id: str, name: str) -> str:
     return f"{team_release_prefix(team_id)}name#{fold_name(name)}"
 
 
+def fold_key(team_id: str) -> str:
+    """The sort key of the marker saying one team's releases were swept for promotions."""
+    return f"{team_release_prefix(team_id)}fold"
+
+
 def issue_link_prefix(issue_id: str) -> str:
     """The prefix every release link of one issue shares."""
     return f"{RELEASE_ISSUE_PREFIX}{issue_id}#"
@@ -130,6 +139,10 @@ class Release(BaseModel):
     `referenced_issue_ids` are issues the release carries that no pull request in
     it closes, such as one a pull request names with `Refs`. They are listed with
     the release but its stage automation leaves their status alone.
+
+    `included_in` names the promotion release that carried this one to a later
+    stage, which hides it from the default listing, and `included_release_ids` is
+    the other side: the releases a promotion carried.
     """
 
     workspace_id: str
@@ -151,6 +164,8 @@ class Release(BaseModel):
     github_release_url: str | None = None
     issue_ids: list[str] = Field(default_factory=list)
     referenced_issue_ids: list[str] = Field(default_factory=list)
+    included_in: str | None = None
+    included_release_ids: list[str] = Field(default_factory=list)
     stages: list[ReleaseStageReached] = Field(default_factory=list)
     created_by: str | None = None
     created_at: datetime = Field(default_factory=utc_now)
@@ -204,6 +219,7 @@ _OPTIONAL_FIELDS: tuple[str, ...] = (
     "pr_number",
     "pr_url",
     "github_release_url",
+    "included_in",
     "created_by",
 )
 
@@ -214,8 +230,9 @@ def as_release_item(release: Release) -> dict[str, Any]:
     for name in _OPTIONAL_FIELDS:
         if item.get(name) is None:
             item.pop(name, None)
-    if not item.get("referenced_issue_ids"):
-        item.pop("referenced_issue_ids", None)
+    for name in ("referenced_issue_ids", "included_release_ids"):
+        if not item.get(name):
+            item.pop(name, None)
     for stage in item["stages"]:
         for name in ("environment", "url", "actor_id"):
             if stage.get(name) is None:
@@ -295,6 +312,91 @@ class ReleaseRepository:
         )
         rows = [Release.model_validate(dict(item)) for item in page.items if is_release(item)]
         return rows, page.last_evaluated_key
+
+    def list_all_for_team(self, workspace_id: str, team_id: str, *, max_items: int = 5000) -> list[Release]:
+        """Every release of a team, newest first, up to `max_items`, for the one-time promotion sweep."""
+        if not workspace_id or not team_id:
+            return []
+        items = self._repository.iter_query(
+            Key("workspace_id").eq(workspace_id) & Key("planning_key").begins_with(release_prefix(team_id)),
+            max_items=max_items,
+            ascending=False,
+        )
+        return [Release.model_validate(dict(item)) for item in items if is_release(item)]
+
+    def _release_item_key(self, workspace_id: str, team_id: str, release_id: str) -> dict[str, str]:
+        """The primary key of one release row."""
+        return {"workspace_id": workspace_id, "planning_key": release_key(team_id, release_id)}
+
+    def mark_included(self, workspace_id: str, team_id: str, release_id: str, parent_id: str) -> bool:
+        """Point one release at the promotion that carried it, answering whether it was written.
+
+        Holds only while the release exists and is not already in a promotion, so a
+        sweep racing a live deployment never moves a release from one promotion to
+        another.
+        """
+        if not release_id or release_id == parent_id:
+            return False
+        try:
+            self._repository.set_attributes(
+                self._release_item_key(workspace_id, team_id, release_id),
+                {"included_in": parent_id},
+                condition=Attr("planning_key").exists() & Attr("included_in").not_exists(),
+                return_values="NONE",
+            )
+        except ConditionFailed:
+            return False
+        return True
+
+    def set_included(self, workspace_id: str, team_id: str, release_id: str, included: Sequence[str]) -> None:
+        """Store the releases one promotion carried, while the promotion exists."""
+        key = self._release_item_key(workspace_id, team_id, release_id)
+        try:
+            if included:
+                self._repository.set_attributes(
+                    key,
+                    {"included_release_ids": list(dict.fromkeys(included))},
+                    condition=Attr("planning_key").exists(),
+                    return_values="NONE",
+                )
+            else:
+                self._repository.remove_attributes(
+                    key, ["included_release_ids"], condition=Attr("planning_key").exists(), return_values="NONE"
+                )
+        except ConditionFailed:
+            pass
+
+    def clear_included(self, workspace_id: str, team_id: str, release_id: str, parent_id: str) -> None:
+        """Take one release out of a promotion, only while that promotion is the one it names."""
+        try:
+            self._repository.remove_attributes(
+                self._release_item_key(workspace_id, team_id, release_id),
+                ["included_in"],
+                condition=Attr("included_in").eq(parent_id),
+                return_values="NONE",
+            )
+        except ConditionFailed:
+            pass
+
+    def fold_swept(self, workspace_id: str, team_id: str, version: int) -> bool:
+        """Whether the team's releases were already swept for promotions at this version or later."""
+        item = self._get(workspace_id, fold_key(team_id))
+        if item is None or item.get("kind") != RELEASE_FOLD:
+            return False
+        return int(item.get("version") or 0) >= version
+
+    def mark_fold_swept(self, workspace_id: str, team_id: str, version: int) -> None:
+        """Record that the team's releases were swept for promotions at this version."""
+        self._repository.put(
+            {
+                "workspace_id": workspace_id,
+                "planning_key": fold_key(team_id),
+                "kind": RELEASE_FOLD,
+                "team_id": team_id,
+                "version": version,
+                "updated_at": utc_now().isoformat(),
+            }
+        )
 
     def _name_claim_action(self, release: Release) -> dict[str, Any]:
         """A put claiming the release's name, holding only when it is free or already this release's."""

@@ -1,7 +1,9 @@
 /**
  * One release: what it is, the commit it was cut from, every stage of the
  * team's pipeline with whether and when the release reached it, the issues
- * it carried and the notes built from them.
+ * it carried and the notes built from them. A promotion lists the earlier
+ * releases it carried to a later stage, and a release one carried links to
+ * that promotion.
  *
  * The stages follow the pipeline's order rather than the order they were
  * reached, so a release that skipped one shows the gap. A stage that was
@@ -55,7 +57,7 @@ import { useTeam } from '../../hooks/useTeam';
 import { useWorkspace } from '../../hooks/useWorkspace';
 import { canWriteIssues } from '../../lib/capabilities';
 import { errorMessage, hasStatus } from '../../lib/errors';
-import { issuePath, teamReleasesPath } from '../../lib/paths';
+import { issuePath, releasePath, teamReleasesPath } from '../../lib/paths';
 import {
   releaseKey,
   releasePipelineKey,
@@ -72,6 +74,7 @@ import {
 import { isStatusCategory } from '../../lib/statusAppearance';
 import { showErrorToast, showToast } from '../../lib/toast';
 import type {
+  IncludedReleaseRead,
   PipelineStageRead,
   ReleaseDetailRead,
   ReleaseStageRead,
@@ -348,6 +351,60 @@ const StageTimeline: React.FC<StageTimelineProps> = ({
 );
 
 /** One release of the team named by the route's key prefix. */
+interface IncludedReleasesProps {
+  releases: IncludedReleaseRead[];
+  slug: string;
+  keyPrefix: string;
+}
+
+/** The earlier releases a promotion carried, each a row that opens it. */
+const IncludedReleases: React.FC<IncludedReleasesProps> = ({
+  releases,
+  slug,
+  keyPrefix,
+}) => (
+  <ul className="rounded-md border border-line">
+    {releases.map((included) => {
+      const pull =
+        included.pr_number === null || included.pr_number === undefined
+          ? null
+          : `#${String(included.pr_number)}`;
+      return (
+        <li
+          key={included.release_id}
+          className="relative flex h-10 items-center gap-3 border-b border-line px-3 transition-colors duration-100 last:border-b-0 hover:bg-surface"
+        >
+          <Link
+            to={releasePath(slug, keyPrefix, included.release_id)}
+            aria-label={included.name}
+            data-hover="parent"
+            className="absolute inset-0 rounded-md focus-visible:ring-1 focus-visible:ring-accent focus-visible:outline-none focus-visible:ring-inset"
+          />
+          <span className="pointer-events-none min-w-0 flex-1 truncate text-sm">
+            {included.name}
+          </span>
+          {pull !== null && (
+            <span className="pointer-events-none inline-flex shrink-0 items-center gap-1 text-xs text-text-muted">
+              <LuGitPullRequest aria-hidden="true" className="h-3.5 w-3.5" />
+              {pull}
+            </span>
+          )}
+          {included.sha !== null && included.sha !== undefined && (
+            <span className="pointer-events-none hidden shrink-0 font-mono text-xs text-text-faint sm:inline">
+              {shortSha(included.sha)}
+            </span>
+          )}
+          <span className="pointer-events-none shrink-0 text-xs text-text-muted tabular-nums">
+            {included.issue_count === 1
+              ? '1 issue'
+              : `${String(included.issue_count)} issues`}
+          </span>
+        </li>
+      );
+    })}
+  </ul>
+);
+
 export const ReleaseDetail: React.FC = () => {
   const { keyPrefix, releaseId } = useParams<{
     keyPrefix: string;
@@ -722,6 +779,19 @@ export const ReleaseDetail: React.FC = () => {
             <span className="inline-flex items-center gap-1">
               Recorded <RelativeTime value={release.created_at} />
             </span>
+            {release.included_in_release !== null &&
+              release.included_in_release !== undefined && (
+                <Link
+                  to={releasePath(
+                    slug,
+                    team.key_prefix,
+                    release.included_in_release.release_id
+                  )}
+                  className={META_LINK}
+                >
+                  {`Included in ${release.included_in_release.name}`}
+                </Link>
+              )}
           </div>
           {release.description !== null &&
             release.description !== undefined &&
@@ -866,6 +936,22 @@ export const ReleaseDetail: React.FC = () => {
             }
           />
         </section>
+
+        {(release.included_releases ?? []).length > 0 && (
+          <section aria-labelledby="release-included" className="space-y-3">
+            <h2 id="release-included" className="text-sm font-medium">
+              Included releases
+              <span className="ml-2 text-text-faint tabular-nums">
+                {String((release.included_releases ?? []).length)}
+              </span>
+            </h2>
+            <IncludedReleases
+              releases={release.included_releases ?? []}
+              slug={slug}
+              keyPrefix={team.key_prefix}
+            />
+          </section>
+        )}
 
         <section aria-labelledby="release-notes" className="space-y-3">
           <div className="flex items-center justify-between gap-2">
