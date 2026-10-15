@@ -623,6 +623,11 @@ export interface IssueRead {
    * time. Optional so a row read before SLAs existed reads as none.
    */
   sla_status?: SlaStatus;
+  /**
+   * The key or URL the issue carried in the tool it was imported from, such as
+   * a Linear or Jira key. Null for issues created in Standupless.
+   */
+  external_ref?: string | null;
   created_by: string;
   created_at: string;
   updated_at: string;

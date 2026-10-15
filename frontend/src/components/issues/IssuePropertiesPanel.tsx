@@ -492,6 +492,11 @@ export const IssuePropertiesPanel: React.FC<IssuePropertiesPanelProps> = ({
         />
       </div>
 
+      {issue.external_ref ? (
+        <p className="px-2 pt-2 text-2xs break-words text-text-faint">
+          Imported from {issue.external_ref}
+        </p>
+      ) : null}
       <p className="px-2 pt-2 text-2xs text-text-faint">
         Updated {timestampLabel(issue.updated_at)}
       </p>

@@ -332,6 +332,22 @@ describe('resolving the issue', () => {
     );
   });
 
+  it('names the source key of an imported issue', async () => {
+    getIssueByKey.mockResolvedValue({ ...issue, external_ref: 'PROJ-12' });
+    renderPage();
+
+    expect(
+      await screen.findByText('Imported from PROJ-12')
+    ).toBeInTheDocument();
+  });
+
+  it('says nothing about a source for an issue made here', async () => {
+    renderPage();
+
+    expect(await screen.findByText('Cache the token')).toBeInTheDocument();
+    expect(screen.queryByText(/Imported from/)).not.toBeInTheDocument();
+  });
+
   it('surfaces a failed read', async () => {
     getIssueByKey.mockRejectedValue(new Error('boom'));
     renderPage();

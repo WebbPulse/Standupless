@@ -13,8 +13,8 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.common.db.dynamo.issues import IssueRepository
-from app.common.db.dynamo.search_index import tokenize
-from app.domains.views.endpoints.search import intersect_descending
+from app.common.db.dynamo.search_index import issue_terms, legacy_terms, ref_term, tokenize
+from app.domains.views.endpoints.search import intersect_descending, source_ref_term
 from tests.domains.helpers import GUEST, OWNER, sign_in
 from tests.domains.views.conftest import OTHER_TEAM, TEAM, seed_issue
 
@@ -116,6 +116,93 @@ def test_a_key_that_names_no_issue_is_empty(client: TestClient, workspace: str, 
 
     assert response.status_code == 200
     assert response.json()["results"] == []
+
+
+def index_source_key(repositories: Any, workspace: str, team_id: str, issue: "dict[str, Any]", ref: str) -> None:
+    """Post one issue under the source key term the search consumer derives from `external_ref`."""
+    term = ref_term(ref)
+    assert term is not None
+    repositories.search_index.apply(workspace, team_id, issue["id"], appeared={term}, departed=set())
+
+
+def test_the_source_key_of_an_imported_issue_finds_it(
+    client: TestClient, issues_client: TestClient, workspace: str, repositories: Any, statuses: Any
+) -> None:
+    """The key an issue had before import still finds it, however it is typed."""
+    sign_in(issues_client, OWNER)
+    imported = seed_issue(issues_client, workspace, title="Fix login")
+    other = seed_issue(issues_client, workspace, title="Fix logout")
+    index_source_key(repositories, workspace, TEAM, imported, "PROJ-12")
+    index_source_key(repositories, workspace, TEAM, other, "PROJ-120")
+
+    sign_in(client, OWNER)
+    for query in ("PROJ-12", "proj-12"):
+        response = client.get(f"/api/workspaces/{workspace}/search", params={"q": query})
+        assert response.status_code == 200
+        assert [row["issue_id"] for row in response.json()["results"]] == [imported["id"]]
+
+
+def test_a_source_key_that_is_not_shaped_like_a_key_still_finds_the_issue(
+    client: TestClient, issues_client: TestClient, workspace: str, repositories: Any, statuses: Any
+) -> None:
+    """A source reference with other punctuation is matched whole rather than refused as too short."""
+    sign_in(issues_client, OWNER)
+    imported = seed_issue(issues_client, workspace, title="Anything at all")
+    index_source_key(repositories, workspace, TEAM, imported, "gh#42")
+
+    sign_in(client, OWNER)
+    response = client.get(f"/api/workspaces/{workspace}/search", params={"q": "GH#42"})
+
+    assert response.status_code == 200
+    assert [row["issue_id"] for row in response.json()["results"]] == [imported["id"]]
+
+
+def test_a_key_and_a_source_key_both_answer_once_each(
+    client: TestClient, issues_client: TestClient, workspace: str, repositories: Any, statuses: Any
+) -> None:
+    """When a key names one issue and is another's source key, both are hits, the exact key first."""
+    sign_in(issues_client, OWNER)
+    native = seed_issue(issues_client, workspace, title="Made here")
+    imported = seed_issue(issues_client, workspace, title="Brought over")
+    index_source_key(repositories, workspace, TEAM, imported, native["key"])
+
+    sign_in(client, OWNER)
+    response = client.get(f"/api/workspaces/{workspace}/search", params={"q": native["key"]})
+
+    assert [row["issue_id"] for row in response.json()["results"]] == [native["id"], imported["id"]]
+
+
+def test_a_guest_cannot_find_a_source_key_outside_their_teams(
+    client: TestClient, issues_client: TestClient, workspace: str, repositories: Any, statuses: Any
+) -> None:
+    """The source key lookup fans out over visible teams only."""
+    sign_in(issues_client, OWNER)
+    hidden = seed_issue(issues_client, workspace, title="Hidden import", team_id=OTHER_TEAM)
+    index_source_key(repositories, workspace, OTHER_TEAM, hidden, "PROJ-7")
+
+    sign_in(client, GUEST)
+    response = client.get(f"/api/workspaces/{workspace}/search", params={"q": "PROJ-7"})
+
+    assert response.status_code == 200
+    assert response.json()["results"] == []
+
+
+def test_the_source_key_term_is_posted_with_the_text_terms() -> None:
+    """The consumer's term sets carry the source key, so it is posted and unposted with the rest."""
+    image = {"key": "ABC-1", "title": "Fix login", "body": "", "external_ref": "PROJ-12"}
+
+    assert "ref:proj-12" in issue_terms(image)
+    assert "ref:proj-12" in legacy_terms(image)
+    assert not any(term.startswith("ref:") for term in issue_terms({**image, "external_ref": None}))
+    assert "#" not in (ref_term("gh#42") or "#")
+
+
+def test_only_a_punctuated_single_token_is_looked_up_as_a_source_key() -> None:
+    """Words and phrases keep to the term index."""
+    assert source_ref_term("PROJ-12") == "ref:proj-12"
+    assert source_ref_term("widget") is None
+    assert source_ref_term("fix the login") is None
+    assert source_ref_term("---") is None
 
 
 def test_a_guest_does_not_see_hits_from_a_team_they_are_outside(
