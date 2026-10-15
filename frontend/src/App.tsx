@@ -99,6 +99,7 @@ import WorkspaceSettings from './pages/workspaces/WorkspaceSettings';
 import ApiKeysSettings from './pages/workspaces/ApiKeysSettings';
 import BillingSettings from './pages/workspaces/BillingSettings';
 import ConnectedAppsSettings from './pages/workspaces/ConnectedAppsSettings';
+import AgentProfilesSettings from './pages/workspaces/AgentProfilesSettings';
 import McpAndCliSettings from './pages/workspaces/McpAndCliSettings';
 import NotificationsSettings from './pages/workspaces/NotificationsSettings';
 import ShareLinksSettings from './pages/workspaces/ShareLinksSettings';
@@ -165,6 +166,10 @@ const App: React.FC = () => (
             element={<ConnectedAppsSettings />}
           />
           <Route path="settings/mcp-and-cli" element={<McpAndCliSettings />} />
+          <Route
+            path="settings/agent-profiles"
+            element={<AgentProfilesSettings />}
+          />
           <Route path="settings/share-links" element={<ShareLinksSettings />} />
           <Route path="settings/export" element={<ExportSettings />} />
           <Route path="settings/import" element={<ImportSettings />} />

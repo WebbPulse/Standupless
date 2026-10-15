@@ -506,6 +506,17 @@ export const workspaceConnectedAppsKey = (workspaceId: string): QueryKey => [
   workspaceId,
 ];
 
+/** The signed in person's private agent profiles. */
+export const MY_AGENT_PROFILES_KEY: QueryKey = ['agent-profiles', 'me'];
+
+/** The kept versions of one of the signed in person's agent profiles. */
+export const myAgentProfileVersionsKey = (name: string): QueryKey => [
+  'agent-profiles',
+  'me',
+  'versions',
+  name,
+];
+
 /** One team's release list. */
 export const releasesKey = (workspaceId: string, teamId: string): QueryKey => [
   'releases',

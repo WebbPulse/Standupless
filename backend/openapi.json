@@ -181,6 +181,335 @@
         "title": "ActivityRead",
         "type": "object"
       },
+      "AgentProfileActivityRead": {
+        "description": "One page of the caller's agent profile trail, newest first.",
+        "properties": {
+          "events": {
+            "items": {
+              "$ref": "#/components/schemas/AgentProfileEventRead"
+            },
+            "title": "Events",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "required": [
+          "events"
+        ],
+        "title": "AgentProfileActivityRead",
+        "type": "object"
+      },
+      "AgentProfileEventRead": {
+        "description": "One entry of the caller's own agent profile trail.",
+        "properties": {
+          "audit_id": {
+            "title": "Audit Id",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "event": {
+            "title": "Event",
+            "type": "string"
+          },
+          "event_label": {
+            "title": "Event Label",
+            "type": "string"
+          },
+          "ip": {
+            "default": "",
+            "title": "Ip",
+            "type": "string"
+          },
+          "profile": {
+            "title": "Profile",
+            "type": "string"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          },
+          "version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version"
+          }
+        },
+        "required": [
+          "audit_id",
+          "event",
+          "event_label",
+          "profile",
+          "source",
+          "created_at"
+        ],
+        "title": "AgentProfileEventRead",
+        "type": "object"
+      },
+      "AgentProfileFile": {
+        "description": "One file of a profile: the root it lives under, its path relative to that root, and its text.",
+        "properties": {
+          "content": {
+            "title": "Content",
+            "type": "string"
+          },
+          "path": {
+            "description": "The file's path relative to its root, with forward slashes.",
+            "title": "Path",
+            "type": "string"
+          },
+          "root": {
+            "description": "home is the home directory, project the project checkout, memory Claude Code's memory folder for that project.",
+            "enum": [
+              "home",
+              "project",
+              "memory"
+            ],
+            "title": "Root",
+            "type": "string"
+          }
+        },
+        "required": [
+          "root",
+          "path",
+          "content"
+        ],
+        "title": "AgentProfileFile",
+        "type": "object"
+      },
+      "AgentProfileListRead": {
+        "description": "Every profile the caller keeps, in name order, with the limits a save is held to.",
+        "properties": {
+          "max_profiles": {
+            "title": "Max Profiles",
+            "type": "integer"
+          },
+          "profiles": {
+            "items": {
+              "$ref": "#/components/schemas/AgentProfileRead"
+            },
+            "title": "Profiles",
+            "type": "array"
+          },
+          "versions_kept": {
+            "title": "Versions Kept",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "profiles",
+          "max_profiles",
+          "versions_kept"
+        ],
+        "title": "AgentProfileListRead",
+        "type": "object"
+      },
+      "AgentProfileRead": {
+        "description": "One profile as its owner lists it.",
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "file_count": {
+            "title": "File Count",
+            "type": "integer"
+          },
+          "latest_version": {
+            "title": "Latest Version",
+            "type": "integer"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "note": {
+            "default": "",
+            "title": "Note",
+            "type": "string"
+          },
+          "total_bytes": {
+            "title": "Total Bytes",
+            "type": "integer"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "latest_version",
+          "file_count",
+          "total_bytes",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "AgentProfileRead",
+        "type": "object"
+      },
+      "AgentProfileSnapshotRead": {
+        "description": "One version's files, and what each root means on the machine restoring them.",
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "files": {
+            "items": {
+              "$ref": "#/components/schemas/AgentProfileFile"
+            },
+            "title": "Files",
+            "type": "array"
+          },
+          "latest_version": {
+            "title": "Latest Version",
+            "type": "integer"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "note": {
+            "default": "",
+            "title": "Note",
+            "type": "string"
+          },
+          "roots": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "What each root maps to on the machine the files are written on.",
+            "title": "Roots",
+            "type": "object"
+          },
+          "sha256": {
+            "title": "Sha256",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "name",
+          "version",
+          "latest_version",
+          "sha256",
+          "created_at",
+          "files",
+          "roots"
+        ],
+        "title": "AgentProfileSnapshotRead",
+        "type": "object"
+      },
+      "AgentProfileVersionListRead": {
+        "description": "A profile's kept versions, newest first.",
+        "properties": {
+          "latest_version": {
+            "title": "Latest Version",
+            "type": "integer"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "versions": {
+            "items": {
+              "$ref": "#/components/schemas/AgentProfileVersionRead"
+            },
+            "title": "Versions",
+            "type": "array"
+          },
+          "versions_kept": {
+            "title": "Versions Kept",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "name",
+          "latest_version",
+          "versions",
+          "versions_kept"
+        ],
+        "title": "AgentProfileVersionListRead",
+        "type": "object"
+      },
+      "AgentProfileVersionRead": {
+        "description": "One kept version of a profile.",
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "file_count": {
+            "title": "File Count",
+            "type": "integer"
+          },
+          "latest": {
+            "title": "Latest",
+            "type": "boolean"
+          },
+          "note": {
+            "default": "",
+            "title": "Note",
+            "type": "string"
+          },
+          "sha256": {
+            "description": "The digest of the version's files, equal for identical contents.",
+            "title": "Sha256",
+            "type": "string"
+          },
+          "source": {
+            "description": "The client the version was saved through, such as mcp.",
+            "title": "Source",
+            "type": "string"
+          },
+          "total_bytes": {
+            "title": "Total Bytes",
+            "type": "integer"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "version",
+          "file_count",
+          "total_bytes",
+          "sha256",
+          "source",
+          "created_at",
+          "latest"
+        ],
+        "title": "AgentProfileVersionRead",
+        "type": "object"
+      },
       "ApiKeyCreate": {
         "description": "The body `POST /api/workspaces/{workspace_id}/api-keys` takes.",
         "properties": {
@@ -17567,6 +17896,271 @@
         ]
       }
     },
+    "/api/users/me/agent-profiles": {
+      "get": {
+        "description": "Every agent profile the caller keeps, in name order.",
+        "operationId": "list_my_agent_profiles_api_users_me_agent_profiles_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentProfileListRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "List My Agent Profiles",
+        "tags": [
+          "identity"
+        ]
+      }
+    },
+    "/api/users/me/agent-profiles/activity": {
+      "get": {
+        "description": "The caller's own saves, restores and deletes, newest first.",
+        "operationId": "list_my_agent_profile_activity_api_users_me_agent_profiles_activity_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 2048,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentProfileActivityRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "List My Agent Profile Activity",
+        "tags": [
+          "identity"
+        ]
+      }
+    },
+    "/api/users/me/agent-profiles/{name}": {
+      "delete": {
+        "description": "Delete a profile and every kept version of it.",
+        "operationId": "delete_my_agent_profile_api_users_me_agent_profiles__name__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "maxLength": 128,
+              "minLength": 1,
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Delete My Agent Profile",
+        "tags": [
+          "identity"
+        ]
+      },
+      "get": {
+        "description": "One version's files, the latest unless named, recorded on the trail as a restore.",
+        "operationId": "get_my_agent_profile_api_users_me_agent_profiles__name__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "maxLength": 128,
+              "minLength": 1,
+              "title": "Name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "A version number, or latest.",
+            "in": "query",
+            "name": "version",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 16,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "A version number, or latest.",
+              "title": "Version"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentProfileSnapshotRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Get My Agent Profile",
+        "tags": [
+          "identity"
+        ]
+      }
+    },
+    "/api/users/me/agent-profiles/{name}/versions": {
+      "get": {
+        "description": "One profile's kept versions, newest first.",
+        "operationId": "list_my_agent_profile_versions_api_users_me_agent_profiles__name__versions_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "maxLength": 128,
+              "minLength": 1,
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentProfileVersionListRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "List My Agent Profile Versions",
+        "tags": [
+          "identity"
+        ]
+      }
+    },
     "/api/users/me/avatar": {
       "delete": {
         "description": "Remove the caller's avatar, falling back to their initials, and delete the image.",
@@ -17838,7 +18432,7 @@
     },
     "/api/users/me/deletion": {
       "post": {
-        "description": "Delete the caller's account now.\n\nA signed in person only, with their address typed out again, and refused with a\n409 naming each workspace where they are the only owner and other people remain.\nOnce it passes, the account is marked deleted, so no sign in method or refresh\nworks for it any more, then every session, OAuth grant and personal API key is\nrevoked and the purge of its data is started at once. The hourly sweep and the\nqueue's retries start any purge this request could not. The account's own\naddress is mailed, and the request is logged with how the caller last\nauthenticated. Repeating it for an account already deleted starts the purge again.",
+        "description": "Delete the caller's account now.\n\nA signed in person only, with their address typed out again, and refused with a\n409 naming each workspace where they are the only owner and other people remain.\nOnce it passes, the account is marked deleted, so no sign in method or refresh\nworks for it any more, then every session, OAuth grant and personal API key is\nrevoked, the person's private agent profiles are removed, and the purge of\nits data is started at once. The hourly sweep and the\nqueue's retries start any purge this request could not. The account's own\naddress is mailed, and the request is logged with how the caller last\nauthenticated. Repeating it for an account already deleted starts the purge again.",
         "operationId": "delete_account_api_users_me_deletion_post",
         "requestBody": {
           "content": {

@@ -8,7 +8,8 @@ authorization system and never exceeds the signed-in user's role.
 Destructive tools carry `destructiveHint`. The one irreversible tool is
 `delete_team`, held to a workspace owner or admin as its route is. Nothing here
 deletes a workspace, touches billing, mints API keys or OAuth clients, or manages
-the GitHub App.
+the GitHub App. The agent profile tools reach only the caller's own profiles,
+whatever workspace the credential is bound to.
 """
 
 from __future__ import annotations
@@ -16,6 +17,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from app.domains.integrations.mcp.agent_profile_tools import AGENT_PROFILE_TOOLS
 from app.domains.integrations.mcp.audit_tools import AUDIT_TOOLS
 from app.domains.integrations.mcp.channel_tools import CHANNEL_TOOLS
 from app.domains.integrations.mcp.document_tools import DOCUMENT_TOOLS
@@ -59,6 +61,7 @@ TOOLS: tuple[Tool, ...] = (
     *EXPORT_TOOLS,
     *AUDIT_TOOLS,
     *TRIAGE_TOOLS,
+    *AGENT_PROFILE_TOOLS,
 )
 
 TOOLS_BY_NAME: dict[str, Tool] = {tool.name: tool for tool in TOOLS}

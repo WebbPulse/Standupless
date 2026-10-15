@@ -17,6 +17,7 @@ from app.common.db.dynamo.registry import ALL_REPOSITORY_NAMES, REPOSITORY_SPECS
 
 if TYPE_CHECKING:  # pragma: no cover
     from app.common.db.dynamo.activity import ActivityRepository
+    from app.common.db.dynamo.agent_profiles import AgentProfileRepository
     from app.common.db.dynamo.audit import AuditRepository
     from app.common.db.dynamo.comments import CommentRepository
     from app.common.db.dynamo.counters import CounterRepository
@@ -200,6 +201,7 @@ class RepositoryBundle:
         share_links: "ShareTokenStoreRepository"
         oauth_links: "OAuthLinkStoreRepository"
         audit: "AuditRepository"
+        agent_profiles: "AgentProfileRepository"
 
 
 Repositories = RepositoryBundle

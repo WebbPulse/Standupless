@@ -21,15 +21,16 @@ RouterSpec = Tuple["APIRouter", str, Tuple[str, ...]]
 
 
 def _identity_routers() -> "Sequence[RouterSpec]":
-    """The current-user routes and connected apps. Everything under `/api/auth` is the package's.
+    """The current-user routes, agent profiles and connected apps. Everything under `/api/auth` is the package's.
 
     The workspace half of connected apps mounts under `/workspaces` because an admin
     reaches it from a workspace, but it is served here, beside the consent tables.
     """
-    from app.domains.identity.endpoints import connected_apps, users
+    from app.domains.identity.endpoints import agent_profiles, connected_apps, users
 
     return [
         (users.router, "/users", ("identity",)),
+        (agent_profiles.router, "/users", ("identity",)),
         (connected_apps.account_router, "/users", ("identity",)),
         (connected_apps.workspace_router, "/workspaces", ("identity",)),
     ]
@@ -183,10 +184,12 @@ def _views_unprefixed_routers(settings: "Any") -> "Sequence[APIRouter]":
     return [build_notify_router(), build_search_router(), shared.router]
 
 
-_IDENTITY_REPOSITORIES: Tuple[str, ...] = ("users", "api_keys", "audit")
+_IDENTITY_REPOSITORIES: Tuple[str, ...] = ("users", "api_keys", "audit", "agent_profiles")
 """The users row, and `api_keys`, which deleting an account empties of the person's keys at once.
 
-`audit` records connected app grants and revocations in each workspace's log.
+`audit` records connected app grants and revocations in each workspace's log, and
+the person's own agent profile trail. `agent_profiles` serves the account settings
+page and the CLI restore, and deleting an account empties it.
 
 `api_keys` is also read so the current user route can verify a personal key and
 answer the key's person.
@@ -371,13 +374,15 @@ _INTEGRATIONS_REPOSITORIES = (
     "views",
     "inbox",
     "audit",
+    "agent_profiles",
 )
 """What the integrations image writes.
 
 Everything past `github` is for the MCP tools, which create and edit issues,
 projects, cycles, teams, members, invites, saved views and the caller's inbox
 through the same shared write paths the product routes use, and record and read
-the workspace audit log as those paths do.
+the workspace audit log as those paths do, and the caller's own agent profiles
+with the trail each save, restore and delete leaves.
 """
 
 _INTEGRATIONS_READ_REPOSITORIES = (

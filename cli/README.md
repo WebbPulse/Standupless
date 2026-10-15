@@ -130,6 +130,25 @@ Names are matched without regard to case: teams by key prefix or name, statuses 
 name or category (`backlog`, `unstarted`, `started`, `completed`, `cancelled`),
 labels, projects, initiatives and cycles by name, people by `me`, email or display name.
 
+## Agent profiles
+
+An agent saves your local Claude guidance (`~/.claude/CLAUDE.md`, untracked project
+`CLAUDE.md` files, a project's memory folder) with the `save_agent_profile` MCP tool.
+Profiles are private to you. To restore one on a fresh machine without installing
+anything, log in with a personal API key that has `settings:read`, then pull from
+inside the project checkout:
+
+```bash
+uvx --from standupless-cli standupless auth login
+uvx --from standupless-cli standupless agent list
+uvx --from standupless-cli standupless agent versions work-laptop
+uvx --from standupless-cli standupless agent pull work-laptop [--version 3] [--project PATH] [--dry-run] [--yes]
+```
+
+`pull` writes `home` files into your home folder, `project` files into the checkout,
+and `memory` files into Claude Code's memory folder for that checkout. It shows a
+diff for every file that differs and asks once before writing anything.
+
 ## Configuration
 
 | Flag | Environment variable | Meaning |

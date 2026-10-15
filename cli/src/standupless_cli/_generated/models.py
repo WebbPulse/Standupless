@@ -39,6 +39,55 @@ ActivityRead = TypedDict(
 )
 
 
+class AgentProfileEventRead(TypedDict):
+    audit_id: str
+    created_at: str
+    event: str
+    event_label: str
+    ip: NotRequired[str]
+    profile: str
+    source: str
+    version: NotRequired[int | None]
+
+
+class AgentProfileFile(TypedDict):
+    content: str
+    path: str
+    root: Literal["home", "project", "memory"]
+
+
+class AgentProfileRead(TypedDict):
+    created_at: str
+    file_count: int
+    latest_version: int
+    name: str
+    note: NotRequired[str]
+    total_bytes: int
+    updated_at: str
+
+
+class AgentProfileSnapshotRead(TypedDict):
+    created_at: str
+    files: list[AgentProfileFile]
+    latest_version: int
+    name: str
+    note: NotRequired[str]
+    roots: dict[str, str]
+    sha256: str
+    version: int
+
+
+class AgentProfileVersionRead(TypedDict):
+    created_at: str
+    file_count: int
+    latest: bool
+    note: NotRequired[str]
+    sha256: str
+    source: str
+    total_bytes: int
+    version: int
+
+
 class ApiKeyCreate(TypedDict):
     expires_in_days: NotRequired[int | None]
     kind: NotRequired[Literal["user", "workspace"]]
@@ -2350,6 +2399,24 @@ class AccountDeletionPlanRead(TypedDict):
 class ActivityListRead(TypedDict):
     activity: list[ActivityRead]
     next_cursor: NotRequired[str | None]
+
+
+class AgentProfileActivityRead(TypedDict):
+    events: list[AgentProfileEventRead]
+    next_cursor: NotRequired[str | None]
+
+
+class AgentProfileListRead(TypedDict):
+    max_profiles: int
+    profiles: list[AgentProfileRead]
+    versions_kept: int
+
+
+class AgentProfileVersionListRead(TypedDict):
+    latest_version: int
+    name: str
+    versions: list[AgentProfileVersionRead]
+    versions_kept: int
 
 
 class ApiKeyListRead(TypedDict):

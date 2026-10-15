@@ -475,6 +475,19 @@ AUDIT = TableSpec(
 """The workspace audit log: one partition per workspace, ULID sort keys so a read is
 newest first and a date range is a key condition, aged out a year after each event."""
 
+AGENT_PROFILES = TableSpec(
+    suffix="agent_profiles",
+    partition_key=KeyAttribute("user_id"),
+    sort_key=KeyAttribute("profile_key"),
+)
+"""Each person's private agent profiles: one partition per user, never per workspace.
+
+A `profile#<name>` head row per profile, a `version#<name>#<number>` row per kept
+version, and the sealed manifest of each version split across `chunk#<name>#<number>#<index>`
+rows so no item nears the 400 KB limit. No index reaches across users, so no read
+can list another person's profiles.
+"""
+
 RATE_LIMITS = TableSpec(
     suffix="rate-limits",
     partition_key=KeyAttribute("pk"),
@@ -505,6 +518,7 @@ TABLES: tuple[TableSpec, ...] = (
     GITHUB,
     IDEMPOTENCY,
     AUDIT,
+    AGENT_PROFILES,
 )
 
 EXPORTED_TABLES: tuple[TableSpec, ...] = (*TABLES, RATE_LIMITS)

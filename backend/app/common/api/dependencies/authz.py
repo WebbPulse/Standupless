@@ -56,6 +56,7 @@ __all__ = [
     "Capability",
     "bearer_claims_of",
     "caller_person",
+    "caller_person_with",
     "check_capability",
     "live_scopes_for",
     "missing_scopes",
@@ -962,9 +963,13 @@ def caller_person(
     MCP token, is refused with the same 403 `require_person` answers.
     """
     del credentials
+    return _person_of(_claims(request, repositories), repositories)
+
+
+def _person_of(claims: Any, repositories: RepositoryBundle) -> str:
+    """The person the verified claims act for, refusing a workspace key and any other delegated token."""
     from app.common.db.dynamo.api_keys import is_service_subject
 
-    claims = _claims(request, repositories)
     subject = _subject(claims)
     actor = _actor(claims)
     if actor is ActorKind.USER:
@@ -985,6 +990,37 @@ def caller_person(
     if _role_for(repositories, tenant, subject) is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=UNAUTHENTICATED_DETAIL)
     return subject
+
+
+def caller_person_with(*required: str) -> Callable[..., str]:
+    """A `caller_person` dependency that also holds a personal key to the scopes a route needs.
+
+    For account routes with no workspace in their path, which `ROUTE_SCOPES` does not
+    cover: a session passes unrestricted, and a personal API key must carry every
+    scope named here, refused with the same 403 `INSUFFICIENT_SCOPE` a workspace
+    route answers.
+    """
+
+    def dependency(
+        request: Request,
+        repositories: RepositoryBundle = Depends(get_repositories),
+        credentials: Optional[HTTPAuthorizationCredentials] = Security(IDENTITY_BEARER),
+    ) -> str:
+        """The person behind the request, once their credential's scopes cover the route."""
+        del credentials
+        claims = _claims(request, repositories)
+        subject = _person_of(claims, repositories)
+        if _actor(claims) is not ActorKind.USER:
+            missing = missing_scopes(_scopes(claims), required)
+            if missing:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail={"error_code": "INSUFFICIENT_SCOPE", "message": f"Missing scope: {', '.join(missing)}"},
+                )
+        return subject
+
+    dependency.__name__ = "caller_person_with"
+    return dependency
 
 
 def require_platform_admin(

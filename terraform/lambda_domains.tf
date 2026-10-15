@@ -4,7 +4,7 @@ locals {
       secrets     = true
       ses         = true
       memory      = 512
-      tables      = ["users", "api-keys", "audit", "rate-limits"]
+      tables      = ["users", "api-keys", "audit", "agent_profiles", "rate-limits"]
       read_tables = ["memberships", "workspaces"]
     }
     workspaces = {
@@ -74,7 +74,7 @@ locals {
       secrets     = true
       ses         = true
       memory      = 512
-      tables      = ["github", "idempotency", "team_config", "issues", "comments", "counters", "activity", "planning", "relations", "subscriptions", "teams", "memberships", "workspaces", "invites", "views", "inbox", "audit", "rate-limits"]
+      tables      = ["github", "idempotency", "team_config", "issues", "comments", "counters", "activity", "planning", "relations", "subscriptions", "teams", "memberships", "workspaces", "invites", "views", "inbox", "audit", "agent_profiles", "rate-limits"]
       read_tables = ["users", "api-keys", "oauth-links", "search_index"]
     }
     integrations-events-consumer = {

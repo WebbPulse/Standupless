@@ -274,8 +274,13 @@ def test_the_contract_fixes_the_tool_set() -> None:
         "create_recurring_issue",
         "update_recurring_issue",
         "delete_recurring_issue",
+        "list_agent_profiles",
+        "list_agent_profile_versions",
+        "get_agent_profile",
+        "save_agent_profile",
+        "delete_agent_profile",
     }
-    assert len(TOOLS) == 161
+    assert len(TOOLS) == 166
 
 
 def test_a_notification_gets_no_body(client: TestClient, workspace: str, repositories: Any) -> None:
