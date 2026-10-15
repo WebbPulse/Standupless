@@ -2343,6 +2343,7 @@ class AppCommonApiSchemasIssuesIssueRead(TypedDict):
     cycle_id: NotRequired[str | None]
     due_date: NotRequired[str | None]
     estimate: NotRequired[str | None]
+    external_ref: NotRequired[str | None]
     id: str
     in_triage: NotRequired[bool]
     key: str

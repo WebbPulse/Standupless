@@ -343,6 +343,7 @@ class IssueRead(BaseModel):
     sla_started_at: Optional[datetime] = None
     sla_breaches_at: Optional[datetime] = None
     sla_status: SlaStatusField = "none"
+    external_ref: Optional[str] = None
 
     @classmethod
     def from_row(cls, issue: Issue) -> "IssueRead":
@@ -379,6 +380,7 @@ class IssueRead(BaseModel):
             sla_started_at=issue.sla_started_at,
             sla_breaches_at=issue.sla_breaches_at,
             sla_status=sla_status(issue),
+            external_ref=issue.external_ref,
         )
 
 

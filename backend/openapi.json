@@ -16469,6 +16469,17 @@
             ],
             "title": "Estimate"
           },
+          "external_ref": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "External Ref"
+          },
           "id": {
             "title": "Id",
             "type": "string"

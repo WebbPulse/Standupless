@@ -5,9 +5,11 @@ there is no cross-workspace read to prevent, and without an explicit team the
 fan-out covers exactly the teams the caller can see, which for a guest is the
 teams they hold a membership in.
 
-A key lookup short-circuits the index entirely. Typing `ABC-123` is meant to be
+A key lookup short-circuits the term index. Typing `ABC-123` is meant to be
 exact rather than a relevance guess, so it is answered from
-`ws_team-key_number-index` and never touches a posting list.
+`ws_team-key_number-index`. A single token with punctuation in it, a key among
+them, is also looked up as the source key an imported issue was posted under,
+so the key an issue had in the tool it came from still finds it.
 
 Search is not paged. The MVP caps at `limit` and says so; a cursor over an
 intersection of posting lists is a post-MVP decision alongside the OpenSearch one.
@@ -32,7 +34,7 @@ from app.common.api.dependencies.repositories import Repositories, get_repositor
 from app.common.api.dependencies.scopes import PROJECTS_READ
 from app.common.api.schemas.documents import DocumentSummaryRead
 from app.common.db.dynamo.issues import Issue
-from app.common.db.dynamo.search_index import tokenize
+from app.common.db.dynamo.search_index import ref_term, tokenize
 from app.common.documents import search_documents
 from app.common.issue_keys import current
 from app.common.issue_move import find_issue_by_number
@@ -92,6 +94,42 @@ def _key_hit(
         return []
     issue = find_issue_by_number(repositories, context.workspace_id, team.team_id, number)
     return [issue] if issue is not None and issue.team_id in teams else []
+
+
+def source_ref_term(query: str) -> str | None:
+    """The source key term a query is looked up under, or `None` when it is not key-like.
+
+    Only one token with punctuation in it is treated as a key, so ordinary words
+    keep to the term index.
+    """
+    text = query.strip()
+    if not text or any(char.isspace() for char in text) or text.isalnum():
+        return None
+    return ref_term(text)
+
+
+def _ref_hits(
+    repositories: Repositories,
+    context: AuthzContext,
+    workspace_id: str,
+    teams: list[str],
+    query: str,
+    limit: int,
+) -> list[Issue]:
+    """Imported issues whose source key is the query, in teams the caller sees."""
+    term = source_ref_term(query)
+    if term is None or not teams:
+        return []
+    matches = _matching_ids(repositories, workspace_id, teams, {term})
+    return _first_hits(repositories, context, workspace_id, matches, limit)
+
+
+def _merge_hits(first: list[Issue], second: list[Issue], limit: int) -> list[Issue]:
+    """Both lists in order with repeats dropped, at most `limit` issues."""
+    merged: dict[str, Issue] = {}
+    for issue in (*first, *second):
+        merged.setdefault(issue.issue_id, issue)
+    return list(merged.values())[:limit]
 
 
 def intersect_descending(streams: list[Iterator[str]]) -> Iterator[str]:
@@ -204,15 +242,24 @@ def search(
         if not teams:
             return SearchRead(results=[])
         prefix, number = parsed
-        hits = _key_hit(repositories, context, teams, number, prefix)
+        hits = _merge_hits(
+            _key_hit(repositories, context, teams, number, prefix),
+            _ref_hits(repositories, context, workspace_id, teams, q, limit),
+            limit,
+        )
         return SearchRead(
             results=[SearchResultRead.from_row(current(repositories.teams, issue), score=1) for issue in hits]
         )
 
     terms = tokenize(q)
+    referenced = _ref_hits(repositories, context, workspace_id, teams, q, limit)
     if not terms:
         if not teams:
             return SearchRead(results=[])
+        if referenced:
+            return SearchRead(
+                results=[SearchResultRead.from_row(current(repositories.teams, issue), score=1) for issue in referenced]
+            )
         raise query_too_short()
 
     documents = _document_hits(repositories, context, team_id, terms, limit)
@@ -223,7 +270,7 @@ def search(
     hits = _first_hits(
         repositories, context, workspace_id, _matching_ids(repositories, workspace_id, teams, terms), limit
     )
-    ordered = sorted(hits, key=lambda row: row.updated_at, reverse=True)
+    ordered = _merge_hits(referenced, sorted(hits, key=lambda row: row.updated_at, reverse=True), limit)
     return SearchRead(
         results=[SearchResultRead.from_row(current(repositories.teams, issue), score=score) for issue in ordered],
         documents=documents,

@@ -109,6 +109,27 @@ def test_reads_show_the_current_key_after_a_key_change(
     assert repositories.issues.get(workspace, created["id"]).key == "ABC-1"
 
 
+def test_an_imported_issue_reads_with_its_source_key(
+    client: TestClient, workspace: str, repositories: Any, statuses: Any
+) -> None:
+    """The key an issue had in the tool it came from is answered, and an issue made here answers null."""
+    sign_in(client, OWNER)
+    created = create_issue(client, workspace)
+    native = create_issue(client, workspace, title="Made here")
+    stored = repositories.issues.get(workspace, created["id"])
+    repositories.issues.replace(stored.model_copy(update={"external_ref": "PROJ-12"}))
+
+    by_id = client.get(f"/api/workspaces/{workspace}/issues/{created['id']}").json()
+    listed = client.get(f"/api/workspaces/{workspace}/issues", params={"team_id": TEAM}).json()
+
+    assert by_id["external_ref"] == "PROJ-12"
+    assert {row["id"]: row["external_ref"] for row in listed["issues"]} == {
+        created["id"]: "PROJ-12",
+        native["id"]: None,
+    }
+    assert native["external_ref"] is None
+
+
 def test_a_key_that_is_not_a_key_is_a_404(client: TestClient, workspace: str, statuses: Any) -> None:
     """A malformed key is not found rather than a 422, because it names nothing."""
     sign_in(client, OWNER)
