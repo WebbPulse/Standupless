@@ -2878,11 +2878,7 @@ export interface ReleasePipelineUpdate {
 
 /** What reported a release or a stage reached. */
 export type ReleaseSource =
-  | 'manual'
-  | 'api'
-  | 'github_deployment'
-  | 'github_tag'
-  | 'github_release';
+  'manual' | 'api' | 'github_deployment' | 'github_tag' | 'github_release';
 
 /** One stage a release reached, when, and what reported it. */
 export interface ReleaseStageRead {
