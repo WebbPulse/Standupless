@@ -43,7 +43,7 @@ def test_an_issue_favorite_answers_its_key_title_and_status(
     assert [(row["kind"], row["target_id"]) for row in listed] == [("issue", issue["id"])]
     assert listed[0]["title"] == "Fix the login"
     assert listed[0]["issue_key"] == issue["key"]
-    assert listed[0]["status"]["status_id"] == issue["status_id"]
+    assert listed[0]["status"]["id"] == issue["status_id"]
 
 
 def test_favorites_are_the_callers_own(client: TestClient, workspace: str) -> None:
