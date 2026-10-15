@@ -617,9 +617,7 @@ def backfill(
     """
     from webbpulse.integrations.github import GitHubRateLimited, GitHubUnavailable
 
-    from app.domains.integrations import github_budget, github_deployments
-
-    from app.domains.integrations import tag_releases
+    from app.domains.integrations import github_budget, github_deployments, tag_releases
 
     routed = tag_releases.route(repositories, workspace_id, team_id, payload)
     if routed is not None:
