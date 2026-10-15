@@ -4,13 +4,15 @@
  * on first open, and the rich text editor, which loads when a description is
  * shown. Each stays a chunk of its own rather than weighing down every page.
  * After the bundle is written, the public pages are prerendered to static HTML.
+ * The dev server proxies `/api` to the backend `VITE_BACKEND` names.
  */
 
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react-swc';
-import { defineConfig, type Plugin } from 'vite';
+import { defineConfig, loadEnv, type Plugin } from 'vite';
+import { apiProxy, devWatch } from './devProxy.ts';
 import { prerender } from './prerender.ts';
 
 /** The merged OpenAPI document the backend commits and its tests keep current. */
@@ -172,49 +174,49 @@ const mobileAssociations = (): Plugin => ({
 const EDITOR_MODULES =
   /node_modules[\\/](@tiptap|prosemirror-[^\\/]+|marked|linkifyjs|orderedmap|rope-sequence|w3c-keyname|@floating-ui|fast-equals|use-sync-external-store)[\\/]/;
 
-export default defineConfig({
-  plugins: [
-    react(),
-    tailwindcss(),
-    openapiDocument(),
-    mobileAssociations(),
-    prerender(),
-  ],
-  server: {
-    port: 4000,
-    proxy: {
-      '/api': {
-        target: 'http://localhost:8000',
-        changeOrigin: true,
-      },
+export default defineConfig(({ mode }) => {
+  const env = { ...loadEnv(mode, process.cwd(), ''), ...process.env };
+  const watch = devWatch(env);
+  return {
+    plugins: [
+      react(),
+      tailwindcss(),
+      openapiDocument(),
+      mobileAssociations(),
+      prerender(),
+    ],
+    server: {
+      port: 4000,
+      proxy: apiProxy(env),
+      ...(watch === undefined ? {} : { watch }),
     },
-  },
-  preview: {
-    allowedHosts: ['standupless.dev', 'staging.standupless.dev'],
-  },
-  build: {
-    sourcemap: 'hidden',
-    rollupOptions: {
-      output: {
-        codeSplitting: {
-          groups: [
-            {
-              name: 'vendor',
-              test: (id: string) =>
-                id.includes('node_modules') &&
-                !id.includes('emojibase-data') &&
-                !EDITOR_MODULES.test(id),
-              priority: 2,
-            },
-            {
-              name: 'editor',
-              test: EDITOR_MODULES,
-              priority: 1,
-            },
-          ],
+    preview: {
+      allowedHosts: ['standupless.dev', 'staging.standupless.dev'],
+    },
+    build: {
+      sourcemap: 'hidden',
+      rollupOptions: {
+        output: {
+          codeSplitting: {
+            groups: [
+              {
+                name: 'vendor',
+                test: (id: string) =>
+                  id.includes('node_modules') &&
+                  !id.includes('emojibase-data') &&
+                  !EDITOR_MODULES.test(id),
+                priority: 2,
+              },
+              {
+                name: 'editor',
+                test: EDITOR_MODULES,
+                priority: 1,
+              },
+            ],
+          },
         },
       },
+      chunkSizeWarningLimit: 600,
     },
-    chunkSizeWarningLimit: 600,
-  },
+  };
 });
