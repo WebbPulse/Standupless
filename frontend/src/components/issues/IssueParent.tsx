@@ -11,6 +11,7 @@ import { usePolledQuery } from '@webbpulse/api-client/react';
 import { Link } from 'react-router-dom';
 import { getIssue } from '../../api/issues';
 import { issuePath } from '../../lib/paths';
+import { TRIAGE_STATUS } from '../../lib/triageStatus';
 import { issueKey } from '../../lib/queryKeys';
 import type { IssueRead, StatusRead } from '../../types/Api';
 import { StatusIcon } from '../ui/StatusIcon';
@@ -65,7 +66,10 @@ export const IssueParent: React.FC<IssueParentProps> = ({
   const parent =
     known ??
     (fetched !== null && fetched.id === parentId ? fetched : undefined);
-  const status = statuses.find((item) => item.id === parent?.status_id);
+  const status =
+    parent?.in_triage === true
+      ? TRIAGE_STATUS
+      : statuses.find((item) => item.id === parent?.status_id);
 
   if (parentId === null && (hideEmpty || !canEdit)) return null;
 

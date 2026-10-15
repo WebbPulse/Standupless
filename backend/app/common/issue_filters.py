@@ -19,6 +19,7 @@ from app.common.db.dynamo.issues import Issue
 from app.common.db.dynamo.relations import LINK_TYPES
 from app.common.db.dynamo.team_config import STATUS_CATEGORIES
 from app.common.estimates import is_unestimated
+from app.common.issue_rules import TRIAGE_STATUS_ID, shown_status_id
 from app.common.sla import SLA_STATUSES
 from app.common.sla import sla_status as issue_sla_status
 
@@ -153,8 +154,10 @@ class IssueFilter:
     Archived issues are left out unless `include_archived` is set, the way a
     Linear list hides them until its display options ask for them, and
     `archived_only` keeps nothing but them, the way Linear's archive view does. Issues
-    awaiting triage are left out the same way unless `include_triage` is set, and
-    `triage_only` keeps nothing but them. An empty set
+    awaiting triage are left out the same way unless `include_triage` is set, or
+    the status filter names the synthetic triage status, and `triage_only` keeps
+    nothing but them. An issue in triage matches the status filters as that
+    synthetic status rather than its hidden one. An empty set
     means the filter is absent. Values within one field are ORed and
     fields are ANDed, which is what repeated query keys mean to every client, and a
     `_not` field excludes any issue matching one of its values. `sla_statuses`
@@ -251,11 +254,11 @@ class IssueFilter:
         if self.triage_only:
             if not issue.in_triage:
                 return False
-        elif issue.in_triage and not self.include_triage:
+        elif issue.in_triage and not (self.include_triage or TRIAGE_STATUS_ID in self.status_ids):
             return False
         if not _included(self.team_ids, self.team_ids_not, issue.team_id):
             return False
-        if not _included(self.status_ids, self.status_ids_not, issue.status_id):
+        if not _included(self.status_ids, self.status_ids_not, shown_status_id(issue)):
             return False
         if self.needs_categories:
             category = (categories or {}).get(issue.status_id)

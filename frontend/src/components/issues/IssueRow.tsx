@@ -26,6 +26,7 @@ import {
   type ScopedLabel,
   type ScopedStatus,
 } from '../../lib/issueView';
+import { shownStatusId } from '../../lib/triageStatus';
 import type { IssueRead } from '../../types/Api';
 import Avatar from '../ui/avatar';
 import Badge, { LabelChip } from '../ui/badge';
@@ -134,7 +135,7 @@ export const IssueRow: React.FC<IssueRowProps> = ({
         <FilterChipButton
           tooltip={`Filter by status: ${statusName}`}
           onFilter={() => {
-            onFilter('status', issue.status_id);
+            onFilter('status', shownStatusId(issue));
           }}
           className={GLYPH_FILTER}
         >

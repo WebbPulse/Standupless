@@ -32,6 +32,7 @@ import {
   LuX,
 } from 'react-icons/lu';
 import { NONE } from '../../../api/issues';
+import { useTriageTeamIds } from '../../../hooks/useTriageTeams';
 import { PRIORITIES, PRIORITY_LABELS } from '../../../lib/issueDisplay';
 import { personAvatar, personLabel } from '../../../lib/issuePeople';
 import {
@@ -53,6 +54,12 @@ import {
 } from '../../../lib/propertyOptions';
 import { pickableLabels } from '../../../lib/labelGroups';
 import { SLA_STATUSES, SLA_STATUS_LABELS } from '../../../lib/sla';
+import {
+  TRIAGE_GROUP_KEY,
+  TRIAGE_STATUS,
+  TRIAGE_STATUS_ID,
+  TRIAGE_STATUS_NAME,
+} from '../../../lib/triageStatus';
 import { cn } from '../../../lib/cn';
 import type { LinkType } from '../../../types/Api';
 import { estimateChoices } from '../../../lib/validation';
@@ -205,10 +212,37 @@ const yesNo = (icon: React.ReactNode): FilterChoice[] => [
   { option: { value: 'false', label: 'No', icon: hollow }, ids: ['false'] },
 ];
 
-/** Every choice a field offers, grouping like named statuses and labels. */
+/** The Triage choice a status filter offers when a team in the list has triage on. */
+const TRIAGE_CHOICE: FilterChoice = {
+  option: {
+    value: TRIAGE_GROUP_KEY,
+    label: TRIAGE_STATUS_NAME,
+    icon: <StatusIcon status={TRIAGE_STATUS} />,
+    group: TRIAGE_STATUS_NAME,
+  },
+  ids: [TRIAGE_STATUS_ID],
+};
+
+/** Whether any team a list spans has triage on, so its status filter offers Triage. */
+const useTriageInList = (context: IssueContext): boolean => {
+  const triageTeams = useTriageTeamIds();
+  const teamIds = [
+    ...context.statuses.map((status) => status.team_id),
+    ...(context.teams ?? []).map((team) => team.id),
+  ];
+  return teamIds.some(
+    (teamId) => teamId !== undefined && triageTeams.has(teamId)
+  );
+};
+
+/**
+ * Every choice a field offers, grouping like named statuses and labels.
+ * Triage leads the status choices when a team in the list has it on.
+ */
 const filterChoices = (
   field: FilterField,
-  context: IssueContext
+  context: IssueContext,
+  triage = false
 ): FilterChoice[] => {
   const byKey = <T,>(
     items: T[],
@@ -230,17 +264,20 @@ const filterChoices = (
   };
   switch (field) {
     case 'status':
-      return byKey(
-        sortStatuses(context.statuses),
-        statusGroupKey,
-        (status, value) => ({
-          value,
-          label: status.name,
-          icon: <StatusIcon status={status} statuses={context.statuses} />,
-          group: STATUS_CATEGORY_LABELS[status.category],
-        }),
-        (status) => status.id
-      );
+      return [
+        ...(triage ? [TRIAGE_CHOICE] : []),
+        ...byKey(
+          sortStatuses(context.statuses),
+          statusGroupKey,
+          (status, value) => ({
+            value,
+            label: status.name,
+            icon: <StatusIcon status={status} statuses={context.statuses} />,
+            group: STATUS_CATEGORY_LABELS[status.category],
+          }),
+          (status) => status.id
+        ),
+      ];
     case 'priority':
       return PRIORITIES.map((priority) => ({
         option: {
@@ -535,6 +572,7 @@ const ValueList: React.FC<{
   context: IssueContext;
   onChange: (filters: FilterClause[]) => void;
 }> = ({ field, filters, context, onChange }) => {
+  const triage = useTriageInList(context);
   if (isDateField(field)) {
     return (
       <DateList
@@ -545,7 +583,7 @@ const ValueList: React.FC<{
       />
     );
   }
-  const choices = filterChoices(field, context);
+  const choices = filterChoices(field, context, triage);
   const clause = filters.find((item) => item.field === field);
   return (
     <Combobox
@@ -571,8 +609,9 @@ const FilterChip: React.FC<{
   context: IssueContext;
   onChange: (filters: FilterClause[]) => void;
 }> = ({ clause, filters, context, onChange }) => {
+  const triage = useTriageInList(context);
   const dated = clause.op === 'before' || clause.op === 'after';
-  const choices = dated ? [] : filterChoices(clause.field, context);
+  const choices = dated ? [] : filterChoices(clause.field, context, triage);
   const names = chosen(clause, choices).map((choice) => choice.option.label);
   const summary = dated
     ? dayLabel(clause.values[0] ?? '')

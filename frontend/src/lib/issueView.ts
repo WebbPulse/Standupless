@@ -36,7 +36,14 @@ import { completionPercent } from './planningDisplay';
 import { personLabel, type Assignable } from './issuePeople';
 import { STATUS_CATEGORY_ORDER } from './propertyOptions';
 import { liveSlaStatus } from './sla';
-import { statusLook, type StatusLook } from './statusAppearance';
+import { statusLook, TRIAGE_LOOK, type StatusLook } from './statusAppearance';
+import {
+  shownStatusId,
+  TRIAGE_GROUP_KEY,
+  TRIAGE_STATUS_ID,
+  TRIAGE_STATUS_NAME,
+  triageStatusFor,
+} from './triageStatus';
 
 /** A property an issue list can be grouped by, or `none`. */
 export type GroupField = ViewGroupBy | 'none';
@@ -633,7 +640,7 @@ export const narrowFilters = (
 const issueFilterValues = (issue: IssueRead, field: FilterField): string[] => {
   switch (field) {
     case 'status':
-      return [issue.status_id];
+      return [shownStatusId(issue)];
     case 'assignee':
       return [issue.assignee_id ?? NONE];
     case 'creator':
@@ -880,9 +887,15 @@ export const stateToViewBody = (
   ...(options.look ?? {}),
 });
 
-/** The key statuses are grouped under, shared by like named statuses across teams. */
+/**
+ * The key statuses are grouped under, shared by like named statuses across
+ * teams. The synthetic Triage status has a key of its own, apart from any real
+ * status a team happens to name Triage.
+ */
 export const statusGroupKey = (status: StatusRead): string =>
-  `${status.category}:${status.name.trim().toLowerCase()}`;
+  status.id === TRIAGE_STATUS_ID
+    ? TRIAGE_GROUP_KEY
+    : `${status.category}:${status.name.trim().toLowerCase()}`;
 
 /** The key labels are grouped under, shared by like named labels across teams, and by their group's name. */
 export const labelGroupKey = (label: ScopedLabel): string =>
@@ -945,7 +958,7 @@ export const hiddenColumnKey = (column: string): string => `column/${column}`;
 /** The ids an issue is resolved by: its own team and the rows it points at. */
 export type IssueRefs = Pick<
   OrderedIssueRead,
-  'team_id' | 'status_id' | 'label_ids'
+  'team_id' | 'status_id' | 'label_ids' | 'in_triage'
 >;
 
 /**
@@ -970,14 +983,18 @@ const lookupFor = <T extends { id: string; team_id?: string }>(
 };
 
 /**
- * The status an issue sits in, from a list that may span teams. A workspace
+ * The status an issue shows under, from a list that may span teams. A workspace
  * status appears once per team in such a list, and the issue's own team copy
- * carries that team's name for it.
+ * carries that team's name for it. An issue waiting in triage shows under the
+ * synthetic Triage status, its real one hidden.
  */
 export const statusForIssue = <T extends ScopedStatus>(
   issue: IssueRefs,
   statuses: readonly T[]
-): T | undefined => lookupFor(statuses, issue.team_id).get(issue.status_id);
+): T | ScopedStatus | undefined =>
+  issue.in_triage === true
+    ? triageStatusFor(issue.team_id)
+    : lookupFor(statuses, issue.team_id).get(issue.status_id);
 
 /**
  * The labels an issue carries, each id once, in the order the lists name
@@ -1152,7 +1169,8 @@ const groupShells = (
  * Splits rows into groups in display order. Rows keep their order inside a
  * group. A group with no rows is kept only when `showEmpty` is set, and a
  * row whose value is missing from the lists, such as someone who has left
- * the team, gets a group of its own rather than disappearing.
+ * the team, gets a group of its own rather than disappearing. Issues waiting
+ * in triage lead a status grouping under a Triage group of their own.
  */
 export const groupIssues = (
   issues: OrderedIssueRead[],
@@ -1168,6 +1186,22 @@ export const groupIssues = (
   for (const issue of issues) {
     for (const key of groupKeysOf(issue, field, context)) {
       let group = byKey.get(key);
+      if (
+        group === undefined &&
+        field === 'status' &&
+        key === TRIAGE_GROUP_KEY
+      ) {
+        group = {
+          key,
+          field,
+          label: TRIAGE_STATUS_NAME,
+          category: 'backlog',
+          statusLook: TRIAGE_LOOK,
+          issues: [],
+        };
+        byKey.set(key, group);
+        groups.unshift(group);
+      }
       if (group === undefined) {
         group = {
           key,
@@ -1291,12 +1325,25 @@ export interface IssueChange {
   sort_order?: string;
 }
 
-/** Lays a change over an issue, adding and removing labels rather than replacing them. */
+/**
+ * Lays a change over an issue, adding and removing labels rather than
+ * replacing them. Triage sends the issue there with its real status kept, and
+ * a real status takes an issue out of triage, as the server does.
+ */
 export const applyChange = (
   issue: OrderedIssueRead,
   change: IssueChange
 ): OrderedIssueRead => {
-  const { add_label_ids, remove_label_ids, ...fields } = change;
+  const { add_label_ids, remove_label_ids, ...rest } = change;
+  const { status_id: statusId, ...others } = rest;
+  const fields =
+    statusId === undefined
+      ? others
+      : statusId === TRIAGE_STATUS_ID
+        ? { ...others, in_triage: true }
+        : issue.in_triage === true
+          ? { ...others, status_id: statusId, in_triage: false }
+          : { ...others, status_id: statusId };
   let labelIds = issue.label_ids;
   if (remove_label_ids !== undefined) {
     labelIds = labelIds.filter((id) => !remove_label_ids.includes(id));
@@ -1324,6 +1371,7 @@ export const changeIsNoop = (
   const next = applyChange(issue, change);
   return (
     next.status_id === issue.status_id &&
+    shownStatusId(next) === shownStatusId(issue) &&
     next.priority === issue.priority &&
     next.assignee_id === issue.assignee_id &&
     next.estimate === issue.estimate &&
@@ -1378,6 +1426,7 @@ export const moveChange = (
   if (fromKey === toKey) return {};
   switch (field) {
     case 'status': {
+      if (toKey === TRIAGE_GROUP_KEY) return { status_id: TRIAGE_STATUS_ID };
       const status = statusForKey(issue, toKey, context);
       return status === undefined ? null : { status_id: status.id };
     }

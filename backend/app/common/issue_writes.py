@@ -37,6 +37,7 @@ from app.common.issue_filters import ME, NONE, IssueFilter, estimate_value
 from app.common.issue_keyed_reads import keyed_rows
 from app.common.issue_keys import current_all
 from app.common.issue_rules import (
+    TRIAGE_STATUS_ID,
     changed_fields,
     check_assignee,
     check_cycle,
@@ -51,6 +52,7 @@ from app.common.issue_rules import (
     lands_in_triage,
     not_found,
     require_team_member,
+    require_triage_on,
     status_categories,
     subscribe_touched,
     unprocessable,
@@ -303,8 +305,14 @@ def create_issue(repositories: Repositories, context: AuthzContext, payload: Iss
         raise not_found()
     payload = apply_template(repositories, context, payload)
 
-    if payload.status_id:
-        chosen = check_status(repositories, context.workspace_id, payload.team_id, payload.status_id)
+    requested_triage = payload.triage
+    status_ref = payload.status_id
+    if status_ref == TRIAGE_STATUS_ID:
+        require_triage_on(repositories, context.workspace_id, payload.team_id)
+        requested_triage = True
+        status_ref = None
+    if status_ref:
+        chosen = check_status(repositories, context.workspace_id, payload.team_id, status_ref)
     else:
         chosen = default_status(repositories, context.workspace_id, payload.team_id)
 
@@ -323,7 +331,7 @@ def create_issue(repositories: Repositories, context: AuthzContext, payload: Iss
     )
 
     mentions = mentioned_user_ids(repositories, context.workspace_id, payload.body)
-    in_triage = lands_in_triage(repositories, context, payload.team_id, payload.triage)
+    in_triage = lands_in_triage(repositories, context, payload.team_id, requested_triage)
     number = repositories.counters.allocate_issue_number(context.workspace_id, payload.team_id)
     issue = Issue(
         workspace_id=context.workspace_id,
@@ -416,14 +424,21 @@ def apply_patch(repositories: Repositories, context: AuthzContext, issue: Issue,
 
     Shared by the single and the bulk patch so both refuse the same values for the
     same reasons, and split from the write so a bulk patch can validate every
-    issue before it stores any. A status change by anyone but a guest also takes
-    the issue out of triage, as accepting it would.
+    issue before it stores any. The synthetic triage status sends the issue to its
+    team's triage inbox, keeping its hidden status. A real status named by anyone
+    but a guest takes an issue out of triage, as accepting it would, even when it
+    names the hidden status the issue already holds.
     """
     updated = issue.model_copy(deep=True)
-    if "status_id" in attributes and attributes["status_id"] is not None:
+    if attributes.get("status_id") == TRIAGE_STATUS_ID:
+        if not issue.in_triage:
+            require_triage_on(repositories, context.workspace_id, issue.team_id)
+            updated.in_triage = True
+            updated.snoozed_until = None
+    elif "status_id" in attributes and attributes["status_id"] is not None:
         chosen = check_status(repositories, context.workspace_id, issue.team_id, attributes["status_id"])
         updated.status_id = chosen.status_id
-        if updated.status_id != issue.status_id and not context.is_guest:
+        if issue.in_triage and not context.is_guest:
             updated.in_triage = False
             updated.snoozed_until = None
     if "title" in attributes and attributes["title"] is not None:
@@ -483,14 +498,15 @@ def store_patch(
     A moved manual position is written but records no activity: dragging a row is
     arrangement rather than a change to the issue, and a history full of reorders
     would bury the edits a reader is looking for. An issue leaving triage records
-    `triage_outcome`. `condition` makes the write depend on the stored row as
-    well. Raises the 404 when the issue was deleted after it was read, or when the
-    stored row no longer meets `condition`.
+    `triage_outcome`, and one sent back records `pending`. `condition` makes the
+    write depend on the stored row as well. Raises the 404 when the issue was
+    deleted after it was read, or when the stored row no longer meets `condition`.
     """
     changes = changed_fields(issue, updated, PATCHABLE_FIELDS)
-    left_triage = issue.in_triage and not updated.in_triage
-    if left_triage:
+    if issue.in_triage and not updated.in_triage:
         changes.append(("triage", "pending", triage_outcome))
+    elif updated.in_triage and not issue.in_triage:
+        changes.append(("triage", None, "pending"))
     if not changes and issue.sort_order == updated.sort_order:
         return issue
 

@@ -7,9 +7,11 @@
  */
 
 import React from 'react';
+import { useTriageOn } from '../../hooks/useTriageTeams';
 import { cn } from '../../lib/cn';
 import type { Assignable } from '../../lib/issuePeople';
 import { liveSlaStatus } from '../../lib/sla';
+import { shownStatusId } from '../../lib/triageStatus';
 import type { EstimateOptions } from '../../lib/validation';
 import type {
   EstimateScale,
@@ -116,6 +118,7 @@ export const IssueFields: React.FC<IssueFieldsProps> = ({
   showParent = true,
 }) => {
   const disabled = !canEdit;
+  const triageOn = useTriageOn(issue.team_id);
   return (
     <>
       <PropertySection title="Properties">
@@ -123,7 +126,8 @@ export const IssueFields: React.FC<IssueFieldsProps> = ({
           <StatusPicker
             disabled={disabled}
             statuses={statuses}
-            value={issue.status_id}
+            triage={triageOn}
+            value={shownStatusId(issue)}
             onChange={(statusId) => {
               onUpdate({ status_id: statusId });
             }}

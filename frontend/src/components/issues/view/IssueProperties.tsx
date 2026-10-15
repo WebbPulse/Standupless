@@ -21,6 +21,7 @@ import {
   LuTriangle,
 } from 'react-icons/lu';
 import { NONE, type OrderedIssueRead } from '../../../api/issues';
+import { useTriageOn } from '../../../hooks/useTriageTeams';
 import { cn } from '../../../lib/cn';
 import { PRIORITY_LABELS } from '../../../lib/issueDisplay';
 import { personAvatar, personLabel } from '../../../lib/issuePeople';
@@ -28,6 +29,7 @@ import { labelsOf, type FilterField } from '../../../lib/issueView';
 import { pullRequestChipStyle } from '../../../lib/pullRequestState';
 import { cyclePath, projectPath } from '../../../lib/paths';
 import { shortDateLabel } from '../../../lib/propertyOptions';
+import { shownStatusId, triageStatusFor } from '../../../lib/triageStatus';
 import { isPastDue } from '../../../lib/viewerTimezone';
 import Avatar from '../../ui/avatar';
 import { LabelChip } from '../../ui/badge';
@@ -111,14 +113,19 @@ export const PriorityCell: React.FC<IssueCellProps> = ({
 export const StatusCell: React.FC<IssueCellProps> = ({ issue, className }) => {
   const { update, canEdit, forTeam } = useIssueViewEnv();
   const onFilter = useReadOnlyFilter('status');
+  const triageOn = useTriageOn(issue.team_id);
+  const shown = shownStatusId(issue);
   if (onFilter !== undefined) {
     const statuses = forTeam(issue.team_id).statuses;
-    const status = statuses.find((item) => item.id === issue.status_id);
+    const status =
+      issue.in_triage === true
+        ? triageStatusFor()
+        : statuses.find((item) => item.id === issue.status_id);
     return (
       <FilterChipButton
         tooltip={`Filter by status: ${status?.name ?? 'Unknown status'}`}
         onFilter={() => {
-          onFilter(issue.status_id);
+          onFilter(shown);
         }}
         wrapperClassName={cn('pointer-coarse:pointer-events-none', className)}
         className={GLYPH_FILTER}
@@ -131,7 +138,8 @@ export const StatusCell: React.FC<IssueCellProps> = ({ issue, className }) => {
     <StatusPicker
       variant="icon"
       statuses={forTeam(issue.team_id).statuses}
-      value={issue.status_id}
+      triage={triageOn}
+      value={shown}
       disabled={!canEdit}
       className={cn(ABOVE_LINK, className)}
       onChange={(statusId) => {

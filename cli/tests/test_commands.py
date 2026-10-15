@@ -255,6 +255,15 @@ def test_issue_edit_with_nothing_to_change_fails(runner: CliRunner, api: respx.M
     assert "Nothing to change" in result.stderr
 
 
+def test_issue_edit_sends_an_issue_to_triage(runner: CliRunner, api: respx.MockRouter) -> None:
+    """`--status triage` patches the synthetic triage status, and the issue then shows under it."""
+    api.get(f"/api/workspaces/{WS}/issues/by-key/ENG-12").respond(json=make_issue())
+    route = api.patch(f"/api/workspaces/{WS}/issues/is-12").respond(json=make_issue(in_triage=True))
+    result = invoke(runner, "issue", "edit", "ENG-12", "--status", "Triage")
+    assert result.exit_code == 0, result.output
+    assert _json(route) == {"status_id": "triage"}
+
+
 @pytest.mark.parametrize(("reason", "status_id"), [("completed", "st-done"), ("canceled", "st-cancel")])
 def test_issue_close(runner: CliRunner, api: respx.MockRouter, reason: str, status_id: str) -> None:
     """Close moves to the first status of the matching category and can comment."""

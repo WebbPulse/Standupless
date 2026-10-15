@@ -56,7 +56,7 @@ def issue_rows(
     return [
         [
             issue["key"],
-            statuses.get(issue["status_id"], ""),
+            statuses.get("triage" if issue.get("in_triage") else issue["status_id"], ""),
             PRIORITY_LABELS.get(issue.get("priority") or "none", ""),
             people.get(issue.get("assignee_id") or "", issue.get("assignee_id") or ""),
             issue["title"],

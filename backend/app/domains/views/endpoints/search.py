@@ -36,9 +36,10 @@ from app.common.db.dynamo.search_index import tokenize
 from app.common.documents import search_documents
 from app.common.issue_keys import current
 from app.common.issue_move import find_issue_by_number
+from app.common.issue_rules import TRIAGE_STATUS_CATEGORY, TRIAGE_STATUS_ID, TRIAGE_STATUS_NAME
 from app.common.similar_issues import DEFAULT_LIMIT as SIMILAR_DEFAULT_LIMIT
 from app.common.similar_issues import MAX_LIMIT as SIMILAR_MAX_LIMIT
-from app.common.similar_issues import find_similar
+from app.common.similar_issues import SimilarIssue, find_similar
 from app.domains.views.schemas.view import (
     SEARCH_DEFAULT_LIMIT,
     SEARCH_MAX_LIMIT,
@@ -244,20 +245,29 @@ def similar(
     search gives, because the dialog asks while the person is still typing.
     """
     hits = find_similar(repositories, context, title, limit=limit, exclude_issue_id=exclude_issue_id)
-    return SimilarListRead(
-        results=[
-            SimilarIssueRead(
-                issue_id=hit.issue.issue_id,
-                key=hit.issue.key,
-                title=hit.issue.title,
-                team_id=hit.issue.team_id,
-                status_id=hit.issue.status_id,
-                status_name=hit.status.name if hit.status else None,
-                status_category=hit.status.category if hit.status else None,
-                status_color=hit.status.color if hit.status else None,
-                status_icon=hit.status.icon if hit.status else None,
-                score=hit.score,
-            )
-            for hit in hits
-        ]
+    return SimilarListRead(results=[_similar_read(hit) for hit in hits])
+
+
+def _similar_read(hit: SimilarIssue) -> SimilarIssueRead:
+    """One possible duplicate as the dialog lists it, under the synthetic triage status while it waits there."""
+    if hit.issue.in_triage:
+        status_id, status_name, status_category = TRIAGE_STATUS_ID, TRIAGE_STATUS_NAME, TRIAGE_STATUS_CATEGORY
+        status_color = status_icon = None
+    else:
+        status_id = hit.issue.status_id
+        status_name = hit.status.name if hit.status else None
+        status_category = hit.status.category if hit.status else None
+        status_color = hit.status.color if hit.status else None
+        status_icon = hit.status.icon if hit.status else None
+    return SimilarIssueRead(
+        issue_id=hit.issue.issue_id,
+        key=hit.issue.key,
+        title=hit.issue.title,
+        team_id=hit.issue.team_id,
+        status_id=status_id,
+        status_name=status_name,
+        status_category=status_category,
+        status_color=status_color,
+        status_icon=status_icon,
+        score=hit.score,
     )

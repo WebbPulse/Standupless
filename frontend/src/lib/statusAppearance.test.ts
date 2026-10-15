@@ -12,6 +12,8 @@ import {
   STATUS_COLORS,
   STATUS_COLOR_VALUES,
   STATUS_ICONS,
+  TRIAGE_LOOK,
+  TRIAGE_STATUS_ID,
   piePath,
   progressFill,
   statusLook,
@@ -100,6 +102,15 @@ describe('progressFill', () => {
     const mine = { ...status({ id: 'a', position: 5 }), team_id: 't1' };
     const theirs = { ...status({ id: 'b', position: 1 }), team_id: 't2' };
     expect(progressFill(mine, [mine, theirs])).toBe(0.5);
+  });
+});
+
+describe('the Triage status', () => {
+  it('draws its own glyph and color whatever its row says', () => {
+    expect(
+      statusLook(status({ id: TRIAGE_STATUS_ID, category: 'backlog' }))
+    ).toEqual(TRIAGE_LOOK);
+    expect(TRIAGE_LOOK.icon).toBe('triage');
   });
 });
 

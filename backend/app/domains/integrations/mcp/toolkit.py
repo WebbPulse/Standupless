@@ -20,7 +20,7 @@ from app.common.api.dependencies.repositories import Repositories
 from app.common.db.dynamo.issues import Issue
 from app.common.db.dynamo.teams import Team
 from app.common.issue_move import find_issue_by_number
-from app.common.issue_rules import load_visible_issue
+from app.common.issue_rules import TRIAGE_STATUS_NAME, load_visible_issue, shown_status_id
 from app.common.issue_rules import not_found as issue_not_found
 from app.common.plan_features import PLAN_FEATURE_UNAVAILABLE
 from app.common.plan_limits import PLAN_LIMIT_REACHED
@@ -370,7 +370,8 @@ def issue_json(issue: Issue, *, status_name: str = "") -> dict[str, Any]:
 
     Ids are included here, unlike in the public share shapes, because the caller is
     inside the workspace and needs them to make the next call. What bounds this
-    credential is its scopes and its membership, not the ids it can see.
+    credential is its scopes and its membership, not the ids it can see. An issue
+    waiting in triage reports the synthetic triage status, as every client shows it.
     """
     return {
         "issue_id": issue.issue_id,
@@ -378,8 +379,8 @@ def issue_json(issue: Issue, *, status_name: str = "") -> dict[str, Any]:
         "team_id": issue.team_id,
         "title": issue.title,
         "body": issue.body or "",
-        "status_id": issue.status_id,
-        "status": status_name,
+        "status_id": shown_status_id(issue),
+        "status": TRIAGE_STATUS_NAME if issue.in_triage else status_name,
         "priority": issue.priority,
         "assignee_id": issue.assignee_id,
         "label_ids": list(issue.label_ids),
@@ -402,13 +403,14 @@ def issue_json(issue: Issue, *, status_name: str = "") -> dict[str, Any]:
 
 
 def summary_json(issue: Issue) -> dict[str, Any]:
-    """One issue as a listing renders it."""
+    """One issue as a listing renders it, under the synthetic triage status while it waits in triage."""
     return {
         "issue_id": issue.issue_id,
         "issue_key": issue.key,
         "team_id": issue.team_id,
         "title": issue.title,
-        "status_id": issue.status_id,
+        "status_id": shown_status_id(issue),
+        "in_triage": issue.in_triage,
         "priority": issue.priority,
         "estimate": issue.estimate,
         "assignee_id": issue.assignee_id,
