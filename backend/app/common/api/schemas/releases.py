@@ -512,12 +512,18 @@ class ReleaseBackfillRead(BaseModel):
 
 
 class IssueReleaseRead(BaseModel):
-    """One release an issue shipped in, as the issue page names it."""
+    """One release an issue shipped in, as the issue page names it.
+
+    `included_in` and `included_in_name` name the promotion that carried this
+    release to a later stage, so the page marks the release rather than hiding it.
+    """
 
     release_id: str
     team_id: str
     name: str
     current_stage: Optional[ReleaseStageRead] = None
+    included_in: Optional[str] = None
+    included_in_name: Optional[str] = None
     created_at: datetime
 
 

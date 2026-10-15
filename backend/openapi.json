@@ -6210,7 +6210,7 @@
         "type": "object"
       },
       "IssueReleaseRead": {
-        "description": "One release an issue shipped in, as the issue page names it.",
+        "description": "One release an issue shipped in, as the issue page names it.\n\n`included_in` and `included_in_name` name the promotion that carried this\nrelease to a later stage, so the page marks the release rather than hiding it.",
         "properties": {
           "created_at": {
             "format": "date-time",
@@ -6226,6 +6226,28 @@
                 "type": "null"
               }
             ]
+          },
+          "included_in": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Included In"
+          },
+          "included_in_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Included In Name"
           },
           "name": {
             "title": "Name",

@@ -1095,8 +1095,8 @@ def delete_release(repositories: Repositories, context: AuthzContext, team_id: s
 def issue_releases(repositories: Repositories, context: AuthzContext, issue_id: str) -> IssueReleaseListRead:
     """The releases one visible issue shipped in, newest first, each with its furthest stage.
 
-    A release a promotion carried is left out when that promotion is listed too,
-    so the issue reads as shipping once per stage rather than once per release.
+    A release a promotion carried is listed too, naming that promotion in
+    `included_in`, so every release the issue shipped in reads as its own row.
     """
     issue = load_visible_issue(repositories, context, issue_id)
     pairs = repositories.releases.list_for_issue(context.workspace_id, issue.issue_id)
@@ -1107,21 +1107,30 @@ def issue_releases(repositories: Repositories, context: AuthzContext, issue_id: 
     for release in releases:
         if release.team_id not in pipelines:
             pipelines[release.team_id] = pipeline_for(repositories, context.workspace_id, release.team_id)[0]
-    listed = {release.release_id for release in releases}
+    names = {release.release_id: release.name for release in releases}
     carried: dict[str, str] = {}
     for team_id, pipeline in pipelines.items():
         carried.update(included_in([row for row in releases if row.team_id == team_id], pipeline))
+    by_id = {release.release_id: release for release in releases}
+    missing = list(
+        dict.fromkeys(
+            (by_id[child_id].team_id, parent_id) for child_id, parent_id in carried.items() if parent_id not in names
+        )
+    )
+    for parent in repositories.releases.get_many(context.workspace_id, missing):
+        names[parent.release_id] = parent.name
     rows: list[IssueReleaseRead] = []
     for release in sorted(releases, key=lambda row: row.release_id, reverse=True):
-        if carried.get(release.release_id) in listed:
-            continue
         read = ReleaseRead.from_row(release, pipelines[release.team_id])
+        parent_id = carried.get(release.release_id)
         rows.append(
             IssueReleaseRead(
                 release_id=read.release_id,
                 team_id=read.team_id,
                 name=read.name,
                 current_stage=read.current_stage,
+                included_in=parent_id,
+                included_in_name=names.get(parent_id) if parent_id else None,
                 created_at=read.created_at,
             )
         )

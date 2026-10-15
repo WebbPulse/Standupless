@@ -2597,6 +2597,8 @@ class IssueListRead(TypedDict):
 class IssueReleaseRead(TypedDict):
     created_at: str
     current_stage: NotRequired[ReleaseStageRead | None]
+    included_in: NotRequired[str | None]
+    included_in_name: NotRequired[str | None]
     name: str
     release_id: str
     team_id: str
