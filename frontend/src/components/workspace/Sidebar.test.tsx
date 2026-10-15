@@ -33,7 +33,7 @@ import {
 } from '../../hooks/useCreateTeam';
 import { triageSummaryKey } from '../../lib/queryKeys';
 import type {
-  FavoriteListRead,
+  FavoriteRead,
   ReviewsRead,
   SavedViewRead,
   TeamRead,
@@ -48,7 +48,7 @@ const setTeamOrder =
   vi.fn<(workspaceId: string, teamIds: string[]) => Promise<TeamRead[]>>();
 const getInboxCount = vi.fn<() => Promise<{ count: number }>>();
 const listViews = vi.fn<() => Promise<SavedViewRead[]>>();
-const listFavorites = vi.fn<() => Promise<FavoriteListRead>>();
+const listFavorites = vi.fn<() => Promise<FavoriteRead[]>>();
 const getTriageSummary = vi.fn<() => Promise<TriageSummaryRead>>();
 const getReviews = vi.fn<() => Promise<ReviewsRead>>();
 
@@ -220,7 +220,7 @@ beforeEach(() => {
   listViews.mockReset();
   listViews.mockResolvedValue([]);
   listFavorites.mockReset();
-  listFavorites.mockResolvedValue({ favorites: [] });
+  listFavorites.mockResolvedValue([]);
   getTriageSummary.mockReset();
   getTriageSummary.mockResolvedValue({ teams: [] });
   getReviews.mockReset();
@@ -545,20 +545,18 @@ describe('creating from the sidebar', () => {
   });
 
   it('lists the caller favorites in their own order with links to each', async () => {
-    listFavorites.mockResolvedValue({
-      favorites: [
-        { kind: 'view', target_id: 'view-1', title: 'My bugs' },
-        {
-          kind: 'issue',
-          target_id: 'issue-1',
-          title: 'Fix the login',
-          issue_key: 'ENG-7',
-          team_id: 'team-1',
-          team_key_prefix: 'ENG',
-        },
-        { kind: 'cycle', target_id: 'cycle-1', title: 'Lost its team' },
-      ],
-    });
+    listFavorites.mockResolvedValue([
+      { kind: 'view', target_id: 'view-1', title: 'My bugs' },
+      {
+        kind: 'issue',
+        target_id: 'issue-1',
+        title: 'Fix the login',
+        issue_key: 'ENG-7',
+        team_id: 'team-1',
+        team_key_prefix: 'ENG',
+      },
+      { kind: 'cycle', target_id: 'cycle-1', title: 'Lost its team' },
+    ]);
     renderSidebar();
 
     const section = await screen.findByTestId('sidebar-favorites');

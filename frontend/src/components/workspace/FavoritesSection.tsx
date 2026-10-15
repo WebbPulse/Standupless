@@ -213,7 +213,10 @@ export const FavoritesSection: React.FC<FavoritesSectionProps> = ({
                     : favorite.title
                 }
                 className={(state) =>
-                  cn(rowClass(state), 'pr-8 pointer-coarse:pr-12')
+                  cn(
+                    rowClass(state),
+                    'pr-8 group-data-[pointer]/nav:hover:text-text pointer-coarse:pr-12'
+                  )
                 }
                 onClick={onNavigate}
                 onKeyDown={(event) => {
