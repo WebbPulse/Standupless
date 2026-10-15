@@ -3219,7 +3219,8 @@ export type ImportField =
   | 'estimate'
   | 'due_date'
   | 'source_key'
-  | 'created_at';
+  | 'created_at'
+  | 'parent';
 
 /** The body both the dry run and the import take. A null mapping value unmaps that field. */
 export interface IssueImportRequest {
@@ -3250,6 +3251,7 @@ export interface ImportRowRead {
   due_date?: string | null;
   source_key?: string | null;
   created_at?: string | null;
+  parent_row?: number | null;
   importable: boolean;
 }
 
@@ -3271,6 +3273,7 @@ export interface IssueImportPreviewRead {
   rows: ImportRowRead[];
   new_labels: string[];
   statuses: StatusMappingRead[];
+  parent_links?: number;
 }
 
 /** Where an issue import job is. */
@@ -3294,6 +3297,7 @@ export interface IssueImportRead {
   created_count: number;
   skipped_count: number;
   labels_created: number;
+  linked_count?: number;
   problem_count: number;
   problems: RowProblemRead[];
   problems_truncated: boolean;

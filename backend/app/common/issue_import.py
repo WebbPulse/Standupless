@@ -12,6 +12,13 @@ writes a page twice. Each row's issue id is derived from the import id and the
 row's line, so a page that failed halfway and runs again finds the issues it
 already wrote and skips them.
 
+When the file maps a parent column, the cursor runs on past the last row for a
+second walk over the same rows: the link pass. It starts only after every row
+is written, so a child may come before its parent in the file, and it resolves
+each parent within the file and sets `parent_id` on the child. The link write
+keeps the bulk marker and only lands on a row of this import that has no parent
+yet, so a link page run twice links each issue once.
+
 Every imported issue carries `import_batch_id`, which the notify consumer, the
 GitHub sync stream consumer and the webhook fan-out read as "stay quiet", so a
 5000-row import sends no 5000 notifications. Rollups and search still index
@@ -39,6 +46,7 @@ from app.common.csv_import import (
     RawRow,
     RowProblem,
     parse_csv,
+    plan_parent_links,
     read_rows,
     resolve_mapping,
     status_category,
@@ -144,6 +152,7 @@ class ImportJob(BaseModel):
     created_count: int = 0
     skipped_count: int = 0
     labels_created: int = 0
+    linked_count: int = 0
     problems: list[RowProblem] = Field(default_factory=list)
     problems_truncated: bool = False
     error: Optional[str] = None
@@ -151,6 +160,20 @@ class ImportJob(BaseModel):
     def is_active(self, now: datetime) -> bool:
         """Whether this job still blocks a new one: queued or running, and not presumed lost."""
         return self.status in ("queued", "running") and now - self.updated_at < STALE_AFTER
+
+    @property
+    def links_parents(self) -> bool:
+        """Whether the file maps a parent column, so a link pass follows the writes."""
+        return bool(self.mapping.get("parent"))
+
+    @property
+    def processed_rows(self) -> int:
+        """How many rows have been written, which the link pass's cursor never runs past."""
+        return min(self.cursor, self.total_rows)
+
+    def final_cursor(self, total: int) -> int:
+        """The cursor the job is done at: past every row, and past them again when parents are linked."""
+        return total * 2 if self.links_parents else total
 
 
 @dataclass
@@ -185,6 +208,7 @@ class ResolvedRow:
     external_ref: Optional[str]
     created_at: Optional[datetime]
     problems: list[RowProblem]
+    parent_row: Optional[int] = None
 
     @property
     def importable(self) -> bool:
@@ -205,6 +229,7 @@ class Preview:
     rows: list[ResolvedRow]
     new_labels: list[str]
     statuses: list[tuple[str, str, int]]
+    parent_links: int = 0
 
 
 def bucket() -> str:
@@ -446,7 +471,13 @@ def preview_import(
     parsed = parse_csv(text)
     mapping = resolve_mapping(parsed.headers, preset, overrides)
     lookup = load_lookup(repositories, workspace_id, team_id)
-    resolved = [resolve_row(repositories, lookup, workspace_id, raw) for raw in read_rows(parsed, mapping)]
+    raws = read_rows(parsed, mapping)
+    resolved = [resolve_row(repositories, lookup, workspace_id, raw) for raw in raws]
+    plan = plan_parent_links(raws)
+    for row in resolved:
+        row.parent_row = plan.links.get(row.line)
+        if row.line in plan.problems:
+            row.problems.append(plan.problems[row.line])
     problems = [problem for row in resolved for problem in row.problems]
     new_labels: dict[str, str] = {}
     statuses: dict[tuple[str, str], int] = {}
@@ -468,6 +499,7 @@ def preview_import(
         rows=resolved[:PREVIEW_ROWS],
         new_labels=sorted(new_labels.values(), key=str.lower),
         statuses=[(source, name, count) for (source, name), count in sorted(statuses.items())],
+        parent_links=len(plan.links),
     )
 
 
@@ -680,12 +712,105 @@ def _write_issue(repositories: Any, job: ImportJob, lookup: TeamLookup, row: Res
     return True
 
 
+def _link_parent(repositories: Any, job: ImportJob, line: int, parent_line: int) -> Optional[RowProblem]:
+    """Make one imported row a sub-issue of another, answering the warning when it cannot be.
+
+    A row this import already linked to the same parent counts as linked, so a
+    re-run is a no-op. The child's history gets the parent change and the parent's
+    gets the child, as a person's edit would write them, while the bulk marker
+    keeps both off the notification and webhook paths.
+    """
+    from app.common.db.dynamo.activity import build_activity
+    from app.common.relation_effects import child_activity
+
+    child_id = row_issue_id(job.import_id, line)
+    parent_id = row_issue_id(job.import_id, parent_line)
+    parent = repositories.issues.get(job.workspace_id, parent_id)
+    if parent is None or parent.team_id != job.team_id or parent.parent_id:
+        return RowProblem(
+            row=line, field="parent", message=f"The issue from row {parent_line} cannot be a parent, left without one"
+        )
+    if repositories.issues.link_imported_parent(job.workspace_id, child_id, parent_id, job.import_id):
+        child = repositories.issues.get(job.workspace_id, child_id)
+        if child is not None:
+            repositories.activity.record_many(
+                [
+                    build_activity(
+                        job.workspace_id,
+                        job.team_id,
+                        child_id,
+                        job.requested_by,
+                        "field_changed",
+                        field="parent_id",
+                        from_value=None,
+                        to_value=parent_id,
+                        source=job.source,
+                    ),
+                    *child_activity(
+                        repositories, job.workspace_id, job.requested_by, child, None, parent_id, job.source
+                    ),
+                ]
+            )
+        return None
+    current = repositories.issues.get(job.workspace_id, child_id)
+    if current is not None and current.parent_id == parent_id:
+        return None
+    return RowProblem(
+        row=line, field="parent", message="The issue changed after it was imported, left without a parent"
+    )
+
+
+def _run_link_page(repositories: Any, job: ImportJob, parsed: ParsedCsv, cursor: int) -> ImportJob:
+    """Link the parents of the page of rows the link pass's `cursor` points at, and move the cursor on.
+
+    The whole file is read again for the plan, because a row's parent may sit on
+    any page. The last link page marks the job completed and tells the requester.
+    """
+    total = len(parsed.rows)
+    start = cursor - total
+    stop = min(start + PAGE_SIZE, total)
+    raws = read_rows(parsed, job.mapping)
+    plan = plan_parent_links(raws)
+    linked = 0
+    problems: list[RowProblem] = []
+    for raw in raws[start:stop]:
+        if raw.line in plan.problems:
+            problems.append(plan.problems[raw.line])
+        parent_line = plan.links.get(raw.line)
+        if parent_line is None:
+            continue
+        problem = _link_parent(repositories, job, raw.line, parent_line)
+        if problem is None:
+            linked += 1
+        else:
+            problems.append(problem)
+    kept = [*job.problems, *problems]
+    done = total + stop >= job.final_cursor(total)
+    updated = save_job(
+        job.model_copy(
+            update={
+                "cursor": total + stop,
+                "page_attempts": 0,
+                "linked_count": job.linked_count + linked,
+                "problems": kept[:MAX_PROBLEMS],
+                "problems_truncated": job.problems_truncated or len(kept) > MAX_PROBLEMS,
+                "status": "completed" if done else "running",
+                "finished_at": utc_now() if done else None,
+            }
+        )
+    )
+    if done:
+        notify(repositories, updated)
+    return updated
+
+
 def run_page(repositories: Any, workspace_id: str, import_id: str, cursor: int) -> ImportJob | None:
     """Write the page of rows that starts at `cursor` and move the cursor past it.
 
     A finished job, or a cursor that is not the job's current one, writes
-    nothing, so a duplicate message is harmless. The last page marks the job
-    completed and tells the requester.
+    nothing, so a duplicate message is harmless. A cursor past the last row is a
+    page of the link pass. The last page marks the job completed and tells the
+    requester.
     """
     job = load_job(workspace_id, import_id)
     if job is None or job.status not in ("queued", "running") or job.cursor != cursor:
@@ -700,6 +825,8 @@ def run_page(repositories: Any, workspace_id: str, import_id: str, cursor: int) 
         )
     )
     parsed: ParsedCsv = parse_csv(_load_source(workspace_id, import_id))
+    if job.links_parents and cursor >= len(parsed.rows):
+        return _run_link_page(repositories, job, parsed, cursor)
     lookup = load_lookup(repositories, workspace_id, job.team_id)
     stop = min(cursor + PAGE_SIZE, len(parsed.rows))
     rows = [
@@ -714,7 +841,7 @@ def run_page(repositories: Any, workspace_id: str, import_id: str, cursor: int) 
         _write_issue(repositories, job, lookup, row)
         created += 1
     problems = [*job.problems, *(problem for row in rows for problem in row.problems)]
-    done = stop >= len(parsed.rows)
+    done = stop >= job.final_cursor(len(parsed.rows))
     updated = save_job(
         job.model_copy(
             update={

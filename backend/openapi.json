@@ -4436,6 +4436,18 @@
             "title": "Labels",
             "type": "array"
           },
+          "parent_row": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The row of the file this row becomes a sub-issue of.",
+            "title": "Parent Row"
+          },
           "priority": {
             "title": "Priority",
             "type": "string"
@@ -6103,6 +6115,12 @@
             "title": "New Labels",
             "type": "array"
           },
+          "parent_links": {
+            "default": 0,
+            "description": "How many rows would become sub-issues of another row.",
+            "title": "Parent Links",
+            "type": "integer"
+          },
           "problems": {
             "items": {
               "$ref": "#/components/schemas/RowProblemRead"
@@ -6192,6 +6210,12 @@
           },
           "labels_created": {
             "title": "Labels Created",
+            "type": "integer"
+          },
+          "linked_count": {
+            "default": 0,
+            "description": "How many imported issues were made sub-issues of another.",
+            "title": "Linked Count",
             "type": "integer"
           },
           "preset": {
@@ -6322,7 +6346,7 @@
                 "type": "null"
               }
             ],
-            "description": "Overrides of the preset's mapping, field to header name; null unmaps a field. Fields are title, description, status, priority, assignee, labels, estimate, due_date, source_key and created_at.",
+            "description": "Overrides of the preset's mapping, field to header name; null unmaps a field. Fields are title, description, status, priority, assignee, labels, estimate, due_date, source_key, created_at and parent. A parent column names another row of the file by its source key or its title.",
             "title": "Mapping"
           },
           "preset": {

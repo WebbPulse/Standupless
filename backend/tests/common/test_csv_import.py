@@ -3,8 +3,10 @@
 Everything here is pure text handling, so these tests need no tables. What they
 watch: each preset maps its own tracker's export by itself, a caller's mapping
 is checked against the file, Jira's repeated label columns are read together,
-the date and priority shapes other trackers write are understood, and a row with
-no title is an error while a bad optional value is only a warning.
+the date and priority shapes other trackers write are understood, a row with
+no title is an error while a bad optional value is only a warning, and a parent
+column resolves against the other rows by key, tracker id or unique title, with
+every link it cannot make left as a warning.
 """
 
 from __future__ import annotations
@@ -16,12 +18,14 @@ import pytest
 from app.common.csv_import import (
     MAX_ROWS,
     CsvRejected,
+    ParentPlan,
     auto_mapping,
     normalise_estimate,
     parse_csv,
     parse_date,
     parse_datetime,
     parse_priority,
+    plan_parent_links,
     read_rows,
     resolve_mapping,
     split_labels,
@@ -79,6 +83,7 @@ def test_the_jira_preset_maps_a_jira_export() -> None:
         "due_date": "Due date",
         "source_key": "Issue key",
         "created_at": "Created",
+        "parent": None,
     }
 
 
@@ -256,3 +261,80 @@ def test_a_date_drops_its_time() -> None:
 def test_estimates_read_as_the_team_scales_write_them(value: str, expected: str | None) -> None:
     """Whole numbers lose their decimal point and T-shirt sizes read in capitals."""
     assert normalise_estimate(value) == expected
+
+
+JIRA_TREE = (
+    "Summary,Issue key,Issue id,Parent,Parent summary\n"
+    "Login fails on Safari,PROJ-3,10003,10001,Auth epic\n"
+    "Auth epic,PROJ-1,10001,,\n"
+    "Reset password,PROJ-2,10002,PROJ-1,Auth epic\n"
+)
+
+LINEAR_TREE = (
+    "ID,Title,Parent issue\n"
+    "ENG-2,Child by key,ENG-1\n"
+    "ENG-1,Parent,\n"
+    "ENG-3,Child by title,parent\n"
+)
+
+
+def _plan(text: str, preset: str) -> tuple[dict[str, str | None], ParentPlan]:
+    """The mapping and the parent plan for one whole file."""
+    parsed = parse_csv(text)
+    mapping = auto_mapping(parsed.headers, preset)
+    return mapping, plan_parent_links(read_rows(parsed, mapping))
+
+
+def test_a_jira_parent_resolves_by_issue_id_or_key_in_any_row_order() -> None:
+    """Jira's `Parent` names the numeric `Issue id` or the key, and a child above its parent still links."""
+    mapping, plan = _plan(JIRA_TREE, "jira")
+
+    assert mapping["parent"] == "Parent"
+    assert plan.links == {2: 3, 4: 3}
+    assert plan.problems == {}
+
+
+def test_jiras_older_parent_id_column_is_mapped() -> None:
+    """An export from before Jira renamed the column still finds the parent."""
+    assert auto_mapping(("Summary", "Issue key", "Parent id"), "jira")["parent"] == "Parent id"
+
+
+def test_a_linear_parent_resolves_by_identifier_or_title() -> None:
+    """Linear's `Parent issue` column names the parent's identifier, and a title also finds it."""
+    mapping, plan = _plan(LINEAR_TREE, "linear")
+
+    assert mapping["parent"] == "Parent issue"
+    assert plan.links == {2: 3, 4: 3}
+
+
+def test_a_parent_missing_from_the_file_is_a_warning() -> None:
+    """The child still imports, without a parent, and says why."""
+    _, plan = _plan("ID,Title,Parent issue\nENG-2,Child,ENG-99\n", "linear")
+
+    assert plan.links == {}
+    problem = plan.problems[2]
+    assert (problem.field, problem.severity) == ("parent", "warning")
+    assert "ENG-99" in problem.message
+
+
+def test_an_ambiguous_title_or_a_skipped_parent_row_is_a_warning() -> None:
+    """A title two rows share is not guessed, and a parent row that will not import is not linked."""
+    text = "Title,Parent,Key\nTwin,,A\nTwin,,B\nChild,Twin,C\n,,D\nOrphan,D,E\n"
+
+    _, plan = _plan(text, "generic")
+
+    assert plan.links == {}
+    assert "More than one row" in plan.problems[4].message
+    assert "No row in the file" in plan.problems[6].message
+
+
+def test_sub_issues_stay_one_level_deep_and_loops_are_refused() -> None:
+    """A grandchild is left at the top, and two rows naming each other are both left unlinked."""
+    text = "Key,Title,Parent\nA,Top,\nB,Middle,A\nC,Bottom,B\nX,Loop one,Y\nY,Loop two,X\nZ,Self,Z\n"
+
+    _, plan = _plan(text, "generic")
+
+    assert plan.links == {3: 2}
+    assert set(plan.problems) == {4, 5, 6, 7}
+    assert "one level deep" in plan.problems[4].message
+    assert "own parent" in plan.problems[7].message

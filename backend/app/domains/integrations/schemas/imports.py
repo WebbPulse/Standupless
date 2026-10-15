@@ -27,7 +27,8 @@ class IssueImportRequest(BaseModel):
         description=(
             "Overrides of the preset's mapping, field to header name; null unmaps a field. "
             "Fields are title, description, status, priority, assignee, labels, estimate, "
-            "due_date, source_key and created_at."
+            "due_date, source_key, created_at and parent. A parent column names another row of the "
+            "file by its source key or its title."
         ),
     )
 
@@ -59,6 +60,7 @@ class ImportRowRead(BaseModel):
     due_date: Optional[str] = None
     source_key: Optional[str] = None
     created_at: Optional[datetime] = None
+    parent_row: Optional[int] = Field(default=None, description="The row of the file this row becomes a sub-issue of.")
     importable: bool
 
     @classmethod
@@ -75,6 +77,7 @@ class ImportRowRead(BaseModel):
             due_date=row.due_date,
             source_key=row.external_ref,
             created_at=row.created_at,
+            parent_row=row.parent_row,
             importable=row.importable,
         )
 
@@ -99,6 +102,7 @@ class IssueImportPreviewRead(BaseModel):
     rows: list[ImportRowRead]
     new_labels: list[str]
     statuses: list[StatusMappingRead]
+    parent_links: int = Field(default=0, description="How many rows would become sub-issues of another row.")
 
     @classmethod
     def from_preview(cls, preview: Preview) -> "IssueImportPreviewRead":
@@ -116,6 +120,7 @@ class IssueImportPreviewRead(BaseModel):
                 StatusMappingRead(source=source, status_name=name, count=count)
                 for source, name, count in preview.statuses
             ],
+            parent_links=preview.parent_links,
         )
 
 
@@ -138,6 +143,7 @@ class IssueImportRead(BaseModel):
     created_count: int
     skipped_count: int
     labels_created: int
+    linked_count: int = Field(default=0, description="How many imported issues were made sub-issues of another.")
     problem_count: int
     problems: list[RowProblemRead]
     problems_truncated: bool
@@ -162,10 +168,11 @@ class IssueImportRead(BaseModel):
             started_at=job.started_at,
             finished_at=job.finished_at,
             total_rows=job.total_rows,
-            processed_rows=job.cursor,
+            processed_rows=job.processed_rows,
             created_count=job.created_count,
             skipped_count=job.skipped_count,
             labels_created=job.labels_created,
+            linked_count=job.linked_count,
             problem_count=len(job.problems),
             problems=[RowProblemRead.from_problem(problem) for problem in job.problems] if with_problems else [],
             problems_truncated=job.problems_truncated,
