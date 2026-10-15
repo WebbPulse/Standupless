@@ -25378,7 +25378,7 @@
     },
     "/api/workspaces/{workspace_id}/issues/by-key/{key}": {
       "get": {
-        "description": "One issue by its human key, `ABC-123` and case insensitive.\n\nDeclared before `/issues/{issue_id}` so `by-key` is not swallowed as an id, and\nthe prefix names the team, which is what makes this one indexed query. A key\nthe issue held before it moved to another team answers the issue under its new\nkey, visible by the team it now belongs to.",
+        "description": "One issue by its human key, `ABC-123` and case insensitive.\n\nDeclared before `/issues/{issue_id}` so `by-key` is not swallowed as an id, and\nthe prefix names the team, which is what makes this one indexed query. A key\nthe issue held before it moved to another team answers the issue under its new\nkey, visible by the team it now belongs to. Like the read by id, the answer\ncarries a weak `ETag` and an unchanged poll gets a 304.",
         "operationId": "read_issue_by_key_api_workspaces__workspace_id__issues_by_key__key__get",
         "parameters": [
           {
@@ -26375,7 +26375,7 @@
         ]
       },
       "get": {
-        "description": "One issue the caller may read.",
+        "description": "One issue the caller may read.\n\nThe answer carries a weak `ETag` over its body, so a poll that sends it back\nin `If-None-Match` gets a 304 with no body while the issue is unchanged.",
         "operationId": "read_issue_api_workspaces__workspace_id__issues__issue_id__get",
         "parameters": [
           {
@@ -28323,7 +28323,7 @@
     },
     "/api/workspaces/{workspace_id}/members": {
       "get": {
-        "description": "Everyone in the workspace, joined with their user rows for display.",
+        "description": "Everyone in the workspace, joined with their user rows for display.\n\nThe answer carries a weak `ETag`, so an unchanged poll gets a 304.",
         "operationId": "list_members_api_workspaces__workspace_id__members_get",
         "parameters": [
           {
@@ -30716,7 +30716,7 @@
     },
     "/api/workspaces/{workspace_id}/teams": {
       "get": {
-        "description": "Every team in the workspace the caller may see, in the caller's saved order.\n\nA guest sees only the teams they are a member of, which is the same rule\nthe single team route applies, read off the context rather than repeated.\nTeams the saved order does not name follow it, oldest first. With\n`parent_team_id`, only that team's sub-teams.",
+        "description": "Every team in the workspace the caller may see, in the caller's saved order.\n\nA guest sees only the teams they are a member of, which is the same rule\nthe single team route applies, read off the context rather than repeated.\nTeams the saved order does not name follow it, oldest first. With\n`parent_team_id`, only that team's sub-teams.\n\nThe answer carries a weak `ETag` over its body, so a poll that sends it\nback in `If-None-Match` gets a 304 with no body while nothing changed.",
         "operationId": "list_teams_api_workspaces__workspace_id__teams_get",
         "parameters": [
           {
@@ -32090,7 +32090,7 @@
     },
     "/api/workspaces/{workspace_id}/teams/{team_id}/labels": {
       "get": {
-        "description": "Every label of the team, its own and the inherited ones, in name order.",
+        "description": "Every label of the team, its own and the inherited ones, in name order.\n\nThe answer carries a weak `ETag`, so an unchanged poll gets a 304.",
         "operationId": "list_labels_api_workspaces__workspace_id__teams__team_id__labels_get",
         "parameters": [
           {
@@ -32564,7 +32564,7 @@
     },
     "/api/workspaces/{workspace_id}/teams/{team_id}/members": {
       "get": {
-        "description": "Everyone explicitly added to this team, joined with their user rows.",
+        "description": "Everyone explicitly added to this team, joined with their user rows.\n\nThe answer carries a weak `ETag`, so an unchanged poll gets a 304.",
         "operationId": "list_team_members_api_workspaces__workspace_id__teams__team_id__members_get",
         "parameters": [
           {
@@ -34261,7 +34261,7 @@
     },
     "/api/workspaces/{workspace_id}/teams/{team_id}/statuses": {
       "get": {
-        "description": "Every status of the team, its own and the inherited ones, ordered by position.",
+        "description": "Every status of the team, its own and the inherited ones, ordered by position.\n\nThe answer carries a weak `ETag`, so an unchanged poll gets a 304.",
         "operationId": "list_statuses_api_workspaces__workspace_id__teams__team_id__statuses_get",
         "parameters": [
           {
@@ -36311,7 +36311,7 @@
     },
     "/api/workspaces/{workspace_id}/views": {
       "get": {
-        "description": "Saved views the caller may read, narrowed by scope.\n\n`all` is the caller's own views plus the team views of teams they can see,\nwhich for a guest is only the teams they hold a membership in, so the listing\nis built from what they may read rather than filtered afterwards.",
+        "description": "Saved views the caller may read, narrowed by scope.\n\n`all` is the caller's own views plus the team views of teams they can see,\nwhich for a guest is only the teams they hold a membership in, so the listing\nis built from what they may read rather than filtered afterwards. The\nanswer carries a weak `ETag`, so an unchanged poll gets a 304.",
         "operationId": "list_views_api_workspaces__workspace_id__views_get",
         "parameters": [
           {

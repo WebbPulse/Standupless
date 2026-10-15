@@ -58,9 +58,6 @@ import { showErrorToast, showToast } from '../../lib/toast';
 import type { ViewListScope } from '../../types/Api';
 import { LOOKUP_POLL_MS } from '../../lib/polling';
 
-/** How often the view list is re-read while the page is open. */
-const POLL_MS = 60000;
-
 /** How often a row's issue count is re-read. */
 const COUNT_POLL_MS = 300000;
 

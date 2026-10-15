@@ -37,8 +37,11 @@ application's path helpers. A path under one of these is not the product's to
 serve, so it is not checked against the contract.
 """
 
-UNCHECKED_MODULES = frozenset({"authorizerDenial.ts", "client.ts", "sharedFetch.ts"})
+UNCHECKED_MODULES = frozenset({"authorizerDenial.ts", "client.ts", "conditional.ts", "sharedFetch.ts"})
 """Modules that configure the client or its transport rather than build a request path."""
+
+CONDITIONAL_GET = "conditionalGet"
+"""The conditional read helper, whose first argument is a GET path like the client's own."""
 
 
 def _contract_paths() -> "set[tuple[str, str]]":
@@ -177,15 +180,17 @@ def _first_argument(source: str, start: int) -> str:
 def _calls(source: str) -> "list[tuple[str, str]]":
     """Every `apiClient.<method>(<pathExpression>)` in one module, as method and expression.
 
-    The generic type argument and the options argument are both skipped: the path
-    is always the first argument, and only its text is needed.
+    A `conditionalGet(<pathExpression>, ...)` counts as a GET, since it sends its
+    path through `apiClient.get`. The generic type argument and the options
+    argument are both skipped: the path is always the first argument, and only
+    its text is needed.
     """
-    pattern = re.compile(r"apiClient\.(" + "|".join(METHODS) + r")\s*(?:<[^(]*>)?\s*\(")
+    pattern = re.compile(r"(?:apiClient\.(" + "|".join(METHODS) + r")|\b" + CONDITIONAL_GET + r")\s*(?:<[^(]*>)?\s*\(")
     found: list[tuple[str, str]] = []
     for match in pattern.finditer(source):
         argument = _first_argument(source, match.end() - 1)
         if argument:
-            found.append((match.group(1).upper(), argument))
+            found.append(((match.group(1) or "get").upper(), argument))
     return found
 
 
