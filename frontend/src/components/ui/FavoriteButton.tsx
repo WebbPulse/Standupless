@@ -10,6 +10,7 @@ import { useFavorites } from '../../hooks/useFavorites';
 import { useShortcut, type ShortcutScope } from '../../hooks/useShortcuts';
 import { cn } from '../../lib/cn';
 import { showToast } from '../../lib/toast';
+import type { FavoritePreview } from '../../lib/favorites';
 import type { FavoriteKind } from '../../types/Api';
 import { IconButton } from './button';
 
@@ -23,6 +24,8 @@ export interface FavoriteButtonProps {
   targetId: string;
   /** The name the new sidebar row shows until the favorites read answers. */
   title: string;
+  /** The issue key or team prefix the new row links with before the read answers. */
+  preview?: FavoritePreview;
   /** The cycle's team, needed only for a cycle. */
   teamId?: string | null | undefined;
   /** Where the shortcut applies. An issue page binds it in the issue scope. */
@@ -38,6 +41,7 @@ export const FavoriteButton: React.FC<FavoriteButtonProps> = ({
   kind,
   targetId,
   title,
+  preview,
   teamId = null,
   scope = 'page',
   bindShortcut = true,
@@ -48,13 +52,15 @@ export const FavoriteButton: React.FC<FavoriteButtonProps> = ({
   const label = starred ? 'Remove from favorites' : 'Add to favorites';
 
   const run = (): void => {
-    void toggle({ kind, target_id: targetId, team_id: teamId }, title).then(
-      (now) => {
-        if (now !== starred) {
-          showToast(now ? 'Added to favorites' : 'Removed from favorites');
-        }
+    void toggle(
+      { kind, target_id: targetId, team_id: teamId },
+      title,
+      preview
+    ).then((now) => {
+      if (now !== starred) {
+        showToast(now ? 'Added to favorites' : 'Removed from favorites');
       }
-    );
+    });
   };
 
   useShortcut({

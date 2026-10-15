@@ -528,6 +528,7 @@ export const IssueView: React.FC<IssueViewProps> = ({
         kind="issue"
         targetId={issue.id}
         title={issue.title}
+        preview={{ issue_key: issue.key }}
         scope="issue"
       />
     );

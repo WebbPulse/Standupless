@@ -15,6 +15,14 @@ import {
   viewPath,
 } from './paths';
 
+/** What a star knows about its target beyond the title, so the new row links and draws before the read answers. */
+export type FavoritePreview = Partial<
+  Pick<
+    FavoriteRead,
+    'issue_key' | 'team_key_prefix' | 'status' | 'icon' | 'color'
+  >
+>;
+
 /** The caller's favorites and the writes that change them. */
 export interface FavoritesState {
   /** The favorites in sidebar order, or null before the first read. */
@@ -22,10 +30,14 @@ export interface FavoritesState {
   /** Whether the caller starred this target. */
   isFavorite: (kind: FavoriteKind, targetId: string) => boolean;
   /**
-   * Stars or unstars a target. `title` draws the new row until the read
-   * answers. Resolves to whether it is now a favorite.
+   * Stars or unstars a target. `title` and `preview` draw the new row until
+   * the read answers. Resolves to whether it is now a favorite.
    */
-  toggle: (ref: FavoriteRef, title: string) => Promise<boolean>;
+  toggle: (
+    ref: FavoriteRef,
+    title: string,
+    preview?: FavoritePreview
+  ) => Promise<boolean>;
   /** Unstars one favorite. */
   remove: (kind: FavoriteKind, targetId: string) => Promise<void>;
   /** Puts the favorites in a new order, shown at once. */
