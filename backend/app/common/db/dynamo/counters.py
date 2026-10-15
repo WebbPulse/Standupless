@@ -8,6 +8,10 @@ Plan usage is one row per workspace and capped resource, `plan#<resource>`. Ever
 create adds to it in the same transaction as its row, conditional on the total
 staying within the plan, and every path that frees a slot subtracts from it, so
 two racing creates at the last slot cannot both land.
+
+A one-off repair sweep records that it finished a team as `sweep#<team>#<name>`
+with the version it ran at, so a later version runs once more and an earlier
+one never again.
 """
 
 from __future__ import annotations
@@ -42,6 +46,18 @@ def moved_key(team_id: str, number: int) -> str:
     """The sort key recording which issue a number of one team now names after a move."""
     return f"{moved_prefix(team_id)}{number}"
 
+
+def sweep_prefix(team_id: str) -> str:
+    """The sort key prefix every repair sweep marker of one team shares."""
+    return f"sweep#{team_id}#"
+
+
+def sweep_key(name: str, team_id: str) -> str:
+    """The sort key recording that one repair sweep finished one team."""
+    return f"{sweep_prefix(team_id)}{name}"
+
+
+SWEEP_VERSION_ATTRIBUTE = "sweep_version"
 
 PLAN_USAGE_PREFIX = "plan#"
 
@@ -150,18 +166,38 @@ class CounterRepository:
         value = item.get(MOVED_ISSUE_ATTRIBUTE)
         return str(value) if value else None
 
+    def swept(self, workspace_id: str, team_id: str, name: str, version: int) -> bool:
+        """Whether the named repair sweep already finished this team at `version` or later."""
+        if not workspace_id or not team_id:
+            return False
+        item = self._repository.get({"workspace_id": workspace_id, "counter_key": sweep_key(name, team_id)})
+        return item is not None and int(item.get(SWEEP_VERSION_ATTRIBUTE, 0) or 0) >= version
+
+    def mark_swept(self, workspace_id: str, team_id: str, name: str, version: int) -> None:
+        """Record that the named repair sweep finished this team at `version`."""
+        self._repository.put(
+            {
+                "workspace_id": workspace_id,
+                "counter_key": sweep_key(name, team_id),
+                SWEEP_VERSION_ATTRIBUTE: version,
+            }
+        )
+
     def delete_for_team(self, workspace_id: str, team_id: str) -> bool:
         """Remove one team's counter and its retired numbers, reporting whether a counter was there.
 
         Deleting it is deliberate: a team that is gone cannot have its numbers
         reused, because the team id is never reissued either. The retired numbers
-        go too, since the prefix that spelled them no longer names the team.
+        go too, since the prefix that spelled them no longer names the team, and so
+        do its repair sweep markers.
         """
-        retired = list(
-            self._repository.iter_query(
-                Key("workspace_id").eq(workspace_id) & Key("counter_key").begins_with(moved_prefix(team_id))
+        retired = [
+            item
+            for prefix in (moved_prefix(team_id), sweep_prefix(team_id))
+            for item in self._repository.iter_query(
+                Key("workspace_id").eq(workspace_id) & Key("counter_key").begins_with(prefix)
             )
-        )
+        ]
         if retired:
             self._repository.delete_many(
                 [{"workspace_id": workspace_id, "counter_key": item["counter_key"]} for item in retired]

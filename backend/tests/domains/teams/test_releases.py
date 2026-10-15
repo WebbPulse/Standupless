@@ -30,6 +30,7 @@ from app.common.db.dynamo.releases import (
     pipeline_key,
     release_key,
 )
+from app.common.db.dynamo.team_config import default_sla_settings
 from app.common.releases import FOLD_SWEEP_VERSION, name_candidates
 from tests.domains.helpers import (
     ADMIN,
@@ -364,6 +365,36 @@ def test_reaching_a_stage_moves_its_issues_forward_only(client: TestClient, repo
     assert len(moves) == 2
     assert {row["release_id"] for row in moves} == {release_id}
     assert repositories.activity.list_for_issue(WORKSPACE, canceled.issue_id).items == []
+
+
+def test_a_release_finishing_an_issue_drops_its_sla_timer(client: TestClient, repositories: Any) -> None:
+    """A move to a started stage keeps a running SLA timer and a move to a completed one clears it."""
+    settings = default_sla_settings(WORKSPACE, TEAM).model_copy(update={"enabled": True, "medium_hours": 72})
+    repositories.team_config.put_sla_settings(settings)
+    sign_in(client, ADMIN)
+    stages = [{"name": "Staging", "status_id": "In Progress"}, {"name": "Production", "status_id": "Done"}]
+    assert client.put(PIPELINE, json={"stages": stages}).status_code == 200
+    started = datetime(2026, 9, 1, 12, 0, tzinfo=timezone.utc)
+    issue = repositories.issues.replace(
+        _issue(repositories, TEAM, "APO", 1).model_copy(
+            update={"priority": "medium", "sla_started_at": started, "sla_breaches_at": started + timedelta(hours=72)}
+        )
+    )
+    sign_in(client, MEMBER)
+
+    created = client.post(RELEASES, json={"stage": "Staging", "issues": ["APO-1"]})
+    assert created.status_code == 201, created.text
+    staged = repositories.issues.get(WORKSPACE, issue.issue_id)
+    assert staged.status_id == _status_id(repositories, "In Progress")
+    assert staged.sla_started_at == started
+    assert staged.sla_breaches_at == started + timedelta(hours=72)
+
+    advanced = client.post(f"{RELEASES}/{created.json()['release_id']}/stages", json={"stage": "Production"})
+    assert advanced.status_code == 200, advanced.text
+    shipped = repositories.issues.get(WORKSPACE, issue.issue_id)
+    assert shipped.status_id == _status_id(repositories, "Done")
+    assert shipped.sla_started_at is None
+    assert shipped.sla_breaches_at is None
 
 
 def test_an_issue_added_later_gets_the_reached_stages_status(client: TestClient, repositories: Any) -> None:
