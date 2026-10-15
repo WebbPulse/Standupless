@@ -106,18 +106,31 @@ def _values(raw: Iterable[str] | str | None, *, me: str | None = None, nullable:
     return frozenset(resolved)
 
 
-def _categories(raw: Iterable[str] | str | None) -> FilterValues:
+def _comma_split(raw: Iterable[str] | str | None) -> FilterValues:
+    """A fixed-vocabulary filter's values with any comma list split into its items.
+
+    Only for filters whose values are a fixed set of words, such as status
+    categories, where no value can hold a comma, so `completed,cancelled` reads as
+    the two categories an agent meant rather than one unknown value.
+    """
+    values = _values(raw, nullable=False)
+    return frozenset(part.strip() for value in values for part in str(value).split(",") if part.strip())
+
+
+def _categories(raw: Iterable[str] | str | None, *, name: str = "status_category") -> FilterValues:
     """Status categories normalised to the stored spelling, refusing unknown ones.
 
     Refused rather than matched against nothing, because a misspelt category would
-    otherwise read as a filter that happens to have no results.
+    otherwise read as a filter that happens to have no results. A comma list is
+    taken as several categories. `name` is the filter the refusal names.
     """
-    values = _values(raw, nullable=False)
     normalised: set[Optional[str]] = set()
-    for value in values:
+    for value in _comma_split(raw):
         candidate = CATEGORY_ALIASES.get(str(value).lower(), str(value).lower())
         if candidate not in STATUS_CATEGORIES:
-            raise UnknownStatusCategory(f"status_category must be one of: {', '.join(STATUS_CATEGORIES)}")
+            raise UnknownStatusCategory(
+                f"{name} must be one or more of: {', '.join(STATUS_CATEGORIES)}, as a list or comma separated"
+            )
         normalised.add(candidate)
     return frozenset(normalised)
 
@@ -125,7 +138,7 @@ def _categories(raw: Iterable[str] | str | None) -> FilterValues:
 def _sla_statuses(raw: Iterable[str] | str | None) -> FilterValues:
     """SLA statuses lower cased, refusing unknown ones for the same reason as categories."""
     normalised: set[Optional[str]] = set()
-    for value in _values(raw, nullable=False):
+    for value in _comma_split(raw):
         candidate = str(value).lower()
         if candidate not in SLA_STATUSES:
             raise UnknownSlaStatus(f"sla_status must be one of: {', '.join(SLA_STATUSES)}")
@@ -421,7 +434,7 @@ def build_issue_filter(
         status_ids=_values(status_id, nullable=False),
         status_ids_not=_values(status_id_not, nullable=False),
         status_categories=_categories(status_category),
-        status_categories_not=_categories(status_category_not),
+        status_categories_not=_categories(status_category_not, name="status_category_not"),
         assignee_ids=_values(assignee_id, me=user_id),
         assignee_ids_not=_values(assignee_id_not, me=user_id),
         creator_ids=_values(creator_id, me=user_id, nullable=False),
