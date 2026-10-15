@@ -78,9 +78,7 @@ const appleAppSiteAssociation = (
   return `${JSON.stringify(
     {
       applinks: {
-        details: [
-          { appIDs: [app], components: [{ '/': MOBILE_LINK_PATH }] },
-        ],
+        details: [{ appIDs: [app], components: [{ '/': MOBILE_LINK_PATH }] }],
       },
       webcredentials: { apps: [app] },
     },

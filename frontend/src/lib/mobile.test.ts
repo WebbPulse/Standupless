@@ -11,7 +11,10 @@ const ORIGIN = 'https://standupless.dev';
 describe('mobileLinkPath', () => {
   it('routes a universal link on the app origin', () => {
     expect(
-      mobileLinkPath('https://standupless.dev/w/acme/issues/STUP-1?x=1#c', ORIGIN)
+      mobileLinkPath(
+        'https://standupless.dev/w/acme/issues/STUP-1?x=1#c',
+        ORIGIN
+      )
     ).toBe('/w/acme/issues/STUP-1?x=1#c');
   });
 
