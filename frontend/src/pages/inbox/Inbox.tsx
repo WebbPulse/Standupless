@@ -147,10 +147,8 @@ const isInitiativeRow = (row: NotificationRead): boolean =>
   row.kind === 'initiative_update_due';
 
 /** The link to one initiative's updates tab. */
-const initiativeUpdatesTabPath = (
-  slug: string,
-  initiativeId: string
-): string => `${initiativePath(slug, initiativeId)}?tab=updates`;
+const initiativeUpdatesTabPath = (slug: string, initiativeId: string): string =>
+  `${initiativePath(slug, initiativeId)}?tab=updates`;
 
 /**
  * Whether a row tells a team admin a Slack or Discord channel was turned off.
