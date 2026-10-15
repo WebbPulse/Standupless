@@ -270,12 +270,7 @@ JIRA_TREE = (
     "Reset password,PROJ-2,10002,PROJ-1,Auth epic\n"
 )
 
-LINEAR_TREE = (
-    "ID,Title,Parent issue\n"
-    "ENG-2,Child by key,ENG-1\n"
-    "ENG-1,Parent,\n"
-    "ENG-3,Child by title,parent\n"
-)
+LINEAR_TREE = "ID,Title,Parent issue\nENG-2,Child by key,ENG-1\nENG-1,Parent,\nENG-3,Child by title,parent\n"
 
 
 def _plan(text: str, preset: str) -> tuple[dict[str, str | None], ParentPlan]:
