@@ -34,6 +34,19 @@ pending would mean a parent could never reach full progress.
 
 NOT_FOUND = {"error_code": "NOT_FOUND", "message": "Resource not found"}
 
+TRIAGE_STATUS_ID = "triage"
+"""The status id every client shows an issue awaiting triage under, and writes to send one there.
+
+Synthetic: no status row carries it. The issue keeps `in_triage` and a hidden real
+status, so the triage index and every stored row stay as they are.
+"""
+
+TRIAGE_STATUS_NAME = "Triage"
+"""The name the synthetic triage status shows under."""
+
+TRIAGE_STATUS_CATEGORY = "backlog"
+"""The category the synthetic triage status reports, as waiting work that has not started."""
+
 
 def unprocessable(message: str) -> HTTPException:
     """A 422 carrying the product's error envelope.
@@ -295,12 +308,28 @@ def lands_in_triage(repositories: Repositories, context: AuthzContext, team_id: 
     Only when the team has triage on: then an issue filed by a guest, by someone
     outside the team or by a workspace key lands there, and a member may ask for it.
     """
-    settings = repositories.team_config.get_triage_settings(context.workspace_id, team_id)
-    if settings is None or not settings.enabled:
+    if not triage_on(repositories, context.workspace_id, team_id):
         return False
     if requested or context.is_guest or is_service_subject(context.user_id):
         return True
     return repositories.memberships.get_team_membership(context.workspace_id, team_id, context.user_id) is None
+
+
+def triage_on(repositories: Repositories, workspace_id: str, team_id: str) -> bool:
+    """Whether one team has its triage inbox switched on."""
+    settings = repositories.team_config.get_triage_settings(workspace_id, team_id)
+    return settings is not None and settings.enabled
+
+
+def require_triage_on(repositories: Repositories, workspace_id: str, team_id: str) -> None:
+    """Hold that one team has triage on before an issue is sent there, or a 422."""
+    if not triage_on(repositories, workspace_id, team_id):
+        raise unprocessable("This team does not have triage turned on")
+
+
+def shown_status_id(issue: Issue) -> str:
+    """The status id an issue shows under: the synthetic triage one while it waits in triage."""
+    return TRIAGE_STATUS_ID if issue.in_triage else issue.status_id
 
 
 def require_team_reader(repositories: Repositories, context: AuthzContext, team_id: str) -> None:

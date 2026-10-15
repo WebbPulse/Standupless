@@ -43,7 +43,7 @@ from app.common.issue_filters import UnknownStatusCategory, build_issue_filter
 from app.common.issue_keys import current
 from app.common.issue_links import create_link, delete_link, list_links
 from app.common.issue_move import move_issue
-from app.common.issue_rules import require_team_reader, visible_team_ids
+from app.common.issue_rules import TRIAGE_STATUS_ID, TRIAGE_STATUS_NAME, require_team_reader, visible_team_ids
 from app.common.issue_subscribers import list_subscribers, subscribe, unsubscribe
 from app.common.issue_writes import bulk_update_issues, create_issue, list_issues, update_issue, walk_page
 from app.common.similar_issues import find_similar
@@ -151,8 +151,8 @@ def _filter_properties(*, with_assignee: bool = True) -> dict[str, Any]:
     """The issue list filters, spelled as the HTTP list's query parameters are."""
     properties: dict[str, Any] = {
         "team_id": string("Narrow to one team"),
-        "status_id": one_or_many("Any of these statuses"),
-        "status_id_not": one_or_many("None of these statuses"),
+        "status_id": one_or_many("Any of these statuses; 'triage' is issues awaiting triage"),
+        "status_id_not": one_or_many("None of these statuses; 'triage' leaves out issues awaiting triage"),
         "status_category": one_or_many("Any of these categories: backlog, unstarted, started, completed, cancelled"),
         "status_category_not": one_or_many("None of these categories, as a list or comma separated"),
         "label_id": one_or_many("Carrying any of these labels; 'none' is unlabelled"),
@@ -383,7 +383,7 @@ def _possible_duplicates(call: ToolCall, issue: Issue) -> list[dict[str, Any]]:
             "issue_id": hit.issue.issue_id,
             "issue_key": hit.issue.key,
             "title": hit.issue.title,
-            "status": hit.status.name if hit.status else "",
+            "status": TRIAGE_STATUS_NAME if hit.issue.in_triage else hit.status.name if hit.status else "",
         }
         for hit in hits
     ]
@@ -672,7 +672,11 @@ def _status_ref(call: ToolCall, team: str, value: str) -> str:
 
     `team` may be a team id, key prefix or name. A team the caller cannot see
     leaves the value as given, so the shared write path answers it as it would.
+    `triage`, in any case, is the synthetic triage status and wins over a status
+    of that name, as the clients' pickers list it first.
     """
+    if _is_triage(value):
+        return TRIAGE_STATUS_ID
     try:
         team_id = team_id_ref(call, team)
     except ToolError:
@@ -711,6 +715,11 @@ def _label_ref(labels: list[Any], value: str) -> str:
     choices = ", ".join(sorted({row.name for row in labels if not row.is_group})) or "none"
     problem = "matches more than one label" if named else "is not a label of this team"
     raise ToolError(f"Label {value!r} {problem}. The team's labels are: {choices}")
+
+
+def _is_triage(value: str) -> bool:
+    """Whether a status reference names the synthetic triage status."""
+    return value.strip().casefold() == TRIAGE_STATUS_ID
 
 
 def _by_name(rows: list[Any], id_attribute: str, value: str) -> str:
@@ -780,11 +789,15 @@ def _bulk_names(call: ToolCall, patch: dict[str, Any], team_id: str | None) -> N
     because a name means a different row in each team and one patch carries one id.
     A milestone named without a project is resolved by `_bulk_milestone` instead.
     Labels both added and removed are left as sent, for the route to refuse.
+    The synthetic triage status resolves in any selection, since every team shares it.
     """
     workspace_id = call.context.workspace_id
+    triage = bool(patch.get("status_id")) and _is_triage(str(patch["status_id"]))
+    if triage:
+        patch["status_id"] = TRIAGE_STATUS_ID
     if team_id is None:
         return
-    if patch.get("status_id"):
+    if patch.get("status_id") and not triage:
         statuses = call.repositories.team_config.list_statuses(workspace_id, team_id)
         patch["status_id"] = _by_name(statuses, "status_id", str(patch["status_id"]))
     labels = None
@@ -941,7 +954,7 @@ ISSUE_TOOLS: tuple[Tool, ...] = (
                 "team_id": string("The team to create it in"),
                 "title": string("The issue title"),
                 "body": string("The issue body, in Markdown"),
-                "status_id": string("The starting status, by id or name"),
+                "status_id": string("The starting status, by id or name; 'triage' files it into triage"),
                 "priority": enum(PRIORITIES, "The priority, defaulting to none"),
                 "assignee_id": string("Who to assign it to; 'me' is the caller"),
                 "label_ids": string_list("Labels of the same team, by id or name"),
@@ -970,7 +983,10 @@ ISSUE_TOOLS: tuple[Tool, ...] = (
                 "issue_id": string(ISSUE_REF),
                 "title": string("A new title"),
                 "body": nullable("A new body, in Markdown"),
-                "status_id": string("A new status of the same team, by id or name"),
+                "status_id": string(
+                    "A new status of the same team, by id or name; 'triage' sends it to triage, "
+                    "and a real status accepts an issue waiting there"
+                ),
                 "priority": enum(PRIORITIES, "A new priority"),
                 "assignee_id": nullable("A new assignee, 'me' for the caller, or null to unassign"),
                 "label_ids": string_list("The full new label set, by id or name"),
@@ -1170,7 +1186,7 @@ ISSUE_TOOLS: tuple[Tool, ...] = (
                     "maxItems": BULK_MAX_ISSUES,
                     "description": "The issues, by id or key such as ABC-12",
                 },
-                "status_id": string("A status of the issues' team, by id or name"),
+                "status_id": string("A status of the issues' team, by id or name; 'triage' sends them to triage"),
                 "assignee_id": nullable("An assignee: 'me', an email or a user id, or null to unassign"),
                 "priority": enum(PRIORITIES, "A new priority"),
                 "add_label_ids": string_list("Labels to add, by id or name; other labels are kept"),

@@ -15,6 +15,7 @@ import {
   type Assignable,
 } from '../../lib/issuePeople';
 import { issuePath } from '../../lib/paths';
+import { TRIAGE_STATUS } from '../../lib/triageStatus';
 import type { IssueProgress, IssueRead, StatusRead } from '../../types/Api';
 import { ErrorAlert } from '../ui/alert';
 import Avatar from '../ui/avatar';
@@ -74,9 +75,12 @@ export const SubIssues: React.FC<SubIssuesProps> = ({
       ) : (
         <ul aria-label="Sub-issues">
           {rows.map((child) => {
-            const status = statuses.find(
-              (candidate) => candidate.id === child.status_id
-            );
+            const status =
+              child.in_triage === true
+                ? TRIAGE_STATUS
+                : statuses.find(
+                    (candidate) => candidate.id === child.status_id
+                  );
             const assignee =
               child.assignee_id === null
                 ? undefined

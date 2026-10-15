@@ -162,12 +162,29 @@ export interface StatusLike {
   icon?: string | null;
 }
 
+/**
+ * The id of the synthetic Triage status. No status row carries it: an issue
+ * waiting in its team's triage inbox shows under it while its real status
+ * stays hidden, and writing it sends an issue to triage.
+ */
+export const TRIAGE_STATUS_ID = 'triage';
+
+/** The glyph only the synthetic Triage status draws. */
+export type TriageIconName = 'triage';
+
 /** What a status glyph draws: the variant, a CSS color and a pie fill from 0 to 1. */
 export interface StatusLook {
-  icon: StatusIconName;
+  icon: StatusIconName | TriageIconName;
   color: string;
   fill: number;
 }
+
+/** What the synthetic Triage status draws: its own inbox glyph in its own color. */
+export const TRIAGE_LOOK: StatusLook = {
+  icon: 'triage',
+  color: STATUS_COLOR_VALUES.orange,
+  fill: 0,
+};
 
 /** Whether a stored value is a palette color this build knows. */
 export const isStatusColor = (value: unknown): value is StatusColor =>
@@ -219,12 +236,14 @@ export const progressFill = (
 /**
  * Resolves a status to what its glyph draws. A color or icon the build does not
  * know, or an icon from another category, falls back to the category default
- * rather than drawing something misleading.
+ * rather than drawing something misleading. The synthetic Triage status always
+ * draws its own look.
  */
 export const statusLook = (
   status: StatusLike,
   statuses?: readonly StatusLike[]
 ): StatusLook => {
+  if (status.id === TRIAGE_STATUS_ID) return TRIAGE_LOOK;
   const icon = iconFits(status.category, status.icon)
     ? status.icon
     : defaultIcon(status.category);

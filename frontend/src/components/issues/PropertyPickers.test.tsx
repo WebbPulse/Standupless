@@ -85,6 +85,50 @@ describe('StatusPicker', () => {
     ).toHaveTextContent('Doing');
   });
 
+  it('offers Triage first when the team has triage on', async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    render(
+      <StatusPicker
+        statuses={statuses}
+        value="st-2"
+        triage
+        onChange={onChange}
+      />
+    );
+    await user.click(screen.getByRole('button', { name: 'Status: Todo' }));
+    expect(
+      screen.getAllByRole('option').map((option) => option.textContent)
+    ).toEqual(['Triage', 'Backlog1', 'Todo2', 'Doing3', 'Done4']);
+    await user.click(screen.getByRole('option', { name: /Triage/ }));
+    expect(onChange).toHaveBeenCalledWith('triage');
+  });
+
+  it('shows an issue in triage under Triage', () => {
+    render(
+      <StatusPicker
+        statuses={statuses}
+        value="triage"
+        triage
+        onChange={vi.fn()}
+      />
+    );
+    expect(
+      screen.getByRole('button', { name: 'Status: Triage' })
+    ).toBeInTheDocument();
+  });
+
+  it('offers no Triage on a team without it', async () => {
+    const user = userEvent.setup();
+    render(
+      <StatusPicker statuses={statuses} value="st-2" onChange={vi.fn()} />
+    );
+    await user.click(screen.getByRole('button', { name: 'Status: Todo' }));
+    expect(
+      screen.queryByRole('option', { name: /Triage/ })
+    ).not.toBeInTheDocument();
+  });
+
   it('filters by typing and picks with Enter', async () => {
     const user = userEvent.setup();
     const onChange = vi.fn();

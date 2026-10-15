@@ -483,6 +483,23 @@ describe('grouping', () => {
     ]);
   });
 
+  it('leads a status grouping with the issues waiting in triage', () => {
+    const groups = groupIssues(
+      [
+        issue({ id: 'a', status_id: 'st-todo' }),
+        issue({ id: 'b', status_id: 'st-todo', in_triage: true }),
+      ],
+      'status',
+      context,
+      false
+    );
+
+    expect(groups.map((group) => [group.label, group.issues.length])).toEqual([
+      ['Triage', 1],
+      ['Todo', 1],
+    ]);
+  });
+
   it('keeps empty groups only when asked', () => {
     const groups = groupIssues([issue()], 'assignee', context, true);
 
@@ -573,6 +590,24 @@ describe('grouping', () => {
 });
 
 describe('moving and ordering', () => {
+  it('sends an issue to triage and back out with a real status', () => {
+    const waiting = applyChange(issue(), { status_id: 'triage' });
+    expect([waiting.status_id, waiting.in_triage]).toEqual(['st-todo', true]);
+
+    const accepted = applyChange(waiting, { status_id: 'st-done' });
+    expect([accepted.status_id, accepted.in_triage]).toEqual([
+      'st-done',
+      false,
+    ]);
+    expect(changeIsNoop(waiting, { status_id: 'st-todo' })).toBe(false);
+  });
+
+  it('moves a card into the Triage column as a triage write', () => {
+    expect(
+      moveChange(issue(), 'status', 'unstarted:todo', 'triage', context)
+    ).toEqual({ status_id: 'triage' });
+  });
+
   it('moves to the like named status in the issue own team', () => {
     const moving = issue({ team_id: 'team-2', status_id: 'st-other' });
 

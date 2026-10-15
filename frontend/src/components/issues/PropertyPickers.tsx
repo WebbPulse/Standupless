@@ -46,6 +46,11 @@ import {
   sortStatuses,
 } from '../../lib/propertyOptions';
 import {
+  TRIAGE_STATUS,
+  TRIAGE_STATUS_ID,
+  TRIAGE_STATUS_NAME,
+} from '../../lib/triageStatus';
+import {
   DATE_PATTERN,
   ZERO_ESTIMATE,
   estimateChoices,
@@ -220,30 +225,51 @@ const emptyText = (
 /** Props for StatusPicker: the team's statuses and the chosen one. */
 export interface StatusPickerProps extends PickerBaseProps {
   statuses: StatusRead[];
-  /** The chosen status id, or null for the team default. */
+  /** The status id, `triage` for an issue in triage, or null for the default. */
   value: string | null;
   onChange: (statusId: string) => void;
+  /** True when the team has triage on, which offers Triage first. */
+  triage?: boolean;
 }
 
 /**
  * Picks a workflow status. The list is grouped by category in workflow
- * order, and the number keys pick the first nine without typing.
+ * order, and the number keys pick the first nine without typing. On a team
+ * with triage on, Triage leads the list, as Linear shows it.
  */
 export const StatusPicker: React.FC<StatusPickerProps> = ({
   statuses,
   value,
   onChange,
+  triage = false,
   ...base
 }) => {
   const ordered = sortStatuses(statuses);
-  const current = statuses.find((status) => status.id === value);
-  const options: ComboboxOption[] = ordered.map((status, index) => ({
-    value: status.id,
-    label: status.name,
-    icon: <StatusIcon status={status} statuses={statuses} />,
-    group: STATUS_CATEGORY_LABELS[status.category],
-    ...(index < 9 ? { shortcut: String(index + 1) } : {}),
-  }));
+  const current =
+    value === TRIAGE_STATUS_ID
+      ? TRIAGE_STATUS
+      : statuses.find((status) => status.id === value);
+  const triageOption: ComboboxOption[] =
+    triage || value === TRIAGE_STATUS_ID
+      ? [
+          {
+            value: TRIAGE_STATUS_ID,
+            label: TRIAGE_STATUS_NAME,
+            icon: <StatusIcon status={TRIAGE_STATUS} />,
+            group: TRIAGE_STATUS_NAME,
+          },
+        ]
+      : [];
+  const options: ComboboxOption[] = [
+    ...triageOption,
+    ...ordered.map((status, index) => ({
+      value: status.id,
+      label: status.name,
+      icon: <StatusIcon status={status} statuses={statuses} />,
+      group: STATUS_CATEGORY_LABELS[status.category],
+      ...(index < 9 ? { shortcut: String(index + 1) } : {}),
+    })),
+  ];
   return (
     <SinglePicker
       {...base}

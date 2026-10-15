@@ -31,6 +31,7 @@ import { listTeamTemplates } from '../../api/templates';
 import { WorkspaceContext } from '../../contexts/WorkspaceContextDefinition';
 import { useAutoGrow } from '../../hooks/useAutoGrow';
 import { useTeamOptions } from '../../hooks/useTeamOptions';
+import { useTriageOn } from '../../hooks/useTriageTeams';
 import { canWriteIssues } from '../../lib/capabilities';
 import { cn } from '../../lib/cn';
 import { errorMessage } from '../../lib/errors';
@@ -44,6 +45,7 @@ import { sortStatuses } from '../../lib/propertyOptions';
 import { issuePath } from '../../lib/paths';
 import { submitKeysLabel } from '../../lib/platform';
 import { showToast } from '../../lib/toast';
+import { TRIAGE_STATUS_ID } from '../../lib/triageStatus';
 import {
   estimateOptionsOf,
   validateDateRange,
@@ -373,6 +375,10 @@ export const CreateIssueDialog: React.FC<CreateIssueDialogProps> = ({
     sortStatuses(teamStatuses).find(
       (status) => status.category === 'backlog'
     ) ?? sortStatuses(teamStatuses)[0];
+  const triageOn = useTriageOn(activeTeamId);
+  const landsInTriage =
+    triageOn &&
+    (workspace?.role === 'guest' || activeTeam?.is_member === false);
 
   const titleError = validateTitle(title);
   const dateError = validateDateRange(
@@ -649,10 +655,13 @@ export const CreateIssueDialog: React.FC<CreateIssueDialogProps> = ({
           <StatusPicker
             variant="chip"
             statuses={teamStatuses}
+            triage={triageOn}
             value={
-              draft.statusId === ''
-                ? (defaultStatus?.id ?? null)
-                : draft.statusId
+              draft.statusId !== ''
+                ? draft.statusId
+                : landsInTriage
+                  ? TRIAGE_STATUS_ID
+                  : (defaultStatus?.id ?? null)
             }
             onChange={(statusId) => {
               patch({ statusId });

@@ -16,7 +16,15 @@ from app.common.db.dynamo.activity import build_activity
 from app.common.db.dynamo.issues import Issue
 from app.common.db.dynamo.relations import Relation
 from app.common.issue_keys import current
-from app.common.issue_rules import load_visible_issue, not_found, require_team_member, unprocessable
+from app.common.issue_rules import (
+    TRIAGE_STATUS_CATEGORY,
+    TRIAGE_STATUS_ID,
+    TRIAGE_STATUS_NAME,
+    load_visible_issue,
+    not_found,
+    require_team_member,
+    unprocessable,
+)
 from app.common.relation_effects import blocked_side, close_as_duplicate, issue_reference, recount_blocked
 
 
@@ -37,7 +45,7 @@ def list_links(repositories: Repositories, context: AuthzContext, issue_id: str)
         target = visible.get(relation.target_issue_id)
         if target is None:
             continue
-        links.append(LinkRead.from_row(relation, current(repositories.teams, target), statuses.get(target.status_id)))
+        links.append(LinkRead.from_row(relation, current(repositories.teams, target), target_status(statuses, target)))
     return links
 
 
@@ -54,6 +62,17 @@ def link_statuses(repositories: Repositories, workspace_id: str, issues: Iterabl
                 id=row.status_id, name=row.name, category=row.category, color=row.color, icon=row.icon
             )
     return found
+
+
+TRIAGE_LINK_STATUS = LinkStatusRead(id=TRIAGE_STATUS_ID, name=TRIAGE_STATUS_NAME, category=TRIAGE_STATUS_CATEGORY)
+"""What a link shows for a far side that waits in triage, whose real status stays hidden."""
+
+
+def target_status(statuses: dict[str, LinkStatusRead], target: Issue) -> LinkStatusRead | None:
+    """The status a link shows for its far side: triage while it waits there, else its own."""
+    if target.in_triage:
+        return TRIAGE_LINK_STATUS
+    return statuses.get(target.status_id)
 
 
 def create_link(repositories: Repositories, context: AuthzContext, issue_id: str, payload: LinkCreate) -> LinkRead:
@@ -98,7 +117,7 @@ def create_link(repositories: Repositories, context: AuthzContext, issue_id: str
     if blocked is not None:
         recount_blocked(repositories, context.workspace_id, blocked)
     statuses = link_statuses(repositories, context.workspace_id, [target])
-    return LinkRead.from_row(relation, current(repositories.teams, target), statuses.get(target.status_id))
+    return LinkRead.from_row(relation, current(repositories.teams, target), target_status(statuses, target))
 
 
 def delete_link(repositories: Repositories, context: AuthzContext, issue_id: str, link_id: str) -> Relation:

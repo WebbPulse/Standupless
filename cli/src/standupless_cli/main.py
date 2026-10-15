@@ -70,7 +70,7 @@ from standupless_cli.config import (
     resolve_settings,
     write_keyring,
 )
-from standupless_cli.resolve import OPEN_CATEGORIES, Context, ResolveError, compact
+from standupless_cli.resolve import OPEN_CATEGORIES, Context, ResolveError, compact, shown_status_id
 
 KEY_PREFIX = "wpk_"
 
@@ -657,7 +657,7 @@ def _describe(context: Context, issue: Issue, comments: list[CommentRead]) -> No
     assignee_id = issue.get("assignee_id") or ""
     output.issue_detail(
         issue,
-        status=context.status_names(team_id).get(issue["status_id"], issue["status_id"]),
+        status=context.status_names(team_id).get(shown_status_id(issue), issue["status_id"]),
         assignee=people.get(assignee_id, assignee_id),
         labels=[labels.get(label_id, label_id) for label_id in issue.get("label_ids", [])],
         cycle=cycle_name,
@@ -708,7 +708,7 @@ def issue_create(
         Path | None, typer.Option("--body-file", "-F", help="Read the description from a file, or - for stdin.")
     ] = None,
     assignee: Annotated[str | None, typer.Option("--assignee", "-a", help="`me`, an email, a name or an id.")] = None,
-    status: Annotated[str | None, typer.Option("--status", "-s", help="Status name or category.")] = None,
+    status: Annotated[str | None, typer.Option("--status", "-s", help="Status name or category, or triage.")] = None,
     label: Annotated[list[str] | None, typer.Option("--label", "-l", help="Label name; repeat for several.")] = None,
     priority: Annotated[Priority | None, typer.Option("--priority")] = None,
     cycle: Annotated[str | None, typer.Option("--cycle", "-c", help="`current`, a name or an id.")] = None,
@@ -777,7 +777,7 @@ def issue_edit(
     assignee: Annotated[
         str | None, typer.Option("--assignee", "-a", help="`me`, `none`, an email, a name or an id.")
     ] = None,
-    status: Annotated[str | None, typer.Option("--status", "-s", help="Status name or category.")] = None,
+    status: Annotated[str | None, typer.Option("--status", "-s", help="Status name or category, or triage.")] = None,
     add_label: Annotated[list[str] | None, typer.Option("--add-label", help="Label to add; repeatable.")] = None,
     remove_label: Annotated[
         list[str] | None, typer.Option("--remove-label", help="Label to remove; repeatable.")
