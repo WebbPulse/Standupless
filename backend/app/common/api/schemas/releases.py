@@ -451,12 +451,35 @@ class ReleaseBackfill(BaseModel):
     every repository pinned to the team. Pass `cursor` back until it comes back
     null. A deployment that already has a release only gains missing issues, and
     the backfill never moves issues or publishes GitHub Releases.
+
+    `deployment_ids` retries only those deployments, such as the
+    `unreadable_deployment_ids` an earlier page passed over, without paging
+    through history. It takes no cursor, and `repository` must name their
+    repository unless the team pins only one.
     """
 
     repository: Optional[str] = Field(default=None, max_length=255)
     environment: str = Field(default="production", min_length=1, max_length=ENVIRONMENT_MAX)
     limit: int = Field(default=BACKFILL_DEFAULT_LIMIT, ge=1, le=BACKFILL_MAX_LIMIT)
     cursor: Optional[str] = Field(default=None, max_length=1024)
+    deployment_ids: Optional[list[int]] = Field(default=None, min_length=1, max_length=BACKFILL_MAX_LIMIT)
+
+    @field_validator("deployment_ids")
+    @classmethod
+    def check_deployment_ids(cls, value: Optional[list[int]]) -> Optional[list[int]]:
+        """Keep each positive id once, in the order given."""
+        if value is None:
+            return None
+        if any(deployment_id <= 0 for deployment_id in value):
+            raise ValueError("deployment ids must be positive")
+        return list(dict.fromkeys(value))
+
+    @model_validator(mode="after")
+    def check_retry(self) -> "ReleaseBackfill":
+        """Refuse a cursor beside deployment ids, since a retry does not page."""
+        if self.deployment_ids and self.cursor:
+            raise ValueError("pass either deployment_ids or cursor, not both")
+        return self
 
     @field_validator("repository", "cursor")
     @classmethod
@@ -490,6 +513,9 @@ class ReleaseBackfillRead(BaseModel):
     `unreadable_deployment_ids` names deployments passed over because their range
     could not be read inside the request timeout, and `pull_reads_skipped` counts
     pull requests a recorded deployment did not read for keys for the same reason.
+    Pass `unreadable_deployment_ids` back as `deployment_ids` to retry only those.
+    A retry names in `deployments_not_found` the ids that are no successful
+    deployment of the environment in the repository.
     """
 
     team_id: str
@@ -503,6 +529,7 @@ class ReleaseBackfillRead(BaseModel):
     stopped_early: bool = False
     stalled: bool = False
     unreadable_deployment_ids: list[int] = Field(default_factory=list)
+    deployments_not_found: list[int] = Field(default_factory=list)
     pull_reads_skipped: int = 0
     message: Optional[str] = None
     resume_after: Optional[datetime] = None

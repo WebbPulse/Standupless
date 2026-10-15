@@ -287,7 +287,7 @@ def _backfill_releases(call: ToolCall) -> Any:
     require_team_admin(call.repositories, call.context, team_id)
     payload = {
         name: call.arguments[name]
-        for name in ("repository", "environment", "limit", "cursor")
+        for name in ("repository", "environment", "limit", "cursor", "deployment_ids")
         if call.optional(name) is not None
     }
     result = deployments.backfill(
@@ -476,8 +476,12 @@ RELEASE_TOOLS: tuple[Tool, ...] = (
             "a few per call. Pass next_cursor back as cursor until it is null. A call stops early, with "
             "stopped_early and a message saying when to continue, rather than use more than half the GitHub "
             "App's hourly API budget or outrun the request timeout. A call that recorded and skipped nothing "
-            "sets stalled and says why; passing its cursor straight back repeats it. Never moves issues or "
-            "publishes GitHub Releases. Team administrators only."
+            "sets stalled and says why; passing its cursor straight back repeats it. A page that finds no "
+            "successful deployment ends that repository: next_cursor moves to the next pinned repository or is "
+            "null, so empty pages at the end of history are not paged through. Pass deployment_ids, such as a "
+            "page's unreadable_deployment_ids, to retry only those deployments without a cursor; ids that are "
+            "no successful deployment of the environment come back in deployments_not_found. Never moves "
+            "issues or publishes GitHub Releases. Team administrators only."
         ),
         scopes=("releases:write",),
         schema=object_schema(
@@ -492,6 +496,16 @@ RELEASE_TOOLS: tuple[Tool, ...] = (
                     "description": "Deployments per call",
                 },
                 "cursor": string("The next_cursor a previous call answered"),
+                "deployment_ids": {
+                    "type": "array",
+                    "items": {"type": "integer", "minimum": 1},
+                    "minItems": 1,
+                    "maxItems": BACKFILL_MAX_LIMIT,
+                    "description": (
+                        "Retry only these deployment ids, such as unreadable_deployment_ids; takes no cursor, and "
+                        "repository is required unless the team pins one repository"
+                    ),
+                },
             },
             required=("team_id",),
         ),

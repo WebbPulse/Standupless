@@ -3251,28 +3251,47 @@ def release_backfill(
     cursor: Annotated[
         str | None, typer.Option("--cursor", help="Continue from the cursor a stopped backfill printed.")
     ] = None,
+    deployment_ids: Annotated[
+        list[int] | None,
+        typer.Option(
+            "--deployment-id",
+            min=1,
+            help="Retry only this deployment, such as one a page could not read; repeat for more.",
+        ),
+    ] = None,
     as_json: JsonFlag = False,
 ) -> None:
     """Rebuild a team's releases from past successful GitHub deployments, newest first. Needs team admin.
 
     Stops when the server pauses to keep the GitHub App's API budget for live sync,
     or when a request makes no progress, printing why and the cursor to continue from.
+    With --deployment-id it retries only those deployments, in one request.
     """
     context = _state(ctx).context()
     chosen = context.team(team)
     paused: str | None = None
     created = updated = scanned = 0
     release_ids: list[str] = []
+    unreadable: list[int] = []
     while True:
         body = cast(
             ReleaseBackfill,
-            compact({"repository": repository, "environment": environment, "limit": batch, "cursor": cursor}),
+            compact(
+                {
+                    "repository": repository,
+                    "environment": environment,
+                    "limit": batch,
+                    "cursor": cursor,
+                    "deployment_ids": deployment_ids or None,
+                }
+            ),
         )
         result = context.client.backfill_releases(context.workspace_id, chosen["id"], body)
         created += result["releases_created"]
         updated += result["releases_updated"]
         scanned += result["deployments_scanned"]
         release_ids.extend(result["release_ids"])
+        unreadable.extend(result.get("unreadable_deployment_ids") or [])
         if not as_json:
             output.console.print(
                 f"[dim]{scanned} deployments read, {created} releases created, {updated} updated[/dim]",
@@ -3294,10 +3313,14 @@ def release_backfill(
                 "releases_updated": updated,
                 "release_ids": release_ids,
                 "next_cursor": cursor if paused else None,
+                "unreadable_deployment_ids": unreadable,
                 "message": paused,
             }
         )
         return
+    if unreadable:
+        retry = " ".join(f"--deployment-id {deployment_id}" for deployment_id in dict.fromkeys(unreadable))
+        output.console.print(f"Could not read some deployments in time. Retry them with {retry}", highlight=False)
     if paused:
         output.console.print(f"{paused}\nContinue with --cursor {cursor}", highlight=False)
         return
