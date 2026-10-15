@@ -558,7 +558,7 @@ describe('CycleDetail', () => {
         screen.getByRole('button', { name: 'This team only' })
       ).toHaveAttribute('aria-pressed', 'false');
       const teamAlone = listIssues.mock.calls
-        .map(([query]) => query as Record<string, unknown>)
+        .map(([query]) => query as { team_id?: unknown; cycle_id?: unknown })
         .filter(
           (query) => query.team_id === 'proj-1' && query.cycle_id === 'cyc-1'
         );
