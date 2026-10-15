@@ -846,3 +846,100 @@ def test_a_promotion_rereads_which_issues_its_release_closes(
     assert [stage.stage_id for stage in release.stages] == ["staging", "production"]
     assert release.referenced_issue_ids == [referenced.issue_id]
     assert repositories.issues.get(WORKSPACE, referenced.issue_id).status_id == referenced.status_id
+
+
+BEFORE = "0" * 40
+
+
+def test_a_promotion_includes_the_staging_releases_it_carried(
+    client: Any, repositories: Any, installed: str, github: FakeGitHub
+) -> None:
+    """Several staging releases one promotion deploys are included in it, still move, and list only on it."""
+    from tests.domains.helpers import MEMBER
+    from tests.domains.integrations.test_mcp import tool
+    from tests.domains.integrations.test_mcp_tools import answer, mint_for
+
+    _pin(repositories)
+    done = next(row for row in repositories.team_config.list_statuses(WORKSPACE, TEAM) if row.category == "completed")
+    repositories.releases.put_pipeline(
+        ReleasePipeline(
+            workspace_id=WORKSPACE,
+            planning_key=pipeline_key(TEAM),
+            team_id=TEAM,
+            stages=[
+                PipelineStage(stage_id="staging", name="Staging", github_environments=["staging"]),
+                PipelineStage(
+                    stage_id="production",
+                    name="Production",
+                    github_environments=["production"],
+                    status_id=done.status_id,
+                ),
+            ],
+        )
+    )
+    first = seed_issue(repositories, WORKSPACE, TEAM, "01JB0000000000000000000IS1", "ABC", 1)
+    second = seed_issue(repositories, WORKSPACE, TEAM, "01JB0000000000000000000IS3", "ABC", 2)
+    github.messages = {
+        FIRST: "ABC-1: Fix login (#228)",
+        SECOND: "ABC-2: Add export (#229)",
+        THIRD: "Merge pull request #230 from acme/promote/2026-10-07-b",
+    }
+    github.merges = {
+        FIRST: PullRef(number=228, title="ABC-1: Fix login", head_ref="abc-1-fix-login", url=None),
+        SECOND: PullRef(number=229, title="ABC-2: Add export", head_ref="abc-2-add-export", url=None),
+        THIRD: PROMOTION,
+    }
+
+    handle_deployment_status(repositories, WORKSPACE, _delivery(FIRST, "staging"))
+    handle_deployment_status(repositories, WORKSPACE, _delivery(SECOND, "staging"))
+    github.previous = BEFORE
+    handle_deployment_status(repositories, WORKSPACE, _delivery(THIRD, "production"))
+
+    rows = _releases(repositories)
+    [promotion] = [row for row in rows if row.name == "2026-10-07-b"]
+    carried = [row for row in rows if row.release_id != promotion.release_id]
+    assert set(promotion.issue_ids) == {first.issue_id, second.issue_id}
+    assert len(carried) == 2
+    assert sorted(promotion.included_release_ids) == sorted(row.release_id for row in carried)
+    for row in carried:
+        assert row.included_in == promotion.release_id
+        assert [stage.stage_id for stage in row.stages] == ["staging", "production"]
+    for issue in (first, second):
+        assert repositories.issues.get(WORKSPACE, issue.issue_id).status_id == done.status_id
+
+    secret = mint_for(repositories, MEMBER, ("releases:read",))
+    listed = answer(tool(client, secret, "list_releases", {"team_id": "ABC"}))
+    everything = answer(tool(client, secret, "list_releases", {"team_id": "ABC", "show_included": True}))
+    found = answer(tool(client, secret, "get_release", {"team_id": "ABC", "release_id": promotion.release_id}))
+    child = answer(tool(client, secret, "get_release", {"team_id": "ABC", "release_id": carried[0].release_id}))
+
+    assert [row["release_id"] for row in listed["releases"]] == [promotion.release_id]
+    assert listed["releases"][0]["included_count"] == 2
+    assert len(everything["releases"]) == 3
+    assert {row["included_in"] for row in everything["releases"] if row["release_id"] != promotion.release_id} == {
+        promotion.release_id
+    }
+    assert {row["release_id"] for row in found["included_releases"]} == {row.release_id for row in carried}
+    assert {row["pr_number"] for row in found["included_releases"]} == {228, 229}
+    assert child["included_in_release"]["release_id"] == promotion.release_id
+
+
+def test_a_staging_deploy_of_a_promoted_commit_includes_nothing(
+    repositories: Any, installed: str, github: FakeGitHub
+) -> None:
+    """A release that first landed on a later stage is never included in one that landed earlier."""
+    _pin(repositories)
+    _staging_then_production(repositories)
+    github.messages = {FIRST: "Merge pull request #230", SECOND: "ABC-2: Add export (#229)"}
+    github.merges = {
+        FIRST: PROMOTION,
+        SECOND: PullRef(number=229, title="Add export", head_ref="abc-2-add-export", url=None),
+    }
+
+    handle_deployment_status(repositories, WORKSPACE, _delivery(FIRST, "production"))
+    github.previous = BEFORE
+    handle_deployment_status(repositories, WORKSPACE, _delivery(SECOND, "staging"))
+
+    for row in _releases(repositories):
+        assert row.included_in is None
+        assert row.included_release_ids == []

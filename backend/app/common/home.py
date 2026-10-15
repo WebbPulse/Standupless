@@ -40,6 +40,7 @@ from app.common.issue_rules import status_categories, visible_team_ids
 from app.common.issue_writes import list_issues
 from app.common.planning_rules import counts_unestimated, visible_project_teams
 from app.common.project_cadence import workspace_interval
+from app.common.releases import included_in
 from app.common.sla import sla_status
 from app.common.standup import DUE_SOON_DAYS, StandupWindowError, resolve_zone
 
@@ -415,7 +416,8 @@ def _releases(
     """Releases of the teams in scope that reached their pipeline's last stage in the window, newest first.
 
     Reads each team's pipeline and its newest few releases, so the cost is two
-    reads a team however many releases it keeps.
+    reads a team however many releases it keeps. A release a promotion carried is
+    left out, as the release listing leaves it out.
     """
     since = moment - timedelta(days=SHIPPED_DAYS)
     found: list[ReleaseRead] = []
@@ -425,7 +427,10 @@ def _releases(
         pipeline = pipeline or default_pipeline(context.workspace_id, team_id)
         final = pipeline.stages[-1].stage_id
         rows, _ = repositories.releases.list_for_team(context.workspace_id, team_id, limit=RELEASE_READ_ROWS)
+        carried = included_in(rows, pipeline)
         for row in rows:
+            if row.release_id in carried:
+                continue
             read = ReleaseRead.from_row(row, pipeline)
             stage = read.current_stage
             if stage is None or stage.stage_id != final or stage.reached_at < since:

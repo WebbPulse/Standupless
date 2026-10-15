@@ -60,9 +60,12 @@ def list_releases(
     repositories: Annotated[Repositories, Depends(get_repositories)],
     cursor: Annotated[Optional[str], Query()] = None,
     limit: Annotated[int, Query(ge=1, le=MAX_LIMIT)] = DEFAULT_LIMIT,
+    show_included: Annotated[bool, Query()] = False,
 ) -> CursorPage[ReleaseRead]:
-    """One page of the team's releases, newest first."""
-    rows, next_cursor = releases.list_releases(repositories, context, str(context.team_id), cursor=cursor, limit=limit)
+    """One page of the team's releases, newest first; releases a promotion carried only with `show_included`."""
+    rows, next_cursor = releases.list_releases(
+        repositories, context, str(context.team_id), cursor=cursor, limit=limit, show_included=show_included
+    )
     return ReleaseListRead(items=rows, next_cursor=next_cursor)
 
 

@@ -357,7 +357,7 @@ class Context:
 
     def release_id(self, team: TeamRead, ref: str) -> str:
         """A release id from its id or its name among the team's newest releases."""
-        releases = self.client.list_releases(self.workspace_id, team["id"], limit=100)
+        releases = self.client.list_releases(self.workspace_id, team["id"], limit=100, show_included=True)
         for release in releases:
             if release["release_id"] == ref:
                 return ref

@@ -66,7 +66,9 @@ def _release_id(call: ToolCall, team_id: str) -> str:
     claimed = call.repositories.releases.release_for_name(call.context.workspace_id, team_id, reference)
     if claimed is not None and call.repositories.releases.get(call.context.workspace_id, team_id, claimed) is not None:
         return claimed
-    rows, _ = releases.list_releases(call.repositories, call.context, team_id, limit=NAME_LOOKUP_LIMIT)
+    rows, _ = releases.list_releases(
+        call.repositories, call.context, team_id, limit=NAME_LOOKUP_LIMIT, show_included=True
+    )
     matches = [row for row in rows if row.name.casefold() == reference.casefold()]
     if len(matches) > 1:
         raise ToolError(f"More than one release is named {reference}; pass its id instead")
@@ -105,6 +107,24 @@ def _release_json(release: ReleaseRead) -> dict[str, Any]:
         "github_release_url": release.github_release_url,
         "issue_count": release.issue_count,
         "current_stage": _stage_json(release.current_stage),
+        "included_in": release.included_in,
+        "included_count": release.included_count,
+        "created_at": release.created_at.isoformat(),
+    }
+
+
+def _included_json(release: Any) -> dict[str, Any] | None:
+    """A release a promotion carried, or the promotion that carried one, as a detail links it."""
+    if release is None:
+        return None
+    return {
+        "release_id": release.release_id,
+        "name": release.name,
+        "sha": release.sha,
+        "pr_number": release.pr_number,
+        "pr_url": release.pr_url,
+        "issue_count": release.issue_count,
+        "current_stage": _stage_json(release.current_stage),
         "created_at": release.created_at.isoformat(),
     }
 
@@ -123,6 +143,8 @@ def _detail_json(release: ReleaseDetailRead) -> dict[str, Any]:
             ],
             "notes": release.notes,
             "skipped_issues": release.skipped_issues,
+            "included_releases": [_included_json(row) for row in release.included_releases],
+            "included_in_release": _included_json(release.included_in_release),
         }
     )
     return body
@@ -155,6 +177,7 @@ def _list_releases(call: ToolCall) -> Any:
         team_id,
         cursor=call.optional("cursor"),
         limit=limit(call.optional("limit")),
+        show_included=call.optional("show_included") is True,
     )
     return {"releases": [_release_json(row) for row in rows], "next_cursor": next_cursor}
 
@@ -300,14 +323,32 @@ STAGE_SCHEMA: dict[str, Any] = {
 RELEASE_TOOLS: tuple[Tool, ...] = (
     Tool(
         name="list_releases",
-        description="One page of a team's releases, newest first, each with its furthest stage and issue count.",
+        description=(
+            "One page of a team's releases, newest first, each with its furthest stage and issue count. "
+            "Releases a promotion carried to a later stage are left out unless show_included is true; "
+            "get_release on the promotion lists them in included_releases."
+        ),
         scopes=("releases:read",),
-        schema=object_schema({"team_id": string(TEAM_HELP), **page_properties()}, required=("team_id",)),
+        schema=object_schema(
+            {
+                "team_id": string(TEAM_HELP),
+                "show_included": {
+                    "type": "boolean",
+                    "description": "Also list the releases a promotion carried, each with included_in naming it",
+                },
+                **page_properties(),
+            },
+            required=("team_id",),
+        ),
         handler=_list_releases,
     ),
     Tool(
         name="get_release",
-        description="One release with every stage it reached, its issues and its release notes.",
+        description=(
+            "One release with every stage it reached, its issues and its release notes. A promotion lists "
+            "the earlier releases it carried in included_releases; a carried release names its promotion "
+            "in included_in_release."
+        ),
         scopes=("releases:read",),
         schema=object_schema(RELEASE_REF, required=("team_id", "release_id")),
         handler=_get_release,

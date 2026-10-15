@@ -2479,6 +2479,17 @@ class InboxListRead(TypedDict):
     notifications: list[NotificationRead]
 
 
+class IncludedReleaseRead(TypedDict):
+    created_at: str
+    current_stage: NotRequired[ReleaseStageRead | None]
+    issue_count: int
+    name: str
+    pr_number: NotRequired[int | None]
+    pr_url: NotRequired[str | None]
+    release_id: str
+    sha: NotRequired[str | None]
+
+
 class InitiativeListRead(TypedDict):
     initiatives: list[InitiativeRead]
     next_cursor: NotRequired[str | None]
@@ -2625,6 +2636,10 @@ class ReleaseDetailRead(TypedDict):
     current_stage: NotRequired[ReleaseStageRead | None]
     description: NotRequired[str | None]
     github_release_url: NotRequired[str | None]
+    included_count: NotRequired[int]
+    included_in: NotRequired[str | None]
+    included_in_release: NotRequired[IncludedReleaseRead | None]
+    included_releases: NotRequired[list[IncludedReleaseRead]]
     issue_count: int
     issues: list[ReleaseIssueRead]
     name: str
@@ -2653,6 +2668,8 @@ class ReleaseRead(TypedDict):
     current_stage: NotRequired[ReleaseStageRead | None]
     description: NotRequired[str | None]
     github_release_url: NotRequired[str | None]
+    included_count: NotRequired[int]
+    included_in: NotRequired[str | None]
     issue_count: int
     name: str
     pr_number: NotRequired[int | None]

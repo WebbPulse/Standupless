@@ -2831,6 +2831,18 @@ def _print_release(context: Context, team: TeamRead, release: ReleaseDetailRead)
     if release["notes"]:
         output.console.print()
         output.console.print(release["notes"], highlight=False)
+    parent = release.get("included_in_release")
+    if parent:
+        output.console.print()
+        output.console.print(f"[dim]Included in[/dim] {parent['name']}", highlight=False)
+    included = release.get("included_releases") or []
+    if included:
+        output.console.print()
+        output.console.print("[bold]Included releases[/bold]", highlight=False)
+        for child in included:
+            pull = _pull_number(child.get("pr_number"))
+            suffix = f"  [dim]{pull}[/dim]" if pull else ""
+            output.console.print(f"  {child['name']}{suffix}", highlight=False)
     skipped = release.get("skipped_issues") or []
     if skipped:
         output.console.print()
@@ -2981,12 +2993,17 @@ def release_list(
     ctx: typer.Context,
     team: TeamFlag,
     limit: Annotated[int, typer.Option("--limit", "-L", help="Most releases to show.")] = 30,
+    show_included: Annotated[
+        bool, typer.Option("--all", "-a", help="Also list releases a promotion carried to a later stage.")
+    ] = False,
     as_json: JsonFlag = False,
 ) -> None:
-    """List a team's releases, newest first."""
+    """List a team's releases, newest first, leaving out those a promotion carried unless --all."""
     context = _state(ctx).context()
     chosen = context.team(team)
-    releases = context.client.list_releases(context.workspace_id, chosen["id"], limit=limit)
+    releases = context.client.list_releases(
+        context.workspace_id, chosen["id"], limit=limit, show_included=show_included
+    )
     if as_json:
         output.print_json(releases)
         return
