@@ -1029,6 +1029,47 @@ class IssueRepository:
         )
         return [as_issue(item) for item in items]
 
+    def iter_with_sla(self, workspace_id: str, team_id: str, status_id: str, *, max_items: int = 200) -> list[Issue]:
+        """Live issues of one team in one status that still carry an SLA deadline.
+
+        What the finished timer repair reads: the status column through the same
+        index, with the deadline as a filter.
+        """
+        if not workspace_id or not team_id or not status_id:
+            return []
+        items = self._repository.iter_query(
+            Key("ws_team_status").eq(ws_team_status(workspace_id, team_id, status_id)),
+            index_name=STATUS_UPDATED_INDEX,
+            filter_expression=Attr("sla_breaches_at").attribute_type("S"),
+            max_items=max_items,
+        )
+        return [as_issue(item) for item in items]
+
+    def clear_sla(self, issue: Issue) -> bool:
+        """Drop one issue's SLA timer if it still sits in the status it was read in, answering whether it did.
+
+        Leaves `updated_at` alone, so the repair neither reads as an edit nor
+        restarts the auto-archive clock, but stamps `changed_at` so synced clients
+        pick it up.
+        """
+        try:
+            self._repository.update(
+                {"workspace_id": issue.workspace_id, "issue_id": issue.issue_id},
+                update_expression="REMOVE #started, #breaches SET #changed = :changed, " + REVISION_BUMP,
+                expression_names={
+                    "#started": "sla_started_at",
+                    "#breaches": "sla_breaches_at",
+                    "#changed": CHANGED_AT,
+                    "#rev": REVISION,
+                },
+                expression_values={":changed": changed_stamp(), **REVISION_STEP},
+                condition=Attr("issue_id").exists() & Attr("status_id").eq(issue.status_id),
+                return_values="NONE",
+            )
+        except ConditionFailed:
+            return False
+        return True
+
     def iter_triage(self, workspace_id: str, team_id: str, *, max_items: int = 1000) -> list[Issue]:
         """Every live issue of one team awaiting triage, newest first by `updated_at`."""
         if not workspace_id or not team_id:

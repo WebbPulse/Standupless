@@ -70,6 +70,7 @@ from app.common.planning_rules import (
     require_team_reader,
     unprocessable,
 )
+from app.common.sla import apply_sla
 
 SHORT_SHA = 7
 
@@ -492,8 +493,9 @@ def apply_stage_automation(
     An issue already past the status, in canceled, archived, moved to another
     team, or only referenced by the release is left alone. Each write is
     conditional on the status it read, so an issue someone moves meanwhile keeps
-    their move. Every move is recorded in the
-    issue's activity naming the release.
+    their move. A move to a finished status drops the issue's SLA timer, as every
+    other status move does. Every move is recorded in the issue's activity naming
+    the release.
     """
     if not stage.status_id:
         return []
@@ -519,6 +521,7 @@ def apply_stage_automation(
         updated = issue.model_copy(
             update={"status_id": target.status_id, "updated_at": utc_now(), "updated_by": None, "updated_source": actor}
         )
+        apply_sla(repositories, issue, updated)
         try:
             repositories.issues.replace(updated, condition=Attr("status_id").eq(issue.status_id))
         except ConditionFailed:
