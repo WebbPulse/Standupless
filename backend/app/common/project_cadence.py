@@ -2,8 +2,9 @@
 
 A project's cadence is its own `update_interval_days`, or the workspace default
 when it has none; 0 turns reminders off. The clock starts at the latest update,
-or the start date, or the moment the project was made, so posting an update
-always moves the next due date a full interval out. A project is due on that
+or else the later of the start date and the moment the project was made, so
+posting an update always moves the next due date a full interval out and a
+backdated start date never makes a new project overdue. A project is due on that
 date and overdue once `OVERDUE_GRACE` has passed it. Completed, canceled and
 paused projects never come due. An initiative follows the same rules against the
 same workspace default, and a completed initiative never comes due.
@@ -99,17 +100,18 @@ def effective_interval(project: Cadenced, default_days: int) -> int:
 
 
 def update_anchor(project: Cadenced) -> datetime:
-    """The moment the cadence counts from: the latest update, the start date, or creation."""
+    """The moment the cadence counts from: the latest update, else the later of the start date and creation."""
     if project.last_update_at is not None:
         return _aware(project.last_update_at)
+    created = _aware(project.created_at)
     start_date = getattr(project, "start_date", None)
     if isinstance(start_date, str) and start_date:
         try:
             day = datetime.strptime(start_date, "%Y-%m-%d").date()
         except ValueError:
-            return _aware(project.created_at)
-        return datetime.combine(day, time.min, tzinfo=timezone.utc)
-    return _aware(project.created_at)
+            return created
+        return max(datetime.combine(day, time.min, tzinfo=timezone.utc), created)
+    return created
 
 
 def next_update_due_at(project: Cadenced, default_days: int) -> datetime | None:

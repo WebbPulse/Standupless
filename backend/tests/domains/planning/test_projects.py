@@ -9,6 +9,7 @@ added or removed, and deleting needs an administrator of every team.
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta
 from typing import Any
 
 from fastapi.testclient import TestClient
@@ -501,6 +502,17 @@ def test_a_project_follows_the_workspace_cadence_until_it_sets_its_own(
     assert client.get(path).json()["update_interval_days"] == 14
     [listed] = client.get(_path(workspace)).json()["projects"]
     assert listed["update_interval_days"] == 14
+
+
+def test_a_backdated_start_date_is_not_overdue_at_create(client: TestClient, workspace: str) -> None:
+    """A project made with a start date long past counts its first update from creation."""
+    sign_in(client, MEMBER)
+    project = seed_project(client, workspace, name="Split out", start_date="2020-01-06")
+
+    assert project["update_due_state"] == "upcoming"
+    due_at = datetime.fromisoformat(project["next_update_due_at"].replace("Z", "+00:00"))
+    created_at = datetime.fromisoformat(project["created_at"].replace("Z", "+00:00"))
+    assert due_at - created_at == timedelta(days=7)
 
 
 def test_an_off_cadence_or_an_exempt_status_has_no_due_date(client: TestClient, workspace: str) -> None:
