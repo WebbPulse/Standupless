@@ -198,6 +198,8 @@ const sameIds = (a: Set<string>, b: Set<string>): boolean =>
 /** The pieces a frame lays out: the bar's title and actions, and the view. */
 export interface IssueViewParts {
   title: ReactNode;
+  /** The favorite star a full page shows right after the title; a pane keeps it in its actions. */
+  titleAccessory?: ReactNode;
   actions?: ReactNode;
   content: ReactNode;
 }
@@ -519,6 +521,17 @@ export const IssueView: React.FC<IssueViewProps> = ({
     </span>
   );
 
+  const favorite =
+    issue === null ? undefined : (
+      <FavoriteButton
+        workspaceId={workspaceId}
+        kind="issue"
+        targetId={issue.id}
+        title={issue.title}
+        scope="issue"
+      />
+    );
+
   const actions =
     issue === null ? undefined : (
       <div className="flex items-center gap-1">
@@ -527,13 +540,7 @@ export const IssueView: React.FC<IssueViewProps> = ({
             <IssueTrailNav slug={slug} issueKey={issueRef} />
           </span>
         )}
-        <FavoriteButton
-          workspaceId={workspaceId}
-          kind="issue"
-          targetId={issue.id}
-          title={issue.title}
-          scope="issue"
-        />
+        {embedded && favorite}
         <IssueSubscribeButton subscription={subscription} />
         {canEdit && (
           <ShareButton
@@ -904,7 +911,14 @@ export const IssueView: React.FC<IssueViewProps> = ({
 
   return (
     <>
-      {frame({ title, ...(actions === undefined ? {} : { actions }), content })}
+      {frame({
+        title,
+        ...(actions === undefined ? {} : { actions }),
+        ...(embedded || favorite === undefined
+          ? {}
+          : { titleAccessory: favorite }),
+        content,
+      })}
     </>
   );
 };

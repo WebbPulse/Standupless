@@ -5,7 +5,7 @@
  * the hook reads for itself.
  */
 
-import { useCallback, useContext, useMemo, useState } from 'react';
+import { useCallback, useContext, useMemo, useRef, useState } from 'react';
 import { useQueryAuth } from '@webbpulse/auth/react';
 import { invalidateQueries, usePolledQuery } from '@webbpulse/api-client/react';
 import {
@@ -24,23 +24,25 @@ import type { FavoriteKind, FavoriteRead, FavoriteRef } from '../types/Api';
 /** How often the favorites read repeats. */
 export const FAVORITES_POLL_MS = 60000;
 
-/** A pending optimistic list, remembered with the read it was laid over. */
+/** An optimistic list, with when its write finished or null while it is in flight. */
 interface Overlay {
-  base: FavoriteRead[] | null;
+  id: number;
   rows: FavoriteRead[];
+  settledAt: number | null;
 }
 
 /**
- * Builds favorites state over one read. An optimistic list stands in until the
- * read changes, so the next answer from the server always wins, and a failed
- * write drops the overlay and says so.
+ * Builds favorites state over one read. An optimistic list stands in while its
+ * write is in flight and until a read lands after the write finished, so a poll
+ * mid-write never flickers the old list back and the server's next answer
+ * still wins. A failed write drops the overlay and says so.
  */
 export const useFavoritesState = (
   workspaceId: string,
   enabled: boolean
 ): FavoritesState => {
   const auth = useQueryAuth();
-  const { data } = usePolledQuery(
+  const { data, lastUpdatedAt } = usePolledQuery(
     ({ signal }) => listFavorites(workspaceId, signal),
     {
       intervalMs: FAVORITES_POLL_MS,
@@ -50,27 +52,39 @@ export const useFavoritesState = (
     }
   );
   const [overlay, setOverlay] = useState<Overlay | null>(null);
+  const writes = useRef(0);
   const favorites =
-    overlay !== null && overlay.base === data ? overlay.rows : data;
+    overlay !== null &&
+    (overlay.settledAt === null ||
+      lastUpdatedAt === null ||
+      lastUpdatedAt <= overlay.settledAt)
+      ? overlay.rows
+      : data;
 
   const settle = useCallback(
     async (
       rows: FavoriteRead[],
       write: () => Promise<unknown>
     ): Promise<boolean> => {
-      setOverlay({ base: data, rows });
+      writes.current += 1;
+      const id = writes.current;
+      setOverlay({ id, rows, settledAt: null });
       try {
         await write();
+        const settledAt = Date.now();
+        setOverlay((current) =>
+          current?.id === id ? { ...current, settledAt } : current
+        );
         return true;
       } catch (failure) {
-        setOverlay(null);
+        setOverlay((current) => (current?.id === id ? null : current));
         showErrorToast(errorMessage(failure, 'Could not change favorites.'));
         return false;
       } finally {
         invalidateQueries(favoritesKey(workspaceId));
       }
     },
-    [data, workspaceId]
+    [workspaceId]
   );
 
   const isFavorite = useCallback(
