@@ -363,35 +363,20 @@ def _get_issue(call: ToolCall) -> Any:
     return answer
 
 
-ANCESTOR_DEPTH = 20
-"""How far up a parent chain the duplicate lookup walks, a bound against a cycle in stored rows."""
-
-
-def _ancestor_ids(call: ToolCall, issue: Issue) -> set[str]:
-    """The ids of an issue's parent, its parent's parent and so on up the chain."""
-    found: set[str] = set()
-    parent_id = issue.parent_id
-    while parent_id and parent_id not in found and len(found) < ANCESTOR_DEPTH:
-        found.add(parent_id)
-        parent = call.repositories.issues.get(call.context.workspace_id, parent_id)
-        parent_id = parent.parent_id if parent is not None else None
-    return found
-
-
 def _possible_duplicates(call: ToolCall, issue: Issue) -> list[dict[str, Any]]:
     """Open issues in the caller's visible teams whose titles look like the new one's.
 
     The same deterministic term match the create dialog shows, so an agent can
     notice a duplicate it just filed and relate or archive it. The issue's own
-    parent and ancestors are never answered, since a sub-issue shares its parent's
-    terms by design.
+    parent is never answered, since a sub-issue shares its parent's terms by design,
+    and sub-issues are one level deep so there is no further ancestor to leave out.
     """
     hits = find_similar(
         call.repositories,
         call.context,
         issue.title,
         exclude_issue_id=issue.issue_id,
-        exclude_issue_ids=_ancestor_ids(call, issue),
+        exclude_issue_ids=[issue.parent_id] if issue.parent_id else [],
     )
     return [
         {

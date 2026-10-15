@@ -93,7 +93,7 @@ def find_similar(
     of its indexed terms match, then by recency. An empty or all short title
     answers nothing rather than reading anything. `exclude_issue_id` and
     `exclude_issue_ids` are never answered, so an issue is not its own duplicate
-    and a sub-issue is not a duplicate of its parent or ancestors.
+    and a sub-issue is not a duplicate of its parent.
     """
     terms = title_terms(title)
     if not terms:

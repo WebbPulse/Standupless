@@ -7,7 +7,6 @@ errored after it wrote, and a sub-issue offered its own parent as a duplicate.
 
 from __future__ import annotations
 
-import json
 from typing import Any
 
 import pytest
@@ -173,21 +172,18 @@ def test_create_issue_answers_the_issue_when_the_duplicate_lookup_fails(
     assert [row["issue_id"] for row in listed["issues"]] == [created["issue_id"]]
 
 
-def test_create_issue_leaves_the_parent_chain_out_of_possible_duplicates(
+def test_create_issue_leaves_the_parent_out_of_possible_duplicates(
     client: TestClient, repositories: Any, workspace: str
 ) -> None:
-    """The parent and grandparent share the sub-issue's terms but are never offered as duplicates."""
+    """The parent shares the sub-issue's terms but is never offered as its duplicate, while a lookalike is."""
     secret = mint_for(repositories, MEMBER, WRITE)
     title = "Login redirect broken on Safari"
-    grandparent = _create(client, secret, title=title)["issue_id"]
-    parent = _create(client, secret, title=title, parent_id=grandparent)["issue_id"]
+    parent = _create(client, secret, title=title)["issue_id"]
     unrelated = _create(client, secret, title=title)["issue_id"]
-    for issue_id in (grandparent, parent, unrelated):
+    for issue_id in (parent, unrelated):
         _index(repositories, issue_id, title)
 
-    body = tool(
-        client, secret, "create_issue", {"team_id": TEAM, "title": "Login redirect broken", "parent_id": parent}
-    ).json()
-    created = json.loads(body["result"]["content"][0]["text"])
+    created = _create(client, secret, title="Login redirect broken", parent_id=parent)
 
+    assert created["parent_id"] == parent
     assert [row["issue_id"] for row in created["possible_duplicates"]] == [unrelated]
