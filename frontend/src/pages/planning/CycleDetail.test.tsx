@@ -557,14 +557,15 @@ describe('CycleDetail', () => {
       expect(
         screen.getByRole('button', { name: 'This team only' })
       ).toHaveAttribute('aria-pressed', 'false');
-      await waitFor(() => {
-        expect(listIssues).toHaveBeenLastCalledWith(
-          expect.objectContaining({ team_id: 'proj-1', cycle_id: 'cyc-1' })
+      const teamAlone = listIssues.mock.calls
+        .map(([query]) => query as { team_id?: unknown; cycle_id?: unknown })
+        .filter(
+          (query) => query.team_id === 'proj-1' && query.cycle_id === 'cyc-1'
         );
-      });
-      expect(listIssues.mock.lastCall?.[0]).not.toHaveProperty(
-        'include_sub_teams'
-      );
+      expect(teamAlone.length).toBeGreaterThan(0);
+      for (const query of teamAlone) {
+        expect(query).not.toHaveProperty('include_sub_teams');
+      }
     });
 
     it('reads the team alone from a narrowed link', async () => {
