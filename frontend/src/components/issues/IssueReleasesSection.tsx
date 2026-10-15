@@ -49,8 +49,7 @@ const stageLabel = (release: IssueReleaseRead): string => {
 /** Whether the release went out alone or inside a promotion. */
 const stateLabel = (release: IssueReleaseRead): string => {
   if (release.included_in === null || release.included_in === undefined) {
-    return release.current_stage === null ||
-      release.current_stage === undefined
+    return release.current_stage === null || release.current_stage === undefined
       ? 'created'
       : 'released';
   }
