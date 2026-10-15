@@ -7,6 +7,10 @@ globally would let a branch name in one customer's repository name a row in anot
 team. And magic words count only in the pull request title and body, never in a
 commit message, so that a rebase which rewrites history cannot reclose an issue
 somebody deliberately reopened.
+
+As in Linear, only a key in the branch name, in the title, or right after a magic
+word moves an issue's status. A key the body mentions in passing still links the
+pull request to the issue, and moves nothing.
 """
 
 from __future__ import annotations
@@ -31,10 +35,42 @@ MAGIC_WORDS: tuple[str, ...] = (
 )
 """The words that close an issue on merge, in the forms GitHub itself accepts."""
 
+REFERENCE_WORDS: tuple[str, ...] = (
+    "ref",
+    "refs",
+    "references",
+    "part of",
+    "related to",
+    "relates to",
+    "contributes to",
+    "toward",
+    "towards",
+)
+"""The words that tie an issue to a pull request without closing it, as in Linear."""
+
 _MAGIC_PATTERN = re.compile(
     r"\b(" + "|".join(MAGIC_WORDS) + r")\b[\s:]+(?=[A-Za-z])",
     re.IGNORECASE,
 )
+
+_REFERENCE_PATTERN = re.compile(
+    r"\b(" + "|".join(word.replace(" ", r"\s+") for word in REFERENCE_WORDS) + r")\b[\s:]+(?=[A-Za-z])",
+    re.IGNORECASE,
+)
+
+
+def _keys_after(pattern: re.Pattern[str], text: str, prefixes: Prefixes) -> dict[tuple[str, int], str]:
+    """Each key that directly follows a match of `pattern`, mapped to the matched word."""
+    if not text:
+        return {}
+    named: dict[tuple[str, int], str] = {}
+    for match in pattern.finditer(text):
+        word = " ".join(match.group(1).lower().split())
+        window = text[match.end() : match.end() + 32]
+        for hit, key in key_matches(window, prefixes):
+            if hit.start() == 0:
+                named[(key.team_id, key.number)] = word
+    return named
 
 
 def find_closing(text: str, prefixes: Prefixes) -> dict[tuple[str, int], str]:
@@ -45,16 +81,16 @@ def find_closing(text: str, prefixes: Prefixes) -> dict[tuple[str, int], str]:
     starts matching a key mentioned in a later sentence. Keyed by team and number
     rather than by the written key, so a retired prefix closes the same issue.
     """
-    if not text:
-        return {}
-    closing: dict[tuple[str, int], str] = {}
-    for match in _MAGIC_PATTERN.finditer(text):
-        word = match.group(1).lower()
-        window = text[match.end() : match.end() + 32]
-        for hit, key in key_matches(window, prefixes):
-            if hit.start() == 0:
-                closing[(key.team_id, key.number)] = word
-    return closing
+    return _keys_after(_MAGIC_PATTERN, text, prefixes)
+
+
+def find_referencing(text: str, prefixes: Prefixes) -> dict[tuple[str, int], str]:
+    """Which issues this text names after a non-closing word such as `Refs` or `Part of`.
+
+    Such a key moves the issue as the pull request progresses, the same as a key in
+    the title, but a merge does not close it.
+    """
+    return _keys_after(_REFERENCE_PATTERN, text, prefixes)
 
 
 def extract(
@@ -69,14 +105,22 @@ def extract(
 
     The four sources are searched in the order design section 4 lists them and a key
     found twice is kept once. The magic word is read from the title and body only,
-    which is what a commit message cannot contribute.
+    which is what a commit message cannot contribute. A key moves its issue's status
+    when the branch, the title, a commit message or a magic word in the body names
+    it; a bare mention in the body only links.
     """
     closing = {**find_closing(title, prefixes), **find_closing(body, prefixes)}
+    referencing = find_referencing(body, prefixes)
 
     keys: dict[tuple[str, int], FoundKey] = {}
-    for text in (branch, title, body, *commit_messages):
+    moving: set[tuple[str, int]] = set(closing) | set(referencing)
+    sources = [(branch, True), (title, True), (body, False), *((message, True) for message in commit_messages)]
+    for text, moves in sources:
         for found in find_keys(text, prefixes):
-            keys.setdefault((found.team_id, found.number), found)
+            ident = (found.team_id, found.number)
+            keys.setdefault(ident, found)
+            if moves:
+                moving.add(ident)
 
     return [
         FoundKey(
@@ -84,6 +128,7 @@ def extract(
             key=found.key,
             number=found.number,
             magic_word=closing.get((found.team_id, found.number)),
+            moves_status=(found.team_id, found.number) in moving,
         )
         for found in sorted(keys.values(), key=lambda row: (row.team_id, row.number))
     ]
