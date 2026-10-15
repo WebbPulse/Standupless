@@ -22,11 +22,11 @@ import { useLocation } from 'react-router-dom';
 import { useWorkspace } from '../../hooks/useWorkspace';
 import { cn } from '../../lib/cn';
 import { errorMessage } from '../../lib/errors';
+import BootSplash from '../layout/BootSplash';
 import { ErrorAlert } from '../ui/alert';
 import { IconButton } from '../ui/button';
 import TextLink from '../ui/link';
 import PageHeader from '../ui/page-header';
-import Spinner from '../ui/spinner';
 import { PeekPane } from './PeekPane';
 import Sidebar from './Sidebar';
 
@@ -67,8 +67,8 @@ const Body: React.FC<{ flush: boolean; children: ReactNode }> = ({
 );
 
 /**
- * Renders the workspace chrome, or the spinner, error and not-found states in
- * its place while the slug is being resolved.
+ * Renders the workspace chrome, or the cold start screen, error and not-found
+ * states in its place while the slug is being resolved.
  */
 export const WorkspaceShell: React.FC<WorkspaceShellProps> = ({
   children,
@@ -103,7 +103,7 @@ export const WorkspaceShell: React.FC<WorkspaceShellProps> = ({
   }, [drawerOpen]);
 
   if (isLoading) {
-    return <Spinner label="Loading workspace" />;
+    return <BootSplash label="Loading workspace" />;
   }
 
   if (error !== null && workspace === null) {
