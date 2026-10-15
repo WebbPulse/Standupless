@@ -20,6 +20,7 @@ jobs:
       frontend: ${{ steps.filter.outputs.frontend }}
       cli: ${{ steps.filter.outputs.cli }}
       desktop: ${{ steps.filter.outputs.desktop }}
+      mobile: ${{ steps.filter.outputs.mobile }}
       frontend_paths: ${{ steps.filter.outputs.frontend_paths }}
     steps:
       - uses: actions/checkout@v7
@@ -44,6 +45,10 @@ jobs:
               - 'desktop/**'
               - '.github/workflows/ci.yml'
               - '.github/workflows/release-desktop.yml'
+            mobile:
+              - 'mobile/**'
+              - '.github/workflows/ci.yml'
+              - '.github/workflows/release-mobile.yml'
             frontend_paths:
               - 'frontend/src/api/**'
               - 'backend/tests/common/test_frontend_paths.py'
@@ -232,6 +237,147 @@ jobs:
       - name: Audit production dependencies
         run: npm audit --omit=dev --audit-level=moderate
 
+  mobile-ios:
+    name: Mobile iOS (${{ matrix.environment }})
+    needs: changes
+    if: needs.changes.outputs.mobile == 'true'
+    runs-on: macos-latest
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        environment: [production, staging]
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Check formatting
+        run: npm run format:check
+
+      - name: Type check
+        run: npm run type-check
+
+      - name: Sync the native project
+        env:
+          STANDUPLESS_MOBILE_ENV: ${{ matrix.environment }}
+        run: npx cap sync ios
+
+      - name: Build the simulator app
+        working-directory: mobile/ios/App
+        env:
+          ENVIRONMENT: ${{ matrix.environment }}
+        run: |
+          set -euo pipefail
+          xcodebuild -version
+          EXTRA=()
+          if [ "$ENVIRONMENT" = "staging" ]; then
+            EXTRA=(-xcconfig Staging.xcconfig)
+          fi
+          xcodebuild build \
+            -project App.xcodeproj \
+            -scheme App \
+            -configuration Debug \
+            -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath build \
+            "${EXTRA[@]}" \
+            CODE_SIGNING_ALLOWED=NO
+          APP=build/Build/Products/Debug-iphonesimulator/App.app
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP/Info.plist"
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleURLTypes:0:CFBundleURLSchemes:0' "$APP/Info.plist"
+          ditto -c -k --keepParent "$APP" "standupless-ios-simulator-${ENVIRONMENT}.zip"
+
+      - name: Upload the simulator app
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: standupless-ios-simulator-${{ matrix.environment }}
+          if-no-files-found: error
+          retention-days: 7
+          path: mobile/ios/App/standupless-ios-simulator-${{ matrix.environment }}.zip
+
+  mobile-android:
+    name: Mobile Android (${{ matrix.environment }})
+    needs: changes
+    if: needs.changes.outputs.mobile == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        environment: [production, staging]
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+
+      - name: Set up Java
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: gradle
+          cache-dependency-path: |
+            mobile/android/*.gradle
+            mobile/android/app/*.gradle
+            mobile/android/gradle/wrapper/gradle-wrapper.properties
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Sync the native project
+        env:
+          STANDUPLESS_MOBILE_ENV: ${{ matrix.environment }}
+        run: npx cap sync android
+
+      - name: Build the debug APK
+        working-directory: mobile/android
+        env:
+          ENVIRONMENT: ${{ matrix.environment }}
+        run: |
+          set -euo pipefail
+          ./gradlew --no-daemon assembleDebug
+          APK=app/build/outputs/apk/debug/app-debug.apk
+          AAPT="$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -n1)/aapt2"
+          "$AAPT" dump badging "$APK" | grep -E "^package:|^application-label:"
+          "$AAPT" dump xmltree --file AndroidManifest.xml "$APK" | grep -E 'android:(scheme|host|pathPattern)'
+          cp "$APK" "standupless-android-debug-${ENVIRONMENT}.apk"
+
+      - name: Upload the debug APK
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: standupless-android-debug-${{ matrix.environment }}
+          if-no-files-found: error
+          retention-days: 7
+          path: mobile/android/standupless-android-debug-${{ matrix.environment }}.apk
+
   frontend-paths:
     name: Frontend paths match backend routes
     needs: changes
@@ -367,6 +513,8 @@ jobs:
       - frontend
       - cli
       - desktop
+      - mobile-ios
+      - mobile-android
       - frontend-paths
       - e2e-local
     if: always()

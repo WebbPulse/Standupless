@@ -9,6 +9,7 @@ import { BrowserRouter } from 'react-router-dom';
 import App from './App';
 import { BootSplashHandoff } from './components/layout/BootSplash';
 import DesktopShellBridge from './components/desktop/DesktopShellBridge';
+import MobileShellBridge from './components/mobile/MobileShellBridge';
 import { AuthProvider } from './contexts/AuthContext';
 import './index.css';
 
@@ -23,6 +24,7 @@ createRoot(rootElement).render(
       <BootSplashHandoff />
       <AuthProvider>
         <DesktopShellBridge />
+        <MobileShellBridge />
         <App />
       </AuthProvider>
     </BrowserRouter>

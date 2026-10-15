@@ -24,6 +24,9 @@
     "type-check": "tsc -b --noEmit"
   },
   "dependencies": {
+    "@capacitor/app": "^8.1.2",
+    "@capacitor/core": "^8.5.3",
+    "@capacitor/splash-screen": "^8.0.2",
     "@tailwindcss/vite": "^4.3.3",
     "@tiptap/core": "^3.31.3",
     "@tiptap/extension-hard-break": "^3.31.3",
