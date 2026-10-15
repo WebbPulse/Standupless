@@ -113,7 +113,7 @@ export const deepLinkToAppUrl = (
   env: Environment
 ): string | null => {
   const url = parseUrl(value);
-  if (url === null) return null;
+  if (url === null || isHandoffCallback(value, env)) return null;
   if (url.protocol === `${env.scheme}:`) {
     const rest = value.slice(`${env.scheme}:`.length).replace(/^\/+/, '');
     const path = `/${rest}`;
@@ -125,6 +125,27 @@ export const deepLinkToAppUrl = (
   }
   return url.origin === env.appOrigin ? url.toString() : null;
 };
+
+/**
+ * Whether a deep link is a browser sign-in handoff callback,
+ * `<scheme>://auth/handoff?code=...`. These never become app URLs: the main
+ * process redeems the code, so it never reaches the page's address bar.
+ */
+export const isHandoffCallback = (value: string, env: Environment): boolean => {
+  const url = parseUrl(value);
+  return (
+    url !== null &&
+    url.protocol === `${env.scheme}:` &&
+    url.hostname === 'auth' &&
+    url.pathname === '/handoff'
+  );
+};
+
+/** Picks the first handoff callback out of a command line, or null. */
+export const handoffCallbackFromArgv = (
+  argv: readonly string[],
+  env: Environment
+): string | null => argv.find((arg) => isHandoffCallback(arg, env)) ?? null;
 
 /** Picks the first deep link out of a command line, for the second instance. */
 export const deepLinkFromArgv = (

@@ -213,7 +213,9 @@ module "github_actions_ci_role" {
     "repo:WebbPulse@185014056/Standupless@1375434030:pull_request",
     "repo:WebbPulse@185014056/Standupless@1375434030:ref:refs/heads/staging",
     "repo:WebbPulse@185014056/Standupless@1375434030:ref:refs/heads/main",
+    "repo:WebbPulse@185014056/Standupless@1375434030:ref:refs/tags/desktop-v*",
   ]
+  allow_wildcard_subjects = true
 
   inline_policy_name = "codeartifact-read"
 

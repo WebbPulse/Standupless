@@ -14,6 +14,7 @@ const NOTIFY = 'standupless:notify';
 const THEME = 'standupless:theme';
 const NAVIGATE = 'standupless:navigate';
 const NAVIGATE_READY = 'standupless:navigate-ready';
+const SIGN_IN_WITH_BROWSER = 'standupless:sign-in-with-browser';
 
 /** The prefix the main process passes the app version under. */
 const VERSION_ARG = '--standupless-version=';
@@ -75,6 +76,9 @@ contextBridge.exposeInMainWorld(
         ipcRenderer.removeListener(NAVIGATE, handler);
         ipcRenderer.send(NAVIGATE_READY, false);
       };
+    },
+    signInWithBrowser(): void {
+      ipcRenderer.send(SIGN_IN_WITH_BROWSER);
     },
   })
 );

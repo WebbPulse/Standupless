@@ -24,6 +24,11 @@ export interface DesktopBridge {
   notify: (payload: DesktopNotification) => void;
   setTheme: (theme: 'system' | 'light' | 'dark') => void;
   onNavigate: (listener: (path: string) => void) => () => void;
+  /**
+   * Opens the system browser to sign in there and hand the session back
+   * through the app's URL scheme. Absent on builds that predate the handoff.
+   */
+  signInWithBrowser?: () => void;
 }
 
 /** The bridge when the page runs inside the desktop app, otherwise null. */
@@ -45,3 +50,32 @@ export const isDesktopShell = (): boolean => desktopBridge() !== null;
  */
 export const desktopSupportsPasskeys = (): boolean =>
   desktopBridge()?.passkeys ?? true;
+
+/**
+ * The desktop app's browser sign-in, or null in a browser or on a desktop
+ * build that predates the handoff.
+ */
+export const desktopBrowserSignIn = (): (() => void) | null => {
+  const bridge = desktopBridge();
+  return typeof bridge?.signInWithBrowser === 'function'
+    ? () => bridge.signInWithBrowser?.()
+    : null;
+};
+
+/**
+ * What the sign-in page says when the desktop app could not finish a browser
+ * handoff, by the reason the app put in the query. Any failure has already
+ * spent the code, so every message sends the person back to the app.
+ */
+export const describeDesktopHandoffFailure = (
+  reason: string | null
+): string | null => {
+  if (reason === null || reason === '') return null;
+  if (reason === 'rate-limited') {
+    return 'Too many sign-in attempts from the app. Wait a few minutes, then start again from the app.';
+  }
+  if (reason === 'refused') {
+    return 'That account cannot sign in to the desktop app. Start again from the app with another account.';
+  }
+  return 'The browser sign-in could not be completed. Start again from the app.';
+};

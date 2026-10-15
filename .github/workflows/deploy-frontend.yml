@@ -30,12 +30,15 @@ jobs:
           set -euo pipefail
           if [ "${{ github.ref_name }}" = "main" ]; then
             echo "environment=production" >> "$GITHUB_OUTPUT"
+            export VITE_DESKTOP_HANDOFF_SCHEMES="standupless"
           else
             echo "environment=staging" >> "$GITHUB_OUTPUT"
+            export VITE_DESKTOP_HANDOFF_SCHEMES="standupless-staging"
           fi
 
           BUILD_ENV=$(python3 -c 'import json, os; print(json.dumps({
               "VITE_API_URL": os.environ["VITE_API_URL"],
+              "VITE_DESKTOP_HANDOFF_SCHEMES": os.environ["VITE_DESKTOP_HANDOFF_SCHEMES"],
           }))')
           echo "build-env-json=$BUILD_ENV" >> "$GITHUB_OUTPUT"
 

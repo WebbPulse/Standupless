@@ -21,6 +21,10 @@
  * outside both, so the same pages answer a visitor, someone signing up and a
  * signed in member. The build prerenders them, and `/`, into static HTML.
  *
+ * `/desktop-handoff` sits outside both as well. It sends a signed out visitor
+ * to sign in itself, with the desktop app's request in `returnTo`, because the
+ * protected guard would drop the query that carries it.
+ *
  * The `p/:keyPrefix` paths were what teams lived under before they were called
  * teams. They stay as redirects rather than being removed, because they are in
  * bookmarks and in links people have already sent each other.
@@ -65,10 +69,12 @@ import Pricing from './pages/pricing/Pricing';
 import IssueDetail from './pages/issues/IssueDetail';
 import MyIssues from './pages/issues/MyIssues';
 import NotFound from './pages/NotFound';
+import DesktopHandoff from './pages/desktop/DesktopHandoff';
 import AccountDeleted from './pages/authentication/AccountDeleted';
 import {
   ACCOUNT_DELETED_PATH,
   CONTACT_PATH,
+  DESKTOP_HANDOFF_PATH,
   PRICING_PATH,
   PRIVACY_PATH,
   REFUNDS_PATH,
@@ -112,6 +118,7 @@ const App: React.FC = () => (
     <Route path={PRICING_PATH} element={<Pricing />} />
     <Route path={CONTACT_PATH} element={<Contact />} />
     <Route path={ACCOUNT_DELETED_PATH} element={<AccountDeleted />} />
+    <Route path={DESKTOP_HANDOFF_PATH} element={<DesktopHandoff />} />
 
     <Route element={<GuestRoute />}>
       <Route path="/login" element={<Login />} />
