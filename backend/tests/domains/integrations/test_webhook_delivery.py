@@ -408,6 +408,40 @@ def test_the_body_has_the_linear_shape(repositories: Any, workspace: str) -> Non
     assert removed.data["id"] == issue_image()["issue_id"]
 
 
+def test_an_issue_without_an_sla_rule_carries_null_sla_fields(repositories: Any, workspace: str) -> None:
+    """No running timer means all three SLA fields are null."""
+    event = payloads.describe(repositories, payloads.ISSUE, "INSERT", issue_image(), {})
+
+    assert event is not None
+    assert (event.data["slaStartedAt"], event.data["slaBreachesAt"], event.data["slaBreached"]) == (None, None, None)
+
+
+def test_a_breached_issue_carries_its_due_time_and_the_breached_flag(repositories: Any, workspace: str) -> None:
+    """A timer whose due time has passed reads as breached, with its start and due time."""
+    image = issue_image(sla_started_at="2026-09-26T00:00:00+00:00", sla_breaches_at="2026-09-27T00:00:00+00:00")
+
+    event = payloads.describe(repositories, payloads.ISSUE, "INSERT", image, {})
+
+    assert event is not None
+    assert event.data["slaStartedAt"] == "2026-09-26T00:00:00+00:00"
+    assert event.data["slaBreachesAt"] == "2026-09-27T00:00:00+00:00"
+    assert event.data["slaBreached"] is True
+    assert "slaBreached" not in payloads.ISSUE_FIELDS.values()
+
+
+def test_a_running_and_an_archived_timer_are_not_breached(repositories: Any, workspace: str) -> None:
+    """A due time still ahead is not breached, and an archived issue's timer no longer runs."""
+    running = issue_image(sla_started_at="2026-09-26T00:00:00+00:00", sla_breaches_at="2999-01-01T00:00:00+00:00")
+    archived = issue_image(sla_breaches_at="2026-09-27T00:00:00+00:00", archived_at="2026-09-28T00:00:00+00:00")
+
+    ahead = payloads.describe(repositories, payloads.ISSUE, "INSERT", running, {})
+    stopped = payloads.describe(repositories, payloads.ISSUE, "INSERT", archived, {})
+
+    assert ahead is not None and stopped is not None
+    assert (ahead.data["slaBreachesAt"], ahead.data["slaBreached"]) == ("2999-01-01T00:00:00+00:00", False)
+    assert (stopped.data["slaStartedAt"], stopped.data["slaBreached"]) == (None, False)
+
+
 def test_a_long_description_is_bounded(repositories: Any, workspace: str) -> None:
     """One body always fits the queue message and the log row that carry it."""
     event = payloads.describe(repositories, payloads.ISSUE, "INSERT", issue_image(body="x" * 50_000), {})

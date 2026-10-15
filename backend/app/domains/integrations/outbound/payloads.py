@@ -5,6 +5,10 @@ Every body carries `action` (`create`, `update` or `remove`), `type`, `data`, `u
 that changed, keyed like `data`. An update that touched none of a type's public fields,
 such as a rollup counter the product maintains itself, describes nothing and is dropped.
 
+An Issue's `data` also carries its SLA timer as `slaStartedAt`, `slaBreachesAt` and
+`slaBreached`, all null when no SLA rule applies. They are read off the row when the
+change is described, so they never make an update on their own.
+
 `data` is a deliberate subset of the row in camelCase. A webhook goes to somebody else's
 server, so it carries what identifies the row and what a receiver acts on, never
 internal index attributes, and long text is cut to a bound so one body always fits the
@@ -201,6 +205,35 @@ type Builder = Callable[[Repositories, Links, str, Mapping[str, Any]], tuple[dic
 """Build `data`, `url` and the team ids for one image of one type."""
 
 
+def _moment(value: Any) -> datetime | None:
+    """A stored ISO 8601 time as an aware datetime, or `None` when it is absent or unreadable."""
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        moment = datetime.fromisoformat(value)
+    except ValueError:
+        return None
+    return moment if moment.tzinfo is not None else moment.replace(tzinfo=timezone.utc)
+
+
+def _issue_sla(image: Mapping[str, Any], now: datetime | None = None) -> dict[str, Any]:
+    """The issue's SLA timer as a receiver reads it: start, due time and breached flag.
+
+    All three are null when no SLA rule applies to the issue, and an archived
+    issue's timer no longer runs, so it reads as not breached.
+    """
+    breaches_at = _moment(image.get("sla_breaches_at"))
+    if breaches_at is None:
+        return {"slaStartedAt": None, "slaBreachesAt": None, "slaBreached": None}
+    archived = bool(image.get("archived_at"))
+    moment = now or datetime.now(timezone.utc)
+    return {
+        "slaStartedAt": image.get("sla_started_at") or None,
+        "slaBreachesAt": image.get("sla_breaches_at"),
+        "slaBreached": not archived and moment >= breaches_at,
+    }
+
+
 def _issue(
     repositories: Repositories, links: Links, workspace_id: str, image: Mapping[str, Any]
 ) -> tuple[dict[str, Any], str, tuple[str, ...]]:
@@ -216,6 +249,7 @@ def _issue(
         "creatorId": image.get("created_by"),
         "createdAt": image.get("created_at"),
         "updatedAt": image.get("updated_at"),
+        **_issue_sla(image),
     }
     url = links.issue(identifier)
     data["url"] = url
