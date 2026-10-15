@@ -88,7 +88,7 @@ const useVisitorPlatform = (): DesktopPlatform | null =>
 interface FirstLaunch {
   platform: DesktopPlatform;
   title: string;
-  steps: React.ReactNode[];
+  steps: { id: string; text: React.ReactNode }[];
 }
 
 const CODE =
@@ -99,41 +99,69 @@ const FIRST_LAUNCH: FirstLaunch[] = [
     platform: 'mac',
     title: 'macOS',
     steps: [
-      'Open the disk image and drag Standupless into Applications.',
-      'Open Standupless. macOS says it cannot check the app, so choose Done.',
-      'In System Settings, open Privacy & Security, scroll to Security and choose Open Anyway, then confirm.',
-      <>
-        If macOS says the app is damaged, run{' '}
-        <code className={CODE}>
-          xattr -dr com.apple.quarantine /Applications/Standupless.app
-        </code>{' '}
-        in Terminal and open it again.
-      </>,
+      {
+        id: 'mac-1',
+        text: 'Open the disk image and drag Standupless into Applications.',
+      },
+      {
+        id: 'mac-2',
+        text: 'Open Standupless. macOS says it cannot check the app, so choose Done.',
+      },
+      {
+        id: 'mac-3',
+        text: 'In System Settings, open Privacy & Security, scroll to Security and choose Open Anyway, then confirm.',
+      },
+      {
+        id: 'mac-4',
+        text: (
+          <>
+            If macOS says the app is damaged, run{' '}
+            <code className={CODE}>
+              xattr -dr com.apple.quarantine /Applications/Standupless.app
+            </code>{' '}
+            in Terminal and open it again.
+          </>
+        ),
+      },
     ],
   },
   {
     platform: 'windows',
     title: 'Windows',
     steps: [
-      'Run the installer. SmartScreen says it protected your PC.',
-      'Choose More info, then Run anyway.',
+      {
+        id: 'windows-1',
+        text: 'Run the installer. SmartScreen says it protected your PC.',
+      },
+      { id: 'windows-2', text: 'Choose More info, then Run anyway.' },
     ],
   },
   {
     platform: 'linux',
     title: 'Linux',
     steps: [
-      <>
-        For the AppImage, run{' '}
-        <code className={CODE}>chmod +x Standupless.AppImage</code> and open it.
-      </>,
-      <>
-        For the package, run{' '}
-        <code className={CODE}>
-          sudo apt install ./standupless-desktop_amd64.deb
-        </code>
-        .
-      </>,
+      {
+        id: 'linux-1',
+        text: (
+          <>
+            For the AppImage, run{' '}
+            <code className={CODE}>chmod +x Standupless.AppImage</code> and open
+            it.
+          </>
+        ),
+      },
+      {
+        id: 'linux-2',
+        text: (
+          <>
+            For the package, run{' '}
+            <code className={CODE}>
+              sudo apt install ./standupless-desktop_amd64.deb
+            </code>
+            .
+          </>
+        ),
+      },
     ],
   },
 ];
@@ -319,8 +347,8 @@ const Download: React.FC = () => {
               <div key={entry.platform} className="space-y-2">
                 <h3 className="text-sm font-medium text-text">{entry.title}</h3>
                 <ol className="list-decimal space-y-1.5 pl-4 text-sm leading-relaxed text-text-muted marker:text-text-faint">
-                  {entry.steps.map((step, index) => (
-                    <li key={index}>{step}</li>
+                  {entry.steps.map((step) => (
+                    <li key={step.id}>{step.text}</li>
                   ))}
                 </ol>
               </div>
