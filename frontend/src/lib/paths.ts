@@ -225,6 +225,10 @@ export const apiKeysPath = (slug: string): string =>
 export const connectedAppsPath = (slug: string): string =>
   `${settingsPath(slug)}/connected-apps`;
 
+/** The caller's private agent profiles, the settings page every role may open. */
+export const agentProfilesPath = (slug: string): string =>
+  `${settingsPath(slug)}/agent-profiles`;
+
 /** The settings page with the MCP server address and the CLI install steps. */
 export const mcpAndCliPath = (slug: string): string =>
   `${settingsPath(slug)}/mcp-and-cli`;

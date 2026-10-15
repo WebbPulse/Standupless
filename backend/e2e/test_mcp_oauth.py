@@ -216,6 +216,11 @@ EXPECTED_TOOLS = frozenset(
         "create_recurring_issue",
         "update_recurring_issue",
         "delete_recurring_issue",
+        "list_agent_profiles",
+        "list_agent_profile_versions",
+        "get_agent_profile",
+        "save_agent_profile",
+        "delete_agent_profile",
     }
 )
 """The tools `docs/api/m6.md` fixes, named here so a silent addition fails.

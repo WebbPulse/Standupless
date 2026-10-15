@@ -22,7 +22,7 @@ from typing import Annotated, Any, cast, get_args, get_type_hints
 import typer
 from typer.core import TyperGroup
 
-from standupless_cli import __version__, output
+from standupless_cli import __version__, agent, output
 from standupless_cli._generated.models import (
     ChannelCreate,
     ChannelRead,
@@ -139,6 +139,11 @@ recurring_app = typer.Typer(
     help="Recurring issues: a team's schedules that create an issue from a template.", no_args_is_help=True
 )
 app.add_typer(recurring_app, name="recurring")
+agent_app = typer.Typer(
+    help="Your private agent profiles: Claude guidance saved through MCP, restored onto this machine.",
+    no_args_is_help=True,
+)
+app.add_typer(agent_app, name="agent")
 
 
 class Source(StrEnum):
@@ -3745,6 +3750,121 @@ def recurring_delete(
     found = context.team(team)
     context.client.delete_recurring(context.workspace_id, found["id"], recurring_id)
     output.success(f"Deleted recurring issue {recurring_id}.")
+
+
+def _personal_client(ctx: typer.Context) -> StanduplessClient:
+    """A client on the logged in key, which has to be a personal key since profiles belong to a person."""
+    state = _state(ctx)
+    settings = state.settings()
+    api_key = settings.api_key()
+    if not api_key:
+        raise ConfigError(
+            f"Not logged in to {settings.base_url}. Run `standupless auth login` with a personal API key "
+            "that has settings:read, or set STANDUPLESS_API_KEY."
+        )
+    return state.client(api_key)
+
+
+ProfileArgument = Annotated[str, typer.Argument(help="The profile name, from agent list.")]
+
+
+@agent_app.command("list")
+def agent_list(ctx: typer.Context, as_json: JsonFlag = False) -> None:
+    """List your agent profiles with each one's latest version."""
+    listed = _personal_client(ctx).list_agent_profiles()
+    if as_json:
+        output.print_json(listed)
+        return
+    output.table(
+        ["Profile", "Latest", "Files", "Bytes", "Updated", "Note"],
+        [
+            [
+                row["name"],
+                row["latest_version"],
+                row["file_count"],
+                row["total_bytes"],
+                row["updated_at"],
+                row.get("note") or "",
+            ]
+            for row in listed["profiles"]
+        ],
+        "No agent profiles yet. Save one from an agent with the save_agent_profile MCP tool.",
+    )
+
+
+@agent_app.command("versions")
+def agent_versions(ctx: typer.Context, profile: ProfileArgument, as_json: JsonFlag = False) -> None:
+    """List the kept versions of one profile, newest first."""
+    listed = _personal_client(ctx).list_agent_profile_versions(profile)
+    if as_json:
+        output.print_json(listed)
+        return
+    output.table(
+        ["Version", "Saved", "Via", "Files", "Bytes", "Note"],
+        [
+            [
+                row["version"],
+                row["created_at"],
+                row["source"],
+                row["file_count"],
+                row["total_bytes"],
+                row.get("note") or "",
+            ]
+            for row in listed["versions"]
+        ],
+        "No versions kept.",
+    )
+
+
+@agent_app.command("pull")
+def agent_pull(
+    ctx: typer.Context,
+    profile: ProfileArgument,
+    version: Annotated[
+        str | None, typer.Option("--version", "-V", help="A version number from agent versions; latest by default.")
+    ] = None,
+    project: Annotated[
+        Path | None,
+        typer.Option(
+            "--project", "-p", help="The project checkout for project and memory files; the current folder by default."
+        ),
+    ] = None,
+    home: Annotated[Path | None, typer.Option("--home", hidden=True, help="The home folder to restore into.")] = None,
+    yes: Annotated[bool, typer.Option("--yes", "-y", help="Write without asking.")] = False,
+    dry_run: Annotated[bool, typer.Option("--dry-run", help="Show what would change and write nothing.")] = False,
+) -> None:
+    """Restore a profile onto this machine, showing each difference and asking before writing.
+
+    Files under home land in your home folder, project files in the project checkout,
+    and memory files in Claude Code's memory folder for that checkout.
+    """
+    snapshot = _personal_client(ctx).get_agent_profile(profile, version)
+    roots = agent.root_dirs(home or Path.home(), project or Path.cwd())
+    try:
+        changes = agent.plan(snapshot["files"], roots)
+    except agent.RestoreError as exc:
+        raise ConfigError(str(exc)) from exc
+    pending = [change for change in changes if change.kind != "same"]
+    output.success(f"{snapshot['name']} version {snapshot['version']}: {len(changes)} files.")
+    for change in changes:
+        typer.echo(f"  {change.kind:<8} {change.target}")
+    if not pending:
+        output.success("Everything is already up to date.")
+        return
+    for change in pending:
+        if change.kind == "changed":
+            typer.echo(change.diff(), nl=False)
+    if dry_run:
+        output.success(f"Dry run: {len(pending)} files would be written.")
+        return
+    changed = sum(1 for change in pending if change.kind == "changed")
+    question = f"Write {len(pending)} files, overwriting {changed} that differ?"
+    if not yes and not typer.confirm(question, default=False):
+        output.error("Nothing written.")
+        raise typer.Exit(1)
+    for change in pending:
+        agent.write(change)
+    output.success(f"Restored {len(pending)} files from {snapshot['name']} version {snapshot['version']}.")
 
 
 def run() -> None:

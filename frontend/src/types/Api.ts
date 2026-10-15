@@ -2628,6 +2628,47 @@ export interface WorkspaceConnectedAppRead {
   last_used_at: string | null;
 }
 
+/** Which local folder an agent profile file belongs under. */
+export type AgentProfileRoot = 'home' | 'project' | 'memory';
+
+/** One of the caller's private agent profiles, with its latest version's size. */
+export interface AgentProfileRead {
+  name: string;
+  latest_version: number;
+  file_count: number;
+  total_bytes: number;
+  note?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+/** The caller's agent profiles and the limits they are kept under. */
+export interface AgentProfileListRead {
+  profiles: AgentProfileRead[];
+  versions_kept: number;
+  max_profiles: number;
+}
+
+/** One kept version of an agent profile, without its files. */
+export interface AgentProfileVersionRead {
+  version: number;
+  created_at: string;
+  file_count: number;
+  total_bytes: number;
+  sha256: string;
+  source: string;
+  note?: string;
+  latest: boolean;
+}
+
+/** One agent profile's kept versions, newest first. */
+export interface AgentProfileVersionListRead {
+  name: string;
+  latest_version: number;
+  versions_kept: number;
+  versions: AgentProfileVersionRead[];
+}
+
 /** A paid plan a workspace can check out on. */
 export type PaidPlan = 'standard' | 'business';
 

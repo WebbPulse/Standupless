@@ -10,12 +10,16 @@ from __future__ import annotations
 
 from collections.abc import Iterator, Mapping
 from typing import Any, cast
+from urllib.parse import quote
 
 import httpx
 
 from standupless_cli import __version__
 from standupless_cli._generated.models import (
     ActivityRead,
+    AgentProfileListRead,
+    AgentProfileSnapshotRead,
+    AgentProfileVersionListRead,
     AppCommonApiSchemasIssuesIssueRead,
     ChannelCreate,
     ChannelRead,
@@ -228,6 +232,21 @@ class StanduplessClient:
     def get_me(self) -> UserRead:
         """The person a personal key belongs to; a workspace key gets a 403."""
         return cast(UserRead, self._request("GET", "/api/users/me"))
+
+    def list_agent_profiles(self) -> AgentProfileListRead:
+        """The key's person's private agent profiles; the key needs settings:read."""
+        return cast(AgentProfileListRead, self._request("GET", "/api/users/me/agent-profiles"))
+
+    def list_agent_profile_versions(self, name: str) -> AgentProfileVersionListRead:
+        """One agent profile's kept versions, newest first."""
+        path = f"/api/users/me/agent-profiles/{quote(name, safe='')}/versions"
+        return cast(AgentProfileVersionListRead, self._request("GET", path))
+
+    def get_agent_profile(self, name: str, version: str | None = None) -> AgentProfileSnapshotRead:
+        """One version of an agent profile with its files, the latest unless `version` names one."""
+        path = f"/api/users/me/agent-profiles/{quote(name, safe='')}"
+        params = {"version": version} if version else None
+        return cast(AgentProfileSnapshotRead, self._request("GET", path, params=params))
 
     def list_teams(self, workspace_id: str) -> list[TeamRead]:
         """The workspace's teams."""
