@@ -1,58 +1,58 @@
-resource "aws_sesv2_configuration_set" "transactional" {
+module "ses" {
+  source  = "terraform.webbpulse.com/WebbPulse/platform-modules/aws//modules/ses-identity"
+  version = "~> 2.39"
+
   configuration_set_name = "standupless-transactional"
 
-  reputation_options {
-    reputation_metrics_enabled = true
-  }
+  domain           = local.custom_domain ? local.domain_name : null
+  sender_address   = local.custom_domain ? null : local.email_from
+  mail_from_domain = local.custom_domain ? "bounce.${local.domain_name}" : null
 
-  sending_options {
-    sending_enabled = true
-  }
+  dkim_records_zone_id     = local.custom_domain ? module.staging_dns.zone_id : null
+  create_mail_from_records = local.custom_domain
 
-  tags = { Name = "${local.prefix}-transactional" }
+  verified_recipients = local.ses_verified_recipients
+
+  tags           = { Name = "${local.prefix}-ses-domain" }
+  recipient_tags = { Name = "${local.prefix}-ses-recipient" }
 }
 
-resource "aws_sesv2_email_identity" "domain" {
-  count = local.custom_domain ? 1 : 0
-
-  email_identity         = local.domain_name
-  configuration_set_name = aws_sesv2_configuration_set.transactional.configuration_set_name
-
-  dkim_signing_attributes {
-    next_signing_key_length = "RSA_2048_BIT"
-  }
-
-  tags = { Name = "${local.prefix}-ses-domain" }
+moved {
+  from = aws_sesv2_configuration_set.transactional
+  to   = module.ses.aws_sesv2_configuration_set.this
 }
 
-resource "aws_sesv2_email_identity" "sender" {
-  count = local.custom_domain ? 0 : 1
-
-  email_identity         = local.email_from
-  configuration_set_name = aws_sesv2_configuration_set.transactional.configuration_set_name
-
-  tags = { Name = "${local.prefix}-ses-sender" }
+moved {
+  from = aws_sesv2_email_identity.domain[0]
+  to   = module.ses.aws_sesv2_email_identity.domain[0]
 }
 
-resource "aws_sesv2_email_identity_mail_from_attributes" "domain" {
-  count = local.custom_domain ? 1 : 0
-
-  email_identity         = aws_sesv2_email_identity.domain[0].email_identity
-  mail_from_domain       = "bounce.${local.domain_name}"
-  behavior_on_mx_failure = "USE_DEFAULT_VALUE"
+moved {
+  from = aws_sesv2_email_identity.sender[0]
+  to   = module.ses.aws_sesv2_email_identity.sender[0]
 }
 
-resource "aws_sesv2_email_identity_feedback_attributes" "domain" {
-  count = local.custom_domain ? 1 : 0
-
-  email_identity           = aws_sesv2_email_identity.domain[0].email_identity
-  email_forwarding_enabled = false
+moved {
+  from = aws_sesv2_email_identity_mail_from_attributes.domain[0]
+  to   = module.ses.aws_sesv2_email_identity_mail_from_attributes.domain[0]
 }
 
-resource "aws_sesv2_email_identity" "recipient" {
-  for_each = toset(local.ses_verified_recipients)
+moved {
+  from = aws_sesv2_email_identity_feedback_attributes.domain[0]
+  to   = module.ses.aws_sesv2_email_identity_feedback_attributes.domain[0]
+}
 
-  email_identity = each.value
+moved {
+  from = aws_sesv2_email_identity.recipient
+  to   = module.ses.aws_sesv2_email_identity.recipient
+}
 
-  tags = { Name = "${local.prefix}-ses-recipient" }
+moved {
+  from = aws_route53_record.ses_mail_from_mx[0]
+  to   = module.ses.aws_route53_record.mail_from_mx[0]
+}
+
+moved {
+  from = aws_route53_record.ses_mail_from_spf[0]
+  to   = module.ses.aws_route53_record.mail_from_spf[0]
 }
