@@ -13,6 +13,7 @@ from typing import Annotated, Any, Dict
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Request, Response, status
 from webbpulse.dynamodb import ConditionFailed, TransactionCanceled
+from webbpulse.http import conditional_response
 
 from app.common import audit, plan_usage, workspace_members
 from app.common.api.dependencies.authz import (
@@ -131,13 +132,16 @@ def list_workspaces(
 @router.post("", response_model=WorkspaceRead, status_code=status.HTTP_201_CREATED)
 def create_workspace(
     payload: WorkspaceCreate,
+    request: Request,
     subject: Annotated[str, Depends(caller_subject)],
     repositories: Annotated[Repositories, Depends(get_repositories)],
 ) -> WorkspaceRead:
     """Create a workspace and make the caller its first owner.
 
     The membership is written after the workspace, because a workspace with no
-    owner is recoverable while an owner row pointing at nothing is not.
+    owner is recoverable while an owner row pointing at nothing is not. The
+    creation opens the new workspace's audit log with its creator as the actor,
+    since there is no earlier admin to act for.
     """
     refuse_deleted_caller(repositories, subject)
     workspace = Workspace(id=new_workspace_id(), name=payload.name, slug=payload.slug)
@@ -153,6 +157,15 @@ def create_workspace(
             user_id=subject,
             role="owner",
         )
+    )
+    audit.record(
+        repositories,
+        request_context(request, created.id, subject, "owner"),
+        "workspace.created",
+        target_type="workspace",
+        target_id=created.id,
+        target_label=created.name,
+        after={"name": created.name, "slug": created.slug},
     )
     return WorkspaceRead.from_row(created, "owner")
 
@@ -301,11 +314,15 @@ def cancel_workspace_deletion(
 
 @router.get("/{workspace_id}/members", response_model=MemberListRead)
 def list_members(
+    request: Request,
     context: Annotated[AuthzContext, Depends(require(Capability.WORKSPACE_READ))],
     repositories: Annotated[Repositories, Depends(get_repositories)],
-) -> MemberListRead:
-    """Everyone in the workspace, joined with their user rows for display."""
-    return workspace_members.list_members(repositories, context)
+) -> Response:
+    """Everyone in the workspace, joined with their user rows for display.
+
+    The answer carries a weak `ETag`, so an unchanged poll gets a 304.
+    """
+    return conditional_response(request, workspace_members.list_members(repositories, context))
 
 
 @router.patch("/{workspace_id}/members/{user_id}", response_model=MemberRead)

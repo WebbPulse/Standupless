@@ -8,7 +8,8 @@ authorization system and never exceeds the signed-in user's role.
 Destructive tools carry `destructiveHint`. The one irreversible tool is
 `delete_team`, held to a workspace owner or admin as its route is. Nothing here
 deletes a workspace, touches billing, mints API keys or OAuth clients, or manages
-the GitHub App.
+the GitHub App. The agent profile tools reach only the caller's own profiles,
+whatever workspace the credential is bound to.
 """
 
 from __future__ import annotations
@@ -16,13 +17,16 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from app.domains.integrations.mcp.agent_profile_tools import AGENT_PROFILE_TOOLS
 from app.domains.integrations.mcp.audit_tools import AUDIT_TOOLS
 from app.domains.integrations.mcp.channel_tools import CHANNEL_TOOLS
 from app.domains.integrations.mcp.document_tools import DOCUMENT_TOOLS
 from app.domains.integrations.mcp.export_tools import EXPORT_TOOLS
+from app.domains.integrations.mcp.favorite_tools import FAVORITE_TOOLS
 from app.domains.integrations.mcp.initiative_tools import INITIATIVE_TOOLS
 from app.domains.integrations.mcp.issue_tools import ISSUE_TOOLS
 from app.domains.integrations.mcp.planning_tools import PLANNING_TOOLS
+from app.domains.integrations.mcp.recurring_tools import RECURRING_TOOLS
 from app.domains.integrations.mcp.release_tools import RELEASE_TOOLS
 from app.domains.integrations.mcp.review_tools import REVIEW_TOOLS
 from app.domains.integrations.mcp.standup_tools import STANDUP_TOOLS
@@ -42,6 +46,7 @@ TOOLS: tuple[Tool, ...] = (
     *TEAM_TOOLS,
     *WORKFLOW_TOOLS,
     *TEMPLATE_TOOLS,
+    *RECURRING_TOOLS,
     *TRANSITION_TOOLS,
     *SYNC_TOOLS,
     *CHANNEL_TOOLS,
@@ -51,10 +56,12 @@ TOOLS: tuple[Tool, ...] = (
     *DOCUMENT_TOOLS,
     *RELEASE_TOOLS,
     *VIEW_TOOLS,
+    *FAVORITE_TOOLS,
     *WORKSPACE_TOOLS,
     *EXPORT_TOOLS,
     *AUDIT_TOOLS,
     *TRIAGE_TOOLS,
+    *AGENT_PROFILE_TOOLS,
 )
 
 TOOLS_BY_NAME: dict[str, Tool] = {tool.name: tool for tool in TOOLS}

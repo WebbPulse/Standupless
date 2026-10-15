@@ -8,18 +8,18 @@ import { Navigate, Outlet, useLocation } from 'react-router-dom';
 import { identityOrigin } from '../../api/identityClient';
 import { useAuth } from '../../hooks/useAuth';
 import { authorizeReturn, wantsFreshLogin } from '../../lib/authorizeReturn';
-import Spinner from '../ui/spinner';
+import BootSplash from '../layout/BootSplash';
 
 /** Hands the browser back to the API's authorize endpoint, outside the router. */
 const AuthorizeHandoff: React.FC<{ url: string }> = ({ url }) => {
   useEffect(() => {
     window.location.assign(url);
   }, [url]);
-  return <Spinner />;
+  return <BootSplash />;
 };
 
 /**
- * Shows a spinner while the session has never settled, then bounces a signed in
+ * Shows the cold start screen while the session has never settled, then bounces a signed in
  * user away, honouring a same-origin `returnTo`, or an MCP authorize URL on the
  * API origin unless the API asked for a fresh sign in with `prompt=login`. The
  * redirect also waits on `!isBusy` so a sign in already in flight keeps the page
@@ -31,7 +31,7 @@ const GuestRoute: React.FC = () => {
   const location = useLocation();
 
   if (isLoading) {
-    return <Spinner />;
+    return <BootSplash />;
   }
 
   if (isAuthenticated && !isBusy) {

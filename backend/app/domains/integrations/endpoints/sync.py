@@ -17,7 +17,7 @@ from app.common.api.dependencies.repositories import Repositories, get_repositor
 from app.common.db.dynamo.github import IssueSync
 from app.domains.integrations.schemas.integrations import IssueSyncRead, TeamSyncRead, TeamSyncWrite
 from app.domains.integrations.service import not_found, require_team_content
-from app.domains.integrations.team_sync import read_team_sync, save_team_sync
+from app.domains.integrations.team_sync import read_team_sync, remove_team_sync, save_team_sync
 
 router = APIRouter()
 
@@ -77,7 +77,7 @@ def put_team_sync(
     """
     _require_team(repositories, context, team_id)
     require_team_content(context, team_id)
-    return save_team_sync(repositories, context.workspace_id, context.user_id, team_id, payload)
+    return save_team_sync(repositories, context, team_id, payload)
 
 
 @router.delete("/{workspace_id}/teams/{team_id}/github-sync", status_code=status.HTTP_204_NO_CONTENT)
@@ -88,7 +88,7 @@ def delete_team_sync(
 ) -> Response:
     """Stop syncing this team. Issues already imported stay, and stop following GitHub."""
     _require_team(repositories, context, team_id)
-    if not repositories.github.delete_team_sync(context.workspace_id, team_id):
+    if not remove_team_sync(repositories, context, team_id):
         raise not_found()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 

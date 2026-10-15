@@ -16,6 +16,7 @@ import {
 } from 'react-icons/lu';
 import type { OrderedIssueRead } from '../../../api/issues';
 import { NONE } from '../../../api/issues';
+import { useTriageTeamIds } from '../../../hooks/useTriageTeams';
 import { PRIORITIES, PRIORITY_LABELS } from '../../../lib/issueDisplay';
 import { personAvatar, personLabel } from '../../../lib/issuePeople';
 import {
@@ -37,6 +38,12 @@ import {
   sortStatuses,
 } from '../../../lib/propertyOptions';
 import { pickableLabels, replacedSiblings } from '../../../lib/labelGroups';
+import {
+  TRIAGE_GROUP_KEY,
+  TRIAGE_STATUS,
+  TRIAGE_STATUS_ID,
+  TRIAGE_STATUS_NAME,
+} from '../../../lib/triageStatus';
 import { estimateChoices, type EstimateOptions } from '../../../lib/validation';
 import Avatar from '../../ui/avatar';
 import { Combobox, type ComboboxOption } from '../../ui/combobox';
@@ -98,6 +105,7 @@ export const PropertyCommand: React.FC<PropertyCommandProps> = ({
     () => [...new Set(issues.map((issue) => issue.team_id))],
     [issues]
   );
+  const triageTeams = useTriageTeamIds();
   const scale = env.scaleFor(teamIds[0] ?? '');
   const optionsFor = (teamId: string): EstimateOptions =>
     env.estimateOptionsFor?.(teamId) ?? {};
@@ -141,7 +149,19 @@ export const PropertyCommand: React.FC<PropertyCommandProps> = ({
   switch (property) {
     case 'status': {
       const seen = new Set<string>();
-      options = statuses.flatMap((status) => {
+      const triageOption: ComboboxOption[] = teamIds.some((teamId) =>
+        triageTeams.has(teamId)
+      )
+        ? [
+            {
+              value: TRIAGE_GROUP_KEY,
+              label: TRIAGE_STATUS_NAME,
+              icon: <StatusIcon status={TRIAGE_STATUS} />,
+              group: TRIAGE_STATUS_NAME,
+            },
+          ]
+        : [];
+      const real = statuses.flatMap((status) => {
         const key = statusGroupKey(status);
         if (seen.has(key)) return [];
         seen.add(key);
@@ -154,8 +174,10 @@ export const PropertyCommand: React.FC<PropertyCommandProps> = ({
           },
         ];
       });
+      options = [...triageOption, ...real];
       selected = shared(
         issues.map((issue) => {
+          if (issue.in_triage === true) return [TRIAGE_GROUP_KEY];
           const own = context.statuses.find(
             (status) => status.id === issue.status_id
           );
@@ -164,6 +186,11 @@ export const PropertyCommand: React.FC<PropertyCommandProps> = ({
       );
       pick = (key) => {
         write((issue) => {
+          if (key === TRIAGE_GROUP_KEY) {
+            return triageTeams.has(issue.team_id)
+              ? { status_id: TRIAGE_STATUS_ID }
+              : null;
+          }
           const status = statusForKey(issue, key, context);
           return status === undefined ? null : { status_id: status.id };
         });

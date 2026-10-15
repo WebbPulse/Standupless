@@ -11,6 +11,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { WorkspaceContextType } from '../../contexts/WorkspaceContextDefinition';
 import type {
   LabelCreate,
+  LabelMergeRead,
   LabelRead,
   LabelUpdate,
   TeamRead,
@@ -23,6 +24,8 @@ const createWorkspaceLabel = vi.fn<(body: LabelCreate) => Promise<LabelRead>>();
 const updateWorkspaceLabel =
   vi.fn<(labelId: string, body: LabelUpdate) => Promise<LabelRead>>();
 const deleteWorkspaceLabel = vi.fn<(labelId: string) => Promise<void>>();
+const mergeWorkspaceLabel =
+  vi.fn<(labelId: string, targetId: string) => Promise<LabelMergeRead>>();
 const listTeams = vi.fn<() => Promise<TeamRead[]>>();
 
 vi.mock('../../api/workflow', () => ({
@@ -32,6 +35,8 @@ vi.mock('../../api/workflow', () => ({
   updateWorkspaceLabel: (_w: string, id: string, body: LabelUpdate) =>
     updateWorkspaceLabel(id, body),
   deleteWorkspaceLabel: (_w: string, id: string) => deleteWorkspaceLabel(id),
+  mergeWorkspaceLabel: (_w: string, id: string, target: string) =>
+    mergeWorkspaceLabel(id, target),
 }));
 
 vi.mock('../../api/teams', () => ({
@@ -92,6 +97,7 @@ beforeEach(() => {
   createWorkspaceLabel.mockReset();
   updateWorkspaceLabel.mockReset();
   deleteWorkspaceLabel.mockReset();
+  mergeWorkspaceLabel.mockReset();
   listTeams.mockReset();
   listTeams.mockResolvedValue([]);
   listWorkspaceLabels.mockResolvedValue(rows);
@@ -163,6 +169,33 @@ describe('the workspace labels page', () => {
     await user.click(within(dialog).getByRole('button', { name: 'Delete' }));
     await waitFor(() => {
       expect(deleteWorkspaceLabel).toHaveBeenCalledWith('bug');
+    });
+  });
+
+  it('asks before merging a label into another in every team', async () => {
+    const user = userEvent.setup();
+    mergeWorkspaceLabel.mockResolvedValue({
+      source_label_id: 'bug',
+      source_name: 'Bug',
+      target: rows[0]!,
+      issues_updated: 3,
+      views_updated: 1,
+      templates_updated: 0,
+      complete: true,
+    });
+    renderPage();
+    await user.click(
+      await screen.findByRole('button', { name: 'Actions for Bug' })
+    );
+    await user.click(
+      screen.getByRole('menuitem', { name: 'Merge into another label' })
+    );
+    const dialog = await screen.findByRole('dialog', { name: 'Merge Bug' });
+    expect(within(dialog).getByText(/in every team/)).toBeInTheDocument();
+    expect(within(dialog).getByLabelText('Merge into')).toHaveValue('security');
+    await user.click(within(dialog).getByRole('button', { name: 'Merge' }));
+    await waitFor(() => {
+      expect(mergeWorkspaceLabel).toHaveBeenCalledWith('bug', 'security');
     });
   });
 

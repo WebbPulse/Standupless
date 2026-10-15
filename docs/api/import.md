@@ -54,6 +54,10 @@ nothing. It answers:
 | `rows` | The first 10 rows as the issues they would become |
 | `new_labels` | Label names the import would create on the team |
 | `statuses` | `{source, status_name, count}` for each source status and where it lands |
+| `parent_links` | How many rows would become sub-issues of another row |
+
+Each entry in `rows` also carries `parent_row`, the row it would become a
+sub-issue of, or `null`.
 
 `row` is the spreadsheet row number, counting the header as row 1. An `error`
 skips the row. A `warning` drops or replaces one value and the row still
@@ -70,7 +74,7 @@ imports.
 
 Job statuses are `queued`, `running`, `completed` and `failed`. A job carries
 `total_rows`, `processed_rows`, `created_count`, `skipped_count`,
-`labels_created`, `problem_count` and, when it failed, `error`.
+`labels_created`, `linked_count`, `problem_count` and, when it failed, `error`.
 
 When the job finishes, the requester gets one inbox notice of kind
 `import_ready` or `import_failed`. The notice's `issue_key` field holds the
@@ -90,6 +94,7 @@ import id.
 | `due_date` | Due Date, Due | Due date | Due Date |
 | `source_key` | ID, Key, Issue Key, Identifier | Issue key | ID |
 | `created_at` | Created, Created At | Created | Created |
+| `parent` | Parent, Parent Key, Parent Issue, Parent ID | Parent, Parent id | Parent issue |
 
 Headers match without case. A preset falls back to the generic names for any
 field its own names miss. A field mapped to a header that appears more than
@@ -116,6 +121,13 @@ once, such as Jira's repeated `Labels` columns, reads every column of that name.
   JavaScript date strings are read, in UTC. A created date in the future is
   capped at the import time.
 - **Description.** Cut to the issue body limit with a warning when longer.
+- **Parent.** Names another row of the same file by its source key, by a
+  tracker id column such as Jira's `Issue id`, or by its title when exactly one
+  row has it. Keys and titles match without case, and the order of rows does
+  not matter. Sub-issues are one level deep, so a row whose parent is itself a
+  sub-issue in the file, a loop, or a row naming itself is left without a
+  parent. A parent that is missing from the file, ambiguous or skipped is a
+  warning on the child, which still imports at the top level.
 
 ## Paging, retries and the bulk guard
 
@@ -124,6 +136,14 @@ issue id is derived from the import id and the row number, so a page that runs
 twice finds the issues it already wrote and writes nothing new. A message for a
 page the cursor has passed is dropped. A page that fails is retried by the
 queue, and after 3 attempts the job is marked failed.
+
+When a parent column is mapped, a link pass follows the last write page. Its
+cursor carries on past the last row and walks the rows again, 100 per page,
+so `processed_rows` reads `total_rows` while it runs. The link write only lands
+on an issue of this import that still carries the bulk marker and has no parent,
+so a link page that runs twice links nothing twice, and an issue someone edited
+in between is left alone with a warning. The link keeps the marker, so it sends
+no notifications either, while the parent's progress still counts the child.
 
 Every imported issue carries `import_batch_id`. The notify consumer, the GitHub
 issue sync and the outbound webhook fan-out skip rows that carry it, so an

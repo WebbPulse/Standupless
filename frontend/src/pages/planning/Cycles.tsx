@@ -59,6 +59,7 @@ import { useTeam } from '../../hooks/useTeam';
 import { useWorkspace } from '../../hooks/useWorkspace';
 import { canWriteIssues, isTeamAdmin } from '../../lib/capabilities';
 import { cn } from '../../lib/cn';
+import { cycleTitle } from '../../lib/cycleBreakdown';
 import { readRolledUpCycles, rollUpCycles } from '../../lib/cycleRollUp';
 import { errorMessage } from '../../lib/errors';
 import {
@@ -120,7 +121,9 @@ const CycleControls: React.FC<CycleControlsProps> = ({
     {canEdit && (
       <IconButton
         label={
-          cycle.cancelled ? `Restore ${cycle.name}` : `Cancel ${cycle.name}`
+          cycle.cancelled
+            ? `Restore ${cycleTitle(cycle)}`
+            : `Cancel ${cycleTitle(cycle)}`
         }
         size="sm"
         onClick={() => {
@@ -136,7 +139,7 @@ const CycleControls: React.FC<CycleControlsProps> = ({
     )}
     {isAdmin && (
       <IconButton
-        label={`Delete ${cycle.name}`}
+        label={`Delete ${cycleTitle(cycle)}`}
         size="sm"
         onClick={() => {
           onDelete(cycle);
@@ -162,13 +165,13 @@ const CycleRow: React.FC<CycleRowProps> = ({
     <li className="group/row relative flex h-11 items-center gap-3 border-b border-line px-3 transition-colors duration-100 last:border-b-0 hover:bg-surface has-[a:active]:bg-raised">
       <Link
         to={href}
-        aria-label={cycle.name}
+        aria-label={cycleTitle(cycle)}
         data-hover="parent"
         className="absolute inset-0 rounded-md focus-visible:ring-1 focus-visible:ring-accent focus-visible:outline-none focus-visible:ring-inset"
       />
       <ProgressRing percent={percent} size={16} />
       <span className="pointer-events-none min-w-0 flex-1 truncate text-sm font-medium">
-        {cycle.name}
+        {cycleTitle(cycle)}
         {cycle.goal !== null && (
           <span className="ml-2 hidden font-normal text-text-faint lg:inline">
             {cycle.goal}
@@ -223,7 +226,7 @@ const ActiveCycle: React.FC<ActiveCycleProps> = ({
             to={href}
             className="rounded-xs hover:underline focus-visible:ring-1 focus-visible:ring-accent focus-visible:outline-none"
           >
-            {cycle.name}
+            {cycleTitle(cycle)}
           </Link>
         </h2>
         <Badge tone="accent">Current</Badge>
@@ -491,6 +494,7 @@ export const Cycles: React.FC = () => {
           <TeamTabs
             slug={slug ?? ''}
             keyPrefix={team.key_prefix}
+            teamId={team.id}
             current="cycles"
           />
           {subTeams.length > 0 && (

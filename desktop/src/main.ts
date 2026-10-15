@@ -1,7 +1,7 @@
 /**
  * The main process: one window on the hosted web app, a single instance, the
  * deep-link protocol, the navigation allowlist, the badge, native
- * notifications and auto-update. The web app is never bundled, so the desktop
+ * notifications, sign-in through the system browser and auto-update. The web app is never bundled, so the desktop
  * app always runs whatever the web release is serving.
  */
 
@@ -19,15 +19,22 @@ import {
   type WebContents,
 } from 'electron';
 import { resolveEnvironment, type Environment } from './environment';
+import {
+  completeBrowserSignIn,
+  handoffFailedUrl,
+  startBrowserSignIn,
+} from './handoff';
 import { CHANNELS, parseBadge, parseNotify, parseTheme } from './ipc';
 import { installMenu } from './menu';
 import {
   decideNavigation,
   deepLinkFromArgv,
   deepLinkToAppUrl,
+  handoffCallbackFromArgv,
   isAppPath,
   isAppUrl,
   isExternalUrl,
+  isHandoffCallback,
   nextSigningIn,
 } from './navigation';
 import { startUpdater } from './updater';
@@ -51,7 +58,10 @@ if (env.name === 'staging') {
 }
 
 let mainWindow: BrowserWindow | null = null;
-let pendingUrl: string | null = deepLinkFromArgv(process.argv, env);
+let pendingUrl: string | null =
+  handoffCallbackFromArgv(process.argv, env) === null
+    ? deepLinkFromArgv(process.argv, env)
+    : handoffFailedUrl(env, 'expired');
 let signingIn = false;
 const navigateReady = new Set<number>();
 
@@ -89,10 +99,36 @@ const openInApp = (url: string): void => {
   }
 };
 
-/** Handles a deep link from the protocol, a second instance or `open-url`. */
-const handleDeepLink = (link: string): void => {
+/**
+ * Redeems a browser sign-in callback, then loads the page the outcome names.
+ * A full load rather than a client side route, so the page starts over and
+ * picks up the session from the refresh cookie the exchange set.
+ */
+const finishBrowserSignIn = (link: string): void => {
+  focusMain();
+  void completeBrowserSignIn(link, env).then((url) => {
+    if (mainWindow === null) {
+      pendingUrl = url;
+    } else {
+      void mainWindow.webContents.loadURL(url);
+    }
+  });
+};
+
+/**
+ * Handles a deep link from the protocol, a second instance or `open-url`. A
+ * sign-in handoff callback is redeemed here; anything else opens in the app.
+ * Returns whether the link was one this app handles.
+ */
+const handleDeepLink = (link: string): boolean => {
+  if (isHandoffCallback(link, env)) {
+    finishBrowserSignIn(link);
+    return true;
+  }
   const target = deepLinkToAppUrl(link, env);
-  if (target !== null) openInApp(target);
+  if (target === null) return false;
+  openInApp(target);
+  return true;
 };
 
 /** Whether an IPC message came from the main window showing the app origin. */
@@ -251,6 +287,11 @@ const listen = (): void => {
     );
   });
 
+  ipcMain.on(CHANNELS.signInWithBrowser, (event) => {
+    if (!fromApp(event)) return;
+    void startBrowserSignIn(env).catch(() => undefined);
+  });
+
   ipcMain.on(CHANNELS.navigateReady, (event, ready: unknown) => {
     if (!fromApp(event)) return;
     if (ready === true) {
@@ -273,12 +314,9 @@ if (!app.requestSingleInstanceLock()) {
   }
 
   app.on('second-instance', (_event, argv) => {
-    const target = deepLinkFromArgv(argv, env);
-    if (target !== null) {
-      openInApp(target);
-    } else {
-      focusMain();
-    }
+    const link =
+      handoffCallbackFromArgv(argv, env) ?? deepLinkFromArgv(argv, env);
+    if (link === null || !handleDeepLink(link)) focusMain();
   });
 
   app.on('open-url', (event, url) => {

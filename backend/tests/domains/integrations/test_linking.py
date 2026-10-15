@@ -97,6 +97,56 @@ def test_a_magic_word_in_a_commit_message_does_not_close() -> None:
     assert found[0].magic_word is None
 
 
+def test_a_bare_mention_in_the_body_links_without_moving() -> None:
+    """A key the body names in passing is found but moves no status, as in Linear."""
+    found = linking.extract(PREFIXES, title="A change", body="ABC-1 writes those")
+
+    assert [row.key for row in found] == ["ABC-1"]
+    assert found[0].moves_status is False
+    assert found[0].magic_word is None
+
+
+@pytest.mark.parametrize(
+    ("branch", "title", "body"),
+    [
+        ("abc-1-a-change", "A change", ""),
+        ("work", "ABC-1 a change", ""),
+        ("work", "A change", "Fixes ABC-1"),
+        ("work", "A change", "Closes: ABC-1"),
+    ],
+)
+def test_the_branch_the_title_and_a_magic_word_move_the_status(branch: str, title: str, body: str) -> None:
+    """Each source Linear reads for a transition marks the key as one that moves."""
+    found = linking.extract(PREFIXES, branch=branch, title=title, body=body)
+
+    assert [row.key for row in found] == ["ABC-1"]
+    assert found[0].moves_status is True
+
+
+@pytest.mark.parametrize("word", ["Refs", "ref", "References", "Part of", "Related to", "Contributes to", "Towards"])
+def test_a_reference_word_moves_the_status_without_closing(word: str) -> None:
+    """A non-closing word ties the key to the pull request so it moves, and a merge does not close it."""
+    found = linking.extract(PREFIXES, title="A change", body=f"{word} ABC-1")
+
+    assert found[0].moves_status is True
+    assert found[0].magic_word is None
+
+
+def test_a_magic_word_does_not_carry_to_a_later_bare_mention() -> None:
+    """Only the key right after the word moves; another key further on stays a mention."""
+    found = linking.extract(PREFIXES, title="A change", body="Fixes ABC-1.\n\nXYZ-2 writes those")
+
+    moves = {row.key: row.moves_status for row in found}
+    assert moves == {"ABC-1": True, "XYZ-2": False}
+
+
+def test_a_key_in_a_commit_message_still_moves() -> None:
+    """A merged promotion names its work only in commits, so those keys stay movable."""
+    found = linking.extract(PREFIXES, commit_messages=["ABC-1 a change"])
+
+    assert found[0].moves_status is True
+
+
 def test_a_key_mentioned_after_the_word_but_not_next_to_it_does_not_close() -> None:
     """ "ABC-1 is not fixed" is a mention, not a close, because the order is wrong."""
     found = linking.extract(PREFIXES, title="ABC-1 is not fixed")

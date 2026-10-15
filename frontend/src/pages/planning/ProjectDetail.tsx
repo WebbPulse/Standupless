@@ -87,6 +87,7 @@ import {
   projectsKey,
 } from '../../lib/queryKeys';
 import { showToast } from '../../lib/toast';
+import FavoriteButton from '../../components/ui/FavoriteButton';
 import type {
   MilestoneRead,
   ProjectRead,
@@ -486,6 +487,14 @@ export const ProjectDetail: React.FC = () => {
           <span className="truncate">{project.name}</span>
           <UpdateDueBadge project={project} className="shrink-0" />
         </span>
+      }
+      titleAccessory={
+        <FavoriteButton
+          workspaceId={workspaceId}
+          kind="project"
+          targetId={project.project_id}
+          title={project.name}
+        />
       }
       leading={crumbs}
       flush

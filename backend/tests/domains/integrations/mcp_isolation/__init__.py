@@ -11,11 +11,14 @@ from __future__ import annotations
 from typing import Any, Callable
 
 from tests.domains.integrations.mcp_isolation import (
+    agent_profiles,
     channels,
     documents,
+    favorites,
     initiatives,
     issues,
     planning,
+    recurring,
     releases,
     reviews,
     sync,
@@ -41,9 +44,12 @@ AREAS = (
     triage,
     channels,
     views,
+    favorites,
     workspace,
     workflow,
     templates,
+    recurring,
+    agent_profiles,
 )
 
 AREA_ARGUMENTS: tuple[Callable[[dict[str, str], str], dict[str, dict[str, Any]]], ...] = tuple(

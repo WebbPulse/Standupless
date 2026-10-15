@@ -4,7 +4,7 @@ locals {
       secrets     = true
       ses         = true
       memory      = 512
-      tables      = ["users", "api-keys", "audit", "rate-limits"]
+      tables      = ["users", "api-keys", "audit", "agent_profiles", "rate-limits"]
       read_tables = ["memberships", "workspaces"]
     }
     workspaces = {
@@ -18,21 +18,21 @@ locals {
       secrets     = false
       ses         = false
       memory      = 512
-      tables      = ["teams", "team_config", "counters", "memberships", "planning", "issues", "activity", "audit", "rate-limits"]
+      tables      = ["teams", "team_config", "counters", "memberships", "planning", "issues", "activity", "audit", "views", "rate-limits"]
       read_tables = ["workspaces", "users", "api-keys"]
     }
     issues = {
       secrets     = false
       ses         = false
       memory      = 512
-      tables      = ["issues", "relations", "activity", "counters", "subscriptions", "planning", "rate-limits"]
-      read_tables = ["memberships", "workspaces", "users", "teams", "team_config", "api-keys"]
+      tables      = ["issues", "relations", "activity", "counters", "subscriptions", "planning", "team_config", "rate-limits"]
+      read_tables = ["memberships", "workspaces", "users", "teams", "api-keys"]
     }
     views = {
       secrets     = true
       ses         = false
       memory      = 512
-      tables      = ["views", "inbox", "search_index", "share-tokens", "rate-limits"]
+      tables      = ["views", "inbox", "search_index", "share-tokens", "audit", "rate-limits"]
       read_tables = ["memberships", "workspaces", "users", "teams", "team_config", "issues", "comments", "subscriptions", "planning", "counters", "api-keys", "activity", "relations"]
     }
     views-notify-consumer = {
@@ -74,7 +74,7 @@ locals {
       secrets     = true
       ses         = true
       memory      = 512
-      tables      = ["github", "idempotency", "team_config", "issues", "comments", "counters", "activity", "planning", "relations", "subscriptions", "teams", "memberships", "workspaces", "invites", "views", "inbox", "audit", "rate-limits"]
+      tables      = ["github", "idempotency", "team_config", "issues", "comments", "counters", "activity", "planning", "relations", "subscriptions", "teams", "memberships", "workspaces", "invites", "views", "inbox", "audit", "agent_profiles", "rate-limits"]
       read_tables = ["users", "api-keys", "oauth-links", "search_index"]
     }
     integrations-events-consumer = {
@@ -263,7 +263,6 @@ locals {
         API_URL         = local.api_url
         ALLOWED_ORIGINS = local.allowed_origins
 
-        WEBBPULSE_OTEL_SAMPLE_RATIO        = var.environment == "production" ? "0.1" : "1.0"
         OTEL_EXPORTER_OTLP_TRACES_ENDPOINT = "https://xray.${var.aws_region}.amazonaws.com/v1/traces"
 
         IDENTITY_ISSUER   = local.identity_issuer
@@ -353,9 +352,13 @@ locals {
         IDENTITY_OAUTH_REDIRECT_URIS = local.identity_oauth_redirect_uris
         IDENTITY_GOOGLE_CLIENT_ID    = var.oauth_google_client_id
         IDENTITY_GITHUB_CLIENT_ID    = var.oauth_github_client_id
+
+        IDENTITY_DESKTOP_HANDOFF_SCHEMES = jsonencode(var.desktop_handoff_schemes)
         },
 
       module.identity.identity_environment) : {},
+
+      module.transaction_search.otel_environment_variables,
     )
   }
 

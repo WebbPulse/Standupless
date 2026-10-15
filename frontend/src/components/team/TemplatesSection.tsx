@@ -45,6 +45,8 @@ export interface TemplatesSectionProps {
   canEdit: boolean;
   /** Whether the caller may choose the default, as a team admin. */
   canSetDefault: boolean;
+  /** Opens a recurring schedule for a template, from its row. */
+  onMakeRecurring?: (template: TemplateRead) => void;
 }
 
 /** How often the list is re-read while the settings page is open. */
@@ -61,6 +63,7 @@ export const TemplatesSection: React.FC<TemplatesSectionProps> = ({
   estimateOptions,
   canEdit,
   canSetDefault,
+  onMakeRecurring,
 }) => {
   const auth = useQueryAuth();
   const selectId = useId();
@@ -176,6 +179,7 @@ export const TemplatesSection: React.FC<TemplatesSectionProps> = ({
               ...(estimateOptions === undefined ? {} : { estimateOptions }),
             }}
             actions={{ create, update, remove }}
+            {...(onMakeRecurring === undefined ? {} : { onMakeRecurring })}
           />
         </>
       )}

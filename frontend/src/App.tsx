@@ -17,9 +17,14 @@
  * route, which holds what must outlive a page change: the shortcut registry,
  * the command palette, the peek pane and the create dialogs.
  *
- * `/privacy`, `/terms`, `/refunds`, `/pricing` and `/contact` also sit
+ * `/privacy`, `/terms`, `/refunds`, `/pricing`, `/contact` and `/download`
+ * also sit
  * outside both, so the same pages answer a visitor, someone signing up and a
  * signed in member. The build prerenders them, and `/`, into static HTML.
+ *
+ * `/desktop-handoff` sits outside both as well. It sends a signed out visitor
+ * to sign in itself, with the desktop app's request in `returnTo`, because the
+ * protected guard would drop the query that carries it.
  *
  * The `p/:keyPrefix` paths were what teams lived under before they were called
  * teams. They stay as redirects rather than being removed, because they are in
@@ -61,14 +66,18 @@ import Privacy from './pages/legal/Privacy';
 import Refunds from './pages/legal/Refunds';
 import Terms from './pages/legal/Terms';
 import Contact from './pages/contact/Contact';
+import Download from './pages/download/Download';
 import Pricing from './pages/pricing/Pricing';
 import IssueDetail from './pages/issues/IssueDetail';
 import MyIssues from './pages/issues/MyIssues';
 import NotFound from './pages/NotFound';
+import DesktopHandoff from './pages/desktop/DesktopHandoff';
 import AccountDeleted from './pages/authentication/AccountDeleted';
 import {
   ACCOUNT_DELETED_PATH,
   CONTACT_PATH,
+  DESKTOP_HANDOFF_PATH,
+  DOWNLOAD_PATH,
   PRICING_PATH,
   PRIVACY_PATH,
   REFUNDS_PATH,
@@ -90,6 +99,7 @@ import WorkspaceSettings from './pages/workspaces/WorkspaceSettings';
 import ApiKeysSettings from './pages/workspaces/ApiKeysSettings';
 import BillingSettings from './pages/workspaces/BillingSettings';
 import ConnectedAppsSettings from './pages/workspaces/ConnectedAppsSettings';
+import AgentProfilesSettings from './pages/workspaces/AgentProfilesSettings';
 import McpAndCliSettings from './pages/workspaces/McpAndCliSettings';
 import NotificationsSettings from './pages/workspaces/NotificationsSettings';
 import ShareLinksSettings from './pages/workspaces/ShareLinksSettings';
@@ -111,7 +121,9 @@ const App: React.FC = () => (
     <Route path={REFUNDS_PATH} element={<Refunds />} />
     <Route path={PRICING_PATH} element={<Pricing />} />
     <Route path={CONTACT_PATH} element={<Contact />} />
+    <Route path={DOWNLOAD_PATH} element={<Download />} />
     <Route path={ACCOUNT_DELETED_PATH} element={<AccountDeleted />} />
+    <Route path={DESKTOP_HANDOFF_PATH} element={<DesktopHandoff />} />
 
     <Route element={<GuestRoute />}>
       <Route path="/login" element={<Login />} />
@@ -154,6 +166,10 @@ const App: React.FC = () => (
             element={<ConnectedAppsSettings />}
           />
           <Route path="settings/mcp-and-cli" element={<McpAndCliSettings />} />
+          <Route
+            path="settings/agent-profiles"
+            element={<AgentProfilesSettings />}
+          />
           <Route path="settings/share-links" element={<ShareLinksSettings />} />
           <Route path="settings/export" element={<ExportSettings />} />
           <Route path="settings/import" element={<ImportSettings />} />

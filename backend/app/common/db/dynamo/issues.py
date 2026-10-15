@@ -15,7 +15,7 @@ index sparse: an unassigned issue costs nothing in `ws_assignee-updated_at-index
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from typing import Any, Callable, Literal, Mapping
+from typing import Any, Callable, Iterator, Literal, Mapping
 
 from boto3.dynamodb.conditions import Attr, Key
 from pydantic import BaseModel, Field, PrivateAttr, TypeAdapter
@@ -675,6 +675,45 @@ class IssueRepository:
             return None
         return as_issue(item) if item is not None else None
 
+    def link_imported_parent(self, workspace_id: str, issue_id: str, parent_id: str, import_batch_id: str) -> bool:
+        """Set the parent of an issue one import wrote, answering whether this call set it.
+
+        The import's link pass is the only caller. Unlike `replace`, it keeps
+        `import_batch_id` on the row, so the stream consumers still read the write
+        as part of the import and stay quiet, while the rollup counts the child. It
+        only lands while the row carries that import's marker and no parent, so a
+        re-run links nothing twice and an issue someone edited since is left alone.
+        `updated_at` stays put, because the link completes the import rather than
+        editing the issue.
+        """
+        if not workspace_id or not issue_id or not parent_id or not import_batch_id:
+            return False
+        try:
+            self._repository.update(
+                {"workspace_id": workspace_id, "issue_id": issue_id},
+                update_expression="SET #parent = :parent, #ws_parent = :ws_parent, #changed = :changed, "
+                + REVISION_BUMP,
+                expression_names={
+                    "#parent": "parent_id",
+                    "#ws_parent": "ws_parent",
+                    "#changed": CHANGED_AT,
+                    "#rev": REVISION,
+                },
+                expression_values={
+                    ":parent": parent_id,
+                    ":ws_parent": ws_parent(workspace_id, parent_id),
+                    ":changed": changed_stamp(),
+                    **REVISION_STEP,
+                },
+                condition=Attr("issue_id").exists()
+                & Attr("import_batch_id").eq(import_batch_id)
+                & (Attr("parent_id").not_exists() | Attr("parent_id").attribute_type("NULL")),
+                return_values="ALL_NEW",
+            )
+        except ConditionFailed:
+            return False
+        return True
+
     def clear_project_milestone(self, workspace_id: str, issue_id: str, milestone_id: str) -> Issue | None:
         """Take one milestone off one issue, or `None` when it no longer carries it.
 
@@ -1029,6 +1068,47 @@ class IssueRepository:
         )
         return [as_issue(item) for item in items]
 
+    def iter_with_sla(self, workspace_id: str, team_id: str, status_id: str, *, max_items: int = 200) -> list[Issue]:
+        """Live issues of one team in one status that still carry an SLA deadline.
+
+        What the finished timer repair reads: the status column through the same
+        index, with the deadline as a filter.
+        """
+        if not workspace_id or not team_id or not status_id:
+            return []
+        items = self._repository.iter_query(
+            Key("ws_team_status").eq(ws_team_status(workspace_id, team_id, status_id)),
+            index_name=STATUS_UPDATED_INDEX,
+            filter_expression=Attr("sla_breaches_at").attribute_type("S"),
+            max_items=max_items,
+        )
+        return [as_issue(item) for item in items]
+
+    def clear_sla(self, issue: Issue) -> bool:
+        """Drop one issue's SLA timer if it still sits in the status it was read in, answering whether it did.
+
+        Leaves `updated_at` alone, so the repair neither reads as an edit nor
+        restarts the auto-archive clock, but stamps `changed_at` so synced clients
+        pick it up.
+        """
+        try:
+            self._repository.update(
+                {"workspace_id": issue.workspace_id, "issue_id": issue.issue_id},
+                update_expression="REMOVE #started, #breaches SET #changed = :changed, " + REVISION_BUMP,
+                expression_names={
+                    "#started": "sla_started_at",
+                    "#breaches": "sla_breaches_at",
+                    "#changed": CHANGED_AT,
+                    "#rev": REVISION,
+                },
+                expression_values={":changed": changed_stamp(), **REVISION_STEP},
+                condition=Attr("issue_id").exists() & Attr("status_id").eq(issue.status_id),
+                return_values="NONE",
+            )
+        except ConditionFailed:
+            return False
+        return True
+
     def iter_triage(self, workspace_id: str, team_id: str, *, max_items: int = 1000) -> list[Issue]:
         """Every live issue of one team awaiting triage, newest first by `updated_at`."""
         if not workspace_id or not team_id:
@@ -1075,6 +1155,22 @@ class IssueRepository:
             max_items=max_items,
         )
         return [as_issue(item) for item in items]
+
+    def iter_with_label_lazily(self, workspace_id: str, team_id: str, label_id: str) -> Iterator[Issue]:
+        """Every issue of one team carrying one label, archived ones included, read a page at a time.
+
+        The unbounded twin of `iter_with_label` for a label merge, which must
+        reach every issue of a large team and stops early on its own time budget
+        rather than on a count, so no page is read before it is needed.
+        """
+        if not workspace_id or not team_id or not label_id:
+            return
+        for item in self._repository.iter_query(
+            Key("ws_team").eq(ws_team(workspace_id, team_id)),
+            index_name=KEY_NUMBER_INDEX,
+            filter_expression=Attr("label_ids").contains(label_id),
+        ):
+            yield as_issue(item)
 
     def list_for_assignee(
         self,

@@ -56,6 +56,7 @@ from webbpulse.dynamodb import ConditionFailed, Repository, new_ulid
 
 from app.common.db.dynamo.base import as_item, build_repository, delete_partition, utc_now
 from app.common.db.dynamo.tables import TEAM_CONFIG
+from app.common.db.dynamo.team_recurring import RecurringRows
 from app.common.db.dynamo.team_templates import TemplateRows
 
 StatusCategory = Literal["backlog", "unstarted", "started", "completed", "cancelled"]
@@ -251,6 +252,16 @@ def label_key(team_id: str, label_id: str) -> str:
     return f"team#{team_id}#label#{label_id}"
 
 
+def label_merge_key(team_id: str | None, label_id: str) -> str:
+    """The sort key of the record of one label's merge, a team's or, with no team, the workspace's."""
+    return f"team#{team_id}#labelmerge#{label_id}" if team_id else f"workspace#labelmerge#{label_id}"
+
+
+def label_merge_prefix(team_id: str) -> str:
+    """The sort key prefix every label merge record of one team shares."""
+    return f"team#{team_id}#labelmerge#"
+
+
 def status_prefix(team_id: str) -> str:
     """The sort key prefix every status of one team shares."""
     return f"team#{team_id}#status#"
@@ -306,6 +317,28 @@ class Label(BaseModel):
     scope: str = TEAM_SCOPE
     hidden: bool = False
     inherited_name: str | None = None
+
+
+class LabelMergeRecord(BaseModel):
+    """The progress of one label folding into another, kept so a retried merge resumes or replays.
+
+    Written before the first issue moves and marked complete just before the
+    merged label is deleted, so a call after the label is gone answers the result
+    the finished merge reached rather than a 404.
+    """
+
+    workspace_id: str
+    config_key: str
+    source_label_id: str
+    source_name: str
+    target_label_id: str
+    team_id: str | None = None
+    issues_updated: int = 0
+    views_updated: int = 0
+    templates_updated: int = 0
+    complete: bool = False
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
 
 
 class Override(BaseModel):
@@ -688,7 +721,7 @@ class StandupRows:
         return True
 
 
-class TeamConfigRepository(StandupRows, TemplateRows):
+class TeamConfigRepository(StandupRows, TemplateRows, RecurringRows):
     """Reads and writes `team_config` rows, every method workspace first."""
 
     def __init__(self, repository: Repository | None = None) -> None:
@@ -1072,6 +1105,22 @@ class TeamConfigRepository(StandupRows, TemplateRows):
         self._repository.delete({"workspace_id": workspace_id, "config_key": workspace_label_key(label_id)})
         return True
 
+    def get_label_merge(self, workspace_id: str, team_id: str | None, label_id: str) -> LabelMergeRecord | None:
+        """The record of one label's merge, a team's or, with no team, the workspace's, or `None`."""
+        if not workspace_id or not label_id:
+            return None
+        item = self._repository.get({"workspace_id": workspace_id, "config_key": label_merge_key(team_id, label_id)})
+        return LabelMergeRecord.model_validate(dict(item)) if item is not None else None
+
+    def put_label_merge(self, record: LabelMergeRecord) -> LabelMergeRecord:
+        """Store one label merge record whole, moving its `updated_at`."""
+        stored = record.model_copy(update={"updated_at": utc_now()})
+        item = as_item(stored)
+        if not stored.team_id:
+            item.pop("team_id", None)
+        self._repository.put(item)
+        return stored
+
     def get_transition(self, workspace_id: str, team_id: str, transition_id: str) -> Transition | None:
         """One transition rule of a team, or `None`."""
         if not workspace_id or not team_id or not transition_id:
@@ -1285,7 +1334,7 @@ class TeamConfigRepository(StandupRows, TemplateRows):
         )
 
     def delete_for_team(self, workspace_id: str, team_id: str, *, batch: int = 100) -> int:
-        """Remove every status, label, override, transition, standup row, template and setting of one team.
+        """Remove every status, label, override, transition, standup row, template, schedule and setting of one team.
 
         Deletes a page at a time until each prefix reads empty, so a team of any
         size is purged and a retry after a crash resumes where the last one stopped.
@@ -1311,10 +1360,12 @@ class TeamConfigRepository(StandupRows, TemplateRows):
         if self.get_parent_id(workspace_id, team_id) is not None:
             self._repository.delete({"workspace_id": workspace_id, "config_key": parent_key(team_id)})
             removed += 1
+        removed += self.delete_team_recurring(workspace_id, team_id, batch=batch)
         removed += self.delete_team_templates(workspace_id, team_id, batch=batch)
         for prefix in (
             status_prefix(team_id),
             label_prefix(team_id),
+            label_merge_prefix(team_id),
             override_prefix(team_id),
             transition_prefix(team_id),
             standup_prefix(team_id),

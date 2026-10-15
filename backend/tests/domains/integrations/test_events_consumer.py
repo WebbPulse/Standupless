@@ -1321,3 +1321,101 @@ def test_the_write_back_job_carries_the_repository_visibility(
 
     jobs = [envelope.payload for _url, envelope in enqueued if envelope.payload.get("kind") == "github.writeback"]
     assert [job["repository_private"] for job in jobs] == [False]
+
+
+def test_a_bare_mention_in_the_body_links_the_issue_without_moving_it(
+    repositories: Any,
+    installed: str,
+    issue: Any,
+    status_ids: dict[str, str],
+    enqueued: list[tuple[str, Any]],
+    github_env: None,
+) -> None:
+    """A key the body names in passing links the pull request and leaves the status alone."""
+    events.handle_record(
+        repositories,
+        sqs_record(pull_request_event(title="A change", branch="work", body="The writer lives in ABC-1.")),
+    )
+
+    links = repositories.github.list_links_for_issue(WORKSPACE, issue.issue_id).items
+    assert [link["issue_key"] for link in links] == ["ABC-1"]
+    moved = repositories.issues.get(WORKSPACE, issue.issue_id)
+    assert moved is not None
+    assert moved.status_id == issue.status_id
+
+
+@pytest.mark.parametrize(
+    ("title", "branch", "body"),
+    [
+        ("ABC-1 a change", "work", ""),
+        ("A change", "abc-1-a-change", ""),
+        ("A change", "work", "Fixes ABC-1"),
+        ("A change", "work", "Refs ABC-1"),
+        ("A change", "work", "Part of ABC-1"),
+    ],
+)
+def test_the_branch_the_title_or_a_magic_word_moves_the_issue(
+    repositories: Any,
+    installed: str,
+    issue: Any,
+    status_ids: dict[str, str],
+    enqueued: list[tuple[str, Any]],
+    github_env: None,
+    title: str,
+    branch: str,
+    body: str,
+) -> None:
+    """Each of the sources Linear reads moves the issue to started on open."""
+    events.handle_record(repositories, sqs_record(pull_request_event(title=title, branch=branch, body=body)))
+
+    moved = repositories.issues.get(WORKSPACE, issue.issue_id)
+    assert moved is not None
+    assert moved.status_id == status_ids["started"]
+
+
+def test_a_bare_mention_edited_into_a_magic_word_moves_the_issue(
+    repositories: Any,
+    installed: str,
+    issue: Any,
+    status_ids: dict[str, str],
+    enqueued: list[tuple[str, Any]],
+    github_env: None,
+) -> None:
+    """An edit that turns a passing mention into `Refs` starts the issue, as a new link does."""
+    events.handle_record(
+        repositories,
+        sqs_record(pull_request_event(title="A change", body="See ABC-1.", updated_at="2026-10-01T00:00:00Z")),
+    )
+    events.handle_record(
+        repositories,
+        sqs_record(
+            pull_request_event(action="edited", title="A change", body="Refs ABC-1", updated_at="2026-10-01T00:05:00Z")
+        ),
+    )
+
+    moved = repositories.issues.get(WORKSPACE, issue.issue_id)
+    assert moved is not None
+    assert moved.status_id == status_ids["started"]
+
+
+def test_a_merge_does_not_move_an_issue_the_body_only_mentions(
+    repositories: Any,
+    installed: str,
+    issue: Any,
+    status_ids: dict[str, str],
+    enqueued: list[tuple[str, Any]],
+    github_env: None,
+) -> None:
+    """A merged pull request moves nothing for a key its body names in passing."""
+    events.handle_record(
+        repositories,
+        sqs_record(
+            pull_request_event(
+                action="closed", merged=True, state="closed", title="A change", body="Unrelated to ABC-1."
+            )
+        ),
+    )
+
+    moved = repositories.issues.get(WORKSPACE, issue.issue_id)
+    assert moved is not None
+    assert moved.status_id == issue.status_id

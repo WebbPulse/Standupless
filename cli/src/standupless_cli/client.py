@@ -10,12 +10,16 @@ from __future__ import annotations
 
 from collections.abc import Iterator, Mapping
 from typing import Any, cast
+from urllib.parse import quote
 
 import httpx
 
 from standupless_cli import __version__
 from standupless_cli._generated.models import (
     ActivityRead,
+    AgentProfileListRead,
+    AgentProfileSnapshotRead,
+    AgentProfileVersionListRead,
     AppCommonApiSchemasIssuesIssueRead,
     ChannelCreate,
     ChannelRead,
@@ -50,6 +54,10 @@ from standupless_cli._generated.models import (
     OverrideUpdate,
     ProjectRead,
     ProjectUpdate,
+    RecurringCreate,
+    RecurringListRead,
+    RecurringRead,
+    RecurringUpdate,
     ReleaseBackfill,
     ReleaseBackfillRead,
     ReleaseCreate,
@@ -224,6 +232,21 @@ class StanduplessClient:
     def get_me(self) -> UserRead:
         """The person a personal key belongs to; a workspace key gets a 403."""
         return cast(UserRead, self._request("GET", "/api/users/me"))
+
+    def list_agent_profiles(self) -> AgentProfileListRead:
+        """The key's person's private agent profiles; the key needs settings:read."""
+        return cast(AgentProfileListRead, self._request("GET", "/api/users/me/agent-profiles"))
+
+    def list_agent_profile_versions(self, name: str) -> AgentProfileVersionListRead:
+        """One agent profile's kept versions, newest first."""
+        path = f"/api/users/me/agent-profiles/{quote(name, safe='')}/versions"
+        return cast(AgentProfileVersionListRead, self._request("GET", path))
+
+    def get_agent_profile(self, name: str, version: str | None = None) -> AgentProfileSnapshotRead:
+        """One version of an agent profile with its files, the latest unless `version` names one."""
+        path = f"/api/users/me/agent-profiles/{quote(name, safe='')}"
+        params = {"version": version} if version else None
+        return cast(AgentProfileSnapshotRead, self._request("GET", path, params=params))
 
     def list_teams(self, workspace_id: str) -> list[TeamRead]:
         """The workspace's teams."""
@@ -439,6 +462,27 @@ class StanduplessClient:
         else:
             path = f"/api/workspaces/{workspace_id}/teams/{team_id}/templates/{template_id}"
         self._request("DELETE", path)
+
+    def list_recurring(self, workspace_id: str, team_id: str) -> RecurringListRead:
+        """A team's recurring issues and the timezone new ones default to."""
+        path = f"/api/workspaces/{workspace_id}/teams/{team_id}/recurring-issues"
+        return cast(RecurringListRead, self._request("GET", path))
+
+    def create_recurring(self, workspace_id: str, team_id: str, body: RecurringCreate) -> RecurringRead:
+        """Schedule an issue from one of a team's templates."""
+        path = f"/api/workspaces/{workspace_id}/teams/{team_id}/recurring-issues"
+        return cast(RecurringRead, self._request("POST", path, json=body))
+
+    def update_recurring(
+        self, workspace_id: str, team_id: str, recurring_id: str, body: RecurringUpdate
+    ) -> RecurringRead:
+        """Change, pause or resume one recurring issue."""
+        path = f"/api/workspaces/{workspace_id}/teams/{team_id}/recurring-issues/{recurring_id}"
+        return cast(RecurringRead, self._request("PATCH", path, json=body))
+
+    def delete_recurring(self, workspace_id: str, team_id: str, recurring_id: str) -> None:
+        """Delete one recurring issue; the issues it created stay."""
+        self._request("DELETE", f"/api/workspaces/{workspace_id}/teams/{team_id}/recurring-issues/{recurring_id}")
 
     def list_members(self, workspace_id: str) -> list[MemberRead]:
         """The workspace's members."""
@@ -686,10 +730,13 @@ class StanduplessClient:
         path = f"/api/workspaces/{workspace_id}/teams/{team_id}/release-backfill"
         return cast(ReleaseBackfillRead, self._request("POST", path, json=body))
 
-    def list_releases(self, workspace_id: str, team_id: str, limit: int | None = None) -> list[ReleaseRead]:
-        """A team's releases, newest first."""
+    def list_releases(
+        self, workspace_id: str, team_id: str, limit: int | None = None, show_included: bool = False
+    ) -> list[ReleaseRead]:
+        """A team's releases, newest first, leaving out those a promotion carried unless `show_included`."""
         path = f"/api/workspaces/{workspace_id}/teams/{team_id}/releases"
-        return list(self._pages(path, "releases", {}, limit))
+        params = {"show_included": "true"} if show_included else {}
+        return list(self._pages(path, "releases", params, limit))
 
     def get_release(self, workspace_id: str, team_id: str, release_id: str) -> ReleaseDetailRead:
         """One release with its issues and notes."""

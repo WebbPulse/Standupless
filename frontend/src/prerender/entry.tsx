@@ -11,12 +11,17 @@ import { StaticRouter } from 'react-router-dom';
 import { AuthProvider } from '../contexts/AuthContext';
 import {
   CONTACT_PATH,
+  DOWNLOAD_PATH,
   PRICING_PATH,
   PRIVACY_PATH,
   REFUNDS_PATH,
   TERMS_PATH,
 } from '../lib/paths';
 import Contact, { CONTACT_TITLE } from '../pages/contact/Contact';
+import Download, {
+  DOWNLOAD_DESCRIPTION,
+  DOWNLOAD_TITLE,
+} from '../pages/download/Download';
 import {
   LandingContent,
   LANDING_DESCRIPTION,
@@ -85,6 +90,12 @@ export const PRERENDERED_PAGES: PrerenderedPage[] = [
     description:
       'Contact Standupless about support, billing, privacy or security by email.',
     element: <Contact />,
+  },
+  {
+    path: DOWNLOAD_PATH,
+    title: DOWNLOAD_TITLE,
+    description: DOWNLOAD_DESCRIPTION,
+    element: <Download />,
   },
 ];
 

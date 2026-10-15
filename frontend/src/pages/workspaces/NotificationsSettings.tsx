@@ -67,6 +67,10 @@ const KIND_COPY: Record<NotificationKind, { title: string; detail: string }> = {
     title: 'Project update reminders',
     detail: 'An update is due on a project you lead.',
   },
+  initiative_update_due: {
+    title: 'Initiative update reminders',
+    detail: 'An update is due or overdue on an initiative you own.',
+  },
   due_soon: {
     title: 'Due date approaching',
     detail: 'An issue assigned to you is due tomorrow or today.',

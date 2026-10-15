@@ -55,8 +55,47 @@ class InstallUrlRead(BaseModel):
     expires_at: datetime
 
 
+ReleaseSourceKind = Literal["deployments", "tags", "github_releases"]
+"""What records a pinned repository's releases: its deployments, its pushed tags or its published GitHub Releases."""
+
+TAG_PATTERN_MAX = 100
+
+
+class RepositoryReleaseSourceRead(BaseModel):
+    """What records a repository's releases, and the status its tags move closed issues to."""
+
+    kind: ReleaseSourceKind = "deployments"
+    tag_pattern: str | None = None
+    status_id: str | None = None
+    move_issues: bool = True
+
+
+class RepositoryReleaseSourceWrite(BaseModel):
+    """What records a pinned repository's releases, replacing the whole setting.
+
+    `tag_pattern` is a glob such as `v*` or `python-v*`; none records every tag.
+    `status` names the team status, by id or name, that a tag or Release moves
+    the issues it closes to, the team's Done when absent. `move_issues` false
+    records releases without moving issues.
+    """
+
+    kind: ReleaseSourceKind = "deployments"
+    tag_pattern: str | None = Field(default=None, max_length=TAG_PATTERN_MAX)
+    status: str | None = Field(default=None, max_length=255)
+    move_issues: bool = True
+
+    @field_validator("tag_pattern", "status")
+    @classmethod
+    def blank_is_none(cls, value: str | None) -> str | None:
+        """Treat a blank value as absent."""
+        if value is None:
+            return None
+        stripped = value.strip()
+        return stripped or None
+
+
 class RepositoryRead(BaseModel):
-    """One repository the installation can see."""
+    """One repository the installation can see, the team it feeds and what records that team's releases."""
 
     repository_id: str
     full_name: str
@@ -65,6 +104,7 @@ class RepositoryRead(BaseModel):
     default_branch: str
     team_id: str | None = None
     linked_at: datetime
+    release_source: RepositoryReleaseSourceRead = Field(default_factory=RepositoryReleaseSourceRead)
 
 
 class InstallationRead(BaseModel):
@@ -84,9 +124,14 @@ class InstallationRead(BaseModel):
 
 
 class RepositoryLinkWrite(BaseModel):
-    """Point one repository at one team, or clear it."""
+    """Point one repository at one team, or clear it, and choose what records its releases.
+
+    A body naming only `release_source` keeps the team; any other body sets the
+    team, so an empty one clears it as it always has.
+    """
 
     team_id: str | None = None
+    release_source: RepositoryReleaseSourceWrite | None = None
 
 
 ReviewState = Literal["none", "pending", "approved", "changes_requested"]

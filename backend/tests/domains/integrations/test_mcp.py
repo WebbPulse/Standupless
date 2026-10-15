@@ -182,6 +182,10 @@ def test_the_contract_fixes_the_tool_set() -> None:
         "list_triage_issues",
         "list_users",
         "list_views",
+        "list_favorites",
+        "add_favorite",
+        "remove_favorite",
+        "reorder_favorites",
         "list_workspace_labels",
         "list_workspace_exports",
         "list_workspace_members",
@@ -189,6 +193,8 @@ def test_the_contract_fixes_the_tool_set() -> None:
         "mark_all_notifications_read",
         "mark_notification_read",
         "mark_notification_unread",
+        "merge_labels",
+        "merge_workspace_labels",
         "move_issue",
         "override_team_label",
         "override_team_status",
@@ -264,8 +270,17 @@ def test_the_contract_fixes_the_tool_set() -> None:
         "create_template",
         "update_template",
         "delete_template",
+        "list_recurring_issues",
+        "create_recurring_issue",
+        "update_recurring_issue",
+        "delete_recurring_issue",
+        "list_agent_profiles",
+        "list_agent_profile_versions",
+        "get_agent_profile",
+        "save_agent_profile",
+        "delete_agent_profile",
     }
-    assert len(TOOLS) == 151
+    assert len(TOOLS) == 166
 
 
 def test_a_notification_gets_no_body(client: TestClient, workspace: str, repositories: Any) -> None:

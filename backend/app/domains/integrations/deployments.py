@@ -34,7 +34,7 @@ from typing import Any, Callable, Mapping, Sequence, TypeVar
 from app.common import issue_keys, releases
 from app.common.api.dependencies.repositories import Repositories
 from app.common.api.schemas.releases import ReleaseBackfill, ReleaseBackfillRead
-from app.common.db.dynamo.github import IssueLink
+from app.common.db.dynamo.github import RELEASE_SOURCE_DEPLOYMENTS, IssueLink
 from app.common.db.dynamo.issues import Issue
 from app.common.db.dynamo.releases import PipelineStage, Release
 from app.common.planning_rules import unprocessable
@@ -237,7 +237,7 @@ def handle_deployment_status(repositories: Repositories, workspace_id: str, body
     if not sha or not environment or not repository_id:
         return
     stored = repositories.github.get_repository(workspace_id, repository_id)
-    if stored is None:
+    if stored is None or stored.release_source.kind != RELEASE_SOURCE_DEPLOYMENTS:
         return
     installation_id = str(installation.get("id", "")) if isinstance(installation, Mapping) else ""
     deployment_id = deployment.get("id") if isinstance(deployment.get("id"), int) else None
@@ -345,7 +345,9 @@ def _record_for_team(
 
     Answers the release of the deployed commit, or `None` when the deployment
     made none. A deployed pull request merge names its release and carries every
-    issue of the range, so a promotion reads as one release in the later stage.
+    issue of the range, so a promotion reads as one release in the later stage,
+    and the earlier releases it advanced are recorded as included in it rather
+    than listed beside it.
     """
     shas = [*(commit_sha for commit_sha, _ in commits), sha]
     known = repositories.releases.releases_for_shas(workspace_id, team_id, repository_id, shas)
@@ -376,7 +378,7 @@ def _record_for_team(
         return None
     from app.domains.integrations import github_deployments
 
-    release, _ = releases.record_release(
+    release, created = releases.record_release(
         repositories,
         workspace_id,
         team_id,
@@ -396,6 +398,9 @@ def _record_for_team(
         automate=automate,
         referenced=referenced,
     )
+    if pull is not None and created and earlier:
+        pipeline, _ = releases.pipeline_for(repositories, workspace_id, team_id)
+        release = releases.include_releases(repositories, release, earlier, pipeline)
     return release
 
 
@@ -540,8 +545,8 @@ def _stored_pulls(
     return read
 
 
-def _stopped(error: Exception, budget: Any) -> tuple[str, datetime | None]:
-    """Why a backfill page stopped early, said so a caller knows when to pass the cursor back."""
+def _stopped(error: Exception, budget: Any, resume: str = "next_cursor") -> tuple[str, datetime | None]:
+    """Why a backfill page stopped early, said so a caller knows when to pass `resume` back."""
     from webbpulse.integrations.github import GitHubRateLimited
 
     from app.domains.integrations import github_budget
@@ -552,17 +557,19 @@ def _stopped(error: Exception, budget: Any) -> tuple[str, datetime | None]:
     if isinstance(error, github_budget.BudgetSpent) and error.reason == github_budget.RATE:
         return (
             f"Stopped early to keep the GitHub App's API budget for live sync: {left} calls left this hour. "
-            f"Pass next_cursor back after {when}, when the budget resets.",
+            f"Pass {resume} back after {when}, when the budget resets.",
             reset,
         )
     if isinstance(error, github_budget.BudgetSpent):
-        return "Stopped early to answer inside the request timeout. Pass next_cursor back to continue.", None
+        return f"Stopped early to answer inside the request timeout. Pass {resume} back to continue.", None
     if isinstance(error, GitHubRateLimited):
-        return f"GitHub rate limited the App. Pass next_cursor back after {when}, when the budget resets.", reset
-    return "GitHub did not answer. Pass next_cursor back in a few minutes to continue.", None
+        return f"GitHub rate limited the App. Pass {resume} back after {when}, when the budget resets.", reset
+    return f"GitHub did not answer. Pass {resume} back in a few minutes to continue.", None
 
 
-def _stalled(error: Exception, budget: Any, deployment_id: int | None) -> tuple[str, datetime | None]:
+def _stalled(
+    error: Exception, budget: Any, deployment_id: int | None, resume: str = "next_cursor"
+) -> tuple[str, datetime | None]:
     """Why a backfill page recorded and skipped nothing, naming the deployment it could not reach."""
     from app.domains.integrations import github_budget
 
@@ -570,10 +577,10 @@ def _stalled(error: Exception, budget: Any, deployment_id: int | None) -> tuple[
     if isinstance(error, github_budget.BudgetSpent) and error.reason == github_budget.TIME:
         return (
             f"Made no progress: reading {where} did not finish inside the request timeout. "
-            "Passing next_cursor back unchanged repeats this; pass it with a smaller limit.",
+            f"Passing {resume} back unchanged repeats this; pass it with a smaller limit.",
             None,
         )
-    message, reset = _stopped(error, budget)
+    message, reset = _stopped(error, budget, resume)
     return f"Made no progress before {where}. {message}", reset
 
 
@@ -598,18 +605,29 @@ def backfill(
     start calls until `BACKFILL_FIRST_SECONDS`, and its pull request reads stop
     there rather than the page: it is recorded with the pull request text read
     so far. When even its range cannot be read in that time it is passed over
-    and named in `unreadable_deployment_ids`; a later backfill without a cursor
-    reads it again. A page that still records and skips nothing, for the rate
-    budget or an outage, sets `stalled` and says so in its message.
+    and named in `unreadable_deployment_ids`; a later backfill passing those as
+    `deployment_ids` retries only them. A page that still records and skips
+    nothing, for the rate budget or an outage, sets `stalled` and says so in its
+    message.
+
+    A page that finds no successful deployment ends the repository, answering the
+    next pinned repository's cursor or null, so the old deployments at the end of
+    history whose statuses GitHub no longer shows as successful are not paged
+    through one empty page at a time.
     """
     from webbpulse.integrations.github import GitHubRateLimited, GitHubUnavailable
 
-    from app.domains.integrations import github_budget, github_deployments
+    from app.domains.integrations import github_budget, github_deployments, tag_releases
 
+    routed = tag_releases.route(repositories, workspace_id, team_id, payload)
+    if routed is not None:
+        return routed
     pipeline, _ = releases.pipeline_for(repositories, workspace_id, team_id)
     stage = releases.stage_for_environment(pipeline, payload.environment)
     if stage is None:
         raise unprocessable(f"No release stage of this team maps the GitHub environment {payload.environment}")
+    if payload.deployment_ids:
+        return _retry(repositories, workspace_id, team_id, payload, stage)
     targets = _backfill_repositories(repositories, workspace_id, team_id, payload.repository)
     cursor_repository, before_id, start_page = _parse_cursor(payload.cursor)
     if cursor_repository is not None:
@@ -738,7 +756,7 @@ def backfill(
     if stop is not None:
         before = batch[done - 1].deployment_id if done else before_id
         next_cursor: str | None = _cursor(target.repository_id, before, start_page)
-    elif len(found.deployments) > len(batch) or found.more:
+    elif batch and (len(found.deployments) > len(batch) or found.more):
         before = batch[-1].deployment_id if batch else before_id
         next_cursor = _cursor(target.repository_id, before, found.page)
     elif len(targets) > 1:
@@ -750,7 +768,7 @@ def backfill(
         named = ", ".join(str(deployment_id) for deployment_id in unreadable)
         passed = (
             f"Passed over deployment {named}: its range could not be read inside the request timeout. "
-            "A backfill without a cursor reads it again."
+            "Pass unreadable_deployment_ids back as deployment_ids to retry only those."
         )
         message = f"{passed} {message}" if message else passed
     return ReleaseBackfillRead(
@@ -767,6 +785,165 @@ def backfill(
         unreadable_deployment_ids=unreadable,
         pull_reads_skipped=github.pulls_unread,
         message=message,
+        resume_after=stop[1] if stop is not None else None,
+        github_calls=budget.calls,
+        rate_limit_remaining=budget.remaining,
+        rate_limit=budget.limit,
+    )
+
+
+RETRY_RESUME = "unreadable_deployment_ids as deployment_ids"
+
+
+def _retry(
+    repositories: Repositories, workspace_id: str, team_id: str, payload: ReleaseBackfill, stage: PipelineStage
+) -> ReleaseBackfillRead:
+    """Record only the named deployments, such as ones an earlier page could not read in time.
+
+    Each deployment is read by id rather than found by listing the environment,
+    so no history is paged through. Its range starts at the environment's
+    previous successful deployment, as on any page. The first deployment has the
+    first deployment's allowance and best effort pull request reads; one it still
+    cannot read in time is named in `unreadable_deployment_ids` again, as are the
+    ones a stop left unread. An id that is no successful deployment of the
+    environment in the repository is named in `deployments_not_found`. A retry
+    never moves issues, never publishes and never sets a stage head.
+    """
+    from webbpulse.integrations.github import GitHubRateLimited, GitHubUnavailable
+
+    from app.domains.integrations import github_budget, github_deployments
+
+    targets = _backfill_repositories(repositories, workspace_id, team_id, payload.repository)
+    if len(targets) > 1:
+        raise unprocessable("This team pins more than one repository; name the one these deployments belong to")
+    target = targets[0]
+    installation = repositories.github.get_installation(workspace_id)
+    installation_id = str(target.installation_id or (installation.installation_id if installation else ""))
+    github = _GitHub(
+        installation_id,
+        target.repository_id,
+        stored_pulls=_stored_pulls(repositories, workspace_id, target.repository_id),
+    )
+    wanted = list(payload.deployment_ids or [])
+    pinned = target.team_id == team_id
+    created = 0
+    updated = 0
+    skipped = 0
+    done = 0
+    release_ids: list[str] = []
+    unreadable: list[int] = []
+    missing: list[int] = []
+    stop: tuple[str, datetime | None] | None = None
+    stalled = False
+
+    with github_budget.capped(BACKFILL_PAGE_SECONDS) as budget:
+        try:
+            for deployment_id in wanted:
+                first = done == 0
+                budget.until(BACKFILL_FIRST_SECONDS if first else BACKFILL_PAGE_SECONDS)
+                github.best_effort_pulls = first
+                try:
+                    deployment = _readable(
+                        lambda: github_deployments.successful_deployment(
+                            github.token(), target.repository_id, payload.environment, deployment_id
+                        ),
+                        None,
+                        "deployment",
+                    )
+                    if deployment is None:
+                        missing.append(deployment_id)
+                        done += 1
+                        continue
+                    if _recorded_at_stage(
+                        repositories, workspace_id, team_id, target.repository_id, deployment.sha, stage.stage_id
+                    ):
+                        skipped += 1
+                        done += 1
+                        continue
+                    previous = github.previous_success(payload.environment, deployment.sha, deployment.deployment_id)
+                    pull = github.merged_pull(deployment.sha)
+                    commits = github.commits(previous, deployment.sha)
+                except github_budget.BudgetSpent as error:
+                    if not first or error.reason != github_budget.TIME:
+                        raise
+                    unreadable.append(deployment_id)
+                    done += 1
+                    _log.warning(
+                        "A release backfill retry could not read a deployment in time.",
+                        extra={
+                            "event": "integrations.release_backfill_unreadable",
+                            "deployment_id": deployment_id,
+                            "github_calls": budget.calls,
+                        },
+                    )
+                    continue
+                had = repositories.releases.release_for_sha(workspace_id, team_id, target.repository_id, deployment.sha)
+                release = _record_for_team(
+                    repositories,
+                    workspace_id,
+                    team_id,
+                    stage,
+                    commits=commits,
+                    sha=deployment.sha,
+                    previous_sha=previous,
+                    repository_id=target.repository_id,
+                    repository=target.full_name,
+                    environment=payload.environment,
+                    url=None,
+                    pinned=pinned,
+                    pull=pull,
+                    at=deployment.created_at,
+                    automate=False,
+                )
+                done += 1
+                if release is None:
+                    continue
+                release_ids.append(release.release_id)
+                if had is None:
+                    created += 1
+                else:
+                    updated += 1
+        except (github_budget.BudgetSpent, GitHubRateLimited, GitHubUnavailable) as error:
+            stalled = done == 0
+            stop = (
+                _stalled(error, budget, wanted[done], RETRY_RESUME)
+                if stalled
+                else _stopped(error, budget, RETRY_RESUME)
+            )
+            _log.warning(
+                "A release backfill retry stopped early.",
+                extra={
+                    "event": f"integrations.release_backfill_{'stalled' if stalled else 'stopped'}",
+                    "reason": type(error).__name__,
+                    "github_calls": budget.calls,
+                    "rate_limit_remaining": budget.remaining,
+                },
+            )
+    unread = unreadable + wanted[done:]
+    parts: list[str] = []
+    if unreadable:
+        named = ", ".join(str(deployment_id) for deployment_id in unreadable)
+        parts.append(f"Could not read deployment {named} inside the request timeout.")
+    if missing:
+        named = ", ".join(str(deployment_id) for deployment_id in missing)
+        parts.append(f"No successful {payload.environment} deployment {named} in {target.full_name}.")
+    if stop is not None:
+        parts.append(stop[0])
+    return ReleaseBackfillRead(
+        team_id=team_id,
+        environment=payload.environment,
+        deployments_scanned=done,
+        deployments_skipped=skipped,
+        releases_created=created,
+        releases_updated=updated,
+        release_ids=list(dict.fromkeys(release_ids)),
+        next_cursor=None,
+        stopped_early=stop is not None,
+        stalled=stalled,
+        unreadable_deployment_ids=unread,
+        deployments_not_found=missing,
+        pull_reads_skipped=github.pulls_unread,
+        message=" ".join(parts) or None,
         resume_after=stop[1] if stop is not None else None,
         github_calls=budget.calls,
         rate_limit_remaining=budget.remaining,

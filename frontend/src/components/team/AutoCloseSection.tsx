@@ -73,7 +73,7 @@ export const AutoCloseSection: React.FC<AutoCloseSectionProps> = ({
   );
 
   const { data: statuses } = usePolledQuery(
-    ({ signal }) => listStatuses(workspaceId, teamId, signal),
+    (context) => listStatuses(workspaceId, teamId, context),
     {
       intervalMs: POLL_MS,
       queryKey: ['auto-close-statuses', workspaceId, teamId],

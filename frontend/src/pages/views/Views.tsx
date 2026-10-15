@@ -48,12 +48,15 @@ import { useWorkspaceMembers } from '../../hooks/useWorkspaceMembers';
 import { errorMessage } from '../../lib/errors';
 import { sharedChange, viewVisibility } from '../../lib/issueView';
 import { newViewPath, viewPath } from '../../lib/paths';
-import { viewCountKey, viewKey, viewsKey } from '../../lib/queryKeys';
+import {
+  favoritesKey,
+  viewCountKey,
+  viewKey,
+  viewsKey,
+} from '../../lib/queryKeys';
 import { showErrorToast, showToast } from '../../lib/toast';
 import type { ViewListScope } from '../../types/Api';
-
-/** How often the view list is re-read while the page is open. */
-const POLL_MS = 60000;
+import { LOOKUP_POLL_MS } from '../../lib/polling';
 
 /** How often a row's issue count is re-read. */
 const COUNT_POLL_MS = 300000;
@@ -135,9 +138,9 @@ export const Views: React.FC = () => {
   const members = useWorkspaceMembers(workspaceId);
 
   const { data, error, isLoading } = usePolledQuery(
-    ({ signal }) => listViews(workspaceId, { scope }, signal),
+    (context) => listViews(workspaceId, { scope }, context),
     {
-      intervalMs: POLL_MS,
+      intervalMs: LOOKUP_POLL_MS,
       enabled: workspaceId !== '',
       queryKey: viewsKey(workspaceId, scope, ''),
       auth,
@@ -196,6 +199,7 @@ export const Views: React.FC = () => {
     try {
       await setViewFavorite(workspaceId, view.view_id, view.favorite !== true);
       refreshViewLists(workspaceId, view);
+      invalidateQueries(favoritesKey(workspaceId));
     } catch (failure) {
       showErrorToast(errorMessage(failure, 'Could not change the favorite.'));
     }

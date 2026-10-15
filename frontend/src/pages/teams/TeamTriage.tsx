@@ -569,6 +569,7 @@ export const TeamTriage: React.FC = () => {
         <TeamTabs
           slug={slug ?? ''}
           keyPrefix={team.key_prefix}
+          teamId={team.id}
           current="triage"
         />
       }

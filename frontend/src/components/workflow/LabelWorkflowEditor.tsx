@@ -1,7 +1,8 @@
 /**
  * The label list both label settings pages draw, in name order with each
  * group's labels under it. A label the caller may edit carries its color
- * picker, an inline name and a menu to move it between groups or delete it.
+ * picker, an inline name and a menu to move it between groups, merge it into
+ * another label of the same scope, or delete it.
  * On a team page the workspace's labels and groups appear among the team's
  * own, marked as inherited and offered only the team overrides.
  */
@@ -21,6 +22,7 @@ import type {
 import { ErrorAlert } from '../ui/alert';
 import { LabelChip } from '../ui/badge';
 import Button, { IconButton } from '../ui/button';
+import Dialog from '../ui/dialog';
 import Field from '../ui/field';
 import Menu, { MenuItem, MenuSeparator } from '../ui/menu';
 import { SelectField } from '../ui/select';
@@ -39,6 +41,7 @@ export interface LabelEditorActions {
   remove: (label: LabelRead) => Promise<unknown>;
   override?: (label: LabelRead, body: OverrideUpdate) => Promise<unknown>;
   reset?: (label: LabelRead) => Promise<unknown>;
+  merge?: (label: LabelRead, into: LabelRead) => Promise<unknown>;
 }
 
 /** Props for LabelWorkflowEditor. */
@@ -58,6 +61,81 @@ export interface LabelWorkflowEditorProps {
 /** The color a new label starts on. */
 const DEFAULT_COLOR = STATUS_COLOR_VALUES.blue;
 
+/** Props for MergeLabelDialog. */
+interface MergeLabelDialogProps {
+  label: LabelRead | null;
+  options: readonly LabelRead[];
+  scope: 'workspace' | 'team';
+  onCancel: () => void;
+  onConfirm: (label: LabelRead, into: LabelRead) => void;
+}
+
+/** Confirms a label merge and picks the label kept. */
+const MergeLabelDialog: React.FC<MergeLabelDialogProps> = ({
+  label,
+  options,
+  scope,
+  onCancel,
+  onConfirm,
+}) => {
+  const [chosen, setChosen] = useState<string>('');
+  const into = options.find((row) => row.id === chosen) ?? options[0];
+  const name = label?.name ?? 'this label';
+  const reach = scope === 'workspace' ? ' in every team' : '';
+  const close = (): void => {
+    setChosen('');
+    onCancel();
+  };
+  return (
+    <Dialog
+      open={label !== null}
+      onClose={close}
+      title={`Merge ${name}`}
+      description={`Every issue labeled ${name}${reach} gets the label you choose instead, and ${name} is deleted. Saved views and templates using ${name} use that label. This cannot be undone.`}
+      size="sm"
+    >
+      <div className="space-y-4">
+        {options.length === 0 ? (
+          <p className="text-sm text-text-muted">
+            There is no other label to merge into.
+          </p>
+        ) : (
+          <SelectField
+            id="merge-label-target"
+            label="Merge into"
+            value={into?.id ?? ''}
+            onChange={(event) => {
+              setChosen(event.target.value);
+            }}
+          >
+            {options.map((row) => (
+              <option key={row.id} value={row.id}>
+                {row.name}
+              </option>
+            ))}
+          </SelectField>
+        )}
+        <div className="flex justify-end gap-2">
+          <Button type="button" variant="ghost" onClick={close}>
+            Cancel
+          </Button>
+          <Button
+            type="button"
+            variant="danger"
+            disabled={into === undefined}
+            onClick={() => {
+              setChosen('');
+              if (label !== null && into !== undefined) onConfirm(label, into);
+            }}
+          >
+            Merge
+          </Button>
+        </div>
+      </div>
+    </Dialog>
+  );
+};
+
 /** Lists labels and edits the ones the caller may change. */
 export const LabelWorkflowEditor: React.FC<LabelWorkflowEditorProps> = ({
   labels,
@@ -75,8 +153,9 @@ export const LabelWorkflowEditor: React.FC<LabelWorkflowEditorProps> = ({
   const [parentId, setParentId] = useState('');
   const [isAdding, setIsAdding] = useState(false);
   const [deleting, setDeleting] = useState<LabelRead | null>(null);
+  const [merging, setMerging] = useState<LabelRead | null>(null);
 
-  const { override, reset } = actions;
+  const { override, reset, merge } = actions;
   const visible = visibleRows(labels);
   const hiddenCount = labels.length - visible.length;
   const shown = sortLabels(showHidden ? labels : visible);
@@ -89,6 +168,15 @@ export const LabelWorkflowEditor: React.FC<LabelWorkflowEditorProps> = ({
     )
   );
   const sections = labelSections(shown);
+  const mergeTargets = (label: LabelRead): LabelRead[] =>
+    sortLabels(
+      labels.filter(
+        (row) =>
+          row.id !== label.id &&
+          !isLabelGroup(row) &&
+          (scope === 'workspace' || !isInherited(row))
+      )
+    );
 
   const run = (write: Promise<unknown>, fallback: string): void => {
     setError(null);
@@ -235,9 +323,19 @@ export const LabelWorkflowEditor: React.FC<LabelWorkflowEditorProps> = ({
                     Remove from group
                   </MenuItem>
                 )}
-              {!isLabelGroup(label) && ownGroups.length > 0 && (
-                <MenuSeparator />
+              {!isLabelGroup(label) && merge !== undefined && (
+                <MenuItem
+                  onSelect={() => {
+                    setMerging(label);
+                  }}
+                >
+                  Merge into another label
+                </MenuItem>
               )}
+              {!isLabelGroup(label) &&
+                (ownGroups.length > 0 || merge !== undefined) && (
+                  <MenuSeparator />
+                )}
               <MenuItem
                 danger
                 onSelect={() => {
@@ -378,6 +476,24 @@ export const LabelWorkflowEditor: React.FC<LabelWorkflowEditorProps> = ({
             ),
           ])}
         </ul>
+      )}
+
+      {merge !== undefined && (
+        <MergeLabelDialog
+          label={merging}
+          options={merging === null ? [] : mergeTargets(merging)}
+          scope={scope}
+          onCancel={() => {
+            setMerging(null);
+          }}
+          onConfirm={(label, into) => {
+            setMerging(null);
+            run(
+              merge(label, into),
+              `Could not merge ${label.name} into ${into.name}.`
+            );
+          }}
+        />
       )}
 
       <ConfirmDeleteDialog

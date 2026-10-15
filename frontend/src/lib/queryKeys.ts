@@ -61,6 +61,12 @@ export const allLabelsKey = (teamId: string): QueryKey => [
 /** The issue templates one team offers, with its default. */
 export const templatesKey = (teamId: string): QueryKey => ['templates', teamId];
 
+/** One team's recurring issues. */
+export const recurringKey = (teamId: string): QueryKey => [
+  'recurring-issues',
+  teamId,
+];
+
 /** The issue templates a workspace offers every team. */
 export const workspaceTemplatesKey = (workspaceId: string): QueryKey => [
   'workspace-templates',
@@ -226,6 +232,12 @@ export const inboxKey = (
 /** The unread badge count, polled by the shell on every page. */
 export const inboxCountKey = (workspaceId: string): QueryKey => [
   'inbox-count',
+  workspaceId,
+];
+
+/** The caller's favorites, read by the sidebar and every star toggle alike. */
+export const favoritesKey = (workspaceId: string): QueryKey => [
+  'favorites',
   workspaceId,
 ];
 
@@ -492,6 +504,17 @@ export const workspaceConnectedAppsKey = (workspaceId: string): QueryKey => [
   'connected-apps',
   'workspace',
   workspaceId,
+];
+
+/** The signed in person's private agent profiles. */
+export const MY_AGENT_PROFILES_KEY: QueryKey = ['agent-profiles', 'me'];
+
+/** The kept versions of one of the signed in person's agent profiles. */
+export const myAgentProfileVersionsKey = (name: string): QueryKey => [
+  'agent-profiles',
+  'me',
+  'versions',
+  name,
 ];
 
 /** One team's release list. */

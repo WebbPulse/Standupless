@@ -20,8 +20,10 @@ from app.common.api.dependencies.repositories import Repositories
 from app.common.db.dynamo.issues import Issue
 from app.common.db.dynamo.teams import Team
 from app.common.issue_move import find_issue_by_number
-from app.common.issue_rules import load_visible_issue
+from app.common.issue_rules import TRIAGE_STATUS_NAME, load_visible_issue, shown_status_id
 from app.common.issue_rules import not_found as issue_not_found
+from app.common.plan_features import PLAN_FEATURE_UNAVAILABLE
+from app.common.plan_limits import PLAN_LIMIT_REACHED
 from app.common.planning_rules import visible_project_teams, visible_team_ids
 from app.common.sla import sla_status
 from app.common.team_refs import TEAM_NOT_FOUND_CODE, find_team, team_not_found_message
@@ -368,7 +370,8 @@ def issue_json(issue: Issue, *, status_name: str = "") -> dict[str, Any]:
 
     Ids are included here, unlike in the public share shapes, because the caller is
     inside the workspace and needs them to make the next call. What bounds this
-    credential is its scopes and its membership, not the ids it can see.
+    credential is its scopes and its membership, not the ids it can see. An issue
+    waiting in triage reports the synthetic triage status, as every client shows it.
     """
     return {
         "issue_id": issue.issue_id,
@@ -376,8 +379,8 @@ def issue_json(issue: Issue, *, status_name: str = "") -> dict[str, Any]:
         "team_id": issue.team_id,
         "title": issue.title,
         "body": issue.body or "",
-        "status_id": issue.status_id,
-        "status": status_name,
+        "status_id": shown_status_id(issue),
+        "status": TRIAGE_STATUS_NAME if issue.in_triage else status_name,
         "priority": issue.priority,
         "assignee_id": issue.assignee_id,
         "label_ids": list(issue.label_ids),
@@ -396,17 +399,19 @@ def issue_json(issue: Issue, *, status_name: str = "") -> dict[str, Any]:
         "sla_started_at": issue.sla_started_at.isoformat() if issue.sla_started_at else None,
         "sla_breaches_at": issue.sla_breaches_at.isoformat() if issue.sla_breaches_at else None,
         "sla_status": sla_status(issue),
+        "external_ref": issue.external_ref,
     }
 
 
 def summary_json(issue: Issue) -> dict[str, Any]:
-    """One issue as a listing renders it."""
+    """One issue as a listing renders it, under the synthetic triage status while it waits in triage."""
     return {
         "issue_id": issue.issue_id,
         "issue_key": issue.key,
         "team_id": issue.team_id,
         "title": issue.title,
-        "status_id": issue.status_id,
+        "status_id": shown_status_id(issue),
+        "in_triage": issue.in_triage,
         "priority": issue.priority,
         "estimate": issue.estimate,
         "assignee_id": issue.assignee_id,
@@ -420,20 +425,28 @@ def summary_json(issue: Issue) -> dict[str, Any]:
     }
 
 
+PLAN_REFUSAL_CODES: frozenset[str] = frozenset({PLAN_FEATURE_UNAVAILABLE, PLAN_LIMIT_REACHED})
+"""The error codes that mean the workspace plan, not the credential, refused a write."""
+
+
 def http_error_message(exc: HTTPException) -> str:
     """The tool error text one route error becomes.
 
     A 404 keeps the routes' rule that invisible and absent look the same, except a
-    team's, whose message already names the reference and nothing more. A 403
-    says the credential may not write there, which is the only reason a visible
-    target refuses. Anything else carries the route's own message, which is written
+    team's, whose message already names the reference and nothing more. A plan
+    refusal says what the plan lacks and carries its code, so a caller with the
+    role is not sent chasing credentials. Any other 403 says the credential may not
+    write there. Anything else carries the route's own message, which is written
     for a person and reads as well to a model.
     """
     detail = exc.detail
     message = detail.get("message") if isinstance(detail, Mapping) else detail
+    code = detail.get("error_code") if isinstance(detail, Mapping) else None
     text = str(message) if message else "The request was refused"
-    if exc.status_code == 404 and not (isinstance(detail, Mapping) and detail.get("error_code") == TEAM_NOT_FOUND_CODE):
+    if exc.status_code == 404 and code != TEAM_NOT_FOUND_CODE:
         return NOT_VISIBLE
+    if code in PLAN_REFUSAL_CODES:
+        return f"{text} ({code})"
     if exc.status_code == 403:
         return f"This credential may not write there. {text}"
     return text

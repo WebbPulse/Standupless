@@ -80,6 +80,9 @@ class DigestEntry(BaseModel):
     project_id: str = ""
     project_name: str = ""
     health: str = ""
+    initiative_id: str = ""
+    initiative_name: str = ""
+    due_state: str = ""
     created_at: datetime
 
 

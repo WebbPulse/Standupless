@@ -69,6 +69,8 @@ def test_every_declared_table_is_workspace_partitioned_or_named_why_not() -> Non
     `users` and `workspaces` are keyed by their own id because they are the two
     things a workspace is defined in terms of, and `idempotency` carries the
     workspace inside its key because the claim has no tenant partition of its own.
+    `agent_profiles` is keyed by the person, because a profile belongs to one
+    person across every workspace they are in and no workspace may reach it.
     A composite partition counts as long as it is named here and starts with `ws_`,
     which is what keeps a new table from quietly opting out of the invariant.
 
@@ -77,7 +79,7 @@ def test_every_declared_table_is_workspace_partitioned_or_named_why_not() -> Non
     tables, which are partitioned by the credential hash for the same reason and
     keep the invariant a layer up through their workspace-first tenant indexes.
     """
-    exempt = {"users", "workspaces", "idempotency"}
+    exempt = {"users", "workspaces", "idempotency", "agent_profiles"}
     for spec in TABLES:
         if spec.suffix in exempt:
             continue

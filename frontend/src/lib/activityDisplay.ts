@@ -284,8 +284,9 @@ const SYNC_FIELD_NAMES: Record<string, string> = {
   label_ids: 'the labels',
 };
 
-/** How each way out of triage reads in the history. */
+/** How each way into and out of triage reads in the history. */
 const TRIAGE_PHRASES: Record<string, string> = {
+  pending: 'sent the issue to triage',
   accepted: 'accepted the issue from triage',
   declined: 'declined the issue in triage',
   duplicate: 'closed the issue in triage as a duplicate',

@@ -11,7 +11,13 @@
  */
 
 import React, { useState } from 'react';
-import { LuArrowDown, LuArrowUp, LuPencil, LuTrash2 } from 'react-icons/lu';
+import {
+  LuArrowDown,
+  LuArrowUp,
+  LuPencil,
+  LuRepeat,
+  LuTrash2,
+} from 'react-icons/lu';
 import { errorMessage } from '../../lib/errors';
 import type { Assignable } from '../../lib/issuePeople';
 import { TEMPLATE_GROUPS } from '../../lib/issueTemplates';
@@ -70,6 +76,8 @@ export interface TemplateEditorProps {
   actions: TemplateEditorActions;
   /** The template the team's create dialog opens with, marked in the list. */
   defaultTemplateId?: string | null;
+  /** Opens a recurring schedule for a template; the button shows when set. */
+  onMakeRecurring?: (template: TemplateRead) => void;
 }
 
 /** The form's working copy of one template. */
@@ -343,6 +351,7 @@ export const TemplateEditor: React.FC<TemplateEditorProps> = ({
   options,
   actions,
   defaultTemplateId = null,
+  onMakeRecurring,
 }) => {
   const [editing, setEditing] = useState<string | null>(null);
   const [confirming, setConfirming] = useState<string | null>(null);
@@ -467,6 +476,17 @@ export const TemplateEditor: React.FC<TemplateEditorProps> = ({
                     </div>
                   ) : (
                     <div className="flex items-center gap-0.5">
+                      {onMakeRecurring !== undefined && (
+                        <IconButton
+                          size="sm"
+                          label={`Make ${template.name} recurring`}
+                          onClick={() => {
+                            onMakeRecurring(template);
+                          }}
+                        >
+                          <LuRepeat className="h-3.5 w-3.5" />
+                        </IconButton>
+                      )}
                       <IconButton
                         size="sm"
                         label={`Move ${template.name} up`}
@@ -556,6 +576,17 @@ export const TemplateEditor: React.FC<TemplateEditorProps> = ({
                   <Badge tone="accent">Default</Badge>
                 )}
                 <Badge>{TEMPLATE_GROUPS[template.scope]}</Badge>
+                {canEdit && onMakeRecurring !== undefined && (
+                  <IconButton
+                    size="sm"
+                    label={`Make ${template.name} recurring`}
+                    onClick={() => {
+                      onMakeRecurring(template);
+                    }}
+                  >
+                    <LuRepeat className="h-3.5 w-3.5" />
+                  </IconButton>
+                )}
               </li>
             ))}
           </ul>

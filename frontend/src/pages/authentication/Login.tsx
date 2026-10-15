@@ -1,6 +1,9 @@
 /**
  * The sign in page: password, passkey and OAuth, with a second leg answered by
- * a TOTP code or a passkey.
+ * a TOTP code or a passkey. Inside the desktop app it also offers signing in
+ * with the system browser, for the providers and passkeys the app window
+ * cannot complete, and says why when a handoff the app started came back
+ * refused.
  */
 
 import React, { useState } from 'react';
@@ -15,7 +18,7 @@ import {
   useAuth as usePackageAuth,
   useOAuthCallback,
 } from '@webbpulse/auth/react';
-import { LuKeyRound } from 'react-icons/lu';
+import { LuGlobe, LuKeyRound } from 'react-icons/lu';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import AuthLayout from './AuthLayout';
 import AuthSubmitButton from './AuthSubmitButton';
@@ -30,6 +33,11 @@ import Field from '../../components/ui/field';
 import TextLink from '../../components/ui/link';
 import { useAuth } from '../../hooks/useAuth';
 import { authorizeReturn, loginReturnFor } from '../../lib/authorizeReturn';
+import {
+  describeDesktopHandoffFailure,
+  desktopBrowserSignIn,
+} from '../../lib/desktop';
+import { DESKTOP_HANDOFF_FAILED_PARAM } from '../../lib/paths';
 import { describePasskeyMfaFailure } from '../../lib/passkeyMfa';
 import type { UserRead } from '../../types/Api';
 
@@ -49,11 +57,16 @@ const Login: React.FC = () => {
   const [code, setCode] = useState('');
   const [ticket, setTicket] = useState<string | null>(null);
   const [factors, setFactors] = useState<string[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
+  const [error, setError] = useState<string | null>(() =>
+    describeDesktopHandoffFailure(
+      searchParams.get(DESKTOP_HANDOFF_FAILED_PARAM)
+    )
+  );
+  const signInWithBrowser = desktopBrowserSignIn();
   const authorizeTarget = authorizeReturn(
     searchParams.get('returnTo'),
     identityOrigin()
@@ -295,6 +308,21 @@ const Login: React.FC = () => {
               <span className="h-px flex-1 bg-line" />
             </div>
             <div className="space-y-2">
+              {signInWithBrowser !== null && (
+                <Button
+                  variant="secondary"
+                  className="w-full"
+                  onClick={() => {
+                    setError(null);
+                    signInWithBrowser();
+                  }}
+                  disabled={isSubmitting}
+                  data-testid="login-desktop-browser"
+                >
+                  <LuGlobe className="h-3.5 w-3.5" aria-hidden="true" />
+                  <span>Sign in with your browser</span>
+                </Button>
+              )}
               <PasskeySignInButton
                 email={email}
                 onResult={(result) => void handlePasskeyResult(result)}

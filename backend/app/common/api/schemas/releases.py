@@ -18,7 +18,7 @@ from webbpulse.http import cursor_page
 
 from app.common.db.dynamo.releases import PipelineStage, Release, ReleasePipeline, ReleaseStageReached
 
-ReleaseSourceField = Literal["manual", "api", "github_deployment"]
+ReleaseSourceField = Literal["manual", "api", "github_deployment", "github_tag", "github_release"]
 
 NAME_MAX = 120
 
@@ -231,6 +231,8 @@ class ReleaseRead(BaseModel):
     reader sees "Released to Production" without ordering the stages itself.
     `status_counts` tallies the issues the caller can see by status category, so a
     listing draws each release's progress without reading its issues.
+    `included_in` names the promotion that carried this release to a later stage,
+    and `included_count` is how many earlier releases a promotion carried.
     """
 
     release_id: str
@@ -250,6 +252,8 @@ class ReleaseRead(BaseModel):
     github_release_url: Optional[str] = None
     issue_count: int
     status_counts: dict[str, int] = Field(default_factory=dict)
+    included_in: Optional[str] = None
+    included_count: int = 0
     stages: list[ReleaseStageRead]
     current_stage: Optional[ReleaseStageRead] = None
     created_by: Optional[str] = None
@@ -284,11 +288,40 @@ class ReleaseRead(BaseModel):
             pr_url=release.pr_url,
             github_release_url=release.github_release_url,
             issue_count=len(release.issue_ids),
+            included_in=release.included_in,
+            included_count=len(release.included_release_ids),
             stages=stages,
             current_stage=current,
             created_by=release.created_by,
             created_at=release.created_at,
             updated_at=release.updated_at,
+        )
+
+
+class IncludedReleaseRead(BaseModel):
+    """One release a promotion carried, or the promotion that carried one, as a detail page links it."""
+
+    release_id: str
+    name: str
+    sha: Optional[str] = None
+    pr_number: Optional[int] = None
+    pr_url: Optional[str] = None
+    issue_count: int
+    current_stage: Optional[ReleaseStageRead] = None
+    created_at: datetime
+
+    @classmethod
+    def from_read(cls, release: "ReleaseRead") -> "IncludedReleaseRead":
+        """The short shape of a release already built for a listing."""
+        return cls(
+            release_id=release.release_id,
+            name=release.name,
+            sha=release.sha,
+            pr_number=release.pr_number,
+            pr_url=release.pr_url,
+            issue_count=release.issue_count,
+            current_stage=release.current_stage,
+            created_at=release.created_at,
         )
 
 
@@ -298,12 +331,16 @@ class ReleaseDetailRead(ReleaseRead):
     The notes are deterministic: one line per visible issue, `KEY title`, in key
     order, so the same release always reads the same way. `skipped_issues` echoes
     the references a write named that matched no issue of the team, so a CI job can
-    report a typo without the release being refused.
+    report a typo without the release being refused. `included_releases` are the
+    earlier releases a promotion carried, newest first, and `included_in_release`
+    is the promotion that carried this one.
     """
 
     issues: list[ReleaseIssueRead]
     notes: str
     skipped_issues: list[str] = Field(default_factory=list)
+    included_releases: list[IncludedReleaseRead] = Field(default_factory=list)
+    included_in_release: Optional[IncludedReleaseRead] = None
 
 
 ReleaseListRead = cursor_page(ReleaseRead, "releases", model_name="ReleaseListRead")
@@ -414,12 +451,35 @@ class ReleaseBackfill(BaseModel):
     every repository pinned to the team. Pass `cursor` back until it comes back
     null. A deployment that already has a release only gains missing issues, and
     the backfill never moves issues or publishes GitHub Releases.
+
+    `deployment_ids` retries only those deployments, such as the
+    `unreadable_deployment_ids` an earlier page passed over, without paging
+    through history. It takes no cursor, and `repository` must name their
+    repository unless the team pins only one.
     """
 
     repository: Optional[str] = Field(default=None, max_length=255)
     environment: str = Field(default="production", min_length=1, max_length=ENVIRONMENT_MAX)
     limit: int = Field(default=BACKFILL_DEFAULT_LIMIT, ge=1, le=BACKFILL_MAX_LIMIT)
     cursor: Optional[str] = Field(default=None, max_length=1024)
+    deployment_ids: Optional[list[int]] = Field(default=None, min_length=1, max_length=BACKFILL_MAX_LIMIT)
+
+    @field_validator("deployment_ids")
+    @classmethod
+    def check_deployment_ids(cls, value: Optional[list[int]]) -> Optional[list[int]]:
+        """Keep each positive id once, in the order given."""
+        if value is None:
+            return None
+        if any(deployment_id <= 0 for deployment_id in value):
+            raise ValueError("deployment ids must be positive")
+        return list(dict.fromkeys(value))
+
+    @model_validator(mode="after")
+    def check_retry(self) -> "ReleaseBackfill":
+        """Refuse a cursor beside deployment ids, since a retry does not page."""
+        if self.deployment_ids and self.cursor:
+            raise ValueError("pass either deployment_ids or cursor, not both")
+        return self
 
     @field_validator("repository", "cursor")
     @classmethod
@@ -453,10 +513,18 @@ class ReleaseBackfillRead(BaseModel):
     `unreadable_deployment_ids` names deployments passed over because their range
     could not be read inside the request timeout, and `pull_reads_skipped` counts
     pull requests a recorded deployment did not read for keys for the same reason.
+    Pass `unreadable_deployment_ids` back as `deployment_ids` to retry only those.
+    A retry names in `deployments_not_found` the ids that are no successful
+    deployment of the environment in the repository.
+
+    `source` is `github_tag` or `github_release` for a page read from a
+    repository that records its releases from tags or GitHub Releases; its
+    deployment counts then count tags.
     """
 
     team_id: str
     environment: str
+    source: str = "github_deployment"
     deployments_scanned: int
     deployments_skipped: int = 0
     releases_created: int
@@ -466,6 +534,7 @@ class ReleaseBackfillRead(BaseModel):
     stopped_early: bool = False
     stalled: bool = False
     unreadable_deployment_ids: list[int] = Field(default_factory=list)
+    deployments_not_found: list[int] = Field(default_factory=list)
     pull_reads_skipped: int = 0
     message: Optional[str] = None
     resume_after: Optional[datetime] = None
@@ -475,12 +544,18 @@ class ReleaseBackfillRead(BaseModel):
 
 
 class IssueReleaseRead(BaseModel):
-    """One release an issue shipped in, as the issue page names it."""
+    """One release an issue shipped in, as the issue page names it.
+
+    `included_in` and `included_in_name` name the promotion that carried this
+    release to a later stage, so the page marks the release rather than hiding it.
+    """
 
     release_id: str
     team_id: str
     name: str
     current_stage: Optional[ReleaseStageRead] = None
+    included_in: Optional[str] = None
+    included_in_name: Optional[str] = None
     created_at: datetime
 
 

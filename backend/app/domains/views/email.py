@@ -246,6 +246,61 @@ def render_project_update_due_notification(
     )
 
 
+INITIATIVE_UPDATE_DUE = "initiative_update_due"
+
+_INITIATIVE_DUE_REASON = (
+    "You are receiving this because you own this initiative. Change its update cadence in the initiative, "
+    "or turn these off in your {product} notification settings."
+)
+
+
+def initiative_url(workspace_slug: str, initiative_id: str) -> str:
+    """The SPA link to one initiative's updates, or to the workspace list when the slug is gone."""
+    base = settings.frontend_base_url
+    if not workspace_slug:
+        return f"{base}/workspaces"
+    return f"{base}/w/{quote(workspace_slug, safe='')}/initiatives/{quote(initiative_id, safe='')}?tab=updates"
+
+
+def _initiative_due_line(due_state: str) -> str:
+    """The sentence an initiative reminder says, by whether the update is due or overdue."""
+    if due_state == "overdue":
+        return "An initiative update is overdue."
+    return "An initiative update is due."
+
+
+def render_initiative_update_due_notification(
+    *,
+    to: str,
+    initiative_id: str,
+    initiative_name: str,
+    due_state: str,
+    workspace_slug: str,
+    accent: str | None = None,
+) -> EmailMessage:
+    """Render the reminder an initiative owner gets when the initiative's update comes due or goes overdue.
+
+    The subject is `[Initiative] Name`, so both reminders for one initiative
+    thread together in a mail client.
+    """
+    title = initiative_name.strip() or "Untitled initiative"
+    line = _initiative_due_line(due_state)
+    return render(
+        to=to,
+        subject=f"[Initiative] {title}",
+        preheader=f"{line[:-1]} for {title}.",
+        blocks=[
+            Heading(title),
+            Paragraph(line),
+            Button(f"Write an update for {title}", initiative_url(workspace_slug, initiative_id), show_url=True),
+        ],
+        footer_note=_INITIATIVE_DUE_REASON.format(product=settings.PROJECT_NAME),
+        footer_links=_settings_link(workspace_slug),
+        tags={"purpose": "notification", "kind": INITIATIVE_UPDATE_DUE},
+        accent=accent,
+    )
+
+
 DIGEST_LINE_LIMIT = 50
 """How many notifications one digest lists before it points at the inbox for the rest.
 
@@ -258,6 +313,8 @@ def _entry_line(entry: DigestEntry) -> str:
     """The one sentence a digest says about one notification."""
     if entry.kind == PROJECT_UPDATE_DUE:
         return "A project update is due."
+    if entry.kind == INITIATIVE_UPDATE_DUE:
+        return _initiative_due_line(entry.due_state)
     actor = entry.actor_name.strip() or "Someone"
     if entry.kind == "project_update":
         health = _HEALTH_LABELS.get(entry.health, "updated").lower()
@@ -271,6 +328,13 @@ def _entry_group(entry: DigestEntry, workspace_slug: str) -> tuple[str, str, str
     if entry.kind in ("project_update", PROJECT_UPDATE_DUE):
         name = entry.project_name.strip() or "Untitled project"
         return f"project#{entry.project_id}", f"Project: {name}", project_url(workspace_slug, entry.project_id)
+    if entry.kind == INITIATIVE_UPDATE_DUE:
+        name = entry.initiative_name.strip() or "Untitled initiative"
+        return (
+            f"initiative#{entry.initiative_id}",
+            f"Initiative: {name}",
+            initiative_url(workspace_slug, entry.initiative_id),
+        )
     title = entry.issue_title.strip() or "Untitled issue"
     label = f"{entry.issue_key} {title}" if entry.issue_key else title
     return f"issue#{entry.issue_id or entry.issue_key}", label, issue_url(workspace_slug, entry.issue_key)
@@ -287,6 +351,15 @@ def render_single(entry: DigestEntry, *, to: str, workspace_slug: str, accent: s
             to=to,
             project_id=entry.project_id,
             project_name=entry.project_name,
+            workspace_slug=workspace_slug,
+            accent=accent,
+        )
+    if entry.kind == INITIATIVE_UPDATE_DUE:
+        return render_initiative_update_due_notification(
+            to=to,
+            initiative_id=entry.initiative_id,
+            initiative_name=entry.initiative_name,
+            due_state=entry.due_state,
             workspace_slug=workspace_slug,
             accent=accent,
         )
@@ -317,7 +390,7 @@ def render_single(entry: DigestEntry, *, to: str, workspace_slug: str, accent: s
 def render_digest(
     entries: Sequence[DigestEntry], *, to: str, workspace_slug: str, accent: str | None = None
 ) -> EmailMessage:
-    """Render one window's notifications as one email, grouped by issue or project.
+    """Render one window's notifications as one email, grouped by issue, project or initiative.
 
     One notification renders as its own email. More are grouped under the issue
     or project they are about, in the order they happened, and the subject is the
@@ -335,7 +408,7 @@ def render_digest(
         groups.setdefault(key, (label, link, []))[2].append(entry)
 
     subjects = {_entry_group(entry, workspace_slug)[0] for entry in ordered}
-    if len(subjects) == 1 and ordered[0].kind not in ("project_update", PROJECT_UPDATE_DUE):
+    if len(subjects) == 1 and ordered[0].kind not in ("project_update", PROJECT_UPDATE_DUE, INITIATIVE_UPDATE_DUE):
         title = ordered[0].issue_title.strip() or "Untitled issue"
         subject = f"[{ordered[0].issue_key}] {title}" if ordered[0].issue_key else title
     else:

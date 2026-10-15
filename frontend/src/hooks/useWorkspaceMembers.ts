@@ -8,9 +8,7 @@ import { usePolledQuery } from '@webbpulse/api-client/react';
 import { listMembers } from '../api/workspaces';
 import { membersKey } from '../lib/queryKeys';
 import type { MemberRead } from '../types/Api';
-
-/** How often the members re-read. */
-const POLL_MS = 60000;
+import { LOOKUP_POLL_MS } from '../lib/polling';
 
 /** Reads the workspace's members, or nothing until there is a workspace. */
 export const useWorkspaceMembers = (
@@ -19,9 +17,9 @@ export const useWorkspaceMembers = (
 ): MemberRead[] => {
   const auth = useQueryAuth();
   const { data } = usePolledQuery(
-    ({ signal }) => listMembers(workspaceId, signal),
+    (context) => listMembers(workspaceId, context),
     {
-      intervalMs: POLL_MS,
+      intervalMs: LOOKUP_POLL_MS,
       enabled: enabled && workspaceId !== '',
       queryKey: membersKey(workspaceId),
       auth,

@@ -15,7 +15,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from pydantic import BaseModel, Field, field_validator
 from webbpulse.identity.claims import identity_claims
 
-from app.common import team_purge
+from app.common import agent_profiles, team_purge
 from app.common.account_deletion import AccountDeletionPlan, WorkspaceSummary, plan_account_deletion
 from app.common.api.dependencies.authz import (
     auth_strength_of,
@@ -324,7 +324,8 @@ def delete_account(
     409 naming each workspace where they are the only owner and other people remain.
     Once it passes, the account is marked deleted, so no sign in method or refresh
     works for it any more, then every session, OAuth grant and personal API key is
-    revoked and the purge of its data is started at once. The hourly sweep and the
+    revoked, the person's private agent profiles are removed, and the purge of
+    its data is started at once. The hourly sweep and the
     queue's retries start any purge this request could not. The account's own
     address is mailed, and the request is logged with how the caller last
     authenticated. Repeating it for an account already deleted starts the purge again.
@@ -333,6 +334,7 @@ def delete_account(
     if user is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=NO_SUCH_USER)
     if user.is_deleted:
+        agent_profiles.delete_for_user(repos, subject)
         _request_purge(subject)
         return Response(status_code=status.HTTP_204_NO_CONTENT)
     if payload.confirm_email.strip().lower() != str(user.email).strip().lower():
@@ -349,9 +351,11 @@ def delete_account(
         )
     deleted = repos.users.mark_deleted(subject)
     if deleted is None:
+        agent_profiles.delete_for_user(repos, subject)
         _request_purge(subject)
         return Response(status_code=status.HTTP_204_NO_CONTENT)
     revocation = revoke_account_access(repos, subject)
+    agent_profiles.delete_for_user(repos, subject)
     purge_requested = _request_purge(subject)
     _log.info(
         "An account was deleted.",

@@ -22,6 +22,7 @@ locals {
       "/api/workspaces/{workspace_id}/search",
       "/api/workspaces/{workspace_id}/inbox",
       "/api/workspaces/{workspace_id}/share-links",
+      "/api/workspaces/{workspace_id}/favorites",
     ]
 
     # The comment thread sits under the issues prefix's own subtree, so it is
@@ -97,6 +98,8 @@ locals {
     "POST /api/auth/totp/disable"   = { integration = "identity", require_identity_jwt = true }
     "POST /api/auth/recovery-codes" = { integration = "identity", require_identity_jwt = true }
     "POST /api/auth/step-up"        = { integration = "identity", require_identity_jwt = true }
+
+    "POST /api/auth/desktop-handoff" = { integration = "identity", require_identity_jwt = true }
 
     "POST /api/auth/passkeys/register/options"  = { integration = "identity", require_identity_jwt = true }
     "POST /api/auth/passkeys/register/verify"   = { integration = "identity", require_identity_jwt = true }

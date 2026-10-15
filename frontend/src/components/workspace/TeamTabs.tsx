@@ -8,8 +8,9 @@
  * route it does not match exactly.
  */
 
-import React from 'react';
+import React, { useContext } from 'react';
 import { Link } from 'react-router-dom';
+import { SidebarDataContext } from '../../contexts/SidebarDataContextDefinition';
 import { cn } from '../../lib/cn';
 import {
   teamBoardPath,
@@ -36,6 +37,8 @@ export interface TeamTabsProps {
   slug: string;
   keyPrefix: string;
   current: TeamTab;
+  /** The team's id, which shows the Triage tab once the team has triage on. */
+  teamId?: string | undefined;
 }
 
 const tabClass = (active: boolean): string =>
@@ -47,15 +50,21 @@ const tabClass = (active: boolean): string =>
 
 /**
  * The Issues, Board, Cycles, Releases, Standup and Settings switch for one
- * team, led by Triage on the triage page, which the sidebar opens.
+ * team, led by Triage whenever the team has triage on or the triage page is
+ * showing, so the inbox is one click from any of the team's surfaces.
  */
 export const TeamTabs: React.FC<TeamTabsProps> = ({
   slug,
   keyPrefix,
   current,
+  teamId,
 }) => {
+  const shared = useContext(SidebarDataContext);
+  const triageOn =
+    teamId !== undefined &&
+    (shared?.triage?.teams ?? []).some((row) => row.team_id === teamId);
   const tabs: { tab: TeamTab; label: string; to: string }[] = [
-    ...(current === 'triage'
+    ...(current === 'triage' || triageOn
       ? [
           {
             tab: 'triage' as const,

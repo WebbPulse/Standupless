@@ -158,6 +158,20 @@ def test_a_duplicate_slug_is_a_conflict(client: TestClient, repositories: Any) -
     assert response.status_code == 409
 
 
+def test_creating_a_workspace_opens_its_audit_log(client: TestClient, repositories: Any) -> None:
+    """The creator is recorded as the actor of the new workspace's first entry."""
+    from webbpulse.audit import AuditQuery
+
+    signed_up(repositories, OWNER)
+    sign_in(client, OWNER)
+    created = client.post("/api/workspaces", json={"name": "Acme", "slug": "acme"}).json()["id"]
+
+    [row] = repositories.audit.list_events(created, AuditQuery(action="workspace.created")).events
+    assert row.actor.id == OWNER
+    assert row.target.id == created and row.target.label == "Acme"
+    assert row.after == {"name": "Acme", "slug": "acme"}
+
+
 def test_a_bad_slug_is_rejected_before_the_table(client: TestClient) -> None:
     """The alphabet is held at the edge, so a bad slug names the field."""
     sign_in(client, OWNER)

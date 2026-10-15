@@ -14,7 +14,8 @@ from __future__ import annotations
 
 from typing import Optional
 
-from fastapi import APIRouter, Depends, Path, Query, Response, status
+from fastapi import APIRouter, Depends, Path, Query, Request, Response, status
+from webbpulse.http import conditional_response
 
 from app.common.api.dependencies.authz import AuthzContext, Capability, require
 from app.common.api.dependencies.repositories import Repositories, get_repositories
@@ -34,21 +35,24 @@ router = APIRouter()
 
 @router.get("/{workspace_id}/views", response_model=ViewListRead)
 def list_views(
+    request: Request,
     workspace_id: str = Path(..., min_length=1),
     scope: ScopeField = Query(default="mine"),
     team_id: Optional[str] = Query(default=None),
     context: AuthzContext = Depends(require(Capability.WORKSPACE_READ)),
     repositories: Repositories = Depends(get_repositories),
-) -> ViewListRead:
+) -> Response:
     """Saved views the caller may read, narrowed by scope.
 
     `all` is the caller's own views plus the team views of teams they can see,
     which for a guest is only the teams they hold a membership in, so the listing
-    is built from what they may read rather than filtered afterwards.
+    is built from what they may read rather than filtered afterwards. The
+    answer carries a weak `ETag`, so an unchanged poll gets a 304.
     """
     ordered = readable_views(repositories, context, scope, team_id)
     starred = favorite_ids(repositories, context)
-    return ViewListRead(views=[ViewRead.from_row(row, favorite=row.view_id in starred) for row in ordered])
+    listing = ViewListRead(views=[ViewRead.from_row(row, favorite=row.view_id in starred) for row in ordered])
+    return conditional_response(request, listing)
 
 
 @router.post("/{workspace_id}/views", response_model=ViewRead, status_code=status.HTTP_201_CREATED)

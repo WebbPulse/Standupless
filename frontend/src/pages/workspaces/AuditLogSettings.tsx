@@ -78,6 +78,10 @@ const dayAfter = (day: string): string | undefined => {
 const show = (value: unknown): string => {
   if (value === null || value === undefined || value === '') return 'none';
   if (typeof value === 'string') return value;
+  if (Array.isArray(value)) {
+    return value.length > 0 ? value.map(show).join(', ') : 'none';
+  }
+  if (typeof value === 'boolean') return value ? 'on' : 'off';
   return JSON.stringify(value);
 };
 
@@ -180,7 +184,7 @@ const AuditLogSection: React.FC<{ workspace: WorkspaceRead }> = ({
   }, [actorId, event, sinceDay, untilDay]);
 
   const { data: members } = usePolledQuery(
-    ({ signal }) => listMembers(workspace.id, signal),
+    (context) => listMembers(workspace.id, context),
     {
       intervalMs: MEMBERS_POLL_MS,
       queryKey: membersKey(workspace.id),

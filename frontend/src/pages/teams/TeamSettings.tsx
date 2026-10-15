@@ -1,6 +1,6 @@
 /**
  * One team's settings: its name and key, the parent team it sits under, who belongs to it, the statuses its
- * issues move through, its labels, its issue templates, its automatic cycles, when stale open
+ * issues move through, its labels, its issue templates and the recurring issues made from them, its automatic cycles, when stale open
  * issues close, how long closed issues stay before they are archived, its SLA
  * rules, the rules that move an issue when a pull request changes, whether
  * linked pull requests carry its issue labels, the GitHub repository its issues sync with, the release
@@ -14,7 +14,7 @@
  * a new team walks through them in order.
  */
 
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useLocation, useParams } from 'react-router-dom';
 import AutoArchiveSection from '../../components/team/AutoArchiveSection';
 import AutoCloseSection from '../../components/team/AutoCloseSection';
@@ -22,6 +22,7 @@ import CyclesSection from '../../components/team/CyclesSection';
 import IssueSyncSection from '../../components/team/IssueSyncSection';
 import LabelsSection from '../../components/team/LabelsSection';
 import PullRequestLabelsSection from '../../components/team/PullRequestLabelsSection';
+import RecurringSection from '../../components/team/RecurringSection';
 import ReleasePipelineSection from '../../components/team/ReleasePipelineSection';
 import SlaSection from '../../components/team/SlaSection';
 import StandupSection from '../../components/team/StandupSection';
@@ -65,6 +66,7 @@ const SECTIONS = [
   { id: 'workflow', label: 'Workflow' },
   { id: 'labels', label: 'Labels' },
   { id: 'templates', label: 'Templates' },
+  { id: 'recurring', label: 'Recurring' },
   { id: 'cycles', label: 'Cycles' },
   { id: 'triage', label: 'Triage' },
   { id: 'sla', label: 'SLAs' },
@@ -77,6 +79,12 @@ const SECTIONS = [
   { id: 'webhooks', label: 'Webhooks' },
   { id: 'danger', label: 'Danger zone' },
 ] as const;
+
+/** A template "Make recurring" opened the schedule form with, keyed per click. */
+interface RecurringStart {
+  templateId: string;
+  nonce: number;
+}
 
 /**
  * Scrolls a section into view inside the page's own scroll area, which a bare
@@ -100,6 +108,9 @@ const TeamSettings: React.FC = () => {
   const { data: teams } = useTeamsFor(workspaceId);
   const { hash } = useLocation();
   const loaded = team !== null;
+  const [recurringStart, setRecurringStart] = useState<RecurringStart | null>(
+    null
+  );
 
   useEffect(() => {
     if (!loaded || !hash.startsWith('#team-settings-')) return;
@@ -141,6 +152,16 @@ const TeamSettings: React.FC = () => {
     (section) => section.id !== 'danger' || canDelete
   );
 
+  const makeRecurring = (templateId: string): void => {
+    setRecurringStart({ templateId, nonce: Date.now() });
+    const target = globalThis.document.getElementById(
+      'team-settings-recurring'
+    );
+    if (target !== null && typeof target.scrollIntoView === 'function') {
+      target.scrollIntoView({ block: 'start', behavior: 'smooth' });
+    }
+  };
+
   const frame = (
     id: (typeof SECTIONS)[number]['id'],
     node: React.ReactNode
@@ -161,6 +182,7 @@ const TeamSettings: React.FC = () => {
         <TeamTabs
           slug={slug ?? ''}
           keyPrefix={team.key_prefix}
+          teamId={team.id}
           current="settings"
         />
       }
@@ -256,6 +278,19 @@ const TeamSettings: React.FC = () => {
               estimateOptions={estimateOptionsOf(team)}
               canEdit={canWriteIssues(workspace?.role, team.role)}
               canSetDefault={editable}
+              onMakeRecurring={(template) => {
+                makeRecurring(template.id);
+              }}
+            />
+          )}
+          {frame(
+            'recurring',
+            <RecurringSection
+              key={recurringStart?.nonce ?? 0}
+              workspaceId={workspaceId}
+              teamId={team.id}
+              canEdit={canWriteIssues(workspace?.role, team.role)}
+              initialTemplateId={recurringStart?.templateId ?? null}
             />
           )}
           {frame(

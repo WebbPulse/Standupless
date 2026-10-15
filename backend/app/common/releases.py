@@ -15,13 +15,13 @@ from __future__ import annotations
 
 import itertools
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any, Iterable, Iterator, Mapping, Sequence
 
 from boto3.dynamodb.conditions import Attr
 from fastapi import HTTPException
 from fastapi import status as http_status
-from webbpulse.dynamodb import ConditionFailed, encode_start_key
+from webbpulse.dynamodb import ConditionFailed, ReadOnlyTable, encode_start_key
 
 from app.common import issue_keys
 from app.common.api.dependencies.authz import ActorKind, AuthzContext
@@ -32,6 +32,7 @@ from app.common.api.schemas.releases import (
     ISSUES_MAX,
     MAX_LIMIT,
     NAME_MAX,
+    IncludedReleaseRead,
     IssueReleaseListRead,
     IssueReleaseRead,
     ReleaseCreate,
@@ -69,10 +70,18 @@ from app.common.planning_rules import (
     require_team_reader,
     unprocessable,
 )
+from app.common.sla import apply_sla
 
 SHORT_SHA = 7
 
 GITHUB_DEPLOYMENT = "github_deployment"
+
+GITHUB_TAG = "github_tag"
+
+GITHUB_RELEASE = "github_release"
+
+GITHUB_SOURCES = frozenset({GITHUB_DEPLOYMENT, GITHUB_TAG, GITHUB_RELEASE})
+"""The sources GitHub reports, whose status moves are recorded as GitHub's."""
 
 CATEGORY_RANK: Mapping[str, int] = {
     "backlog": 0,
@@ -85,6 +94,25 @@ CATEGORY_RANK: Mapping[str, int] = {
 
 NAME_ATTEMPTS = 5
 """How many free names a new release tries before giving up on a run of lost races."""
+
+FOLD_SWEEP_VERSION = 1
+"""The version of the one-time sweep that records promotions' included releases; raising it sweeps again."""
+
+FOLD_SWEEP_ROWS = 5000
+"""How many of a team's newest releases the one-time sweep reads."""
+
+FOLD_BEFORE = timedelta(minutes=3)
+"""How long before a promotion reached its stage an included release may have reached it.
+
+A deployment advances the earlier releases of its range before it records the
+promotion, so they reach the stage first, seconds apart.
+"""
+
+FOLD_AFTER = timedelta(seconds=10)
+"""How long after a promotion reached its stage an included release may have reached it."""
+
+LIST_SCANS = 5
+"""How many reads one listing page makes to fill itself past releases that promotions hide."""
 
 _DATED_NAME = re.compile(r"^(?P<base>.*\d{4}-\d{2}-\d{2})-(?P<letter>[a-z])$")
 """A date-style name with a letter, as a `promote/<date>-<letter>` branch names a release."""
@@ -317,6 +345,126 @@ def add_issues(
     return stored
 
 
+def _stage_rank(pipeline: ReleasePipeline) -> dict[str, int]:
+    """Each stage id of the pipeline mapped to its position."""
+    return {stage.stage_id: index for index, stage in enumerate(pipeline.stages)}
+
+
+def _carries(parent: Release, child: Release, rank: Mapping[str, int]) -> bool:
+    """Whether a promotion may include this release: another, not in one yet, from an earlier stage."""
+    if child.release_id == parent.release_id or child.included_in is not None or parent.included_in is not None:
+        return False
+    if not parent.stages or not child.stages:
+        return False
+    parent_rank = rank.get(parent.stages[0].stage_id)
+    child_rank = rank.get(child.stages[0].stage_id)
+    return parent_rank is not None and child_rank is not None and child_rank < parent_rank
+
+
+def include_releases(
+    repositories: Repositories, parent: Release, candidates: Sequence[Release], pipeline: ReleasePipeline
+) -> Release:
+    """The promotion with the earlier releases it carried recorded as included in it.
+
+    A release qualifies when it first landed on an earlier stage of the pipeline
+    than the one the promotion was released to and is in no promotion yet. Each
+    write holds only while the release is in none, so two writers never move a
+    release between promotions. Status automation is untouched: the releases
+    already advanced through `reach_stage`.
+    """
+    rank = _stage_rank(pipeline)
+    added = [
+        child.release_id
+        for child in candidates
+        if _carries(parent, child, rank)
+        and repositories.releases.mark_included(
+            parent.workspace_id, parent.team_id, child.release_id, parent.release_id
+        )
+    ]
+    if not added:
+        return parent
+    included = list(dict.fromkeys([*parent.included_release_ids, *added]))
+    repositories.releases.set_included(parent.workspace_id, parent.team_id, parent.release_id, included)
+    return parent.model_copy(update={"included_release_ids": included})
+
+
+def _entry(release: Release, stage_id: str) -> ReleaseStageReached | None:
+    """The release's entry for one stage, when it reached it after landing on another."""
+    return next((row for row in release.stages[1:] if row.stage_id == stage_id), None)
+
+
+def infer_inclusions(rows: Sequence[Release], pipeline: ReleasePipeline) -> dict[str, str]:
+    """Which of these releases a promotion among them carried, release id to promotion id.
+
+    This is how releases recorded before promotions kept their included releases
+    are matched: a promotion is a GitHub deployment of a merged pull request that
+    landed on its first stage there, and it carried every release of the same
+    repository that reached that stage, from an earlier one, in the same
+    deployment. Same deployment means the same deployment link when both have one,
+    and reaching the stage just before the promotion did. Each release goes to the
+    promotion that reached the stage nearest in time.
+    """
+    rank = _stage_rank(pipeline)
+    promotions = [row for row in rows if row.source == GITHUB_DEPLOYMENT and row.pr_number is not None and row.stages]
+    found: dict[str, str] = {}
+    for child in rows:
+        if child.source != GITHUB_DEPLOYMENT or len(child.stages) < 2:
+            continue
+        best: tuple[timedelta, str] | None = None
+        for parent in promotions:
+            if parent.repository_id != child.repository_id or not _carries(parent, child, rank):
+                continue
+            landed = parent.stages[0]
+            entry = _entry(child, landed.stage_id)
+            if entry is None or entry.source != GITHUB_DEPLOYMENT:
+                continue
+            if entry.environment and landed.environment and entry.environment != landed.environment:
+                continue
+            if entry.url and landed.url and entry.url != landed.url:
+                continue
+            gap = landed.reached_at - entry.reached_at
+            if gap < -FOLD_AFTER or gap > FOLD_BEFORE or child.created_at > landed.reached_at:
+                continue
+            distance = abs(gap)
+            if best is None or distance < best[0]:
+                best = (distance, parent.release_id)
+        if best is not None:
+            found[child.release_id] = best[1]
+    return found
+
+
+def included_in(rows: Sequence[Release], pipeline: ReleasePipeline) -> dict[str, str]:
+    """Each of these releases a promotion carried, recorded or matched, release id to promotion id."""
+    found = {row.release_id: row.included_in for row in rows if row.included_in}
+    for child_id, parent_id in infer_inclusions(rows, pipeline).items():
+        found.setdefault(child_id, parent_id)
+    return found
+
+
+def sweep_inclusions(repositories: Repositories, workspace_id: str, team_id: str, pipeline: ReleasePipeline) -> None:
+    """Once per team, record the included releases of promotions recorded before they were kept.
+
+    Runs on a listing read in the images that may write releases, and leaves a
+    marker so it never runs again at this version. A function that may only read
+    releases skips it; its listings still match promotions in memory.
+    """
+    if repositories.is_read_only("releases"):
+        return
+    if repositories.releases.fold_swept(workspace_id, team_id, FOLD_SWEEP_VERSION):
+        return
+    try:
+        rows = repositories.releases.list_all_for_team(workspace_id, team_id, max_items=FOLD_SWEEP_ROWS)
+        by_id = {row.release_id: row for row in rows}
+        grouped: dict[str, list[Release]] = {}
+        for child_id, parent_id in infer_inclusions(rows, pipeline).items():
+            grouped.setdefault(parent_id, []).append(by_id[child_id])
+        for parent_id, children in grouped.items():
+            include_releases(repositories, by_id[parent_id], children, pipeline)
+        repositories.releases.mark_fold_swept(workspace_id, team_id, FOLD_SWEEP_VERSION)
+    except ReadOnlyTable:
+        return
+
+
 def moves_forward(current: Any | None, target: Any | None) -> bool:
     """Whether moving from `current` to `target` status goes further along the workflow.
 
@@ -352,8 +500,9 @@ def apply_stage_automation(
     An issue already past the status, in canceled, archived, moved to another
     team, or only referenced by the release is left alone. Each write is
     conditional on the status it read, so an issue someone moves meanwhile keeps
-    their move. Every move is recorded in the
-    issue's activity naming the release.
+    their move. A move to a finished status drops the issue's SLA timer, as every
+    other status move does. Every move is recorded in the issue's activity naming
+    the release.
     """
     if not stage.status_id:
         return []
@@ -367,7 +516,7 @@ def apply_stage_automation(
     ids = [issue_id for issue_id in dict.fromkeys(wanted) if issue_id not in referenced]
     if not ids:
         return []
-    actor = GITHUB if source == GITHUB_DEPLOYMENT else SYSTEM
+    actor = GITHUB if source in GITHUB_SOURCES else SYSTEM
     rows = repositories.issues.get_many(release.workspace_id, ids)
     moved: list[str] = []
     for issue_id in ids:
@@ -379,6 +528,7 @@ def apply_stage_automation(
         updated = issue.model_copy(
             update={"status_id": target.status_id, "updated_at": utc_now(), "updated_by": None, "updated_source": actor}
         )
+        apply_sla(repositories, issue, updated)
         try:
             repositories.issues.replace(updated, condition=Attr("status_id").eq(issue.status_id))
         except ConditionFailed:
@@ -556,8 +706,21 @@ def detail(
     for team_id in {issue.team_id for issue in issues}:
         categories[team_id] = status_categories(repositories, context.workspace_id, team_id)
     base = ReleaseRead.from_row(release, pipeline)
+    linked = repositories.releases.get_many(
+        release.workspace_id,
+        [(release.team_id, child_id) for child_id in [*release.included_release_ids, release.included_in] if child_id],
+    )
+    by_id = {row.release_id: row for row in linked}
+    children = sorted(
+        (by_id[child_id] for child_id in release.included_release_ids if child_id in by_id),
+        key=lambda row: row.release_id,
+        reverse=True,
+    )
+    parent = by_id.get(release.included_in) if release.included_in else None
     return ReleaseDetailRead(
         **base.model_dump(),
+        included_releases=[IncludedReleaseRead.from_read(ReleaseRead.from_row(row, pipeline)) for row in children],
+        included_in_release=IncludedReleaseRead.from_read(ReleaseRead.from_row(parent, pipeline)) if parent else None,
         issues=[
             ReleaseIssueRead(
                 issue_id=issue.issue_id,
@@ -668,6 +831,37 @@ def _start_key(cursor: str | None, workspace_id: str, team_id: str) -> Mapping[s
     return start
 
 
+def _page(
+    repositories: Repositories,
+    workspace_id: str,
+    team_id: str,
+    size: int,
+    start: Mapping[str, Any] | None,
+    *,
+    show_included: bool,
+) -> tuple[list[Release], Mapping[str, Any] | None]:
+    """Up to `size` releases from `start`, skipping those a promotion carried unless asked, and where to resume.
+
+    A page cut short of the rows read resumes after the last release it kept, so
+    the next page starts exactly where this one stopped.
+    """
+    kept: list[Release] = []
+    for _ in range(1 if show_included else LIST_SCANS):
+        rows, last_key = repositories.releases.list_for_team(workspace_id, team_id, limit=size, start_key=start)
+        for index, row in enumerate(rows):
+            if row.included_in and not show_included:
+                continue
+            kept.append(row)
+            if len(kept) == size:
+                if index == len(rows) - 1:
+                    return kept, last_key
+                return kept, {"workspace_id": workspace_id, "planning_key": row.planning_key}
+        if last_key is None:
+            return kept, None
+        start = last_key
+    return kept, start
+
+
 def list_releases(
     repositories: Repositories,
     context: AuthzContext,
@@ -675,16 +869,26 @@ def list_releases(
     *,
     cursor: str | None = None,
     limit: int | None = None,
+    show_included: bool = False,
 ) -> tuple[list[ReleaseRead], str | None]:
-    """One page of a readable team's releases, newest first, and the next cursor."""
+    """One page of a readable team's releases, newest first, and the next cursor.
+
+    Releases a promotion carried to a later stage are left out unless
+    `show_included` asks for them; the promotion's detail lists them. The first
+    listing of a team also records the included releases of promotions that
+    predate keeping them.
+    """
     require_team_reader(repositories, context, team_id)
     pipeline, _ = pipeline_for(repositories, context.workspace_id, team_id)
+    sweep_inclusions(repositories, context.workspace_id, team_id, pipeline)
     size = max(1, min(limit or DEFAULT_LIMIT, MAX_LIMIT))
-    rows, last_key = repositories.releases.list_for_team(
+    rows, last_key = _page(
+        repositories,
         context.workspace_id,
         team_id,
-        limit=size,
-        start_key=_start_key(cursor, context.workspace_id, team_id),
+        size,
+        _start_key(cursor, context.workspace_id, team_id),
+        show_included=show_included,
     )
     counts = _status_counts(repositories, context, rows)
     listed = [ReleaseRead.from_row(row, pipeline) for row in rows]
@@ -719,8 +923,13 @@ def _status_counts(
 
 
 def get_release(repositories: Repositories, context: AuthzContext, team_id: str, release_id: str) -> ReleaseDetailRead:
-    """One release of a readable team, with its issues and notes."""
-    return detail(repositories, context, load_release(repositories, context, team_id, release_id))
+    """One release of a readable team, with its issues, notes and the releases a promotion carried."""
+    release = load_release(repositories, context, team_id, release_id)
+    if not repositories.releases.fold_swept(context.workspace_id, team_id, FOLD_SWEEP_VERSION):
+        pipeline, _ = pipeline_for(repositories, context.workspace_id, team_id)
+        sweep_inclusions(repositories, context.workspace_id, team_id, pipeline)
+        release = load_release(repositories, context, team_id, release_id)
+    return detail(repositories, context, release)
 
 
 def create_release(
@@ -873,32 +1082,62 @@ def remove_release_issue(
 
 
 def delete_release(repositories: Repositories, context: AuthzContext, team_id: str, release_id: str) -> None:
-    """Delete a release and its links as a team administrator; its issues are untouched."""
+    """Delete a release and its links as a team administrator; its issues are untouched.
+
+    A deleted promotion lets go of the releases it carried, so they list again,
+    and a deleted included release leaves its promotion's list.
+    """
     release = load_release(repositories, context, team_id, release_id)
     require_team_admin(repositories, context, team_id)
+    for child_id in release.included_release_ids:
+        repositories.releases.clear_included(context.workspace_id, team_id, child_id, release.release_id)
+    if release.included_in:
+        parent = repositories.releases.get(context.workspace_id, team_id, release.included_in)
+        if parent is not None:
+            remaining = [value for value in parent.included_release_ids if value != release.release_id]
+            repositories.releases.set_included(context.workspace_id, team_id, parent.release_id, remaining)
     repositories.releases.delete(release)
 
 
 def issue_releases(repositories: Repositories, context: AuthzContext, issue_id: str) -> IssueReleaseListRead:
-    """The releases one visible issue shipped in, newest first, each with its furthest stage."""
+    """The releases one visible issue shipped in, newest first, each with its furthest stage.
+
+    A release a promotion carried is listed too, naming that promotion in
+    `included_in`, so every release the issue shipped in reads as its own row.
+    """
     issue = load_visible_issue(repositories, context, issue_id)
     pairs = repositories.releases.list_for_issue(context.workspace_id, issue.issue_id)
     pairs = [(team_id, release_id) for team_id, release_id in pairs if context.can_see_team(team_id)]
-    releases = repositories.releases.get_many(context.workspace_id, pairs)
+    found = repositories.releases.get_many(context.workspace_id, pairs)
+    releases = [row for row in found if issue.issue_id in row.issue_ids]
     pipelines: dict[str, ReleasePipeline] = {}
-    rows: list[IssueReleaseRead] = []
-    for release in sorted(releases, key=lambda row: row.release_id, reverse=True):
-        if issue.issue_id not in release.issue_ids:
-            continue
+    for release in releases:
         if release.team_id not in pipelines:
             pipelines[release.team_id] = pipeline_for(repositories, context.workspace_id, release.team_id)[0]
+    names = {release.release_id: release.name for release in releases}
+    carried: dict[str, str] = {}
+    for team_id, pipeline in pipelines.items():
+        carried.update(included_in([row for row in releases if row.team_id == team_id], pipeline))
+    by_id = {release.release_id: release for release in releases}
+    missing = list(
+        dict.fromkeys(
+            (by_id[child_id].team_id, parent_id) for child_id, parent_id in carried.items() if parent_id not in names
+        )
+    )
+    for parent in repositories.releases.get_many(context.workspace_id, missing):
+        names[parent.release_id] = parent.name
+    rows: list[IssueReleaseRead] = []
+    for release in sorted(releases, key=lambda row: row.release_id, reverse=True):
         read = ReleaseRead.from_row(release, pipelines[release.team_id])
+        parent_id = carried.get(release.release_id)
         rows.append(
             IssueReleaseRead(
                 release_id=read.release_id,
                 team_id=read.team_id,
                 name=read.name,
                 current_stage=read.current_stage,
+                included_in=parent_id,
+                included_in_name=names.get(parent_id) if parent_id else None,
                 created_at=read.created_at,
             )
         )

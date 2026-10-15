@@ -41,7 +41,7 @@ import type { InitiativeRead } from '../../types/Api';
 
 /** The grid every header and row lines up on. */
 const GRID =
-  'grid grid-cols-[minmax(0,1fr)_3.5rem] items-center gap-3 md:grid-cols-[minmax(0,1fr)_2rem_2rem_5rem_6rem_4.5rem]';
+  'grid grid-cols-[minmax(0,1fr)_3.5rem] items-center gap-3 md:grid-cols-[minmax(0,1fr)_4rem_3.5rem_5.5rem_6rem_4.5rem]';
 
 /** Props for InitiativeRow: the initiative and the people its owner is among. */
 interface InitiativeRowProps {
@@ -194,8 +194,8 @@ export const Initiatives: React.FC = () => {
           )}
         >
           <span>Name</span>
-          <span className="hidden text-center md:block">Health</span>
-          <span className="hidden text-center md:block">Owner</span>
+          <span className="hidden truncate text-center md:block">Health</span>
+          <span className="hidden truncate text-center md:block">Owner</span>
           <span className="hidden md:block">Projects</span>
           <span className="hidden md:block">Target</span>
           <span className="text-right">

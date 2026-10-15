@@ -11,7 +11,7 @@
 
 import { app, dialog, shell } from 'electron';
 import { autoUpdater } from 'electron-updater';
-import { DOWNLOADS_URL, type Environment } from './environment';
+import { downloadsUrl, type Environment } from './environment';
 
 /** Whether this build only announces updates rather than installing them. */
 const ANNOUNCE_ONLY = process.platform === 'darwin';
@@ -53,7 +53,7 @@ export const startUpdater = (env: Environment): (() => void) => {
         cancelId: 1,
       })
       .then(({ response }) => {
-        if (response === 0) void shell.openExternal(DOWNLOADS_URL);
+        if (response === 0) void shell.openExternal(downloadsUrl(env));
       });
   };
 

@@ -22,13 +22,15 @@ class FoundKey:
 
     `key` is always written under the team's current prefix, even when the text
     named a retired one, so a link row and a write-back comment show the key the
-    issue carries today.
+    issue carries today. `moves_status` is false for a key the pull request only
+    mentions in passing, which links the issue without moving its status.
     """
 
     team_id: str
     key: str
     number: int
     magic_word: str | None
+    moves_status: bool = True
 
 
 def key_pattern(prefix: str) -> re.Pattern[str]:

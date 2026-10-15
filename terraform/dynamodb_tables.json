@@ -31,6 +31,23 @@
     "stream_view_type": null,
     "ttl_attribute": null
   },
+  "agent_profiles": {
+    "attributes": [
+      {
+        "name": "user_id",
+        "type": "S"
+      },
+      {
+        "name": "profile_key",
+        "type": "S"
+      }
+    ],
+    "global_secondary_indexes": [],
+    "hash_key": "user_id",
+    "range_key": "profile_key",
+    "stream_view_type": null,
+    "ttl_attribute": null
+  },
   "attachments": {
     "attributes": [
       {

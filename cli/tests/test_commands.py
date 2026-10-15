@@ -255,6 +255,15 @@ def test_issue_edit_with_nothing_to_change_fails(runner: CliRunner, api: respx.M
     assert "Nothing to change" in result.stderr
 
 
+def test_issue_edit_sends_an_issue_to_triage(runner: CliRunner, api: respx.MockRouter) -> None:
+    """`--status triage` patches the synthetic triage status, and the issue then shows under it."""
+    api.get(f"/api/workspaces/{WS}/issues/by-key/ENG-12").respond(json=make_issue())
+    route = api.patch(f"/api/workspaces/{WS}/issues/is-12").respond(json=make_issue(in_triage=True))
+    result = invoke(runner, "issue", "edit", "ENG-12", "--status", "Triage")
+    assert result.exit_code == 0, result.output
+    assert _json(route) == {"status_id": "triage"}
+
+
 @pytest.mark.parametrize(("reason", "status_id"), [("completed", "st-done"), ("canceled", "st-cancel")])
 def test_issue_close(runner: CliRunner, api: respx.MockRouter, reason: str, status_id: str) -> None:
     """Close moves to the first status of the matching category and can comment."""
@@ -1368,6 +1377,38 @@ def test_release_list_and_view(runner: CliRunner, api: respx.MockRouter) -> None
     viewed = invoke(runner, "release", "view", "2026.10.07-1a2b3c4", "-t", "ENG")
     assert viewed.exit_code == 0, viewed.output
     assert "ENG-1 Fix login" in viewed.stdout
+
+
+def test_release_list_all_asks_for_included_releases(runner: CliRunner, api: respx.MockRouter) -> None:
+    """--all asks the server for the releases a promotion carried, which the default listing leaves out."""
+    releases = f"/api/workspaces/{WS}/teams/team-1/releases"
+    route = api.get(releases).respond(json={"releases": [RELEASE]})
+    plain = invoke(runner, "release", "list", "-t", "ENG")
+    every = invoke(runner, "release", "list", "-t", "ENG", "--all")
+    assert plain.exit_code == 0, plain.output
+    assert every.exit_code == 0, every.output
+    assert "show_included" not in route.calls[0].request.url.params
+    assert route.calls[1].request.url.params["show_included"] == "true"
+
+
+def test_release_view_names_what_a_promotion_included(runner: CliRunner, api: respx.MockRouter) -> None:
+    """A promotion lists the releases it carried by name and pull request."""
+    releases = f"/api/workspaces/{WS}/teams/team-1/releases"
+    api.get(releases).respond(json={"releases": [RELEASE]})
+    child = {
+        "release_id": "01J0000000000000000000REL0",
+        "name": "Fix login",
+        "pr_number": 228,
+        "issue_count": 1,
+        "created_at": "2026-10-06T00:00:00Z",
+    }
+    detail = {**RELEASE, "issues": [], "notes": "", "skipped_issues": [], "included_releases": [child]}
+    api.get(f"{releases}/{RELEASE['release_id']}").respond(json=detail)
+    viewed = invoke(runner, "release", "view", RELEASE["release_id"], "-t", "ENG")
+    assert viewed.exit_code == 0, viewed.output
+    assert "Included releases" in viewed.stdout
+    assert "Fix login" in viewed.stdout
+    assert "#228" in viewed.stdout
 
 
 def test_release_create_sends_the_commit_messages_of_a_range(

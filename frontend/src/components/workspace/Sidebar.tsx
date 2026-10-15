@@ -1,7 +1,7 @@
 /**
  * The workspace sidebar: the workspace menu with the create and search
  * buttons beside it, the caller's own inbox and issues, the places that span
- * the workspace, their favorite views, then a section per team, each expanding to
+ * the workspace, their favorites, then a section per team, each expanding to
  * that team's issues, cycles, releases and projects. Rendered as the fixed rail on wide
  * screens and inside a drawer on phones.
  *
@@ -17,9 +17,9 @@
  * the saved list is read back. A sub-team sits indented just under its parent
  * team, in the caller's order among its siblings.
  *
- * Favorites are the saved views the caller starred. The star is kept by the
- * server per person, so the section agrees on every device they sign in on,
- * and each opens with the display options stored on the view.
+ * Favorites are whatever the caller starred: issues, projects, cycles, views,
+ * teams, documents and initiatives, in their own order. The star is kept by the
+ * server per person, so the section agrees on every device they sign in on.
  *
  * The footer's sign-out button carries the same `sign-out` test id as the
  * account shell's, because signing in lands a person with one workspace inside
@@ -60,7 +60,7 @@ import { useAuth } from '../../hooks/useAuth';
 import { useCreateIssue } from '../../hooks/useCreateIssue';
 import { useCreateTeam } from '../../hooks/useCreateTeam';
 import { cn } from '../../lib/cn';
-import { useOwnViews, useTriageSummary } from '../../hooks/useSidebarData';
+import { useTriageSummary } from '../../hooks/useSidebarData';
 import {
   ALL_WORKSPACES_PATH,
   PRIVACY_PATH,
@@ -81,7 +81,6 @@ import {
   teamReleasesPath,
   teamSettingsPath,
   teamTriagePath,
-  viewPath,
   viewsPath,
   workspacePath,
 } from '../../lib/paths';
@@ -103,7 +102,7 @@ import { Skeleton } from '../ui/skeleton';
 import ThemeToggle from '../ui/theme-toggle';
 import InboxBadge from '../views/InboxBadge';
 import ReviewsBadge from '../views/ReviewsBadge';
-import ViewIcon from '../views/ViewIcon';
+import FavoritesSection from './FavoritesSection';
 import { useTeamsFor } from '../../hooks/useTeams';
 
 /** Props for Sidebar: the workspace and what to do when a link is followed. */
@@ -112,9 +111,6 @@ export interface SidebarProps {
   /** Called after any link is followed, so a drawer can close. */
   onNavigate?: () => void;
 }
-
-/** How many of the caller's favorite views the sidebar lists before pointing at the rest. */
-const VIEW_LIMIT = 10;
 
 const ICON = 'h-4 w-4 shrink-0';
 const SUB_ICON = 'h-3.5 w-3.5 shrink-0';
@@ -510,7 +506,6 @@ export const Sidebar: React.FC<SidebarProps> = ({ workspace, onNavigate }) => {
   const saveToken = useRef(0);
   const [pointerMoved, setPointerMoved] = useState(false);
 
-  const views = useOwnViews(workspace.id);
   const triage = useTriageSummary(workspace.id);
   const triageCounts = useMemo(
     () => new Map((triage?.teams ?? []).map((row) => [row.team_id, row.count])),
@@ -616,13 +611,6 @@ export const Sidebar: React.FC<SidebarProps> = ({ workspace, onNavigate }) => {
       return next;
     });
   }, [prefix, rows, workspace.id]);
-  const ownViews = useMemo(
-    () =>
-      (views ?? [])
-        .filter((view) => view.favorite === true)
-        .slice(0, VIEW_LIMIT),
-    [views]
-  );
 
   return (
     <div className="flex h-full flex-col bg-app">
@@ -751,6 +739,17 @@ export const Sidebar: React.FC<SidebarProps> = ({ workspace, onNavigate }) => {
           </NavLink>
         </div>
 
+        <FavoritesSection
+          workspaceId={workspace.id}
+          slug={slug}
+          teams={teams}
+          rowClass={itemClass}
+          onNavigate={onNavigate}
+          heading={
+            <SectionHeading id="sidebar-favorites">Favorites</SectionHeading>
+          }
+        />
+
         <section aria-labelledby="sidebar-workspace">
           <SectionHeading id="sidebar-workspace">Workspace</SectionHeading>
           <div className="space-y-px">
@@ -793,30 +792,6 @@ export const Sidebar: React.FC<SidebarProps> = ({ workspace, onNavigate }) => {
             </NavLink>
           </div>
         </section>
-
-        {ownViews.length > 0 && (
-          <section aria-labelledby="sidebar-views">
-            <SectionHeading id="sidebar-views">Favorites</SectionHeading>
-            <div className="space-y-px">
-              {ownViews.map((view) => (
-                <NavLink
-                  key={view.view_id}
-                  to={viewPath(slug, view.view_id)}
-                  end
-                  className={itemClass}
-                  onClick={onNavigate}
-                >
-                  <ViewIcon
-                    icon={view.icon}
-                    color={view.color}
-                    className="h-3.5 w-3.5 shrink-0"
-                  />
-                  <span className="min-w-0 truncate">{view.name}</span>
-                </NavLink>
-              ))}
-            </div>
-          </section>
-        )}
 
         <section aria-labelledby="sidebar-teams">
           <SectionHeading

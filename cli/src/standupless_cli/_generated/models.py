@@ -39,6 +39,55 @@ ActivityRead = TypedDict(
 )
 
 
+class AgentProfileEventRead(TypedDict):
+    audit_id: str
+    created_at: str
+    event: str
+    event_label: str
+    ip: NotRequired[str]
+    profile: str
+    source: str
+    version: NotRequired[int | None]
+
+
+class AgentProfileFile(TypedDict):
+    content: str
+    path: str
+    root: Literal["home", "project", "memory"]
+
+
+class AgentProfileRead(TypedDict):
+    created_at: str
+    file_count: int
+    latest_version: int
+    name: str
+    note: NotRequired[str]
+    total_bytes: int
+    updated_at: str
+
+
+class AgentProfileSnapshotRead(TypedDict):
+    created_at: str
+    files: list[AgentProfileFile]
+    latest_version: int
+    name: str
+    note: NotRequired[str]
+    roots: dict[str, str]
+    sha256: str
+    version: int
+
+
+class AgentProfileVersionRead(TypedDict):
+    created_at: str
+    file_count: int
+    latest: bool
+    note: NotRequired[str]
+    sha256: str
+    source: str
+    total_bytes: int
+    version: int
+
+
 class ApiKeyCreate(TypedDict):
     expires_in_days: NotRequired[int | None]
     kind: NotRequired[Literal["user", "workspace"]]
@@ -525,6 +574,12 @@ class DownloadRead(TypedDict):
     url: str
 
 
+class FavoriteRef(TypedDict):
+    kind: Literal["issue", "project", "cycle", "view", "team", "document", "initiative"]
+    target_id: str
+    team_id: NotRequired[str | None]
+
+
 class GitHubAppStatus(TypedDict):
     app_name: str
     configured: bool
@@ -563,6 +618,7 @@ class ImportRowRead(TypedDict):
     estimate: NotRequired[str | None]
     importable: bool
     labels: list[str]
+    parent_row: NotRequired[int | None]
     priority: str
     row: int
     source_key: NotRequired[str | None]
@@ -853,6 +909,10 @@ class LabelCreate(TypedDict):
     parent_id: NotRequired[str | None]
 
 
+class LabelMerge(TypedDict):
+    target_label_id: str
+
+
 class LabelRead(TypedDict):
     color: str
     hidden: NotRequired[bool]
@@ -952,7 +1012,10 @@ class NotificationRead(TypedDict):
     actor_name: str
     comment_id: NotRequired[str | None]
     created_at: str
+    due_state: NotRequired[Literal["due", "overdue"] | None]
     expires_at: int
+    initiative_id: NotRequired[str | None]
+    initiative_name: NotRequired[str | None]
     issue_id: str
     issue_key: str
     issue_title: str
@@ -1159,14 +1222,64 @@ class ReactionWrite(TypedDict):
     target_kind: Literal["issue", "comment"]
 
 
+class RecurringCreate(TypedDict):
+    day_of_month: NotRequired[int | None]
+    frequency: Literal["daily", "weekly", "monthly"]
+    interval: NotRequired[int | None]
+    paused: NotRequired[bool]
+    starts_on: NotRequired[str | None]
+    template_id: str
+    time: NotRequired[str | None]
+    timezone: NotRequired[str | None]
+    weekdays: NotRequired[list[int] | None]
+
+
+class RecurringRead(TypedDict):
+    created_at: str
+    created_by: str
+    day_of_month: NotRequired[int | None]
+    frequency: Literal["daily", "weekly", "monthly"]
+    id: str
+    interval: int
+    last_issue_id: NotRequired[str | None]
+    last_issue_key: NotRequired[str | None]
+    last_run_at: NotRequired[str | None]
+    next_run_at: NotRequired[str | None]
+    paused: bool
+    paused_reason: NotRequired[str | None]
+    starts_on: str
+    team_id: str
+    template_id: str
+    template_name: NotRequired[str | None]
+    time: str
+    timezone: str
+    upcoming_runs: NotRequired[list[str]]
+    updated_at: str
+    weekdays: NotRequired[list[int]]
+
+
+class RecurringUpdate(TypedDict):
+    day_of_month: NotRequired[int | None]
+    frequency: NotRequired[Literal["daily", "weekly", "monthly"] | None]
+    interval: NotRequired[int | None]
+    paused: NotRequired[bool | None]
+    starts_on: NotRequired[str | None]
+    template_id: NotRequired[str | None]
+    time: NotRequired[str | None]
+    timezone: NotRequired[str | None]
+    weekdays: NotRequired[list[int] | None]
+
+
 class ReleaseBackfill(TypedDict):
     cursor: NotRequired[str | None]
+    deployment_ids: NotRequired[list[int] | None]
     environment: NotRequired[str]
     limit: NotRequired[int]
     repository: NotRequired[str | None]
 
 
 class ReleaseBackfillRead(TypedDict):
+    deployments_not_found: NotRequired[list[int]]
     deployments_scanned: int
     deployments_skipped: NotRequired[int]
     environment: str
@@ -1180,6 +1293,7 @@ class ReleaseBackfillRead(TypedDict):
     releases_created: int
     releases_updated: int
     resume_after: NotRequired[str | None]
+    source: NotRequired[str]
     stalled: NotRequired[bool]
     stopped_early: NotRequired[bool]
     team_id: str
@@ -1245,18 +1359,18 @@ class ReleaseUpdate(TypedDict):
     version: NotRequired[str | None]
 
 
-class RepositoryLinkWrite(TypedDict):
-    team_id: NotRequired[str | None]
+class RepositoryReleaseSourceRead(TypedDict):
+    kind: NotRequired[Literal["deployments", "tags", "github_releases"]]
+    move_issues: NotRequired[bool]
+    status_id: NotRequired[str | None]
+    tag_pattern: NotRequired[str | None]
 
 
-class RepositoryRead(TypedDict):
-    default_branch: str
-    full_name: str
-    linked_at: str
-    name: str
-    private: bool
-    repository_id: str
-    team_id: NotRequired[str | None]
+class RepositoryReleaseSourceWrite(TypedDict):
+    kind: NotRequired[Literal["deployments", "tags", "github_releases"]]
+    move_issues: NotRequired[bool]
+    status: NotRequired[str | None]
+    tag_pattern: NotRequired[str | None]
 
 
 class ReviewCountsRead(TypedDict):
@@ -1930,6 +2044,7 @@ class UserPreferencesUpdate(TypedDict):
                 "subscribed",
                 "project_update",
                 "project_update_due",
+                "initiative_update_due",
                 "due_soon",
                 "overdue",
                 "standup_digest",
@@ -2236,6 +2351,7 @@ class AppCommonApiSchemasIssuesIssueRead(TypedDict):
     cycle_id: NotRequired[str | None]
     due_date: NotRequired[str | None]
     estimate: NotRequired[str | None]
+    external_ref: NotRequired[str | None]
     id: str
     in_triage: NotRequired[bool]
     key: str
@@ -2292,6 +2408,24 @@ class AccountDeletionPlanRead(TypedDict):
 class ActivityListRead(TypedDict):
     activity: list[ActivityRead]
     next_cursor: NotRequired[str | None]
+
+
+class AgentProfileActivityRead(TypedDict):
+    events: list[AgentProfileEventRead]
+    next_cursor: NotRequired[str | None]
+
+
+class AgentProfileListRead(TypedDict):
+    max_profiles: int
+    profiles: list[AgentProfileRead]
+    versions_kept: int
+
+
+class AgentProfileVersionListRead(TypedDict):
+    latest_version: int
+    name: str
+    versions: list[AgentProfileVersionRead]
+    versions_kept: int
 
 
 class ApiKeyListRead(TypedDict):
@@ -2381,6 +2515,24 @@ class ErrorResponse(TypedDict):
     success: NotRequired[bool]
 
 
+class FavoriteOrder(TypedDict):
+    items: list[FavoriteRef]
+
+
+class FavoriteRead(TypedDict):
+    color: NotRequired[str | None]
+    icon: NotRequired[str | None]
+    issue_key: NotRequired[str | None]
+    kind: Literal["issue", "project", "cycle", "view", "team", "document", "initiative"]
+    parent_id: NotRequired[str | None]
+    parent_kind: NotRequired[str | None]
+    status: NotRequired[StatusRead | None]
+    target_id: str
+    team_id: NotRequired[str | None]
+    team_key_prefix: NotRequired[str | None]
+    title: str
+
+
 class HomeAttentionItem(TypedDict):
     issue: AppCommonApiSchemasIssuesIssueRead
     reasons: list[Literal["overdue", "due_soon", "sla_breached", "sla_at_risk", "blocked"]]
@@ -2431,6 +2583,17 @@ class InboxListRead(TypedDict):
     notifications: list[NotificationRead]
 
 
+class IncludedReleaseRead(TypedDict):
+    created_at: str
+    current_stage: NotRequired[ReleaseStageRead | None]
+    issue_count: int
+    name: str
+    pr_number: NotRequired[int | None]
+    pr_url: NotRequired[str | None]
+    release_id: str
+    sha: NotRequired[str | None]
+
+
 class InitiativeListRead(TypedDict):
     initiatives: list[InitiativeRead]
     next_cursor: NotRequired[str | None]
@@ -2455,6 +2618,7 @@ class IssueImportPreviewRead(TypedDict):
     importable_rows: int
     mapping: dict[str, str | None]
     new_labels: list[str]
+    parent_links: NotRequired[int]
     problems: list[RowProblemRead]
     problems_truncated: bool
     rows: list[ImportRowRead]
@@ -2470,6 +2634,7 @@ class IssueImportRead(TypedDict):
     finished_at: NotRequired[str | None]
     import_id: str
     labels_created: int
+    linked_count: NotRequired[int]
     preset: str
     problem_count: int
     problems: list[RowProblemRead]
@@ -2514,6 +2679,8 @@ class IssueListRead(TypedDict):
 class IssueReleaseRead(TypedDict):
     created_at: str
     current_stage: NotRequired[ReleaseStageRead | None]
+    included_in: NotRequired[str | None]
+    included_in_name: NotRequired[str | None]
     name: str
     release_id: str
     team_id: str
@@ -2533,6 +2700,16 @@ class JoinableWorkspaceListRead(TypedDict):
 
 class LabelListRead(TypedDict):
     labels: list[LabelRead]
+
+
+class LabelMergeRead(TypedDict):
+    complete: NotRequired[bool]
+    issues_updated: NotRequired[int]
+    source_label_id: str
+    source_name: str
+    target: LabelRead
+    templates_updated: NotRequired[int]
+    views_updated: NotRequired[int]
 
 
 class LinkRead(TypedDict):
@@ -2566,12 +2743,21 @@ class ProjectUpdateListRead(TypedDict):
     updates: list[ProjectUpdateRead]
 
 
+class RecurringListRead(TypedDict):
+    default_timezone: str
+    recurring_issues: list[RecurringRead]
+
+
 class ReleaseDetailRead(TypedDict):
     created_at: str
     created_by: NotRequired[str | None]
     current_stage: NotRequired[ReleaseStageRead | None]
     description: NotRequired[str | None]
     github_release_url: NotRequired[str | None]
+    included_count: NotRequired[int]
+    included_in: NotRequired[str | None]
+    included_in_release: NotRequired[IncludedReleaseRead | None]
+    included_releases: NotRequired[list[IncludedReleaseRead]]
     issue_count: int
     issues: list[ReleaseIssueRead]
     name: str
@@ -2600,6 +2786,8 @@ class ReleaseRead(TypedDict):
     current_stage: NotRequired[ReleaseStageRead | None]
     description: NotRequired[str | None]
     github_release_url: NotRequired[str | None]
+    included_count: NotRequired[int]
+    included_in: NotRequired[str | None]
     issue_count: int
     name: str
     pr_number: NotRequired[int | None]
@@ -2617,6 +2805,22 @@ class ReleaseRead(TypedDict):
     url: NotRequired[str | None]
     version: NotRequired[str | None]
     workspace_id: str
+
+
+class RepositoryLinkWrite(TypedDict):
+    release_source: NotRequired[RepositoryReleaseSourceWrite | None]
+    team_id: NotRequired[str | None]
+
+
+class RepositoryRead(TypedDict):
+    default_branch: str
+    full_name: str
+    linked_at: str
+    name: str
+    private: bool
+    release_source: NotRequired[RepositoryReleaseSourceRead]
+    repository_id: str
+    team_id: NotRequired[str | None]
 
 
 class SearchRead(TypedDict):
@@ -2721,6 +2925,10 @@ class ConnectedAppListRead(TypedDict):
 class CursorPageIssueLinkRead(TypedDict):
     items: list[IssueLinkRead]
     next_cursor: NotRequired[str | None]
+
+
+class FavoriteListRead(TypedDict):
+    favorites: list[FavoriteRead]
 
 
 class HomeRead(TypedDict):

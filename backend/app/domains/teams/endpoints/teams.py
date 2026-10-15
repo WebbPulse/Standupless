@@ -18,7 +18,8 @@ from __future__ import annotations
 
 from typing import Annotated, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
+from webbpulse.http import conditional_response
 
 from app.common import audit, team_writes
 from app.common.api.dependencies.authz import (
@@ -64,20 +65,24 @@ NO_TEAM_ORDER = "Only a workspace member can keep a team order"
 
 @router.get("/{workspace_id}/teams", response_model=TeamListRead)
 def list_teams(
+    request: Request,
     context: Annotated[AuthzContext, Depends(require(Capability.WORKSPACE_READ))],
     repositories: Annotated[Repositories, Depends(get_repositories)],
     parent_team_id: Annotated[Optional[str], Query(min_length=1)] = None,
-) -> TeamListRead:
+) -> Response:
     """Every team in the workspace the caller may see, in the caller's saved order.
 
     A guest sees only the teams they are a member of, which is the same rule
     the single team route applies, read off the context rather than repeated.
     Teams the saved order does not name follow it, oldest first. With
     `parent_team_id`, only that team's sub-teams.
+
+    The answer carries a weak `ETag` over its body, so a poll that sends it
+    back in `If-None-Match` gets a 304 with no body while nothing changed.
     """
     membership = repositories.memberships.get(context.workspace_id, context.user_id)
     order = membership.team_order if membership is not None else []
-    return _team_list(repositories, context, order, parent_team_id=parent_team_id)
+    return conditional_response(request, _team_list(repositories, context, order, parent_team_id=parent_team_id))
 
 
 @router.put("/{workspace_id}/teams/order", response_model=TeamListRead)
@@ -143,9 +148,10 @@ def update_team(
     A new key prefix is applied first, in its own transaction, so a 409 on a
     taken prefix leaves every other field of the patch unapplied too. An
     explicit null `parent_team_id` makes the team top-level again, and any
-    change of parent is recorded in the audit log.
+    change of parent or of privacy is recorded in the audit log.
     """
     before = _load(repositories, context).parent_team_id
+    was_private = repositories.memberships.is_private_team(context.workspace_id, str(context.team_id))
     team = team_writes.update_team(
         repositories,
         context.workspace_id,
@@ -156,6 +162,7 @@ def update_team(
         can_see=context.can_find_team,
     )
     audit.record_parent_change(repositories, context, team, before)
+    audit.record_privacy_change(repositories, context, team, was_private, payload.private)
     return _read(repositories, context, team)
 
 

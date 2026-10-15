@@ -31,6 +31,10 @@ POSTING_PAGE = 500
 
 TERM_CAP = 200
 
+REF_PREFIX = "ref:"
+
+REF_MAX = 128
+
 STOPWORDS = frozenset(
     {
         "about",
@@ -134,6 +138,27 @@ def truncate_body(body: str | None) -> str:
     return encoded.decode("utf-8", errors="ignore")
 
 
+def ref_term(ref: str | None) -> str | None:
+    """The one term an imported issue's source key is posted under, or `None` when there is none.
+
+    A source key such as `PROJ-12` splits into terms too short to index, so the
+    whole key is posted as one term instead, lowercased with every run of
+    punctuation turned into a hyphen. The `ref:` prefix keeps it apart from word
+    terms, and the result never holds `#`, which separates a term from its issue id.
+    """
+    if not ref:
+        return None
+    slug = _SPLIT.sub("-", ref.lower()).strip("-")[:REF_MAX].strip("-")
+    return f"{REF_PREFIX}{slug}" if slug else None
+
+
+def _ref_terms(image: Mapping[str, Any]) -> set[str]:
+    """The source key term of one issue image, as a set of at most one."""
+    ref = image.get("external_ref")
+    term = ref_term(ref if isinstance(ref, str) else None)
+    return {term} if term else set()
+
+
 def _issue_parts(image: Mapping[str, Any]) -> tuple[str | None, str | None, str]:
     """The title, key and indexed body of one issue image, title first."""
     key = image.get("key")
@@ -147,10 +172,10 @@ def _issue_parts(image: Mapping[str, Any]) -> tuple[str | None, str | None, str]
 
 
 def issue_terms(image: Mapping[str, Any]) -> set[str]:
-    """The terms one issue image is posted under: at most `TERM_CAP`, title terms first."""
+    """The terms one issue image is posted under: at most `TERM_CAP` text terms, title first, and its source key."""
     if not image:
         return set()
-    return ranked_terms(*_issue_parts(image))
+    return ranked_terms(*_issue_parts(image)) | _ref_terms(image)
 
 
 def legacy_terms(image: Mapping[str, Any]) -> set[str]:
@@ -162,7 +187,7 @@ def legacy_terms(image: Mapping[str, Any]) -> set[str]:
     """
     if not image:
         return set()
-    return set(_tokens(*_issue_parts(image)))
+    return set(_tokens(*_issue_parts(image))) | _ref_terms(image)
 
 
 class SearchIndexRepository:

@@ -56,6 +56,15 @@ def test_the_start_date_anchors_a_project_with_no_update() -> None:
     assert next_update_due_at(project, 14) == datetime(2026, 9, 19, tzinfo=timezone.utc)
 
 
+def test_a_backdated_start_date_counts_from_creation() -> None:
+    """A project made with a start date in the past is not overdue the moment it exists."""
+    project = _project(start_date="2026-08-01")
+
+    assert update_anchor(project) == CREATED
+    assert next_update_due_at(project, 7) == CREATED + timedelta(days=7)
+    assert update_due_state(project, 7, CREATED) == "upcoming"
+
+
 def test_creation_anchors_a_project_with_no_update_or_start() -> None:
     """A project with neither counts from the moment it was made."""
     assert next_update_due_at(_project(), 30) == CREATED + timedelta(days=30)

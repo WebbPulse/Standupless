@@ -5,13 +5,15 @@ that one commit lands on one release however many times it is reported, that
 issue references which name nothing are echoed rather than refused, and that an
 issue lists the releases it shipped in only to callers who can see their team.
 They also hold that two releases of a team never share a name: a new one falls to
-the next free name and a rename to a taken one is refused.
+the next free name and a rename to a taken one is refused, and that releases a
+promotion carried, even ones recorded before that was kept, list only on it.
 """
 
 from __future__ import annotations
 
 import itertools
-from typing import Any, Iterator
+from datetime import datetime, timedelta, timezone
+from typing import Any, Iterator, Sequence
 
 import pytest
 from fastapi.testclient import TestClient
@@ -19,8 +21,17 @@ from fastapi.testclient import TestClient
 from app.common.composition.domains import DOMAINS
 from app.common.composition.wiring import build_domain_app
 from app.common.db.dynamo.issues import Issue
-from app.common.db.dynamo.releases import Release, as_release_item, release_key
-from app.common.releases import name_candidates
+from app.common.db.dynamo.releases import (
+    PipelineStage,
+    Release,
+    ReleasePipeline,
+    ReleaseStageReached,
+    as_release_item,
+    pipeline_key,
+    release_key,
+)
+from app.common.db.dynamo.team_config import default_sla_settings
+from app.common.releases import FOLD_SWEEP_VERSION, name_candidates
 from tests.domains.helpers import (
     ADMIN,
     GUEST,
@@ -356,6 +367,36 @@ def test_reaching_a_stage_moves_its_issues_forward_only(client: TestClient, repo
     assert repositories.activity.list_for_issue(WORKSPACE, canceled.issue_id).items == []
 
 
+def test_a_release_finishing_an_issue_drops_its_sla_timer(client: TestClient, repositories: Any) -> None:
+    """A move to a started stage keeps a running SLA timer and a move to a completed one clears it."""
+    settings = default_sla_settings(WORKSPACE, TEAM).model_copy(update={"enabled": True, "medium_hours": 72})
+    repositories.team_config.put_sla_settings(settings)
+    sign_in(client, ADMIN)
+    stages = [{"name": "Staging", "status_id": "In Progress"}, {"name": "Production", "status_id": "Done"}]
+    assert client.put(PIPELINE, json={"stages": stages}).status_code == 200
+    started = datetime(2026, 9, 1, 12, 0, tzinfo=timezone.utc)
+    issue = repositories.issues.replace(
+        _issue(repositories, TEAM, "APO", 1).model_copy(
+            update={"priority": "medium", "sla_started_at": started, "sla_breaches_at": started + timedelta(hours=72)}
+        )
+    )
+    sign_in(client, MEMBER)
+
+    created = client.post(RELEASES, json={"stage": "Staging", "issues": ["APO-1"]})
+    assert created.status_code == 201, created.text
+    staged = repositories.issues.get(WORKSPACE, issue.issue_id)
+    assert staged.status_id == _status_id(repositories, "In Progress")
+    assert staged.sla_started_at == started
+    assert staged.sla_breaches_at == started + timedelta(hours=72)
+
+    advanced = client.post(f"{RELEASES}/{created.json()['release_id']}/stages", json={"stage": "Production"})
+    assert advanced.status_code == 200, advanced.text
+    shipped = repositories.issues.get(WORKSPACE, issue.issue_id)
+    assert shipped.status_id == _status_id(repositories, "Done")
+    assert shipped.sla_started_at is None
+    assert shipped.sla_breaches_at is None
+
+
 def test_an_issue_added_later_gets_the_reached_stages_status(client: TestClient, repositories: Any) -> None:
     """An issue attached after the release reached a stage moves as if it had been there."""
     sign_in(client, ADMIN)
@@ -445,3 +486,195 @@ def test_a_release_stored_before_name_claims_still_holds_its_name(client: TestCl
 
     assert created["name"] == "2026-10-10-b"
     assert client.patch(f"{RELEASES}/{created['release_id']}", json={"name": "2026-10-10-a"}).status_code == 409
+
+
+PROMOTED_AT = datetime(2026, 10, 11, 6, 11, 33, tzinfo=timezone.utc)
+
+DEPLOY_URL = "https://github.com/acme/app/actions/runs/1"
+
+
+def _deployed(
+    repositories: Any,
+    number: int,
+    name: str,
+    stages: list[tuple[str, datetime, str | None]],
+    *,
+    pr_number: int | None = None,
+    issues: Sequence[Issue] = (),
+) -> Release:
+    """Store a GitHub deployment release as one recorded before promotions kept their included releases."""
+    release_id = f"01JB000000000000000000REL{number}"
+    release = Release(
+        workspace_id=WORKSPACE,
+        planning_key=release_key(TEAM, release_id),
+        release_id=release_id,
+        team_id=TEAM,
+        name=name,
+        source="github_deployment",
+        repository_id="1375434030",
+        repository="acme/app",
+        sha=f"{number}" * 40,
+        pr_number=pr_number,
+        issue_ids=[issue.issue_id for issue in issues],
+        stages=[
+            ReleaseStageReached(
+                stage_id=stage_id,
+                name=stage_id.title(),
+                reached_at=at,
+                source="github_deployment",
+                environment=stage_id,
+                url=url,
+            )
+            for stage_id, at, url in stages
+        ],
+        created_at=stages[0][1],
+    )
+    repositories.releases._repository.put(as_release_item(release))
+    if issues:
+        repositories.releases.link_issues(release, release.issue_ids)
+    return release
+
+
+def _promoted_history(repositories: Any, issue: Issue | None = None) -> dict[str, Release]:
+    """Two staging releases a promotion carried, one still on staging, and one a later deploy shipped."""
+    repositories.releases.put_pipeline(
+        ReleasePipeline(
+            workspace_id=WORKSPACE,
+            planning_key=pipeline_key(TEAM),
+            team_id=TEAM,
+            stages=[
+                PipelineStage(stage_id="staging", name="Staging", github_environments=["staging"]),
+                PipelineStage(stage_id="production", name="Production", github_environments=["production"]),
+            ],
+        )
+    )
+    staged = PROMOTED_AT - timedelta(hours=2)
+    carried = (issue,) if issue is not None else ()
+    return {
+        "first": _deployed(
+            repositories,
+            1,
+            "Fix login",
+            [("staging", staged, None), ("production", PROMOTED_AT - timedelta(seconds=3), DEPLOY_URL)],
+            pr_number=228,
+            issues=carried,
+        ),
+        "second": _deployed(
+            repositories,
+            2,
+            "Add export",
+            [("staging", staged, None), ("production", PROMOTED_AT - timedelta(seconds=1), DEPLOY_URL)],
+            pr_number=229,
+        ),
+        "waiting": _deployed(repositories, 3, "Still on staging", [("staging", staged, None)], pr_number=231),
+        "promotion": _deployed(
+            repositories, 4, "2026-10-11-e", [("production", PROMOTED_AT, DEPLOY_URL)], pr_number=230, issues=carried
+        ),
+        "later": _deployed(
+            repositories,
+            5,
+            "Later fix",
+            [
+                ("staging", PROMOTED_AT - timedelta(minutes=1), None),
+                ("production", PROMOTED_AT + timedelta(hours=1), "https://github.com/acme/app/actions/runs/2"),
+            ],
+            pr_number=232,
+        ),
+    }
+
+
+def test_promotions_recorded_earlier_include_their_releases_on_first_listing(
+    client: TestClient, repositories: Any
+) -> None:
+    """The first listing records which releases each earlier promotion carried, and hides them by default."""
+    history = _promoted_history(repositories)
+    sign_in(client, MEMBER)
+
+    listed = client.get(RELEASES).json()["releases"]
+    everything = client.get(RELEASES, params={"show_included": "true"}).json()["releases"]
+    promotion = client.get(f"{RELEASES}/{history['promotion'].release_id}").json()
+    child = client.get(f"{RELEASES}/{history['first'].release_id}").json()
+
+    assert [row["name"] for row in listed] == ["Later fix", "2026-10-11-e", "Still on staging"]
+    assert listed[1]["included_count"] == 2
+    assert len(everything) == 5
+    assert {row["name"]: row["included_in"] for row in everything}["Add export"] == history["promotion"].release_id
+    assert [row["name"] for row in promotion["included_releases"]] == ["Add export", "Fix login"]
+    assert promotion["included_releases"][0]["pr_number"] == 229
+    assert child["included_in_release"]["name"] == "2026-10-11-e"
+    assert repositories.releases.fold_swept(WORKSPACE, TEAM, FOLD_SWEEP_VERSION)
+
+
+def test_a_release_detail_read_first_also_sweeps(client: TestClient, repositories: Any) -> None:
+    """Opening a promotion before any listing still shows what it carried."""
+    history = _promoted_history(repositories)
+    sign_in(client, MEMBER)
+
+    promotion = client.get(f"{RELEASES}/{history['promotion'].release_id}").json()
+
+    assert {row["name"] for row in promotion["included_releases"]} == {"Add export", "Fix login"}
+
+
+def test_listing_pages_fill_past_included_releases(client: TestClient, repositories: Any) -> None:
+    """Walking one release a page lists every visible release once, in order, and none a promotion carried."""
+    _promoted_history(repositories)
+    sign_in(client, MEMBER)
+
+    names: list[str] = []
+    cursor: str | None = None
+    for _ in range(10):
+        params: dict[str, Any] = {"limit": 1}
+        if cursor:
+            params["cursor"] = cursor
+        page = client.get(RELEASES, params=params).json()
+        names.extend(row["name"] for row in page["releases"])
+        cursor = page["next_cursor"]
+        if cursor is None:
+            break
+
+    assert names == ["Later fix", "2026-10-11-e", "Still on staging"]
+
+
+def test_deleting_a_promotion_lists_its_releases_again(client: TestClient, repositories: Any) -> None:
+    """A deleted promotion lets go of what it carried, and the sweep does not take them back."""
+    history = _promoted_history(repositories)
+    sign_in(client, MEMBER)
+    client.get(RELEASES)
+    sign_in(client, ADMIN)
+
+    assert client.delete(f"{RELEASES}/{history['promotion'].release_id}").status_code == 204
+    listed = client.get(RELEASES).json()["releases"]
+
+    assert [row["name"] for row in listed] == ["Later fix", "Still on staging", "Add export", "Fix login"]
+    assert all(row["included_in"] is None for row in listed)
+
+
+def test_deleting_an_included_release_leaves_its_promotion(client: TestClient, repositories: Any) -> None:
+    """The promotion no longer counts a release that was deleted."""
+    history = _promoted_history(repositories)
+    sign_in(client, MEMBER)
+    client.get(RELEASES)
+    sign_in(client, ADMIN)
+
+    assert client.delete(f"{RELEASES}/{history['first'].release_id}").status_code == 204
+    promotion = client.get(f"{RELEASES}/{history['promotion'].release_id}").json()
+
+    assert promotion["included_count"] == 1
+    assert [row["name"] for row in promotion["included_releases"]] == ["Add export"]
+
+
+def test_an_issue_lists_the_release_a_promotion_carried_as_included(client: TestClient, repositories: Any) -> None:
+    """The issue page lists the promotion and the release it carried, marked as included in it."""
+    issue = _issue(repositories, TEAM, "APO", 1)
+    history = _promoted_history(repositories, issue)
+
+    with TestClient(_app(repositories, "issues")) as issues_client:
+        sign_in(issues_client, MEMBER)
+        response = issues_client.get(f"{BASE}/issues/{issue.issue_id}/releases")
+
+    assert response.status_code == 200, response.text
+    rows = response.json()["releases"]
+    assert [row["name"] for row in rows] == ["2026-10-11-e", "Fix login"]
+    assert rows[0]["included_in"] is None
+    assert rows[1]["included_in"] == history["promotion"].release_id
+    assert rows[1]["included_in_name"] == "2026-10-11-e"

@@ -114,5 +114,38 @@ def test_the_switch_needs_a_plan_with_triage(client: TestClient, repositories: A
 
     refused = refusal(tool(client, admin, "update_team_triage_settings", {"team_id": "ABC", "enabled": True}))
 
-    assert "not included" in refused
+    assert "not included in the Free plan" in refused
+    assert "Standard plan" in refused
+    assert "PLAN_FEATURE_UNAVAILABLE" in refused
+    assert "credential" not in refused
     assert repositories.team_config.get_triage_settings(WORKSPACE, TEAM) is None
+
+
+def test_triage_reads_and_writes_as_a_status(client: TestClient, repositories: Any, workspace: str) -> None:
+    """A waiting issue reports the triage status, and `status_id: triage` files, sends and filters by it."""
+    add_team_member(repositories, WORKSPACE, TEAM, OWNER, "admin")
+    owner = mint_for(repositories, OWNER, SCOPES)
+    answer(tool(client, owner, "update_team_triage_settings", {"team_id": "ABC", "enabled": True}))
+
+    filed = answer(tool(client, owner, "create_issue", {"team_id": "ABC", "title": "Filed", "status_id": "triage"}))
+    kept = _file(client, owner, "Kept")
+    sent = answer(tool(client, owner, "update_issue", {"issue_id": kept["issue_key"], "status_id": "Triage"}))
+    read = answer(tool(client, owner, "get_issue", {"issue_id": filed["issue_key"]}))
+    listed = answer(tool(client, owner, "list_issues", {"team_id": "ABC", "status_id": "triage"}))
+    accepted = answer(tool(client, owner, "update_issue", {"issue_id": filed["issue_key"], "status_id": "Todo"}))
+
+    assert filed["in_triage"] is True and filed["status_id"] == "triage" and filed["status"] == "Triage"
+    assert sent["in_triage"] is True and sent["status_id"] == "triage"
+    assert read["status_id"] == "triage" and read["status"] == "Triage"
+    assert {row["issue_id"] for row in listed["issues"]} == {filed["issue_id"], kept["issue_id"]}
+    assert all(row["status_id"] == "triage" and row["in_triage"] for row in listed["issues"])
+    assert accepted["in_triage"] is False and accepted["status"] == "Todo"
+
+
+def test_triage_status_is_refused_where_triage_is_off(client: TestClient, repositories: Any, workspace: str) -> None:
+    """A team with triage off has no triage status to name."""
+    owner = mint_for(repositories, OWNER, SCOPES)
+
+    refused = refusal(tool(client, owner, "create_issue", {"team_id": "ABC", "title": "A", "status_id": "triage"}))
+
+    assert "triage" in refused

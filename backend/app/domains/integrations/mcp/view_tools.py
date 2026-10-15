@@ -162,7 +162,7 @@ def _view_json(view: SavedView) -> dict[str, Any]:
     return ViewRead.from_row(view).model_dump(mode="json")
 
 
-def _view_ref(call: ToolCall, value: Any) -> SavedView:
+def view_ref(call: ToolCall, value: Any) -> SavedView:
     """One readable saved view named by its id or its exact name.
 
     A name resolves only when exactly one readable view carries it, so an agent
@@ -209,7 +209,7 @@ def _create_view(call: ToolCall) -> Any:
 def _update_view(call: ToolCall) -> Any:
     """Change the named fields of a view the caller owns, or of a team view they administer."""
     _workspace_member(call)
-    view = _view_ref(call, call.require("view_id"))
+    view = view_ref(call, call.require("view_id"))
     fields = _view_fields(call)
     for name in fields:
         if fields[name] is None and name not in CLEARABLE_VIEW_FIELDS:
@@ -223,7 +223,7 @@ def _update_view(call: ToolCall) -> Any:
 def _delete_view(call: ToolCall) -> Any:
     """Delete a view the caller owns, or a team view they administer."""
     _workspace_member(call)
-    view = _view_ref(call, call.require("view_id"))
+    view = view_ref(call, call.require("view_id"))
     removed = delete_saved_view(call.repositories, call.context, view.view_id)
     return {"deleted": True, "view_id": removed.view_id, "name": removed.name}
 

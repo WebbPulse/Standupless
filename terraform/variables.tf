@@ -158,6 +158,12 @@ variable "oauth_github_client_id" {
   default     = ""
 }
 
+variable "desktop_handoff_schemes" {
+  description = "Custom URL schemes the desktop app may receive a browser sign-in handoff on, such as standupless. Empty leaves the identity function's desktop handoff routes unmounted. Not a secret; set in env/<environment>.tfvars."
+  type        = list(string)
+  default     = []
+}
+
 variable "identity_jwt_mode" {
   description = "Which mechanism enforces identity access tokens at the gateway: the staging gate's Lambda authorizer (gate), the http-api module's own Lambda authorizer (native), or nothing (off). A route takes exactly one authorizer, so a gated staging environment must use gate. Both enforcing modes admit a bearer carrying an api_key_prefixes prefix and leave the backend to verify it, so an API key reaches a protected route in either."
   type        = string

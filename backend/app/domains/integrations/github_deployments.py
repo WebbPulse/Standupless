@@ -6,8 +6,9 @@ raise the same `GitHubError` subclasses. Every read is capped, because a
 deployment is recorded inside one queue message.
 
 Reading deployments and their statuses needs the App's Deployments read
-permission, reading a commit's pull requests needs Pull requests read, and
-publishing a Release needs Contents write.
+permission, reading a commit's pull requests needs Pull requests read, reading
+tags and Releases needs Contents read, and publishing a Release needs Contents
+write.
 """
 
 from __future__ import annotations
@@ -189,6 +190,32 @@ def successful_deployments(
     return DeploymentPage(found, True, first + LIST_PAGES_MAX - 1)
 
 
+def successful_deployment(
+    token: str,
+    repository_id: int | str,
+    environment: str,
+    deployment_id: int,
+    *,
+    client: httpx.Client | None = None,
+) -> DeploymentRef | None:
+    """One deployment by id when it deployed this environment and succeeded, else `None`.
+
+    A targeted backfill retry reads the deployments an earlier page passed over
+    this way, so it need not list the environment's history again.
+    """
+    path = f"{repository_path(repository_id)}/deployments/{_identifier(deployment_id, 'deployment id')}"
+    try:
+        body = _object(_request("GET", path, token=token, client=client), "deployment")
+    except GitHubNotFound:
+        return None
+    sha = str(body.get("sha") or "").lower()
+    if body.get("id") != deployment_id or not _is_sha(sha) or body.get("environment") != environment:
+        return None
+    if not _succeeded(token, repository_id, deployment_id, client=client):
+        return None
+    return DeploymentRef(deployment_id, sha, _timestamp(body.get("created_at")))
+
+
 SEED_SCANNED = 20
 """How many earlier deployments a first deployment looks back through for its range's start."""
 
@@ -283,3 +310,91 @@ def publish_release(
         )
     url = answer.get("html_url") if isinstance(answer, Mapping) else None
     return url if isinstance(url, str) and url.startswith("https://") else None
+
+
+TAG_PAGE_SIZE = 100
+
+TAG_PAGES_MAX = 10
+"""How many pages of tags, or of Releases, one read lists at most: a thousand of each."""
+
+
+@dataclass(frozen=True)
+class TagRef:
+    """One tag of a repository and the commit it points at."""
+
+    name: str
+    sha: str
+
+
+@dataclass(frozen=True)
+class PublishedRelease:
+    """One published GitHub Release: its tag, its page, and when it was published."""
+
+    tag: str
+    url: str | None
+    published_at: datetime | None
+
+
+def tag_commit(
+    token: str, repository_id: int | str, tag: str, *, client: httpx.Client | None = None
+) -> tuple[str, datetime | None]:
+    """The commit a tag points at and when it was committed, an annotated tag read through to its commit."""
+    if not tag or len(tag) > TAG_MAX * 2:
+        raise ValueError("a tag read needs a tag name")
+    path = f"{repository_path(repository_id)}/commits/tags/{quote(tag, safe='')}"
+    body = _object(_request("GET", path, token=token, client=client), "commit")
+    sha = str(body.get("sha") or "").lower()
+    if not _is_sha(sha):
+        raise GitHubError("the commit call answered no sha")
+    commit = body.get("commit")
+    committer = commit.get("committer") if isinstance(commit, Mapping) else None
+    return sha, _timestamp(committer.get("date")) if isinstance(committer, Mapping) else None
+
+
+def list_tags(token: str, repository_id: int | str, *, client: httpx.Client | None = None) -> list[TagRef]:
+    """Every tag of a repository with its commit, up to `TAG_PAGES_MAX` pages, in GitHub's order."""
+    found: list[TagRef] = []
+    base = f"{repository_path(repository_id)}/tags?per_page={TAG_PAGE_SIZE}"
+    for page in range(1, TAG_PAGES_MAX + 1):
+        body = _request("GET", f"{base}&page={page}", token=token, client=client)
+        if not isinstance(body, list):
+            raise GitHubError("the tags call answered no list")
+        for entry in body:
+            if not isinstance(entry, Mapping):
+                continue
+            commit = entry.get("commit")
+            sha = str(commit.get("sha") or "").lower() if isinstance(commit, Mapping) else ""
+            name = str(entry.get("name") or "")
+            if name and _is_sha(sha):
+                found.append(TagRef(name, sha))
+        if len(body) < TAG_PAGE_SIZE:
+            break
+    return found
+
+
+def list_releases(
+    token: str, repository_id: int | str, *, client: httpx.Client | None = None
+) -> list[PublishedRelease]:
+    """Every published GitHub Release of a repository, drafts left out, up to `TAG_PAGES_MAX` pages."""
+    found: list[PublishedRelease] = []
+    base = f"{repository_path(repository_id)}/releases?per_page={TAG_PAGE_SIZE}"
+    for page in range(1, TAG_PAGES_MAX + 1):
+        body = _request("GET", f"{base}&page={page}", token=token, client=client)
+        if not isinstance(body, list):
+            raise GitHubError("the releases call answered no list")
+        for entry in body:
+            if not isinstance(entry, Mapping) or entry.get("draft"):
+                continue
+            tag = str(entry.get("tag_name") or "")
+            url = entry.get("html_url")
+            if tag:
+                found.append(
+                    PublishedRelease(
+                        tag,
+                        url if isinstance(url, str) and url.startswith("https://") else None,
+                        _timestamp(entry.get("published_at")),
+                    )
+                )
+        if len(body) < TAG_PAGE_SIZE:
+            break
+    return found

@@ -76,10 +76,104 @@
         }
       } catch (error) {}
     </script>
+    <style>
+      .boot-splash {
+        --boot-bg: #141518;
+        --boot-mark: #f2703a;
+        --boot-track: #3a3c44;
+        --boot-head: #9b9da7;
+        position: fixed;
+        inset: 0;
+        z-index: 2147483000;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 20px;
+        background-color: var(--boot-bg);
+      }
+      :root[data-theme='light'] .boot-splash {
+        --boot-bg: #ffffff;
+        --boot-mark: #b8451a;
+        --boot-track: #cfd0d7;
+        --boot-head: #62646f;
+      }
+      @media (prefers-color-scheme: light) {
+        :root:not([data-theme]) .boot-splash {
+          --boot-bg: #ffffff;
+          --boot-mark: #b8451a;
+          --boot-track: #cfd0d7;
+          --boot-head: #62646f;
+        }
+      }
+      html:not([data-prerender='stale']) #root:not(:empty) ~ #boot-splash {
+        display: none;
+      }
+      .boot-splash .boot-splash-mark {
+        display: block;
+        color: var(--boot-mark);
+      }
+      .boot-splash-spinner {
+        box-sizing: border-box;
+        width: 16px;
+        height: 16px;
+        border-radius: 9999px;
+        border: 2px solid var(--boot-track);
+        border-top-color: var(--boot-head);
+        animation: boot-splash-spin 800ms linear infinite;
+        animation-delay: var(--boot-phase, 0ms);
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .boot-splash-spinner {
+          animation: none;
+        }
+      }
+      @keyframes boot-splash-spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+    </style>
   </head>
   <body>
     <div id="root"></div>
+    <div
+      id="boot-splash"
+      class="boot-splash"
+      role="status"
+      aria-live="polite"
+      aria-label="Loading"
+    >
+      <svg
+        viewBox="0 0 32 32"
+        width="40"
+        height="40"
+        class="boot-splash-mark"
+        fill="currentColor"
+        aria-hidden="true"
+      >
+        <rect x="4" y="21.5" width="12" height="5" rx="2.5" />
+        <rect x="10" y="13.5" width="12" height="5" rx="2.5" />
+        <rect x="23" y="5.5" width="5" height="5" rx="2.5" />
+      </svg>
+      <span class="boot-splash-spinner"></span>
+    </div>
+    <script>
+      try {
+        document
+          .getElementById('boot-splash')
+          .style.setProperty(
+            '--boot-phase',
+            '-' + Math.round(performance.now() % 800) + 'ms'
+          );
+      } catch (error) {}
+    </script>
     <noscript>
+      <style>
+        #boot-splash {
+          display: none;
+        }
+      </style>
       <p style="padding: 2rem; text-align: center">
         Standupless requires JavaScript. Please enable JavaScript in your
         browser.

@@ -7,6 +7,8 @@
 import { render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { describe, expect, it } from 'vitest';
+import { SidebarDataContext } from '../../contexts/SidebarDataContextDefinition';
+import { EMPTY_FAVORITES } from '../../lib/favorites';
 import TeamTabs, { type TeamTab } from './TeamTabs';
 
 /** Renders the switch for one team with `current` showing. */
@@ -71,5 +73,42 @@ describe('TeamTabs', () => {
       'href',
       '/w/other/team/DES/cycles'
     );
+  });
+
+  it('leads with Triage once the team has triage on', () => {
+    render(
+      <MemoryRouter>
+        <SidebarDataContext.Provider
+          value={{
+            workspaceId: 'ws',
+            triage: { teams: [{ team_id: 'team-1', count: 2 }] },
+            views: null,
+            inboxCount: null,
+            reviews: null,
+            favorites: EMPTY_FAVORITES,
+          }}
+        >
+          <TeamTabs
+            slug="mine"
+            keyPrefix="ENG"
+            teamId="team-1"
+            current="issues"
+          />
+        </SidebarDataContext.Provider>
+      </MemoryRouter>
+    );
+
+    expect(screen.getByRole('link', { name: 'Triage' })).toHaveAttribute(
+      'href',
+      '/w/mine/team/ENG/triage'
+    );
+  });
+
+  it('leaves Triage out while the team has triage off', () => {
+    renderTabs('issues');
+
+    expect(
+      screen.queryByRole('link', { name: 'Triage' })
+    ).not.toBeInTheDocument();
   });
 });

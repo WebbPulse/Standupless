@@ -181,6 +181,335 @@
         "title": "ActivityRead",
         "type": "object"
       },
+      "AgentProfileActivityRead": {
+        "description": "One page of the caller's agent profile trail, newest first.",
+        "properties": {
+          "events": {
+            "items": {
+              "$ref": "#/components/schemas/AgentProfileEventRead"
+            },
+            "title": "Events",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "required": [
+          "events"
+        ],
+        "title": "AgentProfileActivityRead",
+        "type": "object"
+      },
+      "AgentProfileEventRead": {
+        "description": "One entry of the caller's own agent profile trail.",
+        "properties": {
+          "audit_id": {
+            "title": "Audit Id",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "event": {
+            "title": "Event",
+            "type": "string"
+          },
+          "event_label": {
+            "title": "Event Label",
+            "type": "string"
+          },
+          "ip": {
+            "default": "",
+            "title": "Ip",
+            "type": "string"
+          },
+          "profile": {
+            "title": "Profile",
+            "type": "string"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          },
+          "version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version"
+          }
+        },
+        "required": [
+          "audit_id",
+          "event",
+          "event_label",
+          "profile",
+          "source",
+          "created_at"
+        ],
+        "title": "AgentProfileEventRead",
+        "type": "object"
+      },
+      "AgentProfileFile": {
+        "description": "One file of a profile: the root it lives under, its path relative to that root, and its text.",
+        "properties": {
+          "content": {
+            "title": "Content",
+            "type": "string"
+          },
+          "path": {
+            "description": "The file's path relative to its root, with forward slashes.",
+            "title": "Path",
+            "type": "string"
+          },
+          "root": {
+            "description": "home is the home directory, project the project checkout, memory Claude Code's memory folder for that project.",
+            "enum": [
+              "home",
+              "project",
+              "memory"
+            ],
+            "title": "Root",
+            "type": "string"
+          }
+        },
+        "required": [
+          "root",
+          "path",
+          "content"
+        ],
+        "title": "AgentProfileFile",
+        "type": "object"
+      },
+      "AgentProfileListRead": {
+        "description": "Every profile the caller keeps, in name order, with the limits a save is held to.",
+        "properties": {
+          "max_profiles": {
+            "title": "Max Profiles",
+            "type": "integer"
+          },
+          "profiles": {
+            "items": {
+              "$ref": "#/components/schemas/AgentProfileRead"
+            },
+            "title": "Profiles",
+            "type": "array"
+          },
+          "versions_kept": {
+            "title": "Versions Kept",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "profiles",
+          "max_profiles",
+          "versions_kept"
+        ],
+        "title": "AgentProfileListRead",
+        "type": "object"
+      },
+      "AgentProfileRead": {
+        "description": "One profile as its owner lists it.",
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "file_count": {
+            "title": "File Count",
+            "type": "integer"
+          },
+          "latest_version": {
+            "title": "Latest Version",
+            "type": "integer"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "note": {
+            "default": "",
+            "title": "Note",
+            "type": "string"
+          },
+          "total_bytes": {
+            "title": "Total Bytes",
+            "type": "integer"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "latest_version",
+          "file_count",
+          "total_bytes",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "AgentProfileRead",
+        "type": "object"
+      },
+      "AgentProfileSnapshotRead": {
+        "description": "One version's files, and what each root means on the machine restoring them.",
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "files": {
+            "items": {
+              "$ref": "#/components/schemas/AgentProfileFile"
+            },
+            "title": "Files",
+            "type": "array"
+          },
+          "latest_version": {
+            "title": "Latest Version",
+            "type": "integer"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "note": {
+            "default": "",
+            "title": "Note",
+            "type": "string"
+          },
+          "roots": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "What each root maps to on the machine the files are written on.",
+            "title": "Roots",
+            "type": "object"
+          },
+          "sha256": {
+            "title": "Sha256",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "name",
+          "version",
+          "latest_version",
+          "sha256",
+          "created_at",
+          "files",
+          "roots"
+        ],
+        "title": "AgentProfileSnapshotRead",
+        "type": "object"
+      },
+      "AgentProfileVersionListRead": {
+        "description": "A profile's kept versions, newest first.",
+        "properties": {
+          "latest_version": {
+            "title": "Latest Version",
+            "type": "integer"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "versions": {
+            "items": {
+              "$ref": "#/components/schemas/AgentProfileVersionRead"
+            },
+            "title": "Versions",
+            "type": "array"
+          },
+          "versions_kept": {
+            "title": "Versions Kept",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "name",
+          "latest_version",
+          "versions",
+          "versions_kept"
+        ],
+        "title": "AgentProfileVersionListRead",
+        "type": "object"
+      },
+      "AgentProfileVersionRead": {
+        "description": "One kept version of a profile.",
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "file_count": {
+            "title": "File Count",
+            "type": "integer"
+          },
+          "latest": {
+            "title": "Latest",
+            "type": "boolean"
+          },
+          "note": {
+            "default": "",
+            "title": "Note",
+            "type": "string"
+          },
+          "sha256": {
+            "description": "The digest of the version's files, equal for identical contents.",
+            "title": "Sha256",
+            "type": "string"
+          },
+          "source": {
+            "description": "The client the version was saved through, such as mcp.",
+            "title": "Source",
+            "type": "string"
+          },
+          "total_bytes": {
+            "title": "Total Bytes",
+            "type": "integer"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "version",
+          "file_count",
+          "total_bytes",
+          "sha256",
+          "source",
+          "created_at",
+          "latest"
+        ],
+        "title": "AgentProfileVersionRead",
+        "type": "object"
+      },
       "ApiKeyCreate": {
         "description": "The body `POST /api/workspaces/{workspace_id}/api-keys` takes.",
         "properties": {
@@ -3433,6 +3762,203 @@
         "title": "ErrorResponse",
         "type": "object"
       },
+      "FavoriteListRead": {
+        "description": "The caller's favorites in their order, each one they can still read.",
+        "properties": {
+          "favorites": {
+            "items": {
+              "$ref": "#/components/schemas/FavoriteRead"
+            },
+            "title": "Favorites",
+            "type": "array"
+          }
+        },
+        "required": [
+          "favorites"
+        ],
+        "title": "FavoriteListRead",
+        "type": "object"
+      },
+      "FavoriteOrder": {
+        "description": "The caller's favorites in their new order.\n\nFavorites the list leaves out keep their relative order after the named\nones, and names that are not favorites are ignored, so a reorder racing an\nadd or a removal in another tab never drops or resurrects anything.",
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/FavoriteRef"
+            },
+            "maxItems": 100,
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "FavoriteOrder",
+        "type": "object"
+      },
+      "FavoriteRead": {
+        "description": "One favorite as the sidebar draws it.\n\n`title` is the issue title, or the name of the project, cycle, view, team,\ndocument or initiative. `issue_key` and `status` are set for an issue, and\n`team_key_prefix` wherever the target belongs to one team, which is what a\nclient builds a team or cycle link from. `icon` and `color` are the target's\nown, where it has them.",
+        "properties": {
+          "color": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Color"
+          },
+          "icon": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Icon"
+          },
+          "issue_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Issue Key"
+          },
+          "kind": {
+            "enum": [
+              "issue",
+              "project",
+              "cycle",
+              "view",
+              "team",
+              "document",
+              "initiative"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "parent_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Id"
+          },
+          "parent_kind": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Kind"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/StatusRead"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "target_id": {
+            "title": "Target Id",
+            "type": "string"
+          },
+          "team_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Team Id"
+          },
+          "team_key_prefix": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Team Key Prefix"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "target_id",
+          "title"
+        ],
+        "title": "FavoriteRead",
+        "type": "object"
+      },
+      "FavoriteRef": {
+        "description": "One favorite named by its kind and id, as an add or a reorder sends it.\n\n`team_id` is needed only for a cycle, whose key carries its team.",
+        "properties": {
+          "kind": {
+            "enum": [
+              "issue",
+              "project",
+              "cycle",
+              "view",
+              "team",
+              "document",
+              "initiative"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "target_id": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Target Id",
+            "type": "string"
+          },
+          "team_id": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Team Id"
+          }
+        },
+        "required": [
+          "kind",
+          "target_id"
+        ],
+        "title": "FavoriteRef",
+        "type": "object"
+      },
       "GitHubAppStatus": {
         "description": "Whether this environment can create an App, and whether it already has one.",
         "properties": {
@@ -3910,6 +4436,18 @@
             "title": "Labels",
             "type": "array"
           },
+          "parent_row": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The row of the file this row becomes a sub-issue of.",
+            "title": "Parent Row"
+          },
           "priority": {
             "title": "Priority",
             "type": "string"
@@ -4070,6 +4608,79 @@
           "notification_ids"
         ],
         "title": "InboxUnreadRequest",
+        "type": "object"
+      },
+      "IncludedReleaseRead": {
+        "description": "One release a promotion carried, or the promotion that carried one, as a detail page links it.",
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "current_stage": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ReleaseStageRead"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "issue_count": {
+            "title": "Issue Count",
+            "type": "integer"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "pr_number": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pr Number"
+          },
+          "pr_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pr Url"
+          },
+          "release_id": {
+            "title": "Release Id",
+            "type": "string"
+          },
+          "sha": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sha"
+          }
+        },
+        "required": [
+          "release_id",
+          "name",
+          "issue_count",
+          "created_at"
+        ],
+        "title": "IncludedReleaseRead",
         "type": "object"
       },
       "InitiativeCreate": {
@@ -5504,6 +6115,12 @@
             "title": "New Labels",
             "type": "array"
           },
+          "parent_links": {
+            "default": 0,
+            "description": "How many rows would become sub-issues of another row.",
+            "title": "Parent Links",
+            "type": "integer"
+          },
           "problems": {
             "items": {
               "$ref": "#/components/schemas/RowProblemRead"
@@ -5593,6 +6210,12 @@
           },
           "labels_created": {
             "title": "Labels Created",
+            "type": "integer"
+          },
+          "linked_count": {
+            "default": 0,
+            "description": "How many imported issues were made sub-issues of another.",
+            "title": "Linked Count",
             "type": "integer"
           },
           "preset": {
@@ -5723,7 +6346,7 @@
                 "type": "null"
               }
             ],
-            "description": "Overrides of the preset's mapping, field to header name; null unmaps a field. Fields are title, description, status, priority, assignee, labels, estimate, due_date, source_key and created_at.",
+            "description": "Overrides of the preset's mapping, field to header name; null unmaps a field. Fields are title, description, status, priority, assignee, labels, estimate, due_date, source_key, created_at and parent. A parent column names another row of the file by its source key or its title.",
             "title": "Mapping"
           },
           "preset": {
@@ -5940,7 +6563,7 @@
         "type": "object"
       },
       "IssueReleaseRead": {
-        "description": "One release an issue shipped in, as the issue page names it.",
+        "description": "One release an issue shipped in, as the issue page names it.\n\n`included_in` and `included_in_name` name the promotion that carried this\nrelease to a later stage, so the page marks the release rather than hiding it.",
         "properties": {
           "created_at": {
             "format": "date-time",
@@ -5956,6 +6579,28 @@
                 "type": "null"
               }
             ]
+          },
+          "included_in": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Included In"
+          },
+          "included_in_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Included In Name"
           },
           "name": {
             "title": "Name",
@@ -6370,6 +7015,64 @@
           "labels"
         ],
         "title": "LabelListRead",
+        "type": "object"
+      },
+      "LabelMerge": {
+        "description": "The body a label merge takes: the label of the same scope the merged label folds into.",
+        "properties": {
+          "target_label_id": {
+            "minLength": 1,
+            "title": "Target Label Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "target_label_id"
+        ],
+        "title": "LabelMerge",
+        "type": "object"
+      },
+      "LabelMergeRead": {
+        "description": "What a label merge did, so far or in full.\n\n`complete` is false when a large merge ran out of time for one request: the\nissues moved so far keep the target label, and calling the merge again with\nthe same target picks up where it stopped. A merge already finished answers\nits result again, so a retry is safe.",
+        "properties": {
+          "complete": {
+            "default": true,
+            "title": "Complete",
+            "type": "boolean"
+          },
+          "issues_updated": {
+            "default": 0,
+            "title": "Issues Updated",
+            "type": "integer"
+          },
+          "source_label_id": {
+            "title": "Source Label Id",
+            "type": "string"
+          },
+          "source_name": {
+            "title": "Source Name",
+            "type": "string"
+          },
+          "target": {
+            "$ref": "#/components/schemas/LabelRead"
+          },
+          "templates_updated": {
+            "default": 0,
+            "title": "Templates Updated",
+            "type": "integer"
+          },
+          "views_updated": {
+            "default": 0,
+            "title": "Views Updated",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "source_label_id",
+          "source_name",
+          "target"
+        ],
+        "title": "LabelMergeRead",
         "type": "object"
       },
       "LabelRead": {
@@ -7033,7 +7736,7 @@
         "type": "object"
       },
       "NotificationRead": {
-        "description": "One inbox row as the API returns it.\n\nA `project_update` notification names its project and update and leaves the\nissue fields empty. A `standup_digest` carries the team key in `issue_key`,\nthe team name in `issue_title` and the digest date in `standup_date`. A\n`review_requested` notification carries the pull request's `owner/repo#number`\nin `issue_key`, its title in `issue_title` and its GitHub address in `url`.",
+        "description": "One inbox row as the API returns it.\n\nA `project_update` notification names its project and update and leaves the\nissue fields empty. A `standup_digest` carries the team key in `issue_key`,\nthe team name in `issue_title` and the digest date in `standup_date`. A\n`review_requested` notification carries the pull request's `owner/repo#number`\nin `issue_key`, its title in `issue_title` and its GitHub address in `url`.\nAn `initiative_update_due` reminder names its initiative, carries an empty\n`team_id` and says in `due_state` whether the update is due or overdue.",
         "properties": {
           "actor_id": {
             "title": "Actor Id",
@@ -7059,9 +7762,46 @@
             "title": "Created At",
             "type": "string"
           },
+          "due_state": {
+            "anyOf": [
+              {
+                "enum": [
+                  "due",
+                  "overdue"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Due State"
+          },
           "expires_at": {
             "title": "Expires At",
             "type": "integer"
+          },
+          "initiative_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Initiative Id"
+          },
+          "initiative_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Initiative Name"
           },
           "issue_id": {
             "title": "Issue Id",
@@ -8388,8 +9128,429 @@
         "title": "ReactionWrite",
         "type": "object"
       },
+      "RecurringCreate": {
+        "description": "The body a recurring issue create takes.\n\n`timezone` defaults to the team's standup timezone, else UTC, and\n`starts_on` to today there. A weekly rule needs `weekdays` and a monthly\none `day_of_month`.",
+        "properties": {
+          "day_of_month": {
+            "anyOf": [
+              {
+                "maximum": 31.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Day Of Month"
+          },
+          "frequency": {
+            "enum": [
+              "daily",
+              "weekly",
+              "monthly"
+            ],
+            "title": "Frequency",
+            "type": "string"
+          },
+          "interval": {
+            "anyOf": [
+              {
+                "maximum": 365.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Interval"
+          },
+          "paused": {
+            "default": false,
+            "title": "Paused",
+            "type": "boolean"
+          },
+          "starts_on": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Starts On"
+          },
+          "template_id": {
+            "minLength": 1,
+            "title": "Template Id",
+            "type": "string"
+          },
+          "time": {
+            "anyOf": [
+              {
+                "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Time"
+          },
+          "timezone": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Timezone"
+          },
+          "weekdays": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "integer"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Weekdays"
+          }
+        },
+        "required": [
+          "template_id",
+          "frequency"
+        ],
+        "title": "RecurringCreate",
+        "type": "object"
+      },
+      "RecurringListRead": {
+        "description": "The body a recurring issue list answers with, and the team's default timezone.",
+        "properties": {
+          "default_timezone": {
+            "title": "Default Timezone",
+            "type": "string"
+          },
+          "recurring_issues": {
+            "items": {
+              "$ref": "#/components/schemas/RecurringRead"
+            },
+            "title": "Recurring Issues",
+            "type": "array"
+          }
+        },
+        "required": [
+          "recurring_issues",
+          "default_timezone"
+        ],
+        "title": "RecurringListRead",
+        "type": "object"
+      },
+      "RecurringRead": {
+        "description": "One recurring issue as the API returns it.\n\n`next_run_at` is when the next issue is due, `None` while paused; the hourly\nsweep creates it within the hour after. `upcoming_runs` previews the runs\nafter that. `paused_reason` says why the system paused it, if it did.",
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "created_by": {
+            "title": "Created By",
+            "type": "string"
+          },
+          "day_of_month": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Day Of Month"
+          },
+          "frequency": {
+            "enum": [
+              "daily",
+              "weekly",
+              "monthly"
+            ],
+            "title": "Frequency",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "interval": {
+            "title": "Interval",
+            "type": "integer"
+          },
+          "last_issue_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Issue Id"
+          },
+          "last_issue_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Issue Key"
+          },
+          "last_run_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Run At"
+          },
+          "next_run_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Run At"
+          },
+          "paused": {
+            "title": "Paused",
+            "type": "boolean"
+          },
+          "paused_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Paused Reason"
+          },
+          "starts_on": {
+            "format": "date",
+            "title": "Starts On",
+            "type": "string"
+          },
+          "team_id": {
+            "title": "Team Id",
+            "type": "string"
+          },
+          "template_id": {
+            "title": "Template Id",
+            "type": "string"
+          },
+          "template_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Template Name"
+          },
+          "time": {
+            "title": "Time",
+            "type": "string"
+          },
+          "timezone": {
+            "title": "Timezone",
+            "type": "string"
+          },
+          "upcoming_runs": {
+            "items": {
+              "format": "date-time",
+              "type": "string"
+            },
+            "title": "Upcoming Runs",
+            "type": "array"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "weekdays": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Weekdays",
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "team_id",
+          "template_id",
+          "frequency",
+          "interval",
+          "time",
+          "timezone",
+          "starts_on",
+          "paused",
+          "created_by",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "RecurringRead",
+        "type": "object"
+      },
+      "RecurringUpdate": {
+        "description": "The body a recurring issue patch takes: only the fields sent change.\n\n`paused` pauses or resumes it. Resuming, or changing the rule, sets the next\nrun from now, so a paused schedule never catches up on what it skipped.",
+        "properties": {
+          "day_of_month": {
+            "anyOf": [
+              {
+                "maximum": 31.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Day Of Month"
+          },
+          "frequency": {
+            "anyOf": [
+              {
+                "enum": [
+                  "daily",
+                  "weekly",
+                  "monthly"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Frequency"
+          },
+          "interval": {
+            "anyOf": [
+              {
+                "maximum": 365.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Interval"
+          },
+          "paused": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Paused"
+          },
+          "starts_on": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Starts On"
+          },
+          "template_id": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Template Id"
+          },
+          "time": {
+            "anyOf": [
+              {
+                "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Time"
+          },
+          "timezone": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Timezone"
+          },
+          "weekdays": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "integer"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Weekdays"
+          }
+        },
+        "title": "RecurringUpdate",
+        "type": "object"
+      },
       "ReleaseBackfill": {
-        "description": "The body `POST .../teams/{team_id}/release-backfill` takes.\n\nRebuilds releases from one GitHub environment's past successful deployments,\nnewest first, a few per call. `repository` is a full name or id and defaults to\nevery repository pinned to the team. Pass `cursor` back until it comes back\nnull. A deployment that already has a release only gains missing issues, and\nthe backfill never moves issues or publishes GitHub Releases.",
+        "description": "The body `POST .../teams/{team_id}/release-backfill` takes.\n\nRebuilds releases from one GitHub environment's past successful deployments,\nnewest first, a few per call. `repository` is a full name or id and defaults to\nevery repository pinned to the team. Pass `cursor` back until it comes back\nnull. A deployment that already has a release only gains missing issues, and\nthe backfill never moves issues or publishes GitHub Releases.\n\n`deployment_ids` retries only those deployments, such as the\n`unreadable_deployment_ids` an earlier page passed over, without paging\nthrough history. It takes no cursor, and `repository` must name their\nrepository unless the team pins only one.",
         "properties": {
           "cursor": {
             "anyOf": [
@@ -8402,6 +9563,22 @@
               }
             ],
             "title": "Cursor"
+          },
+          "deployment_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "integer"
+                },
+                "maxItems": 10,
+                "minItems": 1,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deployment Ids"
           },
           "environment": {
             "default": "production",
@@ -8434,8 +9611,15 @@
         "type": "object"
       },
       "ReleaseBackfillRead": {
-        "description": "What one backfill call did, and the cursor to continue from, null when it is done.\n\n`deployments_skipped` counts deployments whose release had already reached\nthe stage, which cost no GitHub call. A page that stopped before its limit to\nkeep half the GitHub App's hourly budget for live sync, or to answer inside\nthe request timeout, sets `stopped_early` and says in `message` when to pass\nthe cursor back; `resume_after` is GitHub's budget reset when that is the\nreason. `rate_limit_remaining` and `rate_limit` are GitHub's last word on the\ninstallation's budget, and `github_calls` what this page spent of it.\n\n`stalled` is set when the page recorded and skipped nothing, so passing the\ncursor back moves only once the message's reason has passed.\n`unreadable_deployment_ids` names deployments passed over because their range\ncould not be read inside the request timeout, and `pull_reads_skipped` counts\npull requests a recorded deployment did not read for keys for the same reason.",
+        "description": "What one backfill call did, and the cursor to continue from, null when it is done.\n\n`deployments_skipped` counts deployments whose release had already reached\nthe stage, which cost no GitHub call. A page that stopped before its limit to\nkeep half the GitHub App's hourly budget for live sync, or to answer inside\nthe request timeout, sets `stopped_early` and says in `message` when to pass\nthe cursor back; `resume_after` is GitHub's budget reset when that is the\nreason. `rate_limit_remaining` and `rate_limit` are GitHub's last word on the\ninstallation's budget, and `github_calls` what this page spent of it.\n\n`stalled` is set when the page recorded and skipped nothing, so passing the\ncursor back moves only once the message's reason has passed.\n`unreadable_deployment_ids` names deployments passed over because their range\ncould not be read inside the request timeout, and `pull_reads_skipped` counts\npull requests a recorded deployment did not read for keys for the same reason.\nPass `unreadable_deployment_ids` back as `deployment_ids` to retry only those.\nA retry names in `deployments_not_found` the ids that are no successful\ndeployment of the environment in the repository.\n\n`source` is `github_tag` or `github_release` for a page read from a\nrepository that records its releases from tags or GitHub Releases; its\ndeployment counts then count tags.",
         "properties": {
+          "deployments_not_found": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Deployments Not Found",
+            "type": "array"
+          },
           "deployments_scanned": {
             "title": "Deployments Scanned",
             "type": "integer"
@@ -8529,6 +9713,11 @@
               }
             ],
             "title": "Resume After"
+          },
+          "source": {
+            "default": "github_deployment",
+            "title": "Source",
+            "type": "string"
           },
           "stalled": {
             "default": false,
@@ -8693,7 +9882,7 @@
         "type": "object"
       },
       "ReleaseDetailRead": {
-        "description": "One release with its issues and the notes built from them.\n\nThe notes are deterministic: one line per visible issue, `KEY title`, in key\norder, so the same release always reads the same way. `skipped_issues` echoes\nthe references a write named that matched no issue of the team, so a CI job can\nreport a typo without the release being refused.",
+        "description": "One release with its issues and the notes built from them.\n\nThe notes are deterministic: one line per visible issue, `KEY title`, in key\norder, so the same release always reads the same way. `skipped_issues` echoes\nthe references a write named that matched no issue of the team, so a CI job can\nreport a typo without the release being refused. `included_releases` are the\nearlier releases a promotion carried, newest first, and `included_in_release`\nis the promotion that carried this one.",
         "properties": {
           "created_at": {
             "format": "date-time",
@@ -8742,6 +9931,39 @@
               }
             ],
             "title": "Github Release Url"
+          },
+          "included_count": {
+            "default": 0,
+            "title": "Included Count",
+            "type": "integer"
+          },
+          "included_in": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Included In"
+          },
+          "included_in_release": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/IncludedReleaseRead"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "included_releases": {
+            "items": {
+              "$ref": "#/components/schemas/IncludedReleaseRead"
+            },
+            "title": "Included Releases",
+            "type": "array"
           },
           "issue_count": {
             "title": "Issue Count",
@@ -9042,7 +10264,7 @@
         "type": "object"
       },
       "ReleaseRead": {
-        "description": "One release as a listing shows it.\n\n`current_stage` is the furthest stage of the pipeline the release reached, so a\nreader sees \"Released to Production\" without ordering the stages itself.\n`status_counts` tallies the issues the caller can see by status category, so a\nlisting draws each release's progress without reading its issues.",
+        "description": "One release as a listing shows it.\n\n`current_stage` is the furthest stage of the pipeline the release reached, so a\nreader sees \"Released to Production\" without ordering the stages itself.\n`status_counts` tallies the issues the caller can see by status category, so a\nlisting draws each release's progress without reading its issues.\n`included_in` names the promotion that carried this release to a later stage,\nand `included_count` is how many earlier releases a promotion carried.",
         "properties": {
           "created_at": {
             "format": "date-time",
@@ -9091,6 +10313,22 @@
               }
             ],
             "title": "Github Release Url"
+          },
+          "included_count": {
+            "default": 0,
+            "title": "Included Count",
+            "type": "integer"
+          },
+          "included_in": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Included In"
           },
           "issue_count": {
             "title": "Issue Count",
@@ -9397,8 +10635,18 @@
         "type": "object"
       },
       "RepositoryLinkWrite": {
-        "description": "Point one repository at one team, or clear it.",
+        "description": "Point one repository at one team, or clear it, and choose what records its releases.\n\nA body naming only `release_source` keeps the team; any other body sets the\nteam, so an empty one clears it as it always has.",
         "properties": {
+          "release_source": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RepositoryReleaseSourceWrite"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "team_id": {
             "anyOf": [
               {
@@ -9415,7 +10663,7 @@
         "type": "object"
       },
       "RepositoryRead": {
-        "description": "One repository the installation can see.",
+        "description": "One repository the installation can see, the team it feeds and what records that team's releases.",
         "properties": {
           "default_branch": {
             "title": "Default Branch",
@@ -9437,6 +10685,9 @@
           "private": {
             "title": "Private",
             "type": "boolean"
+          },
+          "release_source": {
+            "$ref": "#/components/schemas/RepositoryReleaseSourceRead"
           },
           "repository_id": {
             "title": "Repository Id",
@@ -9463,6 +10714,96 @@
           "linked_at"
         ],
         "title": "RepositoryRead",
+        "type": "object"
+      },
+      "RepositoryReleaseSourceRead": {
+        "description": "What records a repository's releases, and the status its tags move closed issues to.",
+        "properties": {
+          "kind": {
+            "default": "deployments",
+            "enum": [
+              "deployments",
+              "tags",
+              "github_releases"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "move_issues": {
+            "default": true,
+            "title": "Move Issues",
+            "type": "boolean"
+          },
+          "status_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status Id"
+          },
+          "tag_pattern": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tag Pattern"
+          }
+        },
+        "title": "RepositoryReleaseSourceRead",
+        "type": "object"
+      },
+      "RepositoryReleaseSourceWrite": {
+        "description": "What records a pinned repository's releases, replacing the whole setting.\n\n`tag_pattern` is a glob such as `v*` or `python-v*`; none records every tag.\n`status` names the team status, by id or name, that a tag or Release moves\nthe issues it closes to, the team's Done when absent. `move_issues` false\nrecords releases without moving issues.",
+        "properties": {
+          "kind": {
+            "default": "deployments",
+            "enum": [
+              "deployments",
+              "tags",
+              "github_releases"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "move_issues": {
+            "default": true,
+            "title": "Move Issues",
+            "type": "boolean"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
+          },
+          "tag_pattern": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tag Pattern"
+          }
+        },
+        "title": "RepositoryReleaseSourceWrite",
         "type": "object"
       },
       "ReviewCountsRead": {
@@ -13458,6 +14799,7 @@
                     "subscribed",
                     "project_update",
                     "project_update_due",
+                    "initiative_update_due",
                     "due_soon",
                     "overdue",
                     "standup_digest",
@@ -15320,6 +16662,17 @@
             ],
             "title": "Estimate"
           },
+          "external_ref": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "External Ref"
+          },
           "id": {
             "title": "Id",
             "type": "string"
@@ -16747,6 +18100,271 @@
         ]
       }
     },
+    "/api/users/me/agent-profiles": {
+      "get": {
+        "description": "Every agent profile the caller keeps, in name order.",
+        "operationId": "list_my_agent_profiles_api_users_me_agent_profiles_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentProfileListRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "List My Agent Profiles",
+        "tags": [
+          "identity"
+        ]
+      }
+    },
+    "/api/users/me/agent-profiles/activity": {
+      "get": {
+        "description": "The caller's own saves, restores and deletes, newest first.",
+        "operationId": "list_my_agent_profile_activity_api_users_me_agent_profiles_activity_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 2048,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentProfileActivityRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "List My Agent Profile Activity",
+        "tags": [
+          "identity"
+        ]
+      }
+    },
+    "/api/users/me/agent-profiles/{name}": {
+      "delete": {
+        "description": "Delete a profile and every kept version of it.",
+        "operationId": "delete_my_agent_profile_api_users_me_agent_profiles__name__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "maxLength": 128,
+              "minLength": 1,
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Delete My Agent Profile",
+        "tags": [
+          "identity"
+        ]
+      },
+      "get": {
+        "description": "One version's files, the latest unless named, recorded on the trail as a restore.",
+        "operationId": "get_my_agent_profile_api_users_me_agent_profiles__name__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "maxLength": 128,
+              "minLength": 1,
+              "title": "Name",
+              "type": "string"
+            }
+          },
+          {
+            "description": "A version number, or latest.",
+            "in": "query",
+            "name": "version",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 16,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "A version number, or latest.",
+              "title": "Version"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentProfileSnapshotRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Get My Agent Profile",
+        "tags": [
+          "identity"
+        ]
+      }
+    },
+    "/api/users/me/agent-profiles/{name}/versions": {
+      "get": {
+        "description": "One profile's kept versions, newest first.",
+        "operationId": "list_my_agent_profile_versions_api_users_me_agent_profiles__name__versions_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "maxLength": 128,
+              "minLength": 1,
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentProfileVersionListRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "List My Agent Profile Versions",
+        "tags": [
+          "identity"
+        ]
+      }
+    },
     "/api/users/me/avatar": {
       "delete": {
         "description": "Remove the caller's avatar, falling back to their initials, and delete the image.",
@@ -17018,7 +18636,7 @@
     },
     "/api/users/me/deletion": {
       "post": {
-        "description": "Delete the caller's account now.\n\nA signed in person only, with their address typed out again, and refused with a\n409 naming each workspace where they are the only owner and other people remain.\nOnce it passes, the account is marked deleted, so no sign in method or refresh\nworks for it any more, then every session, OAuth grant and personal API key is\nrevoked and the purge of its data is started at once. The hourly sweep and the\nqueue's retries start any purge this request could not. The account's own\naddress is mailed, and the request is logged with how the caller last\nauthenticated. Repeating it for an account already deleted starts the purge again.",
+        "description": "Delete the caller's account now.\n\nA signed in person only, with their address typed out again, and refused with a\n409 naming each workspace where they are the only owner and other people remain.\nOnce it passes, the account is marked deleted, so no sign in method or refresh\nworks for it any more, then every session, OAuth grant and personal API key is\nrevoked, the person's private agent profiles are removed, and the purge of\nits data is started at once. The hourly sweep and the\nqueue's retries start any purge this request could not. The account's own\naddress is mailed, and the request is logged with how the caller last\nauthenticated. Repeating it for an account already deleted starts the purge again.",
         "operationId": "delete_account_api_users_me_deletion_post",
         "requestBody": {
           "content": {
@@ -17177,7 +18795,7 @@
         ]
       },
       "post": {
-        "description": "Create a workspace and make the caller its first owner.\n\nThe membership is written after the workspace, because a workspace with no\nowner is recoverable while an owner row pointing at nothing is not.",
+        "description": "Create a workspace and make the caller its first owner.\n\nThe membership is written after the workspace, because a workspace with no\nowner is recoverable while an owner row pointing at nothing is not. The\ncreation opens the new workspace's audit log with its creator as the actor,\nsince there is no earlier admin to act for.",
         "operationId": "create_workspace_api_workspaces_post",
         "requestBody": {
           "content": {
@@ -20654,6 +22272,242 @@
         ]
       }
     },
+    "/api/workspaces/{workspace_id}/favorites": {
+      "get": {
+        "description": "The caller's favorites in their order, each resolved to what the sidebar draws.",
+        "operationId": "read_favorites_api_workspaces__workspace_id__favorites_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FavoriteListRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Read Favorites",
+        "tags": [
+          "views"
+        ]
+      },
+      "post": {
+        "description": "Star an issue, project, cycle, view, team, document or initiative the caller may read.",
+        "operationId": "create_favorite_api_workspaces__workspace_id__favorites_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FavoriteRef"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FavoriteRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Create Favorite",
+        "tags": [
+          "views"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/favorites/order": {
+      "put": {
+        "description": "Put the caller's favorites in a new order, answering the reordered listing.",
+        "operationId": "order_favorites_api_workspaces__workspace_id__favorites_order_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FavoriteOrder"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FavoriteListRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Order Favorites",
+        "tags": [
+          "views"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/favorites/{kind}/{target_id}": {
+      "delete": {
+        "description": "Unstar one favorite, a no-op when it was not starred.",
+        "operationId": "delete_favorite_api_workspaces__workspace_id__favorites__kind___target_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "kind",
+            "required": true,
+            "schema": {
+              "enum": [
+                "issue",
+                "project",
+                "cycle",
+                "view",
+                "team",
+                "document",
+                "initiative"
+              ],
+              "title": "Kind",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "target_id",
+            "required": true,
+            "schema": {
+              "maxLength": 64,
+              "minLength": 1,
+              "title": "Target Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Delete Favorite",
+        "tags": [
+          "views"
+        ]
+      }
+    },
     "/api/workspaces/{workspace_id}/github/install-url": {
       "get": {
         "description": "Where to send this admin to install the App on their GitHub account.\n\nThe state is minted per request and expires in minutes, so a url copied out of\na browser history is not a standing grant to bind an installation later.",
@@ -20847,7 +22701,7 @@
     },
     "/api/workspaces/{workspace_id}/github/repositories/{repository_id}": {
       "patch": {
-        "description": "Point one repository at one team, or clear the link.\n\nA repository links issues by matching every team's prefix, pinned or not;\nnaming a team only chooses whose releases its deployments feed.",
+        "description": "Point one repository at one team, or clear the link, and choose what records its releases.\n\nA repository links issues by matching every team's prefix, pinned or not;\nnaming a team only chooses whose releases it feeds. A body naming only\n`release_source` keeps the team.",
         "operationId": "link_repository_api_workspaces__workspace_id__github_repositories__repository_id__patch",
         "parameters": [
           {
@@ -23632,7 +25486,7 @@
     },
     "/api/workspaces/{workspace_id}/issues/by-key/{key}": {
       "get": {
-        "description": "One issue by its human key, `ABC-123` and case insensitive.\n\nDeclared before `/issues/{issue_id}` so `by-key` is not swallowed as an id, and\nthe prefix names the team, which is what makes this one indexed query. A key\nthe issue held before it moved to another team answers the issue under its new\nkey, visible by the team it now belongs to.",
+        "description": "One issue by its human key, `ABC-123` and case insensitive.\n\nDeclared before `/issues/{issue_id}` so `by-key` is not swallowed as an id, and\nthe prefix names the team, which is what makes this one indexed query. A key\nthe issue held before it moved to another team answers the issue under its new\nkey, visible by the team it now belongs to. Like the read by id, the answer\ncarries a weak `ETag` and an unchanged poll gets a 304.",
         "operationId": "read_issue_by_key_api_workspaces__workspace_id__issues_by_key__key__get",
         "parameters": [
           {
@@ -24629,7 +26483,7 @@
         ]
       },
       "get": {
-        "description": "One issue the caller may read.",
+        "description": "One issue the caller may read.\n\nThe answer carries a weak `ETag` over its body, so a poll that sends it back\nin `If-None-Match` gets a 304 with no body while the issue is unchanged.",
         "operationId": "read_issue_api_workspaces__workspace_id__issues__issue_id__get",
         "parameters": [
           {
@@ -26506,9 +28360,78 @@
         ]
       }
     },
+    "/api/workspaces/{workspace_id}/labels/{label_id}/merge": {
+      "post": {
+        "description": "Fold a workspace label into another on every team: issues, saved views and templates take the other.\n\nA large merge answers `complete: false` once it runs out of time, and calling\nagain with the same target resumes it. A merge already finished answers its\nresult again.",
+        "operationId": "merge_workspace_label_api_workspaces__workspace_id__labels__label_id__merge_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "label_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Label Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LabelMerge"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LabelMergeRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Merge Workspace Label",
+        "tags": [
+          "teams"
+        ]
+      }
+    },
     "/api/workspaces/{workspace_id}/members": {
       "get": {
-        "description": "Everyone in the workspace, joined with their user rows for display.",
+        "description": "Everyone in the workspace, joined with their user rows for display.\n\nThe answer carries a weak `ETag`, so an unchanged poll gets a 304.",
         "operationId": "list_members_api_workspaces__workspace_id__members_get",
         "parameters": [
           {
@@ -28901,7 +30824,7 @@
     },
     "/api/workspaces/{workspace_id}/teams": {
       "get": {
-        "description": "Every team in the workspace the caller may see, in the caller's saved order.\n\nA guest sees only the teams they are a member of, which is the same rule\nthe single team route applies, read off the context rather than repeated.\nTeams the saved order does not name follow it, oldest first. With\n`parent_team_id`, only that team's sub-teams.",
+        "description": "Every team in the workspace the caller may see, in the caller's saved order.\n\nA guest sees only the teams they are a member of, which is the same rule\nthe single team route applies, read off the context rather than repeated.\nTeams the saved order does not name follow it, oldest first. With\n`parent_team_id`, only that team's sub-teams.\n\nThe answer carries a weak `ETag` over its body, so a poll that sends it\nback in `If-None-Match` gets a 304 with no body while nothing changed.",
         "operationId": "list_teams_api_workspaces__workspace_id__teams_get",
         "parameters": [
           {
@@ -29170,7 +31093,7 @@
         ]
       },
       "patch": {
-        "description": "Change a team's name, key prefix, description, estimate scale or parent team.\n\nA new key prefix is applied first, in its own transaction, so a 409 on a\ntaken prefix leaves every other field of the patch unapplied too. An\nexplicit null `parent_team_id` makes the team top-level again, and any\nchange of parent is recorded in the audit log.",
+        "description": "Change a team's name, key prefix, description, estimate scale or parent team.\n\nA new key prefix is applied first, in its own transaction, so a 409 on a\ntaken prefix leaves every other field of the patch unapplied too. An\nexplicit null `parent_team_id` makes the team top-level again, and any\nchange of parent or of privacy is recorded in the audit log.",
         "operationId": "update_team_api_workspaces__workspace_id__teams__team_id__patch",
         "parameters": [
           {
@@ -30275,7 +32198,7 @@
     },
     "/api/workspaces/{workspace_id}/teams/{team_id}/labels": {
       "get": {
-        "description": "Every label of the team, its own and the inherited ones, in name order.",
+        "description": "Every label of the team, its own and the inherited ones, in name order.\n\nThe answer carries a weak `ETag`, so an unchanged poll gets a 304.",
         "operationId": "list_labels_api_workspaces__workspace_id__teams__team_id__labels_get",
         "parameters": [
           {
@@ -30510,6 +32433,75 @@
         ]
       }
     },
+    "/api/workspaces/{workspace_id}/teams/{team_id}/labels/{label_id}/merge": {
+      "post": {
+        "description": "Fold a label into another of the team's labels: its issues, views and templates take the other.\n\nA large merge answers `complete: false` once it runs out of time, and calling\nagain with the same target resumes it. A merge already finished answers its\nresult again.",
+        "operationId": "merge_label_api_workspaces__workspace_id__teams__team_id__labels__label_id__merge_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "label_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Label Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LabelMerge"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LabelMergeRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Merge Label",
+        "tags": [
+          "teams"
+        ]
+      }
+    },
     "/api/workspaces/{workspace_id}/teams/{team_id}/labels/{label_id}/override": {
       "delete": {
         "description": "Drop this team's override of an inherited label, showing it under its workspace name.",
@@ -30680,7 +32672,7 @@
     },
     "/api/workspaces/{workspace_id}/teams/{team_id}/members": {
       "get": {
-        "description": "Everyone explicitly added to this team, joined with their user rows.",
+        "description": "Everyone explicitly added to this team, joined with their user rows.\n\nThe answer carries a weak `ETag`, so an unchanged poll gets a 304.",
         "operationId": "list_team_members_api_workspaces__workspace_id__teams__team_id__members_get",
         "parameters": [
           {
@@ -30841,6 +32833,288 @@
           }
         ],
         "summary": "Put Team Member",
+        "tags": [
+          "teams"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/teams/{team_id}/recurring-issues": {
+      "get": {
+        "description": "Every recurring issue of the team, oldest first, and the timezone new ones default to.",
+        "operationId": "list_recurring_issues_api_workspaces__workspace_id__teams__team_id__recurring_issues_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecurringListRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "List Recurring Issues",
+        "tags": [
+          "teams"
+        ]
+      },
+      "post": {
+        "description": "Schedule an issue from one of the team's templates.",
+        "operationId": "create_recurring_issue_api_workspaces__workspace_id__teams__team_id__recurring_issues_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RecurringCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecurringRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Create Recurring Issue",
+        "tags": [
+          "teams"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/teams/{team_id}/recurring-issues/{recurring_id}": {
+      "delete": {
+        "description": "Delete one recurring issue; issues it already created stay.",
+        "operationId": "delete_recurring_issue_api_workspaces__workspace_id__teams__team_id__recurring_issues__recurring_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "recurring_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Recurring Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Delete Recurring Issue",
+        "tags": [
+          "teams"
+        ]
+      },
+      "get": {
+        "description": "One recurring issue of the team, with its next runs.",
+        "operationId": "read_recurring_issue_api_workspaces__workspace_id__teams__team_id__recurring_issues__recurring_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "recurring_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Recurring Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecurringRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Read Recurring Issue",
+        "tags": [
+          "teams"
+        ]
+      },
+      "patch": {
+        "description": "Change, pause or resume one recurring issue.",
+        "operationId": "update_recurring_issue_api_workspaces__workspace_id__teams__team_id__recurring_issues__recurring_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "recurring_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Recurring Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RecurringUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecurringRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Update Recurring Issue",
         "tags": [
           "teams"
         ]
@@ -31013,7 +33287,7 @@
     },
     "/api/workspaces/{workspace_id}/teams/{team_id}/releases": {
       "get": {
-        "description": "One page of the team's releases, newest first.",
+        "description": "One page of the team's releases, newest first; releases a promotion carried only with `show_included`.",
         "operationId": "list_releases_api_workspaces__workspace_id__teams__team_id__releases_get",
         "parameters": [
           {
@@ -31052,6 +33326,16 @@
               "minimum": 1,
               "title": "Limit",
               "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "show_included",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Show Included",
+              "type": "boolean"
             }
           }
         ],
@@ -32085,7 +34369,7 @@
     },
     "/api/workspaces/{workspace_id}/teams/{team_id}/statuses": {
       "get": {
-        "description": "Every status of the team, its own and the inherited ones, ordered by position.",
+        "description": "Every status of the team, its own and the inherited ones, ordered by position.\n\nThe answer carries a weak `ETag`, so an unchanged poll gets a 304.",
         "operationId": "list_statuses_api_workspaces__workspace_id__teams__team_id__statuses_get",
         "parameters": [
           {
@@ -34135,7 +36419,7 @@
     },
     "/api/workspaces/{workspace_id}/views": {
       "get": {
-        "description": "Saved views the caller may read, narrowed by scope.\n\n`all` is the caller's own views plus the team views of teams they can see,\nwhich for a guest is only the teams they hold a membership in, so the listing\nis built from what they may read rather than filtered afterwards.",
+        "description": "Saved views the caller may read, narrowed by scope.\n\n`all` is the caller's own views plus the team views of teams they can see,\nwhich for a guest is only the teams they hold a membership in, so the listing\nis built from what they may read rather than filtered afterwards. The\nanswer carries a weak `ETag`, so an unchanged poll gets a 304.",
         "operationId": "list_views_api_workspaces__workspace_id__views_get",
         "parameters": [
           {

@@ -12,9 +12,9 @@ team, which acts on the caller alone.
 
 from __future__ import annotations
 
-from typing import Any, Mapping, Optional
+from typing import Any, Callable, Mapping, Optional
 
-from app.common import audit, issue_triage, team_members, team_workflow, team_writes
+from app.common import audit, issue_triage, label_merge, team_members, team_workflow, team_writes
 from app.common.api.dependencies.authz import Capability, check_capability
 from app.common.api.schemas.teams import (
     ArchiveSettingsUpdate,
@@ -433,13 +433,14 @@ def _create_team(call: ToolCall) -> Any:
 def _update_team(call: ToolCall) -> Any:
     """Change a team's name, key prefix, description, estimate settings, label sync, privacy or parent team.
 
-    A change of parent is recorded in the audit log, as the REST patch records it.
+    A change of parent or of privacy is recorded in the audit log, as the REST patch records it.
     """
     team = admin_team(call)
     arguments = given_arguments(
         call, ("name", "key_prefix", "description", *ESTIMATE_ARGUMENTS, "sync_pr_labels", "private")
     )
     payload = TeamUpdate.model_validate({**arguments, **_parent_arguments(call)})
+    was_private = call.repositories.memberships.is_private_team(call.context.workspace_id, team.team_id)
     updated = team_writes.update_team(
         call.repositories,
         call.context.workspace_id,
@@ -450,6 +451,7 @@ def _update_team(call: ToolCall) -> Any:
         can_see=call.context.can_find_team,
     )
     audit.record_parent_change(call.repositories, call.context, updated, team.parent_team_id)
+    audit.record_privacy_change(call.repositories, call.context, updated, was_private, payload.private)
     body = _team_json(call, updated)
     body["retired_key_prefixes"] = call.repositories.teams.list_aliases(call.context.workspace_id, team.team_id)
     return body
@@ -537,7 +539,7 @@ def _add_team_member(call: ToolCall) -> Any:
     role = str(call.optional("role", "member"))
     if role not in TEAM_ROLES:
         raise ToolError(f"role must be one of: {', '.join(TEAM_ROLES)}")
-    membership = team_members.put_team_member(call.repositories, call.context.workspace_id, team.team_id, user_id, role)
+    membership = team_members.put_team_member(call.repositories, call.context, team.team_id, user_id, role)
     return _team_member_json(call, membership)
 
 
@@ -548,9 +550,7 @@ def _update_team_member_role(call: ToolCall) -> Any:
     if role not in TEAM_ROLES:
         raise ToolError(f"role must be one of: {', '.join(TEAM_ROLES)}")
     current = _team_member_ref(call, team.team_id, call.require("user"))
-    membership = team_members.put_team_member(
-        call.repositories, call.context.workspace_id, team.team_id, current.user_id, role
-    )
+    membership = team_members.put_team_member(call.repositories, call.context, team.team_id, current.user_id, role)
     return _team_member_json(call, membership)
 
 
@@ -558,23 +558,21 @@ def _remove_team_member(call: ToolCall) -> Any:
     """Remove someone from a team, refusing its last admin."""
     team = admin_team(call)
     current = _team_member_ref(call, team.team_id, call.require("user"))
-    team_members.remove_team_member(call.repositories, call.context.workspace_id, team.team_id, current.user_id)
+    team_members.remove_team_member(call.repositories, call.context, team.team_id, current.user_id)
     return {"removed": True, "team_id": team.team_id, "user_id": current.user_id}
 
 
 def _join_team(call: ToolCall) -> Any:
     """Join a visible team as a member, or answer the membership already held."""
     team = _reader_team(call)
-    membership = team_members.join_team(
-        call.repositories, call.context.workspace_id, team.team_id, call.context.user_id
-    )
+    membership = team_members.join_team(call.repositories, call.context, team.team_id)
     return _team_member_json(call, membership)
 
 
 def _leave_team(call: ToolCall) -> Any:
     """Leave a team, refusing its last admin."""
     team = _reader_team(call)
-    team_members.leave_team(call.repositories, call.context.workspace_id, team.team_id, call.context.user_id)
+    team_members.leave_team(call.repositories, call.context, team.team_id)
     return {"left": True, "team_id": team.team_id, "user_id": call.context.user_id}
 
 
@@ -701,6 +699,42 @@ def _delete_label(call: ToolCall) -> Any:
     found = label_ref(call, team.team_id, call.require("label"))
     team_workflow.delete_label(call.repositories, call.context.workspace_id, team.team_id, found.label_id)
     return {"deleted": True, "label_id": found.label_id, "name": found.name}
+
+
+MERGE_UNFINISHED = "The merge ran out of time partway. Call the tool again with the same labels to finish it."
+
+
+def merge_answer(outcome: label_merge.MergeOutcome) -> dict[str, Any]:
+    """What a merge tool answers: the result, the kept label as label tools show it, and a nudge when unfinished."""
+    answer: dict[str, Any] = label_merge.merge_read(outcome).model_dump(exclude={"target"})
+    answer["target"] = label_json(outcome.target)
+    if not outcome.record.complete:
+        answer["message"] = MERGE_UNFINISHED
+    return answer
+
+
+def merged_source(call: ToolCall, team_id: str | None, value: Any, find: Callable[[Any], Label]) -> str:
+    """The id of the label being merged, or the raw id of one an earlier call already merged away.
+
+    The merged label is deleted once the merge finishes, so a retry naming it by
+    id would not resolve. The merge itself answers the finished result then.
+    """
+    try:
+        return str(find(value).label_id)
+    except ToolError:
+        reference = str(value).strip()
+        if call.repositories.team_config.get_label_merge(call.context.workspace_id, team_id, reference) is None:
+            raise
+        return reference
+
+
+def _merge_labels(call: ToolCall) -> Any:
+    """Fold one of a team's labels into another of its labels."""
+    team = admin_team(call)
+    source_id = merged_source(call, team.team_id, call.require("label"), lambda ref: label_ref(call, team.team_id, ref))
+    target = label_ref(call, team.team_id, call.require("into"))
+    outcome = label_merge.merge_team_label(call.repositories, call.context, team.team_id, source_id, target.label_id)
+    return merge_answer(outcome)
 
 
 def _list_users(call: ToolCall) -> Any:
@@ -1160,6 +1194,26 @@ TEAM_TOOLS: tuple[Tool, ...] = (
             required=("team_id", "label"),
         ),
         handler=_delete_label,
+        destructive=True,
+    ),
+    Tool(
+        name="merge_labels",
+        description=(
+            "Merge one of a team's labels into another of its labels. Needs team admin. Every issue carrying "
+            "`label` carries `into` instead, once, saved views and templates naming it name `into`, and `label` "
+            "is deleted; this cannot be undone. Both must be the team's own labels and neither a group. A large "
+            "merge may answer complete false: call again with the same labels to finish, which is safe to repeat."
+        ),
+        scopes=("labels:write",),
+        schema=object_schema(
+            {
+                "team_id": string(TEAM_ARGUMENT),
+                "label": string("The label to merge away: its id, its name or its Group/Label path"),
+                "into": string("The label to keep: its id, its name or its Group/Label path"),
+            },
+            required=("team_id", "label", "into"),
+        ),
+        handler=_merge_labels,
         destructive=True,
     ),
     Tool(

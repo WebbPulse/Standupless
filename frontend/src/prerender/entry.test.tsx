@@ -23,6 +23,7 @@ describe('buildSite', () => {
       'privacy/index.html',
       'refunds/index.html',
       'contact/index.html',
+      'download/index.html',
       'robots.txt',
       'sitemap.xml',
     ]);
@@ -50,6 +51,9 @@ describe('buildSite', () => {
       'Cancellation and Refund Policy'
     );
     expect(file('contact/index.html')).toContain('tyler@webbpulse.com');
+    expect(file('download/index.html')).toContain(
+      'releases/download/desktop-latest/Standupless-mac.dmg'
+    );
     expect(file('terms/index.html')).toContain('Terms of Service');
     expect(file('privacy/index.html')).toContain('Privacy Policy');
     expect(file('index.html')).toContain(

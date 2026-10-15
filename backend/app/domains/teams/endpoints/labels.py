@@ -9,14 +9,17 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Path, Query, Response, status
+from fastapi import APIRouter, Depends, Path, Query, Request, Response, status
+from webbpulse.http import conditional_response
 
-from app.common import team_workflow
+from app.common import label_merge, team_workflow
 from app.common.api.dependencies.authz import AuthzContext, Capability, require
 from app.common.api.dependencies.repositories import Repositories, get_repositories
 from app.common.api.schemas.teams import (
     LabelCreate,
     LabelListRead,
+    LabelMerge,
+    LabelMergeRead,
     LabelRead,
     LabelUpdate,
     OverrideUpdate,
@@ -29,13 +32,17 @@ router = APIRouter()
 
 @router.get("/{workspace_id}/teams/{team_id}/labels", response_model=LabelListRead)
 def list_labels(
+    request: Request,
     context: Annotated[AuthzContext, Depends(require(Capability.TEAM_READ))],
     repositories: Annotated[Repositories, Depends(get_repositories)],
     include_hidden: Annotated[bool, Query(description="Also answer the inherited labels the team hid.")] = False,
-) -> LabelListRead:
-    """Every label of the team, its own and the inherited ones, in name order."""
+) -> Response:
+    """Every label of the team, its own and the inherited ones, in name order.
+
+    The answer carries a weak `ETag`, so an unchanged poll gets a 304.
+    """
     ordered = ordered_labels(repositories, context.workspace_id, str(context.team_id), include_hidden=include_hidden)
-    return LabelListRead(labels=[LabelRead.from_row(row) for row in ordered])
+    return conditional_response(request, LabelListRead(labels=[LabelRead.from_row(row) for row in ordered]))
 
 
 @router.post(
@@ -81,6 +88,25 @@ def delete_label(
     """Delete a label and take it off every issue of the team carrying it."""
     team_workflow.delete_label(repositories, context.workspace_id, str(context.team_id), label_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post("/{workspace_id}/teams/{team_id}/labels/{label_id}/merge", response_model=LabelMergeRead)
+def merge_label(
+    payload: LabelMerge,
+    label_id: Annotated[str, Path(min_length=1)],
+    context: Annotated[AuthzContext, Depends(require(Capability.TEAM_ADMIN))],
+    repositories: Annotated[Repositories, Depends(get_repositories)],
+) -> LabelMergeRead:
+    """Fold a label into another of the team's labels: its issues, views and templates take the other.
+
+    A large merge answers `complete: false` once it runs out of time, and calling
+    again with the same target resumes it. A merge already finished answers its
+    result again.
+    """
+    outcome = label_merge.merge_team_label(
+        repositories, context, str(context.team_id), label_id, payload.target_label_id
+    )
+    return label_merge.merge_read(outcome)
 
 
 @router.patch("/{workspace_id}/teams/{team_id}/labels/{label_id}/override", response_model=LabelRead)

@@ -444,6 +444,21 @@ export interface LabelListRead {
   labels: LabelRead[];
 }
 
+/**
+ * What a label merge did. `complete` is false when a large merge ran out of
+ * time for one request; calling the merge again with the same target resumes
+ * it, and a merge already finished answers its result again.
+ */
+export interface LabelMergeRead {
+  source_label_id: string;
+  source_name: string;
+  target: LabelRead;
+  issues_updated: number;
+  views_updated: number;
+  templates_updated: number;
+  complete: boolean;
+}
+
 /** A new label submission. */
 export interface LabelCreate {
   name: string;
@@ -608,6 +623,11 @@ export interface IssueRead {
    * time. Optional so a row read before SLAs existed reads as none.
    */
   sla_status?: SlaStatus;
+  /**
+   * The key or URL the issue carried in the tool it was imported from, such as
+   * a Linear or Jira key. Null for issues created in Standupless.
+   */
+  external_ref?: string | null;
   created_by: string;
   created_at: string;
   updated_at: string;
@@ -721,6 +741,77 @@ export interface TemplateSettingsRead {
 /** The body that sets or clears a team's default template. */
 export interface TemplateSettingsUpdate {
   default_template_id: string | null;
+}
+
+/** How often a recurring issue repeats. */
+export type RecurringFrequency = 'daily' | 'weekly' | 'monthly';
+
+/** Why the system paused a recurring issue, or null when a person did. */
+export type RecurringPausedReason =
+  'template_deleted' | 'creator_cannot_write' | 'create_failed';
+
+/** The rule fields a recurring issue create and patch share. */
+export interface RecurringIssueFields {
+  interval?: number;
+  /** Weekly days to run, 0 (Monday) to 6 (Sunday). */
+  weekdays?: number[];
+  /** Monthly day to run; past a short month's end it runs on the last day. */
+  day_of_month?: number | null;
+  /** Local time of day as HH:MM. */
+  time?: string;
+  /** IANA timezone; a create without one takes the team's standup timezone. */
+  timezone?: string;
+  /** First local date as YYYY-MM-DD. */
+  starts_on?: string;
+}
+
+/** A new recurring issue: a template, a rule, and whether it starts paused. */
+export interface RecurringIssueCreate extends RecurringIssueFields {
+  template_id: string;
+  frequency: RecurringFrequency;
+  paused?: boolean;
+}
+
+/** A recurring issue patch: only the fields sent change; `paused` pauses or resumes. */
+export interface RecurringIssueUpdate extends RecurringIssueFields {
+  template_id?: string;
+  frequency?: RecurringFrequency;
+  paused?: boolean;
+}
+
+/**
+ * One recurring issue. `next_run_at` is when the next issue is due, null while
+ * paused; the hourly sweep creates it within the hour after.
+ */
+export interface RecurringIssueRead {
+  id: string;
+  team_id: string;
+  template_id: string;
+  /** The template's name, null once it is deleted. */
+  template_name: string | null;
+  frequency: RecurringFrequency;
+  interval: number;
+  weekdays: number[];
+  day_of_month: number | null;
+  time: string;
+  timezone: string;
+  starts_on: string;
+  paused: boolean;
+  paused_reason: RecurringPausedReason | null;
+  next_run_at: string | null;
+  upcoming_runs: string[];
+  last_run_at: string | null;
+  last_issue_id: string | null;
+  last_issue_key: string | null;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+}
+
+/** A team's recurring issues and the timezone new ones default to. */
+export interface RecurringIssueListRead {
+  recurring_issues: RecurringIssueRead[];
+  default_timezone: string;
 }
 
 /** The body that moves an issue to another team, which gives it a new key. */
@@ -1182,6 +1273,7 @@ export type NotificationKind =
   | 'subscribed'
   | 'project_update'
   | 'project_update_due'
+  | 'initiative_update_due'
   | 'due_soon'
   | 'overdue'
   | 'standup_digest'
@@ -1221,6 +1313,11 @@ export interface NotificationRead {
   project_id?: string | null;
   project_name?: string | null;
   project_update_id?: string | null;
+  /** The initiative an `initiative_update_due` row is about; null on every other row. */
+  initiative_id?: string | null;
+  initiative_name?: string | null;
+  /** Whether an `initiative_update_due` row's update is due or overdue. */
+  due_state?: 'due' | 'overdue' | null;
   /** The digest date a `standup_digest` row is about; null on every other row. */
   standup_date?: string | null;
   actor_id: string;
@@ -1957,6 +2054,18 @@ export interface GithubRepositoryRead {
   default_branch: string;
   team_id: string | null;
   linked_at: string;
+  /** What records the pinned team's releases from this repository. */
+  release_source?: RepositoryReleaseSource;
+}
+
+/** What records a repository's releases: its deployments, its tags, or its published GitHub Releases. */
+export interface RepositoryReleaseSource {
+  kind: 'deployments' | 'tags' | 'github_releases';
+  /** A glob the tags must match, such as `v*`, or null for every tag. */
+  tag_pattern: string | null;
+  /** The status a tag release moves the issues it closes to, or null for the team's Done. */
+  status_id: string | null;
+  move_issues: boolean;
 }
 
 /** The GitHub App installation backing a workspace, when there is one. */
@@ -2542,6 +2651,47 @@ export interface WorkspaceConnectedAppRead {
   last_used_at: string | null;
 }
 
+/** Which local folder an agent profile file belongs under. */
+export type AgentProfileRoot = 'home' | 'project' | 'memory';
+
+/** One of the caller's private agent profiles, with its latest version's size. */
+export interface AgentProfileRead {
+  name: string;
+  latest_version: number;
+  file_count: number;
+  total_bytes: number;
+  note?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+/** The caller's agent profiles and the limits they are kept under. */
+export interface AgentProfileListRead {
+  profiles: AgentProfileRead[];
+  versions_kept: number;
+  max_profiles: number;
+}
+
+/** One kept version of an agent profile, without its files. */
+export interface AgentProfileVersionRead {
+  version: number;
+  created_at: string;
+  file_count: number;
+  total_bytes: number;
+  sha256: string;
+  source: string;
+  note?: string;
+  latest: boolean;
+}
+
+/** One agent profile's kept versions, newest first. */
+export interface AgentProfileVersionListRead {
+  name: string;
+  latest_version: number;
+  versions_kept: number;
+  versions: AgentProfileVersionRead[];
+}
+
 /** A paid plan a workspace can check out on. */
 export type PaidPlan = 'standard' | 'business';
 
@@ -2727,7 +2877,8 @@ export interface ReleasePipelineUpdate {
 }
 
 /** What reported a release or a stage reached. */
-export type ReleaseSource = 'manual' | 'api' | 'github_deployment';
+export type ReleaseSource =
+  'manual' | 'api' | 'github_deployment' | 'github_tag' | 'github_release';
 
 /** One stage a release reached, when, and what reported it. */
 export interface ReleaseStageRead {
@@ -2766,6 +2917,10 @@ export interface ReleaseRead {
   stages: ReleaseStageRead[];
   /** The furthest pipeline stage the release reached. */
   current_stage?: ReleaseStageRead | null;
+  /** The promotion release that carried this one to a later stage, when one did. */
+  included_in?: string | null;
+  /** How many earlier releases this promotion carried. */
+  included_count?: number;
   created_by?: string | null;
   created_at: string;
   updated_at: string;
@@ -2844,6 +2999,18 @@ export interface ReleaseIssueRead {
   status_category?: StatusCategory | null;
 }
 
+/** One release a promotion carried, or the promotion that carried one. */
+export interface IncludedReleaseRead {
+  release_id: string;
+  name: string;
+  sha?: string | null;
+  pr_number?: number | null;
+  pr_url?: string | null;
+  issue_count: number;
+  current_stage?: ReleaseStageRead | null;
+  created_at: string;
+}
+
 /** One release with its issues and the notes built from them. */
 export interface ReleaseDetailRead extends ReleaseRead {
   issues: ReleaseIssueRead[];
@@ -2851,6 +3018,10 @@ export interface ReleaseDetailRead extends ReleaseRead {
   notes: string;
   /** The references a write named that matched no issue of the team. */
   skipped_issues?: string[];
+  /** The earlier releases this promotion carried, newest first. */
+  included_releases?: IncludedReleaseRead[];
+  /** The promotion that carried this release to a later stage. */
+  included_in_release?: IncludedReleaseRead | null;
 }
 
 /** One cursor page of a team's releases, newest first. */
@@ -2859,10 +3030,14 @@ export interface ReleaseListRead {
   next_cursor?: string | null;
 }
 
-/** The paging a release list takes. */
+/**
+ * The paging a release list takes. `show_included` also lists the releases a
+ * promotion carried, which the default listing leaves out.
+ */
 export interface ReleaseListQuery {
   cursor?: string;
   limit?: number;
+  show_included?: boolean;
 }
 
 /** The body `POST .../teams/{team_id}/releases` takes. Every field is optional. */
@@ -2908,6 +3083,9 @@ export interface IssueReleaseRead {
   team_id: string;
   name: string;
   current_stage?: ReleaseStageRead | null;
+  /** The promotion that carried this release to a later stage, if one did. */
+  included_in?: string | null;
+  included_in_name?: string | null;
   created_at: string;
 }
 
@@ -3060,7 +3238,8 @@ export type ImportField =
   | 'estimate'
   | 'due_date'
   | 'source_key'
-  | 'created_at';
+  | 'created_at'
+  | 'parent';
 
 /** The body both the dry run and the import take. A null mapping value unmaps that field. */
 export interface IssueImportRequest {
@@ -3091,6 +3270,7 @@ export interface ImportRowRead {
   due_date?: string | null;
   source_key?: string | null;
   created_at?: string | null;
+  parent_row?: number | null;
   importable: boolean;
 }
 
@@ -3112,6 +3292,7 @@ export interface IssueImportPreviewRead {
   rows: ImportRowRead[];
   new_labels: string[];
   statuses: StatusMappingRead[];
+  parent_links?: number;
 }
 
 /** Where an issue import job is. */
@@ -3135,6 +3316,7 @@ export interface IssueImportRead {
   created_count: number;
   skipped_count: number;
   labels_created: number;
+  linked_count?: number;
   problem_count: number;
   problems: RowProblemRead[];
   problems_truncated: boolean;
@@ -3295,4 +3477,44 @@ export interface DocumentVersionRead {
 /** A document's kept versions, newest first. */
 export interface DocumentVersionListRead {
   versions: DocumentVersionRead[];
+}
+
+/** What a favorite stars. */
+export type FavoriteKind =
+  'issue' | 'project' | 'cycle' | 'view' | 'team' | 'document' | 'initiative';
+
+/** One favorite named by its kind and id, as an add or a reorder sends it. */
+export interface FavoriteRef {
+  kind: FavoriteKind;
+  target_id: string;
+  /** The cycle's team, needed only for a cycle. */
+  team_id?: string | null;
+}
+
+/** The caller's favorites in their new order. */
+export interface FavoriteOrder {
+  items: FavoriteRef[];
+}
+
+/** One favorite as the sidebar draws it, resolved against its target at read time. */
+export interface FavoriteRead {
+  kind: FavoriteKind;
+  target_id: string;
+  /** The issue title, or the name of the project, cycle, view, team, document or initiative. */
+  title: string;
+  team_id?: string | null;
+  /** The key prefix of the team the target belongs to, which team and cycle links are built from. */
+  team_key_prefix?: string | null;
+  issue_key?: string | null;
+  status?: StatusRead | null;
+  icon?: string | null;
+  color?: string | null;
+  /** For a document, whether it hangs off a project or an initiative. */
+  parent_kind?: string | null;
+  parent_id?: string | null;
+}
+
+/** The caller's favorites in their order. */
+export interface FavoriteListRead {
+  favorites: FavoriteRead[];
 }

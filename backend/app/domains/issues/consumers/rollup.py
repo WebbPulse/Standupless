@@ -25,8 +25,8 @@ setting, which is Linear's "auto-add started issues". The write is conditional
 on the issue still having no cycle.
 
 The cycle close schedule posts one synthetic record to the same route, told apart
-by its `eventSource`, and that record runs the close, auto-close and auto-archive sweeps
-instead.
+by its `eventSource`, and that record runs the recurring issue, close, auto-close and
+auto-archive sweeps instead.
 """
 
 from __future__ import annotations
@@ -43,7 +43,7 @@ from app.common.db.dynamo.activity import build_activity
 from app.common.db.dynamo.planning import MILESTONE_KEY_PREFIX
 from app.common.issue_rules import COMPLETED_CATEGORIES
 from app.common.relation_effects import recount_blocked_by
-from app.domains.issues import auto_archive, auto_close
+from app.domains.issues import auto_archive, auto_close, recurring, sla_repair
 from app.domains.issues.cycle_close import is_cycle_close, sweep
 
 _log = logging.getLogger(__name__)
@@ -264,13 +264,16 @@ def handle_record(repositories: Repositories, record: Mapping[str, Any]) -> None
     """Recount every parent and blocked issue one stream record made stale, or detach a deleted milestone.
 
     Raising puts this record alone into `batchItemFailures`, so a transient failure
-    retries the record rather than the whole batch. The hourly trigger runs the cycle
-    close sweep, the auto-close sweep and then the auto-archive sweep, and nothing else.
+    retries the record rather than the whole batch. The hourly trigger runs the
+    recurring issue sweep, the cycle close sweep, the auto-close sweep, the
+    auto-archive sweep and then the finished SLA timer repair, and nothing else.
     """
     if is_cycle_close(record):
+        recurring.sweep(repositories)
         sweep(repositories)
         auto_close.sweep(repositories)
         auto_archive.sweep(repositories)
+        sla_repair.sweep(repositories)
         return
 
     milestone = removed_milestone(record)

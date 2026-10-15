@@ -68,38 +68,10 @@ jobs:
 
       - name: Resolve the dependency stamp
         id: stamp
-        env:
-          FRESH_DEPENDENCIES: ${{ inputs.fresh-dependencies }}
-          RUN_ID: ${{ github.run_id }}
-          CODEARTIFACT_DOMAIN_OWNER: ${{ vars.CODEARTIFACT_DOMAIN_OWNER }}
-        run: |
-          set -euo pipefail
-          if [ "$FRESH_DEPENDENCIES" = "true" ]; then
-            STAMP="$RUN_ID"
-            echo "fresh-dependencies was requested, so the dependency layer is rebuilt."
-          else
-            if [ -z "$CODEARTIFACT_DOMAIN_OWNER" ]; then
-              echo "vars.CODEARTIFACT_DOMAIN_OWNER is not set, so the newest webbpulse version cannot be resolved."
-              exit 1
-            fi
-            STAMP="$(aws codeartifact list-package-versions \
-              --domain webbpulse \
-              --domain-owner "$CODEARTIFACT_DOMAIN_OWNER" \
-              --repository python \
-              --format pypi \
-              --package webbpulse \
-              --status Published \
-              --sort-by PUBLISHED_TIME \
-              --no-paginate \
-              --query 'versions[0].version' \
-              --output text | head -n 1)"
-            if [ -z "$STAMP" ] || [ "$STAMP" = "None" ]; then
-              echo "No Published webbpulse version resolved from CodeArtifact, so the dependency layer cannot be keyed."
-              exit 1
-            fi
-          fi
-          echo "Dependency stamp: ${STAMP}"
-          echo "dependency-stamp=${STAMP}" >> "$GITHUB_OUTPUT"
+        uses: WebbPulse/.github/actions/webbpulse-dependency-stamp@v3
+        with:
+          fresh-dependencies: ${{ inputs.fresh-dependencies }}
+          domain-owner: ${{ vars.CODEARTIFACT_DOMAIN_OWNER }}
 
   affected:
     name: Resolve the affected domains
@@ -282,7 +254,7 @@ jobs:
     steps:
       - name: Download the per-domain image manifests
         continue-on-error: true
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           path: manifests
           pattern: image-*
@@ -372,7 +344,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload the function image map
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: function-image-map
           path: function-image-map.json

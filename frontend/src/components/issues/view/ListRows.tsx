@@ -3,6 +3,8 @@
  * away, optional sub-group headers inside them, and one dense row per issue.
  * A row is a stretched link to the issue with the pickers lifted above it,
  * so a click on the row opens the issue and a click on a glyph edits it.
+ * With sub-issues nested, a parent leads with a disclosure chevron and its
+ * sub-issues sit indented beneath it.
  */
 
 import React from 'react';
@@ -10,6 +12,7 @@ import { LuArchive, LuChevronRight, LuPlus } from 'react-icons/lu';
 import { Link } from 'react-router-dom';
 import type { OrderedIssueRead } from '../../../api/issues';
 import { cn } from '../../../lib/cn';
+import { foldedParentKey, treeRows } from '../../../lib/issueTree';
 import type { IssueGroup } from '../../../lib/issueView';
 import { issuePath } from '../../../lib/paths';
 import Avatar from '../../ui/avatar';
@@ -25,6 +28,7 @@ import {
   StatusCell,
 } from './IssueProperties';
 import { useIssueViewEnv } from './IssueViewContext';
+import { useIssuePrefetch } from '../../../hooks/useIssuePrefetch';
 
 /** One group with its sub-groups, when the view is sub-grouped. */
 export interface IssueSection {
@@ -215,13 +219,61 @@ export const ArchivedMarker: React.FC<{ className?: string }> = ({
   </span>
 );
 
+/** Where a row sits in a nested section. */
+export interface IssueTreePlace {
+  depth: number;
+  childCount: number;
+  expanded: boolean;
+  onToggle: () => void;
+}
+
+/** The width one level of nesting indents a row by, in pixels. */
+const INDENT = 22;
+
+/**
+ * The indent and disclosure slot a nested row leads with: a chevron that
+ * folds a parent's sub-issues, or an empty slot that keeps titles aligned.
+ */
+const TreeDisclosure: React.FC<{
+  issueKey: string;
+  place: IssueTreePlace;
+}> = ({ issueKey, place }) => (
+  <span
+    className="flex shrink-0 items-center"
+    style={{ paddingLeft: place.depth * INDENT }}
+  >
+    {place.childCount > 0 ? (
+      <button
+        type="button"
+        aria-expanded={place.expanded}
+        aria-label={`${place.expanded ? 'Collapse' : 'Expand'} sub-issues of ${issueKey}`}
+        title={place.expanded ? 'Collapse sub-issues' : 'Expand sub-issues'}
+        onClick={place.onToggle}
+        className="relative z-10 flex h-5 w-5 items-center justify-center rounded-sm text-text-faint transition-colors duration-100 hover:bg-line hover:text-text focus-visible:outline-2 focus-visible:outline-accent"
+      >
+        <LuChevronRight
+          aria-hidden="true"
+          className={cn(
+            'h-3.5 w-3.5 transition-transform duration-100',
+            place.expanded && 'rotate-90'
+          )}
+        />
+      </button>
+    ) : (
+      <span aria-hidden="true" className="w-5" />
+    )}
+  </span>
+);
+
 /** Props for IssueListRow. */
 export interface IssueListRowProps {
   issue: OrderedIssueRead;
+  /** Where the row sits when the section nests sub-issues. */
+  tree?: IssueTreePlace | undefined;
 }
 
 /** One dense row. */
-export const IssueListRow: React.FC<IssueListRowProps> = ({ issue }) => {
+export const IssueListRow: React.FC<IssueListRowProps> = ({ issue, tree }) => {
   const env = useIssueViewEnv();
   const shows = (property: (typeof env.state.visible)[number]): boolean =>
     env.state.visible.includes(property);
@@ -230,11 +282,13 @@ export const IssueListRow: React.FC<IssueListRowProps> = ({ issue }) => {
   const isPeeked = env.peekedKey === issue.key;
   const selecting = env.selected.size > 0;
   const archived = (issue.archived_at ?? null) !== null;
+  const prefetch = useIssuePrefetch(issue.key, isFocused);
 
   return (
     <li
       data-row-id={issue.id}
       aria-selected={isSelected}
+      {...(tree === undefined ? {} : { 'aria-level': tree.depth + 1 })}
       onMouseMove={() => {
         if (!isFocused) env.focus(issue.id);
       }}
@@ -279,6 +333,9 @@ export const IssueListRow: React.FC<IssueListRowProps> = ({ issue }) => {
           )}
         />
       </span>
+      {tree !== undefined && (
+        <TreeDisclosure issueKey={issue.key} place={tree} />
+      )}
       {shows('priority') && <PriorityCell issue={issue} />}
       {shows('id') && (
         <span className="w-14 shrink-0 truncate font-mono text-xs text-text-faint sm:w-16">
@@ -288,6 +345,7 @@ export const IssueListRow: React.FC<IssueListRowProps> = ({ issue }) => {
       {shows('status') && <StatusCell issue={issue} />}
       <Link
         to={issuePath(env.slug, issue.key)}
+        {...prefetch}
         data-hover="parent"
         onClick={(event) => {
           if (event.shiftKey) {
@@ -319,29 +377,56 @@ export interface ListRowsProps {
   sections: IssueSection[];
   collapsed: ReadonlySet<string>;
   onToggle: (key: string) => void;
+  /** True to nest sub-issues under a parent in the same section. */
+  nest?: boolean;
   /** Files an issue into a group, or undefined when it cannot. */
   createIn?:
     | ((group: IssueGroup, sub?: IssueGroup) => (() => void) | undefined)
     | undefined;
 }
 
-/** The rows of a group, as a list. */
-const Rows: React.FC<{ issues: OrderedIssueRead[]; label: string }> = ({
-  issues,
-  label,
-}) => (
-  <ul aria-label={label}>
-    {issues.map((issue) => (
-      <IssueListRow key={issue.id} issue={issue} />
-    ))}
-  </ul>
-);
+/** The rows of a group, as a list, nested under their parents with `nest`. */
+const Rows: React.FC<{
+  issues: OrderedIssueRead[];
+  label: string;
+  nest: boolean;
+  collapsed: ReadonlySet<string>;
+  onToggle: (key: string) => void;
+}> = ({ issues, label, nest, collapsed, onToggle }) => {
+  const rows = treeRows(issues, nest, (id) =>
+    collapsed.has(foldedParentKey(id))
+  );
+  const nested = rows.some((row) => row.childCount > 0);
+  return (
+    <ul aria-label={label}>
+      {rows.map((row) => (
+        <IssueListRow
+          key={row.issue.id}
+          issue={row.issue}
+          tree={
+            nested
+              ? {
+                  depth: row.depth,
+                  childCount: row.childCount,
+                  expanded: !collapsed.has(foldedParentKey(row.issue.id)),
+                  onToggle: () => {
+                    onToggle(foldedParentKey(row.issue.id));
+                  },
+                }
+              : undefined
+          }
+        />
+      ))}
+    </ul>
+  );
+};
 
 /** Every section, its header and its rows. */
 export const ListRows: React.FC<ListRowsProps> = ({
   sections,
   collapsed,
   onToggle,
+  nest = false,
   createIn,
 }) => (
   <div>
@@ -362,7 +447,13 @@ export const ListRows: React.FC<ListRowsProps> = ({
           )}
           {!folded &&
             (subs === null ? (
-              <Rows issues={group.issues} label={group.label} />
+              <Rows
+                issues={group.issues}
+                label={group.label}
+                nest={nest}
+                collapsed={collapsed}
+                onToggle={onToggle}
+              />
             ) : (
               subs.map((sub) => {
                 const subKey = `${group.key}/${sub.key}`;
@@ -382,6 +473,9 @@ export const ListRows: React.FC<ListRowsProps> = ({
                       <Rows
                         issues={sub.issues}
                         label={`${group.label}, ${sub.label}`}
+                        nest={nest}
+                        collapsed={collapsed}
+                        onToggle={onToggle}
                       />
                     )}
                   </div>

@@ -5,7 +5,12 @@
  * cannot blank a page.
  */
 
+import type {
+  PolledQueryContext,
+  PolledResponse,
+} from '@webbpulse/api-client/react';
 import apiClient from './client';
+import { conditionalGet, type ReadContext } from './conditional';
 import type {
   ApprovedDomainListRead,
   ApprovedDomainRead,
@@ -286,18 +291,29 @@ export const cancelWorkspaceDeletion = async (
   return response.data;
 };
 
-/** Lists a workspace's members. */
-export const listMembers = async (
+/**
+ * Lists a workspace's members. Handed a polled query's context, the read is
+ * conditional on the held ETag.
+ */
+export function listMembers(
   workspaceId: string,
   signal?: AbortSignal
-): Promise<MemberRead[]> => {
-  const response = await apiClient.get<MemberListRead>(
+): Promise<MemberRead[]>;
+export function listMembers(
+  workspaceId: string,
+  context: PolledQueryContext
+): Promise<PolledResponse<MemberRead[]>>;
+export function listMembers(
+  workspaceId: string,
+  context?: ReadContext
+): Promise<MemberRead[] | PolledResponse<MemberRead[]>> {
+  return conditionalGet<MemberListRead, MemberRead[]>(
     membersPath(workspaceId),
-    signalOptions(signal)
+    signalOptions,
+    context,
+    (body) => (Array.isArray(body?.members) ? body.members : [])
   );
-  const body = response.data;
-  return Array.isArray(body?.members) ? body.members : [];
-};
+}
 
 /** Changes one member's role. */
 export const updateMember = async (

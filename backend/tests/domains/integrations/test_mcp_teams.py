@@ -15,6 +15,7 @@ from fastapi.testclient import TestClient
 
 from app.common import team_purge
 from app.common.api.schemas.teams import LabelCreate
+from app.common.db.dynamo.issues import Issue
 from app.common.labels import create_label
 from app.common.team_refs import team_not_found_message
 from app.domains.integrations.mcp.tools import TOOLS_BY_NAME
@@ -31,7 +32,7 @@ FORBIDDEN = "may not write"
 
 @pytest.mark.parametrize(
     "name",
-    ["remove_team_member", "leave_team", "delete_status", "delete_label", "delete_team"],
+    ["remove_team_member", "leave_team", "delete_status", "delete_label", "merge_labels", "delete_team"],
 )
 def test_destructive_tools_carry_the_hint(name: str) -> None:
     """Every tool that removes something tells the client to ask first."""
@@ -297,7 +298,11 @@ def test_sla_settings_need_business(client: TestClient, repositories: Any, works
 
     refused = refusal(tool(client, admin, "update_team_sla_settings", {"team_id": "ABC", "enabled": True}))
 
-    assert "not included" in refused
+    assert refused == (
+        "Issue SLAs is not included in the Free plan. "
+        "Upgrade the workspace to the Business plan to use it. (PLAN_FEATURE_UNAVAILABLE)"
+    )
+    assert "credential" not in refused
     assert repositories.team_config.get_sla_settings(WORKSPACE, TEAM) is None
 
 
@@ -574,3 +579,40 @@ def test_deleting_a_group_by_tool_keeps_its_children(client: TestClient, reposit
     answer(tool(client, admin, "delete_label", {"team_id": "ABC", "label": "Area"}))
     listed = answer(tool(client, admin, "list_labels", {"team_id": "ABC"}))["labels"]
     assert [(row["label_id"], row["parent_id"]) for row in listed] == [(child["label_id"], None)]
+
+
+def test_merge_labels_folds_one_label_into_another_by_name(
+    client: TestClient, repositories: Any, workspace: str
+) -> None:
+    """An admin merges a label by name; the issue carries the kept label, and a retry by id replays it."""
+    defect = create_label(repositories, WORKSPACE, TEAM, LabelCreate(name="Defect", color="#ff0000"))
+    bug = create_label(repositories, WORKSPACE, TEAM, LabelCreate(name="Bug", color="#ff0000"))
+    issue = repositories.issues.create(
+        Issue(
+            workspace_id=WORKSPACE,
+            team_id=TEAM,
+            key="ABC-1",
+            number=1,
+            title="Crash",
+            status_id="status",
+            label_ids=[defect.label_id],
+            created_by=OWNER,
+        )
+    )
+    admin = mint_for(repositories, ADMIN, ("labels:write",))
+    member = mint_for(repositories, MEMBER, ("labels:write",))
+
+    blocked = refusal(tool(client, member, "merge_labels", {"team_id": "ABC", "label": "Defect", "into": "Bug"}))
+    merged = answer(tool(client, admin, "merge_labels", {"team_id": "abc", "label": "defect", "into": "bug"}))
+    again = answer(
+        tool(client, admin, "merge_labels", {"team_id": "ABC", "label": defect.label_id, "into": bug.label_id})
+    )
+    itself = refusal(tool(client, admin, "merge_labels", {"team_id": "ABC", "label": "Bug", "into": "Bug"}))
+
+    assert FORBIDDEN in blocked
+    assert (merged["complete"], merged["issues_updated"]) == (True, 1)
+    assert merged["target"]["label_id"] == bug.label_id
+    assert again == merged
+    assert "different label" in itself
+    assert repositories.issues.get(WORKSPACE, issue.issue_id).label_ids == [bug.label_id]
+    assert [row.label_id for row in repositories.team_config.list_labels(WORKSPACE, TEAM)] == [bug.label_id]

@@ -12,6 +12,8 @@ Removing a relation is offered, marked destructive, because the link is all it l
 
 from __future__ import annotations
 
+import logging
+import re
 from typing import Any, cast
 
 from app.common.api.pagination import digest_scope
@@ -41,7 +43,7 @@ from app.common.issue_filters import UnknownStatusCategory, build_issue_filter
 from app.common.issue_keys import current
 from app.common.issue_links import create_link, delete_link, list_links
 from app.common.issue_move import move_issue
-from app.common.issue_rules import require_team_reader, visible_team_ids
+from app.common.issue_rules import TRIAGE_STATUS_ID, TRIAGE_STATUS_NAME, require_team_reader, visible_team_ids
 from app.common.issue_subscribers import list_subscribers, subscribe, unsubscribe
 from app.common.issue_writes import bulk_update_issues, create_issue, list_issues, update_issue, walk_page
 from app.common.similar_issues import find_similar
@@ -53,6 +55,7 @@ from app.domains.integrations.mcp.toolkit import (
     ToolCall,
     enum,
     filter_values,
+    issue_by_key,
     issue_id_ref,
     issue_json,
     issue_ref,
@@ -70,6 +73,11 @@ from app.domains.integrations.mcp.toolkit import (
 )
 from app.domains.integrations.mcp.transport import ToolError
 from app.domains.integrations.service import link_reads
+
+_log = logging.getLogger(__name__)
+
+ULID_PATTERN = re.compile(r"^[0-9A-Z]{26}$")
+"""A row id's shape, so an id the team does not list passes to the write path to be answered there."""
 
 SORTS: tuple[str, ...] = ("updated_desc", "created_desc", "key_asc", "priority_desc", "due_asc", "sla_asc", "manual")
 
@@ -143,14 +151,14 @@ def _filter_properties(*, with_assignee: bool = True) -> dict[str, Any]:
     """The issue list filters, spelled as the HTTP list's query parameters are."""
     properties: dict[str, Any] = {
         "team_id": string("Narrow to one team"),
-        "status_id": one_or_many("Any of these statuses"),
-        "status_id_not": one_or_many("None of these statuses"),
+        "status_id": one_or_many("Any of these statuses; 'triage' is issues awaiting triage"),
+        "status_id_not": one_or_many("None of these statuses; 'triage' leaves out issues awaiting triage"),
         "status_category": one_or_many("Any of these categories: backlog, unstarted, started, completed, cancelled"),
-        "status_category_not": one_or_many("None of these categories"),
+        "status_category_not": one_or_many("None of these categories, as a list or comma separated"),
         "label_id": one_or_many("Carrying any of these labels; 'none' is unlabelled"),
         "label_id_not": one_or_many("Carrying none of these labels"),
         "priority": one_or_many("Any of these priorities: none, urgent, high, medium, low"),
-        "parent_id": one_or_many("Children of any of these issue ids; 'none' is top level issues"),
+        "parent_id": one_or_many("Children of any of these issues, by id or key; 'none' is top level issues"),
         "project_id": one_or_many("In any of these projects; 'none' is no project"),
         "project_milestone_id": one_or_many("In any of these project milestones; 'none' is no milestone"),
         "cycle_id": one_or_many(
@@ -185,12 +193,30 @@ def _include_archived(call: ToolCall, default: bool) -> bool:
     return value
 
 
+def _parent_values(call: ToolCall, values: list[str] | None) -> list[str] | None:
+    """The parent filter's values with any issue key resolved to its id.
+
+    A key resolves the way `get_issue` resolves one, retired prefixes included,
+    while an id and the `none` sentinel pass through unchanged.
+    """
+    if values is None:
+        return None
+    return [issue_by_key(call, value.strip()).issue_id if "-" in value else value for value in values]
+
+
+def _filter_values(call: ToolCall) -> dict[str, Any]:
+    """The filter arguments as lists, parent keys resolved to ids."""
+    values: dict[str, Any] = {name: filter_values(call.optional(name)) for name in FILTER_ARGUMENTS}
+    values["parent_id"] = _parent_values(call, values["parent_id"])
+    return values
+
+
 def _build_filter(call: ToolCall, *, include_archived: bool = False, **overrides: Any) -> Any:
     """The shared issue filter from a tool's arguments, as the HTTP list builds it.
 
     Archived issues are left out unless the caller asks for them, the list's own default.
     """
-    values: dict[str, Any] = {name: filter_values(call.optional(name)) for name in FILTER_ARGUMENTS}
+    values = _filter_values(call)
     values.update({name: call.optional(name) for name in BOOLEAN_FILTER_ARGUMENTS})
     values.update(overrides)
     values["include_archived"] = _include_archived(call, include_archived)
@@ -233,7 +259,7 @@ def _list_issues(call: ToolCall) -> Any:
 
 def _get_insights(call: ToolCall) -> Any:
     """A breakdown of the issues a team, a filter or a saved view selects, as the insights route answers it."""
-    filters: dict[str, Any] = {name: filter_values(call.optional(name)) for name in FILTER_ARGUMENTS}
+    filters = _filter_values(call)
     filters.update({name: call.optional(name) for name in BOOLEAN_FILTER_ARGUMENTS})
     filters["include_archived"] = _include_archived(call, False)
     team_id = call.optional("team_id")
@@ -341,15 +367,23 @@ def _possible_duplicates(call: ToolCall, issue: Issue) -> list[dict[str, Any]]:
     """Open issues in the caller's visible teams whose titles look like the new one's.
 
     The same deterministic term match the create dialog shows, so an agent can
-    notice a duplicate it just filed and relate or archive it.
+    notice a duplicate it just filed and relate or archive it. The issue's own
+    parent is never answered, since a sub-issue shares its parent's terms by design,
+    and sub-issues are one level deep so there is no further ancestor to leave out.
     """
-    hits = find_similar(call.repositories, call.context, issue.title, exclude_issue_id=issue.issue_id)
+    hits = find_similar(
+        call.repositories,
+        call.context,
+        issue.title,
+        exclude_issue_id=issue.issue_id,
+        exclude_issue_ids=[issue.parent_id] if issue.parent_id else [],
+    )
     return [
         {
             "issue_id": hit.issue.issue_id,
             "issue_key": hit.issue.key,
             "title": hit.issue.title,
-            "status": hit.status.name if hit.status else "",
+            "status": TRIAGE_STATUS_NAME if hit.issue.in_triage else hit.status.name if hit.status else "",
         }
         for hit in hits
     ]
@@ -384,8 +418,23 @@ def _create_issue(call: ToolCall) -> Any:
         payload["template_id"] = template_ref(call, str(payload["team_id"]), call.optional("template_id")).template_id
     if payload.get("status_id"):
         payload["status_id"] = _status_ref(call, str(payload["team_id"]), str(payload["status_id"]))
+    if payload.get("label_ids"):
+        payload["label_ids"] = _label_refs(call, str(payload["team_id"]), payload["label_ids"])
     created = create_issue(call.repositories, call.context, IssueCreate.model_validate(payload))
-    return {**_answer(call, created), "possible_duplicates": _possible_duplicates(call, created)}
+    return {**_answer(call, created), "possible_duplicates": _safe_duplicates(call, created)}
+
+
+def _safe_duplicates(call: ToolCall, issue: Issue) -> list[dict[str, Any]]:
+    """The possible duplicates of an issue already written, or none when the lookup fails.
+
+    The issue exists by the time this runs, so a failed lookup must not turn the
+    call into an error: an agent retrying on that error files the issue twice.
+    """
+    try:
+        return _possible_duplicates(call, issue)
+    except Exception:
+        _log.exception("possible duplicate lookup failed", extra={"issue_id": issue.issue_id})
+        return []
 
 
 def _update_issue(call: ToolCall) -> Any:
@@ -409,6 +458,8 @@ def _update_issue(call: ToolCall) -> Any:
         patch["parent_id"] = issue_id_ref(call, patch["parent_id"])
     if patch.get("status_id"):
         patch["status_id"] = _status_ref(call, issue.team_id, str(patch["status_id"]))
+    if patch.get("label_ids"):
+        patch["label_ids"] = _label_refs(call, issue.team_id, patch["label_ids"])
     attributes = IssueUpdate.model_validate(patch).model_dump(exclude_unset=True)
     return _answer(call, update_issue(call.repositories, call.context, issue, attributes))
 
@@ -621,13 +672,54 @@ def _status_ref(call: ToolCall, team: str, value: str) -> str:
 
     `team` may be a team id, key prefix or name. A team the caller cannot see
     leaves the value as given, so the shared write path answers it as it would.
+    `triage`, in any case, is the synthetic triage status and wins over a status
+    of that name, as the clients' pickers list it first.
     """
+    if _is_triage(value):
+        return TRIAGE_STATUS_ID
     try:
         team_id = team_id_ref(call, team)
     except ToolError:
         return value
     statuses = call.repositories.team_config.list_statuses(call.context.workspace_id, team_id)
     return _by_name(statuses, "status_id", value)
+
+
+def _label_refs(call: ToolCall, team: str, values: Any) -> Any:
+    """Label ids from ids or names within one team, workspace labels included.
+
+    `team` may be a team id, key prefix or name. A value that is a listed id, or
+    is shaped like an id, passes through for the write path to answer. A name that
+    matches no label, or more than one, is refused with the team's label names, so
+    an agent can correct the call without listing labels first. A team the caller
+    cannot see, or a value that is not a list, passes through unchanged.
+    """
+    if not isinstance(values, list):
+        return values
+    try:
+        team_id = team_id_ref(call, team)
+    except ToolError:
+        return values
+    labels = call.repositories.team_config.list_labels(call.context.workspace_id, team_id)
+    return [_label_ref(labels, str(value)) for value in values]
+
+
+def _label_ref(labels: list[Any], value: str) -> str:
+    """One label id from its id or its name among a team's labels, refusing an unknown or ambiguous name."""
+    if any(row.label_id == value for row in labels) or ULID_PATTERN.match(value):
+        return value
+    folded = value.strip().casefold()
+    named = [row for row in labels if row.name.casefold() == folded]
+    if len(named) == 1:
+        return str(named[0].label_id)
+    choices = ", ".join(sorted({row.name for row in labels if not row.is_group})) or "none"
+    problem = "matches more than one label" if named else "is not a label of this team"
+    raise ToolError(f"Label {value!r} {problem}. The team's labels are: {choices}")
+
+
+def _is_triage(value: str) -> bool:
+    """Whether a status reference names the synthetic triage status."""
+    return value.strip().casefold() == TRIAGE_STATUS_ID
 
 
 def _by_name(rows: list[Any], id_attribute: str, value: str) -> str:
@@ -660,23 +752,60 @@ def _selection_team(call: ToolCall, issue_ids: list[str]) -> str | None:
     return teams.pop() if len(teams) == 1 else None
 
 
+def _selection_projects(call: ToolCall, issue_ids: list[str]) -> set[str | None]:
+    """The projects the visible issues of a selection sit in now, `None` for an issue in no project."""
+    rows = call.repositories.issues.get_many(call.context.workspace_id, issue_ids)
+    return {row.project_id for row in rows.values() if call.context.can_see_team(row.team_id)}
+
+
+def _bulk_milestone(call: ToolCall, patch: dict[str, Any], issue_ids: list[str]) -> None:
+    """Resolve a milestone name in a bulk patch that names no project, in place.
+
+    The name resolves against the one project every issue of the selection is in
+    now. Issues spread over several projects are refused, because one name means a
+    different milestone in each. An id, or a selection in no project, passes
+    through for the write path to answer.
+    """
+    value = patch.get("project_milestone_id")
+    if not value or "project_id" in patch or ULID_PATTERN.match(str(value)):
+        return
+    projects = _selection_projects(call, issue_ids)
+    if len(projects) > 1:
+        raise ToolError(
+            f"The issues are in different projects, so the milestone {value!r} cannot be resolved by name. "
+            "Pass project_id, or the milestone's id."
+        )
+    project_id = next(iter(projects), None)
+    if project_id is None:
+        return
+    milestones = call.repositories.planning.list_milestones(call.context.workspace_id, project_id)
+    patch["project_milestone_id"] = _by_name(milestones, "milestone_id", str(value))
+
+
 def _bulk_names(call: ToolCall, patch: dict[str, Any], team_id: str | None) -> None:
     """Resolve status, label, cycle, project and milestone names in a bulk patch, in place.
 
     Names resolve only against the selection's single team and the projects on it,
     because a name means a different row in each team and one patch carries one id.
+    A milestone named without a project is resolved by `_bulk_milestone` instead.
+    Labels both added and removed are left as sent, for the route to refuse.
+    The synthetic triage status resolves in any selection, since every team shares it.
     """
     workspace_id = call.context.workspace_id
+    triage = bool(patch.get("status_id")) and _is_triage(str(patch["status_id"]))
+    if triage:
+        patch["status_id"] = TRIAGE_STATUS_ID
     if team_id is None:
         return
-    if patch.get("status_id"):
+    if patch.get("status_id") and not triage:
         statuses = call.repositories.team_config.list_statuses(workspace_id, team_id)
         patch["status_id"] = _by_name(statuses, "status_id", str(patch["status_id"]))
     labels = None
+    overlap = set(map(str, patch.get("add_label_ids") or [])) & set(map(str, patch.get("remove_label_ids") or []))
     for name in ("add_label_ids", "remove_label_ids"):
-        if patch.get(name):
+        if patch.get(name) and not overlap:
             labels = labels or call.repositories.team_config.list_labels(workspace_id, team_id)
-            patch[name] = [_by_name(labels, "label_id", str(item)) for item in patch[name]]
+            patch[name] = [_label_ref(labels, str(item)) for item in patch[name]]
     if patch.get("cycle_id"):
         cycles, _ = call.repositories.planning.list_cycles(workspace_id, team_id, limit=500)
         patch["cycle_id"] = _by_name(cycles, "cycle_id", str(patch["cycle_id"]))
@@ -709,6 +838,7 @@ def _bulk_update_issues(call: ToolCall) -> Any:
         assignee = str(patch["assignee_id"])
         patch["assignee_id"] = user_ref(call, assignee) if "@" in assignee else resolve_user(call, assignee)
     _bulk_names(call, patch, _selection_team(call, issue_ids))
+    _bulk_milestone(call, patch, issue_ids)
     body: dict[str, Any] = {"issue_ids": issue_ids, "patch": patch}
     if call.optional("only_if_estimate") is not None:
         body["only_if_estimate"] = str(call.arguments["only_if_estimate"])
@@ -824,10 +954,10 @@ ISSUE_TOOLS: tuple[Tool, ...] = (
                 "team_id": string("The team to create it in"),
                 "title": string("The issue title"),
                 "body": string("The issue body, in Markdown"),
-                "status_id": string("The starting status, by id or name"),
+                "status_id": string("The starting status, by id or name; 'triage' files it into triage"),
                 "priority": enum(PRIORITIES, "The priority, defaulting to none"),
                 "assignee_id": string("Who to assign it to; 'me' is the caller"),
-                "label_ids": string_list("Labels of the same team"),
+                "label_ids": string_list("Labels of the same team, by id or name"),
                 "estimate": string("The estimate, in the team's scale"),
                 "start_date": string("Start date, YYYY-MM-DD"),
                 "due_date": string("Due date, YYYY-MM-DD"),
@@ -853,10 +983,13 @@ ISSUE_TOOLS: tuple[Tool, ...] = (
                 "issue_id": string(ISSUE_REF),
                 "title": string("A new title"),
                 "body": nullable("A new body, in Markdown"),
-                "status_id": string("A new status of the same team, by id or name"),
+                "status_id": string(
+                    "A new status of the same team, by id or name; 'triage' sends it to triage, "
+                    "and a real status accepts an issue waiting there"
+                ),
                 "priority": enum(PRIORITIES, "A new priority"),
                 "assignee_id": nullable("A new assignee, 'me' for the caller, or null to unassign"),
-                "label_ids": string_list("The full new label set"),
+                "label_ids": string_list("The full new label set, by id or name"),
                 "estimate": nullable("A new estimate in the team's scale, or null"),
                 "start_date": nullable("A new start date, YYYY-MM-DD, or null"),
                 "due_date": nullable("A new due date, YYYY-MM-DD, or null"),
@@ -1053,7 +1186,7 @@ ISSUE_TOOLS: tuple[Tool, ...] = (
                     "maxItems": BULK_MAX_ISSUES,
                     "description": "The issues, by id or key such as ABC-12",
                 },
-                "status_id": string("A status of the issues' team, by id or name"),
+                "status_id": string("A status of the issues' team, by id or name; 'triage' sends them to triage"),
                 "assignee_id": nullable("An assignee: 'me', an email or a user id, or null to unassign"),
                 "priority": enum(PRIORITIES, "A new priority"),
                 "add_label_ids": string_list("Labels to add, by id or name; other labels are kept"),

@@ -43,6 +43,21 @@ export const REFUNDS_PATH = '/refunds';
 /** How to reach the person who runs Standupless, public to everyone. */
 export const CONTACT_PATH = '/contact';
 
+/**
+ * The page the desktop app opens in the system browser to hand a sign-in back
+ * to itself. It needs a signed in browser and mints nothing until asked.
+ */
+export const DESKTOP_HANDOFF_PATH = '/desktop-handoff';
+
+/**
+ * The query parameter the desktop app adds to the sign-in page when a browser
+ * handoff could not be completed, naming why.
+ */
+export const DESKTOP_HANDOFF_FAILED_PARAM = 'desktop_handoff';
+
+/** The desktop and mobile downloads, public to everyone. */
+export const DOWNLOAD_PATH = '/download';
+
 /** The signed out page a person lands on after deleting their account. */
 export const ACCOUNT_DELETED_PATH = '/account-deleted';
 
@@ -209,6 +224,10 @@ export const apiKeysPath = (slug: string): string =>
 /** The connected apps settings page, where authorized OAuth clients are revoked. */
 export const connectedAppsPath = (slug: string): string =>
   `${settingsPath(slug)}/connected-apps`;
+
+/** The caller's private agent profiles, the settings page every role may open. */
+export const agentProfilesPath = (slug: string): string =>
+  `${settingsPath(slug)}/agent-profiles`;
 
 /** The settings page with the MCP server address and the CLI install steps. */
 export const mcpAndCliPath = (slug: string): string =>

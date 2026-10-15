@@ -1,0 +1,290 @@
+name: Release mobile
+
+on:
+  push:
+    tags:
+      - "mobile-v*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-mobile-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  check:
+    name: Check the tag
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Check the tag matches the app version
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          TAG_VERSION="${TAG#mobile-v}"
+          APP_VERSION="$(node -p 'require("./mobile/package.json").version')"
+          echo "Tag version: ${TAG_VERSION}, app version: ${APP_VERSION}"
+          if [ "$TAG_VERSION" != "$APP_VERSION" ]; then
+            echo "::error::tag ${TAG} does not match version ${APP_VERSION} in mobile/package.json"
+            exit 1
+          fi
+
+  ios:
+    name: Build iOS (${{ matrix.environment }})
+    needs: check
+    runs-on: macos-latest
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - environment: production
+            profile_secret: IOS_PROFILE_PRODUCTION
+          - environment: staging
+            profile_secret: IOS_PROFILE_STAGING
+    env:
+      SIGNING_ENABLED: ${{ secrets.IOS_DISTRIBUTION_CERT_P12 != '' }}
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Sync the native project
+        env:
+          STANDUPLESS_MOBILE_ENV: ${{ matrix.environment }}
+        run: npx cap sync ios
+
+      - name: Build the unsigned simulator app
+        if: env.SIGNING_ENABLED != 'true'
+        working-directory: mobile/ios/App
+        env:
+          ENVIRONMENT: ${{ matrix.environment }}
+        run: |
+          set -euo pipefail
+          EXTRA=()
+          if [ "$ENVIRONMENT" = "staging" ]; then
+            EXTRA=(-xcconfig Staging.xcconfig)
+          fi
+          xcodebuild build \
+            -project App.xcodeproj \
+            -scheme App \
+            -configuration Release \
+            -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath build \
+            ${EXTRA[@]+"${EXTRA[@]}"} \
+            CODE_SIGNING_ALLOWED=NO
+          mkdir -p dist
+          ditto -c -k --keepParent build/Build/Products/Release-iphonesimulator/App.app \
+            "dist/standupless-ios-simulator-${ENVIRONMENT}.zip"
+
+      - name: Install the signing certificate and profile
+        if: env.SIGNING_ENABLED == 'true'
+        env:
+          CERT_P12: ${{ secrets.IOS_DISTRIBUTION_CERT_P12 }}
+          CERT_PASSWORD: ${{ secrets.IOS_DISTRIBUTION_CERT_PASSWORD }}
+          PROFILE: ${{ secrets[matrix.profile_secret] }}
+        run: |
+          set -euo pipefail
+          KEYCHAIN="$RUNNER_TEMP/signing.keychain-db"
+          KEYCHAIN_PASSWORD="$(uuidgen)"
+          echo "$CERT_P12" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security import "$RUNNER_TEMP/cert.p12" -P "$CERT_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN"
+          security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security list-keychains -d user -s "$KEYCHAIN" $(security list-keychains -d user | tr -d '"')
+          PROFILES="$HOME/Library/MobileDevice/Provisioning Profiles"
+          mkdir -p "$PROFILES"
+          echo "$PROFILE" | base64 --decode > "$RUNNER_TEMP/profile.mobileprovision"
+          security cms -D -i "$RUNNER_TEMP/profile.mobileprovision" > "$RUNNER_TEMP/profile.plist"
+          UUID="$(/usr/libexec/PlistBuddy -c 'Print :UUID' "$RUNNER_TEMP/profile.plist")"
+          cp "$RUNNER_TEMP/profile.mobileprovision" "$PROFILES/${UUID}.mobileprovision"
+          echo "PROFILE_UUID=${UUID}" >> "$GITHUB_ENV"
+          rm -f "$RUNNER_TEMP/cert.p12"
+
+      - name: Archive and export the signed app
+        if: env.SIGNING_ENABLED == 'true'
+        working-directory: mobile/ios/App
+        env:
+          ENVIRONMENT: ${{ matrix.environment }}
+          TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          set -euo pipefail
+          EXTRA=()
+          BUNDLE_ID=dev.standupless.app
+          if [ "$ENVIRONMENT" = "staging" ]; then
+            EXTRA=(-xcconfig Staging.xcconfig)
+            BUNDLE_ID=dev.standupless.app.staging
+          fi
+          VERSION="$(node -p 'require("../../package.json").version')"
+          xcodebuild archive \
+            -project App.xcodeproj \
+            -scheme App \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -archivePath "$RUNNER_TEMP/App.xcarchive" \
+            ${EXTRA[@]+"${EXTRA[@]}"} \
+            DEVELOPMENT_TEAM="$TEAM_ID" \
+            CODE_SIGN_STYLE=Manual \
+            CODE_SIGN_IDENTITY="Apple Distribution" \
+            PROVISIONING_PROFILE="$PROFILE_UUID" \
+            MARKETING_VERSION="$VERSION" \
+            CURRENT_PROJECT_VERSION="$GITHUB_RUN_NUMBER"
+          cat > "$RUNNER_TEMP/ExportOptions.plist" <<PLIST
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>method</key><string>app-store-connect</string>
+            <key>teamID</key><string>${TEAM_ID}</string>
+            <key>signingStyle</key><string>manual</string>
+            <key>provisioningProfiles</key>
+            <dict><key>${BUNDLE_ID}</key><string>${PROFILE_UUID}</string></dict>
+          </dict>
+          </plist>
+          PLIST
+          xcodebuild -exportArchive \
+            -archivePath "$RUNNER_TEMP/App.xcarchive" \
+            -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist" \
+            -exportPath "$RUNNER_TEMP/export"
+          mkdir -p dist
+          cp "$RUNNER_TEMP"/export/*.ipa "dist/standupless-ios-${ENVIRONMENT}.ipa"
+
+      - name: Upload the build
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: mobile-ios-${{ matrix.environment }}
+          if-no-files-found: error
+          retention-days: 7
+          path: mobile/ios/App/dist/*
+
+  android:
+    name: Build Android (${{ matrix.environment }})
+    needs: check
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: true
+      matrix:
+        environment: [production, staging]
+    env:
+      SIGNING_ENABLED: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+
+      - name: Set up Java
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Sync the native project
+        env:
+          STANDUPLESS_MOBILE_ENV: ${{ matrix.environment }}
+        run: npx cap sync android
+
+      - name: Build the unsigned debug APK
+        if: env.SIGNING_ENABLED != 'true'
+        working-directory: mobile/android
+        env:
+          ENVIRONMENT: ${{ matrix.environment }}
+          STANDUPLESS_ANDROID_VERSION_CODE: ${{ github.run_number }}
+        run: |
+          set -euo pipefail
+          ./gradlew --no-daemon assembleDebug
+          mkdir -p dist
+          cp app/build/outputs/apk/debug/app-debug.apk "dist/standupless-android-debug-${ENVIRONMENT}.apk"
+
+      - name: Build the signed release bundle
+        if: env.SIGNING_ENABLED == 'true'
+        working-directory: mobile/android
+        env:
+          ENVIRONMENT: ${{ matrix.environment }}
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          STANDUPLESS_ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          STANDUPLESS_ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          STANDUPLESS_ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          STANDUPLESS_ANDROID_VERSION_CODE: ${{ github.run_number }}
+        run: |
+          set -euo pipefail
+          export STANDUPLESS_ANDROID_KEYSTORE_PATH="$RUNNER_TEMP/upload.jks"
+          echo "$KEYSTORE_BASE64" | base64 --decode > "$STANDUPLESS_ANDROID_KEYSTORE_PATH"
+          ./gradlew --no-daemon bundleRelease
+          rm -f "$STANDUPLESS_ANDROID_KEYSTORE_PATH"
+          mkdir -p dist
+          cp app/build/outputs/bundle/release/app-release.aab "dist/standupless-android-${ENVIRONMENT}.aab"
+
+      - name: Upload the build
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: mobile-android-${{ matrix.environment }}
+          if-no-files-found: error
+          retention-days: 7
+          path: mobile/android/dist/*
+
+  publish:
+    name: Publish the release
+    needs: [ios, android]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TAG: ${{ github.ref_name }}
+    steps:
+      - name: Download the builds
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: mobile-*
+          path: assets
+          merge-multiple: true
+
+      - name: Publish the versioned release
+        run: |
+          set -euo pipefail
+          ls -l assets
+          VERSION="${TAG#mobile-v}"
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$TAG" assets/* --repo "$GITHUB_REPOSITORY" --clobber
+          else
+            gh release create "$TAG" assets/* --repo "$GITHUB_REPOSITORY" \
+              --verify-tag --latest=false \
+              --title "Standupless mobile ${VERSION}" \
+              --notes "Standupless mobile ${VERSION}. Store builds are signed .ipa and .aab files; until signing is set up these are an iOS simulator app and an Android debug APK. See mobile/SIGNING.md."
+          fi

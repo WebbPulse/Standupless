@@ -257,11 +257,39 @@ class Installation(BaseModel):
     suspended_at: datetime | None = None
 
 
+RELEASE_SOURCE_DEPLOYMENTS = "deployments"
+
+RELEASE_SOURCE_TAGS = "tags"
+
+RELEASE_SOURCE_GITHUB_RELEASES = "github_releases"
+
+RELEASE_SOURCE_KINDS = (RELEASE_SOURCE_DEPLOYMENTS, RELEASE_SOURCE_TAGS, RELEASE_SOURCE_GITHUB_RELEASES)
+
+
+class RepositoryReleaseSource(BaseModel):
+    """What records a pinned repository's releases, and what those releases do to issues.
+
+    `deployments` records from GitHub deployments through the team's pipeline.
+    `tags` records a pushed tag and `github_releases` a published GitHub Release,
+    each matching `tag_pattern`, a glob such as `v*`, when one is set. A tag or
+    Release lands at the pipeline's last stage and moves the issues it closes to
+    `status_id`, or to the team's Done status when that is null, unless
+    `move_issues` is off.
+    """
+
+    kind: Literal["deployments", "tags", "github_releases"] = "deployments"
+    tag_pattern: str | None = None
+    status_id: str | None = None
+    move_issues: bool = True
+
+
 class Repository_(BaseModel):
     """One repository the installation covers.
 
     `team_id` is the team whose releases the repository's deployments feed, null
     for none. Issue keys match against every team of the workspace either way.
+    `release_source` chooses whether the pinned team's releases come from the
+    repository's deployments, its tags or its GitHub Releases.
     """
 
     workspace_id: str
@@ -274,6 +302,7 @@ class Repository_(BaseModel):
     default_branch: str = "main"
     team_id: str | None = None
     linked_at: datetime = Field(default_factory=utc_now)
+    release_source: RepositoryReleaseSource = Field(default_factory=RepositoryReleaseSource)
 
 
 class IssueLink(BaseModel):
@@ -291,6 +320,9 @@ class IssueLink(BaseModel):
     every link of that pull request, so the label sync removes only what it added.
     `detached` marks a link whose key a later delivery no longer names, which is
     how the label sync tells an unlinked issue from a linked one.
+    `moves_status` is false while the pull request only mentions the key in passing
+    in its body, so the link shows on the issue without moving its status; a row
+    written before it existed reads as one that moves.
 
     The branch, review and check fields are copied from the pull request's
     `PullRequestState` row whenever it changes, so a read of an issue's links
@@ -312,6 +344,7 @@ class IssueLink(BaseModel):
     pr_state: str = "open"
     author_login: str = ""
     magic_word: str | None = None
+    moves_status: bool = True
     applied_status_id: str | None = None
     comment_id: str | None = None
     check_run_id: str | None = None
@@ -722,6 +755,21 @@ class GithubRepository:
         key = {"workspace_id": workspace_id, "github_key": repo_key(repository_id)}
         try:
             self._repository.set_attributes(key, {"team_id": team_id}, condition=Attr("repository_id").exists())
+        except ConditionFailed:
+            return False
+        return True
+
+    def set_repository_release_source(
+        self, workspace_id: str, repository_id: str, release_source: RepositoryReleaseSource
+    ) -> bool:
+        """Set what records one repository's releases, reporting whether a row was there."""
+        key = {"workspace_id": workspace_id, "github_key": repo_key(repository_id)}
+        try:
+            self._repository.set_attributes(
+                key,
+                {"release_source": release_source.model_dump(mode="json")},
+                condition=Attr("repository_id").exists(),
+            )
         except ConditionFailed:
             return False
         return True

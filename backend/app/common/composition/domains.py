@@ -21,15 +21,16 @@ RouterSpec = Tuple["APIRouter", str, Tuple[str, ...]]
 
 
 def _identity_routers() -> "Sequence[RouterSpec]":
-    """The current-user routes and connected apps. Everything under `/api/auth` is the package's.
+    """The current-user routes, agent profiles and connected apps. Everything under `/api/auth` is the package's.
 
     The workspace half of connected apps mounts under `/workspaces` because an admin
     reaches it from a workspace, but it is served here, beside the consent tables.
     """
-    from app.domains.identity.endpoints import connected_apps, users
+    from app.domains.identity.endpoints import agent_profiles, connected_apps, users
 
     return [
         (users.router, "/users", ("identity",)),
+        (agent_profiles.router, "/users", ("identity",)),
         (connected_apps.account_router, "/users", ("identity",)),
         (connected_apps.workspace_router, "/workspaces", ("identity",)),
     ]
@@ -85,7 +86,7 @@ def _workspaces_routers() -> "Sequence[RouterSpec]":
 
 
 def _teams_routers() -> "Sequence[RouterSpec]":
-    """The teams domain: teams, their members, statuses, labels and templates, and the workspace set teams inherit.
+    """The teams domain: teams, members, statuses, labels, templates and recurring issues, and the workspace set.
 
     Every path is nested under a workspace, so the tenant is in the path of each
     one and the authorization dependency reads it from there.
@@ -93,6 +94,7 @@ def _teams_routers() -> "Sequence[RouterSpec]":
     from app.domains.teams.endpoints import (
         labels,
         members,
+        recurring,
         releases,
         statuses,
         teams,
@@ -110,6 +112,7 @@ def _teams_routers() -> "Sequence[RouterSpec]":
         (labels.router, "/workspaces", ("teams",)),
         (workspace_workflow.router, "/workspaces", ("teams",)),
         (templates.router, "/workspaces", ("teams",)),
+        (recurring.router, "/workspaces", ("teams",)),
     ]
 
 
@@ -152,9 +155,10 @@ def _views_routers() -> "Sequence[RouterSpec]":
     parameter or off the row rather than from the path, so each route decides
     visibility against the team the data actually belongs to.
     """
-    from app.domains.views.endpoints import board, home, inbox, insights, search, share_links, views
+    from app.domains.views.endpoints import board, favorites, home, inbox, insights, search, share_links, views
 
     return [
+        (favorites.router, "/workspaces", ("views",)),
         (board.router, "/workspaces", ("views",)),
         (insights.router, "/workspaces", ("views",)),
         (home.router, "/workspaces", ("views",)),
@@ -180,10 +184,12 @@ def _views_unprefixed_routers(settings: "Any") -> "Sequence[APIRouter]":
     return [build_notify_router(), build_search_router(), shared.router]
 
 
-_IDENTITY_REPOSITORIES: Tuple[str, ...] = ("users", "api_keys", "audit")
+_IDENTITY_REPOSITORIES: Tuple[str, ...] = ("users", "api_keys", "audit", "agent_profiles")
 """The users row, and `api_keys`, which deleting an account empties of the person's keys at once.
 
-`audit` records connected app grants and revocations in each workspace's log.
+`audit` records connected app grants and revocations in each workspace's log, and
+the person's own agent profile trail. `agent_profiles` serves the account settings
+page and the CLI restore, and deleting an account empties it.
 
 `api_keys` is also read so the current user route can verify a personal key and
 answer the key's person.
@@ -212,24 +218,29 @@ _TEAMS_REPOSITORIES = (
     "issues",
     "activity",
     "audit",
+    "views",
 )
 
 _TEAMS_READ_REPOSITORIES = ("workspaces", "users", "api_keys")
 
-_ISSUES_REPOSITORIES = ("issues", "relations", "activity", "counters", "subscriptions", "planning")
-"""What the issues image writes. `planning` is for a move adding the target team to the issue's project."""
+_ISSUES_REPOSITORIES = ("issues", "relations", "activity", "counters", "subscriptions", "planning", "team_config")
+"""What the issues image writes.
+
+`planning` is for a move adding the target team to the issue's project, and
+`team_config` for the recurring issue sweep moving each schedule to its next run.
+"""
 
 _ISSUES_READ_REPOSITORIES = (
     "memberships",
     "workspaces",
     "users",
     "teams",
-    "team_config",
     "releases",
     "api_keys",
 )
 
-_VIEWS_REPOSITORIES = ("views", "inbox", "search_index", "share_links")
+_VIEWS_REPOSITORIES = ("views", "inbox", "search_index", "share_links", "audit")
+"""What the views image writes. `audit` records share links being created and revoked."""
 
 _VIEWS_READ_REPOSITORIES = (
     "memberships",
@@ -363,13 +374,15 @@ _INTEGRATIONS_REPOSITORIES = (
     "views",
     "inbox",
     "audit",
+    "agent_profiles",
 )
 """What the integrations image writes.
 
 Everything past `github` is for the MCP tools, which create and edit issues,
 projects, cycles, teams, members, invites, saved views and the caller's inbox
 through the same shared write paths the product routes use, and record and read
-the workspace audit log as those paths do.
+the workspace audit log as those paths do, and the caller's own agent profiles
+with the trail each save, restore and delete leaves.
 """
 
 _INTEGRATIONS_READ_REPOSITORIES = (

@@ -14,6 +14,7 @@ import {
   type StatusIconName,
   type StatusLike,
   type StatusLook,
+  type TriageIconName,
 } from '../../lib/statusAppearance';
 
 /**
@@ -64,10 +65,10 @@ const CHECK = 'M4.2 7.2 6.2 9.2 9.9 5.3';
 const CROSS = 'M4.8 4.8 9.2 9.2 M9.2 4.8 4.8 9.2';
 
 /** The shapes one variant draws inside the 14px box. */
-const Shape: React.FC<{ icon: StatusIconName; fill: number }> = ({
-  icon,
-  fill,
-}) => {
+const Shape: React.FC<{
+  icon: StatusIconName | TriageIconName;
+  fill: number;
+}> = ({ icon, fill }) => {
   switch (icon) {
     case 'dashed':
       return <circle {...RING} stroke="currentColor" strokeDasharray="2 2" />;
@@ -140,6 +141,17 @@ const Shape: React.FC<{ icon: StatusIconName; fill: number }> = ({
       return <Knockout d={CROSS} />;
     case 'cross_outline':
       return <Outlined d={CROSS} />;
+    case 'triage':
+      return (
+        <path
+          d="M1.75 7.75 3.6 3.1a1 1 0 0 1 .93-.6h4.94a1 1 0 0 1 .93.6l1.85 4.65v2.75a1 1 0 0 1-1 1h-8.5a1 1 0 0 1-1-1ZM1.75 7.75h2.9l.8 1.5h3.1l.8-1.5h2.9"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.4"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      );
     case 'duplicate':
       return (
         <>

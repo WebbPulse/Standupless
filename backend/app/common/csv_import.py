@@ -9,7 +9,10 @@ repeated `Labels` columns, reads every column of that name.
 
 The conversion to a team's statuses, labels, members and estimates lives in
 `app.common.issue_import`, because it needs the team's rows; this module answers
-the raw values and the problems that need no lookup.
+the raw values and the problems that need no lookup. `plan_parent_links` is the
+one step that reads the whole file at once: a parent column names another row by
+its source key, its tracker id or its title, and the link can only be resolved
+once every row is known, so the order of rows never matters.
 """
 
 from __future__ import annotations
@@ -38,6 +41,7 @@ ImportField = Literal[
     "due_date",
     "source_key",
     "created_at",
+    "parent",
 ]
 
 IMPORT_FIELDS: tuple[str, ...] = (
@@ -51,6 +55,7 @@ IMPORT_FIELDS: tuple[str, ...] = (
     "due_date",
     "source_key",
     "created_at",
+    "parent",
 )
 """Every issue field a column can map to, in the order the mapping screen lists them."""
 
@@ -65,6 +70,7 @@ GENERIC_HEADERS: dict[str, tuple[str, ...]] = {
     "due_date": ("due date", "due", "due_date"),
     "source_key": ("id", "key", "issue key", "identifier"),
     "created_at": ("created", "created at", "created_at"),
+    "parent": ("parent", "parent key", "parent issue", "parent id"),
 }
 
 PRESET_HEADERS: dict[str, dict[str, tuple[str, ...]]] = {
@@ -80,6 +86,7 @@ PRESET_HEADERS: dict[str, dict[str, tuple[str, ...]]] = {
         "due_date": ("due date", "due"),
         "source_key": ("issue key",),
         "created_at": ("created",),
+        "parent": ("parent", "parent id", "parent key"),
     },
     "linear": {
         "title": ("title",),
@@ -92,6 +99,7 @@ PRESET_HEADERS: dict[str, dict[str, tuple[str, ...]]] = {
         "due_date": ("due date",),
         "source_key": ("id",),
         "created_at": ("created",),
+        "parent": ("parent issue", "parent"),
     },
 }
 """Per preset, the header names each field is found under, best match first, compared without case."""
@@ -110,6 +118,9 @@ TITLE_MAX = 200
 LABEL_MAX = 60
 
 SOURCE_KEY_MAX = 120
+
+ALIAS_HEADERS: tuple[str, ...] = ("issue id",)
+"""Columns carrying a row's other identity, such as Jira's numeric `Issue id`, which a parent column may name."""
 
 PRIORITY_WORDS: dict[str, str] = {
     "": "none",
@@ -237,6 +248,8 @@ class RawRow:
     due_date: Optional[str] = None
     source_key: Optional[str] = None
     created_at: Optional[datetime] = None
+    parent: Optional[str] = None
+    aliases: list[str] = field(default_factory=list)
     problems: list[RowProblem] = field(default_factory=list)
 
     @property
@@ -431,6 +444,13 @@ def read_row(line: int, row: Sequence[str], headers: Sequence[str], mapping: Map
     source_key = _cell(row, headers, mapping.get("source_key"))
     raw.source_key = source_key[:SOURCE_KEY_MAX] or None
 
+    raw.parent = _cell(row, headers, mapping.get("parent"))[:TITLE_MAX] or None
+    raw.aliases = [
+        value
+        for header in dict.fromkeys(name for name in headers if name.strip().lower() in ALIAS_HEADERS)
+        for value in _cells(row, headers, header)
+    ]
+
     created_text = _cell(row, headers, mapping.get("created_at"))
     if created_text:
         raw.created_at = parse_datetime(created_text)
@@ -449,3 +469,82 @@ def read_rows(
     """The mapped values of the data rows from `start` up to `stop`, numbered as a spreadsheet numbers them."""
     end = len(parsed.rows) if stop is None else min(stop, len(parsed.rows))
     return [read_row(index + 2, parsed.rows[index], parsed.headers, mapping) for index in range(start, end)]
+
+
+@dataclass(frozen=True)
+class ParentPlan:
+    """Which row each row becomes a sub-issue of, by line, and the warnings for links that cannot be made."""
+
+    links: dict[int, int]
+    problems: dict[int, RowProblem]
+
+
+def _row_index(rows: Sequence[RawRow]) -> tuple[dict[str, int], dict[str, Optional[int]]]:
+    """The importable rows by source key or alias, and by title where the title is unique.
+
+    Keys and aliases are compared without case. A title two rows share maps to
+    `None`, so a parent named by that title is ambiguous rather than guessed.
+    """
+    by_key: dict[str, int] = {}
+    by_title: dict[str, Optional[int]] = {}
+    for raw in rows:
+        if not raw.importable:
+            continue
+        for value in (raw.source_key, *raw.aliases):
+            if value:
+                by_key.setdefault(value.strip().lower(), raw.line)
+        title = raw.title.strip().lower()
+        if title:
+            by_title[title] = None if title in by_title else raw.line
+    return by_key, by_title
+
+
+def plan_parent_links(rows: Sequence[RawRow]) -> ParentPlan:
+    """Resolve every row's parent column against the other rows of the same file.
+
+    A parent is found by source key or tracker id first, then by a unique title.
+    Sub-issues are one level deep, so a row whose parent is itself a sub-issue in
+    the file is left without a parent, and so are both rows of a loop. Every link
+    that cannot be made is a warning on the child row, never an error, because the
+    issue itself still imports.
+    """
+    by_key, by_title = _row_index(rows)
+    wanted: dict[int, int] = {}
+    problems: dict[int, RowProblem] = {}
+    for raw in rows:
+        if not raw.importable or not raw.parent:
+            continue
+        name = raw.parent.strip().lower()
+        line = by_key.get(name)
+        if line is None and name in by_title:
+            line = by_title[name]
+            if line is None:
+                problems[raw.line] = RowProblem(
+                    row=raw.line,
+                    field="parent",
+                    message=f"More than one row is titled {raw.parent!r}, left without a parent",
+                )
+                continue
+        if line is None:
+            problems[raw.line] = RowProblem(
+                row=raw.line,
+                field="parent",
+                message=f"No row in the file matches parent {raw.parent!r}, left without a parent",
+            )
+        elif line == raw.line:
+            problems[raw.line] = RowProblem(
+                row=raw.line, field="parent", message="A row cannot be its own parent, left without a parent"
+            )
+        else:
+            wanted[raw.line] = line
+    links: dict[int, int] = {}
+    for child, parent in wanted.items():
+        if parent in wanted:
+            problems[child] = RowProblem(
+                row=child,
+                field="parent",
+                message=f"The parent on row {parent} is itself a sub-issue; sub-issues are one level deep",
+            )
+        else:
+            links[child] = parent
+    return ParentPlan(links=links, problems=problems)

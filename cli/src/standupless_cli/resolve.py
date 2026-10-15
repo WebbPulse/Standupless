@@ -7,7 +7,7 @@ a project's name, and this module looks each one up once per invocation.
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from typing import Any
 
 from standupless_cli._generated.models import (
@@ -26,6 +26,8 @@ from standupless_cli.config import Settings
 STATUS_CATEGORIES = ("backlog", "unstarted", "started", "completed", "cancelled")
 CATEGORY_ALIASES = {"canceled": "cancelled", "todo": "unstarted", "in_progress": "started", "done": "completed"}
 OPEN_CATEGORIES = ("backlog", "unstarted", "started")
+TRIAGE_STATUS_ID = "triage"
+TRIAGE_STATUS_NAME = "Triage"
 
 
 class ResolveError(Exception):
@@ -35,6 +37,11 @@ class ResolveError(Exception):
 def _norm(value: str) -> str:
     """Case and surrounding space never change which thing a name means."""
     return value.strip().casefold()
+
+
+def shown_status_id(issue: Mapping[str, Any]) -> str:
+    """The status id an issue shows under: the synthetic triage one while it waits in triage."""
+    return TRIAGE_STATUS_ID if issue.get("in_triage") else str(issue["status_id"])
 
 
 def _label_matches(ref: str, label: LabelRead, labels: Iterable[LabelRead]) -> bool:
@@ -154,11 +161,14 @@ class Context:
         return self._statuses[team_id]
 
     def status_names(self, team_id: str) -> dict[str, str]:
-        """Status id to name for a team, for rendering."""
-        return {status["id"]: status["name"] for status in self.statuses(team_id)}
+        """Status id to name for a team, for rendering, with the synthetic triage status."""
+        names = {status["id"]: status["name"] for status in self.statuses(team_id)}
+        return {TRIAGE_STATUS_ID: TRIAGE_STATUS_NAME, **names}
 
     def status_id(self, team_id: str, ref: str) -> str:
-        """One status in one team, by id, name or category (the first in board order)."""
+        """One status in one team, by id, name or category (the first in board order), or the triage status."""
+        if _norm(ref) == TRIAGE_STATUS_ID:
+            return TRIAGE_STATUS_ID
         statuses = self.statuses(team_id)
         for status in statuses:
             if ref == status["id"] or _norm(ref) == _norm(status["name"]):
@@ -177,6 +187,9 @@ class Context:
         ids: list[str] = []
         teams = list(teams)
         for ref in refs:
+            if _norm(ref) == TRIAGE_STATUS_ID:
+                ids.append(TRIAGE_STATUS_ID)
+                continue
             matched = [
                 status["id"]
                 for team in teams
@@ -203,6 +216,9 @@ class Context:
         ids: list[str] = []
         teams = list(teams)
         for ref in refs:
+            if _norm(ref) == TRIAGE_STATUS_ID:
+                ids.append(TRIAGE_STATUS_ID)
+                continue
             matched = [
                 label["id"]
                 for team in teams
@@ -357,7 +373,7 @@ class Context:
 
     def release_id(self, team: TeamRead, ref: str) -> str:
         """A release id from its id or its name among the team's newest releases."""
-        releases = self.client.list_releases(self.workspace_id, team["id"], limit=100)
+        releases = self.client.list_releases(self.workspace_id, team["id"], limit=100, show_included=True)
         for release in releases:
             if release["release_id"] == ref:
                 return ref

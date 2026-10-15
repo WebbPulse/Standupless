@@ -11,6 +11,7 @@ import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type {
   LabelCreate,
+  LabelMergeRead,
   LabelRead,
   LabelUpdate,
   OverrideUpdate,
@@ -24,6 +25,8 @@ const updateLabel =
 const overrideLabel =
   vi.fn<(labelId: string, body: OverrideUpdate) => Promise<LabelRead>>();
 const resetLabelOverride = vi.fn<(labelId: string) => Promise<LabelRead>>();
+const mergeLabel =
+  vi.fn<(labelId: string, targetId: string) => Promise<LabelMergeRead>>();
 
 vi.mock('../../api/teams', async () => {
   const actual =
@@ -39,6 +42,8 @@ vi.mock('../../api/teams', async () => {
       overrideLabel(id, body),
     resetLabelOverride: (_w: string, _t: string, id: string) =>
       resetLabelOverride(id),
+    mergeLabel: (_w: string, _t: string, id: string, target: string) =>
+      mergeLabel(id, target),
   };
 });
 
@@ -81,6 +86,7 @@ beforeEach(() => {
   updateLabel.mockReset();
   overrideLabel.mockReset();
   resetLabelOverride.mockReset();
+  mergeLabel.mockReset();
   listLabels.mockResolvedValue([bug, security, legacy]);
   createLabel.mockImplementation((body) =>
     Promise.resolve({ id: 'new', ...body })
@@ -143,6 +149,58 @@ describe('the team labels', () => {
     await waitFor(() => {
       expect(updateLabel).toHaveBeenCalledWith('bug', { name: 'Defect' });
     });
+  });
+});
+
+describe('merging a team label', () => {
+  const defect: LabelRead = { id: 'defect', name: 'Defect', color: '#e5484d' };
+
+  it('merges into another team label, never an inherited one', async () => {
+    const user = userEvent.setup();
+    listLabels.mockResolvedValue([bug, defect, security, legacy]);
+    mergeLabel.mockResolvedValue({
+      source_label_id: 'defect',
+      source_name: 'Defect',
+      target: bug,
+      issues_updated: 2,
+      views_updated: 0,
+      templates_updated: 0,
+      complete: true,
+    });
+    renderSection();
+    await user.click(
+      await screen.findByRole('button', { name: 'Actions for Defect' })
+    );
+    await user.click(
+      screen.getByRole('menuitem', { name: 'Merge into another label' })
+    );
+    const select = await screen.findByLabelText('Merge into');
+    const options = Array.from(
+      select.querySelectorAll('option'),
+      (row) => row.textContent
+    );
+    expect(options).toEqual(['Bug']);
+    await user.click(screen.getByRole('button', { name: 'Merge' }));
+    await waitFor(() => {
+      expect(mergeLabel).toHaveBeenCalledWith('defect', 'bug');
+    });
+  });
+
+  it('shows the refusal in words', async () => {
+    const user = userEvent.setup();
+    listLabels.mockResolvedValue([bug, defect]);
+    mergeLabel.mockRejectedValue(new Error('boom'));
+    renderSection();
+    await user.click(
+      await screen.findByRole('button', { name: 'Actions for Defect' })
+    );
+    await user.click(
+      screen.getByRole('menuitem', { name: 'Merge into another label' })
+    );
+    await user.click(await screen.findByRole('button', { name: 'Merge' }));
+    expect(
+      await screen.findByText('Could not merge Defect into Bug.')
+    ).toBeInTheDocument();
   });
 });
 

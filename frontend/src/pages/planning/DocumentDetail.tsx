@@ -54,6 +54,7 @@ import {
   issueDocumentsKey,
 } from '../../lib/queryKeys';
 import { showToast } from '../../lib/toast';
+import FavoriteButton from '../../components/ui/FavoriteButton';
 import type { DocumentPatch, DocumentRead } from '../../types/Api';
 
 const RichMarkdownEditor = lazy(
@@ -383,6 +384,14 @@ export const DocumentDetail: React.FC = () => {
           />
           <span className="truncate">{page.title}</span>
         </span>
+      }
+      titleAccessory={
+        <FavoriteButton
+          workspaceId={workspaceId}
+          kind="document"
+          targetId={page.document_id}
+          title={page.title}
+        />
       }
       leading={crumbs}
       flush

@@ -26,11 +26,13 @@ import {
   LuTriangle,
 } from 'react-icons/lu';
 import type { IssueSubscription } from '../../hooks/useIssueSubscription';
+import { useTriageOn } from '../../hooks/useTriageTeams';
 import { cn } from '../../lib/cn';
 import { timestampLabel } from '../../lib/issueDisplay';
 import type { Assignable } from '../../lib/issuePeople';
 import { projectPatch } from '../../lib/milestones';
 import { liveSlaStatus } from '../../lib/sla';
+import { shownStatusId } from '../../lib/triageStatus';
 import type { EstimateOptions } from '../../lib/validation';
 import type {
   CycleRead,
@@ -157,6 +159,7 @@ export const IssuePropertiesPanel: React.FC<IssuePropertiesPanelProps> = ({
 }) => {
   const panel = useRef<HTMLElement>(null);
   const filePicker = useRef<HTMLInputElement>(null);
+  const triageOn = useTriageOn(issue.team_id);
   const [revealed, setRevealed] = useState<{
     issueId: string;
     fields: RevealField[];
@@ -322,7 +325,8 @@ export const IssuePropertiesPanel: React.FC<IssuePropertiesPanelProps> = ({
         <StatusPicker
           disabled={disabled}
           statuses={statuses}
-          value={issue.status_id}
+          triage={triageOn}
+          value={shownStatusId(issue)}
           onChange={(statusId) => {
             onUpdate({ status_id: statusId });
           }}
@@ -488,6 +492,11 @@ export const IssuePropertiesPanel: React.FC<IssuePropertiesPanelProps> = ({
         />
       </div>
 
+      {issue.external_ref ? (
+        <p className="px-2 pt-2 text-2xs break-words text-text-faint">
+          Imported from {issue.external_ref}
+        </p>
+      ) : null}
       <p className="px-2 pt-2 text-2xs text-text-faint">
         Updated {timestampLabel(issue.updated_at)}
       </p>

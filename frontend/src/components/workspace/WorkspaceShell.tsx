@@ -22,11 +22,11 @@ import { useLocation } from 'react-router-dom';
 import { useWorkspace } from '../../hooks/useWorkspace';
 import { cn } from '../../lib/cn';
 import { errorMessage } from '../../lib/errors';
+import BootSplash from '../layout/BootSplash';
 import { ErrorAlert } from '../ui/alert';
 import { IconButton } from '../ui/button';
 import TextLink from '../ui/link';
 import PageHeader from '../ui/page-header';
-import Spinner from '../ui/spinner';
 import { PeekPane } from './PeekPane';
 import Sidebar from './Sidebar';
 
@@ -35,6 +35,8 @@ export interface WorkspaceShellProps {
   children: ReactNode;
   /** The page title. Falls back to the workspace name. */
   title?: ReactNode;
+  /** A control right after the title, such as the favorite star. */
+  titleAccessory?: ReactNode;
   /** Buttons on the right of the title. */
   actions?: ReactNode;
   /** A second row under the title, for filters and view switches. */
@@ -67,12 +69,13 @@ const Body: React.FC<{ flush: boolean; children: ReactNode }> = ({
 );
 
 /**
- * Renders the workspace chrome, or the spinner, error and not-found states in
- * its place while the slug is being resolved.
+ * Renders the workspace chrome, or the cold start screen, error and not-found
+ * states in its place while the slug is being resolved.
  */
 export const WorkspaceShell: React.FC<WorkspaceShellProps> = ({
   children,
   title,
+  titleAccessory,
   actions,
   toolbar,
   leading,
@@ -103,7 +106,7 @@ export const WorkspaceShell: React.FC<WorkspaceShellProps> = ({
   }, [drawerOpen]);
 
   if (isLoading) {
-    return <Spinner label="Loading workspace" />;
+    return <BootSplash label="Loading workspace" />;
   }
 
   if (error !== null && workspace === null) {
@@ -192,6 +195,7 @@ export const WorkspaceShell: React.FC<WorkspaceShellProps> = ({
         <main className="flex min-w-0 flex-1 flex-col">
           <PageHeader
             title={title ?? workspace.name}
+            titleAccessory={titleAccessory}
             actions={actions}
             toolbar={toolbar}
             leading={

@@ -25,9 +25,11 @@ from app.domains.integrations.schemas.integrations import (
 )
 from app.domains.integrations.service import (
     conflict,
+    current_transitions,
     effective_transitions,
     new_transition,
     not_found,
+    record_transitions_change,
     replace_team_transitions,
     transition_read,
     unprocessable,
@@ -87,8 +89,11 @@ def create_transition(
     pattern = payload.branch_pattern or ""
     if any(row.trigger == payload.trigger and row.branch_pattern == pattern for row in stored):
         raise conflict("That trigger already has a rule for that branch pattern.")
+    before = current_transitions(repositories, context.workspace_id, team_id)
     row = new_transition(context.workspace_id, team_id, payload)
-    return transition_read(repositories.team_config.create_transition(row))
+    created = repositories.team_config.create_transition(row)
+    record_transitions_change(repositories, context, team_id, before)
+    return transition_read(created)
 
 
 @router.put(
@@ -103,7 +108,7 @@ def replace_transitions(
 ) -> list[TransitionRead]:
     """Replace the team's whole rule set, an empty list restoring the defaults."""
     _require_team(repositories, context, team_id)
-    return replace_team_transitions(repositories, context.workspace_id, team_id, payload.rules)
+    return replace_team_transitions(repositories, context, team_id, payload.rules)
 
 
 @router.patch(
@@ -137,6 +142,7 @@ def update_transition(
         attributes["branch_pattern"] = pattern
     if not attributes:
         return transition_read(current)
+    before = current_transitions(repositories, context.workspace_id, team_id)
     updated = repositories.team_config.update_transition(
         context.workspace_id,
         team_id,
@@ -145,6 +151,7 @@ def update_transition(
     )
     if updated is None:
         raise not_found()
+    record_transitions_change(repositories, context, team_id, before)
     return transition_read(updated)
 
 
@@ -160,6 +167,8 @@ def delete_transition(
 ) -> Response:
     """Remove one rule. Removing the last one restores the defaults."""
     _require_team(repositories, context, team_id)
+    before = current_transitions(repositories, context.workspace_id, team_id)
     if not repositories.team_config.delete_transition(context.workspace_id, team_id, transition_id):
         raise not_found()
+    record_transitions_change(repositories, context, team_id, before)
     return Response(status_code=status.HTTP_204_NO_CONTENT)

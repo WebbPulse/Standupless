@@ -3,13 +3,19 @@
 The REST routes and the MCP tools both call these, so the allowlist, the sealing and
 the re-enable rule hold the same whichever surface a team admin uses. Each takes an
 already authorized team: deciding who may manage a team's channels is the caller's.
+Adding, changing and removing one are recorded in the workspace audit log here, with
+the URL's masked tail and never the URL.
 """
 
 from __future__ import annotations
 
+from typing import Any
+
 from webbpulse.dynamodb import ConditionFailed
 from webbpulse.events.webhooks import WebhookSender
 
+from app.common import audit
+from app.common.api.dependencies.authz import AuthzContext
 from app.common.api.dependencies.repositories import Repositories
 from app.common.db.dynamo.base import utc_now
 from app.common.db.dynamo.channels import ChannelDestination, ChannelProvider, channel_key, new_channel_id
@@ -94,6 +100,40 @@ def _discord_target(
     }
 
 
+def _audit_fields(destination: ChannelDestination) -> dict[str, Any]:
+    """What the audit log keeps about a destination: where it posts, which events, and whether it is on."""
+    return {
+        "provider": destination.provider,
+        "transport": destination.transport,
+        "destination": destination.url_hint,
+        "label": destination.label,
+        "events": list(destination.events),
+        "enabled": destination.enabled,
+    }
+
+
+def _record(
+    repositories: Repositories,
+    context: AuthzContext,
+    event: str,
+    destination: ChannelDestination,
+    *,
+    before: dict[str, Any] | None = None,
+    after: dict[str, Any] | None = None,
+) -> None:
+    """Record one channel change with the destination as the target and its team beside it."""
+    audit.record(
+        repositories,
+        context,
+        event,
+        target_type="channel",
+        target_id=destination.channel_id,
+        target_label=destination.label or destination.url_hint,
+        before={"team_id": destination.team_id, **before} if before is not None else None,
+        after={"team_id": destination.team_id, **after} if after is not None else None,
+    )
+
+
 def get(repositories: Repositories, workspace_id: str, team_id: str, channel_id: str) -> ChannelDestination:
     """One destination of this team, or `ChannelNotFound`."""
     destination = repositories.github.channels.get(workspace_id, channel_id)
@@ -107,10 +147,10 @@ def list_for_team(repositories: Repositories, workspace_id: str, team_id: str) -
     return [read(row) for row in repositories.github.channels.list(workspace_id, team_id)]
 
 
-def create(
-    repositories: Repositories, workspace_id: str, team_id: str, user_id: str, payload: ChannelCreate
-) -> ChannelRead:
+def create(repositories: Repositories, context: AuthzContext, team_id: str, payload: ChannelCreate) -> ChannelRead:
     """Add one destination to a team, posting by webhook or through the installed Slack or Discord App."""
+    workspace_id = context.workspace_id
+    user_id = context.user_id
     url = ""
     provider: ChannelProvider = "discord" if payload.discord_channel_id is not None else "slack"
     by_webhook = payload.slack_channel_id is None and payload.discord_channel_id is None
@@ -145,13 +185,15 @@ def create(
         repositories.github.channels.create(destination)
     except ConditionFailed as exc:
         raise ChannelError("CONFLICT", "Try again.") from exc
+    _record(repositories, context, "channel.created", destination, after=_audit_fields(destination))
     return read(destination)
 
 
 def update(
-    repositories: Repositories, workspace_id: str, team_id: str, channel_id: str, payload: ChannelUpdate
+    repositories: Repositories, context: AuthzContext, team_id: str, channel_id: str, payload: ChannelUpdate
 ) -> ChannelRead:
     """Change one destination, re-sealing a replaced URL and clearing an auto-disable on re-enable."""
+    workspace_id = context.workspace_id
     current = get(repositories, workspace_id, team_id, channel_id)
     changes = payload.model_dump(exclude_unset=True)
     attributes: dict[str, object] = {}
@@ -176,13 +218,27 @@ def update(
         updated = store.clear(workspace_id, channel_id, *AUTO_DISABLE_FIELDS)
     if updated is None:
         raise ChannelNotFound(channel_id)
+    before, after = _audit_fields(current), _audit_fields(updated)
+    changed = sorted(name for name in after if before[name] != after[name])
+    if "url_ciphertext" in attributes:
+        changed = sorted({*changed, "destination"})
+    if changed:
+        _record(
+            repositories,
+            context,
+            "channel.updated",
+            updated,
+            before={name: before[name] for name in changed},
+            after={name: after[name] for name in changed},
+        )
     return read(updated)
 
 
-def delete(repositories: Repositories, workspace_id: str, team_id: str, channel_id: str) -> None:
+def delete(repositories: Repositories, context: AuthzContext, team_id: str, channel_id: str) -> None:
     """Remove one destination and its delivery log."""
-    get(repositories, workspace_id, team_id, channel_id)
-    repositories.github.channels.delete(workspace_id, channel_id)
+    destination = get(repositories, context.workspace_id, team_id, channel_id)
+    repositories.github.channels.delete(context.workspace_id, channel_id)
+    _record(repositories, context, "channel.deleted", destination, before=_audit_fields(destination))
 
 
 def send_test_message(

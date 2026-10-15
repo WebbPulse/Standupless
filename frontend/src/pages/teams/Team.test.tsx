@@ -250,6 +250,19 @@ const renderPage = (path = '/w/mine/team/ENG', extra?: ReactNode) =>
     </MemoryRouter>
   );
 
+/**
+ * Waits for the page to show the team's name. The sidebar reads the same
+ * cached team list, so the name is looked for outside the sidebar.
+ */
+const findTeamName = async (name: string): Promise<HTMLElement> => {
+  const shown = await screen.findAllByText(name);
+  const onPage = shown.find(
+    (element) => element.closest('[data-testid="sidebar-frame"]') === null
+  );
+  expect(onPage).toBeDefined();
+  return onPage as HTMLElement;
+};
+
 /** Presses a key on the document, as the shortcut layer hears it. */
 const press = (key: string, init: KeyboardEventInit = {}) => {
   act(() => {
@@ -319,7 +332,7 @@ describe('resolving the team', () => {
   it('shows the team the key prefix names', async () => {
     renderPage();
 
-    expect(await screen.findByText('Engine')).toBeInTheDocument();
+    expect(await findTeamName('Engine')).toBeInTheDocument();
   });
 
   it('says so when no team in the workspace uses that key', async () => {
@@ -540,7 +553,7 @@ describe('creating and saving', () => {
     listTeams.mockResolvedValue([guestTeam]);
     renderPage();
 
-    await screen.findByText('Engine');
+    await findTeamName('Engine');
     expect(
       screen.queryByRole('button', { name: 'New issue' })
     ).not.toBeInTheDocument();

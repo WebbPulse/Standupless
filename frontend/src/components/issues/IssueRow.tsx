@@ -26,6 +26,7 @@ import {
   type ScopedLabel,
   type ScopedStatus,
 } from '../../lib/issueView';
+import { shownStatusId } from '../../lib/triageStatus';
 import type { IssueRead } from '../../types/Api';
 import Avatar from '../ui/avatar';
 import Badge, { LabelChip } from '../ui/badge';
@@ -34,6 +35,7 @@ import { FilterChipButton } from './ChipActions';
 import SlaBadge from './SlaBadge';
 import { PriorityGlyph } from '../ui/glyphs';
 import { StatusIcon } from '../ui/StatusIcon';
+import { useIssuePrefetch } from '../../hooks/useIssuePrefetch';
 
 /**
  * Props for IssueRow: the issue, the workspace slug, and the lists to resolve
@@ -79,6 +81,7 @@ export const IssueRow: React.FC<IssueRowProps> = ({
   const assignee = assigneeLabel(issue.assignee_id, people);
   const priorityName = PRIORITY_LABELS[issue.priority];
   const statusName = status?.name ?? 'Unknown status';
+  const prefetch = useIssuePrefetch(issue.key);
 
   const priorityGlyph = (
     <PriorityGlyph priority={issue.priority} name={priorityName} />
@@ -123,6 +126,7 @@ export const IssueRow: React.FC<IssueRowProps> = ({
       )}
       <Link
         to={`/w/${slug}/issues/${issue.key}`}
+        {...prefetch}
         data-hover="parent"
         className="w-12 shrink-0 truncate font-mono text-xs text-text-faint after:absolute sm:w-16 after:inset-0 after:rounded-xs focus-visible:outline-none focus-visible:after:outline-2 focus-visible:after:-outline-offset-2 focus-visible:after:outline-accent"
       >
@@ -134,7 +138,7 @@ export const IssueRow: React.FC<IssueRowProps> = ({
         <FilterChipButton
           tooltip={`Filter by status: ${statusName}`}
           onFilter={() => {
-            onFilter('status', issue.status_id);
+            onFilter('status', shownStatusId(issue));
           }}
           className={GLYPH_FILTER}
         >
