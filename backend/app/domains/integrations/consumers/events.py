@@ -333,6 +333,9 @@ def _handle_pull_request(
     outsider, links nothing and posts nothing. A pull request reaches only the
     teams its author may reach, whatever team the repository is pinned to, so
     naming a private team's key does nothing for someone outside that team.
+
+    A key the body only mentions in passing links its issue and moves nothing. Once
+    an edit names it in the title or after a magic word, it moves as a new link does.
     """
     pull_request = body.get("pull_request")
     repository = body.get("repository")
@@ -399,8 +402,9 @@ def _handle_pull_request(
         match = next(row for row in found if row.key == key)
         link_id = f"{node_id}#{issue.issue_id}"
         previous = repositories.github.get_link(workspace_id, link_id)
-        issue_trigger = trigger
-        if previous is None and issue_trigger is None:
+        issue_trigger = trigger if match.moves_status else None
+        newly_moving = previous is None or not previous.moves_status
+        if match.moves_status and newly_moving and issue_trigger is None:
             issue_trigger = linking.trigger_for_new_link(
                 action,
                 state=str(pull_request.get("state", "")),
@@ -422,6 +426,7 @@ def _handle_pull_request(
                 pr_state=state,
                 author_login=author,
                 magic_word=match.magic_word,
+                moves_status=match.moves_status,
                 applied_status_id=previous.applied_status_id if previous is not None else None,
                 comment_id=previous.comment_id if previous is not None else None,
                 check_run_id=previous.check_run_id if previous is not None else None,

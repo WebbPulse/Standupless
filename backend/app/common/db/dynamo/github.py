@@ -291,6 +291,9 @@ class IssueLink(BaseModel):
     every link of that pull request, so the label sync removes only what it added.
     `detached` marks a link whose key a later delivery no longer names, which is
     how the label sync tells an unlinked issue from a linked one.
+    `moves_status` is false while the pull request only mentions the key in passing
+    in its body, so the link shows on the issue without moving its status; a row
+    written before it existed reads as one that moves.
 
     The branch, review and check fields are copied from the pull request's
     `PullRequestState` row whenever it changes, so a read of an issue's links
@@ -312,6 +315,7 @@ class IssueLink(BaseModel):
     pr_state: str = "open"
     author_login: str = ""
     magic_word: str | None = None
+    moves_status: bool = True
     applied_status_id: str | None = None
     comment_id: str | None = None
     check_run_id: str | None = None
