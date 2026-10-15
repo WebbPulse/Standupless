@@ -70,7 +70,7 @@ def account_step(repositories: Repositories, job: PurgeJob, deadline: Deadline) 
         while views := repositories.views.list_personal(workspace_id, job.user_id):
             for view in views:
                 repositories.views.delete(workspace_id, view.view_key)
-        repositories.views.set_favorites(workspace_id, job.user_id, [])
+        repositories.views.set_favorite_items(workspace_id, job.user_id, [])
         repositories.inbox.delete_all(workspace_id, job.user_id)
     return None
 

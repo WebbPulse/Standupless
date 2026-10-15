@@ -25,7 +25,7 @@ from app.common.api.schemas.views import (
     unknown_filter_keys,
 )
 from app.common.db.dynamo.base import utc_now
-from app.common.db.dynamo.views import SavedView, new_view_id, view_key_for
+from app.common.db.dynamo.views import FAVORITES_MAX, FavoriteItem, SavedView, new_view_id, view_key_for
 from app.common.issue_rules import (
     not_found,
     require_team_member,
@@ -244,12 +244,16 @@ def delete_saved_view(repositories: Repositories, context: AuthzContext, view_id
     view = load_visible_view(repositories, context, view_id)
     require_view_writer(repositories, context, view)
     repositories.views.delete(context.workspace_id, view.view_key)
-    favorites = repositories.views.favorites(context.workspace_id, context.user_id)
-    if view.view_id in favorites:
-        repositories.views.set_favorites(
-            context.workspace_id, context.user_id, [item for item in favorites if item != view.view_id]
-        )
+    _drop_view_favorite(repositories, context, view.view_id)
     return view
+
+
+def _drop_view_favorite(repositories: Repositories, context: AuthzContext, view_id: str) -> None:
+    """Take one view out of the caller's favorites, leaving every other favorite where it was."""
+    items = repositories.views.favorite_items(context.workspace_id, context.user_id)
+    kept = [row for row in items if not (row.kind == "view" and row.target_id == view_id)]
+    if len(kept) != len(items):
+        repositories.views.set_favorite_items(context.workspace_id, context.user_id, kept)
 
 
 def favorite_ids(repositories: Repositories, context: AuthzContext) -> set[str]:
@@ -265,11 +269,13 @@ def set_view_favorite(repositories: Repositories, context: AuthzContext, view_id
     star goes last, which is the order the sidebar lists them in.
     """
     view = load_visible_view(repositories, context, view_id)
-    current = repositories.views.favorites(context.workspace_id, context.user_id)
-    if favorite and view.view_id not in current:
-        repositories.views.set_favorites(context.workspace_id, context.user_id, [*current, view.view_id])
-    elif not favorite and view.view_id in current:
-        repositories.views.set_favorites(
-            context.workspace_id, context.user_id, [item for item in current if item != view.view_id]
-        )
+    if not favorite:
+        _drop_view_favorite(repositories, context, view.view_id)
+        return view
+    items = repositories.views.favorite_items(context.workspace_id, context.user_id)
+    if not any(row.kind == "view" and row.target_id == view.view_id for row in items):
+        if len(items) >= FAVORITES_MAX:
+            raise unprocessable(f"A member keeps at most {FAVORITES_MAX} favorites")
+        starred = FavoriteItem(kind="view", target_id=view.view_id)
+        repositories.views.set_favorite_items(context.workspace_id, context.user_id, [*items, starred])
     return view
