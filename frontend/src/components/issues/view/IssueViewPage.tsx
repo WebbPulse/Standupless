@@ -21,7 +21,6 @@ import {
   LuLayers,
   LuPencil,
   LuPlus,
-  LuStar,
 } from 'react-icons/lu';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import type { IssueListFilters } from '../../../api/issues';
@@ -29,7 +28,6 @@ import {
   VIEW_COLORS,
   createView,
   listViews,
-  setViewFavorite,
   updateView,
   type SavedViewDisplayRead,
   type SavedViewLook,
@@ -67,6 +65,7 @@ import { showErrorToast, showToast } from '../../../lib/toast';
 import { estimateOptionsOf } from '../../../lib/validation';
 import type { TeamRead } from '../../../types/Api';
 import Button, { IconButton } from '../../ui/button';
+import FavoriteButton from '../../ui/FavoriteButton';
 import Dialog from '../../ui/dialog';
 import { Input, Textarea } from '../../ui/input';
 import { Menu, MenuItem, MenuLabel } from '../../ui/menu';
@@ -376,6 +375,8 @@ export interface IssueViewPageProps {
    * into it, shared or saved as a view, and the archived toggle has no say.
    */
   archive?: boolean;
+  /** A control right after the title, such as the team's favorite star. */
+  titleAccessory?: React.ReactNode;
 }
 
 /** Which save dialog is open: a new view, or the details of the one running. */
@@ -399,6 +400,7 @@ export const IssueViewPage: React.FC<IssueViewPageProps> = ({
   emptyMessage,
   hideFilterFields,
   archive = false,
+  titleAccessory,
 }) => {
   const auth = useQueryAuth();
   const navigate = useNavigate();
@@ -409,7 +411,6 @@ export const IssueViewPage: React.FC<IssueViewPageProps> = ({
   const [saving, setSaving] = useState<Saving>(null);
   const [updating, setUpdating] = useState(false);
   const [insightsOpen, setInsightsOpen] = useState(false);
-  const [favorite, setFavorite] = useState(view?.favorite === true);
 
   const state = useMemo(() => parseViewState(params, base), [params, base]);
   const setState = useCallback(
@@ -538,19 +539,6 @@ export const IssueViewPage: React.FC<IssueViewPageProps> = ({
       showErrorToast(errorMessage(error, 'Could not update the view.'));
     } finally {
       setUpdating(false);
-    }
-  };
-
-  const toggleFavorite = async (): Promise<void> => {
-    if (view === undefined) return;
-    const next = !favorite;
-    setFavorite(next);
-    try {
-      await setViewFavorite(workspaceId, view.view_id, next);
-      refreshViewLists(workspaceId, view.team_id ?? undefined);
-    } catch (error) {
-      setFavorite(!next);
-      showErrorToast(errorMessage(error, 'Could not change the favorite.'));
     }
   };
 
@@ -772,20 +760,6 @@ export const IssueViewPage: React.FC<IssueViewPageProps> = ({
     view === undefined ? null : (
       <>
         <IconButton
-          label={favorite ? 'Remove from favorites' : 'Add to favorites'}
-          size="sm"
-          aria-pressed={favorite}
-          onClick={() => void toggleFavorite()}
-        >
-          <LuStar
-            aria-hidden="true"
-            className={cn(
-              'h-3.5 w-3.5',
-              favorite && 'fill-current text-warning'
-            )}
-          />
-        </IconButton>
-        <IconButton
           label="Edit view details"
           size="sm"
           onClick={() => {
@@ -809,6 +783,18 @@ export const IssueViewPage: React.FC<IssueViewPageProps> = ({
   return (
     <WorkspaceShell
       title={title}
+      titleAccessory={
+        view === undefined ? (
+          titleAccessory
+        ) : (
+          <FavoriteButton
+            workspaceId={workspaceId}
+            kind="view"
+            targetId={view.view_id}
+            title={view.name}
+          />
+        )
+      }
       leading={leading}
       actions={actions}
       toolbar={toolbar}

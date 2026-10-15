@@ -84,6 +84,7 @@ import {
 import { shortDateLabel } from '../../lib/propertyOptions';
 import { dayValue, todayNumber } from '../../lib/timeline';
 import { estimateOptionsOf } from '../../lib/validation';
+import FavoriteButton from '../../components/ui/FavoriteButton';
 import type { CycleHistoryRead, CycleRead } from '../../types/Api';
 
 /** How often the cycle re-reads. */
@@ -498,6 +499,15 @@ export const CycleDetail: React.FC = () => {
   return (
     <WorkspaceShell
       title={<span className="truncate">{cycleTitle(cycle)}</span>}
+      titleAccessory={
+        <FavoriteButton
+          workspaceId={workspaceId}
+          kind="cycle"
+          targetId={cycle.cycle_id}
+          teamId={team.id}
+          title={cycleTitle(cycle)}
+        />
+      }
       leading={crumbs}
       flush
       toolbar={

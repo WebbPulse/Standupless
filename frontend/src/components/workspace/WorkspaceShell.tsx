@@ -35,6 +35,8 @@ export interface WorkspaceShellProps {
   children: ReactNode;
   /** The page title. Falls back to the workspace name. */
   title?: ReactNode;
+  /** A control right after the title, such as the favorite star. */
+  titleAccessory?: ReactNode;
   /** Buttons on the right of the title. */
   actions?: ReactNode;
   /** A second row under the title, for filters and view switches. */
@@ -73,6 +75,7 @@ const Body: React.FC<{ flush: boolean; children: ReactNode }> = ({
 export const WorkspaceShell: React.FC<WorkspaceShellProps> = ({
   children,
   title,
+  titleAccessory,
   actions,
   toolbar,
   leading,
@@ -192,6 +195,7 @@ export const WorkspaceShell: React.FC<WorkspaceShellProps> = ({
         <main className="flex min-w-0 flex-1 flex-col">
           <PageHeader
             title={title ?? workspace.name}
+            titleAccessory={titleAccessory}
             actions={actions}
             toolbar={toolbar}
             leading={

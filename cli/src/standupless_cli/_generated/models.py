@@ -525,6 +525,12 @@ class DownloadRead(TypedDict):
     url: str
 
 
+class FavoriteRef(TypedDict):
+    kind: Literal["issue", "project", "cycle", "view", "team", "document", "initiative"]
+    target_id: str
+    team_id: NotRequired[str | None]
+
+
 class GitHubAppStatus(TypedDict):
     app_name: str
     configured: bool
@@ -2429,6 +2435,24 @@ class ErrorResponse(TypedDict):
     success: NotRequired[bool]
 
 
+class FavoriteOrder(TypedDict):
+    items: list[FavoriteRef]
+
+
+class FavoriteRead(TypedDict):
+    color: NotRequired[str | None]
+    icon: NotRequired[str | None]
+    issue_key: NotRequired[str | None]
+    kind: Literal["issue", "project", "cycle", "view", "team", "document", "initiative"]
+    parent_id: NotRequired[str | None]
+    parent_kind: NotRequired[str | None]
+    status: NotRequired[StatusRead | None]
+    target_id: str
+    team_id: NotRequired[str | None]
+    team_key_prefix: NotRequired[str | None]
+    title: str
+
+
 class HomeAttentionItem(TypedDict):
     issue: AppCommonApiSchemasIssuesIssueRead
     reasons: list[Literal["overdue", "due_soon", "sla_breached", "sla_at_risk", "blocked"]]
@@ -2791,6 +2815,10 @@ class ConnectedAppListRead(TypedDict):
 class CursorPageIssueLinkRead(TypedDict):
     items: list[IssueLinkRead]
     next_cursor: NotRequired[str | None]
+
+
+class FavoriteListRead(TypedDict):
+    favorites: list[FavoriteRead]
 
 
 class HomeRead(TypedDict):

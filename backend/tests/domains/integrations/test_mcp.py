@@ -182,6 +182,10 @@ def test_the_contract_fixes_the_tool_set() -> None:
         "list_triage_issues",
         "list_users",
         "list_views",
+        "list_favorites",
+        "add_favorite",
+        "remove_favorite",
+        "reorder_favorites",
         "list_workspace_labels",
         "list_workspace_exports",
         "list_workspace_members",
@@ -269,7 +273,7 @@ def test_the_contract_fixes_the_tool_set() -> None:
         "update_recurring_issue",
         "delete_recurring_issue",
     }
-    assert len(TOOLS) == 155
+    assert len(TOOLS) == 159
 
 
 def test_a_notification_gets_no_body(client: TestClient, workspace: str, repositories: Any) -> None:

@@ -51,6 +51,17 @@ const updateView =
   vi.fn<(id: string, body: Record<string, unknown>) => Promise<unknown>>();
 const setViewFavorite =
   vi.fn<(id: string, favorite: boolean) => Promise<unknown>>();
+const starred: { kind: string; target_id: string; title: string }[] = [];
+const addFavorite =
+  vi.fn<(ref: { kind: string; target_id: string }) => Promise<unknown>>();
+
+vi.mock('../../api/favorites', () => ({
+  listFavorites: () => Promise.resolve([...starred]),
+  addFavorite: (_w: string, ref: { kind: string; target_id: string }) =>
+    addFavorite(ref),
+  removeFavorite: () => Promise.resolve(),
+  reorderFavorites: () => Promise.resolve([...starred]),
+}));
 
 vi.mock('../../hooks/useAuth', () => ({
   useAuth: () => ({
@@ -280,10 +291,12 @@ beforeEach(() => {
     getView,
     updateView,
     setViewFavorite,
+    addFavorite,
     openCreate,
   ]) {
     spy.mockReset();
   }
+  starred.length = 0;
   useWorkspaceMock.mockReset();
   useWorkspaceMock.mockReturnValue(resolved('owner'));
   listTeams.mockResolvedValue([team]);
@@ -396,7 +409,10 @@ describe('a saved view', () => {
 
   it('stars the view for the caller', async () => {
     const user = userEvent.setup();
-    setViewFavorite.mockResolvedValue({});
+    addFavorite.mockImplementation((ref) => {
+      starred.push({ ...ref, title: 'Mine' });
+      return Promise.resolve(ref);
+    });
     renderPage();
 
     await user.click(
@@ -404,7 +420,9 @@ describe('a saved view', () => {
     );
 
     await waitFor(() => {
-      expect(setViewFavorite).toHaveBeenCalledWith('view-1', true);
+      expect(addFavorite).toHaveBeenCalledWith(
+        expect.objectContaining({ kind: 'view', target_id: 'view-1' })
+      );
     });
     expect(
       screen.getByRole('button', { name: 'Remove from favorites' })

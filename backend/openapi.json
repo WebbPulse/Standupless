@@ -3433,6 +3433,203 @@
         "title": "ErrorResponse",
         "type": "object"
       },
+      "FavoriteListRead": {
+        "description": "The caller's favorites in their order, each one they can still read.",
+        "properties": {
+          "favorites": {
+            "items": {
+              "$ref": "#/components/schemas/FavoriteRead"
+            },
+            "title": "Favorites",
+            "type": "array"
+          }
+        },
+        "required": [
+          "favorites"
+        ],
+        "title": "FavoriteListRead",
+        "type": "object"
+      },
+      "FavoriteOrder": {
+        "description": "The caller's favorites in their new order.\n\nFavorites the list leaves out keep their relative order after the named\nones, and names that are not favorites are ignored, so a reorder racing an\nadd or a removal in another tab never drops or resurrects anything.",
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/FavoriteRef"
+            },
+            "maxItems": 100,
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "FavoriteOrder",
+        "type": "object"
+      },
+      "FavoriteRead": {
+        "description": "One favorite as the sidebar draws it.\n\n`title` is the issue title, or the name of the project, cycle, view, team,\ndocument or initiative. `issue_key` and `status` are set for an issue, and\n`team_key_prefix` wherever the target belongs to one team, which is what a\nclient builds a team or cycle link from. `icon` and `color` are the target's\nown, where it has them.",
+        "properties": {
+          "color": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Color"
+          },
+          "icon": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Icon"
+          },
+          "issue_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Issue Key"
+          },
+          "kind": {
+            "enum": [
+              "issue",
+              "project",
+              "cycle",
+              "view",
+              "team",
+              "document",
+              "initiative"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "parent_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Id"
+          },
+          "parent_kind": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Kind"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/StatusRead"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "target_id": {
+            "title": "Target Id",
+            "type": "string"
+          },
+          "team_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Team Id"
+          },
+          "team_key_prefix": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Team Key Prefix"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "target_id",
+          "title"
+        ],
+        "title": "FavoriteRead",
+        "type": "object"
+      },
+      "FavoriteRef": {
+        "description": "One favorite named by its kind and id, as an add or a reorder sends it.\n\n`team_id` is needed only for a cycle, whose key carries its team.",
+        "properties": {
+          "kind": {
+            "enum": [
+              "issue",
+              "project",
+              "cycle",
+              "view",
+              "team",
+              "document",
+              "initiative"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "target_id": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Target Id",
+            "type": "string"
+          },
+          "team_id": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Team Id"
+          }
+        },
+        "required": [
+          "kind",
+          "target_id"
+        ],
+        "title": "FavoriteRef",
+        "type": "object"
+      },
       "GitHubAppStatus": {
         "description": "Whether this environment can create an App, and whether it already has one.",
         "properties": {
@@ -21194,6 +21391,242 @@
         "summary": "Get Workspace Export",
         "tags": [
           "workspaces"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/favorites": {
+      "get": {
+        "description": "The caller's favorites in their order, each resolved to what the sidebar draws.",
+        "operationId": "read_favorites_api_workspaces__workspace_id__favorites_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FavoriteListRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Read Favorites",
+        "tags": [
+          "views"
+        ]
+      },
+      "post": {
+        "description": "Star an issue, project, cycle, view, team, document or initiative the caller may read.",
+        "operationId": "create_favorite_api_workspaces__workspace_id__favorites_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FavoriteRef"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FavoriteRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Create Favorite",
+        "tags": [
+          "views"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/favorites/order": {
+      "put": {
+        "description": "Put the caller's favorites in a new order, answering the reordered listing.",
+        "operationId": "order_favorites_api_workspaces__workspace_id__favorites_order_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FavoriteOrder"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FavoriteListRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Order Favorites",
+        "tags": [
+          "views"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/favorites/{kind}/{target_id}": {
+      "delete": {
+        "description": "Unstar one favorite, a no-op when it was not starred.",
+        "operationId": "delete_favorite_api_workspaces__workspace_id__favorites__kind___target_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "kind",
+            "required": true,
+            "schema": {
+              "enum": [
+                "issue",
+                "project",
+                "cycle",
+                "view",
+                "team",
+                "document",
+                "initiative"
+              ],
+              "title": "Kind",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "target_id",
+            "required": true,
+            "schema": {
+              "maxLength": 64,
+              "minLength": 1,
+              "title": "Target Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Delete Favorite",
+        "tags": [
+          "views"
         ]
       }
     },

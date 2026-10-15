@@ -33,6 +33,7 @@ import {
 } from '../../hooks/useCreateTeam';
 import { triageSummaryKey } from '../../lib/queryKeys';
 import type {
+  FavoriteRead,
   ReviewsRead,
   SavedViewRead,
   TeamRead,
@@ -47,6 +48,7 @@ const setTeamOrder =
   vi.fn<(workspaceId: string, teamIds: string[]) => Promise<TeamRead[]>>();
 const getInboxCount = vi.fn<() => Promise<{ count: number }>>();
 const listViews = vi.fn<() => Promise<SavedViewRead[]>>();
+const listFavorites = vi.fn<() => Promise<FavoriteRead[]>>();
 const getTriageSummary = vi.fn<() => Promise<TriageSummaryRead>>();
 const getReviews = vi.fn<() => Promise<ReviewsRead>>();
 
@@ -71,6 +73,13 @@ vi.mock('../../api/teams', () => ({
 vi.mock('../../api/views', () => ({
   getInboxCount: () => getInboxCount(),
   listViews: () => listViews(),
+}));
+
+vi.mock('../../api/favorites', () => ({
+  listFavorites: () => listFavorites(),
+  addFavorite: vi.fn(),
+  removeFavorite: vi.fn(),
+  reorderFavorites: vi.fn(),
 }));
 
 vi.mock('../../api/triage', () => ({
@@ -210,6 +219,8 @@ beforeEach(() => {
   getInboxCount.mockResolvedValue({ count: 0 });
   listViews.mockReset();
   listViews.mockResolvedValue([]);
+  listFavorites.mockReset();
+  listFavorites.mockResolvedValue([]);
   getTriageSummary.mockReset();
   getTriageSummary.mockResolvedValue({ teams: [] });
   getReviews.mockReset();
@@ -533,29 +544,37 @@ describe('creating from the sidebar', () => {
     expect(open).toHaveBeenCalled();
   });
 
-  it('lists the caller favorite views and leaves the rest out', async () => {
-    listViews.mockResolvedValue([
+  it('lists the caller favorites in their own order with links to each', async () => {
+    listFavorites.mockResolvedValue([
+      { kind: 'view', target_id: 'view-1', title: 'My bugs' },
       {
-        view_id: 'view-1',
-        workspace_id: 'ws-1',
-        name: 'My bugs',
-        favorite: true,
-      } as unknown as SavedViewRead,
-      {
-        view_id: 'view-2',
-        workspace_id: 'ws-1',
-        name: 'Not starred',
-        favorite: false,
-      } as unknown as SavedViewRead,
+        kind: 'issue',
+        target_id: 'issue-1',
+        title: 'Fix the login',
+        issue_key: 'ENG-7',
+        team_id: 'team-1',
+        team_key_prefix: 'ENG',
+      },
+      { kind: 'cycle', target_id: 'cycle-1', title: 'Lost its team' },
     ]);
     renderSidebar();
 
+    const section = await screen.findByTestId('sidebar-favorites');
+    const links = within(section).getAllByRole('link');
+    expect(links.map((link) => link.getAttribute('href'))).toEqual([
+      '/w/mine/views/view-1',
+      '/w/mine/issues/ENG-7',
+    ]);
     expect(
-      await screen.findByRole('link', { name: /My bugs/ })
-    ).toHaveAttribute('href', '/w/mine/views/view-1');
-    expect(
-      screen.queryByRole('link', { name: /Not starred/ })
+      screen.queryByRole('link', { name: /Lost its team/ })
     ).not.toBeInTheDocument();
+  });
+
+  it('leaves the Favorites section out while nothing is starred', async () => {
+    renderSidebar();
+
+    await screen.findByRole('link', { name: /Inbox/ });
+    expect(screen.queryByTestId('sidebar-favorites')).not.toBeInTheDocument();
   });
 });
 

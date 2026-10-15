@@ -13,6 +13,7 @@ from typing import Any, Callable
 from tests.domains.integrations.mcp_isolation import (
     channels,
     documents,
+    favorites,
     initiatives,
     issues,
     planning,
@@ -42,6 +43,7 @@ AREAS = (
     triage,
     channels,
     views,
+    favorites,
     workspace,
     workflow,
     templates,

@@ -126,17 +126,48 @@ class SavedView(BaseModel):
         return "personal"
 
 
-class FavoriteViews(BaseModel):
-    """One member's favorite view ids in a workspace, in the order they were starred.
+FavoriteKind = Literal["issue", "project", "cycle", "view", "team", "document", "initiative"]
 
-    One row per member rather than a flag on each view, because a team or
-    workspace view is shared and a favorite is not.
+FAVORITE_KINDS: tuple[str, ...] = ("issue", "project", "cycle", "view", "team", "document", "initiative")
+"""What a member may star, in the order the API documents them."""
+
+FAVORITES_MAX = 100
+"""The most favorites one member keeps in one workspace, so the sidebar read stays bounded."""
+
+
+class FavoriteItem(BaseModel):
+    """One starred thing: its kind, its id, and the team a cycle needs to be found again.
+
+    A cycle's sort key carries its team, so the team is stored beside the id
+    rather than looked up, which keeps a guessed cycle id from reading anything.
+    """
+
+    kind: str
+    target_id: str
+    team_id: str | None = None
+
+
+class FavoriteViews(BaseModel):
+    """One member's favorites in a workspace, in the order they arranged them.
+
+    One row per member rather than a flag on each target, because a team or
+    workspace view is shared and a favorite is not. `items` holds every kind;
+    `view_ids` is the view subset, still written so a row stays readable by a
+    function deployed before `items` existed, and read to build `items` on a row
+    written before it.
     """
 
     workspace_id: str
     view_key: str
     user_id: str
     view_ids: list[str] = Field(default_factory=list)
+    items: list[FavoriteItem] | None = None
+
+    def ordered_items(self) -> list[FavoriteItem]:
+        """The favorites in order, a row older than `items` reading as its views."""
+        if self.items is not None:
+            return list(self.items)
+        return [FavoriteItem(kind="view", target_id=view_id) for view_id in self.view_ids]
 
 
 class ViewRepository:
@@ -229,23 +260,39 @@ class ViewRepository:
         """Every view shared with the whole workspace, oldest first."""
         return self._list(workspace_id, WORKSPACE_VIEW_PREFIX, limit)
 
-    def favorites(self, workspace_id: str, user_id: str) -> list[str]:
-        """One member's favorite view ids, in the order they were starred."""
+    def favorite_items(self, workspace_id: str, user_id: str) -> list[FavoriteItem]:
+        """One member's favorites of every kind, in the order they arranged them."""
         if not workspace_id or not user_id:
             return []
         item = self._repository.get({"workspace_id": workspace_id, "view_key": favorites_key(user_id)})
         if item is None:
             return []
-        return list(FavoriteViews.model_validate(dict(item)).view_ids)
+        return FavoriteViews.model_validate(dict(item)).ordered_items()
 
-    def set_favorites(self, workspace_id: str, user_id: str, view_ids: list[str]) -> list[str]:
-        """Replace one member's favorite view ids, dropping the row when none are left."""
+    def favorites(self, workspace_id: str, user_id: str) -> list[str]:
+        """One member's favorite view ids, in the order they arranged them."""
+        return [row.target_id for row in self.favorite_items(workspace_id, user_id) if row.kind == "view"]
+
+    def set_favorite_items(self, workspace_id: str, user_id: str, items: list[FavoriteItem]) -> list[FavoriteItem]:
+        """Replace one member's favorites, dropping repeats and the row itself when none are left."""
         key = {"workspace_id": workspace_id, "view_key": favorites_key(user_id)}
-        ordered = list(dict.fromkeys(view_ids))
+        seen: set[tuple[str, str]] = set()
+        ordered: list[FavoriteItem] = []
+        for row in items:
+            identity = (row.kind, row.target_id)
+            if identity not in seen:
+                seen.add(identity)
+                ordered.append(row)
         if not ordered:
             self._repository.delete(key)
             return []
-        row = FavoriteViews(workspace_id=workspace_id, view_key=key["view_key"], user_id=user_id, view_ids=ordered)
+        row = FavoriteViews(
+            workspace_id=workspace_id,
+            view_key=key["view_key"],
+            user_id=user_id,
+            view_ids=[entry.target_id for entry in ordered if entry.kind == "view"],
+            items=ordered,
+        )
         self._repository.put(as_item(row))
         return ordered
 
