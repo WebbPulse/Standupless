@@ -84,18 +84,27 @@ def lowest_plan_with(key: Feature | str) -> str | None:
     return None
 
 
+def plan_feature_message(feature: Feature, plan: str, required: str | None) -> str:
+    """The sentence a plan refusal reads as: the feature, the current plan and the plan to move to."""
+    sentence = f"{FEATURE_NAMES[feature]} is not included in the {plan.title()} plan."
+    if required is None:
+        return sentence
+    return f"{sentence} Upgrade the workspace to the {required.title()} plan to use it."
+
+
 def require_feature(workspace: Workspace | str | None, key: Feature | str) -> None:
     """Refuse with a 403 unless this workspace's plan includes `key`."""
     feature = Feature(key)
     if has_feature(workspace, feature):
         return
     plan = plan_of(workspace)
+    required = lowest_plan_with(feature)
     raise HTTPException(
         status_code=status.HTTP_403_FORBIDDEN,
         detail={
             "error_code": PLAN_FEATURE_UNAVAILABLE,
-            "message": f"{FEATURE_NAMES[feature]} is not included in the {plan} plan.",
-            "details": {"feature": feature.value, "plan": plan, "required_plan": lowest_plan_with(feature)},
+            "message": plan_feature_message(feature, plan, required),
+            "details": {"feature": feature.value, "plan": plan, "required_plan": required},
         },
     )
 

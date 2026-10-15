@@ -31,6 +31,37 @@ const PLAN_LIMIT_MESSAGE =
 export const isPlanLimit = (error: unknown): boolean =>
   getErrorCode(error) === PLAN_LIMIT_REACHED;
 
+/** The code a write answers when the workspace plan leaves out the feature. */
+export const PLAN_FEATURE_UNAVAILABLE = 'PLAN_FEATURE_UNAVAILABLE';
+
+/** Whether a failure was a write refused because the plan lacks the feature. */
+export const isPlanFeatureUnavailable = (error: unknown): boolean =>
+  getErrorCode(error) === PLAN_FEATURE_UNAVAILABLE;
+
+/** A plan name as a person reads it, such as `Business` for `business`. */
+const planTitle = (plan: string): string =>
+  plan.charAt(0).toUpperCase() + plan.slice(1);
+
+/**
+ * The wording for a plan feature refusal that arrived without its own
+ * sentence. It names the plan to move to when the refusal carried one, and
+ * never suggests the caller lacks permission, because the plan is the cause.
+ */
+const planFeatureMessage = (body: unknown): string => {
+  const details =
+    typeof body === 'object' && body !== null && 'details' in body
+      ? (body as { details?: unknown }).details
+      : undefined;
+  const required =
+    typeof details === 'object' && details !== null
+      ? (details as { required_plan?: unknown }).required_plan
+      : undefined;
+  if (typeof required === 'string' && required.length > 0) {
+    return `This feature needs the ${planTitle(required)} plan. Upgrade the workspace on the billing page to use it.`;
+  }
+  return 'This feature is not included in the workspace plan. Upgrade the workspace on the billing page to use it.';
+};
+
 /**
  * Reads a failure into a sentence, falling back to the caller's wording when
  * the failure carried none of its own.
@@ -39,6 +70,9 @@ export const errorMessage = (error: unknown, fallback: string): string => {
   if (error instanceof ApiError) {
     if (isPlanLimit(error)) {
       return formatApiErrorMessage(error.body, PLAN_LIMIT_MESSAGE);
+    }
+    if (isPlanFeatureUnavailable(error)) {
+      return formatApiErrorMessage(error.body, planFeatureMessage(error.body));
     }
     return formatApiErrorMessage(error.body, fallback);
   }

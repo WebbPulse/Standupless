@@ -288,6 +288,8 @@ def test_invite_member_respects_the_plan_limits(
     message = refusal(tool(client, secret, "invite_member", {"email": "x@example.com", "role": "member"}))
 
     assert "plan limit" in message
+    assert "PLAN_LIMIT_REACHED" in message
+    assert "credential" not in message
     assert len(repositories.invites.list_for_workspace(WORKSPACE)) == 1
 
 

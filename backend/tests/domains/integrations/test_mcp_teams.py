@@ -297,7 +297,11 @@ def test_sla_settings_need_business(client: TestClient, repositories: Any, works
 
     refused = refusal(tool(client, admin, "update_team_sla_settings", {"team_id": "ABC", "enabled": True}))
 
-    assert "not included" in refused
+    assert refused == (
+        "Issue SLAs is not included in the Free plan. "
+        "Upgrade the workspace to the Business plan to use it. (PLAN_FEATURE_UNAVAILABLE)"
+    )
+    assert "credential" not in refused
     assert repositories.team_config.get_sla_settings(WORKSPACE, TEAM) is None
 
 

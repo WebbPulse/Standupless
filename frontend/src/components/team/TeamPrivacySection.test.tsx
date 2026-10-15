@@ -76,7 +76,8 @@ describe('the team privacy section', () => {
         statusText: 'Forbidden',
         body: {
           error_code: 'PLAN_FEATURE_UNAVAILABLE',
-          message: 'Private teams is not included in the free plan.',
+          message:
+            'Private teams is not included in the Free plan. Upgrade the workspace to the Business plan to use it.',
         },
         url: '/api/workspaces/ws-1/teams/team-1',
         method: 'PATCH',
@@ -96,7 +97,7 @@ describe('the team privacy section', () => {
     await user.click(confirm);
 
     expect(
-      await screen.findByText(/not included in the free plan/)
+      await screen.findByText(/not included in the Free plan/)
     ).toBeInTheDocument();
   });
 

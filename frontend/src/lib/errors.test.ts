@@ -1,7 +1,7 @@
 import { ApiError } from '@webbpulse/api-client';
 import { describe, expect, it } from 'vitest';
 
-import { errorMessage, isPlanLimit } from './errors';
+import { errorMessage, isPlanFeatureUnavailable, isPlanLimit } from './errors';
 
 /** A refusal carrying the given envelope body, as the shared client throws it. */
 const refusal = (status: number, body: unknown): ApiError =>
@@ -53,6 +53,43 @@ describe('plan limit errors', () => {
       errorMessage(refusal(403, planLimitBody('')), 'Could not create.')
     ).toBe(
       'This workspace has reached its plan limit. Remove one to make room.'
+    );
+  });
+});
+
+/** The envelope a gated write answers when the plan lacks the feature. */
+const planFeatureBody = (message: string, requiredPlan: string | null) => ({
+  success: false,
+  status: 403,
+  message,
+  request_id: 'req-3',
+  error_code: 'PLAN_FEATURE_UNAVAILABLE',
+  details: { feature: 'issue_slas', plan: 'free', required_plan: requiredPlan },
+});
+
+describe('plan feature errors', () => {
+  it('recognises the plan feature code and not the limit code', () => {
+    const gated = refusal(403, planFeatureBody('No.', 'business'));
+    const full = refusal(403, planLimitBody('Full.'));
+    expect(isPlanFeatureUnavailable(gated)).toBe(true);
+    expect(isPlanFeatureUnavailable(full)).toBe(false);
+  });
+
+  it('shows the server sentence, which names the feature and the plan', () => {
+    const message =
+      'Issue SLAs is not included in the Free plan. Upgrade the workspace to the Business plan to use it.';
+    const gated = refusal(403, planFeatureBody(message, 'business'));
+    expect(errorMessage(gated, 'Could not save.')).toBe(message);
+  });
+
+  it('falls back to naming the plan to move to, not a permission problem', () => {
+    const named = refusal(403, planFeatureBody('', 'business'));
+    const unnamed = refusal(403, planFeatureBody('', null));
+    expect(errorMessage(named, 'Could not save.')).toBe(
+      'This feature needs the Business plan. Upgrade the workspace on the billing page to use it.'
+    );
+    expect(errorMessage(unnamed, 'Could not save.')).toBe(
+      'This feature is not included in the workspace plan. Upgrade the workspace on the billing page to use it.'
     );
   });
 });
