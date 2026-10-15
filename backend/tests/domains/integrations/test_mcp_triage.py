@@ -114,5 +114,8 @@ def test_the_switch_needs_a_plan_with_triage(client: TestClient, repositories: A
 
     refused = refusal(tool(client, admin, "update_team_triage_settings", {"team_id": "ABC", "enabled": True}))
 
-    assert "not included" in refused
+    assert "not included in the Free plan" in refused
+    assert "Standard plan" in refused
+    assert "PLAN_FEATURE_UNAVAILABLE" in refused
+    assert "credential" not in refused
     assert repositories.team_config.get_triage_settings(WORKSPACE, TEAM) is None

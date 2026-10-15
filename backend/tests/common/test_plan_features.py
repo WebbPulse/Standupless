@@ -72,6 +72,9 @@ def test_require_feature_passes_or_raises_a_stable_403() -> None:
     assert detail["error_code"] == PLAN_FEATURE_UNAVAILABLE
     assert detail["details"] == {"feature": "audit_log", "plan": "standard", "required_plan": "business"}
     assert "—" not in detail["message"]
+    assert detail["message"] == (
+        "Audit log is not included in the Standard plan. Upgrade the workspace to the Business plan to use it."
+    )
 
 
 def test_enforce_feature_reads_the_stored_plan(repositories: Any) -> None:
