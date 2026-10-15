@@ -18,7 +18,7 @@ from __future__ import annotations
 import math
 from collections import Counter
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Iterable
 
 from app.common.db.dynamo.search_index import ranked_terms, tokenize
 from app.common.issue_keys import current
@@ -85,12 +85,15 @@ def find_similar(
     *,
     limit: int = DEFAULT_LIMIT,
     exclude_issue_id: str | None = None,
+    exclude_issue_ids: Iterable[str] = (),
 ) -> list[SimilarIssue]:
     """Open issues in the caller's visible teams whose title shares enough terms with `title`.
 
     Ranked by how many terms the candidate's own title shares, then by how many
     of its indexed terms match, then by recency. An empty or all short title
-    answers nothing rather than reading anything.
+    answers nothing rather than reading anything. `exclude_issue_id` and
+    `exclude_issue_ids` are never answered, so an issue is not its own duplicate
+    and a sub-issue is not a duplicate of its parent or ancestors.
     """
     terms = title_terms(title)
     if not terms:
@@ -100,10 +103,13 @@ def find_similar(
         return []
 
     workspace_id = context.workspace_id
+    excluded = set(exclude_issue_ids)
+    if exclude_issue_id:
+        excluded.add(exclude_issue_id)
     floor = required_matches(len(terms))
     counts = _counted(repositories, workspace_id, teams, terms)
     ranked = sorted(
-        (issue_id for issue_id, count in counts.items() if count >= floor and issue_id != exclude_issue_id),
+        (issue_id for issue_id, count in counts.items() if count >= floor and issue_id not in excluded),
         key=lambda issue_id: (counts[issue_id], issue_id),
         reverse=True,
     )[:CANDIDATE_CAP]
