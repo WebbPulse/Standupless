@@ -263,7 +263,6 @@ locals {
         API_URL         = local.api_url
         ALLOWED_ORIGINS = local.allowed_origins
 
-        WEBBPULSE_OTEL_SAMPLE_RATIO        = var.environment == "production" ? "0.1" : "1.0"
         OTEL_EXPORTER_OTLP_TRACES_ENDPOINT = "https://xray.${var.aws_region}.amazonaws.com/v1/traces"
 
         IDENTITY_ISSUER   = local.identity_issuer
@@ -356,6 +355,8 @@ locals {
         },
 
       module.identity.identity_environment) : {},
+
+      module.transaction_search.otel_environment_variables,
     )
   }
 
