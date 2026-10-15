@@ -31,7 +31,7 @@ from app.domains.integrations.mcp.toolkit import (
 from app.domains.integrations.mcp.transport import ToolError
 from app.domains.integrations.schemas.integrations import TeamSyncRead, TeamSyncWrite
 from app.domains.integrations.service import require_team_content
-from app.domains.integrations.team_sync import read_team_sync, save_team_sync
+from app.domains.integrations.team_sync import read_team_sync, record_pin, save_team_sync
 
 TEAM_ARGUMENT = "Team: id, key such as ENG, or name"
 
@@ -96,7 +96,7 @@ def _update_team_github_sync(call: ToolCall) -> Any:
         raise ToolError("This team does not sync yet, so name a repository")
     body.update({name: call.arguments[name] for name in SETTINGS if call.present(name)})
     payload = TeamSyncWrite.model_validate(body)
-    saved = save_team_sync(call.repositories, workspace_id, call.context.user_id, team.team_id, payload)
+    saved = save_team_sync(call.repositories, call.context, team.team_id, payload)
     return _sync_json(call, team, saved)
 
 
@@ -120,8 +120,12 @@ def _pin_team_repository(call: ToolCall) -> Any:
             raise ToolError(f"{repository.full_name} is pinned to another team; unpin it there first")
         if repository.team_id is None:
             call.repositories.github.set_repository_team(workspace_id, repository.repository_id, team.team_id)
+            record_pin(
+                call.repositories, call.context, repository.repository_id, repository.full_name, None, team.team_id
+            )
     elif repository.team_id == team.team_id:
         call.repositories.github.set_repository_team(workspace_id, repository.repository_id, None)
+        record_pin(call.repositories, call.context, repository.repository_id, repository.full_name, team.team_id, None)
     return _sync_json(call, team, read_team_sync(call.repositories, workspace_id, team.team_id))
 
 

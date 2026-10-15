@@ -51,9 +51,7 @@ def put_team_member(
     Only an existing workspace member can be added, because a team membership
     is a narrowing of workspace access and never a grant of it.
     """
-    membership = team_members.put_team_member(
-        repositories, context.workspace_id, str(context.team_id), user_id, payload.role
-    )
+    membership = team_members.put_team_member(repositories, context, str(context.team_id), user_id, payload.role)
     return TeamMemberRead.from_rows(membership, repositories.users.get(user_id))
 
 
@@ -67,7 +65,7 @@ def remove_team_member(
     repositories: Annotated[Repositories, Depends(get_repositories)],
 ) -> Response:
     """Remove someone from the team. A guest loses access to it entirely."""
-    team_members.remove_team_member(repositories, context.workspace_id, str(context.team_id), user_id)
+    team_members.remove_team_member(repositories, context, str(context.team_id), user_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
@@ -85,7 +83,7 @@ def join_team(
     to anyone outside it but a workspace owner or admin, and a guest reaches only
     the teams an admin added them to, so this never widens access for either.
     """
-    membership = team_members.join_team(repositories, context.workspace_id, str(context.team_id), context.user_id)
+    membership = team_members.join_team(repositories, context, str(context.team_id))
     return TeamMemberRead.from_rows(membership, repositories.users.get(context.user_id))
 
 
@@ -98,5 +96,5 @@ def leave_team(
     repositories: Annotated[Repositories, Depends(get_repositories)],
 ) -> Response:
     """Leave a team. The last admin must hand the role on first."""
-    team_members.leave_team(repositories, context.workspace_id, str(context.team_id), context.user_id)
+    team_members.leave_team(repositories, context, str(context.team_id))
     return Response(status_code=status.HTTP_204_NO_CONTENT)

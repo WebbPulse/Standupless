@@ -9,6 +9,9 @@ The listing reads the workspace's own tokens and then drops the ones onto
 teams the caller cannot see. The package's table carries a tenant index, so
 this is one query rather than the per-target fan-out the product-local table
 forced, and team visibility stays a filter over a bounded set.
+
+Creating and revoking a link are recorded in the workspace audit log, keyed by the
+token hash so the entry never carries the token itself.
 """
 
 from __future__ import annotations
@@ -18,6 +21,7 @@ from typing import Annotated, Any, Optional
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, Response, status
 from webbpulse.identity.share_tokens import mint_share_token, revoke_share_token
 
+from app.common import audit
 from app.common.api.dependencies.authz import (
     AuthzContext,
     Capability,
@@ -150,10 +154,30 @@ def create_share_link(
         store=repositories.share_links,
     )
 
+    created = ShareLinkView(minted.record)
+    audit.record(
+        repositories,
+        context,
+        "share_link.created",
+        target_type="share_link",
+        target_id=created.token_hash,
+        target_label=created.title,
+        after=_audit_fields(created),
+    )
     return ShareLinkCreated(
-        **ShareLinkRead.from_row(ShareLinkView(minted.record), url=_share_url(minted.plaintext)).model_dump(),
+        **ShareLinkRead.from_row(created, url=_share_url(minted.plaintext)).model_dump(),
         token=minted.plaintext,
     )
+
+
+def _audit_fields(link: ShareLinkView) -> dict[str, Any]:
+    """What the audit log keeps about a link: what it exposes, on which team, and until when."""
+    return {
+        "shares": link.target_type,
+        "shared_id": link.target_id,
+        "team_id": link.team_id,
+        "expires_at": link.expires_at or None,
+    }
 
 
 def _issue_target(repositories: Repositories, context: AuthzContext, issue_id: str) -> tuple[str, str]:
@@ -236,4 +260,13 @@ def revoke_share_link(
 
     if link.revoked_at is None:
         revoke_share_token(token_hash, repositories.share_links)
+        audit.record(
+            repositories,
+            context,
+            "share_link.revoked",
+            target_type="share_link",
+            target_id=link.token_hash,
+            target_label=link.title,
+            before=_audit_fields(link),
+        )
     return Response(status_code=status.HTTP_204_NO_CONTENT)

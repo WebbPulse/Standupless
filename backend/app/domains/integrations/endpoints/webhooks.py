@@ -13,15 +13,19 @@ else, which is why rotate exists at all.
 Every URL is run through the SSRF guard when it is saved, so an admin gets a clear
 422 for a private or loopback address. The sender checks again on every attempt,
 because the answer DNS gives can change after the save.
+
+Creating, changing, rotating and deleting a webhook are recorded in the workspace
+audit log with the URL, scope and events, and never the secret.
 """
 
 from __future__ import annotations
 
 from typing import Annotated, Any
+from urllib.parse import urlsplit, urlunsplit
 
 from fastapi import APIRouter, Depends, Response, status
 
-from app.common import plan_usage
+from app.common import audit, plan_usage
 from app.common.api.dependencies.authz import AuthzContext, Capability, require
 from app.common.api.dependencies.repositories import Repositories, get_repositories
 from app.common.db.dynamo.base import utc_now
@@ -89,6 +93,43 @@ def _scoped(repositories: Repositories, workspace_id: str, webhook_id: str, team
     return endpoint
 
 
+def _audit_fields(endpoint: WebhookEndpoint) -> dict[str, Any]:
+    """What the audit log keeps about a webhook: where it posts, for which team and events, and whether it is on.
+
+    The URL is kept without its query string or fragment, where a receiver's token tends to ride.
+    """
+    parts = urlsplit(endpoint.url)
+    return {
+        "url": urlunsplit((parts.scheme, parts.netloc, parts.path, "", "")),
+        "label": endpoint.label,
+        "team_id": endpoint.team_id,
+        "resource_types": list(endpoint.resource_types),
+        "enabled": endpoint.active,
+    }
+
+
+def _record(
+    repositories: Repositories,
+    context: AuthzContext,
+    event: str,
+    endpoint: WebhookEndpoint,
+    *,
+    before: dict[str, Any] | None = None,
+    after: dict[str, Any] | None = None,
+) -> None:
+    """Record one webhook change with the webhook as the target."""
+    audit.record(
+        repositories,
+        context,
+        event,
+        target_type="webhook",
+        target_id=endpoint.webhook_id,
+        target_label=endpoint.label or endpoint.url,
+        before=before,
+        after=after,
+    )
+
+
 def _list(repositories: Repositories, workspace_id: str, team_id: str | None) -> list[WebhookEndpointRead]:
     """The webhooks a scope sees, oldest first."""
     rows = repositories.github.list_endpoints(workspace_id)
@@ -136,6 +177,7 @@ def _create(
         [repositories.github.create_endpoint_action(endpoint)],
         [plan_usage.Delta(LimitedResource.WEBHOOKS, 1)],
     )
+    _record(repositories, context, "webhook.created", endpoint, after=_audit_fields(endpoint))
     return endpoint_read(endpoint, secret=secret)
 
 
@@ -187,16 +229,30 @@ def _update(
         updated = repositories.github.clear_endpoint_fields(workspace_id, webhook_id, *clear)
     if updated is None:
         raise not_found()
+    before, after = _audit_fields(endpoint), _audit_fields(updated)
+    changed = sorted(name for name in after if before[name] != after[name])
+    if changed:
+        _record(
+            repositories,
+            context,
+            "webhook.updated",
+            updated,
+            before={name: before[name] for name in changed},
+            after={name: after[name] for name in changed},
+        )
     return endpoint_read(updated)
 
 
-def _rotate(repositories: Repositories, workspace_id: str, webhook_id: str, team_id: str | None) -> WebhookEndpointRead:
+def _rotate(
+    repositories: Repositories, context: AuthzContext, webhook_id: str, team_id: str | None
+) -> WebhookEndpointRead:
     """Mint a new secret, invalidating the old one at once.
 
     There is no overlap window: a receiver that has not been updated starts failing
     verification immediately, which is the honest behaviour for a rotate somebody
     reached for because the old value leaked.
     """
+    workspace_id = context.workspace_id
     _scoped(repositories, workspace_id, webhook_id, team_id)
     salt = new_salt()
     secret = mint_secret(webhook_id, salt)
@@ -209,14 +265,16 @@ def _rotate(repositories: Repositories, workspace_id: str, webhook_id: str, team
     )
     if updated is None:
         raise not_found()
+    _record(repositories, context, "webhook.secret_rotated", updated)
     return endpoint_read(updated, secret=secret)
 
 
-def _delete(repositories: Repositories, workspace_id: str, webhook_id: str, team_id: str | None) -> Response:
+def _delete(repositories: Repositories, context: AuthzContext, webhook_id: str, team_id: str | None) -> Response:
     """Stop delivering to a webhook and forget it and its delivery log."""
-    _scoped(repositories, workspace_id, webhook_id, team_id)
-    if not plan_usage.delete_webhook(repositories, workspace_id, webhook_id):
+    endpoint = _scoped(repositories, context.workspace_id, webhook_id, team_id)
+    if not plan_usage.delete_webhook(repositories, context.workspace_id, webhook_id):
         raise not_found()
+    _record(repositories, context, "webhook.deleted", endpoint, before=_audit_fields(endpoint))
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
@@ -277,13 +335,13 @@ def update_webhook(
 @router.post("/{workspace_id}/webhooks/{webhook_id}/rotate", response_model=WebhookEndpointRead)
 def rotate_webhook_secret(webhook_id: str, context: WorkspaceAdmin, repositories: Bundle) -> WebhookEndpointRead:
     """Mint a new secret for any webhook in the workspace."""
-    return _rotate(repositories, context.workspace_id, webhook_id, None)
+    return _rotate(repositories, context, webhook_id, None)
 
 
 @router.delete("/{workspace_id}/webhooks/{webhook_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_webhook(webhook_id: str, context: WorkspaceAdmin, repositories: Bundle) -> Response:
     """Delete any webhook in the workspace."""
-    return _delete(repositories, context.workspace_id, webhook_id, None)
+    return _delete(repositories, context, webhook_id, None)
 
 
 @router.get("/{workspace_id}/webhooks/{webhook_id}/deliveries", response_model=list[WebhookDeliveryRead])
@@ -344,13 +402,13 @@ def rotate_team_webhook_secret(
     team_id: str, webhook_id: str, context: TeamAdmin, repositories: Bundle
 ) -> WebhookEndpointRead:
     """Mint a new secret for one of a team's webhooks."""
-    return _rotate(repositories, context.workspace_id, webhook_id, team_id)
+    return _rotate(repositories, context, webhook_id, team_id)
 
 
 @router.delete("/{workspace_id}/teams/{team_id}/webhooks/{webhook_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_team_webhook(team_id: str, webhook_id: str, context: TeamAdmin, repositories: Bundle) -> Response:
     """Delete one of a team's webhooks."""
-    return _delete(repositories, context.workspace_id, webhook_id, team_id)
+    return _delete(repositories, context, webhook_id, team_id)
 
 
 @router.get(

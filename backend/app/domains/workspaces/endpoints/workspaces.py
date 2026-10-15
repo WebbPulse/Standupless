@@ -131,13 +131,16 @@ def list_workspaces(
 @router.post("", response_model=WorkspaceRead, status_code=status.HTTP_201_CREATED)
 def create_workspace(
     payload: WorkspaceCreate,
+    request: Request,
     subject: Annotated[str, Depends(caller_subject)],
     repositories: Annotated[Repositories, Depends(get_repositories)],
 ) -> WorkspaceRead:
     """Create a workspace and make the caller its first owner.
 
     The membership is written after the workspace, because a workspace with no
-    owner is recoverable while an owner row pointing at nothing is not.
+    owner is recoverable while an owner row pointing at nothing is not. The
+    creation opens the new workspace's audit log with its creator as the actor,
+    since there is no earlier admin to act for.
     """
     refuse_deleted_caller(repositories, subject)
     workspace = Workspace(id=new_workspace_id(), name=payload.name, slug=payload.slug)
@@ -153,6 +156,15 @@ def create_workspace(
             user_id=subject,
             role="owner",
         )
+    )
+    audit.record(
+        repositories,
+        request_context(request, created.id, subject, "owner"),
+        "workspace.created",
+        target_type="workspace",
+        target_id=created.id,
+        target_label=created.name,
+        after={"name": created.name, "slug": created.slug},
     )
     return WorkspaceRead.from_row(created, "owner")
 
