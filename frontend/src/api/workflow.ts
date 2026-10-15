@@ -5,9 +5,11 @@
  */
 
 import apiClient from './client';
+import { runLabelMerge } from './labelMerge';
 import type {
   LabelCreate,
   LabelListRead,
+  LabelMergeRead,
   LabelRead,
   LabelUpdate,
   StatusCreate,
@@ -133,3 +135,14 @@ export const deleteWorkspaceLabel = async (
     `${workspaceLabelsPath(workspaceId)}/${labelId}`
   );
 };
+
+/** Folds one workspace label into another, on every team's issues. */
+export const mergeWorkspaceLabel = (
+  workspaceId: string,
+  labelId: string,
+  targetLabelId: string
+): Promise<LabelMergeRead> =>
+  runLabelMerge(
+    `${workspaceLabelsPath(workspaceId)}/${labelId}/merge`,
+    targetLabelId
+  );

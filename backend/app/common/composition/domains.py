@@ -215,6 +215,7 @@ _TEAMS_REPOSITORIES = (
     "issues",
     "activity",
     "audit",
+    "views",
 )
 
 _TEAMS_READ_REPOSITORIES = ("workspaces", "users", "api_keys")

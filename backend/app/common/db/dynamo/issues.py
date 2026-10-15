@@ -15,7 +15,7 @@ index sparse: an unassigned issue costs nothing in `ws_assignee-updated_at-index
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from typing import Any, Callable, Literal, Mapping
+from typing import Any, Callable, Iterator, Literal, Mapping
 
 from boto3.dynamodb.conditions import Attr, Key
 from pydantic import BaseModel, Field, PrivateAttr, TypeAdapter
@@ -1116,6 +1116,22 @@ class IssueRepository:
             max_items=max_items,
         )
         return [as_issue(item) for item in items]
+
+    def iter_with_label_lazily(self, workspace_id: str, team_id: str, label_id: str) -> Iterator[Issue]:
+        """Every issue of one team carrying one label, archived ones included, read a page at a time.
+
+        The unbounded twin of `iter_with_label` for a label merge, which must
+        reach every issue of a large team and stops early on its own time budget
+        rather than on a count, so no page is read before it is needed.
+        """
+        if not workspace_id or not team_id or not label_id:
+            return
+        for item in self._repository.iter_query(
+            Key("ws_team").eq(ws_team(workspace_id, team_id)),
+            index_name=KEY_NUMBER_INDEX,
+            filter_expression=Attr("label_ids").contains(label_id),
+        ):
+            yield as_issue(item)
 
     def list_for_assignee(
         self,

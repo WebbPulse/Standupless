@@ -6642,6 +6642,64 @@
         "title": "LabelListRead",
         "type": "object"
       },
+      "LabelMerge": {
+        "description": "The body a label merge takes: the label of the same scope the merged label folds into.",
+        "properties": {
+          "target_label_id": {
+            "minLength": 1,
+            "title": "Target Label Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "target_label_id"
+        ],
+        "title": "LabelMerge",
+        "type": "object"
+      },
+      "LabelMergeRead": {
+        "description": "What a label merge did, so far or in full.\n\n`complete` is false when a large merge ran out of time for one request: the\nissues moved so far keep the target label, and calling the merge again with\nthe same target picks up where it stopped. A merge already finished answers\nits result again, so a retry is safe.",
+        "properties": {
+          "complete": {
+            "default": true,
+            "title": "Complete",
+            "type": "boolean"
+          },
+          "issues_updated": {
+            "default": 0,
+            "title": "Issues Updated",
+            "type": "integer"
+          },
+          "source_label_id": {
+            "title": "Source Label Id",
+            "type": "string"
+          },
+          "source_name": {
+            "title": "Source Name",
+            "type": "string"
+          },
+          "target": {
+            "$ref": "#/components/schemas/LabelRead"
+          },
+          "templates_updated": {
+            "default": 0,
+            "title": "Templates Updated",
+            "type": "integer"
+          },
+          "views_updated": {
+            "default": 0,
+            "title": "Views Updated",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "source_label_id",
+          "source_name",
+          "target"
+        ],
+        "title": "LabelMergeRead",
+        "type": "object"
+      },
       "LabelRead": {
         "description": "One label as the API returns it, with the same `scope`, `hidden` and `inherited_name` a status carries.\n\n`is_group` marks a label group and `parent_id` names the group a label is in.",
         "properties": {
@@ -27482,6 +27540,75 @@
         ]
       }
     },
+    "/api/workspaces/{workspace_id}/labels/{label_id}/merge": {
+      "post": {
+        "description": "Fold a workspace label into another on every team: issues, saved views and templates take the other.\n\nA large merge answers `complete: false` once it runs out of time, and calling\nagain with the same target resumes it. A merge already finished answers its\nresult again.",
+        "operationId": "merge_workspace_label_api_workspaces__workspace_id__labels__label_id__merge_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "label_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Label Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LabelMerge"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LabelMergeRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Merge Workspace Label",
+        "tags": [
+          "teams"
+        ]
+      }
+    },
     "/api/workspaces/{workspace_id}/members": {
       "get": {
         "description": "Everyone in the workspace, joined with their user rows for display.",
@@ -31481,6 +31608,75 @@
           }
         ],
         "summary": "Update Label",
+        "tags": [
+          "teams"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/teams/{team_id}/labels/{label_id}/merge": {
+      "post": {
+        "description": "Fold a label into another of the team's labels: its issues, views and templates take the other.\n\nA large merge answers `complete: false` once it runs out of time, and calling\nagain with the same target resumes it. A merge already finished answers its\nresult again.",
+        "operationId": "merge_label_api_workspaces__workspace_id__teams__team_id__labels__label_id__merge_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "label_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Label Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LabelMerge"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LabelMergeRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Merge Label",
         "tags": [
           "teams"
         ]

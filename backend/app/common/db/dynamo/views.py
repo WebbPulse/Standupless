@@ -9,7 +9,7 @@ rather than a partition read with a filter behind it.
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Literal, Mapping
+from typing import Any, Iterator, Literal, Mapping
 
 from boto3.dynamodb.conditions import Attr, Key
 from pydantic import BaseModel, Field
@@ -49,6 +49,10 @@ def workspace_view_key(view_id: str) -> str:
 
 WORKSPACE_VIEW_PREFIX = "workspace#view#"
 """The sort key prefix every workspace shared view shares."""
+
+
+VIEW_KEY_MARKER = "#view#"
+"""The part of the sort key every saved view carries and no other row of the table does."""
 
 
 def favorites_key(user_id: str) -> str:
@@ -259,6 +263,19 @@ class ViewRepository:
     def list_workspace(self, workspace_id: str, *, limit: int = 200) -> list[SavedView]:
         """Every view shared with the whole workspace, oldest first."""
         return self._list(workspace_id, WORKSPACE_VIEW_PREFIX, limit)
+
+    def iter_all(self, workspace_id: str) -> Iterator[SavedView]:
+        """Every saved view of one workspace, personal, team and workspace ones alike, a page at a time.
+
+        For the rare write that must reach every view naming something, such as a
+        label merge repointing the filters on the merged label. Favorites rows and
+        anything else that is not a view are skipped.
+        """
+        if not workspace_id:
+            return
+        for item in self._repository.iter_query(Key("workspace_id").eq(workspace_id)):
+            if VIEW_KEY_MARKER in str(item.get("view_key", "")) and item.get("view_id"):
+                yield SavedView.model_validate(dict(item))
 
     def favorite_items(self, workspace_id: str, user_id: str) -> list[FavoriteItem]:
         """One member's favorites of every kind, in the order they arranged them."""

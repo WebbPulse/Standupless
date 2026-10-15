@@ -85,3 +85,21 @@ def test_workspace_label_tools_take_a_group(client: TestClient, repositories: An
     assert {row["label_id"]: row["parent_id"] for row in team_rows}[child["label_id"]] == group["label_id"]
     assert ungrouped["parent_id"] is None
     assert regrouped["parent_id"] == group["label_id"]
+
+
+def test_merge_workspace_labels_needs_admin_and_folds_the_label(
+    client: TestClient, repositories: Any, workspace: str
+) -> None:
+    """A workspace admin merges one workspace label into another by name; a member may not."""
+    owner = mint_for(repositories, ADMIN, ("labels:write", "labels:read", "admin"))
+    member = mint_for(repositories, MEMBER, ("labels:write", "admin"))
+    bug = answer(tool(client, owner, "create_workspace_label", {"name": "Bug", "color": "#eb5757"}))
+    answer(tool(client, owner, "create_workspace_label", {"name": "Defect", "color": "#eb5757"}))
+
+    refused = refusal(tool(client, member, "merge_workspace_labels", {"label": "Defect", "into": "Bug"}))
+    merged = answer(tool(client, owner, "merge_workspace_labels", {"label": "defect", "into": "bug"}))
+
+    assert "may not" in refused
+    assert merged["complete"] is True
+    assert merged["target"]["label_id"] == bug["label_id"]
+    assert [row.label_id for row in repositories.team_config.list_workspace_labels(WORKSPACE)] == [bug["label_id"]]

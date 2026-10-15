@@ -859,6 +859,10 @@ class LabelCreate(TypedDict):
     parent_id: NotRequired[str | None]
 
 
+class LabelMerge(TypedDict):
+    target_label_id: str
+
+
 class LabelRead(TypedDict):
     color: str
     hidden: NotRequired[bool]
@@ -2616,6 +2620,16 @@ class JoinableWorkspaceListRead(TypedDict):
 
 class LabelListRead(TypedDict):
     labels: list[LabelRead]
+
+
+class LabelMergeRead(TypedDict):
+    complete: NotRequired[bool]
+    issues_updated: NotRequired[int]
+    source_label_id: str
+    source_name: str
+    target: LabelRead
+    templates_updated: NotRequired[int]
+    views_updated: NotRequired[int]
 
 
 class LinkRead(TypedDict):

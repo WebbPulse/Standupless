@@ -444,6 +444,21 @@ export interface LabelListRead {
   labels: LabelRead[];
 }
 
+/**
+ * What a label merge did. `complete` is false when a large merge ran out of
+ * time for one request; calling the merge again with the same target resumes
+ * it, and a merge already finished answers its result again.
+ */
+export interface LabelMergeRead {
+  source_label_id: string;
+  source_name: string;
+  target: LabelRead;
+  issues_updated: number;
+  views_updated: number;
+  templates_updated: number;
+  complete: boolean;
+}
+
 /** A new label submission. */
 export interface LabelCreate {
   name: string;

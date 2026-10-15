@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.common import team_workflow
+from app.common import label_merge, team_workflow
 from app.common.api.dependencies.authz import Capability, check_capability
 from app.common.api.schemas.teams import LabelCreate, LabelUpdate, OverrideUpdate, StatusCreate, StatusUpdate
 from app.common.db.dynamo.team_config import Label, Status
@@ -27,6 +27,8 @@ from app.domains.integrations.mcp.team_tools import (
     integer,
     label_json,
     label_ref,
+    merge_answer,
+    merged_source,
     named_label,
     status_json,
     status_ref,
@@ -176,6 +178,15 @@ def _delete_workspace_label(call: ToolCall) -> Any:
     found = _workspace_label_ref(call, call.require("label"))
     team_workflow.delete_workspace_label(call.repositories, call.context.workspace_id, found.label_id)
     return {"deleted": True, "label_id": found.label_id, "name": found.name}
+
+
+def _merge_workspace_labels(call: ToolCall) -> Any:
+    """Fold one workspace label into another on every team."""
+    check_capability(call.repositories, call.context, Capability.WORKSPACE_ADMIN)
+    source_id = merged_source(call, None, call.require("label"), lambda ref: _workspace_label_ref(call, ref))
+    target = _workspace_label_ref(call, call.require("into"))
+    outcome = label_merge.merge_workspace_label(call.repositories, call.context, source_id, target.label_id)
+    return merge_answer(outcome)
 
 
 def _override_team_status(call: ToolCall) -> Any:
@@ -350,6 +361,25 @@ WORKFLOW_TOOLS: tuple[Tool, ...] = (
         scopes=("labels:write", "admin"),
         schema=object_schema({"label": string("The workspace label: its id or its name")}, required=("label",)),
         handler=_delete_workspace_label,
+        destructive=True,
+    ),
+    Tool(
+        name="merge_workspace_labels",
+        description=(
+            "Merge one workspace label into another on every team. Needs workspace admin. Every issue carrying "
+            "`label` carries `into` instead, once, saved views and templates naming it name `into`, and `label` "
+            "is deleted; this cannot be undone. Neither may be a group. A large merge may answer complete false: "
+            "call again with the same labels to finish, which is safe to repeat."
+        ),
+        scopes=("labels:write", "admin"),
+        schema=object_schema(
+            {
+                "label": string("The workspace label to merge away: its id, its name or its Group/Label path"),
+                "into": string("The workspace label to keep: its id, its name or its Group/Label path"),
+            },
+            required=("label", "into"),
+        ),
+        handler=_merge_workspace_labels,
         destructive=True,
     ),
     Tool(

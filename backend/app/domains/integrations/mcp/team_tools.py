@@ -12,9 +12,9 @@ team, which acts on the caller alone.
 
 from __future__ import annotations
 
-from typing import Any, Mapping, Optional
+from typing import Any, Callable, Mapping, Optional
 
-from app.common import audit, issue_triage, team_members, team_workflow, team_writes
+from app.common import audit, issue_triage, label_merge, team_members, team_workflow, team_writes
 from app.common.api.dependencies.authz import Capability, check_capability
 from app.common.api.schemas.teams import (
     ArchiveSettingsUpdate,
@@ -701,6 +701,42 @@ def _delete_label(call: ToolCall) -> Any:
     return {"deleted": True, "label_id": found.label_id, "name": found.name}
 
 
+MERGE_UNFINISHED = "The merge ran out of time partway. Call the tool again with the same labels to finish it."
+
+
+def merge_answer(outcome: label_merge.MergeOutcome) -> dict[str, Any]:
+    """What a merge tool answers: the result, the kept label as label tools show it, and a nudge when unfinished."""
+    answer: dict[str, Any] = label_merge.merge_read(outcome).model_dump(exclude={"target"})
+    answer["target"] = label_json(outcome.target)
+    if not outcome.record.complete:
+        answer["message"] = MERGE_UNFINISHED
+    return answer
+
+
+def merged_source(call: ToolCall, team_id: str | None, value: Any, find: Callable[[Any], Label]) -> str:
+    """The id of the label being merged, or the raw id of one an earlier call already merged away.
+
+    The merged label is deleted once the merge finishes, so a retry naming it by
+    id would not resolve. The merge itself answers the finished result then.
+    """
+    try:
+        return str(find(value).label_id)
+    except ToolError:
+        reference = str(value).strip()
+        if call.repositories.team_config.get_label_merge(call.context.workspace_id, team_id, reference) is None:
+            raise
+        return reference
+
+
+def _merge_labels(call: ToolCall) -> Any:
+    """Fold one of a team's labels into another of its labels."""
+    team = admin_team(call)
+    source_id = merged_source(call, team.team_id, call.require("label"), lambda ref: label_ref(call, team.team_id, ref))
+    target = label_ref(call, team.team_id, call.require("into"))
+    outcome = label_merge.merge_team_label(call.repositories, call.context, team.team_id, source_id, target.label_id)
+    return merge_answer(outcome)
+
+
 def _list_users(call: ToolCall) -> Any:
     """The workspace's members, or one visible team's explicit members.
 
@@ -1158,6 +1194,26 @@ TEAM_TOOLS: tuple[Tool, ...] = (
             required=("team_id", "label"),
         ),
         handler=_delete_label,
+        destructive=True,
+    ),
+    Tool(
+        name="merge_labels",
+        description=(
+            "Merge one of a team's labels into another of its labels. Needs team admin. Every issue carrying "
+            "`label` carries `into` instead, once, saved views and templates naming it name `into`, and `label` "
+            "is deleted; this cannot be undone. Both must be the team's own labels and neither a group. A large "
+            "merge may answer complete false: call again with the same labels to finish, which is safe to repeat."
+        ),
+        scopes=("labels:write",),
+        schema=object_schema(
+            {
+                "team_id": string(TEAM_ARGUMENT),
+                "label": string("The label to merge away: its id, its name or its Group/Label path"),
+                "into": string("The label to keep: its id, its name or its Group/Label path"),
+            },
+            required=("team_id", "label", "into"),
+        ),
+        handler=_merge_labels,
         destructive=True,
     ),
     Tool(

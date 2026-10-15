@@ -193,6 +193,8 @@ def test_the_contract_fixes_the_tool_set() -> None:
         "mark_all_notifications_read",
         "mark_notification_read",
         "mark_notification_unread",
+        "merge_labels",
+        "merge_workspace_labels",
         "move_issue",
         "override_team_label",
         "override_team_status",

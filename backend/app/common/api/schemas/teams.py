@@ -412,6 +412,30 @@ class LabelListRead(BaseModel):
     labels: list[LabelRead]
 
 
+class LabelMerge(BaseModel):
+    """The body a label merge takes: the label of the same scope the merged label folds into."""
+
+    target_label_id: str = Field(min_length=1)
+
+
+class LabelMergeRead(BaseModel):
+    """What a label merge did, so far or in full.
+
+    `complete` is false when a large merge ran out of time for one request: the
+    issues moved so far keep the target label, and calling the merge again with
+    the same target picks up where it stopped. A merge already finished answers
+    its result again, so a retry is safe.
+    """
+
+    source_label_id: str
+    source_name: str
+    target: LabelRead
+    issues_updated: int = 0
+    views_updated: int = 0
+    templates_updated: int = 0
+    complete: bool = True
+
+
 class OverrideUpdate(BaseModel):
     """The body a team's override of a workspace status or label takes.
 

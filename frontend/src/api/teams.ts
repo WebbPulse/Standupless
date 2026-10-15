@@ -5,6 +5,7 @@
  */
 
 import apiClient, { type RequestOptions } from './client';
+import { runLabelMerge } from './labelMerge';
 import type {
   ArchiveSettingsRead,
   ArchiveSettingsUpdate,
@@ -14,6 +15,7 @@ import type {
   CycleSettingsUpdate,
   LabelCreate,
   LabelListRead,
+  LabelMergeRead,
   LabelRead,
   LabelUpdate,
   OverrideUpdate,
@@ -355,6 +357,18 @@ export const deleteLabel = async (
 ): Promise<void> => {
   await apiClient.delete<void>(`${labelsPath(workspaceId, teamId)}/${labelId}`);
 };
+
+/** Folds one of a team's labels into another, every issue carrying it moving over. */
+export const mergeLabel = (
+  workspaceId: string,
+  teamId: string,
+  labelId: string,
+  targetLabelId: string
+): Promise<LabelMergeRead> =>
+  runLabelMerge(
+    `${labelsPath(workspaceId, teamId)}/${labelId}/merge`,
+    targetLabelId
+  );
 
 /**
  * Hides, shows or locally renames an inherited workspace status in one team.

@@ -11,12 +11,14 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Path, Query, Response, status
 
-from app.common import team_workflow
+from app.common import label_merge, team_workflow
 from app.common.api.dependencies.authz import AuthzContext, Capability, require
 from app.common.api.dependencies.repositories import Repositories, get_repositories
 from app.common.api.schemas.teams import (
     LabelCreate,
     LabelListRead,
+    LabelMerge,
+    LabelMergeRead,
     LabelRead,
     LabelUpdate,
     StatusCreate,
@@ -115,6 +117,23 @@ def update_workspace_label(
     return LabelRead.from_row(
         team_workflow.update_workspace_label(repositories, context.workspace_id, label_id, payload)
     )
+
+
+@router.post("/{workspace_id}/labels/{label_id}/merge", response_model=LabelMergeRead)
+def merge_workspace_label(
+    payload: LabelMerge,
+    label_id: Annotated[str, Path(min_length=1)],
+    context: Annotated[AuthzContext, Depends(require(Capability.WORKSPACE_ADMIN))],
+    repositories: Annotated[Repositories, Depends(get_repositories)],
+) -> LabelMergeRead:
+    """Fold a workspace label into another on every team: issues, saved views and templates take the other.
+
+    A large merge answers `complete: false` once it runs out of time, and calling
+    again with the same target resumes it. A merge already finished answers its
+    result again.
+    """
+    outcome = label_merge.merge_workspace_label(repositories, context, label_id, payload.target_label_id)
+    return label_merge.merge_read(outcome)
 
 
 @router.delete("/{workspace_id}/labels/{label_id}", status_code=status.HTTP_204_NO_CONTENT)
