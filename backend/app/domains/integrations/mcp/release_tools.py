@@ -482,7 +482,8 @@ RELEASE_TOOLS: tuple[Tool, ...] = (
             "page's unreadable_deployment_ids, to retry only those deployments without a cursor; ids that are "
             "no successful deployment of the environment come back in deployments_not_found. A repository "
             "whose release source is tags or github_releases is rebuilt from its matching tags instead, newest "
-            "first, with source naming which. Never moves issues or publishes GitHub Releases. Team "
+            "first, with source naming which, and a tag GitHub will not read is passed over and named in "
+            "unreadable_tags. Never moves issues or publishes GitHub Releases. Team "
             "administrators only."
         ),
         scopes=("releases:write",),
