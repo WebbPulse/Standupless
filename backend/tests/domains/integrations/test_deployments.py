@@ -7,7 +7,9 @@ than making another, and that a redelivery or a failed deployment changes nothin
 They also hold that a promotion pull request names its release, that a first
 deployment seeds its range from GitHub, that a stage can publish a GitHub Release,
 and that a backfill rebuilds history without moving issues and moves its cursor
-even past a deployment too slow for one page. Driven through the
+even past a deployment too slow for one page, ends a repository at a page with
+no successful deployment, and retries only the deployments it is given. Driven
+through the
 github-events consumer, under that function's own grant, a deployment records its
 release, moves its issues, publishes, and is listed.
 """
@@ -92,7 +94,13 @@ def github(monkeypatch: pytest.MonkeyPatch) -> FakeGitHub:
     monkeypatch.setattr(github_deployments, "merged_pull_for_commit", lambda token, repo, sha: state.merges.get(sha))
     monkeypatch.setattr(github_deployments, "pull_request", lambda token, repo, number: state.pulls.get(number))
     monkeypatch.setattr(github_deployments, "previous_successful_sha", lambda *args, **kwargs: state.previous)
+
+    def one_deployment(token: str, repository_id: Any, environment: str, deployment_id: int) -> DeploymentRef | None:
+        """The stood-in successful deployment with this id, or `None`."""
+        return next((row for row in state.deployments if row.deployment_id == deployment_id), None)
+
     monkeypatch.setattr(github_deployments, "successful_deployments", deployments)
+    monkeypatch.setattr(github_deployments, "successful_deployment", one_deployment)
     monkeypatch.setattr(github_deployments, "publish_release", publish)
     return state
 
@@ -697,6 +705,57 @@ def test_a_page_that_cannot_list_deployments_in_time_says_it_made_no_progress(
     assert page.next_cursor == f"{REPOSITORY_ID}:40:5"
     assert page.message is not None and page.message.startswith("Made no progress: reading the deployment list")
     assert "Pass next_cursor back to continue" not in page.message
+
+
+def test_a_page_with_no_successful_deployment_ends_the_backfill(
+    repositories: Any, installed: str, github: FakeGitHub, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An empty page at the end of history answers a null cursor rather than another empty page."""
+    from app.domains.integrations import github_deployments
+
+    _three_deployments(repositories, github)
+
+    def empty(token: str, repository_id: Any, environment: str, **options: Any) -> DeploymentPage:
+        """Scan old deployments whose statuses show no success, with more listed beyond them."""
+        return DeploymentPage([], True, 19)
+
+    monkeypatch.setattr(github_deployments, "successful_deployments", empty)
+
+    page = backfill(repositories, WORKSPACE, TEAM, ReleaseBackfill(limit=5, cursor=f"{REPOSITORY_ID}:10:18"))
+
+    assert page.deployments_scanned == 0
+    assert page.next_cursor is None
+    assert page.stalled is False
+
+
+def test_a_retry_records_only_the_named_deployments(repositories: Any, installed: str, github: FakeGitHub) -> None:
+    """Deployment ids record just those deployments, with no cursor, and name the ids that are not deployments."""
+    _three_deployments(repositories, github)
+
+    page = backfill(repositories, WORKSPACE, TEAM, ReleaseBackfill(deployment_ids=[20, 99]))
+
+    assert page.deployments_scanned == 2
+    assert page.releases_created == 1
+    assert page.deployments_not_found == [99]
+    assert page.unreadable_deployment_ids == []
+    assert page.next_cursor is None
+    assert page.message is not None and "99" in page.message
+    (release,) = _releases(repositories)
+    assert release.issue_ids == ["01JB0000000000000000000IS3"]
+    assert repositories.releases.get_head(WORKSPACE, TEAM, REPOSITORY_ID, "production") is None
+
+    again = backfill(repositories, WORKSPACE, TEAM, ReleaseBackfill(deployment_ids=[20]))
+
+    assert again.deployments_skipped == 1
+    assert again.releases_created == 0
+
+
+def test_a_retry_takes_no_cursor() -> None:
+    """Deployment ids and a cursor together are refused, since a retry does not page."""
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError):
+        ReleaseBackfill(deployment_ids=[20], cursor=f"{REPOSITORY_ID}:30:1")
 
 
 def _consume(repositories: Any, delivery: dict[str, Any]) -> None:

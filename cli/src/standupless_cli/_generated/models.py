@@ -1268,12 +1268,14 @@ class RecurringUpdate(TypedDict):
 
 class ReleaseBackfill(TypedDict):
     cursor: NotRequired[str | None]
+    deployment_ids: NotRequired[list[int] | None]
     environment: NotRequired[str]
     limit: NotRequired[int]
     repository: NotRequired[str | None]
 
 
 class ReleaseBackfillRead(TypedDict):
+    deployments_not_found: NotRequired[list[int]]
     deployments_scanned: int
     deployments_skipped: NotRequired[int]
     environment: str

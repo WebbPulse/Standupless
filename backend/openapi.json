@@ -9489,7 +9489,7 @@
         "type": "object"
       },
       "ReleaseBackfill": {
-        "description": "The body `POST .../teams/{team_id}/release-backfill` takes.\n\nRebuilds releases from one GitHub environment's past successful deployments,\nnewest first, a few per call. `repository` is a full name or id and defaults to\nevery repository pinned to the team. Pass `cursor` back until it comes back\nnull. A deployment that already has a release only gains missing issues, and\nthe backfill never moves issues or publishes GitHub Releases.",
+        "description": "The body `POST .../teams/{team_id}/release-backfill` takes.\n\nRebuilds releases from one GitHub environment's past successful deployments,\nnewest first, a few per call. `repository` is a full name or id and defaults to\nevery repository pinned to the team. Pass `cursor` back until it comes back\nnull. A deployment that already has a release only gains missing issues, and\nthe backfill never moves issues or publishes GitHub Releases.\n\n`deployment_ids` retries only those deployments, such as the\n`unreadable_deployment_ids` an earlier page passed over, without paging\nthrough history. It takes no cursor, and `repository` must name their\nrepository unless the team pins only one.",
         "properties": {
           "cursor": {
             "anyOf": [
@@ -9502,6 +9502,22 @@
               }
             ],
             "title": "Cursor"
+          },
+          "deployment_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "integer"
+                },
+                "maxItems": 10,
+                "minItems": 1,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deployment Ids"
           },
           "environment": {
             "default": "production",
@@ -9534,8 +9550,15 @@
         "type": "object"
       },
       "ReleaseBackfillRead": {
-        "description": "What one backfill call did, and the cursor to continue from, null when it is done.\n\n`deployments_skipped` counts deployments whose release had already reached\nthe stage, which cost no GitHub call. A page that stopped before its limit to\nkeep half the GitHub App's hourly budget for live sync, or to answer inside\nthe request timeout, sets `stopped_early` and says in `message` when to pass\nthe cursor back; `resume_after` is GitHub's budget reset when that is the\nreason. `rate_limit_remaining` and `rate_limit` are GitHub's last word on the\ninstallation's budget, and `github_calls` what this page spent of it.\n\n`stalled` is set when the page recorded and skipped nothing, so passing the\ncursor back moves only once the message's reason has passed.\n`unreadable_deployment_ids` names deployments passed over because their range\ncould not be read inside the request timeout, and `pull_reads_skipped` counts\npull requests a recorded deployment did not read for keys for the same reason.",
+        "description": "What one backfill call did, and the cursor to continue from, null when it is done.\n\n`deployments_skipped` counts deployments whose release had already reached\nthe stage, which cost no GitHub call. A page that stopped before its limit to\nkeep half the GitHub App's hourly budget for live sync, or to answer inside\nthe request timeout, sets `stopped_early` and says in `message` when to pass\nthe cursor back; `resume_after` is GitHub's budget reset when that is the\nreason. `rate_limit_remaining` and `rate_limit` are GitHub's last word on the\ninstallation's budget, and `github_calls` what this page spent of it.\n\n`stalled` is set when the page recorded and skipped nothing, so passing the\ncursor back moves only once the message's reason has passed.\n`unreadable_deployment_ids` names deployments passed over because their range\ncould not be read inside the request timeout, and `pull_reads_skipped` counts\npull requests a recorded deployment did not read for keys for the same reason.\nPass `unreadable_deployment_ids` back as `deployment_ids` to retry only those.\nA retry names in `deployments_not_found` the ids that are no successful\ndeployment of the environment in the repository.",
         "properties": {
+          "deployments_not_found": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Deployments Not Found",
+            "type": "array"
+          },
           "deployments_scanned": {
             "title": "Deployments Scanned",
             "type": "integer"

@@ -189,6 +189,32 @@ def successful_deployments(
     return DeploymentPage(found, True, first + LIST_PAGES_MAX - 1)
 
 
+def successful_deployment(
+    token: str,
+    repository_id: int | str,
+    environment: str,
+    deployment_id: int,
+    *,
+    client: httpx.Client | None = None,
+) -> DeploymentRef | None:
+    """One deployment by id when it deployed this environment and succeeded, else `None`.
+
+    A targeted backfill retry reads the deployments an earlier page passed over
+    this way, so it need not list the environment's history again.
+    """
+    path = f"{repository_path(repository_id)}/deployments/{_identifier(deployment_id, 'deployment id')}"
+    try:
+        body = _object(_request("GET", path, token=token, client=client), "deployment")
+    except GitHubNotFound:
+        return None
+    sha = str(body.get("sha") or "").lower()
+    if body.get("id") != deployment_id or not _is_sha(sha) or body.get("environment") != environment:
+        return None
+    if not _succeeded(token, repository_id, deployment_id, client=client):
+        return None
+    return DeploymentRef(deployment_id, sha, _timestamp(body.get("created_at")))
+
+
 SEED_SCANNED = 20
 """How many earlier deployments a first deployment looks back through for its range's start."""
 
