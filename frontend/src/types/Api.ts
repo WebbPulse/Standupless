@@ -1273,6 +1273,7 @@ export type NotificationKind =
   | 'subscribed'
   | 'project_update'
   | 'project_update_due'
+  | 'initiative_update_due'
   | 'due_soon'
   | 'overdue'
   | 'standup_digest'
@@ -1312,6 +1313,11 @@ export interface NotificationRead {
   project_id?: string | null;
   project_name?: string | null;
   project_update_id?: string | null;
+  /** The initiative an `initiative_update_due` row is about; null on every other row. */
+  initiative_id?: string | null;
+  initiative_name?: string | null;
+  /** Whether an `initiative_update_due` row's update is due or overdue. */
+  due_state?: 'due' | 'overdue' | null;
   /** The digest date a `standup_digest` row is about; null on every other row. */
   standup_date?: string | null;
   actor_id: string;

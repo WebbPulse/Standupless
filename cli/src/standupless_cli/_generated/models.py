@@ -1011,7 +1011,10 @@ class NotificationRead(TypedDict):
     actor_name: str
     comment_id: NotRequired[str | None]
     created_at: str
+    due_state: NotRequired[Literal["due", "overdue"] | None]
     expires_at: int
+    initiative_id: NotRequired[str | None]
+    initiative_name: NotRequired[str | None]
     issue_id: str
     issue_key: str
     issue_title: str
@@ -2039,6 +2042,7 @@ class UserPreferencesUpdate(TypedDict):
                 "subscribed",
                 "project_update",
                 "project_update_due",
+                "initiative_update_due",
                 "due_soon",
                 "overdue",
                 "standup_digest",

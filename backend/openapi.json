@@ -7712,7 +7712,7 @@
         "type": "object"
       },
       "NotificationRead": {
-        "description": "One inbox row as the API returns it.\n\nA `project_update` notification names its project and update and leaves the\nissue fields empty. A `standup_digest` carries the team key in `issue_key`,\nthe team name in `issue_title` and the digest date in `standup_date`. A\n`review_requested` notification carries the pull request's `owner/repo#number`\nin `issue_key`, its title in `issue_title` and its GitHub address in `url`.",
+        "description": "One inbox row as the API returns it.\n\nA `project_update` notification names its project and update and leaves the\nissue fields empty. A `standup_digest` carries the team key in `issue_key`,\nthe team name in `issue_title` and the digest date in `standup_date`. A\n`review_requested` notification carries the pull request's `owner/repo#number`\nin `issue_key`, its title in `issue_title` and its GitHub address in `url`.\nAn `initiative_update_due` reminder names its initiative, carries an empty\n`team_id` and says in `due_state` whether the update is due or overdue.",
         "properties": {
           "actor_id": {
             "title": "Actor Id",
@@ -7738,9 +7738,46 @@
             "title": "Created At",
             "type": "string"
           },
+          "due_state": {
+            "anyOf": [
+              {
+                "enum": [
+                  "due",
+                  "overdue"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Due State"
+          },
           "expires_at": {
             "title": "Expires At",
             "type": "integer"
+          },
+          "initiative_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Initiative Id"
+          },
+          "initiative_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Initiative Name"
           },
           "issue_id": {
             "title": "Issue Id",
@@ -14630,6 +14667,7 @@
                     "subscribed",
                     "project_update",
                     "project_update_due",
+                    "initiative_update_due",
                     "due_soon",
                     "overdue",
                     "standup_digest",

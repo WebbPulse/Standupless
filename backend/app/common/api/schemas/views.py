@@ -56,6 +56,7 @@ NotificationKindField = Literal[
     "subscribed",
     "project_update",
     "project_update_due",
+    "initiative_update_due",
     "due_soon",
     "overdue",
     "standup_digest",
@@ -335,6 +336,18 @@ class ViewListRead(BaseModel):
     views: list[ViewRead] = Field(default_factory=list)
 
 
+DueStateField = Literal["due", "overdue"]
+
+
+def _due_state(value: Optional[str]) -> Optional[DueStateField]:
+    """A stored reminder stage as the contract's literal, or `None` for any other row."""
+    if value == "due":
+        return "due"
+    if value == "overdue":
+        return "overdue"
+    return None
+
+
 class NotificationRead(BaseModel):
     """One inbox row as the API returns it.
 
@@ -343,6 +356,8 @@ class NotificationRead(BaseModel):
     the team name in `issue_title` and the digest date in `standup_date`. A
     `review_requested` notification carries the pull request's `owner/repo#number`
     in `issue_key`, its title in `issue_title` and its GitHub address in `url`.
+    An `initiative_update_due` reminder names its initiative, carries an empty
+    `team_id` and says in `due_state` whether the update is due or overdue.
     """
 
     notification_id: str
@@ -356,6 +371,9 @@ class NotificationRead(BaseModel):
     project_id: Optional[str] = None
     project_name: Optional[str] = None
     project_update_id: Optional[str] = None
+    initiative_id: Optional[str] = None
+    initiative_name: Optional[str] = None
+    due_state: Optional[DueStateField] = None
     standup_date: Optional[str] = None
     url: Optional[str] = None
     actor_id: str
@@ -381,6 +399,9 @@ class NotificationRead(BaseModel):
             project_id=notification.project_id,
             project_name=notification.project_name,
             project_update_id=notification.project_update_id,
+            initiative_id=notification.initiative_id,
+            initiative_name=notification.initiative_name,
+            due_state=_due_state(notification.due_state),
             standup_date=notification.standup_date,
             url=notification.url,
             actor_id=notification.actor_id,

@@ -34,6 +34,7 @@ NotificationKind = Literal[
     "subscribed",
     "project_update",
     "project_update_due",
+    "initiative_update_due",
     "due_soon",
     "overdue",
     "standup_digest",
@@ -50,6 +51,7 @@ NOTIFICATION_KINDS: tuple[str, ...] = (
     "subscribed",
     "project_update",
     "project_update_due",
+    "initiative_update_due",
     "due_soon",
     "overdue",
     "standup_digest",
@@ -64,8 +66,9 @@ REVIEW_REQUESTED = "review_requested"
 REMINDER_PREFIX = "reminder#"
 """The partition prefix reminder markers live under, which no inbox can name.
 
-Project update reminders and issue due date reminders share it, each subject id
-carrying its own shape so the two can never collide.
+Project update reminders, initiative update reminders and issue due date
+reminders share it, each subject id carrying its own shape so they can never
+collide.
 """
 
 STANDUP_PREFIX = "standup#"
@@ -172,7 +175,9 @@ class Notification(BaseModel):
     digest carries its team's key in `issue_key`, the team name in `issue_title`
     and the digest's team local date in `standup_date`. A review request carries
     the pull request's `owner/repo#number` in `issue_key`, its title in
-    `issue_title` and its GitHub address in `url`.
+    `issue_title` and its GitHub address in `url`. An initiative update reminder
+    is about a workspace level subject, so it carries an empty `team_id`, the
+    initiative fields, and `due_state` saying whether the update is due or overdue.
     """
 
     ws_user: str
@@ -187,6 +192,9 @@ class Notification(BaseModel):
     project_id: str | None = None
     project_name: str | None = None
     project_update_id: str | None = None
+    initiative_id: str | None = None
+    initiative_name: str | None = None
+    due_state: str | None = None
     standup_date: str | None = None
     url: str | None = None
     actor_id: str
@@ -407,8 +415,9 @@ class InboxRepository:
     def reminded(self, workspace_id: str, subject_id: str, due_at: datetime) -> bool:
         """Whether the reminder for this subject due at `due_at` has already gone out.
 
-        The subject is a project id for an update reminder, or the kind, issue and
-        assignee of an issue due date reminder.
+        The subject is a project id for an update reminder, `initiative#<id>#<stage>`
+        for an initiative update reminder, or the kind, issue and assignee of an
+        issue due date reminder.
         """
         item = self._repository.get(
             {"ws_user": f"{REMINDER_PREFIX}{workspace_id}", "notification_id": _due_key(subject_id, due_at)}
