@@ -4,8 +4,10 @@
  */
 
 import React from 'react';
-import { LuExternalLink } from 'react-icons/lu';
-import { DESKTOP_DOWNLOAD_URL, isDesktopShell } from '../../lib/desktop';
+import { LuDownload } from 'react-icons/lu';
+import { Link } from 'react-router-dom';
+import { isDesktopShell } from '../../lib/desktop';
+import { DOWNLOAD_PATH } from '../../lib/paths';
 
 /** The "Desktop app" section, or nothing inside the desktop app. */
 const DesktopAppSection: React.FC = () => {
@@ -29,18 +31,13 @@ const DesktopAppSection: React.FC = () => {
           links.
         </p>
       </div>
-      <a
-        href={DESKTOP_DOWNLOAD_URL}
-        target="_blank"
-        rel="noreferrer"
+      <Link
+        to={DOWNLOAD_PATH}
         className="inline-flex h-7 items-center gap-1.5 rounded-sm border border-line-strong bg-bg px-2 text-xs font-medium text-text transition-colors duration-100 hover:bg-raised"
       >
+        <LuDownload aria-hidden="true" className="h-3 w-3 text-text-faint" />
         Download the desktop app
-        <LuExternalLink
-          aria-hidden="true"
-          className="h-3 w-3 text-text-faint"
-        />
-      </a>
+      </Link>
     </section>
   );
 };

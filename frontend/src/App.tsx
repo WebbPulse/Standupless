@@ -17,7 +17,8 @@
  * route, which holds what must outlive a page change: the shortcut registry,
  * the command palette, the peek pane and the create dialogs.
  *
- * `/privacy`, `/terms`, `/refunds`, `/pricing` and `/contact` also sit
+ * `/privacy`, `/terms`, `/refunds`, `/pricing`, `/contact` and `/download`
+ * also sit
  * outside both, so the same pages answer a visitor, someone signing up and a
  * signed in member. The build prerenders them, and `/`, into static HTML.
  *
@@ -65,6 +66,7 @@ import Privacy from './pages/legal/Privacy';
 import Refunds from './pages/legal/Refunds';
 import Terms from './pages/legal/Terms';
 import Contact from './pages/contact/Contact';
+import Download from './pages/download/Download';
 import Pricing from './pages/pricing/Pricing';
 import IssueDetail from './pages/issues/IssueDetail';
 import MyIssues from './pages/issues/MyIssues';
@@ -75,6 +77,7 @@ import {
   ACCOUNT_DELETED_PATH,
   CONTACT_PATH,
   DESKTOP_HANDOFF_PATH,
+  DOWNLOAD_PATH,
   PRICING_PATH,
   PRIVACY_PATH,
   REFUNDS_PATH,
@@ -117,6 +120,7 @@ const App: React.FC = () => (
     <Route path={REFUNDS_PATH} element={<Refunds />} />
     <Route path={PRICING_PATH} element={<Pricing />} />
     <Route path={CONTACT_PATH} element={<Contact />} />
+    <Route path={DOWNLOAD_PATH} element={<Download />} />
     <Route path={ACCOUNT_DELETED_PATH} element={<AccountDeleted />} />
     <Route path={DESKTOP_HANDOFF_PATH} element={<DesktopHandoff />} />
 
