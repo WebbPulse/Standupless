@@ -429,6 +429,7 @@ const NOTIFICATION_VERBS: Partial<Record<NotificationRead['kind'], string>> = {
   subscribed: 'subscribed you',
   project_update: 'posted an update',
   project_update_due: 'Update due',
+  initiative_update_due: 'Initiative update due',
   due_soon: 'Due soon',
   overdue: 'Overdue',
   standup_digest: 'Standup digest',
@@ -446,7 +447,7 @@ export const InboxRow: React.FC<
   const subject =
     item.issue_title !== ''
       ? item.issue_title
-      : (item.project_name ?? item.issue_key);
+      : (item.project_name ?? item.initiative_name ?? item.issue_key);
   return (
     <li
       ref={rowRef}

@@ -35,6 +35,7 @@ import {
   LuClock,
   LuDownload,
   LuGitPullRequest,
+  LuGoal,
   LuInbox,
   LuMailOpen,
   LuTarget,
@@ -72,6 +73,7 @@ import { compactAge, fullTimestamp } from '../../lib/relativeTime';
 import {
   exportSettingsPath,
   importSettingsPath,
+  initiativePath,
   issuePath,
   projectUpdatesTabPath,
   reviewsPath,
@@ -115,6 +117,7 @@ const KIND_LABELS: Record<InboxKind, string> = {
   subscribed: 'Subscribed you',
   project_update: 'Project update',
   project_update_due: 'Update due',
+  initiative_update_due: 'Initiative update due',
   due_soon: 'Due soon',
   overdue: 'Overdue',
   standup_digest: 'Standup digest',
@@ -134,6 +137,20 @@ const kindLabel = (kind: InboxKind): string => KIND_LABELS[kind] ?? 'Update';
 /** Whether a row is about a project update rather than an issue. */
 const isProjectRow = (row: NotificationRead): boolean =>
   row.kind === 'project_update' || row.kind === 'project_update_due';
+
+/**
+ * Whether a row reminds an initiative's owner that its update is due or
+ * overdue. It is workspace level, so `team_id` is empty and the issue fields
+ * are blank; `initiative_name` and `due_state` carry what it says.
+ */
+const isInitiativeRow = (row: NotificationRead): boolean =>
+  row.kind === 'initiative_update_due';
+
+/** The link to one initiative's updates tab. */
+const initiativeUpdatesTabPath = (
+  slug: string,
+  initiativeId: string
+): string => `${initiativePath(slug, initiativeId)}?tab=updates`;
 
 /**
  * Whether a row tells a team admin a Slack or Discord channel was turned off.
@@ -180,35 +197,39 @@ const openPullRequest = (row: NotificationRead): void => {
   if (row.url) window.open(row.url, '_blank', 'noopener,noreferrer');
 };
 
-/** What a row is about, as its actions name it: an issue key, a project or a team standup. */
+/** What a row is about, as its actions name it: an issue key, a project, an initiative or a team standup. */
 const subjectName = (row: NotificationRead): string =>
   isProjectRow(row)
     ? (row.project_name ?? 'Project')
-    : isChannelRow(row) || isJobRow(row)
-      ? row.issue_title
-      : isStandupRow(row)
-        ? `${row.issue_title} standup`
-        : row.issue_key;
+    : isInitiativeRow(row)
+      ? (row.initiative_name ?? 'Initiative')
+      : isChannelRow(row) || isJobRow(row)
+        ? row.issue_title
+        : isStandupRow(row)
+          ? `${row.issue_title} standup`
+          : row.issue_key;
 
-/** Where opening a row goes: its issue, its project's updates, team settings, the standup or Reviews. */
+/** Where opening a row goes: its issue, its project's or initiative's updates, team settings, the standup or Reviews. */
 const rowPath = (slug: string, row: NotificationRead): string =>
   isReviewRow(row)
     ? reviewsPath(slug)
     : isProjectRow(row)
       ? projectUpdatesTabPath(slug, row.project_id ?? '')
-      : isChannelRow(row)
-        ? teamSettingsPath(slug, row.issue_key)
-        : isExportRow(row)
-          ? exportSettingsPath(slug)
-          : isImportRow(row)
-            ? importSettingsPath(slug)
-            : isStandupRow(row)
-              ? `${teamStandupPath(slug, row.issue_key)}${
-                  row.standup_date
-                    ? `?date=${encodeURIComponent(row.standup_date)}`
-                    : ''
-                }`
-              : issuePath(slug, row.issue_key);
+      : isInitiativeRow(row)
+        ? initiativeUpdatesTabPath(slug, row.initiative_id ?? '')
+        : isChannelRow(row)
+          ? teamSettingsPath(slug, row.issue_key)
+          : isExportRow(row)
+            ? exportSettingsPath(slug)
+            : isImportRow(row)
+              ? importSettingsPath(slug)
+              : isStandupRow(row)
+                ? `${teamStandupPath(slug, row.issue_key)}${
+                    row.standup_date
+                      ? `?date=${encodeURIComponent(row.standup_date)}`
+                      : ''
+                  }`
+                : issuePath(slug, row.issue_key);
 
 /** Props for ReviewRequestPane: the selected row and how to leave it. */
 interface ReviewRequestPaneProps {
@@ -500,6 +521,53 @@ const ProjectUpdatePane: React.FC<ProjectUpdatePaneProps> = ({
   );
 };
 
+/** Props for InitiativeUpdatePane: the selected row and how to leave it. */
+interface InitiativeUpdatePaneProps {
+  row: NotificationRead;
+  slug: string;
+  onClose: () => void;
+}
+
+/** The pane beside an initiative update reminder, which links to the initiative's updates. */
+const InitiativeUpdatePane: React.FC<InitiativeUpdatePaneProps> = ({
+  row,
+  slug,
+  onClose,
+}) => {
+  const navigate = useNavigate();
+  const initiative = row.initiative_name ?? 'an initiative';
+  const state = row.due_state === 'overdue' ? 'overdue' : 'due';
+  return (
+    <aside
+      aria-label="Initiative update"
+      className="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center"
+    >
+      <LuGoal aria-hidden="true" className="h-8 w-8 text-text-faint" />
+      <p className="text-sm text-text">
+        An update is {state} on{' '}
+        <span className="font-medium">{initiative}</span>
+      </p>
+      <p className="text-xs text-text-faint">
+        {timestampLabel(row.created_at)}
+      </p>
+      <div className="flex items-center gap-2">
+        <Button variant="ghost" size="sm" onClick={onClose}>
+          Close
+        </Button>
+        <Button
+          variant="primary"
+          size="sm"
+          onClick={() => {
+            void navigate(rowPath(slug, row));
+          }}
+        >
+          Open initiative updates
+        </Button>
+      </div>
+    </aside>
+  );
+};
+
 /** Props for InboxRow. */
 interface InboxRowProps {
   row: NotificationRead;
@@ -557,7 +625,7 @@ const InboxRow: React.FC<InboxRowProps> = ({
               row.unread ? 'font-medium text-text' : 'text-text-muted'
             )}
           >
-            {isProjectRow(row) || isStandupRow(row)
+            {isProjectRow(row) || isInitiativeRow(row) || isStandupRow(row)
               ? subjectName(row)
               : row.issue_title}
           </span>
@@ -574,6 +642,11 @@ const InboxRow: React.FC<InboxRowProps> = ({
         <span className="flex w-full items-center gap-1.5 text-xs text-text-muted">
           {isProjectRow(row) ? (
             <LuTarget
+              aria-hidden="true"
+              className="h-3 w-3 shrink-0 text-text-faint"
+            />
+          ) : isInitiativeRow(row) ? (
+            <LuGoal
               aria-hidden="true"
               className="h-3 w-3 shrink-0 text-text-faint"
             />
@@ -601,7 +674,9 @@ const InboxRow: React.FC<InboxRowProps> = ({
             {row.snoozed_until
               ? snoozeLabel(row.snoozed_until)
               : [
-                  kindLabel(row.kind),
+                  isInitiativeRow(row) && row.due_state === 'overdue'
+                    ? 'Initiative update overdue'
+                    : kindLabel(row.kind),
                   row.actor_name === '' ? null : `by ${row.actor_name}`,
                   viaLabel(row.source),
                 ]
@@ -1130,6 +1205,15 @@ export const Inbox: React.FC = () => {
             />
           ) : isStandupRow(selected) ? (
             <StandupPane
+              key={selected.notification_id}
+              row={selected}
+              slug={slug}
+              onClose={() => {
+                select(null);
+              }}
+            />
+          ) : isInitiativeRow(selected) ? (
+            <InitiativeUpdatePane
               key={selected.notification_id}
               row={selected}
               slug={slug}
