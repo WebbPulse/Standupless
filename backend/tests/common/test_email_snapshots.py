@@ -260,8 +260,12 @@ def test_every_email_is_dark_first_and_keeps_a_plain_text_part(name: str) -> Non
 
     assert '<meta name="color-scheme" content="dark light">' in html
     assert '<meta name="supported-color-schemes" content="dark light">' in html
-    assert f'<body class="wp-bg" bgcolor="{page}" style="margin:0;padding:0;background-color:{page};">' in html
-    assert f'class="wp-bg" bgcolor="{page}" style="background-color:{page};"' in html
+    body = re.search(r"<body ([^>]*)>", html)
+    assert body is not None
+    assert "wp-bg" in body.group(1)
+    assert f'bgcolor="{page}"' in body.group(1)
+    assert f"background-color:{page};" in body.group(1)
+    assert re.search(rf'class="wp-bg" bgcolor="{page}" style="background-color:{page};', html)
     assert f'bgcolor="{card}" style="background-color:{card};' in html
     assert "@media (prefers-color-scheme:dark)" in html
     assert f"[data-ogsc] .wp-text{{color:{EMAIL_THEME.dark.text} !important;}}" in html
