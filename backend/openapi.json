@@ -9611,7 +9611,7 @@
         "type": "object"
       },
       "ReleaseBackfillRead": {
-        "description": "What one backfill call did, and the cursor to continue from, null when it is done.\n\n`deployments_skipped` counts deployments whose release had already reached\nthe stage, which cost no GitHub call. A page that stopped before its limit to\nkeep half the GitHub App's hourly budget for live sync, or to answer inside\nthe request timeout, sets `stopped_early` and says in `message` when to pass\nthe cursor back; `resume_after` is GitHub's budget reset when that is the\nreason. `rate_limit_remaining` and `rate_limit` are GitHub's last word on the\ninstallation's budget, and `github_calls` what this page spent of it.\n\n`stalled` is set when the page recorded and skipped nothing, so passing the\ncursor back moves only once the message's reason has passed.\n`unreadable_deployment_ids` names deployments passed over because their range\ncould not be read inside the request timeout, and `pull_reads_skipped` counts\npull requests a recorded deployment did not read for keys for the same reason.\nPass `unreadable_deployment_ids` back as `deployment_ids` to retry only those.\nA retry names in `deployments_not_found` the ids that are no successful\ndeployment of the environment in the repository.\n\n`source` is `github_tag` or `github_release` for a page read from a\nrepository that records its releases from tags or GitHub Releases; its\ndeployment counts then count tags.",
+        "description": "What one backfill call did, and the cursor to continue from, null when it is done.\n\n`deployments_skipped` counts deployments whose release had already reached\nthe stage, which cost no GitHub call. A page that stopped before its limit to\nkeep half the GitHub App's hourly budget for live sync, or to answer inside\nthe request timeout, sets `stopped_early` and says in `message` when to pass\nthe cursor back; `resume_after` is GitHub's budget reset when that is the\nreason. `rate_limit_remaining` and `rate_limit` are GitHub's last word on the\ninstallation's budget, and `github_calls` what this page spent of it.\n\n`stalled` is set when the page recorded and skipped nothing, so passing the\ncursor back moves only once the message's reason has passed.\n`unreadable_deployment_ids` names deployments passed over because their range\ncould not be read inside the request timeout, and `pull_reads_skipped` counts\npull requests a recorded deployment did not read for keys for the same reason.\nPass `unreadable_deployment_ids` back as `deployment_ids` to retry only those.\nA retry names in `deployments_not_found` the ids that are no successful\ndeployment of the environment in the repository.\n\n`source` is `github_tag` or `github_release` for a page read from a\nrepository that records its releases from tags or GitHub Releases; its\ndeployment counts then count tags, and `unreadable_tags` names the tags\npassed over because GitHub would not read them.",
         "properties": {
           "deployments_not_found": {
             "items": {
@@ -9738,6 +9738,13 @@
               "type": "integer"
             },
             "title": "Unreadable Deployment Ids",
+            "type": "array"
+          },
+          "unreadable_tags": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Unreadable Tags",
             "type": "array"
           }
         },

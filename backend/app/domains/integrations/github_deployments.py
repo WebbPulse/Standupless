@@ -338,10 +338,15 @@ class PublishedRelease:
 def tag_commit(
     token: str, repository_id: int | str, tag: str, *, client: httpx.Client | None = None
 ) -> tuple[str, datetime | None]:
-    """The commit a tag points at and when it was committed, an annotated tag read through to its commit."""
+    """The commit a tag points at and when it was committed, an annotated tag read through to its commit.
+
+    The tag is read as the full ref `refs/tags/<tag>`, which GitHub peels to the
+    commit for annotated and lightweight tags alike; the bare `tags/<tag>` form
+    answers 422 for an annotated tag.
+    """
     if not tag or len(tag) > TAG_MAX * 2:
         raise ValueError("a tag read needs a tag name")
-    path = f"{repository_path(repository_id)}/commits/tags/{quote(tag, safe='')}"
+    path = f"{repository_path(repository_id)}/commits/refs/tags/{quote(tag, safe='')}"
     body = _object(_request("GET", path, token=token, client=client), "commit")
     sha = str(body.get("sha") or "").lower()
     if not _is_sha(sha):

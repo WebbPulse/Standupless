@@ -519,7 +519,8 @@ class ReleaseBackfillRead(BaseModel):
 
     `source` is `github_tag` or `github_release` for a page read from a
     repository that records its releases from tags or GitHub Releases; its
-    deployment counts then count tags.
+    deployment counts then count tags, and `unreadable_tags` names the tags
+    passed over because GitHub would not read them.
     """
 
     team_id: str
@@ -534,6 +535,7 @@ class ReleaseBackfillRead(BaseModel):
     stopped_early: bool = False
     stalled: bool = False
     unreadable_deployment_ids: list[int] = Field(default_factory=list)
+    unreadable_tags: list[str] = Field(default_factory=list)
     deployments_not_found: list[int] = Field(default_factory=list)
     pull_reads_skipped: int = 0
     message: Optional[str] = None

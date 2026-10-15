@@ -1298,6 +1298,7 @@ class ReleaseBackfillRead(TypedDict):
     stopped_early: NotRequired[bool]
     team_id: str
     unreadable_deployment_ids: NotRequired[list[int]]
+    unreadable_tags: NotRequired[list[str]]
 
 
 class ReleaseCreate(TypedDict):

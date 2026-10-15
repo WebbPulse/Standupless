@@ -381,9 +381,15 @@ def backfill(
     GitHub call and the backfill never moves issues. The counts named for
     deployments count tags here, and `environment` is not read. The page keeps to
     the GitHub App's budget and the request timeout as a deployment backfill does,
-    answering a cursor at the first tag it did not record.
+    answering a cursor at the first tag it did not record. A tag GitHub will not
+    read is passed over and named in `unreadable_tags`, so the cursor moves past it.
     """
-    from webbpulse.integrations.github import GitHubRateLimited, GitHubUnavailable
+    from webbpulse.integrations.github import (
+        GitHubNotFound,
+        GitHubRateLimited,
+        GitHubUnavailable,
+        GitHubUnprocessable,
+    )
 
     from app.domains.integrations import github_budget, github_deployments
 
@@ -400,6 +406,7 @@ def backfill(
     skipped = 0
     done = 0
     release_ids: list[str] = []
+    unreadable: list[str] = []
     remaining: list[TagVersion] = []
     batch: list[TagVersion] = []
     stop: tuple[str, datetime | None] | None = None
@@ -421,26 +428,39 @@ def backfill(
                 first = done == 0
                 budget.until(BACKFILL_FIRST_SECONDS if first else BACKFILL_PAGE_SECONDS)
                 github.best_effort_pulls = first
-                at = version.at
-                if at is None:
-                    tagged = version.tag
-                    _, at = _readable(
-                        lambda: github_deployments.tag_commit(github.token(), target.repository_id, tagged),
-                        (version.sha, None),
-                        "tag",
-                    )
                 previous = remaining[index + 1].sha if index + 1 < len(remaining) else None
-                release, made = record(
-                    repositories,
-                    target,
-                    github,
-                    tag=version.tag,
-                    sha=version.sha,
-                    previous_sha=previous,
-                    url=version.url,
-                    at=at,
-                    automate=False,
-                )
+                try:
+                    at = version.at
+                    if at is None:
+                        tagged = version.tag
+                        _, at = _readable(
+                            lambda: github_deployments.tag_commit(github.token(), target.repository_id, tagged),
+                            (version.sha, None),
+                            "tag",
+                        )
+                    release, made = record(
+                        repositories,
+                        target,
+                        github,
+                        tag=version.tag,
+                        sha=version.sha,
+                        previous_sha=previous,
+                        url=version.url,
+                        at=at,
+                        automate=False,
+                    )
+                except (GitHubUnprocessable, GitHubNotFound) as error:
+                    unreadable.append(version.tag)
+                    done += 1
+                    _log.warning(
+                        "A tag release backfill passed over a tag GitHub would not read.",
+                        extra={
+                            "event": "integrations.tag_backfill_unreadable",
+                            "tag": version.tag,
+                            "reason": type(error).__name__,
+                        },
+                    )
+                    continue
                 done += 1
                 release_ids.append(release.release_id)
                 if made:
@@ -476,6 +496,7 @@ def backfill(
         releases_created=created,
         releases_updated=updated,
         release_ids=list(dict.fromkeys(release_ids)),
+        unreadable_tags=unreadable,
         next_cursor=next_cursor,
         stopped_early=stop is not None,
         stalled=stalled,
