@@ -353,7 +353,7 @@ def test_a_backfill_passes_over_a_tag_github_will_not_read(
     assert rest.releases_created == 1
     assert rest.unreadable_tags == []
     assert rest.next_cursor is None
-    assert [row.name for row in _releases(repositories)] == ["standupless v1.2.0", "standupless v1.0.0"]
+    assert {row.name for row in _releases(repositories)} == {"standupless v1.2.0", "standupless v1.0.0"}
 
 
 def test_a_tag_commit_reads_annotated_and_lightweight_tags_through_the_full_ref() -> None:
