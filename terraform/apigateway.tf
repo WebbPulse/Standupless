@@ -98,6 +98,8 @@ locals {
     "POST /api/auth/recovery-codes" = { integration = "identity", require_identity_jwt = true }
     "POST /api/auth/step-up"        = { integration = "identity", require_identity_jwt = true }
 
+    "POST /api/auth/desktop-handoff" = { integration = "identity", require_identity_jwt = true }
+
     "POST /api/auth/passkeys/register/options"  = { integration = "identity", require_identity_jwt = true }
     "POST /api/auth/passkeys/register/verify"   = { integration = "identity", require_identity_jwt = true }
     "GET /api/auth/passkeys"                    = { integration = "identity", require_identity_jwt = true }

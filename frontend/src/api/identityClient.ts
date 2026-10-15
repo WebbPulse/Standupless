@@ -12,7 +12,7 @@ import {
   identityOriginFrom,
   identityUrl as joinIdentityUrl,
 } from '@webbpulse/discovery';
-import { appConfig } from '../config/app';
+import { appConfig, desktopHandoffSchemes } from '../config/app';
 import type { UserRead } from '../types/Api';
 
 export {
@@ -85,6 +85,9 @@ export const getIdentityClient = (): AuthClient<UserRead> | null => {
       timeoutMs: 30000,
     },
     ...(webAuthnAdapter === null ? {} : { webAuthn: webAuthnAdapter }),
+    ...(desktopHandoffSchemes.length === 0
+      ? {}
+      : { desktopHandoffSchemes: [...desktopHandoffSchemes] }),
   });
   return client;
 };

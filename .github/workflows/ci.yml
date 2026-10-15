@@ -181,6 +181,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      id-token: write
     defaults:
       run:
         working-directory: desktop
@@ -196,6 +197,20 @@ jobs:
           node-version: "22"
           cache: npm
           cache-dependency-path: desktop/package-lock.json
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ vars.CI_AWS_ROLE_ARN }}
+          aws-region: us-west-2
+
+      - name: Log in to CodeArtifact
+        env:
+          DOMAIN_OWNER: ${{ vars.CODEARTIFACT_DOMAIN_OWNER }}
+        run: |
+          aws codeartifact login --tool npm --domain webbpulse \
+            --domain-owner "$DOMAIN_OWNER" --repository npm \
+            --namespace @webbpulse --region us-west-2
 
       - name: Install dependencies
         env:
