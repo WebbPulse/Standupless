@@ -16,13 +16,13 @@ import { NavLink } from 'react-router-dom';
 import { useFavorites } from '../../hooks/useFavorites';
 import { cn } from '../../lib/cn';
 import { favoriteHref } from '../../lib/favorites';
-import { PROJECT_ICON_GLYPHS } from '../../lib/projectLook';
+import { showToast } from '../../lib/toast';
+import { PROJECT_ICON_GLYPHS, projectGlyph } from '../../lib/projectLook';
 import type { ViewColor } from '../../api/views';
 import type { FavoriteRead, ProjectIconName, TeamRead } from '../../types/Api';
 import Avatar from '../ui/avatar';
 import { IconButton } from '../ui/button';
 import Menu, { MenuItem, MenuSeparator } from '../ui/menu';
-import ProjectIcon from '../planning/ProjectIcon';
 import StatusIcon from '../ui/StatusIcon';
 import ViewIcon from '../views/ViewIcon';
 
@@ -52,7 +52,7 @@ const isProjectIcon = (
   typeof icon === 'string' && icon in PROJECT_ICON_GLYPHS;
 
 /** The small mark a favorite leads with, matching where it lives elsewhere in the app. */
-const FavoriteGlyph: React.FC<{
+const FavoriteMark: React.FC<{
   favorite: FavoriteRead;
   teams: readonly TeamRead[] | null;
 }> = ({ favorite, teams }) => {
@@ -62,12 +62,13 @@ const FavoriteGlyph: React.FC<{
         <StatusIcon status={favorite.status ?? undefined} className={GLYPH} />
       );
     case 'project':
-      return (
-        <ProjectIcon
-          icon={isProjectIcon(favorite.icon) ? favorite.icon : null}
-          color={favorite.color ?? null}
-          className="h-4 w-4 [&>svg]:h-3 [&>svg]:w-3"
-        />
+      return React.createElement(
+        projectGlyph(isProjectIcon(favorite.icon) ? favorite.icon : null),
+        {
+          'aria-hidden': true,
+          className: cn(GLYPH, !favorite.color && 'text-text-muted'),
+          style: favorite.color ? { color: favorite.color } : undefined,
+        }
       );
     case 'view':
       return (
@@ -98,6 +99,19 @@ const FavoriteGlyph: React.FC<{
       return null;
   }
 };
+
+/** A favorite's mark in one 16px box, so every title starts on the same line whatever the kind. */
+const FavoriteGlyph: React.FC<{
+  favorite: FavoriteRead;
+  teams: readonly TeamRead[] | null;
+}> = ({ favorite, teams }) => (
+  <span
+    aria-hidden="true"
+    className="inline-flex h-4 w-4 shrink-0 items-center justify-center"
+  >
+    <FavoriteMark favorite={favorite} teams={teams} />
+  </span>
+);
 
 /** Moves the row at `from` to `to`, or answers null when nothing would change. */
 const moveRow = (
@@ -260,6 +274,9 @@ export const FavoritesSection: React.FC<FavoritesSectionProps> = ({
                   onSelect={() => {
                     void globalThis.navigator.clipboard
                       .writeText(`${globalThis.location.origin}${href}`)
+                      .then(() => {
+                        showToast('Link copied');
+                      })
                       .catch(() => undefined);
                   }}
                 >
