@@ -103,7 +103,7 @@ def create_team_channel(
     _require_team(repositories, context.workspace_id, team_id)
     require_team_content(context, team_id)
     try:
-        return manage.create(repositories, context.workspace_id, team_id, context.user_id, payload)
+        return manage.create(repositories, context, team_id, payload)
     except (manage.ChannelError, manage.ChannelUnavailable) as exc:
         raise _http(exc) from exc
 
@@ -117,7 +117,7 @@ def update_team_channel(
     if payload.enabled is not False:
         require_team_content(context, team_id)
     try:
-        return manage.update(repositories, context.workspace_id, team_id, channel_id, payload)
+        return manage.update(repositories, context, team_id, channel_id, payload)
     except (manage.ChannelError, manage.ChannelUnavailable, manage.ChannelNotFound) as exc:
         raise _http(exc) from exc
 
@@ -127,7 +127,7 @@ def delete_team_channel(team_id: TeamId, channel_id: ChannelId, context: TeamAdm
     """Remove one of a team's channels."""
     _require_team(repositories, context.workspace_id, team_id)
     try:
-        manage.delete(repositories, context.workspace_id, team_id, channel_id)
+        manage.delete(repositories, context, team_id, channel_id)
     except manage.ChannelNotFound as exc:
         raise _http(exc) from exc
     return Response(status_code=status.HTTP_204_NO_CONTENT)

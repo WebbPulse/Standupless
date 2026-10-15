@@ -234,7 +234,8 @@ _ISSUES_READ_REPOSITORIES = (
     "api_keys",
 )
 
-_VIEWS_REPOSITORIES = ("views", "inbox", "search_index", "share_links")
+_VIEWS_REPOSITORIES = ("views", "inbox", "search_index", "share_links", "audit")
+"""What the views image writes. `audit` records share links being created and revoked."""
 
 _VIEWS_READ_REPOSITORIES = (
     "memberships",

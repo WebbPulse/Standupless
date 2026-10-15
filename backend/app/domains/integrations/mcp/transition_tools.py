@@ -98,7 +98,7 @@ def _set_github_transitions(call: ToolCall) -> Any:
                 }
             )
         )
-    saved = replace_team_transitions(call.repositories, workspace_id, team.team_id, rules)
+    saved = replace_team_transitions(call.repositories, call.context, team.team_id, rules)
     return _rules_json(call, team.team_id, saved)
 
 

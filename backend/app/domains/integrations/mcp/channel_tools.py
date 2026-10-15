@@ -65,8 +65,7 @@ def _create_channel(call: ToolCall) -> Any:
             "enabled": call.arguments.get("enabled", True),
         }
     )
-    workspace_id = call.context.workspace_id
-    row = _run(lambda: manage.create(call.repositories, workspace_id, team.team_id, call.context.user_id, payload))
+    row = _run(lambda: manage.create(call.repositories, call.context, team.team_id, payload))
     return row.model_dump(mode="json")
 
 
@@ -75,9 +74,8 @@ def _update_channel(call: ToolCall) -> Any:
     team = _team(call)
     changes = {name: call.arguments[name] for name in ("url", "label", "events", "enabled") if name in call.arguments}
     payload = ChannelUpdate.model_validate(changes)
-    workspace_id = call.context.workspace_id
     channel_id = str(call.require("channel_id"))
-    row = _run(lambda: manage.update(call.repositories, workspace_id, team.team_id, channel_id, payload))
+    row = _run(lambda: manage.update(call.repositories, call.context, team.team_id, channel_id, payload))
     return row.model_dump(mode="json")
 
 
@@ -85,7 +83,7 @@ def _delete_channel(call: ToolCall) -> Any:
     """Remove a channel from a team."""
     team = _team(call)
     channel_id = str(call.require("channel_id"))
-    _run(lambda: manage.delete(call.repositories, call.context.workspace_id, team.team_id, channel_id))
+    _run(lambda: manage.delete(call.repositories, call.context, team.team_id, channel_id))
     return {"deleted": channel_id}
 
 

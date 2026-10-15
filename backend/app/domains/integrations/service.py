@@ -18,6 +18,8 @@ from typing import Any, Iterable, Literal, Sequence, cast, get_args
 from fastapi import HTTPException, status
 from webbpulse.security import expand_key
 
+from app.common import audit
+from app.common.api.dependencies.authz import AuthzContext
 from app.common.core.config import settings
 from app.common.db.dynamo.base import utc_now
 from app.common.db.dynamo.github import IssueLink, Repository_, WebhookDelivery, WebhookEndpoint
@@ -360,9 +362,49 @@ def new_transition(workspace_id: str, team_id: str, rule: TransitionCreate) -> T
     )
 
 
+def current_transitions(repositories: Any, workspace_id: str, team_id: str) -> list[TransitionRead]:
+    """What the team does on each pull request event right now, stored or default."""
+    stored = repositories.team_config.list_transitions(workspace_id, team_id)
+    statuses = repositories.team_config.list_statuses(workspace_id, team_id)
+    return effective_transitions(team_id, stored, statuses)
+
+
+def _transition_lines(rules: list[TransitionRead], names: dict[str, str]) -> list[str]:
+    """Each rule as one readable line: trigger, branch when it has one, and the status it moves to."""
+    lines = []
+    for rule in rules:
+        branch = f" into {rule.branch_pattern}" if rule.branch_pattern else ""
+        target = names.get(rule.status_id or "", "a removed status") if rule.status_id else "no change"
+        lines.append(f"{rule.trigger}{branch}: {target}")
+    return lines
+
+
+def record_transitions_change(
+    repositories: Any, context: AuthzContext, team_id: str, before: list[TransitionRead]
+) -> None:
+    """Record a change to a team's pull request rules, before and after, when anything changed."""
+    statuses = repositories.team_config.list_statuses(context.workspace_id, team_id)
+    names = {row.status_id: row.name for row in statuses}
+    after = current_transitions(repositories, context.workspace_id, team_id)
+    old, new = _transition_lines(before, names), _transition_lines(after, names)
+    if old == new:
+        return
+    team = repositories.teams.get(context.workspace_id, team_id)
+    audit.record(
+        repositories,
+        context,
+        "github.transitions_changed",
+        target_type="team",
+        target_id=team_id,
+        target_label=team.name if team is not None else "",
+        before={"rules": old, "using_defaults": all(rule.is_default for rule in before)},
+        after={"rules": new, "using_defaults": all(rule.is_default for rule in after)},
+    )
+
+
 def replace_team_transitions(
     repositories: Any,
-    workspace_id: str,
+    context: AuthzContext,
     team_id: str,
     rules: list[TransitionCreate],
 ) -> list[TransitionRead]:
@@ -370,8 +412,9 @@ def replace_team_transitions(
 
     Checked whole before anything is written, so a rule naming another team's
     status or repeating a trigger and branch pattern leaves the old set in place.
-    An empty set restores the defaults.
+    An empty set restores the defaults. The change is recorded in the audit log.
     """
+    workspace_id = context.workspace_id
     statuses = repositories.team_config.list_statuses(workspace_id, team_id)
     status_ids = {row.status_id for row in statuses}
     seen: set[tuple[str, str]] = set()
@@ -382,6 +425,8 @@ def replace_team_transitions(
         seen.add(key)
         if rule.status_id is not None and rule.status_id not in status_ids:
             raise unprocessable("The status does not belong to this team.")
+    before = current_transitions(repositories, workspace_id, team_id)
     rows = [new_transition(workspace_id, team_id, rule) for rule in rules]
     stored = repositories.team_config.replace_transitions(workspace_id, team_id, rows)
+    record_transitions_change(repositories, context, team_id, before)
     return effective_transitions(team_id, stored, statuses)

@@ -143,9 +143,10 @@ def update_team(
     A new key prefix is applied first, in its own transaction, so a 409 on a
     taken prefix leaves every other field of the patch unapplied too. An
     explicit null `parent_team_id` makes the team top-level again, and any
-    change of parent is recorded in the audit log.
+    change of parent or of privacy is recorded in the audit log.
     """
     before = _load(repositories, context).parent_team_id
+    was_private = repositories.memberships.is_private_team(context.workspace_id, str(context.team_id))
     team = team_writes.update_team(
         repositories,
         context.workspace_id,
@@ -156,6 +157,7 @@ def update_team(
         can_see=context.can_find_team,
     )
     audit.record_parent_change(repositories, context, team, before)
+    audit.record_privacy_change(repositories, context, team, was_private, payload.private)
     return _read(repositories, context, team)
 
 

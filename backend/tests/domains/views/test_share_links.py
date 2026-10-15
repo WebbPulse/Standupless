@@ -178,3 +178,26 @@ def test_an_outsider_reaches_nothing(client: TestClient, workspace: str, reposit
     sign_in(client, OUTSIDER)
 
     assert client.get(f"/api/workspaces/{workspace}/share-links").status_code == 404
+
+
+def test_creating_and_revoking_a_link_are_audited_without_the_token(
+    client: TestClient, issues_client: TestClient, workspace: str, repositories: Any
+) -> None:
+    """Both entries target the token hash and name the member, and a second revoke records nothing."""
+    from webbpulse.audit import AuditQuery
+
+    sign_in(issues_client, MEMBER)
+    issue = seed_issue(issues_client, workspace, title="Audited")
+    sign_in(client, MEMBER)
+    created = create_link(client, workspace, target_type="issue", target_id=issue["id"]).json()
+    path = f"/api/workspaces/{workspace}/share-links/{created['token_hash']}"
+    assert client.delete(path).status_code == 204
+    assert client.delete(path).status_code == 204
+
+    [minted] = repositories.audit.list_events(workspace, AuditQuery(action="share_link.created")).events
+    [revoked] = repositories.audit.list_events(workspace, AuditQuery(action="share_link.revoked")).events
+    assert minted.actor.id == MEMBER and minted.target.id == created["token_hash"]
+    assert minted.target.label == "Audited"
+    assert minted.after is not None and minted.after["shares"] == "issue"
+    assert revoked.target.id == created["token_hash"]
+    assert created["token"] not in str([minted.after, revoked.before])

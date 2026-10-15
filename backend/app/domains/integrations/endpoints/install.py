@@ -25,6 +25,7 @@ from app.domains.integrations.schemas.integrations import (
     RepositoryRead,
 )
 from app.domains.integrations.service import not_configured, not_found, repository_read, require_team_content
+from app.domains.integrations.team_sync import record_pin
 
 router = APIRouter()
 
@@ -121,10 +122,19 @@ def link_repository(
         if team is None:
             raise not_found()
         require_team_content(context, payload.team_id)
+    current = repositories.github.get_repository(context.workspace_id, repository_id)
     updated = repositories.github.set_repository_team(context.workspace_id, repository_id, payload.team_id)
     if not updated:
         raise not_found()
     row = repositories.github.get_repository(context.workspace_id, repository_id)
     if row is None:
         raise not_found()
+    record_pin(
+        repositories,
+        context,
+        repository_id,
+        row.full_name,
+        current.team_id if current is not None else None,
+        row.team_id,
+    )
     return repository_read(row)

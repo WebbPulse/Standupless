@@ -168,6 +168,36 @@ describe('the workspace audit log page', () => {
     expect(log.getByText(/203\.0\.113\.7/)).toBeInTheDocument();
   });
 
+  it('reads lists and switches in a change as words', async () => {
+    listAuditLog.mockResolvedValue(
+      page({
+        events: [
+          event({
+            event: 'github.transitions_changed',
+            event_label: 'GitHub status transitions changed',
+            target_type: 'team',
+            target_label: 'Platform',
+            before: { rules: [], using_defaults: true },
+            after: {
+              rules: ['pr_merged into staging: On Staging', 'pr_merged: Done'],
+              using_defaults: false,
+            },
+          }),
+        ],
+      })
+    );
+    renderPage();
+
+    expect(await screen.findByText('Platform')).toBeInTheDocument();
+    const log = within(screen.getByRole('list', { name: 'Audit events' }));
+    expect(
+      log.getByText(
+        'rules: none to pr_merged into staging: On Staging, pr_merged: Done'
+      )
+    ).toBeInTheDocument();
+    expect(log.getByText('using_defaults: on to off')).toBeInTheDocument();
+  });
+
   it('narrows the log by actor and event type', async () => {
     renderPage();
     await screen.findByText('Mo Member');

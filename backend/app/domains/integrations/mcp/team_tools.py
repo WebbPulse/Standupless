@@ -433,13 +433,14 @@ def _create_team(call: ToolCall) -> Any:
 def _update_team(call: ToolCall) -> Any:
     """Change a team's name, key prefix, description, estimate settings, label sync, privacy or parent team.
 
-    A change of parent is recorded in the audit log, as the REST patch records it.
+    A change of parent or of privacy is recorded in the audit log, as the REST patch records it.
     """
     team = admin_team(call)
     arguments = given_arguments(
         call, ("name", "key_prefix", "description", *ESTIMATE_ARGUMENTS, "sync_pr_labels", "private")
     )
     payload = TeamUpdate.model_validate({**arguments, **_parent_arguments(call)})
+    was_private = call.repositories.memberships.is_private_team(call.context.workspace_id, team.team_id)
     updated = team_writes.update_team(
         call.repositories,
         call.context.workspace_id,
@@ -450,6 +451,7 @@ def _update_team(call: ToolCall) -> Any:
         can_see=call.context.can_find_team,
     )
     audit.record_parent_change(call.repositories, call.context, updated, team.parent_team_id)
+    audit.record_privacy_change(call.repositories, call.context, updated, was_private, payload.private)
     body = _team_json(call, updated)
     body["retired_key_prefixes"] = call.repositories.teams.list_aliases(call.context.workspace_id, team.team_id)
     return body
@@ -537,7 +539,7 @@ def _add_team_member(call: ToolCall) -> Any:
     role = str(call.optional("role", "member"))
     if role not in TEAM_ROLES:
         raise ToolError(f"role must be one of: {', '.join(TEAM_ROLES)}")
-    membership = team_members.put_team_member(call.repositories, call.context.workspace_id, team.team_id, user_id, role)
+    membership = team_members.put_team_member(call.repositories, call.context, team.team_id, user_id, role)
     return _team_member_json(call, membership)
 
 
@@ -548,9 +550,7 @@ def _update_team_member_role(call: ToolCall) -> Any:
     if role not in TEAM_ROLES:
         raise ToolError(f"role must be one of: {', '.join(TEAM_ROLES)}")
     current = _team_member_ref(call, team.team_id, call.require("user"))
-    membership = team_members.put_team_member(
-        call.repositories, call.context.workspace_id, team.team_id, current.user_id, role
-    )
+    membership = team_members.put_team_member(call.repositories, call.context, team.team_id, current.user_id, role)
     return _team_member_json(call, membership)
 
 
@@ -558,23 +558,21 @@ def _remove_team_member(call: ToolCall) -> Any:
     """Remove someone from a team, refusing its last admin."""
     team = admin_team(call)
     current = _team_member_ref(call, team.team_id, call.require("user"))
-    team_members.remove_team_member(call.repositories, call.context.workspace_id, team.team_id, current.user_id)
+    team_members.remove_team_member(call.repositories, call.context, team.team_id, current.user_id)
     return {"removed": True, "team_id": team.team_id, "user_id": current.user_id}
 
 
 def _join_team(call: ToolCall) -> Any:
     """Join a visible team as a member, or answer the membership already held."""
     team = _reader_team(call)
-    membership = team_members.join_team(
-        call.repositories, call.context.workspace_id, team.team_id, call.context.user_id
-    )
+    membership = team_members.join_team(call.repositories, call.context, team.team_id)
     return _team_member_json(call, membership)
 
 
 def _leave_team(call: ToolCall) -> Any:
     """Leave a team, refusing its last admin."""
     team = _reader_team(call)
-    team_members.leave_team(call.repositories, call.context.workspace_id, team.team_id, call.context.user_id)
+    team_members.leave_team(call.repositories, call.context, team.team_id)
     return {"left": True, "team_id": team.team_id, "user_id": call.context.user_id}
 
 

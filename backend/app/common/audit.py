@@ -68,6 +68,27 @@ EVENTS: dict[str, str] = {
     "team.created": "Team created",
     "team.deleted": "Team deleted",
     "team.parent_changed": "Team parent changed",
+    "team.privacy_changed": "Team privacy changed",
+    "team_member.added": "Team member added",
+    "team_member.removed": "Team member removed",
+    "team_member.role_changed": "Team member role changed",
+    "team_member.joined": "Team member joined",
+    "team_member.left": "Team member left",
+    "workspace.created": "Workspace created",
+    "share_link.created": "Share link created",
+    "share_link.revoked": "Share link revoked",
+    "webhook.created": "Webhook created",
+    "webhook.updated": "Webhook changed",
+    "webhook.secret_rotated": "Webhook secret rotated",
+    "webhook.deleted": "Webhook deleted",
+    "channel.created": "Notification channel added",
+    "channel.updated": "Notification channel changed",
+    "channel.deleted": "Notification channel removed",
+    "github.sync_updated": "GitHub sync settings changed",
+    "github.sync_removed": "GitHub sync turned off",
+    "github.transitions_changed": "GitHub status transitions changed",
+    "github.repository_pinned": "GitHub repository pinned",
+    "github.repository_unpinned": "GitHub repository unpinned",
 }
 """Every event the log records, with the label the settings page shows."""
 
@@ -174,6 +195,59 @@ def record_parent_change(
         before={"parent_team_id": before},
         after={"parent_team_id": team.parent_team_id},
     )
+
+
+def record_privacy_change(
+    repositories: Repositories, context: AuthzContext, team: Team, before: bool, after: bool | None
+) -> AuditEvent | None:
+    """Record a team made private or opened again, and nothing when the patch left its privacy alone."""
+    if after is None or bool(after) == bool(before):
+        return None
+    return record(
+        repositories,
+        context,
+        "team.privacy_changed",
+        target_type="team",
+        target_id=team.team_id,
+        target_label=team.name,
+        before={"private": bool(before)},
+        after={"private": bool(after)},
+    )
+
+
+def record_team_member(
+    repositories: Repositories,
+    context: AuthzContext,
+    event: str,
+    team_id: str,
+    user_id: str,
+    *,
+    before: Mapping[str, Any] | None = None,
+    after: Mapping[str, Any] | None = None,
+) -> AuditEvent | None:
+    """Record one team membership change, with the person as the target and the team on each side."""
+    team = repositories.teams.get(context.workspace_id, team_id)
+    where = {"team_id": team_id, "team": team.name if team is not None else ""}
+    return record(
+        repositories,
+        context,
+        event,
+        target_type="team_member",
+        target_id=user_id,
+        target_label=_person_label(repositories, user_id),
+        before={**where, **before} if before is not None else None,
+        after={**where, **after} if after is not None else None,
+    )
+
+
+def _person_label(repositories: Repositories, user_id: str) -> str:
+    """A person's display name for a target label, or their id where this bundle has no users."""
+    if "users" not in repositories.repository_names:
+        return user_id
+    from app.common.api.schemas.workspaces import display_name_for
+
+    user = repositories.users.get(user_id)
+    return display_name_for(user) if user is not None else user_id
 
 
 def record_system(

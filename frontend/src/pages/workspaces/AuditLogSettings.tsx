@@ -78,6 +78,10 @@ const dayAfter = (day: string): string | undefined => {
 const show = (value: unknown): string => {
   if (value === null || value === undefined || value === '') return 'none';
   if (typeof value === 'string') return value;
+  if (Array.isArray(value)) {
+    return value.length > 0 ? value.map(show).join(', ') : 'none';
+  }
+  if (typeof value === 'boolean') return value ? 'on' : 'off';
   return JSON.stringify(value);
 };
 
