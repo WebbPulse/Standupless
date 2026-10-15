@@ -77,24 +77,22 @@ export const MOBILE_STORE_URLS: {
 
 /**
  * The desktop platform a browser runs on, or null for a phone, a tablet or
- * anything not recognised, which then sees every build with none first.
+ * anything not recognised, which then sees every build with none first. The
+ * platform hint wins over the user agent, which browsers freeze or spoof.
  */
 export const detectDesktopPlatform = (
   userAgent: string,
   platform = ''
 ): DesktopPlatform | null => {
   const agent = userAgent.toLowerCase();
-  const os = platform.toLowerCase();
   if (/android|iphone|ipad|ipod|mobile/.test(agent)) return null;
-  if (os.startsWith('mac') || agent.includes('mac os x')) return 'mac';
-  if (os.startsWith('win') || agent.includes('windows')) return 'windows';
-  if (
-    os.includes('linux') ||
-    agent.includes('linux') ||
-    agent.includes('x11')
-  ) {
-    return 'linux';
-  }
+  const os = platform.toLowerCase();
+  if (os.startsWith('mac')) return 'mac';
+  if (os.startsWith('win')) return 'windows';
+  if (os.includes('linux')) return 'linux';
+  if (agent.includes('mac os x')) return 'mac';
+  if (agent.includes('windows')) return 'windows';
+  if (agent.includes('linux') || agent.includes('x11')) return 'linux';
   return null;
 };
 
