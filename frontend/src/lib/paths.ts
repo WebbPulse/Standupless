@@ -55,6 +55,9 @@ export const DESKTOP_HANDOFF_PATH = '/desktop-handoff';
  */
 export const DESKTOP_HANDOFF_FAILED_PARAM = 'desktop_handoff';
 
+/** The desktop and mobile downloads, public to everyone. */
+export const DOWNLOAD_PATH = '/download';
+
 /** The signed out page a person lands on after deleting their account. */
 export const ACCOUNT_DELETED_PATH = '/account-deleted';
 

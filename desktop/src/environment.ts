@@ -8,10 +8,6 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-/** Where the current desktop builds live: the fixed `desktop-latest` release. */
-export const DOWNLOADS_URL =
-  'https://github.com/WebbPulse/Standupless/releases/tag/desktop-latest';
-
 /** The environments a build can target. */
 export type EnvironmentName = 'production' | 'staging';
 
@@ -73,3 +69,10 @@ export const resolveEnvironment = (
     parseEnvironmentName(override ?? packagedEnvironment(appPath))
   ];
 };
+
+/**
+ * The web app's download page, which links every build from the fixed
+ * `desktop-latest` release and says how to open an unsigned one.
+ */
+export const downloadsUrl = (env: Environment): string =>
+  new URL('/download', env.appOrigin).toString();

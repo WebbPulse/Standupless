@@ -192,11 +192,26 @@ jobs:
               --notes "Placeholder"
           fi
 
+          mkdir -p fixed
+          copy_fixed() {
+            local matches=( assets/$1 )
+            if [ "${#matches[@]}" -ne 1 ] || [ ! -f "${matches[0]}" ]; then
+              echo "::error::expected one installer matching $1, found ${#matches[@]}"
+              exit 1
+            fi
+            cp "${matches[0]}" "fixed/$2"
+          }
+          copy_fixed 'Standupless-*-mac.dmg' Standupless-mac.dmg
+          copy_fixed 'Standupless-Setup-*.exe' Standupless-Setup.exe
+          copy_fixed 'Standupless-*.AppImage' Standupless.AppImage
+          copy_fixed 'standupless-desktop_*_amd64.deb' standupless-desktop_amd64.deb
+
           find assets -maxdepth 1 -type f ! -name 'latest*.yml' -print0 \
             | xargs -0 gh release upload "$CHANNEL" --repo "$GITHUB_REPOSITORY" --clobber
+          gh release upload "$CHANNEL" fixed/* --repo "$GITHUB_REPOSITORY" --clobber
           gh release upload "$CHANNEL" assets/latest*.yml --repo "$GITHUB_REPOSITORY" --clobber
 
-          KEEP="$(cd assets && ls -1)"
+          KEEP="$(cd assets && ls -1; cd ../fixed && ls -1)"
           gh release view "$CHANNEL" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name' \
             | while IFS= read -r NAME; do
                 if ! grep -Fxq "$NAME" <<<"$KEEP"; then

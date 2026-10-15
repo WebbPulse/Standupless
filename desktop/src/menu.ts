@@ -11,7 +11,7 @@ import {
   type BrowserWindow,
   type MenuItemConstructorOptions,
 } from 'electron';
-import { DOWNLOADS_URL, type Environment } from './environment';
+import { downloadsUrl, type Environment } from './environment';
 
 /** What the menu needs from the rest of the shell. */
 export interface MenuActions {
@@ -124,7 +124,7 @@ export const installMenu = (actions: MenuActions): void => {
         {
           label: 'Download Desktop Apps',
           click: () => {
-            void shell.openExternal(DOWNLOADS_URL);
+            void shell.openExternal(downloadsUrl(env));
           },
         },
         {

@@ -21,6 +21,7 @@ import { useAuth } from '../../hooks/useAuth';
 import { cn } from '../../lib/cn';
 import {
   CONTACT_PATH,
+  DOWNLOAD_PATH,
   LANDING_PARAM,
   PRICING_PATH,
   PRIVACY_PATH,
@@ -158,6 +159,11 @@ export const PublicFooter: React.FC = () => {
             <li>
               <Link to={PRICING_PATH} className={FOOTER_LINK}>
                 Pricing
+              </Link>
+            </li>
+            <li>
+              <Link to={DOWNLOAD_PATH} className={FOOTER_LINK}>
+                Download
               </Link>
             </li>
           </ul>
