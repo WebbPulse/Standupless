@@ -63,6 +63,25 @@ uv run bandit -r app -ll
 systemd-run --user --scope -p MemoryMax=8G -p MemorySwapMax=0 uv run pytest
 ```
 
+### Operator scripts
+
+Run from `backend/` with credentials for the environment's account. `--stage` is
+`staging` or `production`.
+
+- `scripts/grant_admin.py` sets or clears the platform admin flag
+  (`users.is_admin`) for one person, named by `--user-id` or `--email`. It is a
+  dry run unless `--apply` is passed, `--revoke` clears the flag, and it refuses
+  an unknown person, a disabled account and the last admin who can sign in. Each
+  write is recorded in the audit log of every workspace the person belongs to.
+  It prints the user id and outcome, never an email.
+- `scripts/grant_comp_plan.py` grants or revokes an internal comp plan on one
+  workspace.
+
+```bash
+uv run python scripts/grant_admin.py --stage production --user-id <id>
+uv run python scripts/grant_admin.py --stage production --user-id <id> --apply
+```
+
 ### Frontend
 
 ```bash
