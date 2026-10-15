@@ -32,7 +32,13 @@ module "frontend" {
     login_origin_id = "${local.prefix}-access-gate-login"
   } : null
 
-  public_paths = ["/robots.txt", "/sitemap.xml", "/email-logo.png"]
+  public_paths = [
+    "/robots.txt",
+    "/sitemap.xml",
+    "/email-logo.png",
+    "/.well-known/apple-app-site-association",
+    "/.well-known/assetlinks.json",
+  ]
 
   create_dns_records = local.custom_domain
   zone_id            = module.staging_dns.zone_id

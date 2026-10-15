@@ -1,0 +1,35 @@
+{
+  "name": "standupless-mobile",
+  "productName": "Standupless",
+  "description": "The Standupless iOS and Android apps.",
+  "version": "0.1.0",
+  "private": true,
+  "license": "SEE LICENSE IN LICENSE",
+  "author": "WebbPulse",
+  "homepage": "https://standupless.dev",
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "scripts": {
+    "sync": "cap sync",
+    "sync:staging": "STANDUPLESS_MOBILE_ENV=staging cap sync",
+    "format": "prettier --write \"src/**/*.ts\" \"*.{ts,json}\"",
+    "format:check": "prettier --check \"src/**/*.ts\" \"*.{ts,json}\"",
+    "type-check": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@capacitor/android": "8.5.3",
+    "@capacitor/app": "8.1.2",
+    "@capacitor/browser": "8.0.5",
+    "@capacitor/core": "8.5.3",
+    "@capacitor/ios": "8.5.3",
+    "@capacitor/keyboard": "8.0.6",
+    "@capacitor/splash-screen": "8.0.2"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "8.5.3",
+    "@types/node": "24.13.6",
+    "prettier": "3.9.9",
+    "typescript": "6.0.3"
+  }
+}
