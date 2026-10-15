@@ -16,11 +16,6 @@
 import { session, shell } from 'electron';
 import type { Environment } from './environment';
 
-/** The `@webbpulse/auth` module, which ships as ES modules only. */
-type AuthModule = typeof import('@webbpulse/auth', {
-  with: { 'resolution-mode': 'import' },
-});
-
 /** How long a browser sign-in may take before its verifier is discarded. */
 const PENDING_TTL_MS = 10 * 60 * 1000;
 
@@ -33,8 +28,8 @@ const SIGNED_IN_PATH = '/workspaces';
 /** The verifier of the one browser sign-in in flight, if any. */
 let pending: { verifier: string; startedAt: number } | null = null;
 
-/** Loads `@webbpulse/auth` from this CommonJS build. */
-const loadAuth = (): Promise<AuthModule> => import('@webbpulse/auth');
+/** Loads `@webbpulse/auth`, an ES module only package, from this CommonJS build. */
+const loadAuth = () => import('@webbpulse/auth');
 
 /** Takes the pending verifier, once, or null when none is pending or it expired. */
 const takeVerifier = (): string | null => {

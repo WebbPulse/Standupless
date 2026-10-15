@@ -64,4 +64,4 @@ export const parseDesktopHandoffSchemes = (value: unknown): string[] => {
 
 /** The custom URL schemes this build may hand a desktop sign-in to. */
 export const desktopHandoffSchemes: readonly string[] =
-  parseDesktopHandoffSchemes(import.meta.env.VITE_DESKTOP_HANDOFF_SCHEMES);
+  parseDesktopHandoffSchemes(import.meta.env['VITE_DESKTOP_HANDOFF_SCHEMES']);
