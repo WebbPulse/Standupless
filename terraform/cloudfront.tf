@@ -7,11 +7,14 @@
  * prerendered pages, whose hash embeds the page path). A change to any of them
  * changes its hash; under report_only that only logs a violation.
  *
+ * The API origin is spelled from the domain rather than read from module.api,
+ * whose CORS origins already depend on this distribution.
+ *
  * The attachments bucket is listed in both host forms because presigned URLs
  * use the global s3.amazonaws.com host while regional ones may appear in time.
  */
 locals {
-  api_origin = regex("^https://[^/]+", local.api_url)
+  api_origin = local.custom_domain ? "https://api.${local.domain_name}" : "https://*.execute-api.${var.aws_region}.amazonaws.com"
 
   attachments_bucket_origins = [
     "https://${module.attachments_bucket.bucket_id}.s3.amazonaws.com",
