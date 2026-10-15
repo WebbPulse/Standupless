@@ -45,8 +45,7 @@ export const isTriageStatusId = (
 export const shownStatusId = (issue: {
   status_id: string;
   in_triage?: boolean | undefined;
-}): string =>
-  issue.in_triage === true ? TRIAGE_STATUS_ID : issue.status_id;
+}): string => (issue.in_triage === true ? TRIAGE_STATUS_ID : issue.status_id);
 
 /** The statuses a picker offers: Triage first when the team has triage on. */
 export const withTriage = <T extends StatusRead>(
