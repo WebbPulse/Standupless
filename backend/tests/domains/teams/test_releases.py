@@ -663,14 +663,18 @@ def test_deleting_an_included_release_leaves_its_promotion(client: TestClient, r
     assert [row["name"] for row in promotion["included_releases"]] == ["Add export"]
 
 
-def test_an_issue_lists_the_promotion_not_the_release_it_carried(client: TestClient, repositories: Any) -> None:
-    """The issue page names the promotion once, matched even before any listing recorded it."""
+def test_an_issue_lists_the_release_a_promotion_carried_as_included(client: TestClient, repositories: Any) -> None:
+    """The issue page lists the promotion and the release it carried, marked as included in it."""
     issue = _issue(repositories, TEAM, "APO", 1)
-    _promoted_history(repositories, issue)
+    history = _promoted_history(repositories, issue)
 
     with TestClient(_app(repositories, "issues")) as issues_client:
         sign_in(issues_client, MEMBER)
         response = issues_client.get(f"{BASE}/issues/{issue.issue_id}/releases")
 
     assert response.status_code == 200, response.text
-    assert [row["name"] for row in response.json()["releases"]] == ["2026-10-11-e"]
+    rows = response.json()["releases"]
+    assert [row["name"] for row in rows] == ["2026-10-11-e", "Fix login"]
+    assert rows[0]["included_in"] is None
+    assert rows[1]["included_in"] == history["promotion"].release_id
+    assert rows[1]["included_in_name"] == "2026-10-11-e"

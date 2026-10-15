@@ -3003,6 +3003,9 @@ export interface IssueReleaseRead {
   team_id: string;
   name: string;
   current_stage?: ReleaseStageRead | null;
+  /** The promotion that carried this release to a later stage, if one did. */
+  included_in?: string | null;
+  included_in_name?: string | null;
   created_at: string;
 }
 
