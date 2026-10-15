@@ -115,7 +115,7 @@ export const TransitionsSection: React.FC<TransitionsSectionProps> = ({
   );
 
   const { data: statuses, error: statusesError } = usePolledQuery(
-    ({ signal }) => listStatuses(workspaceId, teamId, signal),
+    (context) => listStatuses(workspaceId, teamId, context),
     { intervalMs: POLL_MS, queryKey: statusesKey(teamId), auth }
   );
 

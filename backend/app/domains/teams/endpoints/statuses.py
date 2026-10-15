@@ -13,7 +13,8 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Path, Query, Response, status
+from fastapi import APIRouter, Depends, Path, Query, Request, Response, status
+from webbpulse.http import conditional_response
 
 from app.common import team_workflow
 from app.common.api.dependencies.authz import AuthzContext, Capability, require
@@ -31,15 +32,19 @@ router = APIRouter()
 
 @router.get("/{workspace_id}/teams/{team_id}/statuses", response_model=StatusListRead)
 def list_statuses(
+    request: Request,
     context: Annotated[AuthzContext, Depends(require(Capability.TEAM_READ))],
     repositories: Annotated[Repositories, Depends(get_repositories)],
     include_hidden: Annotated[bool, Query(description="Also answer the inherited statuses the team hid.")] = False,
-) -> StatusListRead:
-    """Every status of the team, its own and the inherited ones, ordered by position."""
+) -> Response:
+    """Every status of the team, its own and the inherited ones, ordered by position.
+
+    The answer carries a weak `ETag`, so an unchanged poll gets a 304.
+    """
     ordered = team_workflow.ordered_statuses(
         repositories, context.workspace_id, str(context.team_id), include_hidden=include_hidden
     )
-    return StatusListRead(statuses=[StatusRead.from_row(row) for row in ordered])
+    return conditional_response(request, StatusListRead(statuses=[StatusRead.from_row(row) for row in ordered]))
 
 
 @router.post(

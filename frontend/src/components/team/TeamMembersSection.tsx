@@ -60,7 +60,7 @@ export const TeamMembersSection: React.FC<TeamMembersSectionProps> = ({
   const [role, setRole] = useState<TeamRole>('member');
 
   const { data, error, isLoading } = usePolledQuery(
-    ({ signal }) => listTeamMembers(workspaceId, teamId, signal),
+    (context) => listTeamMembers(workspaceId, teamId, context),
     {
       intervalMs: POLL_MS,
       queryKey,
@@ -69,7 +69,7 @@ export const TeamMembersSection: React.FC<TeamMembersSectionProps> = ({
   );
 
   const { data: workspaceMembers } = usePolledQuery(
-    ({ signal }) => listMembers(workspaceId, signal),
+    (context) => listMembers(workspaceId, context),
     {
       intervalMs: POLL_MS,
       enabled: canEdit && canReadWorkspaceMembers,

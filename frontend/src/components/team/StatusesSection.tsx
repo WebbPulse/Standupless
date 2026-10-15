@@ -59,8 +59,8 @@ export const StatusesSection: React.FC<StatusesSectionProps> = ({
   const keys = [allStatusesKey(teamId), statusesKey(teamId)];
 
   const { data, error, isLoading } = usePolledQuery(
-    ({ signal }) =>
-      listStatuses(workspaceId, teamId, signal, { includeHidden: true }),
+    (context) =>
+      listStatuses(workspaceId, teamId, context, { includeHidden: true }),
     {
       intervalMs: POLL_MS,
       queryKey: allStatusesKey(teamId),

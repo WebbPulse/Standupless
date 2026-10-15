@@ -52,7 +52,7 @@ export const IssuePeek: React.FC<IssuePeekProps> = ({ issueId, onClose }) => {
   const enabled = workspaceId !== '' && issueId !== '';
 
   const { data, error, isLoading } = usePolledQuery(
-    ({ signal }) => getIssue(workspaceId, issueId, signal),
+    (context) => getIssue(workspaceId, issueId, context),
     {
       intervalMs: POLL_MS,
       enabled,

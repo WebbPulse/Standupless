@@ -14,9 +14,7 @@ import {
 } from '../contexts/TeamsContextDefinition';
 import { teamsKey } from '../lib/queryKeys';
 import { useWorkspace } from './useWorkspace';
-
-/** How often the fallback read re-reads the list. */
-const POLL_MS = 60000;
+import { LOOKUP_POLL_MS } from '../lib/polling';
 
 /** The team list with the workspace it belongs to. */
 export type UseTeamsResult = TeamsContextType & { workspaceId: string };
@@ -33,8 +31,8 @@ export const useTeamsFor = (
   const shared = useContext(TeamsContext);
   const auth = useQueryAuth();
 
-  const own = usePolledQuery(({ signal }) => listTeams(workspaceId, signal), {
-    intervalMs: POLL_MS,
+  const own = usePolledQuery((context) => listTeams(workspaceId, context), {
+    intervalMs: LOOKUP_POLL_MS,
     enabled: enabled && shared === undefined && workspaceId !== '',
     queryKey: teamsKey(workspaceId),
     auth,

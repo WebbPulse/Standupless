@@ -25,6 +25,7 @@ import {
   viewsKey,
 } from '../lib/queryKeys';
 import type { ReviewsRead, TriageSummaryRead } from '../types/Api';
+import { LOOKUP_POLL_MS } from '../lib/polling';
 
 /** How often a fallback read repeats. */
 const POLL_MS = 60000;
@@ -65,9 +66,9 @@ export const useOwnViews = (
   const shared = useShared(workspaceId);
   const auth = useQueryAuth();
   const own = usePolledQuery(
-    ({ signal }) => listViews(workspaceId, { scope: 'all' }, signal),
+    (context) => listViews(workspaceId, { scope: 'all' }, context),
     {
-      intervalMs: POLL_MS,
+      intervalMs: LOOKUP_POLL_MS,
       enabled: shared === undefined && workspaceId !== '',
       queryKey: viewsKey(workspaceId, 'all', ''),
       auth,

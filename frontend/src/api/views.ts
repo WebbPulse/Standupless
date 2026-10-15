@@ -6,7 +6,12 @@
  * visibility is decided.
  */
 
+import type {
+  PolledQueryContext,
+  PolledResponse,
+} from '@webbpulse/api-client/react';
 import apiClient from './client';
+import { conditionalGet, type ReadContext } from './conditional';
 import type { IssueListFilters, IssueListSort } from './issues';
 import type {
   BoardQuery,
@@ -327,19 +332,41 @@ export const listBoardColumn = async (
   };
 };
 
-/** Lists saved views. `mine` is the default the route applies. */
-export const listViews = async (
+/** The filter a saved view listing is narrowed by. */
+export interface ViewListQuery {
+  scope?: ViewListScope;
+  team_id?: string;
+}
+
+/**
+ * Lists saved views. `mine` is the default the route applies. Handed a polled
+ * query's context, the read is conditional on the held ETag.
+ */
+export function listViews(
   workspaceId: string,
-  query: { scope?: ViewListScope; team_id?: string } = {},
+  query?: ViewListQuery,
   signal?: AbortSignal
-): Promise<SavedViewDisplayRead[]> => {
-  const response = await apiClient.get<{ views: SavedViewDisplayRead[] }>(
+): Promise<SavedViewDisplayRead[]>;
+export function listViews(
+  workspaceId: string,
+  query: ViewListQuery,
+  context: PolledQueryContext
+): Promise<PolledResponse<SavedViewDisplayRead[]>>;
+export function listViews(
+  workspaceId: string,
+  query: ViewListQuery = {},
+  context?: ReadContext
+): Promise<SavedViewDisplayRead[] | PolledResponse<SavedViewDisplayRead[]>> {
+  return conditionalGet<
+    { views: SavedViewDisplayRead[] },
+    SavedViewDisplayRead[]
+  >(
     viewsPath(workspaceId),
-    listOptions({ ...query }, signal)
+    (signal) => listOptions({ ...query }, signal),
+    context,
+    (body) => (Array.isArray(body?.views) ? body.views : [])
   );
-  const body = response.data;
-  return Array.isArray(body?.views) ? body.views : [];
-};
+}
 
 /**
  * Creates a saved view. `scope` is derived from whether `team_id` is set

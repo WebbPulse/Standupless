@@ -80,6 +80,7 @@ import DisplayMenu from './DisplayMenu';
 import { FilterButton, FilterChips } from './FilterBar';
 import InsightsPanel from './InsightsPanel';
 import IssueListView from './IssueListView';
+import { LOOKUP_POLL_MS } from '../../../lib/polling';
 
 /** Clears every cached views list, so each surface listing views re-reads. */
 const refreshViewLists = (workspaceId: string, teamId?: string): void => {
@@ -471,10 +472,10 @@ export const IssueViewPage: React.FC<IssueViewPageProps> = ({
 
   const menuTeamId = homeTeam?.id ?? '';
   const { data: teamViews } = usePolledQuery(
-    ({ signal }) =>
-      listViews(workspaceId, { scope: 'all', team_id: menuTeamId }, signal),
+    (context) =>
+      listViews(workspaceId, { scope: 'all', team_id: menuTeamId }, context),
     {
-      intervalMs: 120000,
+      intervalMs: LOOKUP_POLL_MS,
       enabled: workspaceId !== '' && menuTeamId !== '' && view === undefined,
       queryKey: viewsKey(workspaceId, 'all', menuTeamId),
       auth,

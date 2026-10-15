@@ -83,6 +83,7 @@ import { useTeams } from '../../hooks/useTeams';
 import { SimilarIssues, useSimilarIssues } from './SimilarIssues';
 import { teamTree } from '../../lib/teamOrder';
 import { TemplatePicker } from './TemplatePicker';
+import { LOOKUP_POLL_MS } from '../../lib/polling';
 
 /** Props for CreateIssueDialog: where the issue lands and what it may carry. */
 export interface CreateIssueDialogProps {
@@ -213,7 +214,7 @@ interface TeamTemplates extends TemplateListRead {
 }
 
 /** How often the dialog re-reads the team's templates while open. */
-const TEMPLATES_POLL_MS = 60000;
+const TEMPLATES_POLL_MS = LOOKUP_POLL_MS;
 
 /** Builds the create body, leaving out every field still at its default. */
 const toPayload = (

@@ -45,7 +45,7 @@ export const MembersSection: React.FC<MembersSectionProps> = ({
   const manages = canManageMembers(workspace.role);
 
   const { data, error, isLoading } = usePolledQuery(
-    ({ signal }) => listMembers(workspace.id, signal),
+    (context) => listMembers(workspace.id, context),
     {
       intervalMs: POLL_MS,
       queryKey,

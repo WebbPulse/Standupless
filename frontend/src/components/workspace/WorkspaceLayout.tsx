@@ -16,7 +16,11 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useQueryAuth } from '@webbpulse/auth/react';
-import { invalidateQueries, usePolledQuery } from '@webbpulse/api-client/react';
+import {
+  clearPolledQueryCache,
+  invalidateQueries,
+  usePolledQuery,
+} from '@webbpulse/api-client/react';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { listLabels, listStatuses, listTeamMembers } from '../../api/teams';
 import {
@@ -59,9 +63,7 @@ import DesktopInboxReporter from '../desktop/DesktopInboxReporter';
 import { Toaster } from '../ui/toast';
 import { PeekProvider } from './PeekPane';
 import { estimateOptionsOf } from '../../lib/validation';
-
-/** How often the dialog's supporting lists are re-read while it is open. */
-const POLL_MS = 60000;
+import { LOOKUP_POLL_MS } from '../../lib/polling';
 
 /** The open create request, with the team it resolved to. */
 type Request = CreateIssueOptions & { teamId: string };
@@ -111,16 +113,16 @@ const CreateIssueHost: React.FC<CreateIssueHostProps> = ({
 }) => {
   const auth = useQueryAuth();
   const { data: statuses } = usePolledQuery(
-    ({ signal }) => listStatuses(workspaceId, team.id, signal),
-    { intervalMs: POLL_MS, queryKey: statusesKey(team.id), auth }
+    (context) => listStatuses(workspaceId, team.id, context),
+    { intervalMs: LOOKUP_POLL_MS, queryKey: statusesKey(team.id), auth }
   );
   const { data: labels } = usePolledQuery(
-    ({ signal }) => listLabels(workspaceId, team.id, signal),
-    { intervalMs: POLL_MS, queryKey: labelsKey(team.id), auth }
+    (context) => listLabels(workspaceId, team.id, context),
+    { intervalMs: LOOKUP_POLL_MS, queryKey: labelsKey(team.id), auth }
   );
   const { data: people } = usePolledQuery(
-    ({ signal }) => listTeamMembers(workspaceId, team.id, signal),
-    { intervalMs: POLL_MS, queryKey: teamMembersKey(team.id), auth }
+    (context) => listTeamMembers(workspaceId, team.id, context),
+    { intervalMs: LOOKUP_POLL_MS, queryKey: teamMembersKey(team.id), auth }
   );
 
   if (statuses === null) return null;
@@ -145,6 +147,26 @@ const CreateIssueHost: React.FC<CreateIssueHostProps> = ({
   );
 };
 
+/** The workspace this tab last showed, kept across layout remounts. */
+let shownWorkspaceId = '';
+
+/**
+ * Empties the shared polled query cache when the person moves from one
+ * workspace to another, including by way of the workspace list, which unmounts
+ * this layout. Keys such as a team's statuses, labels, members and templates
+ * are not workspace scoped, so the old workspace's lists are dropped rather
+ * than kept warm. Queries already mounted keep what they show until their next
+ * read.
+ */
+const useWorkspaceSwitchCacheClear = (workspaceId: string): void => {
+  useEffect(() => {
+    if (workspaceId === '' || workspaceId === shownWorkspaceId) return;
+    const left = shownWorkspaceId;
+    shownWorkspaceId = workspaceId;
+    if (left !== '') clearPolledQueryCache();
+  }, [workspaceId]);
+};
+
 /** Renders the overlays and the page beneath them, inside the team list. */
 const WorkspaceOverlays: React.FC = () => {
   const { workspace } = useWorkspace();
@@ -166,6 +188,7 @@ const WorkspaceOverlays: React.FC = () => {
   useEffect(() => {
     rememberWorkspace(slug);
   }, [slug]);
+  useWorkspaceSwitchCacheClear(workspaceId);
 
   const writable = useMemo(
     () => teams.filter((team) => canWriteIssues(role, team.role)),

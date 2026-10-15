@@ -4,8 +4,13 @@
  * outside its tenant.
  */
 
+import type {
+  PolledQueryContext,
+  PolledResponse,
+} from '@webbpulse/api-client/react';
 import apiClient, { type RequestOptions } from './client';
 import { untilMergeComplete } from '../lib/labelMerge';
+import { conditionalGet, type ReadContext } from './conditional';
 import type {
   ArchiveSettingsRead,
   ArchiveSettingsUpdate,
@@ -102,18 +107,29 @@ const listOptions = (
   return signal === undefined ? { query } : { query, signal };
 };
 
-/** Lists a workspace's teams. A guest sees only the ones they belong to. */
-export const listTeams = async (
+/**
+ * Lists a workspace's teams. A guest sees only the ones they belong to. Handed
+ * a polled query's context, the read is conditional on the held ETag.
+ */
+export function listTeams(
   workspaceId: string,
   signal?: AbortSignal
-): Promise<TeamRead[]> => {
-  const response = await apiClient.get<TeamListRead>(
+): Promise<TeamRead[]>;
+export function listTeams(
+  workspaceId: string,
+  context: PolledQueryContext
+): Promise<PolledResponse<TeamRead[]>>;
+export function listTeams(
+  workspaceId: string,
+  context?: ReadContext
+): Promise<TeamRead[] | PolledResponse<TeamRead[]>> {
+  return conditionalGet<TeamListRead, TeamRead[]>(
     teamsPath(workspaceId),
-    signalOptions(signal)
+    signalOptions,
+    context,
+    (body) => (Array.isArray(body?.teams) ? body.teams : [])
   );
-  const body = response.data;
-  return Array.isArray(body?.teams) ? body.teams : [];
-};
+}
 
 /**
  * Saves the caller's own sidebar team order for this workspace, which follows
@@ -178,19 +194,32 @@ export const deleteTeam = async (
   await apiClient.delete<void>(teamPath(workspaceId, teamId));
 };
 
-/** Lists a team's members. */
-export const listTeamMembers = async (
+/**
+ * Lists a team's members. Handed a polled query's context, the read is
+ * conditional on the held ETag.
+ */
+export function listTeamMembers(
   workspaceId: string,
   teamId: string,
   signal?: AbortSignal
-): Promise<TeamMemberRead[]> => {
-  const response = await apiClient.get<TeamMemberListRead>(
+): Promise<TeamMemberRead[]>;
+export function listTeamMembers(
+  workspaceId: string,
+  teamId: string,
+  context: PolledQueryContext
+): Promise<PolledResponse<TeamMemberRead[]>>;
+export function listTeamMembers(
+  workspaceId: string,
+  teamId: string,
+  context?: ReadContext
+): Promise<TeamMemberRead[] | PolledResponse<TeamMemberRead[]>> {
+  return conditionalGet<TeamMemberListRead, TeamMemberRead[]>(
     teamMembersPath(workspaceId, teamId),
-    signalOptions(signal)
+    signalOptions,
+    context,
+    (body) => (Array.isArray(body?.members) ? body.members : [])
   );
-  const body = response.data;
-  return Array.isArray(body?.members) ? body.members : [];
-};
+}
 
 /**
  * Grants a team role. A PUT rather than a POST, because the contract makes
@@ -242,21 +271,34 @@ export const leaveTeam = async (
 /**
  * Lists a team's effective statuses ordered by position: its own and the
  * workspace's, with its overrides applied. Hidden inherited ones are left out
- * unless asked for.
+ * unless asked for. Handed a polled query's context, the read is conditional
+ * on the held ETag.
  */
-export const listStatuses = async (
+export function listStatuses(
   workspaceId: string,
   teamId: string,
   signal?: AbortSignal,
+  options?: WorkflowListOptions
+): Promise<StatusRead[]>;
+export function listStatuses(
+  workspaceId: string,
+  teamId: string,
+  context: PolledQueryContext,
+  options?: WorkflowListOptions
+): Promise<PolledResponse<StatusRead[]>>;
+export function listStatuses(
+  workspaceId: string,
+  teamId: string,
+  context?: ReadContext,
   options: WorkflowListOptions = {}
-): Promise<StatusRead[]> => {
-  const response = await apiClient.get<StatusListRead>(
+): Promise<StatusRead[] | PolledResponse<StatusRead[]>> {
+  return conditionalGet<StatusListRead, StatusRead[]>(
     statusesPath(workspaceId, teamId),
-    listOptions(signal, options)
+    (signal) => listOptions(signal, options),
+    context,
+    (body) => (Array.isArray(body?.statuses) ? body.statuses : [])
   );
-  const body = response.data;
-  return Array.isArray(body?.statuses) ? body.statuses : [];
-};
+}
 
 /** Adds a status. */
 export const createStatus = async (
@@ -307,20 +349,33 @@ export const deleteStatus = async (
 /**
  * Lists a team's effective labels: its own and the workspace's, with its
  * overrides applied. Hidden inherited ones are left out unless asked for.
+ * Handed a polled query's context, the read is conditional on the held ETag.
  */
-export const listLabels = async (
+export function listLabels(
   workspaceId: string,
   teamId: string,
   signal?: AbortSignal,
+  options?: WorkflowListOptions
+): Promise<LabelRead[]>;
+export function listLabels(
+  workspaceId: string,
+  teamId: string,
+  context: PolledQueryContext,
+  options?: WorkflowListOptions
+): Promise<PolledResponse<LabelRead[]>>;
+export function listLabels(
+  workspaceId: string,
+  teamId: string,
+  context?: ReadContext,
   options: WorkflowListOptions = {}
-): Promise<LabelRead[]> => {
-  const response = await apiClient.get<LabelListRead>(
+): Promise<LabelRead[] | PolledResponse<LabelRead[]>> {
+  return conditionalGet<LabelListRead, LabelRead[]>(
     labelsPath(workspaceId, teamId),
-    listOptions(signal, options)
+    (signal) => listOptions(signal, options),
+    context,
+    (body) => (Array.isArray(body?.labels) ? body.labels : [])
   );
-  const body = response.data;
-  return Array.isArray(body?.labels) ? body.labels : [];
-};
+}
 
 /** Adds a label. */
 export const createLabel = async (

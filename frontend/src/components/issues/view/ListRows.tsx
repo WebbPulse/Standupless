@@ -28,6 +28,7 @@ import {
   StatusCell,
 } from './IssueProperties';
 import { useIssueViewEnv } from './IssueViewContext';
+import { useIssuePrefetch } from '../../../hooks/useIssuePrefetch';
 
 /** One group with its sub-groups, when the view is sub-grouped. */
 export interface IssueSection {
@@ -281,6 +282,7 @@ export const IssueListRow: React.FC<IssueListRowProps> = ({ issue, tree }) => {
   const isPeeked = env.peekedKey === issue.key;
   const selecting = env.selected.size > 0;
   const archived = (issue.archived_at ?? null) !== null;
+  const prefetch = useIssuePrefetch(issue.key, isFocused);
 
   return (
     <li
@@ -343,6 +345,7 @@ export const IssueListRow: React.FC<IssueListRowProps> = ({ issue, tree }) => {
       {shows('status') && <StatusCell issue={issue} />}
       <Link
         to={issuePath(env.slug, issue.key)}
+        {...prefetch}
         data-hover="parent"
         onClick={(event) => {
           if (event.shiftKey) {

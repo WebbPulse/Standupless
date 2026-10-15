@@ -184,7 +184,7 @@ const AuditLogSection: React.FC<{ workspace: WorkspaceRead }> = ({
   }, [actorId, event, sinceDay, untilDay]);
 
   const { data: members } = usePolledQuery(
-    ({ signal }) => listMembers(workspace.id, signal),
+    (context) => listMembers(workspace.id, context),
     {
       intervalMs: MEMBERS_POLL_MS,
       queryKey: membersKey(workspace.id),

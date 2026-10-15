@@ -13,6 +13,7 @@ from typing import Annotated, Any, Dict
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Request, Response, status
 from webbpulse.dynamodb import ConditionFailed, TransactionCanceled
+from webbpulse.http import conditional_response
 
 from app.common import audit, plan_usage, workspace_members
 from app.common.api.dependencies.authz import (
@@ -313,11 +314,15 @@ def cancel_workspace_deletion(
 
 @router.get("/{workspace_id}/members", response_model=MemberListRead)
 def list_members(
+    request: Request,
     context: Annotated[AuthzContext, Depends(require(Capability.WORKSPACE_READ))],
     repositories: Annotated[Repositories, Depends(get_repositories)],
-) -> MemberListRead:
-    """Everyone in the workspace, joined with their user rows for display."""
-    return workspace_members.list_members(repositories, context)
+) -> Response:
+    """Everyone in the workspace, joined with their user rows for display.
+
+    The answer carries a weak `ETag`, so an unchanged poll gets a 304.
+    """
+    return conditional_response(request, workspace_members.list_members(repositories, context))
 
 
 @router.patch("/{workspace_id}/members/{user_id}", response_model=MemberRead)

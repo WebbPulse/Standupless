@@ -11,9 +11,10 @@ import { listTeams } from '../api/teams';
 import { useWorkspace } from '../hooks/useWorkspace';
 import { teamsKey } from '../lib/queryKeys';
 import { TeamsContext, type TeamsContextType } from './TeamsContextDefinition';
+import { LOOKUP_POLL_MS } from '../lib/polling';
 
 /** How often the team list is re-read while a workspace page is open. */
-export const TEAMS_POLL_MS = 60000;
+export const TEAMS_POLL_MS = LOOKUP_POLL_MS;
 
 /**
  * Ceiling on the retry delay after a failed read. The team list is what the
@@ -32,7 +33,7 @@ export const TeamsProvider: React.FC<{ children: React.ReactNode }> = ({
   const workspaceId = workspace?.id ?? '';
 
   const { data, error, isLoading, refetch } = usePolledQuery(
-    ({ signal }) => listTeams(workspaceId, signal),
+    (context) => listTeams(workspaceId, context),
     {
       intervalMs: TEAMS_POLL_MS,
       maxBackoffMs: TEAMS_MAX_BACKOFF_MS,

@@ -5,8 +5,13 @@
  */
 
 import apiClient from './client';
+import { conditionalGet, type ReadContext } from './conditional';
 import type { QueryValue } from '@webbpulse/api-client';
-import { polledResponse } from '@webbpulse/api-client/react';
+import {
+  polledResponse,
+  type PolledQueryContext,
+  type PolledResponse,
+} from '@webbpulse/api-client/react';
 import type {
   ActivityListRead,
   ActivityRead,
@@ -316,31 +321,59 @@ export const createIssue = async (
   return response.data;
 };
 
-/** Reads one issue by id. */
-export const getIssue = async (
+/**
+ * Reads one issue by id. Handed a polled query's context, the read is
+ * conditional on the held ETag.
+ */
+export function getIssue(
   workspaceId: string,
   issueId: string,
   signal?: AbortSignal
-): Promise<IssueRead> => {
-  const response = await apiClient.get<IssueRead>(
+): Promise<IssueRead>;
+export function getIssue(
+  workspaceId: string,
+  issueId: string,
+  context: PolledQueryContext
+): Promise<PolledResponse<IssueRead>>;
+export function getIssue(
+  workspaceId: string,
+  issueId: string,
+  context?: ReadContext
+): Promise<IssueRead | PolledResponse<IssueRead>> {
+  return conditionalGet<IssueRead, IssueRead>(
     issuePath(workspaceId, issueId),
-    signalOptions(signal)
+    signalOptions,
+    context,
+    (body) => body
   );
-  return response.data;
-};
+}
 
-/** Reads one issue by its key, which the contract matches case insensitively. */
-export const getIssueByKey = async (
+/**
+ * Reads one issue by its key, which the contract matches case insensitively.
+ * Handed a polled query's context, the read is conditional on the held ETag.
+ */
+export function getIssueByKey(
   workspaceId: string,
   key: string,
   signal?: AbortSignal
-): Promise<IssueRead> => {
-  const response = await apiClient.get<IssueRead>(
+): Promise<IssueRead>;
+export function getIssueByKey(
+  workspaceId: string,
+  key: string,
+  context: PolledQueryContext
+): Promise<PolledResponse<IssueRead>>;
+export function getIssueByKey(
+  workspaceId: string,
+  key: string,
+  context?: ReadContext
+): Promise<IssueRead | PolledResponse<IssueRead>> {
+  return conditionalGet<IssueRead, IssueRead>(
     issueByKeyPath(workspaceId, key),
-    signalOptions(signal)
+    signalOptions,
+    context,
+    (body) => body
   );
-  return response.data;
-};
+}
 
 /** Updates an issue. Each changed field becomes one activity row server side. */
 export const updateIssue = async (

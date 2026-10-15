@@ -60,8 +60,8 @@ export const LabelsSection: React.FC<LabelsSectionProps> = ({
   const keys = [allLabelsKey(teamId), labelsKey(teamId)];
 
   const { data, error, isLoading } = usePolledQuery(
-    ({ signal }) =>
-      listLabels(workspaceId, teamId, signal, { includeHidden: true }),
+    (context) =>
+      listLabels(workspaceId, teamId, context, { includeHidden: true }),
     {
       intervalMs: POLL_MS,
       queryKey: allLabelsKey(teamId),

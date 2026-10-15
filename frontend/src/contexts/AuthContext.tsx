@@ -10,6 +10,7 @@ import {
   useAuth as usePackageAuth,
   type AnyAuthClient,
 } from '@webbpulse/auth/react';
+import { clearPolledQueryCache } from '@webbpulse/api-client/react';
 import { useNavigate } from 'react-router-dom';
 import { getIdentityClient } from '../api/identityClient';
 import { clearIssueContextCache } from '../lib/issueContextCache';
@@ -57,6 +58,30 @@ const useTimezoneCapture = (
 };
 
 /**
+ * Empties the shared polled query cache once a signed in session ends, however
+ * it ended: a sign out here, one in another tab, or an expired session. Several
+ * cached keys, such as a team's statuses or the current user, carry no user,
+ * so the next person signing in on this browser must not paint from them.
+ */
+const useSignedOutCacheClear = (
+  isAuthenticated: boolean,
+  isLoading: boolean
+): void => {
+  const signedIn = useRef(false);
+
+  useEffect(() => {
+    if (isAuthenticated) {
+      signedIn.current = true;
+      return;
+    }
+    if (!isLoading && signedIn.current) {
+      signedIn.current = false;
+      clearPolledQueryCache();
+    }
+  }, [isAuthenticated, isLoading]);
+};
+
+/**
  * Supplies the session calls `@webbpulse/auth` does not own. Mounted inside the
  * package provider so `useAuth` resolves, and holding no user of its own: the
  * package store is the single source of truth.
@@ -75,6 +100,7 @@ const AuthExtrasProvider: React.FC<{ children: ReactNode }> = ({
   } = usePackageAuth<UserRead>();
 
   useSignedInHint(isAuthenticated, isLoading);
+  useSignedOutCacheClear(isAuthenticated, isLoading);
   useTimezoneCapture(isAuthenticated ? user : null, setUser);
 
   const login = useCallback(
@@ -100,6 +126,7 @@ const AuthExtrasProvider: React.FC<{ children: ReactNode }> = ({
         void 0;
       }
       clearIssueContextCache();
+      clearPolledQueryCache();
       clearSignedIn();
       void navigate(to, { replace: true });
     },
