@@ -1,11 +1,15 @@
 module "transaction_search" {
   source  = "terraform.webbpulse.com/WebbPulse/platform-modules/aws//modules/transaction-search"
-  version = "~> 2.27"
+  version = "~> 2.41"
 
   name_prefix = local.prefix
 
   adopt_spans_log_group             = var.adopt_spans_log_group
   spans_log_group_retention_in_days = 7
+
+  adopt_application_signals_log_group = true
+
+  span_sample_ratio = 0.1
 }
 
 variable "adopt_spans_log_group" {
@@ -19,6 +23,11 @@ import {
 
   to = module.transaction_search.aws_cloudwatch_log_group.spans[each.key]
   id = each.value
+}
+
+import {
+  to = module.transaction_search.aws_cloudwatch_log_group.application_signals["/aws/application-signals/data"]
+  id = "/aws/application-signals/data"
 }
 
 moved {
