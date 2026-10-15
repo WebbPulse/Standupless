@@ -565,7 +565,12 @@ export const ReleaseDetail: React.FC = () => {
       }
       leading={crumbs}
       toolbar={
-        <TeamTabs slug={slug} keyPrefix={team.key_prefix} current="releases" />
+        <TeamTabs
+          slug={slug}
+          keyPrefix={team.key_prefix}
+          teamId={team.id}
+          current="releases"
+        />
       }
       actions={
         canEdit ? (

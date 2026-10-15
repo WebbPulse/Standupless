@@ -776,6 +776,7 @@ export const Releases: React.FC = () => {
         <TeamTabs
           slug={slug ?? ''}
           keyPrefix={team.key_prefix}
+          teamId={team.id}
           current="releases"
         />
       }

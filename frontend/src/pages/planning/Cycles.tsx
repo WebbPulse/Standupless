@@ -494,6 +494,7 @@ export const Cycles: React.FC = () => {
           <TeamTabs
             slug={slug ?? ''}
             keyPrefix={team.key_prefix}
+            teamId={team.id}
             current="cycles"
           />
           {subTeams.length > 0 && (

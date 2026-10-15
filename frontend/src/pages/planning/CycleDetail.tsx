@@ -502,7 +502,12 @@ export const CycleDetail: React.FC = () => {
       flush
       toolbar={
         <div className="flex items-center gap-2">
-          <TeamTabs slug={slug} keyPrefix={team.key_prefix} current="cycles" />
+          <TeamTabs
+            slug={slug}
+            keyPrefix={team.key_prefix}
+            teamId={team.id}
+            current="cycles"
+          />
           {subTeams.length > 0 && (
             <SubTeamToggle rollUp={rollUp} onToggle={toggle} />
           )}
