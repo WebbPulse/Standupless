@@ -153,7 +153,7 @@ export const ReleasePipelineSection: React.FC<ReleasePipelineSectionProps> = ({
   );
 
   const { data: statuses } = usePolledQuery(
-    ({ signal }) => listStatuses(workspaceId, teamId, signal),
+    (context) => listStatuses(workspaceId, teamId, context),
     { intervalMs: POLL_MS, queryKey: statusesKey(teamId), auth }
   );
 

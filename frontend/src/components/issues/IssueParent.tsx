@@ -54,7 +54,7 @@ export const IssueParent: React.FC<IssueParentProps> = ({
       : candidates.find((candidate) => candidate.id === parentId);
 
   const { data: fetched } = usePolledQuery(
-    ({ signal }) => getIssue(workspaceId, parentId ?? '', signal),
+    (context) => getIssue(workspaceId, parentId ?? '', context),
     {
       intervalMs: POLL_MS,
       enabled: parentId !== null && known === undefined && workspaceId !== '',

@@ -9,7 +9,8 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Path, Query, Response, status
+from fastapi import APIRouter, Depends, Path, Query, Request, Response, status
+from webbpulse.http import conditional_response
 
 from app.common import label_merge, team_workflow
 from app.common.api.dependencies.authz import AuthzContext, Capability, require
@@ -31,13 +32,17 @@ router = APIRouter()
 
 @router.get("/{workspace_id}/teams/{team_id}/labels", response_model=LabelListRead)
 def list_labels(
+    request: Request,
     context: Annotated[AuthzContext, Depends(require(Capability.TEAM_READ))],
     repositories: Annotated[Repositories, Depends(get_repositories)],
     include_hidden: Annotated[bool, Query(description="Also answer the inherited labels the team hid.")] = False,
-) -> LabelListRead:
-    """Every label of the team, its own and the inherited ones, in name order."""
+) -> Response:
+    """Every label of the team, its own and the inherited ones, in name order.
+
+    The answer carries a weak `ETag`, so an unchanged poll gets a 304.
+    """
     ordered = ordered_labels(repositories, context.workspace_id, str(context.team_id), include_hidden=include_hidden)
-    return LabelListRead(labels=[LabelRead.from_row(row) for row in ordered])
+    return conditional_response(request, LabelListRead(labels=[LabelRead.from_row(row) for row in ordered]))
 
 
 @router.post(

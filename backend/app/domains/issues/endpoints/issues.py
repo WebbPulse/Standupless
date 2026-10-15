@@ -254,16 +254,18 @@ def create_issue(
 
 @router.get("/{workspace_id}/issues/by-key/{key}", response_model=IssueRead)
 def read_issue_by_key(
+    request: Request,
     key: Annotated[str, Path(min_length=1)],
     context: Annotated[AuthzContext, Depends(require(Capability.WORKSPACE_READ))],
     repositories: Annotated[Repositories, Depends(get_repositories)],
-) -> IssueRead:
+) -> Response:
     """One issue by its human key, `ABC-123` and case insensitive.
 
     Declared before `/issues/{issue_id}` so `by-key` is not swallowed as an id, and
     the prefix names the team, which is what makes this one indexed query. A key
     the issue held before it moved to another team answers the issue under its new
-    key, visible by the team it now belongs to.
+    key, visible by the team it now belongs to. Like the read by id, the answer
+    carries a weak `ETag` and an unchanged poll gets a 304.
     """
     parsed = parse_issue_key(key)
     if parsed is None:
@@ -277,17 +279,23 @@ def read_issue_by_key(
     issue = find_issue_by_number(repositories, context.workspace_id, team.team_id, number)
     if issue is None or not context.can_see_team(issue.team_id):
         raise not_found()
-    return IssueRead.from_row(current(repositories.teams, issue))
+    return conditional_response(request, IssueRead.from_row(current(repositories.teams, issue)))
 
 
 @router.get("/{workspace_id}/issues/{issue_id}", response_model=IssueRead)
 def read_issue(
+    request: Request,
     issue_id: Annotated[str, Path(min_length=1)],
     context: Annotated[AuthzContext, Depends(require(Capability.WORKSPACE_READ))],
     repositories: Annotated[Repositories, Depends(get_repositories)],
-) -> IssueRead:
-    """One issue the caller may read."""
-    return IssueRead.from_row(current(repositories.teams, load_visible_issue(repositories, context, issue_id)))
+) -> Response:
+    """One issue the caller may read.
+
+    The answer carries a weak `ETag` over its body, so a poll that sends it back
+    in `If-None-Match` gets a 304 with no body while the issue is unchanged.
+    """
+    issue = IssueRead.from_row(current(repositories.teams, load_visible_issue(repositories, context, issue_id)))
+    return conditional_response(request, issue)
 
 
 @router.patch("/{workspace_id}/issues", response_model=IssueBulkRead)

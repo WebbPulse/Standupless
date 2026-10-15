@@ -42,6 +42,7 @@ import {
 import { useIssueViewEnv } from './IssueViewContext';
 import { ArchivedMarker, GroupGlyph } from './ListRows';
 import { isNoOpDrop } from '../../../lib/boardDrop';
+import { useIssuePrefetch } from '../../../hooks/useIssuePrefetch';
 
 /** Where a dragged card would land. */
 interface DropTarget {
@@ -105,6 +106,7 @@ const BoardCard: React.FC<BoardCardProps> = ({
   const isFocused = env.focusedId === issue.id;
   const isSelected = env.selected.has(issue.id);
   const isPeeked = env.peekedKey === issue.key;
+  const prefetch = useIssuePrefetch(issue.key, isFocused);
   return (
     <li
       data-row-id={issue.id}
@@ -147,6 +149,7 @@ const BoardCard: React.FC<BoardCardProps> = ({
         )}
         <Link
           to={issuePath(env.slug, issue.key)}
+          {...prefetch}
           draggable={false}
           data-hover="parent"
           onClick={(event) => {

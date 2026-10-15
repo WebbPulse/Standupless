@@ -56,6 +56,7 @@ import {
 } from '../../lib/queryKeys';
 import { showErrorToast, showToast } from '../../lib/toast';
 import type { ViewListScope } from '../../types/Api';
+import { LOOKUP_POLL_MS } from '../../lib/polling';
 
 /** How often the view list is re-read while the page is open. */
 const POLL_MS = 60000;
@@ -140,9 +141,9 @@ export const Views: React.FC = () => {
   const members = useWorkspaceMembers(workspaceId);
 
   const { data, error, isLoading } = usePolledQuery(
-    ({ signal }) => listViews(workspaceId, { scope }, signal),
+    (context) => listViews(workspaceId, { scope }, context),
     {
-      intervalMs: POLL_MS,
+      intervalMs: LOOKUP_POLL_MS,
       enabled: workspaceId !== '',
       queryKey: viewsKey(workspaceId, scope, ''),
       auth,

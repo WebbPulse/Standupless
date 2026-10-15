@@ -113,6 +113,7 @@ import { teamTree } from '../../lib/teamOrder';
 import type { Theme } from '../../lib/theme';
 import { currentOrFirstTeam, settingsLanding } from '../../lib/workspaceNav';
 import type { TeamRead, WorkspaceRead } from '../../types/Api';
+import { LOOKUP_POLL_MS } from '../../lib/polling';
 
 /** How many hits the palette asks the search route for. */
 const RESULT_LIMIT = 20;
@@ -306,9 +307,9 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
   );
 
   const { data: savedViews } = usePolledQuery(
-    ({ signal }) => listViews(workspaceId, { scope: 'all' }, signal),
+    (context) => listViews(workspaceId, { scope: 'all' }, context),
     {
-      intervalMs: POLL_MS,
+      intervalMs: LOOKUP_POLL_MS,
       enabled: page === 'views' && workspaceId !== '',
       queryKey: viewsKey(workspaceId, 'all', ''),
       auth,
@@ -318,7 +319,7 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
   const { data: templateList } = usePolledQuery(
     ({ signal }) => listTeamTemplates(workspaceId, team?.id ?? '', signal),
     {
-      intervalMs: POLL_MS,
+      intervalMs: LOOKUP_POLL_MS,
       enabled: page === 'template' && workspaceId !== '' && team !== undefined,
       queryKey: [...templatesKey(team?.id ?? ''), 'palette'],
       auth,

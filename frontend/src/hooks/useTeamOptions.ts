@@ -36,6 +36,7 @@ import type {
   ProjectRead,
   StatusRead,
 } from '../types/Api';
+import { LOOKUP_POLL_MS } from '../lib/polling';
 
 /** How often the lists are re-read. */
 const POLL_MS = 60000;
@@ -77,18 +78,23 @@ export const useTeamOptions = (
   const enabled = workspaceId !== '' && teamId !== '';
 
   const { data: statuses } = usePolledQuery(
-    ({ signal }) => listStatuses(workspaceId, teamId, signal),
-    { intervalMs: POLL_MS, enabled, queryKey: statusesKey(teamId), auth }
+    (context) => listStatuses(workspaceId, teamId, context),
+    { intervalMs: LOOKUP_POLL_MS, enabled, queryKey: statusesKey(teamId), auth }
   );
 
   const { data: labels } = usePolledQuery(
-    ({ signal }) => listLabels(workspaceId, teamId, signal),
-    { intervalMs: POLL_MS, enabled, queryKey: labelsKey(teamId), auth }
+    (context) => listLabels(workspaceId, teamId, context),
+    { intervalMs: LOOKUP_POLL_MS, enabled, queryKey: labelsKey(teamId), auth }
   );
 
   const { data: people } = usePolledQuery(
-    ({ signal }) => listTeamMembers(workspaceId, teamId, signal),
-    { intervalMs: POLL_MS, enabled, queryKey: teamMembersKey(teamId), auth }
+    (context) => listTeamMembers(workspaceId, teamId, context),
+    {
+      intervalMs: LOOKUP_POLL_MS,
+      enabled,
+      queryKey: teamMembersKey(teamId),
+      auth,
+    }
   );
 
   const { data: cycles } = usePolledQuery(

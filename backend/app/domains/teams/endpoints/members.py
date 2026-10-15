@@ -11,7 +11,8 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Path, Response, status
+from fastapi import APIRouter, Depends, Path, Request, Response, status
+from webbpulse.http import conditional_response
 
 from app.common import team_members
 from app.common.api.dependencies.authz import AuthzContext, Capability, require
@@ -27,13 +28,18 @@ router = APIRouter()
 
 @router.get("/{workspace_id}/teams/{team_id}/members", response_model=TeamMemberListRead)
 def list_team_members(
+    request: Request,
     context: Annotated[AuthzContext, Depends(require(Capability.TEAM_READ))],
     repositories: Annotated[Repositories, Depends(get_repositories)],
-) -> TeamMemberListRead:
-    """Everyone explicitly added to this team, joined with their user rows."""
+) -> Response:
+    """Everyone explicitly added to this team, joined with their user rows.
+
+    The answer carries a weak `ETag`, so an unchanged poll gets a 304.
+    """
     memberships = repositories.memberships.list_team_members(context.workspace_id, str(context.team_id))
     users = repositories.users.get_many([m.user_id for m in memberships])
-    return TeamMemberListRead(members=[TeamMemberRead.from_rows(m, users.get(m.user_id)) for m in memberships])
+    listing = TeamMemberListRead(members=[TeamMemberRead.from_rows(m, users.get(m.user_id)) for m in memberships])
+    return conditional_response(request, listing)
 
 
 @router.put(

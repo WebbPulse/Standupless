@@ -240,10 +240,10 @@ export const IssueView: React.FC<IssueViewProps> = ({
   const enabled = workspaceId !== '' && issueRef !== '';
 
   const { data, error, isLoading } = usePolledQuery(
-    ({ signal }) =>
+    (context) =>
       lookup === 'id'
-        ? getIssue(workspaceId, issueRef, signal)
-        : getIssueByKey(workspaceId, issueRef, signal),
+        ? getIssue(workspaceId, issueRef, context)
+        : getIssueByKey(workspaceId, issueRef, context),
     {
       intervalMs: POLL_MS,
       enabled,
