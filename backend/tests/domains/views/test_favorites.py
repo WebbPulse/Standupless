@@ -36,11 +36,11 @@ def test_an_issue_favorite_answers_its_key_title_and_status(
     issue = seed_issue(issues_client, workspace, title="Fix the login")
     sign_in(client, MEMBER)
 
-    added = star(client, workspace, kind="issue", target_id=issue["issue_id"])
+    added = star(client, workspace, kind="issue", target_id=issue["id"])
 
     assert added.status_code == 200, added.text
     listed = favorites(client, workspace)
-    assert [(row["kind"], row["target_id"]) for row in listed] == [("issue", issue["issue_id"])]
+    assert [(row["kind"], row["target_id"]) for row in listed] == [("issue", issue["id"])]
     assert listed[0]["title"] == "Fix the login"
     assert listed[0]["issue_key"] == issue["key"]
     assert listed[0]["status"]["status_id"] == issue["status_id"]
@@ -133,13 +133,13 @@ def test_reordering_keeps_favorites_the_order_left_out(
     sign_in(client, MEMBER)
     star(client, workspace, kind="team", target_id=TEAM)
     star(client, workspace, kind="team", target_id=OTHER_TEAM)
-    star(client, workspace, kind="issue", target_id=issue["issue_id"])
+    star(client, workspace, kind="issue", target_id=issue["id"])
 
     response = client.put(
         f"/api/workspaces/{workspace}/favorites/order",
         json={
             "items": [
-                {"kind": "issue", "target_id": issue["issue_id"]},
+                {"kind": "issue", "target_id": issue["id"]},
                 {"kind": "project", "target_id": "01JB0000000000000000000NOT"},
                 {"kind": "team", "target_id": OTHER_TEAM},
             ]
@@ -148,7 +148,7 @@ def test_reordering_keeps_favorites_the_order_left_out(
 
     assert response.status_code == 200, response.text
     order = [row["target_id"] for row in response.json()["favorites"]]
-    assert order == [issue["issue_id"], OTHER_TEAM, TEAM]
+    assert order == [issue["id"], OTHER_TEAM, TEAM]
     assert [row["target_id"] for row in favorites(client, workspace)] == order
 
 
