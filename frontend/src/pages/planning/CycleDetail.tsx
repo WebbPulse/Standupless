@@ -506,6 +506,7 @@ export const CycleDetail: React.FC = () => {
           targetId={cycle.cycle_id}
           teamId={team.id}
           title={cycleTitle(cycle)}
+          preview={{ team_key_prefix: team.key_prefix }}
         />
       }
       leading={crumbs}

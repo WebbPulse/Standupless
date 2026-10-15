@@ -16,7 +16,11 @@ import {
 } from '../api/favorites';
 import { SidebarDataContext } from '../contexts/SidebarDataContextDefinition';
 import { errorMessage } from '../lib/errors';
-import { sameFavorite, type FavoritesState } from '../lib/favorites';
+import {
+  sameFavorite,
+  type FavoritePreview,
+  type FavoritesState,
+} from '../lib/favorites';
 import { favoritesKey } from '../lib/queryKeys';
 import { showErrorToast } from '../lib/toast';
 import type { FavoriteKind, FavoriteRead, FavoriteRef } from '../types/Api';
@@ -104,7 +108,11 @@ export const useFavoritesState = (
   );
 
   const toggle = useCallback(
-    async (ref: FavoriteRef, title: string): Promise<boolean> => {
+    async (
+      ref: FavoriteRef,
+      title: string,
+      preview: FavoritePreview = {}
+    ): Promise<boolean> => {
       if (isFavorite(ref.kind, ref.target_id)) {
         const removed = await settle(
           (favorites ?? []).filter(
@@ -115,6 +123,7 @@ export const useFavoritesState = (
         return !removed;
       }
       const row: FavoriteRead = {
+        ...preview,
         kind: ref.kind,
         target_id: ref.target_id,
         team_id: ref.team_id ?? null,

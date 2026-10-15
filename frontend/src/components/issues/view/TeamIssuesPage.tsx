@@ -132,6 +132,7 @@ export const TeamIssuesPage: React.FC<TeamIssuesPageProps> = ({
           kind="team"
           targetId={team.id}
           title={team.name}
+          preview={{ team_key_prefix: team.key_prefix }}
         />
       }
       tabs={
