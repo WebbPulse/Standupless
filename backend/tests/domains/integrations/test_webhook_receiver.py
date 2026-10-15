@@ -391,3 +391,36 @@ def test_a_finished_check_run_naming_no_pull_request_is_queued(
 
     assert response.status_code == 202
     assert len(enqueued) == 1
+
+
+@pytest.mark.parametrize(
+    ("event", "payload", "queued"),
+    [
+        ("create", {"ref": "v1.0.0", "ref_type": "tag"}, True),
+        ("create", {"ref": "feature", "ref_type": "branch"}, False),
+        ("release", {"action": "published", "release": {"tag_name": "v1.0.0"}}, True),
+        ("release", {"action": "edited", "release": {"tag_name": "v1.0.0"}}, False),
+    ],
+)
+def test_only_a_created_tag_or_a_published_release_is_queued(
+    client: TestClient,
+    enqueued: list[tuple[str, Any]],
+    event: str,
+    payload: dict[str, Any],
+    queued: bool,
+) -> None:
+    """A tag or published Release may record a release; a branch or an edited Release is answered and dropped."""
+    body = delivery({**payload, "installation": {"id": int(INSTALLATION_ID)}})
+    response = client.post(
+        PATH,
+        content=body,
+        headers={
+            "X-Hub-Signature-256": signature(body),
+            "X-GitHub-Event": event,
+            "X-GitHub-Delivery": f"delivery-{event}-{queued}-{payload.get('action', payload.get('ref'))}",
+            "Content-Type": "application/json",
+        },
+    )
+
+    assert response.status_code == (202 if queued else 200)
+    assert len(enqueued) == (1 if queued else 0)

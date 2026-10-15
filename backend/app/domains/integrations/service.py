@@ -30,6 +30,7 @@ from app.domains.integrations.schemas.integrations import (
     DeliveryAttemptRead,
     IssueLinkRead,
     RepositoryRead,
+    RepositoryReleaseSourceRead,
     ReviewState,
     StackRead,
     TransitionCreate,
@@ -224,6 +225,7 @@ def repository_read(repository: Repository_) -> RepositoryRead:
         default_branch=repository.default_branch,
         team_id=repository.team_id,
         linked_at=repository.linked_at,
+        release_source=RepositoryReleaseSourceRead.model_validate(repository.release_source.model_dump()),
     )
 
 

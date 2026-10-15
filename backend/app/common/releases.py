@@ -76,6 +76,13 @@ SHORT_SHA = 7
 
 GITHUB_DEPLOYMENT = "github_deployment"
 
+GITHUB_TAG = "github_tag"
+
+GITHUB_RELEASE = "github_release"
+
+GITHUB_SOURCES = frozenset({GITHUB_DEPLOYMENT, GITHUB_TAG, GITHUB_RELEASE})
+"""The sources GitHub reports, whose status moves are recorded as GitHub's."""
+
 CATEGORY_RANK: Mapping[str, int] = {
     "backlog": 0,
     "unstarted": 1,
@@ -509,7 +516,7 @@ def apply_stage_automation(
     ids = [issue_id for issue_id in dict.fromkeys(wanted) if issue_id not in referenced]
     if not ids:
         return []
-    actor = GITHUB if source == GITHUB_DEPLOYMENT else SYSTEM
+    actor = GITHUB if source in GITHUB_SOURCES else SYSTEM
     rows = repositories.issues.get_many(release.workspace_id, ids)
     moved: list[str] = []
     for issue_id in ids:

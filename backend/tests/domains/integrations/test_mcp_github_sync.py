@@ -27,7 +27,7 @@ def test_a_team_without_a_link_reads_as_unlinked(client: TestClient, repositorie
 
     read = answer(tool(client, secret, "get_team_github_sync", {"team_id": "ABC"}))
 
-    assert read == {"team_id": TEAM, "linked": False, "pinned_repositories": []}
+    assert read == {"team_id": TEAM, "linked": False, "pinned_repositories": [], "release_sources": {}}
 
 
 def test_an_admin_links_by_full_name_and_changes_one_setting(
@@ -105,7 +105,14 @@ def test_a_pinned_repository_reads_on_an_unlinked_team(client: TestClient, repos
 
     read = answer(tool(client, secret, "get_team_github_sync", {"team_id": TEAM}))
 
-    assert read == {"team_id": TEAM, "linked": False, "pinned_repositories": [REPOSITORY_FULL_NAME]}
+    assert read == {
+        "team_id": TEAM,
+        "linked": False,
+        "pinned_repositories": [REPOSITORY_FULL_NAME],
+        "release_sources": {
+            REPOSITORY_FULL_NAME: {"kind": "deployments", "tag_pattern": None, "status_id": None, "move_issues": True}
+        },
+    }
 
 
 def test_an_admin_pins_and_unpins_without_starting_a_sync(
@@ -147,3 +154,51 @@ def test_a_member_may_not_pin(client: TestClient, repositories: Any, installed: 
     refusal(tool(client, secret, "pin_team_repository", {"team_id": TEAM, "repository": REPOSITORY_ID}))
 
     assert _pin(repositories) is None
+
+
+def test_a_pin_chooses_the_release_source_and_keeps_what_it_does_not_name(
+    client: TestClient, repositories: Any, installed: str
+) -> None:
+    """Tags with a pattern and a status by name are stored, a later call changes one part, and bad input is refused."""
+    secret = mint_for(repositories, ADMIN, ("teams:write",))
+    started = next(row for row in repositories.team_config.list_statuses(WORKSPACE, TEAM) if row.category == "started")
+
+    pinned = answer(
+        tool(
+            client,
+            secret,
+            "pin_team_repository",
+            {
+                "team_id": TEAM,
+                "repository": REPOSITORY_ID,
+                "release_source": "tags",
+                "tag_pattern": "python-v*",
+                "release_status": started.name,
+            },
+        )
+    )
+    moved = answer(
+        tool(
+            client, secret, "pin_team_repository", {"team_id": TEAM, "repository": REPOSITORY_ID, "move_issues": False}
+        )
+    )
+    unknown = refusal(
+        tool(
+            client,
+            secret,
+            "pin_team_repository",
+            {"team_id": TEAM, "repository": REPOSITORY_ID, "release_status": "Nowhere"},
+        )
+    )
+
+    assert pinned["release_sources"][REPOSITORY_FULL_NAME] == {
+        "kind": "tags",
+        "tag_pattern": "python-v*",
+        "status_id": started.status_id,
+        "move_issues": True,
+    }
+    assert moved["release_sources"][REPOSITORY_FULL_NAME]["move_issues"] is False
+    assert moved["release_sources"][REPOSITORY_FULL_NAME]["tag_pattern"] == "python-v*"
+    assert "Nowhere" in unknown
+    stored = repositories.github.get_repository(WORKSPACE, REPOSITORY_ID)
+    assert stored.release_source.kind == "tags"

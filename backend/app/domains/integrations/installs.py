@@ -22,7 +22,7 @@ from webbpulse.dynamodb import ConditionFailed
 from app.common.api.dependencies.repositories import Repositories
 from app.common.core.config import settings
 from app.common.db.dynamo.base import utc_now
-from app.common.db.dynamo.github import Installation, Repository_, install_key, repo_key
+from app.common.db.dynamo.github import Installation, Repository_, RepositoryReleaseSource, install_key, repo_key
 from app.domains.integrations import github_api
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -308,6 +308,7 @@ def sync_repositories(
                 default_branch=str(entry.get("default_branch", "main")),
                 team_id=previous.team_id if previous is not None else None,
                 linked_at=previous.linked_at if previous is not None else utc_now(),
+                release_source=previous.release_source if previous is not None else RepositoryReleaseSource(),
             )
         )
         if not bool(entry.get("private", True)):
@@ -349,6 +350,7 @@ def apply_repository_changes(
                 default_branch=str(entry.get("default_branch", "main")),
                 team_id=previous.team_id if previous is not None else None,
                 linked_at=previous.linked_at if previous is not None else utc_now(),
+                release_source=previous.release_source if previous is not None else RepositoryReleaseSource(),
             )
         )
         if not bool(entry.get("private", True)):

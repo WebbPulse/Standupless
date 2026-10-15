@@ -34,7 +34,7 @@ from typing import Any, Callable, Mapping, Sequence, TypeVar
 from app.common import issue_keys, releases
 from app.common.api.dependencies.repositories import Repositories
 from app.common.api.schemas.releases import ReleaseBackfill, ReleaseBackfillRead
-from app.common.db.dynamo.github import IssueLink
+from app.common.db.dynamo.github import RELEASE_SOURCE_DEPLOYMENTS, IssueLink
 from app.common.db.dynamo.issues import Issue
 from app.common.db.dynamo.releases import PipelineStage, Release
 from app.common.planning_rules import unprocessable
@@ -237,7 +237,7 @@ def handle_deployment_status(repositories: Repositories, workspace_id: str, body
     if not sha or not environment or not repository_id:
         return
     stored = repositories.github.get_repository(workspace_id, repository_id)
-    if stored is None:
+    if stored is None or stored.release_source.kind != RELEASE_SOURCE_DEPLOYMENTS:
         return
     installation_id = str(installation.get("id", "")) if isinstance(installation, Mapping) else ""
     deployment_id = deployment.get("id") if isinstance(deployment.get("id"), int) else None
@@ -617,8 +617,11 @@ def backfill(
     """
     from webbpulse.integrations.github import GitHubRateLimited, GitHubUnavailable
 
-    from app.domains.integrations import github_budget, github_deployments
+    from app.domains.integrations import github_budget, github_deployments, tag_releases
 
+    routed = tag_releases.route(repositories, workspace_id, team_id, payload)
+    if routed is not None:
+        return routed
     pipeline, _ = releases.pipeline_for(repositories, workspace_id, team_id)
     stage = releases.stage_for_environment(pipeline, payload.environment)
     if stage is None:

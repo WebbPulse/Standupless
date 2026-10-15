@@ -97,7 +97,7 @@ uninstall webhook has not landed yet, has it cleared so a reinstall binds.
 | Issues | Read and write | Two way issue sync: opening and updating mirrored issues, their labels, assignees and comments |
 | Pull requests | Read and write | Posting the comment listing linked issues |
 | Checks | Read and write | Setting the check run that reports the links |
-| Contents | Read-only | Reading branch names and commit messages; Read and write only where a release stage publishes GitHub Releases |
+| Contents | Read-only | Reading branch names, commit messages, tags and GitHub Releases; Read and write only where a release stage publishes GitHub Releases |
 | Deployments | Read-only | Receiving deployment statuses and reading an environment's past deployments, which record and backfill releases |
 | Metadata | Read-only | Mandatory, granted automatically |
 
@@ -116,6 +116,8 @@ comments of a repository a team syncs with.
 - Deployment status
 - Pull request review
 - Check run
+- Create
+- Release
 - Installation
 - Installation repositories
 
@@ -124,7 +126,12 @@ pull requests, and the stacks those pull requests form. Both use permissions the
 App already has, Pull requests and Checks. A check run on a commit no pull request
 heads, and the App's own check run, are answered 200 without being queued.
 
-The manifest names only the first eight: GitHub delivers installation and
+Create and Release record a package repository's releases from its tags or its
+GitHub Releases, for a repository pinned to a team with that release source. A
+branch created, and a Release edited, deleted or saved as a draft, are answered
+200 without being queued. Both use Contents, which the App already has.
+
+The manifest names only the first ten: GitHub delivers installation and
 installation repository events to every App without a subscription. Nothing else. An event that is not on this list is answered 200 and dropped by the
 receiver, so subscribing to more would only spend deliveries.
 
@@ -169,6 +176,40 @@ to accept anything. Each environment's App is changed by hand, once:
 
 Until then stacks still form from the branch names a pull request delivery
 carries, and every pull request shows no review and no checks.
+
+## Adding tags and Releases to an existing App
+
+An App created before tag release sources does not subscribe to the two events
+that carry a pushed tag and a published Release. No permission changes, so no
+installation has to accept anything. Each environment's App is changed by hand,
+once:
+
+1. On the App's settings page, open Permissions & events.
+2. Under Subscribe to events, check Create and Release.
+3. Save changes.
+
+Until then a repository whose release source is tags or GitHub Releases records
+nothing live, and a release backfill still rebuilds its releases from its tags.
+
+## Release sources
+
+A repository pinned to a team records the team's releases from one source,
+chosen per repository through the repositories route, `pin_team_repository` or
+the CLI:
+
+- `deployments`, the default: successful GitHub deployments, through the team's
+  pipeline, as below.
+- `tags`: every pushed tag matching `tag_pattern`, a glob such as `v*` or
+  `python-v*`, or every tag without one.
+- `github_releases`: every published GitHub Release whose tag matches.
+
+A tag or Release makes a release named after the repository and the tag, with
+the version the tag spells and a link to its GitHub page. It carries the team's
+issues named in the commits since the previous matching tag by version, and in
+the titles and branches of their pull requests. It lands at the team's last
+release stage and moves the issues it closes to `status_id`, or the team's Done
+when that is null, unless `move_issues` is off. A repository that records from
+tags or Releases records nothing from its deployments.
 
 ## Publishing GitHub Releases
 
