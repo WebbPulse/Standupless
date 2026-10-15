@@ -1,7 +1,7 @@
 /**
  * ESLint configuration for the frontend, extending the shared WebbPulse react
- * config. The build time prerender step is Node tooling, so it is typed against
- * the Node tsconfig rather than the app's.
+ * config. The build time prerender step and the dev proxy are Node tooling, so
+ * they are typed against the Node tsconfig rather than the app's.
  */
 
 import { reactConfig } from '@webbpulse/eslint-config/react';
@@ -29,7 +29,7 @@ export default [
     },
   }),
   {
-    files: ['prerender.ts'],
+    files: ['prerender.ts', 'devProxy.ts'],
     languageOptions: {
       parserOptions: {
         project: ['./tsconfig.node.json'],
