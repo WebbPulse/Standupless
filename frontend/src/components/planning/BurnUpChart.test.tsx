@@ -1,7 +1,8 @@
 /**
  * The burn-up chart. Covers that its y axis labels are whole numbers that
- * never repeat, that a one-issue cycle reads 0 and 1, and that a cycle whose
- * scope has been empty every day says so instead of drawing an axis.
+ * never repeat, that a one-issue cycle reads 0 and 1, that a cycle whose
+ * scope has been empty every day says so instead of drawing an axis, that a
+ * loading chart shows a placeholder, and that it draws at a fixed height.
  */
 
 import { render, screen } from '@testing-library/react';
@@ -49,6 +50,30 @@ describe('axisTicks', () => {
 });
 
 describe('BurnUpChart', () => {
+  it('shows a placeholder instead of the empty message while loading', () => {
+    render(
+      <BurnUpChart
+        points={[point('2026-09-01', 0)]}
+        days={days}
+        emptyMessage="No issues in this cycle yet."
+        isLoading
+      />
+    );
+
+    expect(screen.getByTestId('burn-up-loading')).toBeInTheDocument();
+    expect(screen.queryByTestId('burn-up-empty')).toBeNull();
+  });
+
+  it('draws at a fixed height with small axis text', () => {
+    render(<BurnUpChart points={[point('2026-09-01', 4, 2, 1)]} days={days} />);
+
+    const svg = screen.getByRole('img', { name: /^Burn-up chart/ });
+    expect(svg).toHaveAttribute('height', '160');
+    for (const tick of screen.getAllByTestId('burn-up-tick')) {
+      expect(tick).toHaveAttribute('font-size', '11');
+    }
+  });
+
   it('says the cycle is empty rather than drawing an axis over nothing', () => {
     render(
       <BurnUpChart

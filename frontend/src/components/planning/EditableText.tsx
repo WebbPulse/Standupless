@@ -3,7 +3,8 @@
  * name, its description and its milestones are edited on the project page.
  */
 
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
+import { useAutoGrow } from '../../hooks/useAutoGrow';
 import { cn } from '../../lib/cn';
 
 /** Props for EditableText: the saved text and how to save a change. */
@@ -20,7 +21,9 @@ export interface EditableTextProps {
 /**
  * Text that reads as plain content and edits in place. The draft lives only
  * while the field has focus, so a poll that lands mid-edit does not overwrite
- * what is being typed, and blur or Cmd+Enter saves it.
+ * what is being typed, and blur or Cmd+Enter saves it. A multiline field
+ * grows with its content, reading or editing, so it never scrolls inside
+ * itself.
  */
 export const EditableText: React.FC<EditableTextProps> = ({
   value,
@@ -32,6 +35,8 @@ export const EditableText: React.FC<EditableTextProps> = ({
   onSave,
 }) => {
   const [draft, setDraft] = useState<string | null>(null);
+  const area = useRef<HTMLTextAreaElement>(null);
+  useAutoGrow(area);
   const commit = (text: string): void => {
     setDraft(null);
     if (text.trim() !== value.trim()) onSave(text.trim());
@@ -56,6 +61,7 @@ export const EditableText: React.FC<EditableTextProps> = ({
     return (
       <textarea
         {...shared}
+        ref={area}
         rows={Math.max(3, (draft ?? value).split('\n').length + 1)}
         onChange={(event) => {
           setDraft(event.target.value);

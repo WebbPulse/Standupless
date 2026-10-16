@@ -1,11 +1,13 @@
 /**
  * A team's velocity: one column per closed cycle, the scope the cycle held on
  * its last day drawn faint behind what it completed, with the average as a
- * dashed rule across. Plain SVG in a fixed coordinate space that scales to
- * its container, summed up in words for a reader who cannot see it.
+ * dashed rule across. Plain SVG drawn in real pixels at a fixed height across
+ * the width of its container, so the text stays at the app's small size at
+ * any window width, summed up in words for a reader who cannot see it.
  */
 
 import React from 'react';
+import { useElementWidth } from '../../hooks/useElementWidth';
 import type { PlanningMeasure } from '../../lib/planningModel';
 import type { VelocityCycleRead } from '../../types/Api';
 
@@ -23,6 +25,14 @@ const PAD_RIGHT = 8;
 const PAD_TOP = 12;
 const PAD_BOTTOM = 22;
 const MAX_BAR = 48;
+const FONT_SIZE = 11;
+const CHAR_WIDTH = 6.5;
+
+/** A cycle name cut to the characters that fit in a slot `slot` pixels wide. */
+export const fitLabel = (name: string, slot: number): string => {
+  const room = Math.max(3, Math.floor((slot - 4) / CHAR_WIDTH));
+  return name.length > room ? `${name.slice(0, room - 1)}…` : name;
+};
 
 /** The completed and scope values of one cycle in the chosen measure. */
 const valuesOf = (
@@ -39,6 +49,7 @@ export const VelocityChart: React.FC<VelocityChartProps> = ({
   measure,
   average,
 }) => {
+  const [measureRef, width] = useElementWidth<HTMLDivElement>(WIDTH);
   const unit = measure === 'points' ? 'points' : 'issues';
   const rows = cycles.map((cycle) => ({
     cycle,
@@ -49,7 +60,7 @@ export const VelocityChart: React.FC<VelocityChartProps> = ({
     average,
     ...rows.map((row) => Math.max(row.scope, row.completed))
   );
-  const plotWidth = WIDTH - PAD_LEFT - PAD_RIGHT;
+  const plotWidth = width - PAD_LEFT - PAD_RIGHT;
   const plotHeight = HEIGHT - PAD_TOP - PAD_BOTTOM;
   const slot = plotWidth / Math.max(rows.length, 1);
   const bar = Math.min(MAX_BAR, slot * 0.6);
@@ -64,90 +75,93 @@ export const VelocityChart: React.FC<VelocityChartProps> = ({
 
   return (
     <figure className="space-y-2">
-      <svg
-        viewBox={`0 0 ${String(WIDTH)} ${String(HEIGHT)}`}
-        className="h-auto w-full"
-        role="img"
-        aria-label={`Velocity chart. ${summary}`}
-      >
-        {[0, 0.5, 1].map((share) => (
-          <g key={share}>
-            <line
-              x1={PAD_LEFT}
-              x2={WIDTH - PAD_RIGHT}
-              y1={y(top * share)}
-              y2={y(top * share)}
-              stroke="var(--line)"
-              strokeWidth="1"
-            />
-            <text
-              x={PAD_LEFT - 6}
-              y={y(top * share) + 3}
-              textAnchor="end"
-              fontSize="10"
-              fill="var(--text-faint)"
-            >
-              {String(Math.round(top * share))}
-            </text>
-          </g>
-        ))}
-        {rows.map((row, index) => {
-          const centre = PAD_LEFT + slot * index + slot / 2;
-          return (
-            <g key={row.cycle.cycle_id} data-testid="velocity-bar">
-              <title>{`${row.cycle.name}: ${String(row.completed)} of ${String(row.scope)} ${unit} completed`}</title>
-              <rect
-                x={centre - bar / 2}
-                y={y(row.scope)}
-                width={bar}
-                height={Math.max(0, y(0) - y(row.scope))}
-                rx="2"
-                fill="var(--raised)"
+      <div ref={measureRef} className="w-full">
+        <svg
+          width={width}
+          height={HEIGHT}
+          viewBox={`0 0 ${String(width)} ${String(HEIGHT)}`}
+          className="block max-w-full"
+          data-testid="velocity-svg"
+          role="img"
+          aria-label={`Velocity chart. ${summary}`}
+        >
+          {[0, 0.5, 1].map((share) => (
+            <g key={share}>
+              <line
+                x1={PAD_LEFT}
+                x2={width - PAD_RIGHT}
+                y1={y(top * share)}
+                y2={y(top * share)}
                 stroke="var(--line)"
-              />
-              <rect
-                x={centre - bar / 2}
-                y={y(row.completed)}
-                width={bar}
-                height={Math.max(0, y(0) - y(row.completed))}
-                rx="2"
-                fill="var(--accent)"
+                strokeWidth="1"
               />
               <text
-                x={centre}
-                y={Math.max(PAD_TOP + 8, y(row.completed) - 4)}
-                textAnchor="middle"
-                fontSize="10"
-                fill="var(--text-muted)"
-              >
-                {String(row.completed)}
-              </text>
-              <text
-                x={centre}
-                y={HEIGHT - 6}
-                textAnchor="middle"
-                fontSize="10"
+                x={PAD_LEFT - 6}
+                y={y(top * share) + 3}
+                textAnchor="end"
+                fontSize={FONT_SIZE}
                 fill="var(--text-faint)"
               >
-                {row.cycle.name.length > 14
-                  ? `${row.cycle.name.slice(0, 13)}…`
-                  : row.cycle.name}
+                {String(Math.round(top * share))}
               </text>
             </g>
-          );
-        })}
-        {rows.length > 0 && (
-          <line
-            x1={PAD_LEFT}
-            x2={WIDTH - PAD_RIGHT}
-            y1={y(average)}
-            y2={y(average)}
-            stroke="var(--warning)"
-            strokeWidth="1"
-            strokeDasharray="4 4"
-          />
-        )}
-      </svg>
+          ))}
+          {rows.map((row, index) => {
+            const centre = PAD_LEFT + slot * index + slot / 2;
+            return (
+              <g key={row.cycle.cycle_id} data-testid="velocity-bar">
+                <title>{`${row.cycle.name}: ${String(row.completed)} of ${String(row.scope)} ${unit} completed`}</title>
+                <rect
+                  x={centre - bar / 2}
+                  y={y(row.scope)}
+                  width={bar}
+                  height={Math.max(0, y(0) - y(row.scope))}
+                  rx="2"
+                  fill="var(--raised)"
+                  stroke="var(--line)"
+                />
+                <rect
+                  x={centre - bar / 2}
+                  y={y(row.completed)}
+                  width={bar}
+                  height={Math.max(0, y(0) - y(row.completed))}
+                  rx="2"
+                  fill="var(--accent)"
+                />
+                <text
+                  x={centre}
+                  y={Math.max(PAD_TOP + 8, y(row.completed) - 4)}
+                  textAnchor="middle"
+                  fontSize={FONT_SIZE}
+                  fill="var(--text-muted)"
+                >
+                  {String(row.completed)}
+                </text>
+                <text
+                  x={centre}
+                  y={HEIGHT - 6}
+                  textAnchor="middle"
+                  fontSize={FONT_SIZE}
+                  fill="var(--text-faint)"
+                >
+                  {fitLabel(row.cycle.name, slot)}
+                </text>
+              </g>
+            );
+          })}
+          {rows.length > 0 && (
+            <line
+              x1={PAD_LEFT}
+              x2={width - PAD_RIGHT}
+              y1={y(average)}
+              y2={y(average)}
+              stroke="var(--warning)"
+              strokeWidth="1"
+              strokeDasharray="4 4"
+            />
+          )}
+        </svg>
+      </div>
       <figcaption className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-text-muted">
         <span className="inline-flex items-center gap-1.5">
           <span aria-hidden="true" className="h-2 w-2 rounded-xs bg-accent" />
