@@ -18,9 +18,10 @@
  * the command palette, the peek pane and the create dialogs.
  *
  * `/privacy`, `/terms`, `/refunds`, `/pricing`, `/contact` and `/download`
- * also sit
- * outside both, so the same pages answer a visitor, someone signing up and a
- * signed in member. The build prerenders them, and `/`, into static HTML.
+ * also sit outside both, so the same pages answer a visitor, someone signing
+ * up and a signed in member. The build prerenders them, and `/`, into static
+ * HTML. Inside the desktop and mobile apps `ShellPublicRoute` opens them in
+ * the system browser instead, and `/` starts on sign in or the workspace.
  *
  * `/desktop-handoff` sits outside both as well. It sends a signed out visitor
  * to sign in itself, with the desktop app's request in `returnTo`, because the
@@ -36,6 +37,7 @@ import { Route, Routes } from 'react-router-dom';
 import GuestRoute from './components/routes/GuestRoute';
 import ProtectedRoute from './components/routes/ProtectedRoute';
 import LegacyTeamRedirect from './components/routes/LegacyTeamRedirect';
+import { ShellPublicRoute } from './components/routes/ShellRoutes';
 import WorkspaceLayout from './components/workspace/WorkspaceLayout';
 import WorkspaceProvider from './contexts/WorkspaceContext';
 import AcceptInvite from './pages/invites/AcceptInvite';
@@ -116,12 +118,14 @@ import TeamsSettings from './pages/workspaces/TeamsSettings';
 const App: React.FC = () => (
   <Routes>
     <Route path="/" element={<Landing />} />
-    <Route path={PRIVACY_PATH} element={<Privacy />} />
-    <Route path={TERMS_PATH} element={<Terms />} />
-    <Route path={REFUNDS_PATH} element={<Refunds />} />
-    <Route path={PRICING_PATH} element={<Pricing />} />
-    <Route path={CONTACT_PATH} element={<Contact />} />
-    <Route path={DOWNLOAD_PATH} element={<Download />} />
+    <Route element={<ShellPublicRoute />}>
+      <Route path={PRIVACY_PATH} element={<Privacy />} />
+      <Route path={TERMS_PATH} element={<Terms />} />
+      <Route path={REFUNDS_PATH} element={<Refunds />} />
+      <Route path={PRICING_PATH} element={<Pricing />} />
+      <Route path={CONTACT_PATH} element={<Contact />} />
+      <Route path={DOWNLOAD_PATH} element={<Download />} />
+    </Route>
     <Route path={ACCOUNT_DELETED_PATH} element={<AccountDeleted />} />
     <Route path={DESKTOP_HANDOFF_PATH} element={<DesktopHandoff />} />
 

@@ -48,6 +48,8 @@ import { useAuth } from '../../hooks/useAuth';
 import { cn } from '../../lib/cn';
 import { CLI_INSTALL_PIP, mcpServerUrl } from '../../lib/connect';
 import { RESUME_STATE } from '../../lib/lastWorkspace';
+import { isAppShell } from '../../lib/shell';
+import { ShellStart } from '../../components/routes/ShellRoutes';
 import { LANDING_PARAM, WORKSPACES_PATH } from '../../lib/paths';
 import AppPreview from './AppPreview';
 
@@ -578,12 +580,16 @@ export const LandingContent: React.FC = () => {
  * picker, asking it to resume the workspace they last opened. The page stays
  * up while the session is read rather than swapping to a spinner, because the
  * build prerenders it and a spinner would flash over that HTML. A signed in
- * person can still read the page at `/?landing`.
+ * person can still read the page at `/?landing`. The desktop and mobile apps
+ * never show it, and start on sign in or the workspace instead.
  */
 const Landing: React.FC = () => {
   const { isAuthenticated, isBusy } = useAuth();
   const [params] = useSearchParams();
 
+  if (isAppShell()) {
+    return <ShellStart />;
+  }
   if (isAuthenticated && !isBusy && !params.has(LANDING_PARAM)) {
     return <Navigate to={WORKSPACES_PATH} state={RESUME_STATE} replace />;
   }
