@@ -157,11 +157,14 @@ def resolve_tenants(
     would otherwise reach a workspace the session itself cannot. A workspace limiting
     its sign-in methods refuses a session whose `amr` is unknown. The `two_factor`
     claim is asked of `has_two_factor` only when a workspace requires it; with nothing
-    to ask, the user is taken to have no enrolled factor.
+    to ask, the user is taken to have no enrolled factor. A single sign-on session's
+    connection is read from the marker its stored `amr` carries, so a workspace that
+    requires single sign-on is offered only to a session through its own connection.
     """
     from webbpulse.identity import TenantChoice
+    from webbpulse.identity.sso import sso_connection_from_amr, strip_sso_markers
 
-    from app.common.api.dependencies.authz import TWO_FACTOR_CLAIM, policy_refusal
+    from app.common.api.dependencies.authz import SSO_CONNECTION_CLAIM, TWO_FACTOR_CLAIM, policy_refusal
     from app.common.db.dynamo.memberships import MembershipRepository
     from app.common.db.dynamo.workspaces import WorkspaceRepository
 
@@ -172,7 +175,10 @@ def resolve_tenants(
 
     repository = MembershipRepository()
     workspaces = WorkspaceRepository().get_many([membership.workspace_id for membership in memberships])
-    claims: dict[str, Any] = {"sub": user_id, "amr": list(subject.amr)}
+    claims: dict[str, Any] = {"sub": user_id, "amr": list(strip_sso_markers(subject.amr))}
+    connection = sso_connection_from_amr(subject.amr)
+    if connection:
+        claims[SSO_CONNECTION_CLAIM] = connection
     choices: list[TenantChoice] = []
     for membership in memberships:
         if not allowed_scopes(user_id, membership.workspace_id):
@@ -180,7 +186,7 @@ def resolve_tenants(
         policy = repository.get_auth_policy(membership.workspace_id)
         if policy.require_two_factor and TWO_FACTOR_CLAIM not in claims:
             claims[TWO_FACTOR_CLAIM] = has_two_factor is not None and has_two_factor(user_id)
-        if policy_refusal(policy, claims) is not None:
+        if policy_refusal(policy, claims, workspace_id=membership.workspace_id, role=membership.role) is not None:
             continue
         workspace = workspaces.get(membership.workspace_id)
         choices.append(TenantChoice(id=membership.workspace_id, name=workspace.name if workspace is not None else ""))

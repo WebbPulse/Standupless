@@ -119,7 +119,7 @@ class WorkspaceRead(BaseModel):
     purge_after: Optional[datetime] = None
     project_update_interval_days: int = DEFAULT_INTERVAL_DAYS
     auth_policy_blocked: bool = False
-    auth_policy_reason: Optional[Literal["two_factor", "sign_in_method"]] = Field(
+    auth_policy_reason: Optional[Literal["two_factor", "sign_in_method", "sso"]] = Field(
         default=None,
         description="Why the authentication policy refuses the caller's session, when it does.",
     )

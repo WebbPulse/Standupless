@@ -116,7 +116,7 @@ def list_workspaces(
     for workspace_id, workspace in sorted(found.items()):
         if workspace.is_purging:
             continue
-        refusal = auth_policy_refusal(repositories, workspace_id, claims)
+        refusal = auth_policy_refusal(repositories, workspace_id, claims, role=roles.get(workspace_id))
         rows.append(
             WorkspaceRead.from_row(
                 workspace,
