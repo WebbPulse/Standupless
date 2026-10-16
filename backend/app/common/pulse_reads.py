@@ -41,9 +41,7 @@ def list_pulse(
 ) -> tuple[list[PulseItemRead], str | None]:
     """One page of the caller's Pulse, newest first, and the cursor to the next."""
     viewer = pulse.viewer_for(repositories, context)
-    entries, next_cursor = pulse.list_feed(
-        repositories, viewer, scope=check_scope(scope), cursor=cursor, limit=limit
-    )
+    entries, next_cursor = pulse.list_feed(repositories, viewer, scope=check_scope(scope), cursor=cursor, limit=limit)
     names = _actor_names(repositories, entries)
     return (
         [

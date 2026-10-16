@@ -142,9 +142,7 @@ def _pulse_lines() -> list[ListItem]:
     """One Pulse digest's lines: an update, a health change and a completed milestone."""
     common = {"actor_name": "Ada Lovelace", "project_name": "Launch", "initiative_name": "Expand to Europe"}
     return [
-        pulse_line(
-            event_type="project_update", milestone_name="", health="at_risk", body="Slipping a week.", **common
-        ),
+        pulse_line(event_type="project_update", milestone_name="", health="at_risk", body="Slipping a week.", **common),
         pulse_line(event_type="initiative_health", milestone_name="", health="on_track", body="", **common),
         pulse_line(event_type="milestone_completed", milestone_name="Beta", health="", body="", **common),
     ]
