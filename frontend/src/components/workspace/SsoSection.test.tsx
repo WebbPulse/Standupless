@@ -221,7 +221,9 @@ describe('the single sign-on section', () => {
     await userEvent.click(verify);
 
     expect(verifySsoDomain).toHaveBeenCalledWith('example.com');
-    expect(await screen.findByText('Verified')).toBeInTheDocument();
+    expect(
+      (await screen.findAllByText('Verified', { selector: 'span' }))[0]
+    ).toBeInTheDocument();
   });
 
   it('saves an OIDC connection and keeps a blank secret', async () => {

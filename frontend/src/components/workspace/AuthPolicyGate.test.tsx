@@ -39,7 +39,7 @@ const refresh = vi.fn(() => {
 });
 
 vi.mock('../../api/identityClient', () => ({
-  getIdentityClient: () => ({ refresh }),
+  getIdentityClient: () => ({ refresh: () => refresh() }),
 }));
 
 vi.mock('../../hooks/useAuth', () => ({

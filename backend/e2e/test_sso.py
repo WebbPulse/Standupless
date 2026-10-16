@@ -15,6 +15,7 @@ Every deployed stage skips it.
 
 from __future__ import annotations
 
+import contextlib
 import html
 import os
 import re
@@ -283,7 +284,7 @@ def test_oidc_sign_in_joins_tests_and_requires_sso(
         assert too_early.status_code == 409
 
         browser = _sign_in_through_provider(api_base, provider, workspace_id)
-        with browser:
+        with contextlib.closing(browser):
             token = _access_token(browser, api_base)
             alice = httpx.Client(base_url=api_base, headers={"Authorization": f"Bearer {token}"}, timeout=30)
             with alice:
