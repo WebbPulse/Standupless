@@ -574,11 +574,9 @@ const ConnectionBlock: React.FC<ConnectionBlockProps> = ({
                 type="password"
                 autoComplete="off"
                 placeholder={connection?.has_client_secret ? 'Stored' : ''}
-                hint={
-                  connection?.has_client_secret
-                    ? 'Leave blank to keep the stored secret.'
-                    : undefined
-                }
+                {...(connection?.has_client_secret
+                  ? { hint: 'Leave blank to keep the stored secret.' }
+                  : {})}
                 value={form.oidcClientSecret}
                 disabled={busy}
                 onChange={(event) =>

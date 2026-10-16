@@ -11,6 +11,7 @@ import { ApiError } from '@webbpulse/api-client';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { SsoStartRead } from '../../types/Api';
 import Login from './Login';
 
 const login = vi.fn();
@@ -18,7 +19,7 @@ const completeTotp = vi.fn();
 const completeMfaWithPasskey = vi.fn();
 const seedUser = vi.fn();
 const assign = vi.fn();
-const startSsoSignIn = vi.fn();
+const startSsoSignIn = vi.fn<(body: unknown) => Promise<SsoStartRead>>();
 
 vi.mock('../../api/sso', () => ({
   startSsoSignIn: (body: unknown) => startSsoSignIn(body),

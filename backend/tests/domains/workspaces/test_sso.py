@@ -429,7 +429,9 @@ def test_turning_it_off_needs_neither_the_plan_nor_a_session_through_it(
     assert client.delete(f"{BASE}/domains/acme.com").status_code == 204
 
 
-def test_the_two_factor_route_leaves_the_requirement_alone(client: TestClient, required: str, repositories: Any) -> None:
+def test_the_two_factor_route_leaves_the_requirement_alone(
+    client: TestClient, required: str, repositories: Any
+) -> None:
     repositories.memberships.set_auth_policy(required, require_two_factor=False, updated_by=OWNER)
     assert repositories.memberships.get_auth_policy(required).require_sso is True
 

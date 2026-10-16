@@ -307,7 +307,8 @@ def remove_sso_domain(
     if row is None:
         return Response(status_code=status.HTTP_204_NO_CONTENT)
     others_verified = any(item.verified for item in rows if item.domain != name)
-    if row.verified and not others_verified and repositories.memberships.get_auth_policy(context.workspace_id).require_sso:
+    required = repositories.memberships.get_auth_policy(context.workspace_id).require_sso
+    if row.verified and not others_verified and required:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=LAST_DOMAIN_IN_USE)
     repositories.memberships.remove_sso_domain(context.workspace_id, name)
     audit.record(
