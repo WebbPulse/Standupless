@@ -4,9 +4,9 @@
  * line beside them. A blocked issue carries a solid flag and a blocking one a
  * flag with a hollow pennant, so the two differ in shape as well as colour,
  * which comes from the warning and danger tokens; related and duplicate
- * glyphs take the text colour they are given. Every glyph paints with `currentColor` and cuts its holes with an even-odd
- * fill, so a hover background behind it shows through rather than a fixed
- * knockout colour.
+ * glyphs take the text colour they are given. Every glyph paints with
+ * `currentColor` and cuts its holes with an even-odd fill, so a hover
+ * background behind it shows through rather than a fixed knockout colour.
  */
 
 import React from 'react';
@@ -97,7 +97,7 @@ export const DuplicateGlyph: React.FC<RelationGlyphProps> = (props) => (
   </Frame>
 );
 
-/** The colour class each blocking glyph wears wherever it is drawn. */
+/** The colour class of the blocked glyph. */
 export const BLOCKED_TONE = 'text-warning';
 
 /** The colour class of the blocking glyph. */
