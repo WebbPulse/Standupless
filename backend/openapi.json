@@ -17013,6 +17013,11 @@
             "title": "Blocked By Open Count",
             "type": "integer"
           },
+          "blocking_count": {
+            "default": 0,
+            "title": "Blocking Count",
+            "type": "integer"
+          },
           "body": {
             "anyOf": [
               {

@@ -1,7 +1,8 @@
 /**
  * Relates this issue to another: pick how they relate, then find the other
  * issue by key or title with the list route's `q`, the only read that matches
- * either, so a person can paste a key or type part of a title.
+ * either, so a person can paste a key or type part of a title. The relation
+ * picker leads with the same glyph the rail and the rows draw for that type.
  */
 
 import React, { useEffect, useState } from 'react';
@@ -17,6 +18,7 @@ import { ErrorAlert } from '../ui/alert';
 import Dialog from '../ui/dialog';
 import Field from '../ui/field';
 import { SelectField } from '../ui/select';
+import { RelationGlyph } from './RelationGlyphs';
 
 /** Props for AddRelationDialog. */
 export interface AddRelationDialogProps {
@@ -102,20 +104,30 @@ const AddRelationForm: React.FC<Omit<AddRelationDialogProps, 'open'>> = ({
   return (
     <div className="space-y-3">
       <div className="grid gap-3 sm:grid-cols-[10rem_1fr]">
-        <SelectField
-          id="add-relation-type"
-          label="Relation"
-          value={type}
-          onChange={(event) => {
-            setType(event.target.value as LinkType);
-          }}
-        >
-          {LINK_TYPES.map((value) => (
-            <option key={value} value={value}>
-              {linkTypeLabel(value)}
-            </option>
-          ))}
-        </SelectField>
+        <div className="relative">
+          <SelectField
+            id="add-relation-type"
+            label="Relation"
+            value={type}
+            style={{ paddingLeft: '1.875rem' }}
+            onChange={(event) => {
+              setType(event.target.value as LinkType);
+            }}
+          >
+            {LINK_TYPES.map((value) => (
+              <option key={value} value={value}>
+                {linkTypeLabel(value)}
+              </option>
+            ))}
+          </SelectField>
+          <span
+            aria-hidden="true"
+            data-relation-glyph={type}
+            className="pointer-events-none absolute bottom-0 left-2.5 flex h-8 items-center"
+          >
+            <RelationGlyph type={type} />
+          </span>
+        </div>
         <Field
           id={SEARCH_FIELD_ID}
           label="Find an issue"

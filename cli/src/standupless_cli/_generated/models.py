@@ -2467,6 +2467,7 @@ class AppCommonApiSchemasIssuesIssueRead(TypedDict):
     archived_at: NotRequired[str | None]
     assignee_id: NotRequired[str | None]
     blocked_by_open_count: NotRequired[int]
+    blocking_count: NotRequired[int]
     body: NotRequired[str | None]
     created_at: str
     created_by: str

@@ -25,7 +25,14 @@ from app.common.issue_rules import (
     require_team_member,
     unprocessable,
 )
-from app.common.relation_effects import blocked_side, close_as_duplicate, issue_reference, recount_blocked
+from app.common.relation_effects import (
+    blocked_side,
+    blocking_side,
+    close_as_duplicate,
+    issue_reference,
+    recount_blocked,
+    recount_blocking,
+)
 
 
 def list_links(repositories: Repositories, context: AuthzContext, issue_id: str) -> list[LinkRead]:
@@ -116,6 +123,9 @@ def create_link(repositories: Repositories, context: AuthzContext, issue_id: str
     blocked = blocked_side(relation)
     if blocked is not None:
         recount_blocked(repositories, context.workspace_id, blocked)
+    blocker = blocking_side(relation)
+    if blocker is not None:
+        recount_blocking(repositories, context.workspace_id, blocker)
     statuses = link_statuses(repositories, context.workspace_id, [target])
     return LinkRead.from_row(relation, current(repositories.teams, target), target_status(statuses, target))
 
@@ -124,8 +134,8 @@ def delete_link(repositories: Repositories, context: AuthzContext, issue_id: str
     """Remove a link, both directions at once, answering the removed row of this issue.
 
     The caller must be able to write in the issue's team. The removal is recorded on
-    the issue's history naming the far side whole, and the blocked side of a
-    blocking link is recounted so its marker clears when its last open blocker goes.
+    the issue's history naming the far side whole, and both sides of a
+    blocking link are recounted so each marker clears when its last link goes.
     An unknown link id is the same 404 an invisible issue is.
     """
     issue = load_visible_issue(repositories, context, issue_id)
@@ -155,4 +165,7 @@ def delete_link(repositories: Repositories, context: AuthzContext, issue_id: str
     blocked = blocked_side(removed)
     if blocked is not None:
         recount_blocked(repositories, context.workspace_id, blocked)
+    blocker = blocking_side(removed)
+    if blocker is not None:
+        recount_blocking(repositories, context.workspace_id, blocker)
     return removed

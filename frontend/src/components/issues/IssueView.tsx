@@ -31,20 +31,15 @@ import React, {
 import type { ReactNode } from 'react';
 import { useQueryAuth } from '@webbpulse/auth/react';
 import { invalidateQueries, usePolledQuery } from '@webbpulse/api-client/react';
-import type { IconType } from 'react-icons';
 import {
   LuArchive,
   LuArchiveRestore,
-  LuArrowLeftRight,
-  LuBan,
   LuChevronRight,
   LuCopy,
-  LuCopyMinus,
   LuEllipsis,
   LuLink2,
   LuListTree,
   LuMaximize2,
-  LuOctagonAlert,
   LuTrash2,
   LuUsers,
   LuX,
@@ -109,6 +104,13 @@ import AddRelationDialog from './AddRelationDialog';
 import IssueBody from './IssueBody';
 import IssuePageCommands from './IssuePageCommands';
 import IssuePropertiesPanel from './IssuePropertiesPanel';
+import {
+  BlockedIcon,
+  BlockingIcon,
+  DuplicateGlyph,
+  RelatedGlyph,
+  type RelationGlyphProps,
+} from './RelationGlyphs';
 import IssueSubscribeButton from './IssueSubscribeButton';
 import FavoriteButton from '../ui/FavoriteButton';
 import IssueTimeline from './IssueTimeline';
@@ -145,31 +147,31 @@ const RELATION_COMMANDS: {
   keys: string;
   label: string;
   type: LinkType;
-  icon: IconType;
+  icon: React.FC<RelationGlyphProps>;
 }[] = [
   {
     keys: KEYS.blockedBy,
     label: 'Mark as blocked by',
     type: 'blocked_by',
-    icon: LuBan,
+    icon: BlockedIcon,
   },
   {
     keys: KEYS.blocking,
     label: 'Mark as blocking',
     type: 'blocks',
-    icon: LuOctagonAlert,
+    icon: BlockingIcon,
   },
   {
     keys: KEYS.related,
     label: 'Mark as related to',
     type: 'relates_to',
-    icon: LuArrowLeftRight,
+    icon: RelatedGlyph,
   },
   {
     keys: KEYS.duplicate,
     label: 'Mark as duplicate of',
     type: 'duplicate_of',
-    icon: LuCopyMinus,
+    icon: DuplicateGlyph,
   },
 ];
 

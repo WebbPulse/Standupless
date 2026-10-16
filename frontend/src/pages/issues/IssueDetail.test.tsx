@@ -843,6 +843,23 @@ describe('the relations', () => {
     expect(within(blockedBy).getByText('Upstream')).toBeInTheDocument();
   });
 
+  it('moves a finished blocker under Related, as Linear does', async () => {
+    listLinks.mockResolvedValue([
+      {
+        ...relation('blocked_by', 'ENG-7', 'Shipped upstream'),
+        target_status: { id: 'st-done', name: 'Done', category: 'completed' },
+      },
+      relation('blocked_by', 'ENG-6', 'Upstream'),
+    ]);
+    renderPage();
+
+    const related = await screen.findByRole('list', { name: 'Related' });
+    expect(within(related).getByText('ENG-7')).toBeInTheDocument();
+    const blockedBy = screen.getByRole('list', { name: 'Blocked by' });
+    expect(within(blockedBy).queryByText('ENG-7')).toBeNull();
+    expect(within(blockedBy).getByText('ENG-6')).toBeInTheDocument();
+  });
+
   it('names the read only inverse the contract returns', async () => {
     listLinks.mockResolvedValue([
       relation('duplicated_by', 'ENG-4', 'The copy'),
