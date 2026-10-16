@@ -75,9 +75,7 @@ export const ProjectUpdateCard: React.FC<ProjectUpdateCardProps> = ({
   const [confirming, setConfirming] = useState(false);
   const author = update.author_id.startsWith(LINEAR_AUTHOR_PREFIX)
     ? `${update.author_id.slice(LINEAR_AUTHOR_PREFIX.length)} (Linear)`
-    : personLabel(
-        people.find((person) => person.user_id === update.author_id)
-      );
+    : personLabel(people.find((person) => person.user_id === update.author_id));
 
   const save = (body: string, health: ProjectHealth): Promise<boolean> =>
     onEdit(update.update_id, { body, health }).then(

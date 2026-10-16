@@ -15,12 +15,12 @@ import React, { useState } from 'react';
 import { LuFileSpreadsheet, LuKeyRound, LuUpload } from 'react-icons/lu';
 import { useQueryAuth } from '@webbpulse/auth/react';
 import {
+  invalidateQueries,
   useMutationWithRefetch,
   usePolledQuery,
 } from '@webbpulse/api-client/react';
 import {
   cancelIssueImport,
-  getIssueImport,
   listIssueImports,
   previewIssueImport,
   startIssueImport,
@@ -229,6 +229,50 @@ const jobSummary = (job: IssueImportRead): string => {
   return `${job.processed_rows} of ${job.total_rows} rows`;
 };
 
+/** What a job row is called: the file it read, or the Linear teams and where they went. */
+const jobTitle = (job: IssueImportRead, teams: TeamRead[]): string => {
+  if (job.kind === 'linear') {
+    const mapped = (job.linear_teams ?? []).map((row) => {
+      const target = teams.find((t) => t.id === row.team_id);
+      return target === undefined
+        ? row.linear_key
+        : `${row.linear_key} into ${target.name}`;
+    });
+    return mapped.length === 0 ? 'Linear' : `Linear ${mapped.join(', ')}`;
+  }
+  const target = teams.find((t) => t.id === job.team_id);
+  const name = job.file_name || 'Untitled file';
+  return target === undefined ? name : `${name} into ${target.name}`;
+};
+
+/** Props for JobProblems: the per item problems a job recorded. */
+interface JobProblemsProps {
+  problems: RowProblemRead[];
+  truncated: boolean;
+}
+
+/** The problems a job recorded, folded away until asked for. */
+const JobProblems: React.FC<JobProblemsProps> = ({ problems, truncated }) => (
+  <details className="text-xs">
+    <summary className="cursor-pointer text-text-muted">
+      {count(problems.length, 'problem')}
+    </summary>
+    <ul className="mt-1 max-h-48 space-y-0.5 overflow-y-auto">
+      {problems.slice(0, PROBLEMS_SHOWN).map((problem) => (
+        <li
+          key={`${problem.row}-${problem.field ?? ''}-${problem.message}`}
+          className="text-text-faint"
+        >
+          {problem.message}
+        </li>
+      ))}
+    </ul>
+    {(problems.length > PROBLEMS_SHOWN || truncated) && (
+      <p className="text-text-faint">Only the first problems are listed.</p>
+    )}
+  </details>
+);
+
 /** Props for ImportSummary: a dry run's result. */
 interface ImportSummaryProps {
   preview: IssueImportPreviewRead;
@@ -337,6 +381,7 @@ export const WorkspaceImportSection: React.FC<WorkspaceImportSectionProps> = ({
   const [previewError, setPreviewError] = useState<unknown>(null);
   const [polling, setPolling] = useState(false);
   const [fileKey, setFileKey] = useState(0);
+  const [source, setSource] = useState<Source>('linear');
 
   const teamList = teams.data ?? [];
   const chosenTeam = teamId || (teamList[0]?.id ?? '');
@@ -360,6 +405,15 @@ export const WorkspaceImportSection: React.FC<WorkspaceImportSectionProps> = ({
     error: startError,
   } = useMutationWithRefetch(
     (body: IssueImportRequest) => startIssueImport(workspace.id, body),
+    queryKey
+  );
+
+  const {
+    mutate: cancel,
+    isMutating: cancelling,
+    error: cancelError,
+  } = useMutationWithRefetch(
+    (importId: string) => cancelIssueImport(workspace.id, importId),
     queryKey
   );
 
@@ -443,143 +497,194 @@ export const WorkspaceImportSection: React.FC<WorkspaceImportSectionProps> = ({
       <div className="space-y-1">
         <h2 className="text-base font-semibold">Import issues</h2>
         <p className="text-sm text-text-muted">
-          Bring issues into a team from a CSV export of Jira, Linear or any
-          other tracker. Every issue gets a new key, and its old key is kept as
-          its source reference. Statuses match by name, assignees by email, and
-          labels the team lacks are created. Imported issues send no
+          Bring work over from Linear through its API, or from a CSV export of
+          Jira, Linear or any other tracker. Every issue gets a new key, and its
+          old key is kept as its source reference, so importing again updates
+          instead of duplicating. Statuses match by name or type, people by
+          email, and labels the team lacks are created. Imported issues send no
           notifications, syncs or webhooks.
         </p>
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-2">
-        <SelectField
-          id="import-preset"
-          label="Source"
-          value={preset}
-          onChange={(event) => {
-            setPreset(event.target.value as ImportPreset);
-            reset();
-          }}
-        >
-          {PRESETS.map((option) => (
-            <option key={option.value} value={option.value}>
-              {option.label}
-            </option>
-          ))}
-        </SelectField>
-        <SelectField
-          id="import-team"
-          label="Team"
-          value={chosenTeam}
-          disabled={teamList.length === 0}
-          onChange={(event) => {
-            setTeamId(event.target.value);
-            reset();
-          }}
-        >
-          {teamList.map((team) => (
-            <option key={team.id} value={team.id}>
-              {team.name}
-            </option>
-          ))}
-        </SelectField>
+      <div
+        role="radiogroup"
+        aria-label="Import from"
+        className="grid gap-2 sm:grid-cols-2"
+      >
+        {SOURCES.map((option) => {
+          const active = source === option.value;
+          return (
+            <button
+              key={option.value}
+              type="button"
+              role="radio"
+              aria-checked={active}
+              onClick={() => {
+                setSource(option.value);
+              }}
+              className={cn(
+                'flex items-start gap-3 rounded-md border px-3 py-2.5 text-left transition-colors',
+                active
+                  ? 'border-accent bg-accent-soft'
+                  : 'border-line hover:bg-raised'
+              )}
+            >
+              <span className="mt-0.5 text-text-muted">{option.icon}</span>
+              <span className="min-w-0 space-y-0.5">
+                <span className="block text-sm font-medium text-text">
+                  {option.title}
+                </span>
+                <span className="block text-xs text-text-faint">
+                  {option.detail}
+                </span>
+              </span>
+            </button>
+          );
+        })}
       </div>
 
-      <div className="space-y-1">
-        <Label htmlFor="import-file">CSV file</Label>
-        <input
-          key={fileKey}
-          id="import-file"
-          type="file"
-          accept=".csv,text/csv"
-          onChange={onFile}
-          className="block w-full text-sm text-text-muted file:mr-3 file:h-8 file:cursor-pointer file:rounded-sm file:border file:border-line file:bg-raised file:px-2.5 file:text-sm file:text-text"
-        />
-        <p className="text-xs text-text-faint">
-          Up to 5000 rows and 4 MB, header row first.
-        </p>
-      </div>
-
-      <div className="flex flex-wrap items-center gap-3">
-        <Button
-          variant="secondary"
-          size="sm"
-          disabled={file === null || chosenTeam === '' || previewing}
-          onClick={() => {
-            if (file !== null) runPreview(request(file, mapping));
+      {source === 'linear' ? (
+        <LinearImportForm
+          workspaceId={workspace.id}
+          teams={teamList}
+          importing={importing}
+          onStarted={() => {
+            invalidateQueries(queryKey);
           }}
-        >
-          {previewing ? 'Checking' : 'Check file'}
-        </Button>
-        <Button
-          variant="primary"
-          size="sm"
-          disabled={!canStart}
-          onClick={onStart}
-        >
-          <LuUpload aria-hidden="true" className="h-3.5 w-3.5" />
-          {importing
-            ? 'Import in progress'
-            : preview === null
-              ? 'Start import'
-              : `Import ${count(preview.importable_rows, 'issue')}`}
-        </Button>
-      </div>
-
-      {teams.error !== null && teams.error !== undefined && (
-        <ErrorAlert
-          message={errorMessage(teams.error, 'Could not load the teams.')}
         />
-      )}
-      {previewError !== null && (
-        <ErrorAlert
-          message={errorMessage(previewError, 'Could not check that file.')}
-        />
-      )}
-      {startError !== null && (
-        <ErrorAlert
-          message={errorMessage(startError, 'Could not start the import.')}
-        />
-      )}
-
-      {preview !== null && (
-        <div className="space-y-4">
-          <div className="space-y-1">
-            <h3 className="text-xs font-medium text-text-muted">
-              Column mapping
-            </h3>
-            <ul className="rounded-md border border-line">
-              {FIELDS.map(({ field, label }) => (
-                <li
-                  key={field}
-                  className="flex min-h-row items-center gap-3 border-b border-line px-3 py-1.5 last:border-b-0"
-                >
-                  <label
-                    htmlFor={`import-map-${field}`}
-                    className="w-28 shrink-0 text-sm text-text"
-                  >
-                    {label}
-                  </label>
-                  <Select
-                    id={`import-map-${field}`}
-                    value={preview.mapping[field] ?? UNMAPPED}
-                    disabled={previewing}
-                    onChange={(event) => {
-                      onMapping(field, event.target.value);
-                    }}
-                  >
-                    <option value={UNMAPPED}>Not imported</option>
-                    {[...new Set(preview.headers)].map((header) => (
-                      <option key={header} value={header}>
-                        {header}
-                      </option>
-                    ))}
-                  </Select>
-                </li>
+      ) : (
+        <div className="space-y-6">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <SelectField
+              id="import-preset"
+              label="Source"
+              value={preset}
+              onChange={(event) => {
+                setPreset(event.target.value as ImportPreset);
+                reset();
+              }}
+            >
+              {PRESETS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
               ))}
-            </ul>
+            </SelectField>
+            <SelectField
+              id="import-team"
+              label="Team"
+              value={chosenTeam}
+              disabled={teamList.length === 0}
+              onChange={(event) => {
+                setTeamId(event.target.value);
+                reset();
+              }}
+            >
+              {teamList.map((team) => (
+                <option key={team.id} value={team.id}>
+                  {team.name}
+                </option>
+              ))}
+            </SelectField>
           </div>
-          <ImportSummary preview={preview} />
+
+          <div className="space-y-1">
+            <Label htmlFor="import-file">CSV file</Label>
+            <input
+              key={fileKey}
+              id="import-file"
+              type="file"
+              accept=".csv,text/csv"
+              onChange={onFile}
+              className="block w-full text-sm text-text-muted file:mr-3 file:h-8 file:cursor-pointer file:rounded-sm file:border file:border-line file:bg-raised file:px-2.5 file:text-sm file:text-text"
+            />
+            <p className="text-xs text-text-faint">
+              Up to 5000 rows and 4 MB, header row first.
+            </p>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-3">
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled={file === null || chosenTeam === '' || previewing}
+              onClick={() => {
+                if (file !== null) runPreview(request(file, mapping));
+              }}
+            >
+              {previewing ? 'Checking' : 'Check file'}
+            </Button>
+            <Button
+              variant="primary"
+              size="sm"
+              disabled={!canStart}
+              onClick={onStart}
+            >
+              <LuUpload aria-hidden="true" className="h-3.5 w-3.5" />
+              {importing
+                ? 'Import in progress'
+                : preview === null
+                  ? 'Start import'
+                  : `Import ${count(preview.importable_rows, 'issue')}`}
+            </Button>
+          </div>
+
+          {teams.error !== null && teams.error !== undefined && (
+            <ErrorAlert
+              message={errorMessage(teams.error, 'Could not load the teams.')}
+            />
+          )}
+          {previewError !== null && (
+            <ErrorAlert
+              message={errorMessage(previewError, 'Could not check that file.')}
+            />
+          )}
+          {startError !== null && (
+            <ErrorAlert
+              message={errorMessage(startError, 'Could not start the import.')}
+            />
+          )}
+
+          {preview !== null && (
+            <div className="space-y-4">
+              <div className="space-y-1">
+                <h3 className="text-xs font-medium text-text-muted">
+                  Column mapping
+                </h3>
+                <ul className="rounded-md border border-line">
+                  {FIELDS.map(({ field, label }) => (
+                    <li
+                      key={field}
+                      className="flex min-h-row items-center gap-3 border-b border-line px-3 py-1.5 last:border-b-0"
+                    >
+                      <label
+                        htmlFor={`import-map-${field}`}
+                        className="w-28 shrink-0 text-sm text-text"
+                      >
+                        {label}
+                      </label>
+                      <Select
+                        id={`import-map-${field}`}
+                        value={preview.mapping[field] ?? UNMAPPED}
+                        disabled={previewing}
+                        onChange={(event) => {
+                          onMapping(field, event.target.value);
+                        }}
+                      >
+                        <option value={UNMAPPED}>Not imported</option>
+                        {[...new Set(preview.headers)].map((header) => (
+                          <option key={header} value={header}>
+                            {header}
+                          </option>
+                        ))}
+                      </Select>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+              <ImportSummary preview={preview} />
+            </div>
+          )}
         </div>
       )}
 
@@ -590,6 +695,11 @@ export const WorkspaceImportSection: React.FC<WorkspaceImportSectionProps> = ({
             message={errorMessage(error, 'Could not load the imports.')}
           />
         )}
+        {cancelError !== null && (
+          <ErrorAlert
+            message={errorMessage(cancelError, 'Could not cancel the import.')}
+          />
+        )}
         {isLoading ? (
           <Spinner label="Loading imports" />
         ) : jobs.length === 0 ? (
@@ -598,7 +708,7 @@ export const WorkspaceImportSection: React.FC<WorkspaceImportSectionProps> = ({
           <ul className="rounded-md border border-line">
             {jobs.map((job) => {
               const display = STATUS_DISPLAY[job.status];
-              const team = teamList.find((t) => t.id === job.team_id);
+              const finished = !isActive(job);
               return (
                 <li
                   key={job.import_id}
@@ -606,20 +716,32 @@ export const WorkspaceImportSection: React.FC<WorkspaceImportSectionProps> = ({
                 >
                   <div className="min-w-0 flex-1 space-y-0.5">
                     <p className="truncate text-sm text-text">
-                      {job.file_name || 'Untitled file'}
-                      {team !== undefined && (
-                        <span className="text-text-faint">
-                          {' '}
-                          into {team.name}
-                        </span>
-                      )}
+                      {jobTitle(job, teamList)}
                     </p>
                     <p className="text-xs text-text-faint">
                       {jobSummary(job)}
                       {', started '}
                       <RelativeTime value={job.created_at} />
                     </p>
+                    {finished && job.problems.length > 0 && (
+                      <JobProblems
+                        problems={job.problems}
+                        truncated={job.problems_truncated}
+                      />
+                    )}
                   </div>
+                  {!finished && (
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      disabled={cancelling}
+                      onClick={() => {
+                        void cancel(job.import_id).catch(() => undefined);
+                      }}
+                    >
+                      Cancel
+                    </Button>
+                  )}
                   <Badge tone={display.tone}>{display.label}</Badge>
                 </li>
               );

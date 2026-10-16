@@ -28,4 +28,3 @@ def from_bulk_import(record: Mapping[str, Any]) -> bool:
     """Whether a stream record's new image was written by a bulk import."""
     image = deserialize_image(record, "NewImage")
     return bool(image) and bool(image.get(IMPORT_BATCH_ATTRIBUTE))
-

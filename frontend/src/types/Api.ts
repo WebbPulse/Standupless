@@ -3381,11 +3381,7 @@ export interface IssueImportPreviewRead {
 
 /** Where an issue import job is. */
 export type ImportStatus =
-  | 'queued'
-  | 'running'
-  | 'completed'
-  | 'failed'
-  | 'cancelled';
+  'queued' | 'running' | 'completed' | 'failed' | 'cancelled';
 
 /** What an import reads: an uploaded CSV, or a Linear workspace through its API. */
 export type ImportKind = 'csv' | 'linear';

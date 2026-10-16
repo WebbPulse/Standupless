@@ -76,9 +76,7 @@ export const LinearImportForm: React.FC<LinearImportFormProps> = ({
   onStarted,
 }) => {
   const [apiKey, setApiKey] = useState('');
-  const [linearTeams, setLinearTeams] = useState<LinearTeamRead[] | null>(
-    null
-  );
+  const [linearTeams, setLinearTeams] = useState<LinearTeamRead[] | null>(null);
   const [choices, setChoices] = useState<Record<string, TeamChoice>>({});
   const [loading, setLoading] = useState(false);
   const [starting, setStarting] = useState(false);
@@ -303,10 +301,10 @@ export const LinearImportForm: React.FC<LinearImportFormProps> = ({
             </p>
           )}
           <p className="text-xs text-text-faint">
-            Issues, comments, labels, cycles, projects with their milestones
-            and updates, and initiatives come across. People match by email,
-            and anyone without an account here is shown by name. Running it
-            again updates what it imported before.
+            Issues, comments, labels, cycles, projects with their milestones and
+            updates, and initiatives come across. People match by email, and
+            anyone without an account here is shown by name. Running it again
+            updates what it imported before.
           </p>
         </div>
       )}
