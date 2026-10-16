@@ -387,6 +387,9 @@ const TeamSettings: React.FC = () => {
                 teamId={team.id}
                 canEdit={editable}
                 canManageWorkspace={canManageMembers(workspace?.role)}
+                {...(workspace === null
+                  ? {}
+                  : { workspaceSlug: workspace.slug })}
               />
               <SlackReturnToast />
               <DiscordReturnToast />

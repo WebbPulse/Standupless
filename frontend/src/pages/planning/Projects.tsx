@@ -61,7 +61,7 @@ import { useOptimisticRecord } from '../../lib/optimistic';
 import { projectPath } from '../../lib/paths';
 import {
   PROJECT_STATUS_LABELS,
-  completionPercent,
+  progressPercent,
 } from '../../lib/planningDisplay';
 import { PROJECT_STATUS_ORDER, canEditProject } from '../../lib/planningModel';
 import {
@@ -197,7 +197,7 @@ const ProjectRow: React.FC<ProjectRowProps> = ({
     }
   );
   const project = value ?? server;
-  const percent = completionPercent(project.counts);
+  const percent = progressPercent(project);
   const editable = canEditProject(workspaceRole, project, teams);
   const projectTeams = teams.filter((team) =>
     project.team_ids.includes(team.id)

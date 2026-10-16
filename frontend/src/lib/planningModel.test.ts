@@ -8,6 +8,7 @@ import type {
   IssueRead,
   ProjectRead,
   StatusRead,
+  TeamRead,
   VelocityRead,
 } from '../types/Api';
 import {
@@ -23,6 +24,9 @@ import {
   groupIssuesByCategory,
   groupProjectsByStatus,
   projectGraphRange,
+  countEach,
+  issueWeight,
+  pointWeigher,
 } from './planningModel';
 
 const statuses: StatusRead[] = [
@@ -355,5 +359,84 @@ describe('projectGraphRange', () => {
         '2026-09-26'
       )
     ).toBeNull();
+  });
+});
+
+const team = (
+  id: string,
+  scale: TeamRead['estimate_scale'],
+  countUnestimated = false
+): TeamRead => ({
+  id,
+  workspace_id: 'ws-1',
+  name: id,
+  key_prefix: id.toUpperCase(),
+  description: null,
+  estimate_scale: scale,
+  estimate_count_unestimated: countUnestimated,
+  created_at: '2026-09-01T00:00:00Z',
+  updated_at: '2026-09-01T00:00:00Z',
+});
+
+const sized = (
+  id: string,
+  statusId: string,
+  estimate: string | null,
+  teamId = 'team-1'
+): IssueRead => ({
+  ...issue(id, statusId, '2026-09-01', '2026-09-02'),
+  estimate,
+  team_id: teamId,
+});
+
+describe('issueWeight', () => {
+  it('weighs sizes, numbers and unestimated issues on the team scale', () => {
+    expect(issueWeight('L', team('t', 'tshirt'))).toBe(5);
+    expect(issueWeight('XL', team('t', 'tshirt'))).toBe(8);
+    expect(issueWeight('8', team('t', 'fibonacci'))).toBe(8);
+    expect(issueWeight(null, team('t', 'tshirt'))).toBe(0);
+    expect(issueWeight(null, team('t', 'tshirt', true))).toBe(1);
+  });
+
+  it('weighs every issue as one on a team with estimates off', () => {
+    expect(issueWeight('XL', team('t', 'off'))).toBe(1);
+    expect(issueWeight(null, team('t', 'off'))).toBe(1);
+    expect(issueWeight('M', undefined)).toBe(1);
+  });
+});
+
+describe('weighted progress', () => {
+  const teams = [team('team-1', 'tshirt'), team('team-2', 'linear')];
+  const issues = [
+    sized('1', 'done', 'L'),
+    sized('2', 'doing', 'M'),
+    sized('3', 'todo', null),
+    sized('4', 'todo', '4', 'team-2'),
+  ];
+
+  it('sums mixed sizes across teams on each team scale', () => {
+    const counts = categoryCounts(issues, statuses, pointWeigher(teams));
+    expect(counts.completed).toBe(5);
+    expect(counts.started).toBe(3);
+    expect(counts.unstarted).toBe(4);
+  });
+
+  it('falls back to one per issue when counting', () => {
+    const counts = categoryCounts(issues, statuses, countEach);
+    expect(counts.unstarted).toBe(2);
+  });
+
+  it('draws the burn-up in points', () => {
+    const points = burnUpSeries(
+      issues,
+      statuses,
+      '2026-09-01',
+      '2026-09-02',
+      '2026-09-02',
+      pointWeigher(teams)
+    );
+    expect(points.map((point) => point.scope)).toEqual([12, 12]);
+    expect(points.map((point) => point.started)).toEqual([0, 8]);
+    expect(points.map((point) => point.completed)).toEqual([0, 5]);
   });
 });

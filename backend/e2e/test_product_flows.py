@@ -1970,6 +1970,114 @@ class TestIssueImport:
         assert notices, inbox.text[:400]
 
 
+LINEAR_FAKE_PORT = 8765
+"""Where the local stack's `LINEAR_API_URL` points, so the case serves the fake Linear there."""
+
+
+@pytest.fixture(scope="class")
+def linear_team(api: Any, run_scope: RunScope, workspace: "dict[str, Any]") -> "Any":
+    """A team the Linear import writes into, so its issues land where no other flow lists."""
+    path = f"/api/workspaces/{workspace['id']}/teams"
+    body = {"name": run_scope.name("linear-team"), "key_prefix": "LNR"}
+    created = _created(api.post(path, json=body), "team")
+    yield created
+    api.delete(f"{path}/{created['id']}")
+
+
+class TestLinearImport:
+    """A Linear workspace imports through the API against a fake Linear, and again without duplicating.
+
+    The local stack points `LINEAR_API_URL` at a fake Linear GraphQL server this case
+    serves in process, and has no queue, so the start route runs the whole job before
+    it answers. A deployed stage would reach the real Linear, which no run holds a key
+    for, so there only the refusals that never call Linear are driven.
+    """
+
+    @WRITES
+    def test_the_import_routes_refuse_bad_requests_without_calling_linear(
+        self, api: Any, workspace: "dict[str, Any]"
+    ) -> None:
+        """A missing key, an empty team choice and an unknown import are refused before Linear is asked."""
+        base = f"/api/workspaces/{workspace['id']}/imports"
+        teams = api.post(f"{base}/linear/teams", json={"api_key": ""})
+        assert teams.status_code == 422, teams.text[:400]
+        start = api.post(f"{base}/linear", json={"api_key": "not-a-key", "teams": []})
+        assert start.status_code == 422, start.text[:400]
+        cancel = api.post(f"{base}/{ABSENT_ID}/cancel")
+        assert cancel.status_code == 404, cancel.text[:400]
+
+    @WRITES
+    def test_a_linear_team_imports_and_a_rerun_updates_it(
+        self,
+        api: Any,
+        e2e_env: Any,
+        credentials: Any,
+        run_scope: RunScope,
+        workspace: "dict[str, Any]",
+        linear_team: "dict[str, Any]",
+    ) -> None:
+        """The fake team is listed, imported with every count, and imported again as updates only."""
+        if not e2e_env.is_local:
+            pytest.skip("the fake Linear is served on the local stack only")
+        from tests.domains.integrations.linear_fake import FAKE_KEY, sample
+
+        tag = run_scope.slug("lin")
+        fake = sample(credentials.email, prefix="LIN", tag=tag)
+        server = fake.serve(port=LINEAR_FAKE_PORT)
+        try:
+            base = f"/api/workspaces/{workspace['id']}/imports"
+            listed = api.post(f"{base}/linear/teams", json={"api_key": FAKE_KEY})
+            assert listed.status_code == 200, listed.text[:400]
+            linear_teams = listed.json()["items"]
+            assert [row["key"] for row in linear_teams] == ["LIN"], linear_teams
+            refused = api.post(f"{base}/linear/teams", json={"api_key": f"{FAKE_KEY}x"})
+            assert refused.status_code == 400, refused.text[:400]
+            assert FAKE_KEY not in refused.text
+
+            body = {
+                "api_key": FAKE_KEY,
+                "teams": [{"linear_team_id": linear_teams[0]["id"], "team_id": linear_team["id"]}],
+            }
+            first = api.post(f"{base}/linear", json=body)
+            assert first.status_code == 202, first.text[:400]
+            job = first.json()
+            assert FAKE_KEY not in first.text
+            assert job["kind"] == "linear", job
+            assert job["status"] == "completed", job
+            assert job["created_count"] == 4, job
+            assert job["counts"].get("comments") == 3, job
+            assert job["counts"].get("relations") == 3, job
+            assert job["counts"].get("sub_issues") == 1, job
+            assert job["counts"].get("projects") == 1, job
+            assert job["counts"].get("cycles") == 1, job
+
+            polled = api.get(f"{base}/{job['import_id']}")
+            assert polled.status_code == 200, polled.text[:400]
+            assert polled.json()["status"] == "completed"
+
+            issues_path = f"/api/workspaces/{workspace['id']}/issues"
+            issues = api.get(issues_path, params={"team_id": linear_team["id"]})
+            assert issues.status_code == 200, issues.text[:400]
+            titles = sorted(str(row.get("title")) for row in _items(issues.json(), "issues", "items"))
+            assert titles == sorted(node["title"] for node in fake.issues[f"team-lin{tag}"]), titles
+
+            again = api.post(f"{base}/linear", json=body)
+            assert again.status_code == 202, again.text[:400]
+            rerun = again.json()
+            assert rerun["status"] == "completed", rerun
+            assert rerun["created_count"] == 0, rerun
+            assert rerun["updated_count"] == 4, rerun
+            after = api.get(issues_path, params={"team_id": linear_team["id"]})
+            assert len(_items(after.json(), "issues", "items")) == len(titles), after.text[:400]
+
+            finished = api.post(f"{base}/{rerun['import_id']}/cancel")
+            assert finished.status_code == 200, finished.text[:400]
+            assert finished.json()["status"] == "completed"
+        finally:
+            server.shutdown()
+            server.server_close()
+
+
 class TestDeletion:
     """Self serve deletion: a workspace scheduled, cancelled and scheduled again, and the account routes' guards."""
 
@@ -2125,6 +2233,43 @@ class TestSlackApp:
 
         removed = api.delete(base)
         assert removed.status_code == 404, removed.text[:400]
+
+    @WRITES
+    def test_workspace_channels_answer_before_an_install(
+        self, api: Any, workspace: "dict[str, Any]", team: "dict[str, Any]"
+    ) -> None:
+        """The workspace channel routes list nothing, refuse a create without an App, and 404 an unknown id."""
+        workspace_base = f"/api/workspaces/{workspace['id']}"
+        channels = f"{workspace_base}/webhooks/channels"
+        listed = api.get(channels)
+        assert listed.status_code == 200, listed.text[:400]
+        assert listed.json() == [], listed.json()
+
+        for picker in ("slack", "discord"):
+            answered = api.get(f"{workspace_base}/{picker}/channels")
+            assert answered.status_code == 404, f"{picker}: {answered.text[:400]}"
+
+        link = api.get(f"{workspace_base}/slack/install-url")
+        assert link.status_code in (200, 409), link.text[:400]
+
+        refused = api.post(
+            channels, json={"slack_channel_id": "C0E2E", "events": ["issue_created"], "team_ids": [team["id"]]}
+        )
+        assert refused.status_code == 422, refused.text[:400]
+        assert "SLACK_NOT_INSTALLED" in refused.text, refused.text[:400]
+
+        webhook = {"url": "https://hooks.slack.com/services/T0E2E/B0E2E/e2e", "events": ["issue_created"]}
+        pasted = api.post(channels, json=webhook)
+        assert pasted.status_code == 422, pasted.text[:400]
+
+        unknown = f"{channels}/01HZZZZZZZZZZZZZZZZZZZZZZZ"
+        assert api.patch(unknown, json={"label": "x"}).status_code == 404
+        assert api.post(f"{unknown}/test").status_code == 404
+        assert api.delete(unknown).status_code == 404
+
+        team_channels = api.get(f"{workspace_base}/teams/{team['id']}/webhooks/channels")
+        assert team_channels.status_code == 200, team_channels.text[:400]
+        assert all(row.get("scope", "team") == "team" for row in team_channels.json()), team_channels.json()
 
     def test_the_receivers_refuse_a_request_slack_did_not_sign(self, anon: Any) -> None:
         """Each receiver answers 401 to an unsigned request, or 404 where the App is off."""

@@ -8,6 +8,12 @@ is a bearer credential for the channel, so it is accepted on create and on an up
 that replaces it and never returned: reads carry only its masked tail. A channel can
 instead post through the workspace's installed Slack or Discord App, picked from the
 list `slack-channels` or `discord-channels` answers, and then has no URL at all.
+
+Workspace owners and admins manage the workspace's own channels under
+`/{workspace_id}/webhooks/channels`. Those always post through an installed App and
+follow every open team or a chosen few, and their pickers are `/{workspace_id}/slack/channels`
+and `/{workspace_id}/discord/channels`. A team route never reads or changes a
+workspace channel, and a workspace route never a team's.
 """
 
 from __future__ import annotations
@@ -21,7 +27,14 @@ from app.common.api.dependencies.repositories import Repositories, get_repositor
 from app.domains.integrations.channels import manage
 from app.domains.integrations.discord import install as discord_install
 from app.domains.integrations.discord.api import DiscordError
-from app.domains.integrations.schemas.channels import ChannelCreate, ChannelRead, ChannelTestRead, ChannelUpdate
+from app.domains.integrations.schemas.channels import (
+    ChannelCreate,
+    ChannelRead,
+    ChannelTestRead,
+    ChannelUpdate,
+    WorkspaceChannelCreate,
+    WorkspaceChannelUpdate,
+)
 from app.domains.integrations.schemas.discord import DiscordChannelRead
 from app.domains.integrations.schemas.slack import SlackChannelRead
 from app.domains.integrations.service import not_found, require_team_content, unavailable, unprocessable
@@ -31,6 +44,8 @@ from app.domains.integrations.slack.api import SlackError
 router = APIRouter()
 
 TeamAdmin = Annotated[AuthzContext, Depends(require(Capability.TEAM_ADMIN))]
+
+WorkspaceAdmin = Annotated[AuthzContext, Depends(require(Capability.WORKSPACE_ADMIN))]
 
 Bundle = Annotated[Repositories, Depends(get_repositories)]
 
@@ -47,6 +62,10 @@ def _require_team(repositories: Repositories, workspace_id: str, team_id: str) -
 
 def _http(exc: Exception) -> HTTPException:
     """The HTTP answer for a management error."""
+    if isinstance(exc, manage.ChannelError) and exc.code == "PRIVATE_TEAM":
+        return HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail={"error_code": exc.code, "message": exc.message}
+        )
     if isinstance(exc, manage.ChannelError):
         return unprocessable(exc.message, exc.code)
     if isinstance(exc, manage.ChannelUnavailable):
@@ -61,12 +80,9 @@ def list_team_channels(team_id: TeamId, context: TeamAdmin, repositories: Bundle
     return manage.list_for_team(repositories, context.workspace_id, team_id)
 
 
-@router.get("/{workspace_id}/teams/{team_id}/webhooks/slack-channels", response_model=list[SlackChannelRead])
-def list_slack_channels(team_id: TeamId, context: TeamAdmin, repositories: Bundle) -> list[SlackChannelRead]:
-    """The Slack channels the workspace's Slack App can post to, for the add channel picker."""
-    _require_team(repositories, context.workspace_id, team_id)
-    require_team_content(context, team_id)
-    installation = repositories.github.slack.get(context.workspace_id)
+def _slack_channels(repositories: Repositories, workspace_id: str) -> list[SlackChannelRead]:
+    """The Slack channels the workspace's Slack App can post to, or a 404 before it is installed."""
+    installation = repositories.github.slack.get(workspace_id)
     if installation is None:
         raise not_found()
     try:
@@ -76,12 +92,9 @@ def list_slack_channels(team_id: TeamId, context: TeamAdmin, repositories: Bundl
     return [SlackChannelRead.model_validate(channel) for channel in channels]
 
 
-@router.get("/{workspace_id}/teams/{team_id}/webhooks/discord-channels", response_model=list[DiscordChannelRead])
-def list_discord_channels(team_id: TeamId, context: TeamAdmin, repositories: Bundle) -> list[DiscordChannelRead]:
-    """The Discord channels the workspace's Discord App can post to, for the add channel picker."""
-    _require_team(repositories, context.workspace_id, team_id)
-    require_team_content(context, team_id)
-    installation = repositories.github.discord.get(context.workspace_id)
+def _discord_channels(repositories: Repositories, workspace_id: str) -> list[DiscordChannelRead]:
+    """The Discord channels the workspace's Discord App can post to, or a 404 before it is installed."""
+    installation = repositories.github.discord.get(workspace_id)
     if installation is None:
         raise not_found()
     try:
@@ -91,6 +104,22 @@ def list_discord_channels(team_id: TeamId, context: TeamAdmin, repositories: Bun
     except DiscordError as exc:
         raise unavailable("Discord did not list the channels. Try again.") from exc
     return [DiscordChannelRead.model_validate(channel) for channel in channels]
+
+
+@router.get("/{workspace_id}/teams/{team_id}/webhooks/slack-channels", response_model=list[SlackChannelRead])
+def list_slack_channels(team_id: TeamId, context: TeamAdmin, repositories: Bundle) -> list[SlackChannelRead]:
+    """The Slack channels the workspace's Slack App can post to, for the add channel picker."""
+    _require_team(repositories, context.workspace_id, team_id)
+    require_team_content(context, team_id)
+    return _slack_channels(repositories, context.workspace_id)
+
+
+@router.get("/{workspace_id}/teams/{team_id}/webhooks/discord-channels", response_model=list[DiscordChannelRead])
+def list_discord_channels(team_id: TeamId, context: TeamAdmin, repositories: Bundle) -> list[DiscordChannelRead]:
+    """The Discord channels the workspace's Discord App can post to, for the add channel picker."""
+    _require_team(repositories, context.workspace_id, team_id)
+    require_team_content(context, team_id)
+    return _discord_channels(repositories, context.workspace_id)
 
 
 @router.post(
@@ -141,5 +170,64 @@ def test_team_channel(
     _require_team(repositories, context.workspace_id, team_id)
     try:
         return manage.send_test_message(repositories, context.workspace_id, team_id, channel_id, context.user_id)
+    except manage.ChannelNotFound as exc:
+        raise _http(exc) from exc
+
+
+@router.get("/{workspace_id}/slack/channels", response_model=list[SlackChannelRead])
+def list_workspace_slack_channels(context: WorkspaceAdmin, repositories: Bundle) -> list[SlackChannelRead]:
+    """The Slack channels the Slack App can post to, for the workspace channel picker."""
+    return _slack_channels(repositories, context.workspace_id)
+
+
+@router.get("/{workspace_id}/discord/channels", response_model=list[DiscordChannelRead])
+def list_workspace_discord_channels(context: WorkspaceAdmin, repositories: Bundle) -> list[DiscordChannelRead]:
+    """The Discord channels the Discord App can post to, for the workspace channel picker."""
+    return _discord_channels(repositories, context.workspace_id)
+
+
+@router.get("/{workspace_id}/webhooks/channels", response_model=list[ChannelRead])
+def list_workspace_channels(context: WorkspaceAdmin, repositories: Bundle) -> list[ChannelRead]:
+    """The Slack and Discord channels that follow the whole workspace."""
+    return manage.list_for_workspace(repositories, context.workspace_id)
+
+
+@router.post("/{workspace_id}/webhooks/channels", response_model=ChannelRead, status_code=status.HTTP_201_CREATED)
+def create_workspace_channel(
+    payload: WorkspaceChannelCreate, context: WorkspaceAdmin, repositories: Bundle
+) -> ChannelRead:
+    """Add a Slack or Discord channel that follows every open team, or the teams it names."""
+    try:
+        return manage.create(repositories, context, None, payload)
+    except (manage.ChannelError, manage.ChannelUnavailable) as exc:
+        raise _http(exc) from exc
+
+
+@router.patch("/{workspace_id}/webhooks/channels/{channel_id}", response_model=ChannelRead)
+def update_workspace_channel(
+    channel_id: ChannelId, payload: WorkspaceChannelUpdate, context: WorkspaceAdmin, repositories: Bundle
+) -> ChannelRead:
+    """Change one of the workspace's channels."""
+    try:
+        return manage.update(repositories, context, None, channel_id, payload)
+    except (manage.ChannelError, manage.ChannelUnavailable, manage.ChannelNotFound) as exc:
+        raise _http(exc) from exc
+
+
+@router.delete("/{workspace_id}/webhooks/channels/{channel_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_workspace_channel(channel_id: ChannelId, context: WorkspaceAdmin, repositories: Bundle) -> Response:
+    """Remove one of the workspace's channels."""
+    try:
+        manage.delete(repositories, context, None, channel_id)
+    except manage.ChannelNotFound as exc:
+        raise _http(exc) from exc
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post("/{workspace_id}/webhooks/channels/{channel_id}/test", response_model=ChannelTestRead)
+def test_workspace_channel(channel_id: ChannelId, context: WorkspaceAdmin, repositories: Bundle) -> ChannelTestRead:
+    """Post a test message to one of the workspace's channels and report what it answered."""
+    try:
+        return manage.send_test_message(repositories, context.workspace_id, None, channel_id, context.user_id)
     except manage.ChannelNotFound as exc:
         raise _http(exc) from exc

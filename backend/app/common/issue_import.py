@@ -19,6 +19,11 @@ each parent within the file and sets `parent_id` on the child. The link write
 keeps the bulk marker and only lands on a row of this import that has no parent
 yet, so a link page run twice links each issue once.
 
+A Linear import, kind `linear`, is the same job reading Linear's API instead
+of a stored file; `app.common.linear_import` holds its steps and its sealed key.
+A job may be cancelled while it runs: every step reads the job again before it
+saves its progress and keeps a cancel it finds.
+
 Every imported issue carries `import_batch_id`, which the notify consumer, the
 GitHub sync stream consumer and the webhook fan-out read as "stay quiet", so a
 5000-row import sends no 5000 notifications. Rollups and search still index
@@ -52,6 +57,7 @@ from app.common.csv_import import (
     status_category,
 )
 from app.common.db.dynamo.base import utc_now
+from app.common.linear_import import LinearTeamMapping
 
 _log = logging.getLogger(__name__)
 
@@ -108,13 +114,20 @@ IMPORT_REPOSITORIES: tuple[str, ...] = (
     "team_config",
     "subscriptions",
     "inbox",
+    "comments",
+    "relations",
+    "planning",
 )
-"""What the import job writes: the issues, their keys, activity and subscriptions, new labels and the notice."""
+"""What the import job writes: issues, keys, activity, subscriptions, labels, the notice, and Linear's extras."""
 
 IMPORT_READ_REPOSITORIES: tuple[str, ...] = ("workspaces", "memberships", "users", "teams")
 """What the import job only reads: the team, its members and their accounts."""
 
-ImportStatus = Literal["queued", "running", "completed", "failed"]
+ImportStatus = Literal["queued", "running", "completed", "failed", "cancelled"]
+
+ImportKind = Literal["csv", "linear"]
+
+FINISHED: frozenset[str] = frozenset({"completed", "failed", "cancelled"})
 
 
 class ImportUnavailable(Exception):
@@ -129,14 +142,24 @@ class PageRetriesExhausted(Exception):
     """A page started too many times without finishing."""
 
 
+class ImportNotFound(Exception):
+    """No import with that id exists in the workspace."""
+
+
 class ImportJob(BaseModel):
     """One import: who asked, into which team, how the file maps, and how far it has got."""
 
     import_id: str
     workspace_id: str
     team_id: str
+    kind: ImportKind = "csv"
     preset: str
     mapping: dict[str, Optional[str]]
+    linear_teams: list[LinearTeamMapping] = Field(default_factory=list)
+    phase_index: int = 0
+    after: Optional[str] = None
+    counts: dict[str, int] = Field(default_factory=dict)
+    updated_count: int = 0
     file_name: str = ""
     status: ImportStatus = "queued"
     requested_by: str
@@ -603,7 +626,14 @@ def handle_page(repositories: Any, workspace_id: str, import_id: str, cursor: in
 
 
 def fail(repositories: Any, job: ImportJob, exc: BaseException) -> ImportJob:
-    """Mark a job failed and tell the requester."""
+    """Mark a job failed, delete a Linear job's key, and tell the requester, unless it was cancelled."""
+    if job.kind == "linear":
+        from app.common.linear_import import delete_key
+
+        delete_key(job.workspace_id, job.import_id)
+    current = load_job(job.workspace_id, job.import_id)
+    if current is not None and current.status == "cancelled":
+        return current
     failed = save_job(
         job.model_copy(update={"status": "failed", "finished_at": utc_now(), "error": type(exc).__name__})
     )
@@ -786,6 +816,9 @@ def _run_link_page(repositories: Any, job: ImportJob, parsed: ParsedCsv, cursor:
             problems.append(problem)
     kept = [*job.problems, *problems]
     done = total + stop >= job.final_cursor(total)
+    cancelled = _cancelled(job)
+    if cancelled is not None:
+        return cancelled
     updated = save_job(
         job.model_copy(
             update={
@@ -802,6 +835,78 @@ def _run_link_page(repositories: Any, job: ImportJob, parsed: ParsedCsv, cursor:
     if done:
         notify(repositories, updated)
     return updated
+
+
+def _cancelled(job: ImportJob) -> ImportJob | None:
+    """The job as stored when it was cancelled while a page ran, so the page's save does not undo it."""
+    current = load_job(job.workspace_id, job.import_id)
+    return current if current is not None and current.status == "cancelled" else None
+
+
+def cancel_import(workspace_id: str, import_id: str) -> ImportJob:
+    """Stop one import: mark it cancelled and delete a Linear import's key, leaving what it wrote.
+
+    A job that already finished is answered as it is. Raises `ImportNotFound`
+    when the workspace has no such import.
+    """
+    job = load_job(workspace_id, import_id)
+    if job is None:
+        raise ImportNotFound(import_id)
+    if job.status in FINISHED:
+        return job
+    cancelled = save_job(job.model_copy(update={"status": "cancelled", "finished_at": utc_now()}))
+    if job.kind == "linear":
+        from app.common.linear_import import delete_key
+
+        delete_key(workspace_id, import_id)
+    return cancelled
+
+
+def start_linear_import(
+    repositories: Any,
+    context: AuthzContext,
+    api_key: str,
+    teams: list[LinearTeamMapping],
+) -> ImportJob:
+    """Queue an import of Linear teams into Standupless teams, or run it inline where no queue exists.
+
+    The key has already been checked against Linear by the caller. It is sealed
+    beside the job and never stored on it. Refuses like `start_import` does.
+    """
+    from app.common.issue_rules import require_team_member
+    from app.common.linear_import import PRESET, can_seal, seal_key
+
+    bucket()
+    queue_url = settings.ISSUE_IMPORT_QUEUE_URL.strip()
+    if (not queue_url and settings.is_production) or not can_seal():
+        raise ImportUnavailable("Linear imports are not configured for this environment")
+    for mapping in teams:
+        require_team_member(repositories, context, mapping.team_id)
+    now = utc_now()
+    if any(job.is_active(now) for job in list_jobs(context.workspace_id, limit=3)):
+        raise ImportInProgress("An import into this workspace is already running")
+    import_id = new_ulid()
+    seal_key(context.workspace_id, import_id, api_key)
+    job = save_job(
+        ImportJob(
+            import_id=import_id,
+            workspace_id=context.workspace_id,
+            team_id=teams[0].team_id,
+            kind="linear",
+            preset=PRESET,
+            mapping={},
+            linear_teams=teams,
+            file_name="Linear",
+            requested_by=context.user_id,
+            requester_role=context.role,
+            source=context.source,
+            created_at=now,
+        )
+    )
+    if queue_url:
+        enqueue_page(job.workspace_id, job.import_id, 0)
+        return job
+    return run_inline(repositories, job.workspace_id, job.import_id) or job
 
 
 def run_page(repositories: Any, workspace_id: str, import_id: str, cursor: int) -> ImportJob | None:
@@ -824,6 +929,10 @@ def run_page(repositories: Any, workspace_id: str, import_id: str, cursor: int) 
             }
         )
     )
+    if job.kind == "linear":
+        from app.common.linear_import import run_linear_page
+
+        return run_linear_page(repositories, job)
     parsed: ParsedCsv = parse_csv(_load_source(workspace_id, import_id))
     if job.links_parents and cursor >= len(parsed.rows):
         return _run_link_page(repositories, job, parsed, cursor)
@@ -842,6 +951,9 @@ def run_page(repositories: Any, workspace_id: str, import_id: str, cursor: int) 
         created += 1
     problems = [*job.problems, *(problem for row in rows for problem in row.problems)]
     done = stop >= job.final_cursor(len(parsed.rows))
+    cancelled = _cancelled(job)
+    if cancelled is not None:
+        return cancelled
     updated = save_job(
         job.model_copy(
             update={
@@ -871,15 +983,16 @@ def notify(repositories: Any, job: ImportJob) -> bool:
     now = utc_now()
     completed = job.status == "completed"
     plural = "issue" if job.created_count == 1 else "issues"
+    title = f"Imported {job.created_count} {plural} into {name}" if completed else f"The import into {name} failed"
+    if job.kind == "linear":
+        title = f"Imported {job.created_count} {plural} from Linear" if completed else "The import from Linear failed"
     notification = Notification(
         ws_user=inbox_partition(job.workspace_id, job.requested_by),
         notification_id=new_ulid(),
         workspace_id=job.workspace_id,
         kind=READY_KIND if completed else FAILED_KIND,
         issue_key=job.import_id,
-        issue_title=(
-            f"Imported {job.created_count} {plural} into {name}" if completed else f"The import into {name} failed"
-        ),
+        issue_title=title,
         team_id="",
         actor_id="",
         actor_name="",

@@ -9,7 +9,9 @@ new image carries it. Rollup and search still read the record, because an import
 issue must count towards its parent and be findable.
 
 Any later edit through `IssueRepository.replace` drops the marker, so the first
-change a person makes to an imported issue is announced as usual.
+change a person makes to an imported issue is announced as usual. Comments and
+planning rows an import writes carry the same marker, and a person's edit of one
+drops it the same way.
 """
 
 from __future__ import annotations

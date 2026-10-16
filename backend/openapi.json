@@ -1826,7 +1826,7 @@
         "type": "object"
       },
       "ChannelRead": {
-        "description": "One Slack or Discord channel a team posts its notifications to.\n\n`disabled_reason` is set when the channel answered 404 or 410 and was turned\noff; turning it back on clears it.",
+        "description": "One Slack or Discord channel a team, or the whole workspace, posts its notifications to.\n\n`disabled_reason` is set when the channel answered 404 or 410 and was turned\noff; turning it back on clears it. A workspace channel has an empty `team_id`\nand lists the teams it follows in `team_ids`, empty for every open team.",
         "properties": {
           "channel_id": {
             "title": "Channel Id",
@@ -1924,6 +1924,15 @@
             "title": "Provider",
             "type": "string"
           },
+          "scope": {
+            "default": "team",
+            "enum": [
+              "team",
+              "workspace"
+            ],
+            "title": "Scope",
+            "type": "string"
+          },
           "slack_channel_id": {
             "default": "",
             "title": "Slack Channel Id",
@@ -1932,6 +1941,13 @@
           "team_id": {
             "title": "Team Id",
             "type": "string"
+          },
+          "team_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Team Ids",
+            "type": "array"
           },
           "transport": {
             "default": "webhook",
@@ -4855,6 +4871,16 @@
             ],
             "title": "Last Update At"
           },
+          "measure": {
+            "default": "issues",
+            "description": "The unit `progress` reads in, points when a team on it estimates",
+            "enum": [
+              "points",
+              "issues"
+            ],
+            "title": "Measure",
+            "type": "string"
+          },
           "name": {
             "title": "Name",
             "type": "string"
@@ -4884,6 +4910,10 @@
           },
           "points": {
             "$ref": "#/components/schemas/CountsRead"
+          },
+          "progress": {
+            "$ref": "#/components/schemas/CountsRead",
+            "description": "The buckets scope and completion are measured by, in `measure`"
           },
           "project_count": {
             "default": 0,
@@ -6168,6 +6198,14 @@
       "IssueImportRead": {
         "description": "One import job and how far it has got.",
         "properties": {
+          "counts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "description": "A Linear import's tallies: issues, comments, labels, cycles, projects, milestones and more.",
+            "title": "Counts",
+            "type": "object"
+          },
           "created_at": {
             "format": "date-time",
             "title": "Created At",
@@ -6208,14 +6246,52 @@
             "title": "Import Id",
             "type": "string"
           },
+          "kind": {
+            "default": "csv",
+            "enum": [
+              "csv",
+              "linear"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
           "labels_created": {
             "title": "Labels Created",
             "type": "integer"
+          },
+          "linear_teams": {
+            "items": {
+              "$ref": "#/components/schemas/LinearTeamMappingRead"
+            },
+            "title": "Linear Teams",
+            "type": "array"
           },
           "linked_count": {
             "default": 0,
             "description": "How many imported issues were made sub-issues of another.",
             "title": "Linked Count",
+            "type": "integer"
+          },
+          "phase": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "What a running Linear import is reading now.",
+            "title": "Phase"
+          },
+          "phase_count": {
+            "default": 0,
+            "title": "Phase Count",
+            "type": "integer"
+          },
+          "phase_index": {
+            "default": 0,
+            "title": "Phase Index",
             "type": "integer"
           },
           "preset": {
@@ -6266,7 +6342,8 @@
               "queued",
               "running",
               "completed",
-              "failed"
+              "failed",
+              "cancelled"
             ],
             "title": "Status",
             "type": "string"
@@ -6283,6 +6360,12 @@
             "format": "date-time",
             "title": "Updated At",
             "type": "string"
+          },
+          "updated_count": {
+            "default": 0,
+            "description": "How many issues a Linear import found already imported and updated.",
+            "title": "Updated Count",
+            "type": "integer"
           },
           "workspace_id": {
             "title": "Workspace Id",
@@ -7184,6 +7267,143 @@
         "title": "LabelUpdate",
         "type": "object"
       },
+      "LinearImportRequest": {
+        "description": "A Linear import: the key, sealed while the job runs and deleted after, and the team mapping.",
+        "properties": {
+          "api_key": {
+            "description": "A Linear personal API key with read access.",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Api Key",
+            "type": "string"
+          },
+          "teams": {
+            "items": {
+              "$ref": "#/components/schemas/LinearTeamChoice"
+            },
+            "maxItems": 50,
+            "minItems": 1,
+            "title": "Teams",
+            "type": "array"
+          }
+        },
+        "required": [
+          "api_key",
+          "teams"
+        ],
+        "title": "LinearImportRequest",
+        "type": "object"
+      },
+      "LinearKeyRequest": {
+        "description": "A Linear personal API key, used for this request only and never stored.",
+        "properties": {
+          "api_key": {
+            "description": "A Linear personal API key with read access.",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Api Key",
+            "type": "string"
+          }
+        },
+        "required": [
+          "api_key"
+        ],
+        "title": "LinearKeyRequest",
+        "type": "object"
+      },
+      "LinearTeamChoice": {
+        "description": "One Linear team to import and the Standupless team it goes into.",
+        "properties": {
+          "linear_team_id": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Linear Team Id",
+            "type": "string"
+          },
+          "team_id": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Team Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "linear_team_id",
+          "team_id"
+        ],
+        "title": "LinearTeamChoice",
+        "type": "object"
+      },
+      "LinearTeamListRead": {
+        "description": "Every team the key can read in Linear.",
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/LinearTeamRead"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "LinearTeamListRead",
+        "type": "object"
+      },
+      "LinearTeamMappingRead": {
+        "description": "One Linear team a Linear import reads and the Standupless team it writes into.",
+        "properties": {
+          "linear_key": {
+            "title": "Linear Key",
+            "type": "string"
+          },
+          "linear_team_id": {
+            "title": "Linear Team Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "team_id": {
+            "title": "Team Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "linear_team_id",
+          "linear_key",
+          "name",
+          "team_id"
+        ],
+        "title": "LinearTeamMappingRead",
+        "type": "object"
+      },
+      "LinearTeamRead": {
+        "description": "One team the key can read in Linear.",
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "key",
+          "name"
+        ],
+        "title": "LinearTeamRead",
+        "type": "object"
+      },
       "LinkCreate": {
         "description": "The body a link create takes.",
         "properties": {
@@ -7572,6 +7792,16 @@
             ],
             "title": "Description"
           },
+          "measure": {
+            "default": "issues",
+            "description": "The unit `progress` reads in, points when a team on it estimates",
+            "enum": [
+              "points",
+              "issues"
+            ],
+            "title": "Measure",
+            "type": "string"
+          },
           "milestone_id": {
             "title": "Milestone Id",
             "type": "string"
@@ -7582,6 +7812,10 @@
           },
           "points": {
             "$ref": "#/components/schemas/CountsRead"
+          },
+          "progress": {
+            "$ref": "#/components/schemas/CountsRead",
+            "description": "The buckets scope and completion are measured by, in `measure`"
           },
           "project_id": {
             "title": "Project Id",
@@ -8408,6 +8642,16 @@
             ],
             "title": "Lead Id"
           },
+          "measure": {
+            "default": "issues",
+            "description": "The unit `progress` reads in, points when a team on it estimates",
+            "enum": [
+              "points",
+              "issues"
+            ],
+            "title": "Measure",
+            "type": "string"
+          },
           "member_ids": {
             "items": {
               "type": "string"
@@ -8445,6 +8689,10 @@
             ],
             "title": "Priority",
             "type": "string"
+          },
+          "progress": {
+            "$ref": "#/components/schemas/CountsRead",
+            "description": "The buckets scope and completion are measured by, in `measure`"
           },
           "project_id": {
             "title": "Project Id",
@@ -11355,6 +11603,16 @@
             "title": "Kind",
             "type": "string"
           },
+          "measure": {
+            "default": "issues",
+            "description": "The unit `progress` reads in, points when a team on it estimates",
+            "enum": [
+              "points",
+              "issues"
+            ],
+            "title": "Measure",
+            "type": "string"
+          },
           "name": {
             "title": "Name",
             "type": "string"
@@ -11369,6 +11627,10 @@
               }
             ],
             "title": "Priority"
+          },
+          "progress": {
+            "$ref": "#/components/schemas/CountsRead",
+            "description": "The buckets scope and completion are measured by, in `measure`"
           },
           "start_date": {
             "anyOf": [
@@ -16469,6 +16731,176 @@
         "title": "WebhookEndpointUpdate",
         "type": "object"
       },
+      "WorkspaceChannelCreate": {
+        "additionalProperties": false,
+        "description": "Add a workspace channel: a Slack or Discord channel an App posts to, and the teams it follows.\n\nAn empty `team_ids` follows every open team. A private team is followed only\nwhen it is named.",
+        "properties": {
+          "discord_channel_id": {
+            "anyOf": [
+              {
+                "maxLength": 24,
+                "minLength": 1,
+                "pattern": "^[0-9]+$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Discord Channel Id"
+          },
+          "discord_channel_name": {
+            "default": "",
+            "maxLength": 100,
+            "title": "Discord Channel Name",
+            "type": "string"
+          },
+          "enabled": {
+            "default": true,
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "events": {
+            "items": {
+              "enum": [
+                "issue_created",
+                "issue_status_changed",
+                "issue_completed",
+                "issue_assigned",
+                "comment_created",
+                "project_update_posted",
+                "project_update_due"
+              ],
+              "type": "string"
+            },
+            "minItems": 1,
+            "title": "Events",
+            "type": "array"
+          },
+          "label": {
+            "default": "",
+            "maxLength": 80,
+            "title": "Label",
+            "type": "string"
+          },
+          "slack_channel_id": {
+            "anyOf": [
+              {
+                "maxLength": 40,
+                "minLength": 1,
+                "pattern": "^[A-Z0-9]+$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Slack Channel Id"
+          },
+          "slack_channel_name": {
+            "default": "",
+            "maxLength": 80,
+            "title": "Slack Channel Name",
+            "type": "string"
+          },
+          "team_ids": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 200,
+            "title": "Team Ids",
+            "type": "array"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "maxLength": 512,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
+          }
+        },
+        "required": [
+          "events"
+        ],
+        "title": "WorkspaceChannelCreate",
+        "type": "object"
+      },
+      "WorkspaceChannelUpdate": {
+        "additionalProperties": false,
+        "description": "Change a workspace channel, leaving unset fields alone.\n\nSetting `team_ids` to an empty list follows every open team again.",
+        "properties": {
+          "enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Enabled"
+          },
+          "events": {
+            "anyOf": [
+              {
+                "items": {
+                  "enum": [
+                    "issue_created",
+                    "issue_status_changed",
+                    "issue_completed",
+                    "issue_assigned",
+                    "comment_created",
+                    "project_update_posted",
+                    "project_update_due"
+                  ],
+                  "type": "string"
+                },
+                "minItems": 1,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Events"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "maxLength": 80,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label"
+          },
+          "team_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 200,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Team Ids"
+          }
+        },
+        "title": "WorkspaceChannelUpdate",
+        "type": "object"
+      },
       "WorkspaceConnectedAppListRead": {
         "description": "Every member grant in the workspace, most recently used first.",
         "properties": {
@@ -17677,7 +18109,7 @@
     },
     "/api/discord/oauth/callback": {
       "get": {
-        "description": "Finish a server install or a person's account link, whichever the signed state was minted for.\n\nThe workspace comes from the state alone, redeemed once, and the code is\nexchanged with the client secret before anything is written, so a callback\nnobody started from Standupless binds and links nothing.",
+        "description": "Finish a server install or a person's account link, whichever the signed state was minted for.\n\nThe workspace comes from the state alone, redeemed once, and the code is\nexchanged with the client secret before anything is written, so a callback\nnobody started from Standupless binds and links nothing. A `link` start ticket\nwith no state begins a person's account link instead.",
         "operationId": "discord_oauth_callback_api_discord_oauth_callback_get",
         "parameters": [
           {
@@ -17707,6 +18139,16 @@
             "schema": {
               "default": "",
               "title": "Error",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "link",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "Link",
               "type": "string"
             }
           }
@@ -22168,6 +22610,59 @@
         ]
       }
     },
+    "/api/workspaces/{workspace_id}/discord/channels": {
+      "get": {
+        "description": "The Discord channels the Discord App can post to, for the workspace channel picker.",
+        "operationId": "list_workspace_discord_channels_api_workspaces__workspace_id__discord_channels_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/DiscordChannelRead"
+                  },
+                  "title": "Response List Workspace Discord Channels Api Workspaces  Workspace Id  Discord Channels Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "List Workspace Discord Channels",
+        "tags": [
+          "integrations"
+        ]
+      }
+    },
     "/api/workspaces/{workspace_id}/discord/install-url": {
       "get": {
         "description": "Where to send this admin to add the Discord App, returning to the team they started from.",
@@ -23447,6 +23942,124 @@
         ]
       }
     },
+    "/api/workspaces/{workspace_id}/imports/linear": {
+      "post": {
+        "description": "Queue an import of Linear teams into Standupless teams, refusing a second while one is running.",
+        "operationId": "start_linear_import_api_workspaces__workspace_id__imports_linear_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LinearImportRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IssueImportRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Start Linear Import",
+        "tags": [
+          "integrations"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/imports/linear/teams": {
+      "post": {
+        "description": "The Linear teams a personal API key can read, to choose from; the key is not kept.",
+        "operationId": "list_linear_teams_api_workspaces__workspace_id__imports_linear_teams_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LinearKeyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LinearTeamListRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "List Linear Teams",
+        "tags": [
+          "integrations"
+        ]
+      }
+    },
     "/api/workspaces/{workspace_id}/imports/preview": {
       "post": {
         "description": "Read a file against one team and answer what an import would do, row by row, writing nothing.",
@@ -23561,6 +24174,66 @@
           }
         ],
         "summary": "Get Issue Import",
+        "tags": [
+          "integrations"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/imports/{import_id}/cancel": {
+      "post": {
+        "description": "Stop an import that is queued or running, keeping what it already wrote; a finished one is answered as is.",
+        "operationId": "cancel_issue_import_api_workspaces__workspace_id__imports__import_id__cancel_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "import_id",
+            "required": true,
+            "schema": {
+              "maxLength": 64,
+              "minLength": 1,
+              "title": "Import Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IssueImportRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Cancel Issue Import",
         "tags": [
           "integrations"
         ]
@@ -31471,6 +32144,59 @@
         ]
       }
     },
+    "/api/workspaces/{workspace_id}/slack/channels": {
+      "get": {
+        "description": "The Slack channels the Slack App can post to, for the workspace channel picker.",
+        "operationId": "list_workspace_slack_channels_api_workspaces__workspace_id__slack_channels_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/SlackChannelRead"
+                  },
+                  "title": "Response List Workspace Slack Channels Api Workspaces  Workspace Id  Slack Channels Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "List Workspace Slack Channels",
+        "tags": [
+          "integrations"
+        ]
+      }
+    },
     "/api/workspaces/{workspace_id}/slack/install-url": {
       "get": {
         "description": "Where to send this admin to add the Slack App, returning to the team they started from.",
@@ -38774,6 +39500,294 @@
           }
         ],
         "summary": "Create Webhook",
+        "tags": [
+          "integrations"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/webhooks/channels": {
+      "get": {
+        "description": "The Slack and Discord channels that follow the whole workspace.",
+        "operationId": "list_workspace_channels_api_workspaces__workspace_id__webhooks_channels_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ChannelRead"
+                  },
+                  "title": "Response List Workspace Channels Api Workspaces  Workspace Id  Webhooks Channels Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "List Workspace Channels",
+        "tags": [
+          "integrations"
+        ]
+      },
+      "post": {
+        "description": "Add a Slack or Discord channel that follows every open team, or the teams it names.",
+        "operationId": "create_workspace_channel_api_workspaces__workspace_id__webhooks_channels_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkspaceChannelCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChannelRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Create Workspace Channel",
+        "tags": [
+          "integrations"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/webhooks/channels/{channel_id}": {
+      "delete": {
+        "description": "Remove one of the workspace's channels.",
+        "operationId": "delete_workspace_channel_api_workspaces__workspace_id__webhooks_channels__channel_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "channel_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Channel Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Delete Workspace Channel",
+        "tags": [
+          "integrations"
+        ]
+      },
+      "patch": {
+        "description": "Change one of the workspace's channels.",
+        "operationId": "update_workspace_channel_api_workspaces__workspace_id__webhooks_channels__channel_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "channel_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Channel Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkspaceChannelUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChannelRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Update Workspace Channel",
+        "tags": [
+          "integrations"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/webhooks/channels/{channel_id}/test": {
+      "post": {
+        "description": "Post a test message to one of the workspace's channels and report what it answered.",
+        "operationId": "test_workspace_channel_api_workspaces__workspace_id__webhooks_channels__channel_id__test_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "channel_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Channel Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChannelTestRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Test Workspace Channel",
         "tags": [
           "integrations"
         ]

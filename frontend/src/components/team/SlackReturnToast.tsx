@@ -1,5 +1,5 @@
 /**
- * The toast shown when Slack sends an admin back to team settings after an
+ * The toast shown when Slack sends an admin back to the page that started an
  * install. The outcome arrives as `?slack=<code>`, and `ReturnToast` reads it
  * once, shows it in plain words and strips it from the URL.
  */

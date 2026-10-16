@@ -74,6 +74,7 @@ import {
   exportSettingsPath,
   importSettingsPath,
   initiativePath,
+  integrationsSettingsPath,
   issuePath,
   projectUpdatesTabPath,
   reviewsPath,
@@ -216,7 +217,9 @@ const rowPath = (slug: string, row: NotificationRead): string =>
       : isInitiativeRow(row)
         ? initiativeUpdatesTabPath(slug, row.initiative_id ?? '')
         : isChannelRow(row)
-          ? teamSettingsPath(slug, row.issue_key)
+          ? row.issue_key
+            ? teamSettingsPath(slug, row.issue_key)
+            : integrationsSettingsPath(slug)
           : isExportRow(row)
             ? exportSettingsPath(slug)
             : isImportRow(row)
@@ -338,7 +341,7 @@ interface ChannelNoticePaneProps {
   onClose: () => void;
 }
 
-/** The pane beside a turned-off channel row, which links to team settings. */
+/** The pane beside a turned-off channel row, which links to team settings, or the integrations page for a workspace channel. */
 const ChannelNoticePane: React.FC<ChannelNoticePaneProps> = ({
   row,
   slug,
@@ -353,8 +356,9 @@ const ChannelNoticePane: React.FC<ChannelNoticePaneProps> = ({
       <LuTriangleAlert aria-hidden="true" className="h-8 w-8 text-text-faint" />
       <p className="text-sm text-text">{row.issue_title}</p>
       <p className="text-xs text-text-muted">
-        The channel answered that its webhook is gone. Replace the URL or delete
-        the channel in team settings.
+        {row.issue_key
+          ? 'The channel answered that its webhook is gone. Replace the URL or delete the channel in team settings.'
+          : 'The channel answered that it is gone. Pick another channel or delete it in workspace integrations.'}
       </p>
       <p className="text-xs text-text-faint">
         {timestampLabel(row.created_at)}
@@ -370,7 +374,7 @@ const ChannelNoticePane: React.FC<ChannelNoticePaneProps> = ({
             void navigate(rowPath(slug, row));
           }}
         >
-          Open team settings
+          {row.issue_key ? 'Open team settings' : 'Open integrations'}
         </Button>
       </div>
     </aside>

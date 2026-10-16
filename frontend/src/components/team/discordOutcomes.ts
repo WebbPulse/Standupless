@@ -20,7 +20,7 @@ export const DISCORD_OUTCOMES: Record<string, ReturnOutcome | undefined> = {
     tone: 'success',
     title: 'Discord connected',
     message:
-      'Pick a Discord channel when you add one here, and use /standupless in your server.',
+      'Every team can now pick Discord channels by name, and /standupless works in your server.',
   },
   denied: {
     tone: 'info',
@@ -31,7 +31,7 @@ export const DISCORD_OUTCOMES: Record<string, ReturnOutcome | undefined> = {
     tone: 'danger',
     title: 'The install link expired',
     message:
-      'Each link works once and for a short time. Press Add to Discord to start again.',
+      'Each link works once and for a short time. Press Connect Discord to start again.',
   },
   discord_guild_taken: {
     tone: 'danger',

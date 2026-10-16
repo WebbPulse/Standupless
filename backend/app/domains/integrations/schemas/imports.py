@@ -8,7 +8,8 @@ from typing import Literal, Optional
 from pydantic import BaseModel, Field
 
 from app.common.csv_import import MAX_CSV_BYTES, RowProblem
-from app.common.issue_import import ImportJob, ImportStatus, Preview, ResolvedRow
+from app.common.issue_import import ImportJob, ImportKind, ImportStatus, Preview, ResolvedRow
+from app.common.linear_import import phases
 
 ImportPreset = Literal["generic", "jira", "linear"]
 
@@ -124,12 +125,22 @@ class IssueImportPreviewRead(BaseModel):
         )
 
 
+class LinearTeamMappingRead(BaseModel):
+    """One Linear team a Linear import reads and the Standupless team it writes into."""
+
+    linear_team_id: str
+    linear_key: str
+    name: str
+    team_id: str
+
+
 class IssueImportRead(BaseModel):
     """One import job and how far it has got."""
 
     import_id: str
     workspace_id: str
     team_id: str
+    kind: ImportKind = "csv"
     preset: str
     file_name: str
     status: ImportStatus
@@ -148,6 +159,17 @@ class IssueImportRead(BaseModel):
     problems: list[RowProblemRead]
     problems_truncated: bool
     error: Optional[str] = None
+    updated_count: int = Field(
+        default=0, description="How many issues a Linear import found already imported and updated."
+    )
+    counts: dict[str, int] = Field(
+        default_factory=dict,
+        description="A Linear import's tallies: issues, comments, labels, cycles, projects, milestones and more.",
+    )
+    linear_teams: list[LinearTeamMappingRead] = Field(default_factory=list)
+    phase: Optional[str] = Field(default=None, description="What a running Linear import is reading now.")
+    phase_index: int = 0
+    phase_count: int = 0
 
     @classmethod
     def from_job(cls, job: ImportJob, *, with_problems: bool = True) -> "IssueImportRead":
@@ -155,10 +177,13 @@ class IssueImportRead(BaseModel):
 
         A list leaves the row problems out, since each job may hold hundreds.
         """
+        steps = phases(job) if job.kind == "linear" else []
+        current = steps[job.phase_index] if job.phase_index < len(steps) else None
         return cls(
             import_id=job.import_id,
             workspace_id=job.workspace_id,
             team_id=job.team_id,
+            kind=job.kind,
             preset=job.preset,
             file_name=job.file_name,
             status=job.status,
@@ -177,6 +202,12 @@ class IssueImportRead(BaseModel):
             problems=[RowProblemRead.from_problem(problem) for problem in job.problems] if with_problems else [],
             problems_truncated=job.problems_truncated,
             error=job.error,
+            updated_count=job.updated_count,
+            counts=dict(job.counts),
+            linear_teams=[LinearTeamMappingRead(**mapping.model_dump()) for mapping in job.linear_teams],
+            phase=current[0] if current is not None else None,
+            phase_index=min(job.phase_index, len(steps)),
+            phase_count=len(steps),
         )
 
 
@@ -184,3 +215,37 @@ class IssueImportListRead(BaseModel):
     """A workspace's most recent imports, newest first."""
 
     items: list[IssueImportRead]
+
+
+class LinearKeyRequest(BaseModel):
+    """A Linear personal API key, used for this request only and never stored."""
+
+    api_key: str = Field(min_length=1, max_length=200, description="A Linear personal API key with read access.")
+
+
+class LinearTeamRead(BaseModel):
+    """One team the key can read in Linear."""
+
+    id: str
+    key: str
+    name: str
+
+
+class LinearTeamListRead(BaseModel):
+    """Every team the key can read in Linear."""
+
+    items: list[LinearTeamRead]
+
+
+class LinearTeamChoice(BaseModel):
+    """One Linear team to import and the Standupless team it goes into."""
+
+    linear_team_id: str = Field(min_length=1, max_length=64)
+    team_id: str = Field(min_length=1, max_length=64)
+
+
+class LinearImportRequest(BaseModel):
+    """A Linear import: the key, sealed while the job runs and deleted after, and the team mapping."""
+
+    api_key: str = Field(min_length=1, max_length=200, description="A Linear personal API key with read access.")
+    teams: list[LinearTeamChoice] = Field(min_length=1, max_length=50)

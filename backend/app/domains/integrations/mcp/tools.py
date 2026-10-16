@@ -23,6 +23,7 @@ from app.domains.integrations.mcp.channel_tools import CHANNEL_TOOLS
 from app.domains.integrations.mcp.document_tools import DOCUMENT_TOOLS
 from app.domains.integrations.mcp.export_tools import EXPORT_TOOLS
 from app.domains.integrations.mcp.favorite_tools import FAVORITE_TOOLS
+from app.domains.integrations.mcp.import_tools import IMPORT_TOOLS
 from app.domains.integrations.mcp.initiative_tools import INITIATIVE_TOOLS
 from app.domains.integrations.mcp.issue_tools import ISSUE_TOOLS
 from app.domains.integrations.mcp.planning_tools import PLANNING_TOOLS
@@ -61,6 +62,7 @@ TOOLS: tuple[Tool, ...] = (
     *FAVORITE_TOOLS,
     *WORKSPACE_TOOLS,
     *EXPORT_TOOLS,
+    *IMPORT_TOOLS,
     *AUDIT_TOOLS,
     *TRIAGE_TOOLS,
     *AGENT_PROFILE_TOOLS,

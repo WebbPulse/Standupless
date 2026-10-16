@@ -303,6 +303,12 @@
     "auth": "workspace:admin",
     "domain": "integrations",
     "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/discord/channels"
+  },
+  {
+    "auth": "workspace:admin",
+    "domain": "integrations",
+    "method": "GET",
     "path": "/api/workspaces/{workspace_id}/discord/install-url"
   },
   {
@@ -351,6 +357,18 @@
     "auth": "workspace:admin",
     "domain": "integrations",
     "method": "POST",
+    "path": "/api/workspaces/{workspace_id}/imports/linear"
+  },
+  {
+    "auth": "workspace:admin",
+    "domain": "integrations",
+    "method": "POST",
+    "path": "/api/workspaces/{workspace_id}/imports/linear/teams"
+  },
+  {
+    "auth": "workspace:admin",
+    "domain": "integrations",
+    "method": "POST",
     "path": "/api/workspaces/{workspace_id}/imports/preview"
   },
   {
@@ -358,6 +376,12 @@
     "domain": "integrations",
     "method": "GET",
     "path": "/api/workspaces/{workspace_id}/imports/{import_id}"
+  },
+  {
+    "auth": "workspace:admin",
+    "domain": "integrations",
+    "method": "POST",
+    "path": "/api/workspaces/{workspace_id}/imports/{import_id}/cancel"
   },
   {
     "auth": "workspace:read",
@@ -388,6 +412,12 @@
     "domain": "integrations",
     "method": "GET",
     "path": "/api/workspaces/{workspace_id}/slack"
+  },
+  {
+    "auth": "workspace:admin",
+    "domain": "integrations",
+    "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/slack/channels"
   },
   {
     "auth": "workspace:admin",
@@ -586,6 +616,36 @@
     "domain": "integrations",
     "method": "POST",
     "path": "/api/workspaces/{workspace_id}/webhooks"
+  },
+  {
+    "auth": "workspace:admin",
+    "domain": "integrations",
+    "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/webhooks/channels"
+  },
+  {
+    "auth": "workspace:admin",
+    "domain": "integrations",
+    "method": "POST",
+    "path": "/api/workspaces/{workspace_id}/webhooks/channels"
+  },
+  {
+    "auth": "workspace:admin",
+    "domain": "integrations",
+    "method": "DELETE",
+    "path": "/api/workspaces/{workspace_id}/webhooks/channels/{channel_id}"
+  },
+  {
+    "auth": "workspace:admin",
+    "domain": "integrations",
+    "method": "PATCH",
+    "path": "/api/workspaces/{workspace_id}/webhooks/channels/{channel_id}"
+  },
+  {
+    "auth": "workspace:admin",
+    "domain": "integrations",
+    "method": "POST",
+    "path": "/api/workspaces/{workspace_id}/webhooks/channels/{channel_id}/test"
   },
   {
     "auth": "workspace:admin",

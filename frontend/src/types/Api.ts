@@ -1745,6 +1745,10 @@ export interface ProjectRead {
   counts: RollupCounts;
   /** The same buckets weighted by estimate points. */
   points?: RollupCounts;
+  /** The unit `progress` reads in: points when a team on it estimates, otherwise issues. */
+  measure?: 'points' | 'issues';
+  /** The buckets scope and completion are measured by, in `measure`. */
+  progress?: RollupCounts;
   /** Issues per status id, beside the category totals; empty until the project's first recount. */
   status_counts?: Record<string, number>;
   /** When the newest project update was posted, or null before the first. */
@@ -1837,6 +1841,10 @@ export interface MilestoneRead {
   counts: RollupCounts;
   /** The same buckets weighted by estimate points. */
   points?: RollupCounts;
+  /** The unit `progress` reads in: points when a team on it estimates, otherwise issues. */
+  measure?: 'points' | 'issues';
+  /** The buckets scope and completion are measured by, in `measure`. */
+  progress?: RollupCounts;
   /** Issues per status id, beside the category totals. */
   status_counts?: Record<string, number>;
   created_by: string;
@@ -1942,6 +1950,10 @@ export interface InitiativeRead {
   project_count: number;
   counts: RollupCounts;
   points: RollupCounts;
+  /** The unit `progress` reads in: points when a team on it estimates, otherwise issues. */
+  measure?: 'points' | 'issues';
+  /** The buckets scope and completion are measured by, in `measure`. */
+  progress?: RollupCounts;
   /** Issues per status id across the visible projects. */
   status_counts?: Record<string, number>;
   project_health: HealthBreakdownRead;
@@ -2093,6 +2105,10 @@ export interface RoadmapEntryRead {
   health?: ProjectHealth | null;
   priority?: IssuePriority | null;
   counts: RollupCounts;
+  /** The unit `progress` reads in: points when a team on it estimates, otherwise issues. */
+  measure?: 'points' | 'issues';
+  /** The buckets scope and completion are measured by, in `measure`. */
+  progress?: RollupCounts;
 }
 
 /** The body the roadmap answers with, by date ascending and undated last. */
@@ -2898,6 +2914,9 @@ export type ChannelProvider = 'slack' | 'discord';
 /** How a team channel posts: through its incoming webhook, or as the installed Slack or Discord App's bot. */
 export type ChannelTransport = 'webhook' | 'slack_app' | 'discord_app';
 
+/** Who owns a channel: one team, or the workspace, which follows several teams. */
+export type ChannelScope = 'team' | 'workspace';
+
 /**
  * One Slack or Discord channel a team posts its notifications to. The webhook
  * URL is never returned; `url_hint` names the host and its last characters.
@@ -2906,7 +2925,12 @@ export type ChannelTransport = 'webhook' | 'slack_app' | 'discord_app';
  */
 export interface ChannelRead {
   channel_id: string;
+  /** The team a team channel belongs to, empty for a workspace channel. */
   team_id: string;
+  /** Whether one team or the whole workspace owns the channel. Absent from an older backend. */
+  scope?: ChannelScope;
+  /** The teams a workspace channel follows, empty for every open team. */
+  team_ids?: string[];
   provider: ChannelProvider;
   /** Absent from an older backend, which only had webhooks. */
   transport?: ChannelTransport;
@@ -3032,6 +3056,22 @@ export interface ChannelUpdate {
   label?: string;
   events?: ChannelEvent[];
   enabled?: boolean;
+}
+
+/**
+ * What adding a workspace channel takes: the Slack or Discord channel an
+ * installed App posts to, and the teams it follows, empty for every open team.
+ */
+export interface WorkspaceChannelCreate extends Omit<ChannelCreate, 'url'> {
+  team_ids?: string[];
+}
+
+/** What editing a workspace channel takes; unset fields are left alone. */
+export interface WorkspaceChannelUpdate {
+  label?: string;
+  events?: ChannelEvent[];
+  enabled?: boolean;
+  team_ids?: string[];
 }
 
 /** Whether this environment has a Slack App and whether this workspace installed it. */
@@ -3380,7 +3420,33 @@ export interface IssueImportPreviewRead {
 }
 
 /** Where an issue import job is. */
-export type ImportStatus = 'queued' | 'running' | 'completed' | 'failed';
+export type ImportStatus =
+  'queued' | 'running' | 'completed' | 'failed' | 'cancelled';
+
+/** What an import reads: an uploaded CSV, or a Linear workspace through its API. */
+export type ImportKind = 'csv' | 'linear';
+
+/** The tallies a Linear import keeps, by name. */
+export type LinearImportCount =
+  | 'issues_created'
+  | 'issues_updated'
+  | 'comments'
+  | 'labels'
+  | 'cycles'
+  | 'projects'
+  | 'milestones'
+  | 'project_updates'
+  | 'initiatives'
+  | 'sub_issues'
+  | 'relations';
+
+/** One Linear team a Linear import reads and the Standupless team it writes into. */
+export interface LinearTeamMappingRead {
+  linear_team_id: string;
+  linear_key: string;
+  name: string;
+  team_id: string;
+}
 
 /** One issue import job and how far it has got. */
 export interface IssueImportRead {
@@ -3405,11 +3471,44 @@ export interface IssueImportRead {
   problems: RowProblemRead[];
   problems_truncated: boolean;
   error?: string | null;
+  kind?: ImportKind;
+  /** How many issues a Linear import found already imported and updated. */
+  updated_count?: number;
+  counts?: Partial<Record<LinearImportCount, number>>;
+  linear_teams?: LinearTeamMappingRead[];
+  /** What a running Linear import is reading now. */
+  phase?: string | null;
+  phase_index?: number;
+  phase_count?: number;
 }
 
 /** The body the import list answers with, newest first. */
 export interface IssueImportListRead {
   items: IssueImportRead[];
+}
+
+/** One team a Linear key can read. */
+export interface LinearTeamRead {
+  id: string;
+  key: string;
+  name: string;
+}
+
+/** Every team a Linear key can read. */
+export interface LinearTeamListRead {
+  items: LinearTeamRead[];
+}
+
+/** One Linear team to import and the Standupless team it goes into. */
+export interface LinearTeamChoice {
+  linear_team_id: string;
+  team_id: string;
+}
+
+/** The body a Linear import starts with. The key is used for the job only. */
+export interface LinearImportRequest {
+  api_key: string;
+  teams: LinearTeamChoice[];
 }
 
 /** Why an open issue assigned to the caller needs attention now. */

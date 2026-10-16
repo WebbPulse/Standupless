@@ -300,8 +300,10 @@ class ChannelRead(TypedDict):
     last_delivery_at: NotRequired[str | None]
     last_status: NotRequired[int | None]
     provider: Literal["slack", "discord"]
+    scope: NotRequired[Literal["team", "workspace"]]
     slack_channel_id: NotRequired[str]
     team_id: str
+    team_ids: NotRequired[list[str]]
     transport: NotRequired[Literal["webhook", "slack_app", "discord_app"]]
     updated_at: str
     url_hint: str
@@ -666,10 +668,12 @@ class InitiativeRead(TypedDict):
     health: NotRequired[Literal["on_track", "at_risk", "off_track"] | None]
     initiative_id: str
     last_update_at: NotRequired[str | None]
+    measure: NotRequired[Literal["points", "issues"]]
     name: str
     next_update_due_at: NotRequired[str | None]
     owner_id: NotRequired[str | None]
     points: NotRequired[CountsRead]
+    progress: NotRequired[CountsRead]
     project_count: NotRequired[int]
     project_health: NotRequired[HealthBreakdownRead]
     project_ids: NotRequired[list[str]]
@@ -930,6 +934,28 @@ class LabelUpdate(TypedDict):
     parent_id: NotRequired[str | None]
 
 
+class LinearKeyRequest(TypedDict):
+    api_key: str
+
+
+class LinearTeamChoice(TypedDict):
+    linear_team_id: str
+    team_id: str
+
+
+class LinearTeamMappingRead(TypedDict):
+    linear_key: str
+    linear_team_id: str
+    name: str
+    team_id: str
+
+
+class LinearTeamRead(TypedDict):
+    id: str
+    key: str
+    name: str
+
+
 class LinkCreate(TypedDict):
     target_issue_id: str
     type: Literal["blocks", "blocked_by", "relates_to", "duplicate_of"]
@@ -979,9 +1005,11 @@ class MilestoneRead(TypedDict):
     created_at: str
     created_by: str
     description: NotRequired[str | None]
+    measure: NotRequired[Literal["points", "issues"]]
     milestone_id: str
     name: str
     points: NotRequired[CountsRead]
+    progress: NotRequired[CountsRead]
     project_id: str
     sort_order: str
     status_counts: NotRequired[dict[str, int]]
@@ -1108,11 +1136,13 @@ class ProjectRead(TypedDict):
     initiative_id: NotRequired[str | None]
     last_update_at: NotRequired[str | None]
     lead_id: NotRequired[str | None]
+    measure: NotRequired[Literal["points", "issues"]]
     member_ids: NotRequired[list[str]]
     name: str
     next_update_due_at: NotRequired[str | None]
     points: NotRequired[CountsRead]
     priority: NotRequired[Literal["none", "urgent", "high", "medium", "low"]]
+    progress: NotRequired[CountsRead]
     project_id: str
     start_date: NotRequired[str | None]
     status: Literal["backlog", "planned", "in_progress", "paused", "completed", "canceled"]
@@ -1461,8 +1491,10 @@ class RoadmapEntryRead(TypedDict):
     icon: NotRequired[str | None]
     id: str
     kind: Literal["cycle", "project"]
+    measure: NotRequired[Literal["points", "issues"]]
     name: str
     priority: NotRequired[str | None]
+    progress: NotRequired[CountsRead]
     start_date: NotRequired[str | None]
     status: str
     target_date: NotRequired[str | None]
@@ -2392,6 +2424,48 @@ class WebhookEndpointUpdate(TypedDict, closed=True):
     url: NotRequired[str | None]
 
 
+class WorkspaceChannelCreate(TypedDict, closed=True):
+    discord_channel_id: NotRequired[str | None]
+    discord_channel_name: NotRequired[str]
+    enabled: NotRequired[bool]
+    events: list[
+        Literal[
+            "issue_created",
+            "issue_status_changed",
+            "issue_completed",
+            "issue_assigned",
+            "comment_created",
+            "project_update_posted",
+            "project_update_due",
+        ]
+    ]
+    label: NotRequired[str]
+    slack_channel_id: NotRequired[str | None]
+    slack_channel_name: NotRequired[str]
+    team_ids: NotRequired[list[str]]
+    url: NotRequired[str | None]
+
+
+class WorkspaceChannelUpdate(TypedDict, closed=True):
+    enabled: NotRequired[bool | None]
+    events: NotRequired[
+        list[
+            Literal[
+                "issue_created",
+                "issue_status_changed",
+                "issue_completed",
+                "issue_assigned",
+                "comment_created",
+                "project_update_posted",
+                "project_update_due",
+            ]
+        ]
+        | None
+    ]
+    label: NotRequired[str | None]
+    team_ids: NotRequired[list[str] | None]
+
+
 class WorkspaceConnectedAppRead(TypedDict):
     authorized_at: NotRequired[str | None]
     client_id: str
@@ -2750,14 +2824,20 @@ class IssueImportPreviewRead(TypedDict):
 
 
 class IssueImportRead(TypedDict):
+    counts: NotRequired[dict[str, int]]
     created_at: str
     created_count: int
     error: NotRequired[str | None]
     file_name: str
     finished_at: NotRequired[str | None]
     import_id: str
+    kind: NotRequired[Literal["csv", "linear"]]
     labels_created: int
+    linear_teams: NotRequired[list[LinearTeamMappingRead]]
     linked_count: NotRequired[int]
+    phase: NotRequired[str | None]
+    phase_count: NotRequired[int]
+    phase_index: NotRequired[int]
     preset: str
     problem_count: int
     problems: list[RowProblemRead]
@@ -2766,10 +2846,11 @@ class IssueImportRead(TypedDict):
     requested_by: str
     skipped_count: int
     started_at: NotRequired[str | None]
-    status: Literal["queued", "running", "completed", "failed"]
+    status: Literal["queued", "running", "completed", "failed", "cancelled"]
     team_id: str
     total_rows: int
     updated_at: str
+    updated_count: NotRequired[int]
     workspace_id: str
 
 
@@ -2833,6 +2914,15 @@ class LabelMergeRead(TypedDict):
     target: LabelRead
     templates_updated: NotRequired[int]
     views_updated: NotRequired[int]
+
+
+class LinearImportRequest(TypedDict):
+    api_key: str
+    teams: list[LinearTeamChoice]
+
+
+class LinearTeamListRead(TypedDict):
+    items: list[LinearTeamRead]
 
 
 class LinkRead(TypedDict):

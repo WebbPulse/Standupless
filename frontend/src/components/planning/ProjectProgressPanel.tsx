@@ -5,6 +5,10 @@
  * a project's scope, so the graph is read off the issues as they are now and
  * gives way to the numbers alone when they cannot all be read.
  *
+ * Scope, started, completed, the percentage and the graph read in estimate
+ * points when a team on the project estimates, each issue weighed on its own
+ * team's scale, and in issues otherwise, with the unit named beside the scope.
+ *
  * The stage list shows each workflow status on its own, from the loaded issues
  * or the project's stored per-status counts, and falls back to one row per
  * category only when neither is to hand.
@@ -16,13 +20,21 @@
 import React, { useMemo } from 'react';
 import { LuDiamond } from 'react-icons/lu';
 import { cn } from '../../lib/cn';
-import { completionPercent } from '../../lib/planningDisplay';
+import {
+  completionPercent,
+  measureUnit,
+  progressMeasureOf,
+  progressOf,
+  progressPercent,
+} from '../../lib/planningDisplay';
 import {
   ISSUE_GROUP_LABELS,
   ISSUE_GROUP_ORDER,
   burnUpSeries,
   categoryCounts,
+  countEach,
   daysBetween,
+  pointWeigher,
   projectGraphRange,
 } from '../../lib/planningModel';
 import { shortDateLabel } from '../../lib/propertyOptions';
@@ -36,6 +48,7 @@ import type {
   ProjectUpdateRead,
   StatusCategory,
   StatusRead,
+  TeamRead,
 } from '../../types/Api';
 import { StatusIcon } from '../ui/StatusIcon';
 import Markdown from '../ui/markdown';
@@ -49,6 +62,8 @@ export interface ProjectProgressPanelProps {
   project: ProjectRead;
   issues: IssueRead[];
   statuses: StatusRead[];
+  /** Every team an issue of the project may sit on, for weighing it in points. */
+  teams?: readonly TeamRead[];
   /** Whether every issue of the project has been read, so sums are whole. */
   complete: boolean;
   milestones: MilestoneRead[];
@@ -146,11 +161,15 @@ const tallyByStatus = (
   return tally;
 };
 
+/** The default for a panel given no teams, stable so memoised sums keep. */
+const NO_TEAMS: readonly TeamRead[] = [];
+
 /** The progress, graph, stage bars and milestone progress of one project. */
 export const ProjectProgressPanel: React.FC<ProjectProgressPanelProps> = ({
   project,
   issues,
   statuses,
+  teams = NO_TEAMS,
   complete,
   milestones,
   onOpenMilestone,
@@ -160,27 +179,38 @@ export const ProjectProgressPanel: React.FC<ProjectProgressPanelProps> = ({
   onOpenUpdates,
 }) => {
   const readable = complete && statuses.length > 0;
+  const measure = progressMeasureOf(project);
+  const weigh = useMemo(
+    () => (measure === 'points' ? pointWeigher(teams) : countEach),
+    [measure, teams]
+  );
+  const stored = progressOf(project);
   const breakdown: Record<StatusCategory, number> = useMemo(
     () =>
       readable
-        ? categoryCounts(issues, statuses)
+        ? categoryCounts(issues, statuses, weigh)
         : {
             backlog: 0,
-            unstarted: project.counts.todo,
-            started: project.counts.in_progress,
-            completed: project.counts.done,
-            cancelled: project.counts.cancelled,
+            unstarted: stored.todo,
+            started: stored.in_progress,
+            completed: stored.done,
+            cancelled: stored.cancelled,
           },
-    [readable, issues, statuses, project.counts]
+    [readable, issues, statuses, weigh, stored]
   );
-  const counts = readable ? countsOf(breakdown) : project.counts;
+  const counts = readable ? countsOf(breakdown) : stored;
   const scope = counts.total - counts.cancelled;
   const started = counts.in_progress + counts.done;
   const percent = completionPercent(counts);
   const share = (value: number): string =>
     scope <= 0 ? '0%' : `${String(Math.round((value / scope) * 100))}%`;
   const stats = [
-    { label: 'Scope', value: scope, detail: 'issues', tone: 'bg-text-muted' },
+    {
+      label: 'Scope',
+      value: scope,
+      detail: measureUnit(measure, scope),
+      tone: 'bg-text-muted',
+    },
     {
       label: 'Started',
       value: started,
@@ -204,11 +234,12 @@ export const ProjectProgressPanel: React.FC<ProjectProgressPanelProps> = ({
       statuses,
       range.start,
       range.end,
-      today
+      today,
+      weigh
     );
     if (points.every((point) => point.scope === 0)) return null;
     return { points, days: daysBetween(range.start, range.end) };
-  }, [readable, issues, statuses, project, today]);
+  }, [readable, issues, statuses, project, today, weigh]);
 
   const { stages, perStatus } = useMemo(() => {
     const rows = statusRows(
@@ -310,7 +341,11 @@ export const ProjectProgressPanel: React.FC<ProjectProgressPanelProps> = ({
           </p>
         ) : (
           <div data-testid="project-progress-graph">
-            <BurnUpChart points={graph.points} days={graph.days} />
+            <BurnUpChart
+              points={graph.points}
+              days={graph.days}
+              unit={measure}
+            />
           </div>
         )}
         {perStatus && stageTotal > 0 && (
@@ -369,7 +404,7 @@ export const ProjectProgressPanel: React.FC<ProjectProgressPanelProps> = ({
           <PanelHeading id="milestone-progress">Milestones</PanelHeading>
           <ul aria-label="Milestone progress" className="space-y-0.5">
             {milestones.map((milestone) => {
-              const done = completionPercent(milestone.counts);
+              const done = progressPercent(milestone);
               return (
                 <li key={milestone.milestone_id}>
                   <button

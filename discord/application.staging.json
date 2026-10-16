@@ -24,6 +24,6 @@
   ],
   "bot_permissions": "19456",
   "privileged_gateway_intents": [],
-  "terms_of_service_url": "https://staging.standupless.dev/terms",
-  "privacy_policy_url": "https://staging.standupless.dev/privacy"
+  "terms_of_service_url": "https://standupless.dev/terms",
+  "privacy_policy_url": "https://standupless.dev/privacy"
 }

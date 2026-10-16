@@ -112,6 +112,17 @@ export const projectPath = (
       : `?team=${encodeURIComponent(teamKeyPrefix)}`
   }`;
 
+/** One project opened on its issues tab, filtered to one of its milestones. */
+export const projectMilestonePath = (
+  slug: string,
+  projectId: string,
+  milestoneId: string
+): string =>
+  `${projectsPath(slug)}/${projectId}?${new URLSearchParams([
+    ['tab', 'issues'],
+    ['f', `milestone.is:${milestoneId}`],
+  ]).toString()}`;
+
 /** One document, reached by its own id whichever project or initiative holds it. */
 export const documentPath = (slug: string, documentId: string): string =>
   `${workspacePath(slug)}/documents/${documentId}`;
@@ -212,6 +223,10 @@ export const labelsSettingsPath = (slug: string): string =>
 /** The workspace's share links, where every published link can be revoked. */
 export const shareLinksSettingsPath = (slug: string): string =>
   `${settingsPath(slug)}/share-links`;
+
+/** The workspace integrations page, where Slack and Discord are connected and workspace channels are managed. */
+export const integrationsSettingsPath = (slug: string): string =>
+  `${settingsPath(slug)}/integrations`;
 
 /** The admin only workspace export page, where JSON bundles are made and downloaded. */
 export const exportSettingsPath = (slug: string): string =>

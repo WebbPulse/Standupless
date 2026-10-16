@@ -323,6 +323,14 @@ class Settings(BaseServiceSettings):
         ),
     )
 
+    LINEAR_API_URL: str = Field(
+        default="https://api.linear.app/graphql",
+        description=(
+            "Linear's GraphQL endpoint, which the Linear importer reads a workspace through. Only "
+            "the local stack and the tests point it elsewhere, at a fake Linear server."
+        ),
+    )
+
     BILLING_ENABLED: bool = Field(
         default=False,
         description=(

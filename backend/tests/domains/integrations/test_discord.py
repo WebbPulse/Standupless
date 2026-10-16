@@ -18,6 +18,7 @@ import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 from fastapi.testclient import TestClient
+from webbpulse.audit import AuditQuery
 
 from app.common.db.dynamo.base import utc_now
 from app.common.db.dynamo.channels import ChannelDestination, channel_key, new_channel_id
@@ -170,7 +171,7 @@ def _slash(client: TestClient, subcommand: str, user: str = "D_OWNER", **values:
     return response.json()
 
 
-def _discord_destination(repositories: Any, *, guild_id: str = GUILD) -> ChannelDestination:
+def _discord_destination(repositories: Any, *, guild_id: str = GUILD, team_id: str = TEAM) -> ChannelDestination:
     """Store one enabled destination that posts through the bot."""
     channel_id = new_channel_id()
     now = utc_now()
@@ -178,7 +179,7 @@ def _discord_destination(repositories: Any, *, guild_id: str = GUILD) -> Channel
         workspace_id=WORKSPACE,
         github_key=channel_key(channel_id),
         channel_id=channel_id,
-        team_id=TEAM,
+        team_id=team_id,
         provider="discord",
         label="eng",
         events=["issue_created"],
@@ -272,6 +273,8 @@ def test_an_install_binds_the_server_and_registers_the_commands(
     assert repositories.github.discord.installation_for_guild(GUILD) is not None
     assert discord.paths("PUT") == [f"/applications/{APPLICATION_ID}/commands"]
     assert discord.calls[-1][2] == list(commands.COMMANDS)
+    [connected] = repositories.audit.list_events(WORKSPACE, AuditQuery(action="discord.connected")).events
+    assert connected.actor.id == ADMIN and connected.target.id == GUILD
 
     replay_path, replay = _callback(discord_client, code="a-code", state=state)
     assert replay["discord"] == ["invalid_state"]
@@ -290,7 +293,7 @@ def test_a_denied_or_forged_install_binds_nothing(
     """A refusal on Discord's consent screen or a state minted for another flow changes nothing."""
     state, _ = mint_state(WORKSPACE, ADMIN, audience=install.STATE_AUDIENCE)
     path, query = _callback(discord_client, error="access_denied", state=state)
-    assert (path, query["discord"]) == ("/w/acme/settings", ["denied"])
+    assert (path, query["discord"]) == ("/w/acme/settings/integrations", ["denied"])
 
     github_state, _ = mint_state(WORKSPACE, ADMIN)
     _, forged = _callback(discord_client, code="a-code", state=github_state)
@@ -344,17 +347,44 @@ def test_help_needs_no_account_and_an_unknown_server_is_turned_away(
 def test_an_unlinked_person_gets_their_own_consent_link(
     discord_client: TestClient, installed: DiscordInstallation
 ) -> None:
-    """A person with no link is answered with a link minted for their Discord id alone."""
+    """A person with no link gets a button, short enough for Discord, that starts a link for their id alone."""
     reply = _slash(discord_client, "show", user="D_STRANGER", key="ABC-1")
     content = reply["data"]["content"]
-    assert "not linked" in content
-    url = urlparse(content.rsplit(" ", 1)[-1])
+    assert "not linked" in content and "run the command again" in content
+    assert "http" not in content
+    row = reply["data"]["components"][0]
+    assert row["type"] == commands.ACTION_ROW
+    button = row["components"][0]
+    assert button["type"] == commands.BUTTON
+    assert button["style"] == commands.LINK_BUTTON_STYLE
+    assert button["label"] == commands.LINK_LABEL
+    assert len(button["url"]) <= 512
+
+    start = urlparse(button["url"])
+    assert start.path == "/api/discord/oauth/callback"
+    followed = discord_client.get(f"{start.path}?{start.query}", follow_redirects=False)
+    assert followed.status_code == 302
+    assert followed.headers["cache-control"] == "no-store"
+    url = urlparse(followed.headers["location"])
     query = parse_qs(url.query)
     assert url.netloc == "discord.com"
     assert query["scope"] == ["identify email"]
     claims = people_claims(query["state"][0])
     assert claims["discord_user_id"] == "D_STRANGER"
     assert claims["guild_id"] == GUILD
+
+
+def test_a_forged_or_orphaned_start_link_goes_nowhere(
+    discord_client: TestClient, installed: DiscordInstallation
+) -> None:
+    """A start ticket this product did not sign, or for a server no longer bound, is a page saying so."""
+    forged = discord_client.get("/api/discord/oauth/callback", params={"link": "not-a-ticket"}, follow_redirects=False)
+    assert forged.status_code == 400 and "expired" in forged.text
+
+    elsewhere = installed.model_copy(update={"guild_id": "1299999999999999999"})
+    button = urlparse(people.start_url(elsewhere, "D_STRANGER"))
+    orphaned = discord_client.get(f"{button.path}?{button.query}", follow_redirects=False)
+    assert orphaned.status_code == 400 and "no longer connected" in orphaned.text
 
 
 def _link_callback(client: TestClient, installation: DiscordInstallation, person: str, **params: str) -> Any:
@@ -425,7 +455,11 @@ def test_create_files_an_issue_as_the_person_in_the_team_they_name(
 ) -> None:
     """With one writable team it is used, with several the person names one, and a team out of reach is refused."""
     guest = _slash(discord_client, "create", user="D_GUEST", title="Login loops")
-    assert "Created [ABC-" in guest["data"]["content"]
+    assert guest["data"]["content"].startswith("Created ABC-")
+    assert "http" not in guest["data"]["content"]
+    card = guest["data"]["embeds"][0]
+    assert card["title"].endswith("Login loops") and "/issues/ABC-" in card["url"]
+    assert [field["name"] for field in card["fields"]] == ["Status", "Priority", "Assignee", "Team"]
     created = _created(repositories, TEAM, "Login loops")
     assert len(created) == 1 and created[0]["created_by"] == GUEST
 
@@ -434,12 +468,48 @@ def test_create_files_an_issue_as_the_person_in_the_team_they_name(
     assert not _created(repositories, TEAM, "Pick one")
 
     named = _slash(discord_client, "create", title="Checkout fails", team="xyz", description="Seen twice")
-    assert "Created [XYZ-" in named["data"]["content"]
+    assert named["data"]["content"].startswith("Created XYZ-")
     assert _created(repositories, OTHER_TEAM, "Checkout fails")[0]["created_by"] == OWNER
 
     outside = _slash(discord_client, "create", user="D_GUEST", title="Sneaky", team=OTHER_TEAM)
     assert "Created" not in outside["data"]["content"]
     assert not _created(repositories, OTHER_TEAM, "Sneaky")
+
+
+def test_create_without_a_team_defaults_to_the_team_the_channel_posts_for(
+    discord_client: TestClient, linked: DiscordInstallation, repositories: Any
+) -> None:
+    """A channel connected to a writable team picks it; an unmapped or out of reach channel still asks."""
+    unmapped = _slash(discord_client, "create", title="Still ambiguous")
+    assert "Pick a team" in unmapped["data"]["content"]
+
+    _discord_destination(repositories, team_id=OTHER_TEAM)
+    mapped = _slash(discord_client, "create", title="From the channel")
+    assert mapped["data"]["content"].startswith("Created XYZ-")
+    assert _created(repositories, OTHER_TEAM, "From the channel")[0]["created_by"] == OWNER
+
+    named = _slash(discord_client, "create", title="Named wins", team="abc")
+    assert named["data"]["content"].startswith("Created ABC-")
+
+    guest = _slash(discord_client, "create", user="D_GUEST", title="Guest stays home")
+    assert guest["data"]["content"].startswith("Created ABC-")
+    assert not _created(repositories, OTHER_TEAM, "Guest stays home")
+
+
+def test_the_form_starts_on_the_team_the_channel_posts_for(
+    discord_client: TestClient, linked: DiscordInstallation, repositories: Any
+) -> None:
+    """The message form prefills the channel's team key for a person with several teams."""
+    message = {"id": MESSAGE, "channel_id": CHANNEL, "content": "Checkout fails"}
+    data = {"type": 3, "name": "Create issue", "target_id": MESSAGE, "resolved": {"messages": {MESSAGE: message}}}
+    payload = {"type": 2, "data": data, "channel_id": CHANNEL, **_member("D_OWNER")}
+
+    unmapped = _interact(discord_client, payload).json()["data"]
+    assert unmapped["components"][0]["components"][0].get("value", "") == ""
+
+    _discord_destination(repositories, team_id=OTHER_TEAM)
+    mapped = _interact(discord_client, payload).json()["data"]
+    assert mapped["components"][0]["components"][0]["value"] == "XYZ"
 
 
 def test_the_team_option_completes_to_the_teams_the_person_can_write(
@@ -477,7 +547,8 @@ def test_the_message_command_opens_a_form_and_its_submission_creates_the_issue(
         ],
     }
     reply = _interact(discord_client, {"type": 5, "data": submitted, **_member("D_GUEST")}).json()
-    assert "Created [ABC-" in reply["data"]["content"]
+    assert reply["data"]["content"].startswith("Created ABC-")
+    assert reply["data"]["embeds"][0]["title"].endswith("Checkout fails on Safari")
     created = _created(repositories, TEAM, "Checkout fails on Safari")
     assert len(created) == 1
     assert f"https://discord.com/channels/{GUILD}/{CHANNEL}/{MESSAGE}" in str(created[0].get("body") or "")
@@ -633,6 +704,8 @@ def test_disconnecting_leaves_the_server_and_turns_off_bot_channels(
     stored = repositories.github.channels.get(WORKSPACE, destination.channel_id)
     assert stored is not None and stored.enabled is False
     assert discord_client.delete(f"/api/workspaces/{WORKSPACE}/discord").status_code == 404
+    [entry] = repositories.audit.list_events(WORKSPACE, AuditQuery(action="discord.disconnected")).events
+    assert entry.actor.id == ADMIN and entry.target.id == GUILD
 
 
 def test_the_guest_role_is_kept_for_a_discord_person(linked: DiscordInstallation, repositories: Any) -> None:

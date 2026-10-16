@@ -56,7 +56,7 @@ import { projectPath } from '../../lib/paths';
 import { healthLabel } from '../../lib/projectLook';
 import {
   PROJECT_STATUS_LABELS,
-  completionPercent,
+  progressPercent,
 } from '../../lib/planningDisplay';
 import { canEditProject } from '../../lib/planningModel';
 import {
@@ -186,7 +186,7 @@ const RoadmapRow: React.FC<RoadmapRowProps> = ({
   const project = value ?? server;
   const [drag, setDrag] = useState<DragState | null>(null);
   const editable = canEditProject(workspaceRole, project, teams);
-  const percent = completionPercent(project.counts);
+  const percent = progressPercent(project);
   const lead = people.find((person) => person.user_id === project.lead_id);
   const href = projectPath(slug, project.project_id);
   const projectTeams = teams.filter((team) =>

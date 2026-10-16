@@ -1,8 +1,10 @@
 /**
- * The issue import page. An admin picks a source, a team and a file, dry runs
- * it and sees the row problems, remaps a column, which runs the dry run again
- * with the change, and starts the import with the same body. Anyone below
- * admin is told they cannot.
+ * The issue import page. For a CSV an admin picks a source, a team and a file,
+ * dry runs it and sees the row problems, remaps a column, which runs the dry
+ * run again with the change, and starts the import with the same body. For
+ * Linear they paste a key, load its teams, map each and start, and the key is
+ * cleared once the job is queued. A running job can be cancelled. Anyone
+ * below admin is told they cannot.
  */
 
 import { render, screen, waitFor, within } from '@testing-library/react';
@@ -14,6 +16,8 @@ import type {
   IssueImportPreviewRead,
   IssueImportRead,
   IssueImportRequest,
+  LinearImportRequest,
+  LinearTeamRead,
   TeamRead,
   WorkspaceRead,
   WorkspaceRole,
@@ -25,6 +29,11 @@ const previewIssueImport =
   vi.fn<(body: IssueImportRequest) => Promise<IssueImportPreviewRead>>();
 const startIssueImport =
   vi.fn<(body: IssueImportRequest) => Promise<IssueImportRead>>();
+const listLinearTeams = vi.fn<(apiKey: string) => Promise<LinearTeamRead[]>>();
+const startLinearImport =
+  vi.fn<(body: LinearImportRequest) => Promise<IssueImportRead>>();
+const cancelIssueImport =
+  vi.fn<(importId: string) => Promise<IssueImportRead>>();
 
 vi.mock('../../hooks/useAuth', () => ({
   useAuth: () => ({
@@ -44,6 +53,12 @@ vi.mock('../../api/imports', () => ({
     previewIssueImport(body),
   startIssueImport: (_workspaceId: string, body: IssueImportRequest) =>
     startIssueImport(body),
+  listLinearTeams: (_workspaceId: string, apiKey: string) =>
+    listLinearTeams(apiKey),
+  startLinearImport: (_workspaceId: string, body: LinearImportRequest) =>
+    startLinearImport(body),
+  cancelIssueImport: (_workspaceId: string, importId: string) =>
+    cancelIssueImport(importId),
 }));
 
 vi.mock('@webbpulse/auth/react', async () => {
@@ -163,8 +178,14 @@ const renderPage = () =>
     </MemoryRouter>
   );
 
-/** Picks the CSV fixture as the file and dry runs it. */
+/** Switches the page from the Linear source to a CSV file. */
+const chooseCsv = async (user: ReturnType<typeof userEvent.setup>) => {
+  await user.click(screen.getByRole('radio', { name: /CSV file/ }));
+};
+
+/** Picks the CSV source and fixture file, then dry runs it. */
 const pickAndCheck = async (user: ReturnType<typeof userEvent.setup>) => {
+  await chooseCsv(user);
   await user.upload(
     screen.getByLabelText('CSV file'),
     new File([CSV], 'jira.csv', { type: 'text/csv' })
@@ -180,11 +201,21 @@ beforeEach(() => {
   listIssueImports.mockReset();
   previewIssueImport.mockReset();
   startIssueImport.mockReset();
+  listLinearTeams.mockReset();
+  startLinearImport.mockReset();
+  cancelIssueImport.mockReset();
   useWorkspaceMock.mockReset();
   useWorkspaceMock.mockReturnValue(resolved('admin'));
   listIssueImports.mockResolvedValue([job()]);
   previewIssueImport.mockResolvedValue(dryRun());
   startIssueImport.mockResolvedValue(job({ status: 'queued' }));
+  listLinearTeams.mockResolvedValue([
+    { id: 'lin-team-1', key: 'PLA', name: 'Linear Platform' },
+  ]);
+  startLinearImport.mockResolvedValue(
+    job({ kind: 'linear', status: 'queued', file_name: '' })
+  );
+  cancelIssueImport.mockResolvedValue(job({ status: 'cancelled' }));
 });
 
 describe('the issue import page', () => {
@@ -200,6 +231,7 @@ describe('the issue import page', () => {
   it('dry runs the file against the chosen team and preset', async () => {
     const user = userEvent.setup();
     renderPage();
+    await chooseCsv(user);
 
     await user.selectOptions(screen.getByLabelText('Team'), 'team-2');
     await user.selectOptions(screen.getByLabelText('Source'), 'linear');
@@ -258,7 +290,9 @@ describe('the issue import page', () => {
   });
 
   it('cannot start before a dry run', async () => {
+    const user = userEvent.setup();
     renderPage();
+    await chooseCsv(user);
 
     expect(
       await screen.findByRole('button', { name: 'Start import' })
@@ -275,6 +309,74 @@ describe('the issue import page', () => {
       await screen.findByRole('button', { name: 'Import in progress' })
     ).toBeDisabled();
     expect(screen.getByText(/100 of 400 rows/)).toBeInTheDocument();
+  });
+
+  it('imports Linear teams into the team with the same key and clears the key', async () => {
+    const user = userEvent.setup();
+    renderPage();
+
+    const key = screen.getByLabelText('Linear API key');
+    await user.type(key, 'lin_api_example');
+    await user.click(screen.getByRole('button', { name: 'Load teams' }));
+
+    expect(
+      await screen.findByLabelText('Standupless team for Linear Platform')
+    ).toHaveValue('team-1');
+    expect(listLinearTeams).toHaveBeenCalledWith('lin_api_example');
+
+    await user.click(screen.getByRole('button', { name: 'Import 1 team' }));
+
+    await waitFor(() => {
+      expect(startLinearImport).toHaveBeenCalledWith({
+        api_key: 'lin_api_example',
+        teams: [{ linear_team_id: 'lin-team-1', team_id: 'team-1' }],
+      });
+    });
+    await waitFor(() => {
+      expect(screen.getByLabelText('Linear API key')).toHaveValue('');
+    });
+  });
+
+  it('cancels a running import', async () => {
+    const user = userEvent.setup();
+    listIssueImports.mockResolvedValue([
+      job({ status: 'running', processed_rows: 100, total_rows: 400 }),
+    ]);
+    renderPage();
+
+    await user.click(await screen.findByRole('button', { name: 'Cancel' }));
+
+    await waitFor(() => {
+      expect(cancelIssueImport).toHaveBeenCalledWith('imp-1');
+    });
+  });
+
+  it('lists what a finished Linear import brought over', async () => {
+    listIssueImports.mockResolvedValue([
+      job({
+        kind: 'linear',
+        file_name: '',
+        created_count: 4,
+        updated_count: 0,
+        counts: { comments: 3, relations: 2, cycles: 1 },
+        linear_teams: [
+          {
+            linear_team_id: 'lin-team-1',
+            linear_key: 'PLA',
+            name: 'Linear Platform',
+            team_id: 'team-1',
+          },
+        ],
+      }),
+    ]);
+    renderPage();
+
+    expect(
+      await screen.findByText('Linear PLA into Platform')
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/4 issues created, 3 comments, 2 relations, 1 cycle/)
+    ).toBeInTheDocument();
   });
 
   it('says so when there are no imports', async () => {

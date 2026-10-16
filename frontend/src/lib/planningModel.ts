@@ -15,6 +15,7 @@ import type {
   VelocityRead,
   WorkspaceRole,
 } from '../types/Api';
+import { estimatePoints } from './issueView';
 
 /** The order project status groups run in on the projects list. */
 export const PROJECT_STATUS_ORDER: ProjectStatus[] = [
@@ -68,6 +69,35 @@ export const categoryOf = (
   statuses: StatusRead[]
 ): StatusCategory | undefined =>
   statuses.find((status) => status.id === issue.status_id)?.category;
+
+/** What one issue adds to a progress sum. */
+export type IssueWeigher = (issue: IssueRead) => number;
+
+/** Weighs every issue as one, which is a sum in issues. */
+export const countEach: IssueWeigher = () => 1;
+
+/**
+ * What one issue adds to a project's scope on its own team's scale, the way the
+ * server's rollup weighs it: one on a team with estimates off, nothing or one for
+ * an unestimated issue as the team counts them, and its points otherwise.
+ */
+export const issueWeight = (
+  estimate: string | null,
+  team:
+    Pick<TeamRead, 'estimate_scale' | 'estimate_count_unestimated'> | undefined
+): number => {
+  if (team === undefined || team.estimate_scale === 'off') return 1;
+  if (estimate === null || estimate.trim() === '') {
+    return team.estimate_count_unestimated === true ? 1 : 0;
+  }
+  return estimatePoints(estimate);
+};
+
+/** Weighs each issue in points on the scale of the team that holds it. */
+export const pointWeigher = (teams: readonly TeamRead[]): IssueWeigher => {
+  const byId = new Map(teams.map((team) => [team.id, team]));
+  return (issue) => issueWeight(issue.estimate, byId.get(issue.team_id));
+};
 
 /**
  * Groups issues by status category in the list's order. An issue whose status
@@ -135,7 +165,8 @@ export const burnUpSeries = (
   statuses: StatusRead[],
   startDate: string,
   endDate: string,
-  today: string
+  today: string,
+  weigh: IssueWeigher = countEach
 ): BurnUpPoint[] => {
   const last = today < endDate ? today : endDate;
   const live = issues
@@ -147,13 +178,14 @@ export const burnUpSeries = (
     let completed = 0;
     for (const { issue, category } of live) {
       if (issue.created_at.slice(0, 10) > date) continue;
-      scope += 1;
+      const weight = weigh(issue);
+      scope += weight;
       const changed = issue.updated_at.slice(0, 10) <= date;
       if (category === 'completed' && changed) {
-        completed += 1;
-        started += 1;
+        completed += weight;
+        started += weight;
       } else if (category === 'started' && changed) {
-        started += 1;
+        started += weight;
       }
     }
     return { date, scope, started, completed };
@@ -196,7 +228,8 @@ export const projectGraphRange = (
 /** How many of a list of issues fall in each status category. */
 export const categoryCounts = (
   issues: IssueRead[],
-  statuses: StatusRead[]
+  statuses: StatusRead[],
+  weigh: IssueWeigher = countEach
 ): Record<StatusCategory, number> => {
   const counts: Record<StatusCategory, number> = {
     backlog: 0,
@@ -206,7 +239,7 @@ export const categoryCounts = (
     cancelled: 0,
   };
   for (const issue of issues) {
-    counts[categoryOf(issue, statuses) ?? 'backlog'] += 1;
+    counts[categoryOf(issue, statuses) ?? 'backlog'] += weigh(issue);
   }
   return counts;
 };
