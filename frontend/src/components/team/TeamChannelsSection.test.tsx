@@ -611,6 +611,7 @@ describe('the chat app connections in team settings', () => {
       <TeamChannelsSection
         workspaceId="ws-discord-readonly"
         teamId="team-1"
+        workspaceSlug="engineering"
         canEdit
       />
     );

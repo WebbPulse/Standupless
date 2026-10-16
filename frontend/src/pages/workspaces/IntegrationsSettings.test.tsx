@@ -8,6 +8,7 @@
 
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import type { ReactNode } from 'react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { WorkspaceContextType } from '../../contexts/WorkspaceContextDefinition';
@@ -165,6 +166,24 @@ const installer: MemberRead = {
 
 vi.mock('../../hooks/useTeams', () => ({
   useTeams: () => ({ data: teams, isLoading: false, error: null }),
+}));
+
+vi.mock('../../components/workspace/WorkspaceShell', () => ({
+  default: ({
+    title,
+    toolbar,
+    children,
+  }: {
+    title?: ReactNode;
+    toolbar?: ReactNode;
+    children: ReactNode;
+  }) => (
+    <main>
+      <h1>{title}</h1>
+      {toolbar}
+      {children}
+    </main>
+  ),
 }));
 
 vi.mock('../../hooks/useWorkspaceMembers', () => ({
