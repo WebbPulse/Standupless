@@ -27,6 +27,10 @@ import type {
   MemberListRead,
   MemberRead,
   MemberUpdate,
+  SsoConnectionUpdate,
+  SsoDomainRead,
+  SsoJoinRead,
+  SsoSettingsRead,
   WorkspaceCreate,
   WorkspaceDeletionRequest,
   WorkspaceListRead,
@@ -70,6 +74,17 @@ export const approvedDomainPath = (
 /** The route a workspace is joined through by an approved email domain. */
 export const joinWorkspacePath = (workspaceId: string): string =>
   `${workspacePath(workspaceId)}/join`;
+
+/** The route a workspace's single sign-on settings are read from. */
+export const ssoPath = (workspaceId: string): string =>
+  `${workspacePath(workspaceId)}/sso`;
+
+/** The route one single sign-on domain is verified and removed through. */
+export const ssoDomainPath = (workspaceId: string, domain: string): string =>
+  `${ssoPath(workspaceId)}/domains/${encodeURIComponent(domain)}`;
+
+/** The route a single sign-on session joins the workspace that owns its connection. */
+export const SSO_JOIN_PATH = '/workspaces/sso/join';
 
 /** The route the workspaces the caller may join by email domain are read from. */
 export const JOINABLE_WORKSPACES_PATH = '/workspaces/joinable';
@@ -197,6 +212,102 @@ export const removeApprovedDomain = async (
   domain: string
 ): Promise<void> => {
   await apiClient.delete<void>(approvedDomainPath(workspaceId, domain));
+};
+
+/** Reads a workspace's single sign-on domains, connection and requirement. */
+export const getSsoSettings = async (
+  workspaceId: string,
+  signal?: AbortSignal
+): Promise<SsoSettingsRead> => {
+  const response = await apiClient.get<SsoSettingsRead>(
+    ssoPath(workspaceId),
+    signalOptions(signal)
+  );
+  return response.data;
+};
+
+/** Adds an email domain to prove for single sign-on, answering its TXT record. */
+export const addSsoDomain = async (
+  workspaceId: string,
+  domain: string
+): Promise<SsoDomainRead> => {
+  const response = await apiClient.post<SsoDomainRead>(
+    `${ssoPath(workspaceId)}/domains`,
+    { domain }
+  );
+  return response.data;
+};
+
+/** Checks a single sign-on domain's TXT record and marks it verified when it matches. */
+export const verifySsoDomain = async (
+  workspaceId: string,
+  domain: string
+): Promise<SsoDomainRead> => {
+  const response = await apiClient.post<SsoDomainRead>(
+    `${ssoDomainPath(workspaceId, domain)}/verify`
+  );
+  return response.data;
+};
+
+/** Removes a single sign-on domain. */
+export const removeSsoDomain = async (
+  workspaceId: string,
+  domain: string
+): Promise<void> => {
+  await apiClient.delete<void>(ssoDomainPath(workspaceId, domain));
+};
+
+/** Saves the workspace's single sign-on connection, answering the new settings. */
+export const saveSsoConnection = async (
+  workspaceId: string,
+  body: SsoConnectionUpdate
+): Promise<SsoSettingsRead> => {
+  const response = await apiClient.put<SsoSettingsRead>(
+    `${ssoPath(workspaceId)}/connection`,
+    body
+  );
+  return response.data;
+};
+
+/** Removes the workspace's single sign-on connection. */
+export const removeSsoConnection = async (
+  workspaceId: string
+): Promise<void> => {
+  await apiClient.delete<void>(`${ssoPath(workspaceId)}/connection`);
+};
+
+/**
+ * Records that the caller's own session finished a test sign-in through the
+ * workspace's connection, answering the new settings.
+ */
+export const recordSsoTestResult = async (
+  workspaceId: string
+): Promise<SsoSettingsRead> => {
+  const response = await apiClient.post<SsoSettingsRead>(
+    `${ssoPath(workspaceId)}/connection/test-result`
+  );
+  return response.data;
+};
+
+/** Turns the single sign-on requirement on or off, answering the new settings. */
+export const updateSsoPolicy = async (
+  workspaceId: string,
+  requireSso: boolean
+): Promise<SsoSettingsRead> => {
+  const response = await apiClient.put<SsoSettingsRead>(
+    `${ssoPath(workspaceId)}/policy`,
+    { require_sso: requireSso }
+  );
+  return response.data;
+};
+
+/**
+ * Joins, or finds, the workspace whose connection the caller's single sign-on
+ * session came through.
+ */
+export const joinSsoWorkspace = async (): Promise<SsoJoinRead> => {
+  const response = await apiClient.post<SsoJoinRead>(SSO_JOIN_PATH);
+  return response.data;
 };
 
 /** Lists the workspaces the caller's verified email domain lets them join. */

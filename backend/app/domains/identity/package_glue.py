@@ -12,6 +12,13 @@ The OAuth 2.1 authorization server mounts behind the package's `mcp_oauth_enable
 switch. Its stores are built only when that switch is on, because they are the one
 thing the package refuses to mount without, and a deployment that does not host an
 MCP resource should reach none of their tables.
+
+Single sign-on mounts whenever this function can open a connection's client secret,
+which needs the master key every deployed environment's app secret carries. Its
+OIDC states and links are the package's own TTL tables, and a SAML assertion id is
+claimed in the `idempotency` table, whose rows expire on their TTL, so a replayed
+response is refused by every execution environment and no claim outlives the
+assertion it guards.
 """
 
 from __future__ import annotations
@@ -126,6 +133,43 @@ def build_router(settings: "Settings") -> "APIRouter":
         oauth_server_stores=oauth_server_stores,
         session_tenant_resolver=partial(resolve_tenants, has_two_factor=hooks.has_two_factor),
         consent_theme=build_consent_theme(),
+        sso=build_sso_service(identity_settings, hooks, stores),
+    )
+
+
+def build_sso_service(identity_settings: Any, hooks: Any, stores: Any) -> Any:
+    """The single sign-on service, or `None` when this function has no master key to open secrets with.
+
+    `None` mounts no single sign-on route at all, which is what a test application
+    without an app secret wants. The URL guard trusts provider hosts only on the
+    local stack, where the test provider runs over HTTP on loopback.
+    """
+    import logging
+
+    from webbpulse.identity import PublicUrlGuard, SsoService
+
+    from app.common.db.dynamo.idempotency import IdempotencyRepository
+    from app.common.sso import SsoUnavailable, sso_cipher, trusted_provider_hosts
+    from app.domains.identity.sso_hooks import StanduplessSsoHooks
+
+    try:
+        cipher = sso_cipher()
+    except SsoUnavailable:
+        logging.getLogger(__name__).info(
+            "Single sign-on is not mounted: no master key is available.",
+            extra={"event": "sso.unavailable"},
+        )
+        return None
+
+    return SsoService(
+        identity_settings,
+        hooks,
+        StanduplessSsoHooks(),
+        states=stores.require_oauth_states(),
+        links=stores.require_oauth_links(),
+        cipher=cipher,
+        url_guard=PublicUrlGuard(trusted_hosts=trusted_provider_hosts()),
+        saml_replay=IdempotencyRepository().event_store,
     )
 
 

@@ -20,6 +20,12 @@ as the domain index: "which workspaces approve acme.com" is one query on
 `user_id = domain#acme.com`. No user id can take that form, because user ids are
 ULIDs, so a person's own index reads never meet a domain row.
 
+`sso#connection` holds the workspace's single sign-on connection, and
+`sso_domain#<domain>` one domain the workspace is proving it owns for it. A domain
+row takes `user_id = sso_domain#<domain>` only once its TXT record is verified, so
+"which workspace signs in acme.com" is one query on the user index that never
+meets a domain still pending, and no user id can take that form either.
+
 The workspace membership also carries the person's own sidebar team order,
 because it is the one row that is already per person and per workspace.
 
@@ -97,8 +103,77 @@ class AuthPolicy(BaseModel):
 
     require_two_factor: bool = False
     allowed_methods: list[SignInMethod] = Field(default_factory=lambda: list(SIGN_IN_METHODS))
+    require_sso: bool = False
     updated_at: datetime | None = None
     updated_by: str | None = None
+
+
+SSO_CONNECTION_KEY = "sso#connection"
+
+SSO_DOMAIN_PREFIX = "sso_domain#"
+
+SSO_DOMAIN_LIMIT = 20
+"""The abuse ceiling on single sign-on domains per workspace, far above any real company's."""
+
+SsoProtocolName = Literal["oidc", "saml"]
+
+
+def sso_domain_key(domain: str) -> str:
+    """The sort key, and once verified the user index key, of one single sign-on domain."""
+    return f"{SSO_DOMAIN_PREFIX}{domain}"
+
+
+class SsoDomain(BaseModel):
+    """One email domain a workspace is proving it owns, for single sign-on.
+
+    `token` is the value of the TXT record the domain must publish. It is not a
+    secret: it only proves who could publish it.
+    """
+
+    workspace_id: str
+    domain: str
+    token: str
+    added_by: str
+    added_at: datetime = Field(default_factory=utc_now)
+    verified_at: datetime | None = None
+    verified_by: str | None = None
+
+    @property
+    def verified(self) -> bool:
+        """Whether the domain's TXT record was found."""
+        return self.verified_at is not None
+
+
+class SsoConnectionRow(BaseModel):
+    """A workspace's single sign-on connection, as stored.
+
+    The OIDC client secret is held only sealed, in `oidc_sealed_secret`, bound to the
+    workspace id, so the stored row is safe to read anywhere the table is granted.
+    `tested_at` is cleared by any change to the provider settings, because a test
+    proves only the settings it ran against.
+    """
+
+    workspace_id: str
+    protocol: SsoProtocolName
+    display_name: str = ""
+    oidc_issuer: str = ""
+    oidc_client_id: str = ""
+    oidc_sealed_secret: dict[str, str] = Field(default_factory=dict)
+    oidc_scopes: list[str] = Field(default_factory=lambda: ["openid", "email", "profile"])
+    saml_idp_entity_id: str = ""
+    saml_idp_sso_url: str = ""
+    saml_idp_certificates: list[str] = Field(default_factory=list)
+    created_by: str
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_by: str
+    updated_at: datetime = Field(default_factory=utc_now)
+    tested_at: datetime | None = None
+    tested_by: str | None = None
+
+    @property
+    def tested(self) -> bool:
+        """Whether a sign-in has completed through these settings."""
+        return self.tested_at is not None
 
 
 MEMBERSHIP_SCAN_LIMIT = 100_000
@@ -450,11 +525,16 @@ class MembershipRepository:
         require_two_factor: bool,
         updated_by: str,
         allowed_methods: list[SignInMethod] | None = None,
+        require_sso: bool | None = None,
     ) -> AuthPolicy:
         """Store the workspace's authentication policy and return it.
 
-        `allowed_methods` of `None` allows every sign-in method.
+        `allowed_methods` of `None` allows every sign-in method. `require_sso` of
+        `None` keeps the stored value, so the two-factor and methods route never
+        turns single sign-on off by saving its own fields.
         """
+        if require_sso is None:
+            require_sso = self.get_auth_policy(workspace_id).require_sso
         methods: list[SignInMethod] = (
             list(SIGN_IN_METHODS)
             if allowed_methods is None
@@ -463,6 +543,7 @@ class MembershipRepository:
         policy = AuthPolicy(
             require_two_factor=require_two_factor,
             allowed_methods=methods,
+            require_sso=require_sso,
             updated_at=utc_now(),
             updated_by=updated_by,
         )
@@ -516,6 +597,86 @@ class MembershipRepository:
             return []
         items = self._repository.iter_query(
             Key("user_id").eq(approved_domain_key(domain)),
+            index_name=USER_INDEX,
+            max_items=limit,
+        )
+        return sorted({str(item["workspace_id"]) for item in items})
+
+    def get_sso_connection(self, workspace_id: str) -> SsoConnectionRow | None:
+        """The workspace's single sign-on connection, or `None` when none is set up."""
+        if not workspace_id:
+            return None
+        item = self._repository.get({"workspace_id": workspace_id, "member_key": SSO_CONNECTION_KEY})
+        return None if item is None else SsoConnectionRow.model_validate(dict(item))
+
+    def put_sso_connection(self, row: SsoConnectionRow) -> SsoConnectionRow:
+        """Store the workspace's single sign-on connection, replacing any earlier one."""
+        self._repository.put(as_item(row, member_key=SSO_CONNECTION_KEY))
+        return row
+
+    def delete_sso_connection(self, workspace_id: str) -> None:
+        """Remove the workspace's single sign-on connection. Idempotent."""
+        if not workspace_id:
+            return
+        self._repository.delete({"workspace_id": workspace_id, "member_key": SSO_CONNECTION_KEY})
+
+    def list_sso_domains(self, workspace_id: str) -> list[SsoDomain]:
+        """Every single sign-on domain of this workspace, verified or not, in domain order."""
+        if not workspace_id:
+            return []
+        items = self._repository.iter_query(
+            Key("workspace_id").eq(workspace_id) & Key("member_key").begins_with(SSO_DOMAIN_PREFIX),
+            max_items=SSO_DOMAIN_LIMIT * 2,
+            consistent=True,
+        )
+        return sorted((SsoDomain.model_validate(dict(item)) for item in items), key=lambda row: row.domain)
+
+    def get_sso_domain(self, workspace_id: str, domain: str) -> SsoDomain | None:
+        """One single sign-on domain of this workspace, or `None`."""
+        if not workspace_id or not domain:
+            return None
+        item = self._repository.get({"workspace_id": workspace_id, "member_key": sso_domain_key(domain)})
+        return None if item is None else SsoDomain.model_validate(dict(item))
+
+    def add_sso_domain(self, workspace_id: str, domain: str, *, token: str, added_by: str) -> SsoDomain:
+        """Start proving one domain, keeping the original row and token when it is already listed."""
+        existing = self.get_sso_domain(workspace_id, domain)
+        if existing is not None:
+            return existing
+        row = SsoDomain(workspace_id=workspace_id, domain=domain, token=token, added_by=added_by)
+        try:
+            self._repository.put(
+                as_item(row, member_key=sso_domain_key(domain)),
+                condition=Attr("member_key").not_exists(),
+            )
+        except ConditionFailed:
+            return self.get_sso_domain(workspace_id, domain) or row
+        return row
+
+    def mark_sso_domain_verified(self, row: SsoDomain, *, verified_by: str) -> SsoDomain:
+        """Record a found TXT record, which puts the domain in the user index."""
+        key = sso_domain_key(row.domain)
+        verified = row.model_copy(update={"verified_at": utc_now(), "verified_by": verified_by})
+        self._repository.put(as_item(verified, member_key=key, user_id=key))
+        return verified
+
+    def remove_sso_domain(self, workspace_id: str, domain: str) -> None:
+        """Stop using one domain for single sign-on. Idempotent."""
+        if not workspace_id or not domain:
+            return
+        self._repository.delete({"workspace_id": workspace_id, "member_key": sso_domain_key(domain)})
+
+    def workspaces_verifying_sso_domain(self, domain: str, *, limit: int = 10) -> list[str]:
+        """The ids of every workspace that verified this domain for single sign-on.
+
+        Spans tenants on purpose, as `workspaces_approving_domain` does: it is how a
+        sign-in page finds the connection for an address, and it answers ids alone.
+        Verification refuses a domain another workspace holds, so this is one id or none.
+        """
+        if not domain:
+            return []
+        items = self._repository.iter_query(
+            Key("user_id").eq(sso_domain_key(domain)),
             index_name=USER_INDEX,
             max_items=limit,
         )

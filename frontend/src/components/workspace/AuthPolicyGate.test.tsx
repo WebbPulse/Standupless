@@ -2,25 +2,44 @@
  * The auth policy gate: for a missing second factor it names the workspace,
  * links to account security, and "Try again" refreshes the session before
  * re-reading the workspace list. For a refused sign-in method it lists the
- * allowed methods and offers to sign out.
+ * allowed methods and offers to sign out. For a required single sign-on it
+ * starts the workspace's connection, signs out, then leaves for the provider.
  */
 
+import { ApiError } from '@webbpulse/api-client';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { WorkspaceRead } from '../../types/Api';
 import AuthPolicyGate from './AuthPolicyGate';
 
 const calls: string[] = [];
-const logout = vi.fn(() => Promise.resolve());
+const logout = vi.fn(() => {
+  calls.push('logout');
+  return Promise.resolve();
+});
+const startSsoSignIn = vi.fn((_body: unknown) => {
+  calls.push('start');
+  return Promise.resolve({
+    authorization_url: 'https://login.example.com/authorize?state=s1',
+    connection_id: 'ws-1',
+  });
+});
+const assign = vi.fn((url: string) => {
+  calls.push(`assign ${url}`);
+});
+
+vi.mock('../../api/sso', () => ({
+  startSsoSignIn: (body: unknown) => startSsoSignIn(body),
+}));
 const refresh = vi.fn(() => {
   calls.push('refresh');
   return Promise.resolve('token');
 });
 
 vi.mock('../../api/identityClient', () => ({
-  getIdentityClient: () => ({ refresh }),
+  getIdentityClient: () => ({ refresh: () => refresh() }),
 }));
 
 vi.mock('../../hooks/useAuth', () => ({
@@ -52,10 +71,22 @@ const methodRefused: WorkspaceRead = {
   auth_policy_allowed_methods: ['github', 'google'],
 };
 
+const ssoRequired: WorkspaceRead = {
+  ...workspace,
+  auth_policy_reason: 'sso',
+};
+
 beforeEach(() => {
   calls.length = 0;
   refresh.mockClear();
   logout.mockClear();
+  startSsoSignIn.mockClear();
+  assign.mockClear();
+  vi.stubGlobal('location', { ...window.location, assign });
+});
+
+afterEach(() => {
+  vi.unstubAllGlobals();
 });
 
 describe('the auth policy gate', () => {
@@ -127,5 +158,70 @@ describe('the auth policy gate', () => {
     );
 
     expect(logout).toHaveBeenCalledTimes(1);
+  });
+
+  it('starts the workspace connection, signs out, then leaves for the provider', async () => {
+    render(
+      <MemoryRouter initialEntries={['/w/engineering/issues']}>
+        <AuthPolicyGate
+          workspace={ssoRequired}
+          onRetry={() => Promise.resolve()}
+        />
+      </MemoryRouter>
+    );
+
+    expect(
+      screen.getByRole('heading', {
+        name: 'Engineering requires single sign-on',
+      })
+    ).toBeInTheDocument();
+
+    await userEvent.click(screen.getByTestId('auth-policy-sso'));
+
+    await waitFor(() => {
+      expect(calls).toEqual([
+        'start',
+        'logout',
+        'assign https://login.example.com/authorize?state=s1',
+      ]);
+    });
+    expect(startSsoSignIn).toHaveBeenCalledWith({
+      connection_id: 'ws-1',
+      return_to: '/login?returnTo=%2Fw%2Fengineering%2Fissues&sso_login=1',
+    });
+  });
+
+  it('stays signed in and says so when the start is refused', async () => {
+    startSsoSignIn.mockImplementationOnce(() =>
+      Promise.reject(
+        new ApiError({
+          status: 503,
+          statusText: 'Service Unavailable',
+          body: {
+            success: false,
+            message: 'Single sign-on is not available right now.',
+            error_code: 'SSO_UNAVAILABLE',
+          },
+          url: '/api/auth/sso/start',
+          method: 'POST',
+        })
+      )
+    );
+    render(
+      <MemoryRouter>
+        <AuthPolicyGate
+          workspace={ssoRequired}
+          onRetry={() => Promise.resolve()}
+        />
+      </MemoryRouter>
+    );
+
+    await userEvent.click(screen.getByTestId('auth-policy-sso'));
+
+    expect(
+      await screen.findByText('Single sign-on is not available right now.')
+    ).toBeInTheDocument();
+    expect(logout).not.toHaveBeenCalled();
+    expect(assign).not.toHaveBeenCalled();
   });
 });
