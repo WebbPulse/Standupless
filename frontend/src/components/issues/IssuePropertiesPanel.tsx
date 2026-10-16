@@ -31,6 +31,7 @@ import { cn } from '../../lib/cn';
 import { timestampLabel } from '../../lib/issueDisplay';
 import type { Assignable } from '../../lib/issuePeople';
 import { projectPatch } from '../../lib/milestones';
+import { projectMilestonePath, projectPath } from '../../lib/paths';
 import { liveSlaStatus } from '../../lib/sla';
 import { shownStatusId } from '../../lib/triageStatus';
 import type { EstimateOptions } from '../../lib/validation';
@@ -56,6 +57,7 @@ import IssueResources from './IssueResources';
 import IssueSubscribers from './IssueSubscribers';
 import { IssueTeamRow } from './MoveIssueDialog';
 import { IssueMilestonePicker } from './PlanningPickers';
+import PlanningRowLink from './PlanningRowLink';
 import {
   AssigneePicker,
   CyclePicker,
@@ -402,24 +404,46 @@ export const IssuePropertiesPanel: React.FC<IssuePropertiesPanelProps> = ({
       </PanelSection>
 
       <PanelSection title="Project">
-        <ProjectPicker
-          disabled={disabled}
-          projects={projects}
-          value={issue.project_id}
-          onChange={(projectId) => {
-            onUpdate(projectPatch(issue, projectId));
-          }}
-        />
-        {issue.project_id !== null && (
-          <IssueMilestonePicker
-            workspaceId={workspaceId}
-            projectId={issue.project_id}
-            value={issue.project_milestone_id ?? null}
+        <PlanningRowLink
+          to={
+            issue.project_id === null
+              ? null
+              : projectPath(slug, issue.project_id)
+          }
+          label="Open project"
+        >
+          <ProjectPicker
             disabled={disabled}
-            onChange={(milestoneId) => {
-              onUpdate({ project_milestone_id: milestoneId });
+            projects={projects}
+            value={issue.project_id}
+            onChange={(projectId) => {
+              onUpdate(projectPatch(issue, projectId));
             }}
           />
+        </PlanningRowLink>
+        {issue.project_id !== null && (
+          <PlanningRowLink
+            to={
+              issue.project_milestone_id == null
+                ? null
+                : projectMilestonePath(
+                    slug,
+                    issue.project_id,
+                    issue.project_milestone_id
+                  )
+            }
+            label="Open milestone"
+          >
+            <IssueMilestonePicker
+              workspaceId={workspaceId}
+              projectId={issue.project_id}
+              value={issue.project_milestone_id ?? null}
+              disabled={disabled}
+              onChange={(milestoneId) => {
+                onUpdate({ project_milestone_id: milestoneId });
+              }}
+            />
+          </PlanningRowLink>
         )}
       </PanelSection>
 

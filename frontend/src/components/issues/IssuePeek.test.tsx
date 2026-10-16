@@ -2,9 +2,9 @@
  * The issue peek pane. Covers that it reads the issue by id and shows its
  * title, properties and description, that a property change applies at once
  * through the same pickers as the rail, that an issue in a project can be
- * moved between the project's milestones, that it links to the full page, and
- * that Escape and the close button dismiss it while Escape inside a picker
- * only closes the picker.
+ * moved between the project's milestones, that it links to the full page and
+ * to the issue's project and milestone, and that Escape and the close button
+ * dismiss it while Escape inside a picker only closes the picker.
  */
 
 import { render, screen, waitFor } from '@testing-library/react';
@@ -226,6 +226,25 @@ describe('IssuePeek', () => {
         project_milestone_id: 'ms-1',
       });
     });
+  });
+
+  it('links the project and milestone rows to the project page', async () => {
+    getIssue.mockResolvedValue({
+      ...issue,
+      project_id: 'prj-1',
+      project_milestone_id: 'ms-1',
+    });
+    renderPeek();
+
+    expect(
+      await screen.findByRole('link', { name: 'Open project' })
+    ).toHaveAttribute('href', '/w/mine/projects/prj-1');
+    expect(
+      screen.getByRole('link', { name: 'Open milestone' })
+    ).toHaveAttribute(
+      'href',
+      '/w/mine/projects/prj-1?tab=issues&f=milestone.is%3Ams-1'
+    );
   });
 
   it('closes on Escape, but not while a picker is open', async () => {
