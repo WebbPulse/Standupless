@@ -70,6 +70,7 @@ import { shortDateLabel } from '../../lib/propertyOptions';
 import { initiativeDetailKey, initiativesKey } from '../../lib/queryKeys';
 import { showToast } from '../../lib/toast';
 import FavoriteButton from '../../components/ui/FavoriteButton';
+import FollowButton from '../../components/planning/FollowButton';
 import type {
   HealthBreakdownRead,
   InitiativeRead,
@@ -457,27 +458,34 @@ export const InitiativeDetail: React.FC = () => {
         </div>
       }
       actions={
-        canDelete ? (
-          <Menu
-            label="Initiative actions"
-            align="end"
-            trigger={(trigger) => (
-              <IconButton label="Initiative actions" size="sm" {...trigger}>
-                <LuEllipsis className="h-3.5 w-3.5" />
-              </IconButton>
-            )}
-          >
-            <MenuItem
-              danger
-              onSelect={() => {
-                setIsConfirmingDelete(true);
-              }}
+        <div className="flex items-center gap-1">
+          <FollowButton
+            workspaceId={workspaceId}
+            subject="initiative"
+            subjectId={initiative.initiative_id}
+          />
+          {canDelete && (
+            <Menu
+              label="Initiative actions"
+              align="end"
+              trigger={(trigger) => (
+                <IconButton label="Initiative actions" size="sm" {...trigger}>
+                  <LuEllipsis className="h-3.5 w-3.5" />
+                </IconButton>
+              )}
             >
-              <LuTrash2 aria-hidden="true" className="h-3.5 w-3.5" />
-              Delete initiative
-            </MenuItem>
-          </Menu>
-        ) : undefined
+              <MenuItem
+                danger
+                onSelect={() => {
+                  setIsConfirmingDelete(true);
+                }}
+              >
+                <LuTrash2 aria-hidden="true" className="h-3.5 w-3.5" />
+                Delete initiative
+              </MenuItem>
+            </Menu>
+          )}
+        </div>
       }
     >
       {error !== null && (

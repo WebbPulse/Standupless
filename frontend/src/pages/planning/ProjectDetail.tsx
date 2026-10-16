@@ -88,6 +88,7 @@ import {
 } from '../../lib/queryKeys';
 import { showToast } from '../../lib/toast';
 import FavoriteButton from '../../components/ui/FavoriteButton';
+import FollowButton from '../../components/planning/FollowButton';
 import type {
   MilestoneRead,
   ProjectRead,
@@ -503,6 +504,11 @@ export const ProjectDetail: React.FC = () => {
       }
       actions={
         <div className="flex items-center gap-1">
+          <FollowButton
+            workspaceId={workspaceId}
+            subject="project"
+            subjectId={project.project_id}
+          />
           {mayCreate && (
             <Button variant="secondary" size="sm" onClick={createIssue}>
               <LuPlus aria-hidden="true" />

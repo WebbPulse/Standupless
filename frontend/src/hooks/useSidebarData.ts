@@ -7,6 +7,7 @@
 import { useContext } from 'react';
 import { useQueryAuth } from '@webbpulse/auth/react';
 import { usePolledQuery } from '@webbpulse/api-client/react';
+import { getPulseCount } from '../api/pulse';
 import { getReviews } from '../api/reviews';
 import { getTriageSummary } from '../api/triage';
 import {
@@ -20,6 +21,7 @@ import {
 } from '../contexts/SidebarDataContextDefinition';
 import {
   inboxCountKey,
+  pulseCountKey,
   reviewsKey,
   triageSummaryKey,
   viewsKey,
@@ -107,4 +109,20 @@ export const useReviews = (workspaceId: string): ReviewsRead | null => {
     auth,
   });
   return shared === undefined ? own.data : shared.reviews;
+};
+
+/** Returns the caller's unread Pulse count in the workspace. */
+export const usePulseCount = (workspaceId: string): number | null => {
+  const shared = useShared(workspaceId);
+  const auth = useQueryAuth();
+  const own = usePolledQuery(
+    ({ signal }) => getPulseCount(workspaceId, signal),
+    {
+      intervalMs: POLL_MS,
+      enabled: shared === undefined && workspaceId !== '',
+      queryKey: pulseCountKey(workspaceId),
+      auth,
+    }
+  );
+  return shared === undefined ? own.data : shared.pulseCount;
 };

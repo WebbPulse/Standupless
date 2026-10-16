@@ -296,6 +296,17 @@ describe('the navigation commands', () => {
       screen.queryByRole('option', { name: /Inbox/ })
     ).not.toBeInTheDocument();
   });
+
+  it('finds Pulse by name and by what it holds', async () => {
+    const user = renderPalette();
+
+    await user.keyboard('{Control>}k{/Control}');
+    await user.keyboard('initiative updates');
+
+    await waitFor(() => {
+      expect(screen.getByRole('option', { name: /Pulse/ })).toBeInTheDocument();
+    });
+  });
 });
 
 describe('the highlight', () => {

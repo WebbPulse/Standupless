@@ -61,6 +61,7 @@ import Projects from './pages/planning/Projects';
 import Roadmap from './pages/planning/Roadmap';
 import ReleaseDetail from './pages/releases/ReleaseDetail';
 import Releases from './pages/releases/Releases';
+import Pulse from './pages/pulse/Pulse';
 import Reviews from './pages/reviews/Reviews';
 import Inbox from './pages/inbox/Inbox';
 import Landing from './pages/landing/Landing';
@@ -212,6 +213,7 @@ const App: React.FC = () => (
           <Route path="search" element={<Search />} />
           <Route path="inbox" element={<Inbox />} />
           <Route path="reviews" element={<Reviews />} />
+          <Route path="pulse" element={<Pulse />} />
           <Route path="roadmap" element={<Roadmap />} />
           <Route path="views" element={<Views />} />
           <Route path="views/new" element={<NewView />} />
