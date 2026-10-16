@@ -483,7 +483,12 @@ jobs:
           "DISCORD_CLIENT_SECRET": "local-stack-discord-client-secret",
           "DISCORD_BOT_TOKEN": "local-stack-discord-bot-token",
           "E2E_USER_EMAIL": "e2e-local-user@standupless.dev",
-          "E2E_USER_PASSWORD": "E2eLocalStackPassw0rd"
+          "E2E_USER_PASSWORD": "E2eLocalStackPassw0rd",
+          "ATTACHMENTS_BUCKET": "standupless-e2e-local-imports",
+          "AWS_ENDPOINT_URL_S3": "http://127.0.0.1:9100",
+          "AWS_REQUEST_CHECKSUM_CALCULATION": "when_required",
+          "AWS_RESPONSE_CHECKSUM_VALIDATION": "when_required",
+          "LINEAR_API_URL": "http://127.0.0.1:8765/graphql"
         }
       backend-start-command: >-
         uv run --no-sync uvicorn app.common.composition.app:app --host localhost --port 8000
@@ -495,7 +500,8 @@ jobs:
       table-bootstrap-command: >-
         uv run --no-sync python scripts/create_local_tables.py &&
         uv run --no-sync python scripts/create_local_e2e_user.py &&
-        uv run --no-sync python scripts/write_local_github_key.py
+        uv run --no-sync python scripts/write_local_github_key.py &&
+        (nohup uv run --no-sync python scripts/local_s3.py > local-s3.log 2>&1 &)
       dynamodb-port: 8001
       check-name: "e2e (local)"
       fail-on-suite-failure: true

@@ -174,17 +174,17 @@ locals {
 
   issue_import_functions = var.issue_import_enabled ? {
     integrations-import-consumer = {
-      secrets     = false
+      secrets     = true
       ses         = false
       memory      = 1024
-      tables      = ["issues", "counters", "activity", "team_config", "subscriptions", "inbox", "rate-limits"]
+      tables      = ["issues", "counters", "activity", "team_config", "subscriptions", "inbox", "comments", "relations", "planning", "rate-limits"]
       read_tables = ["workspaces", "memberships", "users", "teams"]
     }
   } : {}
 
   lambda_domain_timeouts = {
     workspaces-export-consumer   = 900
-    integrations-import-consumer = 300
+    integrations-import-consumer = 900
   }
 
   lambda_domain_ephemeral_storage = {
@@ -697,7 +697,7 @@ resource "aws_iam_role_policy" "lambda_domain" {
         {
           Sid      = "ReadWriteImportObjects"
           Effect   = "Allow"
-          Action   = ["s3:GetObject", "s3:PutObject"]
+          Action   = ["s3:GetObject", "s3:PutObject", "s3:DeleteObject"]
           Resource = ["${module.attachments_bucket.bucket_arn}/imports/*"]
         },
       ] : [],

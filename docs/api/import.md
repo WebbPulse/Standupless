@@ -161,3 +161,66 @@ the issue import SQS queue, and the `integrations-import-consumer` function
 runs them. The queue and consumer exist when the `issue_import_enabled`
 Terraform variable is true. In local development, where no queue exists, the
 import runs inline.
+
+## Import from Linear's API
+
+A workspace owner or admin can also import straight from a Linear workspace,
+with no export file. They paste a Linear personal API key with read access,
+pick the Linear teams to bring over and map each one to a new or existing
+Standupless team. The UI creates a new team before it starts the import.
+
+| Surface | How |
+| --- | --- |
+| API | `POST /api/workspaces/{workspace_id}/imports/linear/teams`, `POST /api/workspaces/{workspace_id}/imports/linear`, `POST /api/workspaces/{workspace_id}/imports/{import_id}/cancel`, and the `GET` routes above |
+| MCP | `list_linear_teams`, `import_linear_workspace`, `get_workspace_import`, `cancel_workspace_import` |
+| UI | Workspace settings, Import tab, source Linear |
+
+`POST .../imports/linear/teams` takes `{"api_key": "..."}` and answers the
+teams the key can read. A key Linear refuses answers 400 with code
+`LINEAR_KEY_REFUSED`, and Linear not answering is 502. `POST .../imports/linear`
+takes the key and `teams`, a list of `{"linear_team_id", "team_id"}`, and
+answers 202 with the job, which has `kind` `linear`. A Linear team the key
+cannot read, or one chosen twice, answers 422, and a second import while one
+runs answers 409. Cancel stops a queued or running job and answers a finished
+one as it is.
+
+### What is read
+
+Per mapped team, in order: cycles, projects with their milestones and updates,
+issues with their comments, then a second pass over the issues for sub-issue
+links and relations. Initiatives come last, once for the workspace. Every
+connection is paged 50 at a time. Linear's rate limit, a 429 or a `RATELIMITED`
+error, is waited out until the reset time it gives, at most 60 seconds per wait
+and 5 attempts per request. The job's `phase`, `phase_index` and `phase_count`
+say where it is, and `counts` holds the tallies the summary shows.
+
+### How values map
+
+- Workflow states map to the team status with the same name, else the first
+  status in the category of the state's type, else the team default.
+- Priority 1 to 4 is urgent, high, medium and low. Estimates keep their points,
+  or the matching size on a t-shirt team; a value off the team's scale is left
+  empty with a warning.
+- Labels are created in the team when missing, and a Linear label group
+  becomes a label group.
+- Assignee, creator, project lead and initiative owner are matched to members
+  by email. A comment or project update by someone who is not a member keeps a
+  `linear:<name>` placeholder author. No account or invite is created.
+- Relations `blocks`, `related` and `duplicate` become blocks, relates to and
+  duplicate of. Linear's `similar` has no counterpart and is skipped. Attachment
+  links are added to the end of the description; only http and https links are
+  kept.
+- An unnamed Linear cycle is named after its number, such as `Cycle 7`.
+
+Every row gets an id derived from the workspace and the Linear id, and each
+issue keeps its Linear identifier and URL in `external_ref`, so running the
+import again updates what the earlier run wrote instead of duplicating it.
+
+### The key
+
+The key is sealed with the environment master key, bound to the workspace and
+the import, and stored beside the job as `key.json`. It is opened in memory for
+each step and deleted when the job completes, fails or is cancelled. It never
+appears in the job, an answer, a log, an audit event or imported data. A key
+left behind by a lost job goes with the 7 day lifecycle rule on `imports/`.
+

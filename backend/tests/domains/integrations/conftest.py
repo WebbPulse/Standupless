@@ -7,7 +7,8 @@ secret leaving the test.
 
 No test here reaches GitHub. `github_api` is patched at the boundary, which is the
 only place an outbound call is made, so a test that starts making one fails rather
-than silently talking to the internet.
+than silently talking to the internet. Linear is held off the same way: every
+Linear client a test builds answers 401 unless the test points it at the fake.
 """
 
 from __future__ import annotations
@@ -354,3 +355,22 @@ def pr_commits(monkeypatch: pytest.MonkeyPatch) -> PullRequestCommits:
 
     monkeypatch.setattr("app.domains.integrations.consumers.events.fetch_commit_messages", fetch)
     return state
+
+
+@pytest.fixture(autouse=True)
+def no_linear(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Build every Linear client on a transport that refuses every key, so no test reaches Linear."""
+    import httpx
+
+    from app.common import linear_import
+    from app.common.linear_api import LinearClient
+
+    def refused(request: httpx.Request) -> httpx.Response:
+        """Answer as Linear does for a key it does not know."""
+        return httpx.Response(401, json={"errors": [{"extensions": {"code": "AUTHENTICATION_ERROR"}}]})
+
+    monkeypatch.setattr(
+        linear_import,
+        "client_factory",
+        lambda api_key: LinearClient(api_key=api_key, transport=httpx.MockTransport(refused)),
+    )

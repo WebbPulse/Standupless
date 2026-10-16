@@ -3380,7 +3380,33 @@ export interface IssueImportPreviewRead {
 }
 
 /** Where an issue import job is. */
-export type ImportStatus = 'queued' | 'running' | 'completed' | 'failed';
+export type ImportStatus =
+  'queued' | 'running' | 'completed' | 'failed' | 'cancelled';
+
+/** What an import reads: an uploaded CSV, or a Linear workspace through its API. */
+export type ImportKind = 'csv' | 'linear';
+
+/** The tallies a Linear import keeps, by name. */
+export type LinearImportCount =
+  | 'issues_created'
+  | 'issues_updated'
+  | 'comments'
+  | 'labels'
+  | 'cycles'
+  | 'projects'
+  | 'milestones'
+  | 'project_updates'
+  | 'initiatives'
+  | 'sub_issues'
+  | 'relations';
+
+/** One Linear team a Linear import reads and the Standupless team it writes into. */
+export interface LinearTeamMappingRead {
+  linear_team_id: string;
+  linear_key: string;
+  name: string;
+  team_id: string;
+}
 
 /** One issue import job and how far it has got. */
 export interface IssueImportRead {
@@ -3405,11 +3431,44 @@ export interface IssueImportRead {
   problems: RowProblemRead[];
   problems_truncated: boolean;
   error?: string | null;
+  kind?: ImportKind;
+  /** How many issues a Linear import found already imported and updated. */
+  updated_count?: number;
+  counts?: Partial<Record<LinearImportCount, number>>;
+  linear_teams?: LinearTeamMappingRead[];
+  /** What a running Linear import is reading now. */
+  phase?: string | null;
+  phase_index?: number;
+  phase_count?: number;
 }
 
 /** The body the import list answers with, newest first. */
 export interface IssueImportListRead {
   items: IssueImportRead[];
+}
+
+/** One team a Linear key can read. */
+export interface LinearTeamRead {
+  id: string;
+  key: string;
+  name: string;
+}
+
+/** Every team a Linear key can read. */
+export interface LinearTeamListRead {
+  items: LinearTeamRead[];
+}
+
+/** One Linear team to import and the Standupless team it goes into. */
+export interface LinearTeamChoice {
+  linear_team_id: string;
+  team_id: string;
+}
+
+/** The body a Linear import starts with. The key is used for the job only. */
+export interface LinearImportRequest {
+  api_key: string;
+  teams: LinearTeamChoice[];
 }
 
 /** Why an open issue assigned to the caller needs attention now. */

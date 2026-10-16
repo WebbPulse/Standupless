@@ -1,4 +1,4 @@
-"""Isolation arguments for the workspace settings, members, invites, export and audit log MCP tools."""
+"""Isolation arguments for the workspace settings, members, invites, export, import and audit log MCP tools."""
 
 from __future__ import annotations
 
@@ -12,6 +12,10 @@ FOREIGN_INVITE_EMAIL = "classified-invitee@example.com"
 FOREIGN_EXPORT_ID = "01JB0000000000000000EXPRT9"
 
 FOREIGN_DOMAIN = "classified-domain.example"
+
+FOREIGN_IMPORT_ID = "01JB0000000000000000IMPRT9"
+
+ISOLATION_LINEAR_KEY = "lin_api_isolation_fake_0000000000000000"
 
 ANSWERS_AT_HOME: frozenset[str] = frozenset(
     {
@@ -64,4 +68,11 @@ def arguments(foreign: dict[str, str], home_issue: str) -> dict[str, dict[str, A
         "add_approved_domain": {"domain": FOREIGN_DOMAIN},
         "remove_approved_domain": {"domain": FOREIGN_DOMAIN},
         "list_audit_events": {"actor": foreign["member_id"]},
+        "list_linear_teams": {"api_key": ISOLATION_LINEAR_KEY},
+        "import_linear_workspace": {
+            "api_key": ISOLATION_LINEAR_KEY,
+            "teams": [{"linear_team_id": "team-isolation", "team_id": foreign["team_id"]}],
+        },
+        "get_workspace_import": {"import_id": FOREIGN_IMPORT_ID},
+        "cancel_workspace_import": {"import_id": FOREIGN_IMPORT_ID},
     }

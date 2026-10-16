@@ -22,6 +22,7 @@ from boto3.dynamodb.conditions import Attr, Key
 from pydantic import BaseModel, Field, TypeAdapter
 from webbpulse.dynamodb import ConditionFailed, Page, Repository, new_ulid
 
+from app.common.bulk_import import IMPORT_BATCH_ATTRIBUTE
 from app.common.db.dynamo.base import build_repository, delete_partition, utc_now
 from app.common.db.dynamo.tables import PLANNING
 
@@ -434,6 +435,7 @@ class Cycle(BaseModel):
     created_by: str
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
+    import_batch_id: str | None = None
 
     def status(self, today: str | None = None) -> str:
         """This cycle's derived status, from its dates and its cancellation flag."""
@@ -484,6 +486,7 @@ class Project(BaseModel):
     created_by: str
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
+    import_batch_id: str | None = None
 
 
 class Initiative(BaseModel):
@@ -510,6 +513,7 @@ class Initiative(BaseModel):
     created_by: str
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
+    import_batch_id: str | None = None
 
 
 class InitiativeUpdateRow(BaseModel):
@@ -549,6 +553,7 @@ class ProjectUpdateRow(BaseModel):
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
     edited_at: datetime | None = None
+    import_batch_id: str | None = None
 
 
 class ProjectMilestone(BaseModel):
@@ -573,6 +578,7 @@ class ProjectMilestone(BaseModel):
     created_by: str
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
+    import_batch_id: str | None = None
 
 
 class PulseEvent(BaseModel):
@@ -639,6 +645,8 @@ def as_cycle_item(cycle: Cycle) -> dict[str, Any]:
             item[name] = set(ids)
     item["ws_team"] = ws_team(cycle.workspace_id, cycle.team_id)
     item["target_date"] = cycle.end_date
+    if not item.get("import_batch_id"):
+        item.pop("import_batch_id", None)
     return item
 
 
@@ -653,6 +661,7 @@ PROJECT_OPTIONAL_FIELDS: tuple[str, ...] = (
     "last_update_at",
     "update_interval_days",
     "initiative_id",
+    "import_batch_id",
 )
 """The project attributes a null value removes from the row rather than storing."""
 
@@ -663,10 +672,11 @@ INITIATIVE_OPTIONAL_FIELDS: tuple[str, ...] = (
     "target_date",
     "last_update_at",
     "update_interval_days",
+    "import_batch_id",
 )
 """The initiative attributes a null value removes from the row rather than storing."""
 
-MILESTONE_OPTIONAL_FIELDS: tuple[str, ...] = ("target_date", "description")
+MILESTONE_OPTIONAL_FIELDS: tuple[str, ...] = ("target_date", "description", "import_batch_id")
 """The milestone attributes a null value removes from the row rather than storing."""
 
 ROLLUP_ATTRIBUTES: frozenset[str] = frozenset({"counts", "status_counts", "rollup_rev"})
@@ -708,16 +718,28 @@ def as_milestone_item(milestone: ProjectMilestone) -> dict[str, Any]:
     return item
 
 
+def _marked(item: dict[str, Any], keep_import_batch: bool) -> dict[str, Any]:
+    """One item to write over a row, without the bulk import marker unless the importer's re-run keeps it.
+
+    A person's edit of an imported row drops the marker, so that edit and every
+    later one is announced as usual.
+    """
+    if not keep_import_batch or not item.get(IMPORT_BATCH_ATTRIBUTE):
+        item.pop(IMPORT_BATCH_ATTRIBUTE, None)
+    return item
+
+
 def _stored_time(value: datetime) -> str:
     """A datetime in the string form a model dump stores, so every row reads alike."""
     return str(_DATETIME.dump_python(value, mode="json"))
 
 
 def as_project_update_item(update: ProjectUpdateRow) -> dict[str, Any]:
-    """One project update as the stored item, an unedited one carrying no `edited_at`."""
+    """One project update as the stored item, an unedited one carrying no `edited_at` and no empty bulk marker."""
     item = update.model_dump(mode="json")
-    if item.get("edited_at") is None:
-        item.pop("edited_at", None)
+    for name in ("edited_at", "import_batch_id"):
+        if item.get(name) is None:
+            item.pop(name, None)
     return item
 
 
@@ -958,12 +980,14 @@ class PlanningRepository:
         self._repository.put(as_milestone_item(milestone), condition=Attr("planning_key").not_exists())
         return milestone
 
-    def replace_milestone(self, milestone: ProjectMilestone) -> ProjectMilestone:
+    def replace_milestone(self, milestone: ProjectMilestone, *, keep_import_batch: bool = False) -> ProjectMilestone:
         """Write one milestone's fields over an existing row, its stored counters kept.
 
-        Raises `ConditionFailed` when the row is gone.
+        Raises `ConditionFailed` when the row is gone. The bulk import marker is
+        cleared unless `keep_import_batch` says this is the importer's own re-run.
         """
-        stored = self._replace_fields(as_milestone_item(milestone), MILESTONE_OPTIONAL_FIELDS)
+        item = _marked(as_milestone_item(milestone), keep_import_batch)
+        stored = self._replace_fields(item, MILESTONE_OPTIONAL_FIELDS)
         return as_milestone(stored)
 
     def delete_project_milestones(self, workspace_id: str, project_id: str, *, limit: int = 100) -> int:
@@ -1026,9 +1050,14 @@ class PlanningRepository:
         self._repository.put(as_project_update_item(update), condition=Attr("planning_key").not_exists())
         return update
 
-    def replace_project_update(self, update: ProjectUpdateRow) -> ProjectUpdateRow:
-        """Write one update over an existing row, raising `ConditionFailed` when it is gone."""
-        self._repository.put(as_project_update_item(update), condition=Attr("planning_key").exists())
+    def replace_project_update(self, update: ProjectUpdateRow, *, keep_import_batch: bool = False) -> ProjectUpdateRow:
+        """Write one update over an existing row, raising `ConditionFailed` when it is gone.
+
+        The bulk import marker is cleared unless `keep_import_batch` says this is
+        the importer's own re-run.
+        """
+        item = _marked(as_project_update_item(update), keep_import_batch)
+        self._repository.put(item, condition=Attr("planning_key").exists())
         return update
 
     def record_project_health(
@@ -1118,9 +1147,14 @@ class PlanningRepository:
         self._repository.put(as_initiative_item(initiative), condition=Attr("planning_key").not_exists())
         return initiative
 
-    def replace_initiative(self, initiative: Initiative) -> Initiative:
-        """Write one initiative's fields over an existing row, raising `ConditionFailed` when it is gone."""
-        stored = self._replace_fields(as_initiative_item(initiative), INITIATIVE_OPTIONAL_FIELDS)
+    def replace_initiative(self, initiative: Initiative, *, keep_import_batch: bool = False) -> Initiative:
+        """Write one initiative's fields over an existing row, raising `ConditionFailed` when it is gone.
+
+        The bulk import marker is cleared unless `keep_import_batch` says this is
+        the importer's own re-run.
+        """
+        item = _marked(as_initiative_item(initiative), keep_import_batch)
+        stored = self._replace_fields(item, INITIATIVE_OPTIONAL_FIELDS)
         return as_initiative(stored)
 
     def set_project_initiative(self, workspace_id: str, project_id: str, initiative_id: str | None) -> Project | None:
@@ -1129,16 +1163,17 @@ class PlanningRepository:
         A targeted `SET` or `REMOVE`, so the rollup counters the stream consumer
         moves concurrently are never written back stale. The row comes back from
         the write itself, because a read straight after it may not see the change.
+        It is a person's change, so it clears the bulk import marker.
         """
         if not workspace_id or not project_id:
             return None
-        names = {"#initiative": "initiative_id", "#updated": "updated_at"}
+        names = {"#initiative": "initiative_id", "#updated": "updated_at", "#batch": IMPORT_BATCH_ATTRIBUTE}
         values: dict[str, Any] = {":updated": _stored_time(utc_now())}
         if initiative_id is None:
-            expression = "SET #updated = :updated REMOVE #initiative"
+            expression = "SET #updated = :updated REMOVE #initiative, #batch"
         else:
             values[":initiative"] = initiative_id
-            expression = "SET #initiative = :initiative, #updated = :updated"
+            expression = "SET #initiative = :initiative, #updated = :updated REMOVE #batch"
         try:
             item = self._repository.update(
                 {"workspace_id": workspace_id, "planning_key": project_key(project_id)},
@@ -1416,25 +1451,28 @@ class PlanningRepository:
         self._repository.put(as_project_item(project), condition=Attr("planning_key").not_exists())
         return project
 
-    def replace_cycle(self, cycle: Cycle) -> Cycle:
+    def replace_cycle(self, cycle: Cycle, *, keep_import_batch: bool = False) -> Cycle:
         """Write one cycle's fields over an existing row, recomputing its index attributes.
 
         Every attribute but the counters is set from the finished model, so the
         roadmap's range value derived from `end_date` never goes stale, while the
         counters and the rollup revision stay what the consumer last wrote rather
         than what the caller read. Raises `ConditionFailed` when the row is gone.
+        The bulk import marker is cleared unless `keep_import_batch` says this is
+        the importer's own re-run.
         """
-        stored = self._replace_fields(as_cycle_item(cycle), ())
+        stored = self._replace_fields(_marked(as_cycle_item(cycle), keep_import_batch), (IMPORT_BATCH_ATTRIBUTE,))
         return as_cycle(stored)
 
-    def replace_project(self, project: Project) -> Project:
+    def replace_project(self, project: Project, *, keep_import_batch: bool = False) -> Project:
         """Write one project's fields over an existing row, its stored counters kept.
 
         A cleared optional field is removed rather than written as a null, so an
         undated project really does leave the sparse index. Raises
-        `ConditionFailed` when the row is gone.
+        `ConditionFailed` when the row is gone. The bulk import marker is cleared
+        unless `keep_import_batch` says this is the importer's own re-run.
         """
-        stored = self._replace_fields(as_project_item(project), PROJECT_OPTIONAL_FIELDS)
+        stored = self._replace_fields(_marked(as_project_item(project), keep_import_batch), PROJECT_OPTIONAL_FIELDS)
         return as_project(stored)
 
     def _replace_fields(self, item: Mapping[str, Any], optional: tuple[str, ...]) -> Mapping[str, Any]:

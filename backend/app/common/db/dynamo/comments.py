@@ -60,6 +60,7 @@ class Comment(BaseModel):
     source: str | None = None
     created_at: datetime = Field(default_factory=utc_now)
     edited_at: datetime | None = None
+    import_batch_id: str | None = None
 
 
 def build_comment(
@@ -100,8 +101,11 @@ def as_comment(item: Mapping[str, Any]) -> Comment:
 
 
 def as_comment_item(comment: Comment) -> dict[str, Any]:
-    """One comment as the stored item, carrying its author index composite."""
-    return as_item(comment, ws_author=ws_author(comment.workspace_id, comment.author_id))
+    """One comment as the stored item, carrying its author index composite and no empty bulk marker."""
+    item = as_item(comment, ws_author=ws_author(comment.workspace_id, comment.author_id))
+    if not item.get("import_batch_id"):
+        item.pop("import_batch_id", None)
+    return item
 
 
 class CommentRepository:
@@ -147,14 +151,33 @@ class CommentRepository:
         The mentions go in the same update as the body because they are derived
         from it: two writes would leave a window in which the stored mentions name
         a body that is no longer there, and the stream consumer reads both.
+
+        An edit is a person's change, so it clears the bulk import marker an
+        imported comment carries and is announced like any other.
         """
-        item = self._repository.set_attributes(
+        item = self._repository.update(
             {"ws_issue": ws_issue(workspace_id, issue_id), "comment_id": comment_id},
-            {"body": body, "mentions": mentions, "edited_at": utc_now().isoformat()},
+            update_expression="SET #body = :body, #mentions = :mentions, #edited = :edited REMOVE #batch",
+            expression_names={
+                "#body": "body",
+                "#mentions": "mentions",
+                "#edited": "edited_at",
+                "#batch": "import_batch_id",
+            },
+            expression_values={":body": body, ":mentions": mentions, ":edited": utc_now().isoformat()},
             condition=Attr("comment_id").exists(),
             return_values="ALL_NEW",
         )
         return as_comment(item) if item is not None else None
+
+    def replace_imported(self, comment: Comment) -> Comment:
+        """Write a re-imported comment over the row an earlier import wrote, raising `ConditionFailed` when it is gone.
+
+        Only the importer calls this, and the comment carries the new batch id, so
+        the rewrite stays off the announcing paths as the first write did.
+        """
+        self._repository.put(as_comment_item(comment), condition=Attr("comment_id").exists())
+        return comment
 
     def delete(self, workspace_id: str, issue_id: str, comment_id: str) -> bool:
         """Hard-delete one comment row, reporting whether one was there.

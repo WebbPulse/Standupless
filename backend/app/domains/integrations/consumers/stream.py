@@ -289,7 +289,8 @@ def handle_record(
     """Route one record to the handlers for the table it came from.
 
     An issue row a bulk import wrote is carried along on a team move but sends
-    no webhook, channel message or GitHub sync.
+    no webhook, channel message or GitHub sync, and neither does an imported
+    comment or planning row.
     """
     repositories = _GRANT.narrow(repositories)
     physical = source_table(record)
@@ -304,10 +305,14 @@ def handle_record(
         queue_pr_labels(repositories, record)
         channel_events.on_issue(repositories, record, channel_cache)
     elif physical == table_name("comments", prefix):
+        if from_bulk_import(record):
+            return
         publish(repositories, payloads.COMMENT, record, cache)
         queue_comment_sync(repositories, record)
         channel_events.on_comment(repositories, record, channel_cache)
     elif physical == table_name("planning", prefix):
+        if from_bulk_import(record):
+            return
         kind = _planning_kind(record)
         if kind is not None:
             publish(repositories, kind, record, cache)

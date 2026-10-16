@@ -930,6 +930,28 @@ class LabelUpdate(TypedDict):
     parent_id: NotRequired[str | None]
 
 
+class LinearKeyRequest(TypedDict):
+    api_key: str
+
+
+class LinearTeamChoice(TypedDict):
+    linear_team_id: str
+    team_id: str
+
+
+class LinearTeamMappingRead(TypedDict):
+    linear_key: str
+    linear_team_id: str
+    name: str
+    team_id: str
+
+
+class LinearTeamRead(TypedDict):
+    id: str
+    key: str
+    name: str
+
+
 class LinkCreate(TypedDict):
     target_issue_id: str
     type: Literal["blocks", "blocked_by", "relates_to", "duplicate_of"]
@@ -2750,14 +2772,20 @@ class IssueImportPreviewRead(TypedDict):
 
 
 class IssueImportRead(TypedDict):
+    counts: NotRequired[dict[str, int]]
     created_at: str
     created_count: int
     error: NotRequired[str | None]
     file_name: str
     finished_at: NotRequired[str | None]
     import_id: str
+    kind: NotRequired[Literal["csv", "linear"]]
     labels_created: int
+    linear_teams: NotRequired[list[LinearTeamMappingRead]]
     linked_count: NotRequired[int]
+    phase: NotRequired[str | None]
+    phase_count: NotRequired[int]
+    phase_index: NotRequired[int]
     preset: str
     problem_count: int
     problems: list[RowProblemRead]
@@ -2766,10 +2794,11 @@ class IssueImportRead(TypedDict):
     requested_by: str
     skipped_count: int
     started_at: NotRequired[str | None]
-    status: Literal["queued", "running", "completed", "failed"]
+    status: Literal["queued", "running", "completed", "failed", "cancelled"]
     team_id: str
     total_rows: int
     updated_at: str
+    updated_count: NotRequired[int]
     workspace_id: str
 
 
@@ -2833,6 +2862,15 @@ class LabelMergeRead(TypedDict):
     target: LabelRead
     templates_updated: NotRequired[int]
     views_updated: NotRequired[int]
+
+
+class LinearImportRequest(TypedDict):
+    api_key: str
+    teams: list[LinearTeamChoice]
+
+
+class LinearTeamListRead(TypedDict):
+    items: list[LinearTeamRead]
 
 
 class LinkRead(TypedDict):
