@@ -1208,8 +1208,8 @@ class PulseItemRead(BaseModel):
 
     The project's or initiative's name, icon and colour ride along, so a feed
     renders without a read per entry. `actor_id` is null for what no person did,
-    which is a milestone its last closed issue completed. `unread` is this
-    caller's own state.
+    which is a milestone its last closed issue completed, and `actor_name` is
+    then empty. `unread` is this caller's own state.
     """
 
     event_id: str
@@ -1229,6 +1229,7 @@ class PulseItemRead(BaseModel):
     health: Optional[ProjectHealthField] = None
     previous_health: Optional[ProjectHealthField] = None
     actor_id: Optional[str] = None
+    actor_name: str = ""
     source: Optional[ChangeSource] = None
     created_at: datetime
     edited_at: Optional[datetime] = None
@@ -1236,7 +1237,13 @@ class PulseItemRead(BaseModel):
 
     @classmethod
     def from_event(
-        cls, event: PulseEvent, *, project: Optional[Project], initiative: Optional[Initiative], unread: bool
+        cls,
+        event: PulseEvent,
+        *,
+        project: Optional[Project],
+        initiative: Optional[Initiative],
+        unread: bool,
+        actor_name: str = "",
     ) -> "PulseItemRead":
         """Build the response shape from a stored event and what it is about."""
         return cls(
@@ -1257,6 +1264,7 @@ class PulseItemRead(BaseModel):
             health=event.health,  # pyright: ignore[reportArgumentType]
             previous_health=event.previous_health,  # pyright: ignore[reportArgumentType]
             actor_id=event.actor_id or None,
+            actor_name=actor_name if event.actor_id else "",
             source=event.source,  # pyright: ignore[reportArgumentType]
             created_at=event.created_at,
             edited_at=event.edited_at,

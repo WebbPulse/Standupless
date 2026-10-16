@@ -9073,7 +9073,7 @@
         "type": "object"
       },
       "PulseItemRead": {
-        "description": "One Pulse entry as the API returns it.\n\nThe project's or initiative's name, icon and colour ride along, so a feed\nrenders without a read per entry. `actor_id` is null for what no person did,\nwhich is a milestone its last closed issue completed. `unread` is this\ncaller's own state.",
+        "description": "One Pulse entry as the API returns it.\n\nThe project's or initiative's name, icon and colour ride along, so a feed\nrenders without a read per entry. `actor_id` is null for what no person did,\nwhich is a milestone its last closed issue completed, and `actor_name` is\nthen empty. `unread` is this caller's own state.",
         "properties": {
           "actor_id": {
             "anyOf": [
@@ -9085,6 +9085,11 @@
               }
             ],
             "title": "Actor Id"
+          },
+          "actor_name": {
+            "default": "",
+            "title": "Actor Name",
+            "type": "string"
           },
           "body": {
             "anyOf": [

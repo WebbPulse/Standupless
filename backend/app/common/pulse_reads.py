@@ -12,6 +12,7 @@ from app.common import pulse
 from app.common.api.dependencies.authz import AuthzContext
 from app.common.api.dependencies.repositories import Repositories
 from app.common.api.schemas.planning import PulseFollowRead, PulseItemRead
+from app.common.api.schemas.workspaces import display_name_for
 from app.common.initiative_writes import load_initiative
 from app.common.planning_rules import load_readable_project, unprocessable
 
@@ -21,6 +22,13 @@ def check_scope(scope: str) -> str:
     if scope not in pulse.PULSE_SCOPES:
         raise unprocessable(f"scope must be one of {', '.join(pulse.PULSE_SCOPES)}")
     return scope
+
+
+def _actor_names(repositories: Repositories, entries: list[pulse.PulseEntry]) -> dict[str, str]:
+    """Display names for the people behind a page of entries, read in one batch."""
+    ids = sorted({entry.event.actor_id for entry in entries if entry.event.actor_id})
+    users = repositories.users.get_many(ids) if ids else {}
+    return {user_id: display_name_for(user) for user_id, user in users.items()}
 
 
 def list_pulse(
@@ -36,10 +44,15 @@ def list_pulse(
     entries, next_cursor = pulse.list_feed(
         repositories, viewer, scope=check_scope(scope), cursor=cursor, limit=limit
     )
+    names = _actor_names(repositories, entries)
     return (
         [
             PulseItemRead.from_event(
-                entry.event, project=entry.project, initiative=entry.initiative, unread=entry.unread
+                entry.event,
+                project=entry.project,
+                initiative=entry.initiative,
+                unread=entry.unread,
+                actor_name=names.get(entry.event.actor_id or "", ""),
             )
             for entry in entries
         ],

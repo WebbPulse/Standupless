@@ -102,6 +102,7 @@ def test_for_me_holds_what_a_person_leads_and_recent_holds_everything(client: Te
     assert entry["project_name"] == "Led"
     assert entry["body"] == "Led is fine"
     assert entry["actor_id"] == ADMIN
+    assert entry["actor_name"] == "Adam Admin"
     assert entry["unread"] is True
     assert mine["next_cursor"] is None
 
@@ -344,6 +345,7 @@ def test_a_milestone_is_posted_once_when_its_last_issue_closes(
     assert _types(page) == ["milestone_completed"]
     assert page["items"][0]["milestone_name"] == "Alpha"
     assert page["items"][0]["actor_id"] is None
+    assert page["items"][0]["actor_name"] == ""
 
     handle_record(repositories, _record({**image, "status_id": statuses["started"]}, "4"))
     handle_record(repositories, _record({**image, "status_id": statuses["completed"]}, "5"))

@@ -36,10 +36,10 @@ from app.common.standup import StandupDigest, StandupItem, StandupPerson, Standu
 from app.domains.identity.email import render_account_deletion
 from app.domains.identity.package_glue import build_identity_settings
 from app.domains.views.email import (
+    pulse_line,
     render_digest,
     render_notification,
     render_project_update_due_notification,
-    pulse_line,
     render_project_update_notification,
     render_pulse_digest,
     render_standup_digest,
