@@ -2,8 +2,12 @@
  * After a sign in, the login page returns to an MCP authorize URL on the API
  * origin with a full page load, and to anything else only as a local path.
  * Its second leg takes a TOTP code or a passkey, whichever the challenge lists.
+ * "Continue with SSO" asks for an email, sends the browser to the identity
+ * provider through the login page, and falls back to the password form when no
+ * connection matches the domain.
  */
 
+import { ApiError } from '@webbpulse/api-client';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -14,6 +18,11 @@ const completeTotp = vi.fn();
 const completeMfaWithPasskey = vi.fn();
 const seedUser = vi.fn();
 const assign = vi.fn();
+const startSsoSignIn = vi.fn();
+
+vi.mock('../../api/sso', () => ({
+  startSsoSignIn: (body: unknown) => startSsoSignIn(body),
+}));
 
 vi.mock('@webbpulse/auth/react', () => ({
   useAuth: () => ({ login, completeTotp, completeMfaWithPasskey }),
@@ -73,6 +82,7 @@ beforeEach(() => {
   completeTotp.mockReset();
   completeMfaWithPasskey.mockReset();
   assign.mockReset();
+  startSsoSignIn.mockReset();
   vi.stubGlobal('location', { assign });
 });
 
@@ -203,5 +213,88 @@ describe('Login second leg', () => {
       )
     ).toBeInTheDocument();
     expect(screen.getByTestId('login-email')).toBeInTheDocument();
+  });
+});
+
+describe('Login single sign-on', () => {
+  /** Opens the single sign-on path and submits `address`. */
+  const continueWithSso = (address: string) => {
+    fireEvent.click(screen.getByTestId('login-sso'));
+    expect(screen.queryByTestId('login-password')).not.toBeInTheDocument();
+    fireEvent.change(screen.getByTestId('login-email'), {
+      target: { value: address },
+    });
+    fireEvent.submit(screen.getByTestId('login-email').closest('form')!);
+  };
+
+  it('sends the browser to the identity provider for the email domain', async () => {
+    startSsoSignIn.mockResolvedValue({
+      authorization_url: 'https://login.example.com/authorize?state=s1',
+      connection_id: 'ws-1',
+    });
+    renderLogin('/login');
+    continueWithSso('person@example.com');
+
+    await waitFor(() =>
+      expect(assign).toHaveBeenCalledWith(
+        'https://login.example.com/authorize?state=s1'
+      )
+    );
+    expect(startSsoSignIn).toHaveBeenCalledWith({
+      email: 'person@example.com',
+      return_to: '/login?returnTo=%2Fworkspaces&sso_login=1',
+    });
+  });
+
+  it('falls back to the password form when no connection matches', async () => {
+    startSsoSignIn.mockRejectedValue(
+      new ApiError({
+        status: 404,
+        statusText: 'Not Found',
+        body: {
+          success: false,
+          message: 'No single sign-on connection matches.',
+          error_code: 'SSO_CONNECTION_NOT_FOUND',
+        },
+        url: '/api/auth/sso/start',
+        method: 'POST',
+      })
+    );
+    renderLogin('/login');
+    continueWithSso('person@gmail.com');
+
+    expect(
+      await screen.findByText(
+        'No single sign-on is set up for that email domain. Use your password instead.'
+      )
+    ).toBeInTheDocument();
+    expect(screen.getByTestId('login-password')).toBeInTheDocument();
+    expect(assign).not.toHaveBeenCalled();
+  });
+
+  it('asks for an email before starting', async () => {
+    renderLogin('/login');
+    continueWithSso('');
+
+    expect(
+      await screen.findByText('Enter your work email address.')
+    ).toBeInTheDocument();
+    expect(startSsoSignIn).not.toHaveBeenCalled();
+  });
+
+  it('says a cancelled single sign-on was cancelled', () => {
+    renderLogin('/login?sso_error=SSO_CANCELLED');
+
+    expect(screen.getByText('Sign-in was cancelled.')).toBeInTheDocument();
+  });
+
+  it('says any other single sign-on failure did not complete', () => {
+    renderLogin('/login?sso_error=SSO_STATE_INVALID');
+
+    expect(
+      screen.getByText(
+        'Single sign-on did not complete. Try again or contact your workspace admin.'
+      )
+    ).toBeInTheDocument();
   });
 });

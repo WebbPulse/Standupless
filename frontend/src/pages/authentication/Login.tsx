@@ -4,6 +4,11 @@
  * with the system browser, for the providers and passkeys the app window
  * cannot complete, and says why when a handoff the app started came back
  * refused.
+ *
+ * "Continue with SSO" asks only for an email address and hands the browser to
+ * the identity provider its domain uses, falling back to the password form
+ * when no connection matches. Every single sign-on returns here, so its
+ * second factor and its refusals are handled on this page.
  */
 
 import React, { useState } from 'react';
@@ -18,7 +23,7 @@ import {
   useAuth as usePackageAuth,
   useOAuthCallback,
 } from '@webbpulse/auth/react';
-import { LuGlobe, LuKeyRound } from 'react-icons/lu';
+import { LuGlobe, LuKeyRound, LuLock } from 'react-icons/lu';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import AuthLayout from './AuthLayout';
 import AuthSubmitButton from './AuthSubmitButton';
@@ -30,7 +35,7 @@ import PasskeySignInButton from '../../components/auth/PasskeySignInButton';
 import { ErrorAlert } from '../../components/ui/alert';
 import Button from '../../components/ui/button';
 import Field from '../../components/ui/field';
-import TextLink from '../../components/ui/link';
+import TextLink, { LINK_CLASS } from '../../components/ui/link';
 import { useAuth } from '../../hooks/useAuth';
 import { authorizeReturn, loginReturnFor } from '../../lib/authorizeReturn';
 import {
@@ -38,7 +43,17 @@ import {
   desktopBrowserSignIn,
 } from '../../lib/desktop';
 import { DESKTOP_HANDOFF_FAILED_PARAM } from '../../lib/paths';
+import { errorMessage } from '../../lib/errors';
 import { describePasskeyMfaFailure } from '../../lib/passkeyMfa';
+import {
+  beginSso,
+  describeSsoError,
+  isSsoConnectionNotFound,
+  landAfterSso,
+  SSO_ERROR_PARAM,
+  SSO_LOGIN_PARAM,
+  SSO_NOT_FOUND_MESSAGE,
+} from '../../lib/sso';
 import type { UserRead } from '../../types/Api';
 
 /** What the second leg asks for, given the answers it offers. */
@@ -58,13 +73,18 @@ const Login: React.FC = () => {
   const [ticket, setTicket] = useState<string | null>(null);
   const [factors, setFactors] = useState<string[] | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [ssoMode, setSsoMode] = useState(false);
 
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const [error, setError] = useState<string | null>(() =>
-    describeDesktopHandoffFailure(
-      searchParams.get(DESKTOP_HANDOFF_FAILED_PARAM)
-    )
+  const [error, setError] = useState<string | null>(
+    () =>
+      describeDesktopHandoffFailure(
+        searchParams.get(DESKTOP_HANDOFF_FAILED_PARAM)
+      ) ?? describeSsoError(searchParams.get(SSO_ERROR_PARAM))
+  );
+  const [ssoReturn] = useState(
+    () => searchParams.get(SSO_LOGIN_PARAM) === '1'
   );
   const signInWithBrowser = desktopBrowserSignIn();
   const authorizeTarget = authorizeReturn(
@@ -105,6 +125,42 @@ const Login: React.FC = () => {
       return;
     }
     void navigate(returnTo);
+    if (ssoReturn) {
+      void landAfterSso(
+        (to) => {
+          void navigate(to, { replace: true });
+        },
+        () => returnTo
+      );
+    }
+  };
+
+  /**
+   * Starts a single sign-on for the email's domain, staying on the password
+   * form with a note when no connection matches it.
+   */
+  const handleSsoSubmit = async () => {
+    if (email.trim() === '') {
+      setError('Enter your work email address.');
+      return;
+    }
+    setIsSubmitting(true);
+    try {
+      await beginSso({
+        email: email.trim(),
+        returnTo: authorizeTarget ?? returnTo,
+      });
+    } catch (failure) {
+      setIsSubmitting(false);
+      if (isSsoConnectionNotFound(failure)) {
+        setSsoMode(false);
+        setError(SSO_NOT_FOUND_MESSAGE);
+        return;
+      }
+      setError(
+        errorMessage(failure, 'Could not start single sign-on. Try again.')
+      );
+    }
   };
 
   useOAuthCallback(async (result) => {
@@ -160,6 +216,11 @@ const Login: React.FC = () => {
     event.preventDefault();
     setError(null);
 
+    if (ssoMode && ticket === null) {
+      await handleSsoSubmit();
+      return;
+    }
+
     if (ticket !== null) {
       if (code.trim() === '') {
         setError('Enter the code from your authenticator app.');
@@ -204,7 +265,9 @@ const Login: React.FC = () => {
       title={ticket === null ? 'Sign in' : 'Two-factor authentication'}
       subtitle={
         ticket === null
-          ? 'Sign in to reach your workspaces.'
+          ? ssoMode
+            ? 'Enter your work email to sign in with your identity provider.'
+            : 'Sign in to reach your workspaces.'
           : secondLegSubtitle(offersCode, offersPasskey)
       }
     >
@@ -237,18 +300,20 @@ const Login: React.FC = () => {
                 onChange={(event) => setEmail(event.target.value)}
                 disabled={isSubmitting}
               />
-              <Field
-                id="password"
-                label="Password"
-                name="password"
-                type="password"
-                autoComplete="current-password"
-                data-testid="login-password"
-                required
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
-                disabled={isSubmitting}
-              />
+              {!ssoMode && (
+                <Field
+                  id="password"
+                  label="Password"
+                  name="password"
+                  type="password"
+                  autoComplete="current-password"
+                  data-testid="login-password"
+                  required
+                  value={password}
+                  onChange={(event) => setPassword(event.target.value)}
+                  disabled={isSubmitting}
+                />
+              )}
             </>
           ) : (
             <Field
@@ -274,7 +339,13 @@ const Login: React.FC = () => {
             disabled={isSubmitting}
             data-testid="login-submit"
           >
-            {isSubmitting ? 'Signing in' : 'Sign in'}
+            {ssoMode
+              ? isSubmitting
+                ? 'Opening single sign-on'
+                : 'Continue with SSO'
+              : isSubmitting
+                ? 'Signing in'
+                : 'Sign in'}
           </AuthSubmitButton>
 
           {ticket !== null && offersPasskey && (
@@ -299,7 +370,23 @@ const Login: React.FC = () => {
         </AuthForm>
       )}
 
-      {ticket === null && (
+      {ticket === null && ssoMode && (
+        <p className="text-sm text-text-muted">
+          <button
+            type="button"
+            className={LINK_CLASS}
+            onClick={() => {
+              setSsoMode(false);
+              setError(null);
+            }}
+            data-testid="login-sso-cancel"
+          >
+            Use your password instead
+          </button>
+        </p>
+      )}
+
+      {ticket === null && !ssoMode && (
         <>
           <div className="hidden space-y-4 has-[a]:block has-[button]:block">
             <div className="flex items-center gap-3 text-2xs text-text-faint">
@@ -323,6 +410,19 @@ const Login: React.FC = () => {
                   <span>Sign in with your browser</span>
                 </Button>
               )}
+              <Button
+                variant="secondary"
+                className="w-full"
+                onClick={() => {
+                  setError(null);
+                  setSsoMode(true);
+                }}
+                disabled={isSubmitting}
+                data-testid="login-sso"
+              >
+                <LuLock className="h-3.5 w-3.5" aria-hidden="true" />
+                <span>Continue with SSO</span>
+              </Button>
               <PasskeySignInButton
                 email={email}
                 onResult={(result) => void handlePasskeyResult(result)}

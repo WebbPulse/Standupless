@@ -8,14 +8,22 @@
  * the `two_factor` claim the policy checks is stamped at refresh. A refused
  * sign-in method is fixed only by signing in again another way, so that page
  * names the allowed methods and offers to sign out.
+ *
+ * A single sign-on requirement is met only by a session from the workspace's
+ * own connection, so that page starts one, signing the current session out
+ * on the way and returning to the page the member was on.
  */
 
 import React, { useState } from 'react';
 import { LuShieldAlert } from 'react-icons/lu';
 import { getIdentityClient } from '../../api/identityClient';
+import { useLocation } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
+import { errorMessage } from '../../lib/errors';
 import { listSignInMethods } from '../../lib/signInMethods';
+import { beginSso } from '../../lib/sso';
 import AccountShell from '../layout/AccountShell';
+import { ErrorAlert } from '../ui/alert';
 import Button from '../ui/button';
 import TextLink from '../ui/link';
 import type { WorkspaceRead } from '../../types/Api';
@@ -32,7 +40,11 @@ export const AuthPolicyGate: React.FC<AuthPolicyGateProps> = ({
   onRetry,
 }) => {
   const { logout } = useAuth();
+  const location = useLocation();
   const [checking, setChecking] = useState(false);
+  const [starting, setStarting] = useState(false);
+  const [ssoError, setSsoError] = useState<string | null>(null);
+  const ssoRequired = workspace.auth_policy_reason === 'sso';
   const allowed = workspace.auth_policy_allowed_methods ?? [];
   const methodRefused =
     workspace.auth_policy_reason === 'sign_in_method' && allowed.length > 0;
@@ -47,11 +59,55 @@ export const AuthPolicyGate: React.FC<AuthPolicyGateProps> = ({
     }
   };
 
+  const continueWithSso = async (): Promise<void> => {
+    setStarting(true);
+    setSsoError(null);
+    try {
+      await beginSso({
+        connectionId: workspace.id,
+        returnTo: `${location.pathname}${location.search}`,
+        signOut: () => logout(),
+      });
+    } catch (error) {
+      setStarting(false);
+      setSsoError(
+        errorMessage(error, 'Could not start single sign-on. Try again.')
+      );
+    }
+  };
+
   return (
     <AccountShell width="narrow">
       <div className="space-y-4" data-testid="auth-policy-gate">
         <LuShieldAlert className="h-6 w-6 text-text-faint" aria-hidden="true" />
-        {methodRefused ? (
+        {ssoRequired ? (
+          <>
+            <div className="space-y-1">
+              <h1 className="text-lg font-semibold">
+                {workspace.name} requires single sign-on
+              </h1>
+              <p className="text-sm text-text-muted">
+                An admin requires everyone in this workspace to sign in through
+                its identity provider. Continue with SSO to sign out of this
+                session and sign in again there.
+              </p>
+            </div>
+            <ErrorAlert message={ssoError} />
+            <div className="flex items-center gap-3">
+              <Button
+                variant="primary"
+                size="sm"
+                disabled={starting}
+                onClick={() => {
+                  void continueWithSso();
+                }}
+                data-testid="auth-policy-sso"
+              >
+                {starting ? 'Opening single sign-on' : 'Continue with SSO'}
+              </Button>
+            </div>
+          </>
+        ) : methodRefused ? (
           <>
             <div className="space-y-1">
               <h1 className="text-lg font-semibold">

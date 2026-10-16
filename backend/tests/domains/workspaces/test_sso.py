@@ -254,14 +254,14 @@ def test_a_first_oidc_connection_needs_a_secret(client: TestClient, workspace: s
     sign_in(client, ADMIN)
     response = client.put(f"{BASE}/connection", json={**OIDC_CONNECTION, "oidc_client_secret": ""})
     assert response.status_code == 422
-    assert response.json()["field"] == "oidc_client_secret"
+    assert response.json()["details"]["field"] == "oidc_client_secret"
 
 
 def test_a_plain_http_issuer_is_refused(client: TestClient, workspace: str) -> None:
     sign_in(client, ADMIN)
     response = client.put(f"{BASE}/connection", json={**OIDC_CONNECTION, "oidc_issuer": "http://acme.okta.example"})
     assert response.status_code == 422
-    assert response.json()["field"] == "oidc_issuer"
+    assert response.json()["details"]["field"] == "oidc_issuer"
 
 
 def test_a_saml_connection_is_saved_from_its_three_values(client: TestClient, workspace: str) -> None:
@@ -294,7 +294,7 @@ def test_a_saml_certificate_that_does_not_parse_is_refused(client: TestClient, w
         },
     )
     assert response.status_code == 422
-    assert response.json()["field"] == "saml_idp_certificate"
+    assert response.json()["details"]["field"] == "saml_idp_certificate"
 
 
 def test_the_connection_save_is_audited_without_its_secret(

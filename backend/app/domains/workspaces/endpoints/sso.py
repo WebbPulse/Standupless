@@ -141,7 +141,7 @@ def _invalid(field: str, message: str) -> HTTPException:
     """The 422 for one unusable connection field."""
     return HTTPException(
         status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-        detail={"error_code": "SSO_CONNECTION_INVALID", "field": field, "message": message},
+        detail={"error_code": "SSO_CONNECTION_INVALID", "message": message, "details": {"field": field}},
     )
 
 
