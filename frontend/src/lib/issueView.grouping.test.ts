@@ -497,7 +497,8 @@ describe('the ordering direction', () => {
     } as unknown as SavedViewDisplayRead;
 
     expect(sameViewState(viewToState(view), reversed)).toBe(true);
-    const older = { ...view, ordering_reversed: undefined };
-    expect(viewToState(older).reverse).toBe(false);
+    const older: Partial<SavedViewDisplayRead> = { ...view };
+    delete older.ordering_reversed;
+    expect(viewToState(older as SavedViewDisplayRead).reverse).toBe(false);
   });
 });
