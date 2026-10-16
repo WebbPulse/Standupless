@@ -17,6 +17,7 @@ import type {
   ApprovedDomainRead,
   AuthPolicyRead,
   AuthPolicyUpdate,
+  SsoSettingsRead,
   UserRead,
   WorkspaceRead,
   WorkspaceRole,
@@ -31,6 +32,20 @@ const addApprovedDomain =
   vi.fn<(domain: string) => Promise<ApprovedDomainRead>>();
 const removeApprovedDomain = vi.fn<(domain: string) => Promise<void>>();
 let currentUser: UserRead | null = null;
+const ssoSettings: SsoSettingsRead = {
+  available: true,
+  domains: [],
+  connection: null,
+  require_sso: false,
+  service_provider: {
+    oidc_redirect_uri: 'https://id.example.test/sso/oidc/callback',
+    saml_acs_url: 'https://id.example.test/sso/saml/acs',
+    saml_metadata_url: 'https://id.example.test/sso/saml/metadata',
+    saml_entity_id: 'https://id.example.test/sso/saml',
+  },
+  current_session_sso: false,
+  can_require: false,
+};
 
 vi.mock('../../hooks/useAuth', () => ({
   useAuth: () => ({
@@ -53,6 +68,15 @@ vi.mock('../../api/workspaces', () => ({
     addApprovedDomain(domain),
   removeApprovedDomain: (_workspaceId: string, domain: string) =>
     removeApprovedDomain(domain),
+  getSsoSettings: () => Promise.resolve(ssoSettings),
+  addSsoDomain: vi.fn(),
+  verifySsoDomain: vi.fn(),
+  removeSsoDomain: vi.fn(),
+  saveSsoConnection: vi.fn(),
+  removeSsoConnection: vi.fn(),
+  recordSsoTestResult: vi.fn(),
+  updateSsoPolicy: vi.fn(),
+  joinSsoWorkspace: vi.fn(),
 }));
 
 vi.mock('@webbpulse/auth/react', async () => {

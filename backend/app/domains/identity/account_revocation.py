@@ -60,23 +60,10 @@ def revoke_account_access(repositories: "Repositories", user_id: str) -> Revocat
 
 
 def _revoke_refresh_families(user_id: str) -> int:
-    """Revoke every refresh family the user holds, or nothing when no issuer is configured."""
-    from webbpulse.dynamodb import Repository
-    from webbpulse.identity import REFRESH_TOKENS_TABLE, DynamoRefreshTokenStore
+    """Revoke every refresh family the user holds, through the store every function shares."""
+    from app.common.sessions import revoke_refresh_families
 
-    from app.common.core.config import get_settings
-
-    settings = get_settings()
-    if not settings.IDENTITY_ISSUER:
-        return 0
-    store = DynamoRefreshTokenStore(
-        Repository(
-            REFRESH_TOKENS_TABLE,
-            prefix=settings.dynamodb_table_prefix,
-            endpoint_url=settings.DYNAMODB_ENDPOINT_URL or None,
-        )
-    )
-    return store.revoke_all_for_user(user_id)
+    return revoke_refresh_families(user_id)
 
 
 def _revoke_connected_apps(user_id: str) -> int:

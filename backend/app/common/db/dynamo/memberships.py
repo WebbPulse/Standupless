@@ -20,6 +20,21 @@ as the domain index: "which workspaces approve acme.com" is one query on
 `user_id = domain#acme.com`. No user id can take that form, because user ids are
 ULIDs, so a person's own index reads never meet a domain row.
 
+`sso#connection` holds the workspace's single sign-on connection, and
+`sso_domain#<domain>` one domain the workspace is proving it owns for it. A domain
+row takes `user_id = sso_domain#<domain>` only once its TXT record is verified, so
+"which workspace signs in acme.com" is one query on the user index that never
+meets a domain still pending, and no user id can take that form either.
+
+`scim_user#<scim_id>` is one person a workspace's directory provisioned over SCIM,
+and `scim_name#<user_name>` reserves that person's lowercased `userName`, so two
+provisioning calls racing on one name cannot both land. `scim_group#<team_id>`
+links a directory group to an existing team, and `scim_member#<team_id>#<scim_id>`
+records one directory member of that group, with whether SCIM created the team
+membership it stands for. None of these rows carries a `user_id`, so the user
+index never meets them, and none starts with `user#` or `team#`, so no member or
+team membership read does either.
+
 The workspace membership also carries the person's own sidebar team order,
 because it is the one row that is already per person and per workspace.
 
@@ -34,7 +49,7 @@ from typing import Any, Literal, Mapping
 
 from boto3.dynamodb.conditions import Attr, Key
 from pydantic import BaseModel, Field
-from webbpulse.dynamodb import ConditionFailed, Repository
+from webbpulse.dynamodb import ConditionFailed, Repository, TransactionCanceled
 
 from app.common.db.dynamo.base import as_item, build_repository, delete_partition, utc_now
 from app.common.db.dynamo.tables import MEMBERSHIPS
@@ -97,8 +112,160 @@ class AuthPolicy(BaseModel):
 
     require_two_factor: bool = False
     allowed_methods: list[SignInMethod] = Field(default_factory=lambda: list(SIGN_IN_METHODS))
+    require_sso: bool = False
     updated_at: datetime | None = None
     updated_by: str | None = None
+
+
+SSO_CONNECTION_KEY = "sso#connection"
+
+SSO_DOMAIN_PREFIX = "sso_domain#"
+
+SSO_DOMAIN_LIMIT = 20
+"""The abuse ceiling on single sign-on domains per workspace, far above any real company's."""
+
+SsoProtocolName = Literal["oidc", "saml"]
+
+
+def sso_domain_key(domain: str) -> str:
+    """The sort key, and once verified the user index key, of one single sign-on domain."""
+    return f"{SSO_DOMAIN_PREFIX}{domain}"
+
+
+class SsoDomain(BaseModel):
+    """One email domain a workspace is proving it owns, for single sign-on.
+
+    `token` is the value of the TXT record the domain must publish. It is not a
+    secret: it only proves who could publish it.
+    """
+
+    workspace_id: str
+    domain: str
+    token: str
+    added_by: str
+    added_at: datetime = Field(default_factory=utc_now)
+    verified_at: datetime | None = None
+    verified_by: str | None = None
+
+    @property
+    def verified(self) -> bool:
+        """Whether the domain's TXT record was found."""
+        return self.verified_at is not None
+
+
+class SsoConnectionRow(BaseModel):
+    """A workspace's single sign-on connection, as stored.
+
+    The OIDC client secret is held only sealed, in `oidc_sealed_secret`, bound to the
+    workspace id, so the stored row is safe to read anywhere the table is granted.
+    `tested_at` is cleared by any change to the provider settings, because a test
+    proves only the settings it ran against.
+    """
+
+    workspace_id: str
+    protocol: SsoProtocolName
+    display_name: str = ""
+    oidc_issuer: str = ""
+    oidc_client_id: str = ""
+    oidc_sealed_secret: dict[str, str] = Field(default_factory=dict)
+    oidc_scopes: list[str] = Field(default_factory=lambda: ["openid", "email", "profile"])
+    saml_idp_entity_id: str = ""
+    saml_idp_sso_url: str = ""
+    saml_idp_certificates: list[str] = Field(default_factory=list)
+    created_by: str
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_by: str
+    updated_at: datetime = Field(default_factory=utc_now)
+    tested_at: datetime | None = None
+    tested_by: str | None = None
+
+    @property
+    def tested(self) -> bool:
+        """Whether a sign-in has completed through these settings."""
+        return self.tested_at is not None
+
+
+SCIM_USER_PREFIX = "scim_user#"
+
+SCIM_NAME_PREFIX = "scim_name#"
+
+SCIM_GROUP_PREFIX = "scim_group#"
+
+SCIM_MEMBER_PREFIX = "scim_member#"
+
+SCIM_SCAN_LIMIT = 20_000
+"""The safety ceiling on one read of a workspace's directory rows, far above any plan's seats."""
+
+
+class ScimNameTaken(Exception):
+    """Another directory user in the workspace already holds this `userName`."""
+
+
+def scim_user_key(scim_id: str) -> str:
+    """The sort key of one provisioned directory user."""
+    return f"{SCIM_USER_PREFIX}{scim_id}"
+
+
+def scim_name_key(user_name: str) -> str:
+    """The sort key reserving one lowercased `userName` in a workspace."""
+    return f"{SCIM_NAME_PREFIX}{user_name.strip().lower()}"
+
+
+def scim_group_key(team_id: str) -> str:
+    """The sort key of the link between a directory group and a team."""
+    return f"{SCIM_GROUP_PREFIX}{team_id}"
+
+
+def scim_member_key(team_id: str, scim_id: str) -> str:
+    """The sort key of one directory member of a linked group."""
+    return f"{SCIM_MEMBER_PREFIX}{team_id}#{scim_id}"
+
+
+class ScimUserRow(BaseModel):
+    """One directory user, as the workspace's identity provider last described them.
+
+    `resource` holds the SCIM attributes this product does not model, such as the
+    name parts and the enterprise extension, as JSON, so a provider reads back what
+    it wrote. `linked_user_id` is the Standupless account the directory user stands
+    for, empty until that person has an account on a verified domain.
+    """
+
+    workspace_id: str
+    scim_id: str
+    user_name: str
+    external_id: str = ""
+    active: bool = True
+    display_name: str = ""
+    email_lower: str = ""
+    linked_user_id: str = ""
+    resource: str = "{}"
+    created: str = ""
+    last_modified: str = ""
+
+
+class ScimGroupRow(BaseModel):
+    """A directory group linked to one existing team, whose id is the group's id."""
+
+    workspace_id: str
+    team_id: str
+    display_name: str
+    external_id: str = ""
+    attributes: str = "{}"
+    created: str = ""
+    last_modified: str = ""
+
+
+class ScimMemberRow(BaseModel):
+    """One directory user in one linked group.
+
+    `applied` is whether SCIM created the team membership, so removing the person
+    from the group never removes a membership someone granted by hand.
+    """
+
+    workspace_id: str
+    team_id: str
+    scim_id: str
+    applied: bool = False
 
 
 MEMBERSHIP_SCAN_LIMIT = 100_000
@@ -450,11 +617,16 @@ class MembershipRepository:
         require_two_factor: bool,
         updated_by: str,
         allowed_methods: list[SignInMethod] | None = None,
+        require_sso: bool | None = None,
     ) -> AuthPolicy:
         """Store the workspace's authentication policy and return it.
 
-        `allowed_methods` of `None` allows every sign-in method.
+        `allowed_methods` of `None` allows every sign-in method. `require_sso` of
+        `None` keeps the stored value, so the two-factor and methods route never
+        turns single sign-on off by saving its own fields.
         """
+        if require_sso is None:
+            require_sso = self.get_auth_policy(workspace_id).require_sso
         methods: list[SignInMethod] = (
             list(SIGN_IN_METHODS)
             if allowed_methods is None
@@ -463,6 +635,7 @@ class MembershipRepository:
         policy = AuthPolicy(
             require_two_factor=require_two_factor,
             allowed_methods=methods,
+            require_sso=require_sso,
             updated_at=utc_now(),
             updated_by=updated_by,
         )
@@ -521,6 +694,86 @@ class MembershipRepository:
         )
         return sorted({str(item["workspace_id"]) for item in items})
 
+    def get_sso_connection(self, workspace_id: str) -> SsoConnectionRow | None:
+        """The workspace's single sign-on connection, or `None` when none is set up."""
+        if not workspace_id:
+            return None
+        item = self._repository.get({"workspace_id": workspace_id, "member_key": SSO_CONNECTION_KEY})
+        return None if item is None else SsoConnectionRow.model_validate(dict(item))
+
+    def put_sso_connection(self, row: SsoConnectionRow) -> SsoConnectionRow:
+        """Store the workspace's single sign-on connection, replacing any earlier one."""
+        self._repository.put(as_item(row, member_key=SSO_CONNECTION_KEY))
+        return row
+
+    def delete_sso_connection(self, workspace_id: str) -> None:
+        """Remove the workspace's single sign-on connection. Idempotent."""
+        if not workspace_id:
+            return
+        self._repository.delete({"workspace_id": workspace_id, "member_key": SSO_CONNECTION_KEY})
+
+    def list_sso_domains(self, workspace_id: str) -> list[SsoDomain]:
+        """Every single sign-on domain of this workspace, verified or not, in domain order."""
+        if not workspace_id:
+            return []
+        items = self._repository.iter_query(
+            Key("workspace_id").eq(workspace_id) & Key("member_key").begins_with(SSO_DOMAIN_PREFIX),
+            max_items=SSO_DOMAIN_LIMIT * 2,
+            consistent=True,
+        )
+        return sorted((SsoDomain.model_validate(dict(item)) for item in items), key=lambda row: row.domain)
+
+    def get_sso_domain(self, workspace_id: str, domain: str) -> SsoDomain | None:
+        """One single sign-on domain of this workspace, or `None`."""
+        if not workspace_id or not domain:
+            return None
+        item = self._repository.get({"workspace_id": workspace_id, "member_key": sso_domain_key(domain)})
+        return None if item is None else SsoDomain.model_validate(dict(item))
+
+    def add_sso_domain(self, workspace_id: str, domain: str, *, token: str, added_by: str) -> SsoDomain:
+        """Start proving one domain, keeping the original row and token when it is already listed."""
+        existing = self.get_sso_domain(workspace_id, domain)
+        if existing is not None:
+            return existing
+        row = SsoDomain(workspace_id=workspace_id, domain=domain, token=token, added_by=added_by)
+        try:
+            self._repository.put(
+                as_item(row, member_key=sso_domain_key(domain)),
+                condition=Attr("member_key").not_exists(),
+            )
+        except ConditionFailed:
+            return self.get_sso_domain(workspace_id, domain) or row
+        return row
+
+    def mark_sso_domain_verified(self, row: SsoDomain, *, verified_by: str) -> SsoDomain:
+        """Record a found TXT record, which puts the domain in the user index."""
+        key = sso_domain_key(row.domain)
+        verified = row.model_copy(update={"verified_at": utc_now(), "verified_by": verified_by})
+        self._repository.put(as_item(verified, member_key=key, user_id=key))
+        return verified
+
+    def remove_sso_domain(self, workspace_id: str, domain: str) -> None:
+        """Stop using one domain for single sign-on. Idempotent."""
+        if not workspace_id or not domain:
+            return
+        self._repository.delete({"workspace_id": workspace_id, "member_key": sso_domain_key(domain)})
+
+    def workspaces_verifying_sso_domain(self, domain: str, *, limit: int = 10) -> list[str]:
+        """The ids of every workspace that verified this domain for single sign-on.
+
+        Spans tenants on purpose, as `workspaces_approving_domain` does: it is how a
+        sign-in page finds the connection for an address, and it answers ids alone.
+        Verification refuses a domain another workspace holds, so this is one id or none.
+        """
+        if not domain:
+            return []
+        items = self._repository.iter_query(
+            Key("user_id").eq(sso_domain_key(domain)),
+            index_name=USER_INDEX,
+            max_items=limit,
+        )
+        return sorted({str(item["workspace_id"]) for item in items})
+
     def count_owners(self, workspace_id: str) -> int:
         """How many workspace owners this tenant has.
 
@@ -536,6 +789,213 @@ class MembershipRepository:
             consistent=True,
         )
         return sum(1 for _ in items)
+
+    def get_scim_user(self, workspace_id: str, scim_id: str) -> ScimUserRow | None:
+        """One provisioned directory user, or `None`."""
+        if not workspace_id or not scim_id:
+            return None
+        item = self._repository.get(
+            {"workspace_id": workspace_id, "member_key": scim_user_key(scim_id)}, consistent=True
+        )
+        return None if item is None else ScimUserRow.model_validate(dict(item))
+
+    def get_scim_user_by_name(self, workspace_id: str, user_name: str) -> ScimUserRow | None:
+        """The directory user holding this `userName`, compared without case, or `None`."""
+        if not workspace_id or not user_name.strip():
+            return None
+        item = self._repository.get(
+            {"workspace_id": workspace_id, "member_key": scim_name_key(user_name)}, consistent=True
+        )
+        if item is None:
+            return None
+        return self.get_scim_user(workspace_id, str(item.get("scim_id", "")))
+
+    def list_scim_users(
+        self,
+        workspace_id: str,
+        *,
+        external_id: str | None = None,
+        email_lower: str | None = None,
+        linked_user_id: str | None = None,
+        limit: int = SCIM_SCAN_LIMIT,
+    ) -> list[ScimUserRow]:
+        """The workspace's directory users, oldest first, narrowed by any attribute given."""
+        if not workspace_id:
+            return []
+        condition = None
+        for name, value in (
+            ("external_id", external_id),
+            ("email_lower", email_lower),
+            ("linked_user_id", linked_user_id),
+        ):
+            if value is None:
+                continue
+            clause = Attr(name).eq(value)
+            condition = clause if condition is None else condition & clause
+        items = self._repository.iter_query(
+            Key("workspace_id").eq(workspace_id) & Key("member_key").begins_with(SCIM_USER_PREFIX),
+            filter_expression=condition,
+            max_items=limit,
+            consistent=True,
+        )
+        rows = [ScimUserRow.model_validate(dict(item)) for item in items]
+        return sorted(rows, key=lambda row: (row.created, row.scim_id))
+
+    def _scim_name_item(self, row: ScimUserRow) -> dict[str, Any]:
+        """The row reserving a directory user's `userName`."""
+        return {
+            "workspace_id": row.workspace_id,
+            "member_key": scim_name_key(row.user_name),
+            "scim_id": row.scim_id,
+        }
+
+    def create_scim_user(self, row: ScimUserRow) -> ScimUserRow:
+        """Store a new directory user with its `userName` reserved, raising `ScimNameTaken` on a duplicate."""
+        try:
+            self._repository.transact_write(
+                [
+                    self._repository.put_action(
+                        as_item(row, member_key=scim_user_key(row.scim_id)),
+                        condition=Attr("member_key").not_exists(),
+                    ),
+                    self._repository.put_action(self._scim_name_item(row), condition=Attr("member_key").not_exists()),
+                ]
+            )
+        except TransactionCanceled as exc:
+            raise ScimNameTaken(row.user_name) from exc
+        return row
+
+    def put_scim_user(self, row: ScimUserRow, *, previous_name: str | None = None) -> ScimUserRow:
+        """Replace a directory user, moving its `userName` reservation when the name changed.
+
+        Raises `ScimNameTaken` when the new name is already reserved by someone else.
+        """
+        item = as_item(row, member_key=scim_user_key(row.scim_id))
+        if previous_name is None or scim_name_key(previous_name) == scim_name_key(row.user_name):
+            self._repository.put(item)
+            return row
+        try:
+            self._repository.transact_write(
+                [
+                    self._repository.put_action(item),
+                    self._repository.delete_action(
+                        {"workspace_id": row.workspace_id, "member_key": scim_name_key(previous_name)}
+                    ),
+                    self._repository.put_action(self._scim_name_item(row), condition=Attr("member_key").not_exists()),
+                ]
+            )
+        except TransactionCanceled as exc:
+            raise ScimNameTaken(row.user_name) from exc
+        return row
+
+    def delete_scim_user(self, row: ScimUserRow) -> None:
+        """Remove a directory user, its `userName` reservation and its group memberships."""
+        keys = [
+            {"workspace_id": row.workspace_id, "member_key": scim_user_key(row.scim_id)},
+            {"workspace_id": row.workspace_id, "member_key": scim_name_key(row.user_name)},
+        ]
+        keys.extend(
+            {"workspace_id": row.workspace_id, "member_key": scim_member_key(member.team_id, member.scim_id)}
+            for member in self.list_scim_memberships_for_user(row.workspace_id, row.scim_id)
+        )
+        self._repository.delete_many(keys)
+
+    def get_scim_group(self, workspace_id: str, team_id: str) -> ScimGroupRow | None:
+        """The directory group linked to this team, or `None`."""
+        if not workspace_id or not team_id:
+            return None
+        item = self._repository.get(
+            {"workspace_id": workspace_id, "member_key": scim_group_key(team_id)}, consistent=True
+        )
+        return None if item is None else ScimGroupRow.model_validate(dict(item))
+
+    def list_scim_groups(self, workspace_id: str, *, limit: int = SCIM_SCAN_LIMIT) -> list[ScimGroupRow]:
+        """Every directory group linked to a team in this workspace, oldest first."""
+        if not workspace_id:
+            return []
+        items = self._repository.iter_query(
+            Key("workspace_id").eq(workspace_id) & Key("member_key").begins_with(SCIM_GROUP_PREFIX),
+            max_items=limit,
+            consistent=True,
+        )
+        rows = [ScimGroupRow.model_validate(dict(item)) for item in items]
+        return sorted(rows, key=lambda row: (row.created, row.team_id))
+
+    def link_scim_group(self, row: ScimGroupRow) -> bool:
+        """Link a directory group to its team, answering false when the team is already linked."""
+        try:
+            self._repository.put(
+                as_item(row, member_key=scim_group_key(row.team_id)), condition=Attr("member_key").not_exists()
+            )
+        except ConditionFailed:
+            return False
+        return True
+
+    def put_scim_group(self, row: ScimGroupRow) -> ScimGroupRow:
+        """Replace a linked group's directory attributes."""
+        self._repository.put(as_item(row, member_key=scim_group_key(row.team_id)))
+        return row
+
+    def delete_scim_group(self, workspace_id: str, team_id: str) -> None:
+        """Unlink a directory group from its team, with every member row it held."""
+        keys = [{"workspace_id": workspace_id, "member_key": scim_group_key(team_id)}]
+        keys.extend(
+            {"workspace_id": workspace_id, "member_key": scim_member_key(team_id, member.scim_id)}
+            for member in self.list_scim_members(workspace_id, team_id)
+        )
+        self._repository.delete_many(keys)
+
+    def list_scim_members(
+        self, workspace_id: str, team_id: str, *, limit: int = SCIM_SCAN_LIMIT
+    ) -> list[ScimMemberRow]:
+        """Every directory member of the group linked to this team."""
+        if not workspace_id or not team_id:
+            return []
+        items = self._repository.iter_query(
+            Key("workspace_id").eq(workspace_id) & Key("member_key").begins_with(f"{SCIM_MEMBER_PREFIX}{team_id}#"),
+            max_items=limit,
+            consistent=True,
+        )
+        return [ScimMemberRow.model_validate(dict(item)) for item in items]
+
+    def list_all_scim_members(self, workspace_id: str, *, limit: int = SCIM_SCAN_LIMIT) -> list[ScimMemberRow]:
+        """Every directory member of every linked group, read once for a page of users."""
+        if not workspace_id:
+            return []
+        items = self._repository.iter_query(
+            Key("workspace_id").eq(workspace_id) & Key("member_key").begins_with(SCIM_MEMBER_PREFIX),
+            max_items=limit,
+            consistent=True,
+        )
+        return [ScimMemberRow.model_validate(dict(item)) for item in items]
+
+    def list_scim_memberships_for_user(self, workspace_id: str, scim_id: str) -> list[ScimMemberRow]:
+        """Every linked group this directory user is a member of."""
+        if not workspace_id or not scim_id:
+            return []
+        items = self._repository.iter_query(
+            Key("workspace_id").eq(workspace_id) & Key("member_key").begins_with(SCIM_MEMBER_PREFIX),
+            filter_expression=Attr("scim_id").eq(scim_id),
+            max_items=SCIM_SCAN_LIMIT,
+            consistent=True,
+        )
+        return [ScimMemberRow.model_validate(dict(item)) for item in items]
+
+    def get_scim_member(self, workspace_id: str, team_id: str, scim_id: str) -> ScimMemberRow | None:
+        """One directory user's row in one linked group, or `None`."""
+        item = self._repository.get(
+            {"workspace_id": workspace_id, "member_key": scim_member_key(team_id, scim_id)}, consistent=True
+        )
+        return None if item is None else ScimMemberRow.model_validate(dict(item))
+
+    def put_scim_member(self, row: ScimMemberRow) -> ScimMemberRow:
+        """Record one directory user in one linked group."""
+        self._repository.put(as_item(row, member_key=scim_member_key(row.team_id, row.scim_id)))
+        return row
+
+    def delete_scim_member(self, workspace_id: str, team_id: str, scim_id: str) -> None:
+        """Forget one directory user in one linked group. Idempotent."""
+        self._repository.delete({"workspace_id": workspace_id, "member_key": scim_member_key(team_id, scim_id)})
 
 
 def _as_membership(item: Mapping[str, Any]) -> Membership:

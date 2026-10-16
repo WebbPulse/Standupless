@@ -488,7 +488,11 @@ jobs:
           "AWS_ENDPOINT_URL_S3": "http://127.0.0.1:9100",
           "AWS_REQUEST_CHECKSUM_CALCULATION": "when_required",
           "AWS_RESPONSE_CHECKSUM_VALIDATION": "when_required",
-          "LINEAR_API_URL": "http://127.0.0.1:8765/graphql"
+          "LINEAR_API_URL": "http://127.0.0.1:8765/graphql",
+          "IDENTITY_TOTP_MASTER_KEY": "ZTJlLWxvY2FsLXN0YWNrLW9ubHktbWFzdGVyLWtleSE=",
+          "SSO_TRUSTED_HOSTS": "localhost",
+          "SSO_SKIP_DNS_VERIFICATION": "true",
+          "KEYCLOAK_URL": "http://localhost:8080"
         }
       backend-start-command: >-
         uv run --no-sync uvicorn app.common.composition.app:app --host localhost --port 8000
@@ -498,10 +502,14 @@ jobs:
       # GitHub routes answer 503 without one, and a PEM inline in a workflow reads
       # like a real credential even when it is thrown away at the end of the run.
       table-bootstrap-command: >-
+        docker run -d --name keycloak -p 8080:8080
+        -e KC_BOOTSTRAP_ADMIN_USERNAME=admin -e KC_BOOTSTRAP_ADMIN_PASSWORD=admin
+        quay.io/keycloak/keycloak:26.0.7 start-dev &&
         uv run --no-sync python scripts/create_local_tables.py &&
         uv run --no-sync python scripts/create_local_e2e_user.py &&
         uv run --no-sync python scripts/write_local_github_key.py &&
-        (nohup uv run --no-sync python scripts/local_s3.py > local-s3.log 2>&1 &)
+        (nohup uv run --no-sync python scripts/local_s3.py > local-s3.log 2>&1 &) &&
+        timeout 240 bash -c 'until curl -sf http://localhost:8080/realms/master > /dev/null; do sleep 3; done'
       dynamodb-port: 8001
       check-name: "e2e (local)"
       fail-on-suite-failure: true
