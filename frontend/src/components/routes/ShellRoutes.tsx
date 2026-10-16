@@ -65,9 +65,5 @@ const ShellPublicHandoff: React.FC = () => {
  */
 export const ShellPublicRoute: React.FC = () => {
   const location = useLocation();
-  return isAppShell() ? (
-    <ShellPublicHandoff key={location.key} />
-  ) : (
-    <Outlet />
-  );
+  return isAppShell() ? <ShellPublicHandoff key={location.key} /> : <Outlet />;
 };
