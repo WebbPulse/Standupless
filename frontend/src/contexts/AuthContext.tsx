@@ -14,6 +14,7 @@ import { clearPolledQueryCache } from '@webbpulse/api-client/react';
 import { useNavigate } from 'react-router-dom';
 import { getIdentityClient } from '../api/identityClient';
 import { clearIssueContextCache } from '../lib/issueContextCache';
+import { isAppShell, SHELL_SIGN_IN_PATH } from '../lib/shell';
 import { clearSignedIn, useSignedInHint } from '../lib/signedInHint';
 import { browserTimezone, setViewerTimezone } from '../lib/viewerTimezone';
 import type { UserRead } from '../types/Api';
@@ -119,7 +120,7 @@ const AuthExtrasProvider: React.FC<{ children: ReactNode }> = ({
   }, [reloadUser]);
 
   const logout = useCallback(
-    async (to: string = '/') => {
+    async (to: string = isAppShell() ? SHELL_SIGN_IN_PATH : '/') => {
       try {
         await packageLogout();
       } catch {

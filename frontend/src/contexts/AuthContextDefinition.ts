@@ -14,7 +14,7 @@ export interface AuthExtrasContextType {
   login: (userData: UserRead) => void;
   /**
    * Ends the session through the package store, then goes to `to`, the home
-   * page unless given. The navigation waits for the logout call to settle,
+   * page unless given, or sign in inside the desktop and mobile apps. The navigation waits for the logout call to settle,
    * because navigating first aborts the in-flight request and leaves the
    * refresh cookie alive.
    */
