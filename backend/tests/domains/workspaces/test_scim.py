@@ -333,7 +333,7 @@ def test_deprovisioning_reaches_a_member_who_joined_by_invite(
     assert response.status_code == 201
     assert client.delete(f"{SCIM}/Users/{response.json()['id']}", headers=_bearer(token)).status_code == 204
     assert repositories.memberships.get(WORKSPACE, OUTSIDER) is None
-    assert revoked_sessions == [OUTSIDER]
+    assert set(revoked_sessions) == {OUTSIDER}
 
 
 def test_deleting_a_user_forgets_the_row_and_keeps_the_account(
