@@ -2,8 +2,11 @@
  * A cycle's burn-up: scope, started and completed drawn as steps over the
  * cycle's days, with a dashed line for the pace that finishes the scope on
  * the last day and, once there is enough history, a dotted projection of
- * where completed work lands if the pace so far holds. Drawn as plain SVG in a fixed coordinate space that scales to
- * its container, and summed up in words for a reader who cannot see it.
+ * where completed work lands if the pace so far holds. Drawn as plain SVG in
+ * real pixels at a fixed height across the width of its container, so the
+ * text stays at the app's small size, and summed up in words for a reader who
+ * cannot see it. While its data is still loading it shows a placeholder, never
+ * the empty message.
  *
  * The y axis is labelled in whole numbers, each once, and a cycle whose scope
  * has been empty on every day so far says so instead of drawing an axis
@@ -11,6 +14,7 @@
  */
 
 import React from 'react';
+import { useElementWidth } from '../../hooks/useElementWidth';
 import type { BurnUpPoint } from '../../lib/planningModel';
 
 /** Props for BurnUpChart: the series so far and every day of the cycle. */
@@ -24,14 +28,18 @@ export interface BurnUpChartProps {
   unit?: string;
   /** What shows in place of the chart while the scope has been empty every day. */
   emptyMessage?: string;
+  /** Whether the series is still loading, so a placeholder shows instead. */
+  isLoading?: boolean;
 }
 
 const WIDTH = 640;
-const HEIGHT = 200;
+const HEIGHT = 160;
 const PAD_LEFT = 28;
 const PAD_RIGHT = 8;
 const PAD_TOP = 10;
 const PAD_BOTTOM = 22;
+const FONT_SIZE = 11;
+const LABEL_SLOT = 48;
 
 /**
  * The y axis ticks for a chart topping out at `top`: zero, the top and a
@@ -75,11 +83,13 @@ export const BurnUpChart: React.FC<BurnUpChartProps> = ({
   projection = null,
   unit = 'issues',
   emptyMessage = 'Nothing is in scope yet, so there is nothing to chart.',
+  isLoading = false,
 }) => {
+  const [measureRef, width] = useElementWidth<HTMLDivElement>(WIDTH);
   const count = Math.max(days.length, 1);
   const ticks = axisTicks(Math.max(0, ...points.map((point) => point.scope)));
   const top = ticks[ticks.length - 1] ?? 1;
-  const plotWidth = WIDTH - PAD_LEFT - PAD_RIGHT;
+  const plotWidth = width - PAD_LEFT - PAD_RIGHT;
   const plotHeight = HEIGHT - PAD_TOP - PAD_BOTTOM;
   const x = (index: number): number => PAD_LEFT + (index / count) * plotWidth;
   const y = (value: number): number =>
@@ -88,12 +98,25 @@ export const BurnUpChart: React.FC<BurnUpChartProps> = ({
   const scope = points.map((point) => point.scope);
   const started = points.map((point) => point.started);
   const completed = points.map((point) => point.completed);
-  const labelEvery = Math.max(1, Math.ceil(count / 7));
+  const labelCount = Math.max(1, Math.floor(plotWidth / LABEL_SLOT));
+  const labelEvery = Math.max(1, Math.ceil(count / labelCount));
   const summary =
     last === undefined
       ? 'The cycle has not started yet.'
       : `Scope ${String(last.scope)}, started ${String(last.started)}, completed ${String(last.completed)} ${unit} as of ${last.date}.${projection === null ? '' : ` Projected to complete ${String(projection)} by the last day.`}`;
   const showProjection = projection !== null && last !== undefined;
+
+  if (isLoading) {
+    return (
+      <div
+        role="status"
+        aria-label="Loading burn-up chart"
+        className="animate-pulse rounded-md bg-surface"
+        style={{ height: HEIGHT }}
+        data-testid="burn-up-loading"
+      />
+    );
+  }
 
   if (points.length > 0 && points.every((point) => point.scope === 0)) {
     return (
@@ -105,108 +128,112 @@ export const BurnUpChart: React.FC<BurnUpChartProps> = ({
 
   return (
     <figure className="space-y-2">
-      <svg
-        viewBox={`0 0 ${String(WIDTH)} ${String(HEIGHT)}`}
-        className="h-auto w-full"
-        role="img"
-        aria-label={`Burn-up chart. ${summary}`}
-      >
-        {ticks.map((tick) => (
-          <g key={tick}>
+      <div ref={measureRef} className="w-full">
+        <svg
+          width={width}
+          height={HEIGHT}
+          viewBox={`0 0 ${String(width)} ${String(HEIGHT)}`}
+          className="block max-w-full"
+          role="img"
+          aria-label={`Burn-up chart. ${summary}`}
+        >
+          {ticks.map((tick) => (
+            <g key={tick}>
+              <line
+                x1={PAD_LEFT}
+                x2={width - PAD_RIGHT}
+                y1={y(tick)}
+                y2={y(tick)}
+                stroke="var(--line)"
+                strokeWidth="1"
+              />
+              <text
+                x={PAD_LEFT - 6}
+                y={y(tick) + 3}
+                textAnchor="end"
+                fontSize={FONT_SIZE}
+                fill="var(--text-faint)"
+                data-testid="burn-up-tick"
+              >
+                {String(tick)}
+              </text>
+            </g>
+          ))}
+          {days.map((day, index) =>
+            index % labelEvery === 0 ? (
+              <text
+                key={day}
+                x={x(index) + plotWidth / count / 2}
+                y={HEIGHT - 6}
+                textAnchor="middle"
+                fontSize={FONT_SIZE}
+                fill="var(--text-faint)"
+              >
+                {axisLabel(day)}
+              </text>
+            ) : null
+          )}
+          {last !== undefined && (
             <line
-              x1={PAD_LEFT}
-              x2={WIDTH - PAD_RIGHT}
-              y1={y(tick)}
-              y2={y(tick)}
-              stroke="var(--line)"
+              x1={x(0)}
+              y1={y(0)}
+              x2={x(count)}
+              y2={y(last.scope)}
+              stroke="var(--text-faint)"
               strokeWidth="1"
+              strokeDasharray="4 4"
             />
-            <text
-              x={PAD_LEFT - 6}
-              y={y(tick) + 3}
-              textAnchor="end"
-              fontSize="10"
-              fill="var(--text-faint)"
-              data-testid="burn-up-tick"
-            >
-              {String(tick)}
-            </text>
-          </g>
-        ))}
-        {days.map((day, index) =>
-          index % labelEvery === 0 ? (
-            <text
-              key={day}
-              x={x(index) + plotWidth / count / 2}
-              y={HEIGHT - 6}
-              textAnchor="middle"
-              fontSize="10"
-              fill="var(--text-faint)"
-            >
-              {axisLabel(day)}
-            </text>
-          ) : null
-        )}
-        {last !== undefined && (
-          <line
-            x1={x(0)}
-            y1={y(0)}
-            x2={x(count)}
-            y2={y(last.scope)}
-            stroke="var(--text-faint)"
-            strokeWidth="1"
-            strokeDasharray="4 4"
-          />
-        )}
-        {points.length > 0 && (
-          <>
-            <path
-              d={stepPath(scope, x, y)}
-              fill="none"
-              stroke="var(--text-muted)"
-              strokeWidth="1.5"
-            />
-            <path
-              d={stepPath(started, x, y)}
-              fill="none"
-              stroke="var(--warning)"
-              strokeWidth="1.5"
-            />
-            <path
-              d={`${stepPath(completed, x, y)} L${String(x(points.length))} ${String(y(0))} L${String(x(0))} ${String(y(0))} Z`}
-              fill="var(--accent-soft)"
-              stroke="none"
-            />
-            <path
-              d={stepPath(completed, x, y)}
-              fill="none"
-              stroke="var(--accent)"
-              strokeWidth="2"
-            />
-            {showProjection && (
+          )}
+          {points.length > 0 && (
+            <>
+              <path
+                d={stepPath(scope, x, y)}
+                fill="none"
+                stroke="var(--text-muted)"
+                strokeWidth="1.5"
+              />
+              <path
+                d={stepPath(started, x, y)}
+                fill="none"
+                stroke="var(--warning)"
+                strokeWidth="1.5"
+              />
+              <path
+                d={`${stepPath(completed, x, y)} L${String(x(points.length))} ${String(y(0))} L${String(x(0))} ${String(y(0))} Z`}
+                fill="var(--accent-soft)"
+                stroke="none"
+              />
+              <path
+                d={stepPath(completed, x, y)}
+                fill="none"
+                stroke="var(--accent)"
+                strokeWidth="2"
+              />
+              {showProjection && (
+                <line
+                  x1={x(points.length)}
+                  y1={y(last.completed)}
+                  x2={x(count)}
+                  y2={y(projection)}
+                  stroke="var(--accent)"
+                  strokeWidth="1.5"
+                  strokeDasharray="2 3"
+                  data-testid="burn-up-projection"
+                />
+              )}
               <line
                 x1={x(points.length)}
-                y1={y(last.completed)}
-                x2={x(count)}
-                y2={y(projection)}
+                x2={x(points.length)}
+                y1={PAD_TOP}
+                y2={PAD_TOP + plotHeight}
                 stroke="var(--accent)"
-                strokeWidth="1.5"
-                strokeDasharray="2 3"
-                data-testid="burn-up-projection"
+                strokeWidth="1"
+                opacity="0.5"
               />
-            )}
-            <line
-              x1={x(points.length)}
-              x2={x(points.length)}
-              y1={PAD_TOP}
-              y2={PAD_TOP + plotHeight}
-              stroke="var(--accent)"
-              strokeWidth="1"
-              opacity="0.5"
-            />
-          </>
-        )}
-      </svg>
+            </>
+          )}
+        </svg>
+      </div>
       <figcaption className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-text-muted">
         <span className="inline-flex items-center gap-1.5">
           <span

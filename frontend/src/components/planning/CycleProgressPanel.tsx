@@ -35,6 +35,8 @@ export interface CycleProgressPanelProps {
   points: BurnUpPoint[];
   days: string[];
   projection: number | null;
+  /** Whether the burn-up's data is still loading, so it shows a placeholder. */
+  isLoadingChart?: boolean;
   /** Every issue of the cycle, unfiltered, for the breakdown. */
   issues: readonly IssueRead[];
   statuses: readonly StatusRead[];
@@ -295,6 +297,7 @@ export const CycleProgressPanel: React.FC<CycleProgressPanelProps> = ({
   points,
   days,
   projection,
+  isLoadingChart = false,
   issues,
   statuses,
   context,
@@ -332,15 +335,18 @@ export const CycleProgressPanel: React.FC<CycleProgressPanelProps> = ({
               projection={projection}
               unit={measure === 'points' ? 'points' : 'issues'}
               emptyMessage="No issues in this cycle yet, so there is nothing to chart."
+              isLoading={isLoadingChart}
             />
-            {projection !== null && lastPoint !== undefined && (
-              <p
-                className="text-xs text-text-muted"
-                data-testid="projection-label"
-              >
-                {projectionLabel(projection, lastPoint.scope, measure)}
-              </p>
-            )}
+            {!isLoadingChart &&
+              projection !== null &&
+              lastPoint !== undefined && (
+                <p
+                  className="text-xs text-text-muted"
+                  data-testid="projection-label"
+                >
+                  {projectionLabel(projection, lastPoint.scope, measure)}
+                </p>
+              )}
           </div>
         )}
       </section>

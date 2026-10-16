@@ -273,17 +273,20 @@ export const CycleDetail: React.FC = () => {
     },
     [workspaceId, id, teamId, matchKey]
   );
-  const { data: history } = usePolledQuery(readHistory, {
-    intervalMs: POLL_MS,
-    enabled:
-      workspaceId !== '' &&
-      teamId !== '' &&
-      id !== '' &&
-      cycle !== undefined &&
-      cycle.status !== 'upcoming',
-    queryKey: ['cycleHistory', workspaceId, teamId, id, matchKey],
-    auth,
-  });
+  const { data: history, isLoading: isLoadingHistory } = usePolledQuery(
+    readHistory,
+    {
+      intervalMs: POLL_MS,
+      enabled:
+        workspaceId !== '' &&
+        teamId !== '' &&
+        id !== '' &&
+        cycle !== undefined &&
+        cycle.status !== 'upcoming',
+      queryKey: ['cycleHistory', workspaceId, teamId, id, matchKey],
+      auth,
+    }
+  );
 
   const hasPoints =
     (team !== null && team.estimate_scale !== 'off') ||
@@ -451,6 +454,7 @@ export const CycleDetail: React.FC = () => {
     today,
   ]);
   const projection = recorded ? projectCompletion(points, days.length) : null;
+  const isLoadingChart = !recorded && (isLoadingHistory || issues.isLoading);
 
   const cyclesHref = teamCyclesPath(slug, keyPrefix ?? '');
   const crumbs = (
@@ -544,6 +548,7 @@ export const CycleDetail: React.FC = () => {
             points={points}
             days={days}
             projection={projection}
+            isLoadingChart={isLoadingChart}
             issues={issues.rows}
             statuses={statuses}
             context={lists.context}

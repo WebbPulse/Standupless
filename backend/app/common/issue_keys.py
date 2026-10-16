@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import re
 import time
-from typing import Iterable, Mapping, TypeVar
+from typing import Any, Iterable, Mapping, TypeVar
 
 from app.common.db.dynamo.issues import Issue
 from app.common.db.dynamo.teams import TeamRepository
@@ -94,3 +94,26 @@ def current_references(text: str, renames: Mapping[str, str]) -> str:
         return f"{prefix}-{match.group(2)}" if prefix else match.group(0)
 
     return REFERENCE.sub(swap, text)
+
+
+def is_issue_reference(value: Any) -> bool:
+    """Whether an activity value names an issue by id and key, as relation and sub-issue rows do."""
+    return isinstance(value, dict) and isinstance(value.get("id"), str) and isinstance(value.get("key"), str)
+
+
+def current_reference_value(value: Any, renames: Mapping[str, str]) -> Any:
+    """An activity value with the key of each issue it names under the team's current prefix.
+
+    Relation and sub-issue rows store the key the far issue had when the row was
+    written, so a team key change would leave them printing a retired prefix. Only
+    the stored key is swapped; the id, which the reader links by, is kept.
+    """
+    if not renames:
+        return value
+    if isinstance(value, list):
+        return [current_reference_value(item, renames) for item in value]
+    if not is_issue_reference(value):
+        return value
+    head, separator, number = value["key"].rpartition("-")
+    prefix = renames.get(head) if separator and number.isdigit() else None
+    return {**value, "key": f"{prefix}-{number}"} if prefix else value

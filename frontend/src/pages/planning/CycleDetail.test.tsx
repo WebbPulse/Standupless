@@ -454,6 +454,14 @@ describe('CycleDetail', () => {
     ).toBeInTheDocument();
   });
 
+  it('shows a placeholder, not the empty message, while the history loads', async () => {
+    getCycleHistory.mockReturnValue(new Promise<never>(() => undefined));
+    renderPage();
+
+    expect(await screen.findByTestId('burn-up-loading')).toBeInTheDocument();
+    expect(screen.queryByTestId('burn-up-empty')).toBeNull();
+  });
+
   it('says an empty cycle has nothing to chart', async () => {
     getCycle.mockResolvedValue({
       ...cycle,
