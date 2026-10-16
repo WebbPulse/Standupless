@@ -26,7 +26,7 @@ from app.common.api.schemas.releases import ReleaseBackfill
 from app.common.db.dynamo.github import IssueLink, link_key
 from app.common.db.dynamo.releases import PipelineStage, ReleasePipeline, pipeline_key
 from app.domains.integrations.deployments import backfill, handle_deployment_status
-from app.domains.integrations.github_deployments import DeploymentPage, DeploymentRef, PullRef
+from app.domains.integrations.github_deployments import DeploymentPage, DeploymentRef, PullRef, TagRef
 from tests.domains.integrations.conftest import (
     OTHER_TEAM,
     REPOSITORY_FULL_NAME,
@@ -55,6 +55,8 @@ class FakeGitHub:
     previous: str | None = None
     deployments: list[DeploymentRef] = field(default_factory=list)
     published: list[dict[str, Any]] = field(default_factory=list)
+    tags: list[TagRef] = field(default_factory=list)
+    tag_reads: int = 0
 
 
 @pytest.fixture
@@ -95,6 +97,13 @@ def github(monkeypatch: pytest.MonkeyPatch) -> FakeGitHub:
     monkeypatch.setattr(github_deployments, "pull_request", lambda token, repo, number: state.pulls.get(number))
     monkeypatch.setattr(github_deployments, "previous_successful_sha", lambda *args, **kwargs: state.previous)
 
+    def tags(token: str, repository_id: Any) -> list[TagRef]:
+        """The stood-in tags, counting the reads."""
+        state.tag_reads += 1
+        return list(state.tags)
+
+    monkeypatch.setattr(github_deployments, "list_tags", tags)
+
     def one_deployment(token: str, repository_id: Any, environment: str, deployment_id: int) -> DeploymentRef | None:
         """The stood-in successful deployment with this id, or `None`."""
         return next((row for row in state.deployments if row.deployment_id == deployment_id), None)
@@ -105,8 +114,13 @@ def github(monkeypatch: pytest.MonkeyPatch) -> FakeGitHub:
     return state
 
 
-def _delivery(sha: str, environment: str = "production", state: str = "success") -> dict[str, Any]:
+def _delivery(
+    sha: str, environment: str = "production", state: str = "success", ref: str | None = None
+) -> dict[str, Any]:
     """A `deployment_status` delivery as GitHub sends it, trimmed to what the source reads."""
+    deployment: dict[str, Any] = {"sha": sha, "environment": environment}
+    if ref is not None:
+        deployment["ref"] = ref
     return {
         "action": "created",
         "deployment_status": {
@@ -114,7 +128,7 @@ def _delivery(sha: str, environment: str = "production", state: str = "success")
             "environment": environment,
             "environment_url": "https://app.example.test",
         },
-        "deployment": {"sha": sha, "environment": environment},
+        "deployment": deployment,
         "repository": {"id": int(REPOSITORY_ID), "full_name": REPOSITORY_FULL_NAME},
         "installation": {"id": 44551122},
     }
@@ -278,6 +292,98 @@ def test_a_reused_promotion_branch_gets_the_next_letter(repositories: Any, insta
     assert oldest.name == "2026-10-07-b"
     assert newest.name == "2026-10-07-c"
     assert newest.pr_number == 231
+
+
+DIRECT = PullRef(
+    number=81,
+    title="TF-81: Sign provider releases with a KMS key (#81)",
+    head_ref="abc-1-sign-releases",
+    url="https://github.com/acme/app/pull/81",
+)
+
+
+def test_a_direct_merge_with_a_version_ref_is_named_by_its_version(
+    repositories: Any, installed: str, github: FakeGitHub
+) -> None:
+    """A tag-triggered deploy of a pull request merge takes its version as its name and keeps the pull request link."""
+    _pin(repositories)
+    github.messages = {FIRST: "ABC-1: Sign releases (#81)"}
+    github.merges = {FIRST: DIRECT}
+
+    handle_deployment_status(repositories, WORKSPACE, _delivery(FIRST, ref="refs/tags/v1.4.0"))
+
+    [release] = _releases(repositories)
+    assert release.name == "v1.4.0"
+    assert release.version == "1.4.0"
+    assert release.pr_number == 81
+    assert release.pr_url == DIRECT.url
+    assert github.tag_reads == 0
+
+
+def test_a_direct_merge_is_named_by_the_highest_version_tag_on_its_commit(
+    repositories: Any, installed: str, github: FakeGitHub
+) -> None:
+    """With a branch ref, the semantic version tags on the deployed commit name the release, the highest first."""
+    _pin(repositories)
+    github.messages = {FIRST: "ABC-1: Sign releases (#81)"}
+    github.merges = {FIRST: DIRECT}
+    github.tags = [
+        TagRef("latest", FIRST),
+        TagRef("v1.9.0", FIRST),
+        TagRef("v1.10.0", FIRST),
+        TagRef("v2.0.0", SECOND),
+    ]
+
+    handle_deployment_status(repositories, WORKSPACE, _delivery(FIRST, ref="main"))
+
+    [release] = _releases(repositories)
+    assert release.name == "v1.10.0"
+    assert release.version == "1.10.0"
+    assert release.pr_number == 81
+
+
+def test_a_direct_merge_without_a_version_is_named_by_the_date(
+    repositories: Any, installed: str, github: FakeGitHub
+) -> None:
+    """With no version anywhere, a pull request merge gets the dated name of a continuous deploy, not its title."""
+    _pin(repositories)
+    github.messages = {FIRST: "ABC-1: Sign releases (#81)"}
+    github.merges = {FIRST: DIRECT}
+
+    handle_deployment_status(repositories, WORKSPACE, _delivery(FIRST, ref="main"))
+
+    [release] = _releases(repositories)
+    assert release.name.endswith(f"-{FIRST[:7]}")
+    assert "Sign" not in release.name
+    assert release.version is None
+    assert release.pr_number == 81
+    assert release.pr_url == DIRECT.url
+
+
+def test_a_backfilled_direct_merge_is_named_by_version_or_by_the_day_it_shipped(
+    repositories: Any, installed: str, github: FakeGitHub
+) -> None:
+    """A backfill names a versioned deployment by its ref and an unversioned one by its own date, reading tags once."""
+    _pin(repositories)
+    github.messages = {FIRST: "ABC-1: Sign releases (#81)", SECOND: "ABC-2: Cap entries (#89)"}
+    github.merges = {
+        FIRST: DIRECT,
+        SECOND: PullRef(number=89, title="TF-89: cap entries", head_ref="abc-2-cap", url=None),
+    }
+    github.deployments = [
+        DeploymentRef(deployment_id=20, sha=SECOND, created_at=_at(5), ref="v0.3.0"),
+        DeploymentRef(deployment_id=10, sha=FIRST, created_at=_at(3), ref="main"),
+    ]
+
+    page = backfill(repositories, WORKSPACE, TEAM, ReleaseBackfill(limit=5))
+
+    assert page.releases_created == 2
+    newest, oldest = _releases(repositories)
+    assert newest.name == "v0.3.0"
+    assert newest.pr_number == 89
+    assert oldest.name == f"2026.10.03-{FIRST[:7]}"
+    assert oldest.pr_number == 81
+    assert github.tag_reads == 1
 
 
 def test_keys_come_from_pull_request_titles_and_branches(repositories: Any, installed: str, github: FakeGitHub) -> None:

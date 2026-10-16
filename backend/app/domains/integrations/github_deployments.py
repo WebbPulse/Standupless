@@ -39,9 +39,11 @@ NAME_MAX = 120
 
 TAG_MAX = 100
 
-_PULL_SUFFIX = re.compile(r"\s*\(#\d+\)\s*$")
-
 _TAG_UNSAFE = re.compile(r"[^A-Za-z0-9._/-]+")
+
+_SEMVER = re.compile(r"^v?\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$")
+
+_TAG_REF = "refs/tags/"
 
 
 @dataclass(frozen=True)
@@ -56,11 +58,17 @@ class PullRef:
 
 @dataclass(frozen=True)
 class DeploymentRef:
-    """One deployment of an environment: its id, the commit it deployed, and when."""
+    """One deployment of an environment: its id, the commit it deployed, when, and the ref it deployed."""
 
     deployment_id: int
     sha: str
     created_at: datetime | None
+    ref: str | None = None
+
+
+def _ref(value: Any) -> str | None:
+    """A deployment's ref as GitHub sent it, or `None` when it sent none."""
+    return (value.strip() or None) if isinstance(value, str) else None
 
 
 def _pull(body: Mapping[str, Any]) -> PullRef | None:
@@ -184,7 +192,9 @@ def successful_deployments(
                 return DeploymentPage(found, True, page)
             scanned += 1
             if _succeeded(token, repository_id, deployment_id, client=client):
-                found.append(DeploymentRef(deployment_id, sha, _timestamp(entry.get("created_at"))))
+                found.append(
+                    DeploymentRef(deployment_id, sha, _timestamp(entry.get("created_at")), _ref(entry.get("ref")))
+                )
         if len(body) < DEPLOYMENT_PAGE_SIZE:
             return DeploymentPage(found, False, page)
     return DeploymentPage(found, True, first + LIST_PAGES_MAX - 1)
@@ -213,7 +223,7 @@ def successful_deployment(
         return None
     if not _succeeded(token, repository_id, deployment_id, client=client):
         return None
-    return DeploymentRef(deployment_id, sha, _timestamp(body.get("created_at")))
+    return DeploymentRef(deployment_id, sha, _timestamp(body.get("created_at")), _ref(body.get("ref")))
 
 
 SEED_SCANNED = 20
@@ -252,18 +262,26 @@ def previous_successful_sha(
     return found.deployments[0].sha if found.deployments else None
 
 
-def release_name(pull: PullRef) -> str:
-    """A release's name from the pull request whose merge deployed it.
+def promotion_name(pull: PullRef) -> str | None:
+    """A promotion's release name from its branch, or `None` for a pull request that is no promotion.
 
-    A promotion or release branch names it by what follows its prefix, so
-    `promote/2026-10-07-b` reads `2026-10-07-b`; any other pull request names it
-    by its title.
+    A promotion or release branch names its release by what follows its prefix,
+    so `promote/2026-10-07-b` reads `2026-10-07-b`.
     """
     for prefix in RELEASE_BRANCH_PREFIXES:
         if pull.head_ref.startswith(prefix) and pull.head_ref[len(prefix) :].strip("/"):
             return pull.head_ref[len(prefix) :].strip("/")[:NAME_MAX]
-    title = _PULL_SUFFIX.sub("", pull.title).strip()
-    return (title or f"#{pull.number}")[:NAME_MAX]
+    return None
+
+
+def semver_tag(ref: str | None) -> str | None:
+    """The tag a ref names when it is a semantic version, so `refs/tags/v1.2.3` reads `v1.2.3`, else `None`."""
+    if not ref:
+        return None
+    name = ref.strip()
+    if name.startswith(_TAG_REF):
+        name = name[len(_TAG_REF) :]
+    return name if _SEMVER.match(name) else None
 
 
 def tag_for(name: str) -> str:

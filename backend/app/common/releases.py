@@ -581,7 +581,7 @@ def record_release(
     stage and adds any new issues to it, so a CI retry, a second deploy job of the
     same commit and a promotion of it all land on one release. A new release, or
     one newly reaching the stage, runs the stage's status automation unless
-    `automate` is off. `at` dates a backfilled release to when it shipped.
+    `automate` is off. `at` dates a backfilled release, and its automatic name, to when it shipped.
     `referenced` names issues the release carries without closing, which the
     automation leaves alone.
 
@@ -614,7 +614,7 @@ def record_release(
                 return add_issues(repositories, advanced, issues, automate=automate, referenced=referenced), False
     release_id = new_release_id(at)
     issue_ids = list(dict.fromkeys(issue.issue_id for issue in issues))[:ISSUES_MAX]
-    wanted = ((name or "").strip() or (version or "").strip() or auto_name(sha, release_id))[:NAME_MAX]
+    wanted = ((name or "").strip() or (version or "").strip() or auto_name(sha, release_id, at))[:NAME_MAX]
     taken = set(repositories.releases.names_in_use(workspace_id, team_id))
     release = Release(
         workspace_id=workspace_id,
