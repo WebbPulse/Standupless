@@ -254,7 +254,7 @@ interface JobProblemsProps {
 /** The problems a job recorded, folded away until asked for. */
 const JobProblems: React.FC<JobProblemsProps> = ({ problems, truncated }) => (
   <details className="text-xs">
-    <summary className="cursor-pointer text-text-muted">
+    <summary className="cursor-pointer text-text-muted hover:text-text">
       {count(problems.length, 'problem')}
     </summary>
     <ul className="mt-1 max-h-48 space-y-0.5 overflow-y-auto">
