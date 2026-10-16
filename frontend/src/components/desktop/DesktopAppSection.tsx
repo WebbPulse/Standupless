@@ -1,17 +1,17 @@
 /**
  * The settings section that offers the desktop app, hidden when the page is
- * already running inside it.
+ * already running inside it or inside the mobile app.
  */
 
 import React from 'react';
 import { LuDownload } from 'react-icons/lu';
 import { Link } from 'react-router-dom';
-import { isDesktopShell } from '../../lib/desktop';
 import { DOWNLOAD_PATH } from '../../lib/paths';
+import { isAppShell } from '../../lib/shell';
 
-/** The "Desktop app" section, or nothing inside the desktop app. */
+/** The "Desktop app" section, or nothing inside an installable app. */
 const DesktopAppSection: React.FC = () => {
-  if (isDesktopShell()) return null;
+  if (isAppShell()) return null;
   return (
     <section
       id="desktop"

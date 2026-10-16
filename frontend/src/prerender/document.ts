@@ -6,7 +6,8 @@
  */
 
 import { LAST_WORKSPACE_STORAGE_KEY } from '../lib/lastWorkspace';
-import { LANDING_PARAM } from '../lib/paths';
+import { LANDING_PARAM, WORKSPACES_PATH } from '../lib/paths';
+import { MOBILE_USER_AGENT_MARKER, SHELL_SIGN_IN_PATH } from '../lib/shell';
 import {
   SIGNED_IN_HINT_STORAGE_KEY,
   SIGNED_IN_HINT_VALUE,
@@ -87,14 +88,19 @@ const staleGuard = (path: string): string =>
  * last opened, before the landing page paints. It reads only the non-secret
  * signed in marker and the last workspace slug, runs on `/` alone since the
  * root document doubles as the fallback for app routes, and leaves `?landing`
- * on the landing page.
+ * on the landing page. Inside the desktop or mobile app the landing page never
+ * paints: `?landing` is ignored, a signed in person without a last workspace
+ * goes to the picker, and anyone else goes to sign in.
  */
 export const resumeRedirectScript = (): string =>
-  `<script>try{if(location.pathname==='/'&&` +
-  `!new URLSearchParams(location.search).has(${JSON.stringify(LANDING_PARAM)})&&` +
-  `localStorage.getItem(${JSON.stringify(SIGNED_IN_HINT_STORAGE_KEY)})===${JSON.stringify(SIGNED_IN_HINT_VALUE)}){` +
-  `var s=localStorage.getItem(${JSON.stringify(LAST_WORKSPACE_STORAGE_KEY)});` +
-  `if(s)location.replace('/w/'+encodeURIComponent(s))}}catch(e){}</script>`;
+  `<script>try{if(location.pathname==='/'){` +
+  `var a=typeof standuplessDesktop==='object'||(typeof navigator!=='undefined'&&` +
+  `navigator.userAgent.indexOf(${JSON.stringify(MOBILE_USER_AGENT_MARKER)})>=0);` +
+  `var i=localStorage.getItem(${JSON.stringify(SIGNED_IN_HINT_STORAGE_KEY)})===${JSON.stringify(SIGNED_IN_HINT_VALUE)};` +
+  `var s=i&&(a||!new URLSearchParams(location.search).has(${JSON.stringify(LANDING_PARAM)}))?` +
+  `localStorage.getItem(${JSON.stringify(LAST_WORKSPACE_STORAGE_KEY)}):null;` +
+  `var t=s?'/w/'+encodeURIComponent(s):a?(i?${JSON.stringify(WORKSPACES_PATH)}:${JSON.stringify(SHELL_SIGN_IN_PATH)}):null;` +
+  `if(t)location.replace(t)}}catch(e){}</script>`;
 
 /** Replaces the content of every `<meta {attribute}="{key}">` tag. */
 const setMeta = (

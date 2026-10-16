@@ -135,6 +135,11 @@ export interface DesktopBridge {
    * through the app's URL scheme. Absent on builds that predate the handoff.
    */
   signInWithBrowser?: () => void;
+  /**
+   * Opens a web or mail link in the system browser. Absent on builds that
+   * predate it.
+   */
+  openExternal?: (url: string) => void;
 }
 
 /** The bridge when the page runs inside the desktop app, otherwise null. */

@@ -211,6 +211,15 @@ release stage and moves the issues it closes to `status_id`, or the team's Done
 when that is null, unless `move_issues` is off. A repository that records from
 tags or Releases records nothing from its deployments.
 
+A deployment's new release is named from the merged pull request only when that
+is a promotion, by what follows `promote/`, `promotion/`, `release/` or
+`releases/` in its branch. Any other deployment is named by its version: the
+deployment's ref when it is a semantic version such as `v1.4.0`, else the
+highest such tag on the deployed commit. Without one it gets the dated name of a
+continuous deploy, `YYYY.MM.DD-<short sha>`, dated when it shipped. A pull
+request title never names a release; the pull request stays as its link.
+Existing releases keep their names.
+
 ## Publishing GitHub Releases
 
 A release stage can publish a GitHub Release when a deployment reaches it,
@@ -224,7 +233,8 @@ since the notes carry that team's issue titles.
 
 Naming a release from the pull request that merged its commit, and resolving
 issue keys from pull request titles and branches, read the commit's pull
-requests through the Pull requests permission the App already holds.
+requests through the Pull requests permission the App already holds. Naming one
+by a tag on its commit reads the repository's tags through Contents.
 
 ## Issue sync
 

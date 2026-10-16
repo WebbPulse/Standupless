@@ -98,7 +98,11 @@ describe('pageDocument', () => {
 });
 
 describe('resume redirect', () => {
-  const run = (url: string, held: Record<string, string>): string | null => {
+  const run = (
+    url: string,
+    held: Record<string, string>,
+    shell: Record<string, unknown> = {}
+  ): string | null => {
     const { pathname, search } = new URL(url, PRODUCTION_ORIGIN);
     let target: string | null = null;
     const location = {
@@ -112,8 +116,17 @@ describe('resume redirect', () => {
       getItem: (key: string) => new Map(Object.entries(held)).get(key) ?? null,
     };
     const body = resumeRedirectScript().replace(/^<script>|<\/script>$/g, '');
-    runInNewContext(body, { location, localStorage, URLSearchParams });
+    runInNewContext(body, {
+      location,
+      localStorage,
+      URLSearchParams,
+      ...shell,
+    });
     return target;
+  };
+  const desktop = { standuplessDesktop: {} };
+  const mobile = {
+    navigator: { userAgent: 'Mozilla/5.0 Mobile StanduplessMobile/production' },
   };
   const signedIn = {
     'standupless-signed-in': '1',
@@ -140,6 +153,32 @@ describe('resume redirect', () => {
   it('only fires on the root, which also serves app routes', () => {
     expect(run('/w/acme/issues', signedIn)).toBeNull();
     expect(run('/pricing', signedIn)).toBeNull();
+  });
+
+  it('sends a signed out person in an app to sign in', () => {
+    expect(run('/', {}, desktop)).toBe('/login');
+    expect(run('/', {}, mobile)).toBe('/login');
+  });
+
+  it('resumes the last workspace in an app, even with the escape hatch', () => {
+    expect(run('/?landing', signedIn, desktop)).toBe('/w/acme%20co');
+    expect(run('/', signedIn, mobile)).toBe('/w/acme%20co');
+  });
+
+  it('sends a signed in person with no last workspace in an app to the picker', () => {
+    expect(run('/', { 'standupless-signed-in': '1' }, desktop)).toBe(
+      '/workspaces'
+    );
+  });
+
+  it('leaves a browser that is not an app alone', () => {
+    expect(
+      run('/', {}, { navigator: { userAgent: 'Mozilla/5.0 Safari' } })
+    ).toBeNull();
+  });
+
+  it('leaves app routes in an app to the router', () => {
+    expect(run('/w/acme/issues', {}, desktop)).toBeNull();
   });
 
   it('is added to the root document only, first in the head', () => {
