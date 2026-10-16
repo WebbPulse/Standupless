@@ -28,7 +28,7 @@ from app.common.filter_resolution import resolve_issue_filter
 from app.common.issue_filters import IssueFilter
 from app.common.issue_keys import current_all
 from app.common.issue_rules import status_categories
-from app.common.issue_writes import descending, sort_key
+from app.common.issue_writes import order_issues, status_ranks
 from app.common.sub_teams import listed_teams
 
 SYNC_OVERLAP = timedelta(seconds=10)
@@ -79,6 +79,7 @@ def list_issue_changes(
     since: datetime,
     subscribed: bool = False,
     include_sub_teams: bool = False,
+    reverse: bool = False,
 ) -> IssueChanges:
     """What changed in the caller's filtered issue list after `since`.
 
@@ -87,7 +88,7 @@ def list_issue_changes(
     cursor older than the tombstone retention, or a delta too large to carry,
     answers `resync_required` and nothing else, since a partial answer there would
     be silently wrong. `include_sub_teams` rolls the named team's visible
-    sub-teams in, as the full read does.
+    sub-teams in and `reverse` turns the sort around, as the full read does.
     """
     since = normalize(since)
     if since < utc_now() - TOMBSTONE_RETENTION + SYNC_OVERLAP:
@@ -135,7 +136,8 @@ def list_issue_changes(
             removed.append(issue.issue_id)
     removed.extend(row.issue_id for row in tombstones if row.issue_id not in latest)
 
-    ordered = sorted(kept, key=sort_key(sort), reverse=descending(sort))
+    ranks = status_ranks(repositories, context.workspace_id, teams) if sort == "status_asc" else None
+    ordered = order_issues(kept, sort, reverse=reverse, ranks=ranks)
     return IssueChanges(issues=ordered, removed_ids=sorted(set(removed)), synced_at=cursor)
 
 

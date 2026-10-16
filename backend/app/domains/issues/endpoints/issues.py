@@ -111,6 +111,7 @@ def list_issues(
     include_triage: Annotated[bool, Query()] = False,
     triage_only: Annotated[bool, Query()] = False,
     sort: Annotated[SortField, Query()] = "updated_desc",
+    reverse: Annotated[bool, Query()] = False,
     cursor: Annotated[Optional[str], Query()] = None,
     limit: Annotated[int, Query(ge=1, le=MAX_LIMIT)] = DEFAULT_LIMIT,
     updated_since: Annotated[Optional[datetime], Query()] = None,
@@ -137,6 +138,7 @@ def list_issues(
 
     `include_sub_teams` with a `team_id` rolls that team's sub-teams the caller
     may see into the list, so a parent team's views show its sub-teams' issues.
+    `reverse` turns the sort around, issues lacking the sorted value still last.
 
     Every body carries `synced_at`. Sent back as `updated_since` with the same
     filter, it turns the read into a delta: only the issues changed since, every
@@ -209,6 +211,7 @@ def list_issues(
             since=updated_since,
             subscribed=subscribed,
             include_sub_teams=include_sub_teams,
+            reverse=reverse,
         )
         delta = IssueSyncListRead(
             items=[IssueRead.from_row(issue) for issue in changes.issues],
@@ -230,6 +233,7 @@ def list_issues(
         limit=limit,
         subscribed=subscribed,
         include_sub_teams=include_sub_teams,
+        reverse=reverse,
     )
     return IssueSyncListRead(
         items=[IssueRead.from_row(issue) for issue in rows], next_cursor=next_cursor, synced_at=synced_at

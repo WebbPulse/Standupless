@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import logging
 import re
-from typing import Any, cast
+from typing import Any, cast, get_args
 
 from app.common.api.pagination import digest_scope
 from app.common.api.schemas.insights import INSIGHT_DIMENSIONS, INSIGHT_MEASURES
@@ -79,12 +79,15 @@ _log = logging.getLogger(__name__)
 ULID_PATTERN = re.compile(r"^[0-9A-Z]{26}$")
 """A row id's shape, so an id the team does not list passes to the write path to be answered there."""
 
-SORTS: tuple[str, ...] = ("updated_desc", "created_desc", "key_asc", "priority_desc", "due_asc", "sla_asc", "manual")
+SORTS: tuple[str, ...] = get_args(SortField)
 
 SORT_HELP = (
     "The order, defaulting to updated_desc; sla_asc puts the soonest SLA breach first "
-    "and issues without a running SLA last"
+    "and issues without a running SLA last; status_asc follows the board's status order, "
+    "start_asc the earliest start date and estimate_desc the largest estimate"
 )
+
+REVERSE_HELP = "Turn the sort around, issues without the sorted value still last, default false"
 
 LINK_TYPES: tuple[str, ...] = ("blocks", "blocked_by", "relates_to", "duplicate_of")
 
@@ -234,6 +237,14 @@ def _sort(call: ToolCall) -> SortField:
     return cast(SortField, value)
 
 
+def _reverse(call: ToolCall) -> bool:
+    """Whether the caller asked for the sort turned around, refusing anything but a boolean."""
+    value = call.optional("reverse", False)
+    if not isinstance(value, bool):
+        raise ToolError("reverse must be true or false")
+    return value
+
+
 def _page(call: ToolCall, **overrides: Any) -> dict[str, Any]:
     """One page of the issue list, through the same fan-out the HTTP list runs."""
     wanted = _build_filter(call, **overrides)
@@ -247,6 +258,7 @@ def _page(call: ToolCall, **overrides: Any) -> dict[str, Any]:
         cursor=call.optional("cursor"),
         limit=limit(call.optional("limit")),
         include_sub_teams=call.optional("include_sub_teams", False) is True,
+        reverse=_reverse(call),
     )
     return {"issues": [summary_json(row) for row in rows], "next_cursor": next_cursor}
 
@@ -867,6 +879,7 @@ ISSUE_TOOLS: tuple[Tool, ...] = (
                     "description": "With team_id, also list the issues of that team's sub-teams, default false",
                 },
                 "sort": enum(SORTS, SORT_HELP),
+                "reverse": {"type": "boolean", "description": REVERSE_HELP},
                 **page_properties(),
             }
         ),
@@ -906,6 +919,7 @@ ISSUE_TOOLS: tuple[Tool, ...] = (
                 **_filter_properties(with_assignee=False),
                 "include_archived": {"type": "boolean", "description": "Include archived issues, default false"},
                 "sort": enum(SORTS, SORT_HELP),
+                "reverse": {"type": "boolean", "description": REVERSE_HELP},
                 **page_properties(),
             }
         ),

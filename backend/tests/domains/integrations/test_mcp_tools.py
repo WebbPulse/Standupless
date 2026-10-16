@@ -174,6 +174,16 @@ def test_list_issues_pages_with_a_cursor(client: TestClient, repositories: Any, 
     assert second["next_cursor"] is None
 
 
+def test_list_issues_reverses_the_sort(client: TestClient, repositories: Any, issue: Issue) -> None:
+    """`reverse` turns the key order around, the newest number first."""
+    seed_issue(repositories, WORKSPACE, TEAM, "01JB0000000000000000000IS3", "ABC", 2)
+    secret = mint_for(repositories, MEMBER, ("issues:read",))
+
+    rows = answer(tool(client, secret, "list_issues", {"team_id": TEAM, "sort": "key_asc", "reverse": True}))["issues"]
+
+    assert [row["issue_key"] for row in rows] == ["ABC-2", "ABC-1"]
+
+
 def test_list_issues_filters_by_cycle_project_label_and_status(
     client: TestClient, repositories: Any, issue: Issue, planning: dict[str, str]
 ) -> None:

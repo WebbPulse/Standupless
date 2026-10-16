@@ -26,6 +26,7 @@ import type {
   LabelRead,
   MilestoneRead,
   ProjectRead,
+  SlaStatus,
   StatusCategory,
   StatusRead,
   ViewGroupBy,
@@ -35,7 +36,7 @@ import { pickableLabels, replacedSiblings } from './labelGroups';
 import { completionPercent } from './planningDisplay';
 import { personLabel, type Assignable } from './issuePeople';
 import { STATUS_CATEGORY_ORDER } from './propertyOptions';
-import { liveSlaStatus } from './sla';
+import { liveSlaStatus, SLA_STATUS_LABELS } from './sla';
 import { statusLook, TRIAGE_LOOK, type StatusLook } from './statusAppearance';
 import {
   shownStatusId,
@@ -118,6 +119,8 @@ export interface ViewState {
   groupBy: GroupField;
   subGroupBy: GroupField;
   ordering: IssueListSort;
+  /** True to read the ordering backwards, issues lacking its value still last. */
+  reverse: boolean;
   visible: ViewVisibleProperty[];
   layout: ViewLayout;
   showEmpty: boolean;
@@ -177,7 +180,36 @@ export interface IssueContext {
    * filter, since a single team's list already fixes it.
    */
   teams?: { id: string; name: string; key?: string }[];
+  /**
+   * The issues a list holds that other rows name as their parent, so a
+   * grouping by parent issue heads each group with its key and title.
+   */
+  parents?: ReadonlyMap<string, ParentRef>;
 }
+
+/** How a parent issue heads its group: its key and title. */
+export interface ParentRef {
+  key: string;
+  title: string;
+}
+
+/** The parents named by the rows of a list, from the rows the list holds. */
+export const parentsIn = (
+  issues: readonly Pick<IssueRead, 'id' | 'key' | 'title' | 'parent_id'>[]
+): Map<string, ParentRef> => {
+  const named = new Set(
+    issues
+      .map((issue) => issue.parent_id)
+      .filter((id): id is string => id !== null)
+  );
+  const parents = new Map<string, ParentRef>();
+  for (const issue of issues) {
+    if (named.has(issue.id)) {
+      parents.set(issue.id, { key: issue.key, title: issue.title });
+    }
+  }
+  return parents;
+};
 
 /** The fields a list can be grouped by, in menu order. */
 export const GROUP_FIELDS: GroupField[] = [
@@ -185,9 +217,29 @@ export const GROUP_FIELDS: GroupField[] = [
   'assignee',
   'priority',
   'label',
+  'project',
   'milestone',
+  'cycle',
+  'parent',
+  'team',
+  'sla',
   'none',
 ];
+
+/**
+ * The groupings a board column can be dragged into, because the property is
+ * one an issue's own fields hold. A parent, team or SLA column only shows
+ * where an issue sits.
+ */
+export const MOVABLE_GROUP_FIELDS: ReadonlySet<GroupField> = new Set([
+  'status',
+  'assignee',
+  'priority',
+  'label',
+  'project',
+  'milestone',
+  'cycle',
+]);
 
 /**
  * The fields a list with this context can be grouped or filtered by. A
@@ -211,16 +263,24 @@ export const GROUP_LABELS: Record<GroupField, string> = {
   priority: 'Priority',
   label: 'Label',
   milestone: 'Milestone',
+  project: 'Project',
+  cycle: 'Cycle',
+  parent: 'Parent issue',
+  team: 'Team',
+  sla: 'SLA status',
   none: 'No grouping',
 };
 
 /** The orderings a list offers, in menu order. */
 export const ORDERINGS: IssueListSort[] = [
   'manual',
+  'status_asc',
   'priority_desc',
   'updated_desc',
   'created_desc',
+  'start_asc',
   'due_asc',
+  'estimate_desc',
   'sla_asc',
   'key_asc',
 ];
@@ -234,6 +294,9 @@ export const ORDERING_LABELS: Record<IssueListSort, string> = {
   due_asc: 'Due date',
   sla_asc: 'SLA breach',
   key_asc: 'Issue ID',
+  status_asc: 'Status',
+  start_asc: 'Start date',
+  estimate_desc: 'Estimate',
 };
 
 /** The filterable fields, in menu order. */
@@ -381,6 +444,7 @@ export const defaultViewState = (layout: ViewLayout = 'list'): ViewState => ({
   groupBy: 'status',
   subGroupBy: 'none',
   ordering: 'priority_desc',
+  reverse: false,
   visible: [...DEFAULT_VISIBLE],
   layout,
   showEmpty: layout === 'board',
@@ -451,6 +515,7 @@ export const sameViewState = (left: ViewState, right: ViewState): boolean =>
   left.groupBy === right.groupBy &&
   left.subGroupBy === right.subGroupBy &&
   left.ordering === right.ordering &&
+  left.reverse === right.reverse &&
   sameList(left.visible, right.visible) &&
   left.layout === right.layout &&
   left.showEmpty === right.showEmpty &&
@@ -481,6 +546,7 @@ export const parseViewState = (
   const group = params.get('group');
   const sub = params.get('sub');
   const order = params.get('order');
+  const rev = params.get('rev');
   const props = params.get('props');
   const empty = params.get('empty');
   const subs = params.get('subs');
@@ -494,6 +560,7 @@ export const parseViewState = (
     groupBy,
     subGroupBy: subGroupBy === groupBy ? 'none' : subGroupBy,
     ordering: isOrdering(order) ? order : base.ordering,
+    reverse: rev === null ? base.reverse : rev === '1',
     visible:
       props === null
         ? base.visible
@@ -529,6 +596,7 @@ export const writeViewState = (
         'group',
         'sub',
         'order',
+        'rev',
         'props',
         'layout',
         'empty',
@@ -549,6 +617,8 @@ export const writeViewState = (
   if (state.groupBy !== base.groupBy) params.set('group', state.groupBy);
   if (state.subGroupBy !== base.subGroupBy) params.set('sub', state.subGroupBy);
   if (state.ordering !== base.ordering) params.set('order', state.ordering);
+  if (state.reverse !== base.reverse)
+    params.set('rev', state.reverse ? '1' : '0');
   if (!sameList(state.visible, base.visible)) {
     params.set('props', state.visible.join(','));
   }
@@ -732,6 +802,7 @@ export const viewStateQuery = (
     ...(state.q === '' ? {} : { q: state.q }),
     ...(state.showArchived ? { include_archived: true } : {}),
     sort: state.ordering,
+    ...(state.reverse ? { reverse: true } : {}),
   };
 };
 
@@ -776,6 +847,7 @@ export const viewToState = (view: SavedViewDisplayRead): ViewState => {
     groupBy,
     subGroupBy: sub === groupBy ? 'none' : sub,
     ordering: isOrdering(ordering) ? ordering : 'priority_desc',
+    reverse: view.ordering_reversed === true,
     visible: view.visible_properties ?? [...DEFAULT_VISIBLE],
     layout,
     showEmpty: layout === 'board',
@@ -817,6 +889,7 @@ export const stateToViewFilter = (
   for (const [key, value] of Object.entries(query)) {
     if (
       key !== 'sort' &&
+      key !== 'reverse' &&
       key !== 'cursor' &&
       key !== 'limit' &&
       key !== 'include_archived' &&
@@ -835,6 +908,7 @@ export const stateToViewDisplay = (
   SavedViewDisplayCreate,
   | 'sort'
   | 'ordering'
+  | 'ordering_reversed'
   | 'group_by'
   | 'sub_group_by'
   | 'visible_properties'
@@ -845,6 +919,7 @@ export const stateToViewDisplay = (
 > => ({
   sort: state.ordering,
   ordering: state.ordering,
+  ordering_reversed: state.reverse,
   group_by: state.groupBy === 'none' ? null : state.groupBy,
   sub_group_by:
     state.subGroupBy === 'none' || state.subGroupBy === state.groupBy
@@ -1062,8 +1137,82 @@ export const groupKeysOf = (
     }
     case 'milestone':
       return [milestoneOf(issue, context)?.milestone_id ?? NONE];
+    case 'project':
+      return [issue.project_id ?? NONE];
+    case 'cycle':
+      return [issue.cycle_id ?? NONE];
+    case 'parent':
+      return [issue.parent_id ?? NONE];
+    case 'team':
+      return [issue.team_id];
+    case 'sla':
+      return [liveSlaStatus(issue)];
     default:
       return ['all'];
+  }
+};
+
+/** The SLA statuses in the order a grouping reads them: the most urgent first. */
+export const SLA_GROUP_ORDER: readonly SlaStatus[] = [
+  'breached',
+  'at_risk',
+  'on_track',
+  'none',
+];
+
+const CLOSED_PROJECT_STATUSES: ReadonlySet<string> = new Set([
+  'completed',
+  'canceled',
+]);
+
+const spansTeams = (context: IssueContext): boolean =>
+  (context.teams?.length ?? 0) > 1;
+
+/** How a cycle heads its group, led by its team's key when a list spans teams. */
+const cycleLabel = (cycle: CycleRead, context: IssueContext): string => {
+  if (!spansTeams(context)) return cycle.name;
+  const team = context.teams?.find((entry) => entry.id === cycle.team_id);
+  const prefix = team?.key ?? team?.name;
+  return prefix === undefined ? cycle.name : `${prefix} ${cycle.name}`;
+};
+
+/** How a parent issue heads its group: its key and title. */
+const parentLabel = (parent: ParentRef): string =>
+  `${parent.key} ${parent.title}`;
+
+/**
+ * The header a row's group takes when the field's shells do not hold it, such
+ * as a closed project, a finished cycle or a parent outside the list.
+ */
+const fallbackLabel = (
+  field: GroupField,
+  key: string,
+  context: IssueContext
+): string => {
+  switch (field) {
+    case 'assignee':
+      return 'Unknown person';
+    case 'status':
+      return 'Unknown status';
+    case 'project':
+      return (
+        context.projects.find((project) => project.project_id === key)?.name ??
+        'Unknown project'
+      );
+    case 'cycle': {
+      const cycle = context.cycles.find((entry) => entry.cycle_id === key);
+      return cycle === undefined ? 'Unknown cycle' : cycleLabel(cycle, context);
+    }
+    case 'parent': {
+      const parent = context.parents?.get(key);
+      return parent === undefined ? 'Unknown parent' : parentLabel(parent);
+    }
+    case 'team':
+      return (
+        context.teams?.find((team) => team.id === key)?.name ?? 'Unknown team'
+      );
+    default:
+      return key;
   }
 };
 
@@ -1160,6 +1309,57 @@ const groupShells = (
           })),
         { key: NONE, field, label: 'No milestone' },
       ];
+    case 'project':
+      return [
+        ...context.projects
+          .filter((project) => !CLOSED_PROJECT_STATUSES.has(project.status))
+          .sort((left, right) => left.name.localeCompare(right.name))
+          .map((project) => ({
+            key: project.project_id,
+            field,
+            label: project.name,
+            progress: completionPercent(project.counts),
+          })),
+        { key: NONE, field, label: 'No project' },
+      ];
+    case 'cycle':
+      return [
+        ...context.cycles
+          .filter(
+            (cycle) =>
+              !cycle.cancelled &&
+              cycle.status !== 'cancelled' &&
+              cycle.status !== 'completed'
+          )
+          .sort(
+            (left, right) =>
+              left.start_date.localeCompare(right.start_date) ||
+              cycleLabel(left, context).localeCompare(
+                cycleLabel(right, context)
+              )
+          )
+          .map((cycle) => ({
+            key: cycle.cycle_id,
+            field,
+            label: cycleLabel(cycle, context),
+            progress: completionPercent(cycle.counts),
+          })),
+        { key: NONE, field, label: 'No cycle' },
+      ];
+    case 'parent':
+      return [{ key: NONE, field, label: 'No parent' }];
+    case 'team':
+      return (context.teams ?? []).map((team) => ({
+        key: team.id,
+        field,
+        label: team.name,
+      }));
+    case 'sla':
+      return SLA_GROUP_ORDER.map((status) => ({
+        key: status,
+        field,
+        label: SLA_STATUS_LABELS[status],
+      }));
     default:
       return [{ key: 'all', field, label: 'All issues' }];
   }
@@ -1206,12 +1406,7 @@ export const groupIssues = (
         group = {
           key,
           field,
-          label:
-            field === 'assignee'
-              ? 'Unknown person'
-              : field === 'status'
-                ? 'Unknown status'
-                : key,
+          label: fallbackLabel(field, key, context),
           ...(field === 'assignee' ? { person: '?' } : {}),
           issues: [],
         };
@@ -1220,6 +1415,10 @@ export const groupIssues = (
       }
       group.issues.push(issue);
     }
+  }
+  if (field === 'parent') {
+    const index = groups.findIndex((group) => group.key === NONE);
+    if (index !== -1) groups.push(...groups.splice(index, 1));
   }
   return showEmpty || field === 'none'
     ? groups
@@ -1244,26 +1443,106 @@ const PRIORITY_RANK: Record<IssuePriority, number> = {
   none: 4,
 };
 
+const TSHIRT_POINTS: Record<string, number> = {
+  XS: 1,
+  S: 2,
+  M: 3,
+  L: 5,
+  XL: 8,
+  XXL: 13,
+  XXXL: 21,
+};
+
+/**
+ * An estimate as whole points, the way the server weighs it: a t-shirt size
+ * on its ladder, a number as itself, anything else as zero.
+ */
+export const estimatePoints = (estimate: string | null): number => {
+  if (estimate === null) return 0;
+  const text = estimate.trim();
+  const size = TSHIRT_POINTS[text.toUpperCase()];
+  if (size !== undefined) return size;
+  const number = Number(text);
+  return Number.isFinite(number) && number > 0 ? Math.trunc(number) : 0;
+};
+
+const isUnestimated = (estimate: string | null): boolean =>
+  estimate === null || estimate.trim() === '';
+
+/**
+ * Where an issue's status sits on its board: triage first, then category and
+ * position, and a status missing from the lists last.
+ */
+const statusRank = (
+  issue: OrderedIssueRead,
+  context: IssueContext | undefined
+): [number, number] => {
+  if (issue.in_triage === true) return [-1, 0];
+  const status =
+    context === undefined
+      ? undefined
+      : context.statuses.find(
+          (entry) =>
+            entry.id === issue.status_id &&
+            (entry.team_id === undefined || entry.team_id === issue.team_id)
+        );
+  if (status === undefined) return [STATUS_CATEGORY_ORDER.length, 0];
+  const category = STATUS_CATEGORY_ORDER.indexOf(status.category);
+  return [
+    category === -1 ? STATUS_CATEGORY_ORDER.length : category,
+    status.position,
+  ];
+};
+
+/** Whether an issue lacks the value an ordering reads, so it sorts last either way. */
+const lacksValue = (
+  issue: OrderedIssueRead,
+  ordering: IssueListSort
+): boolean => {
+  switch (ordering) {
+    case 'manual':
+      return (issue.sort_order ?? null) === null;
+    case 'due_asc':
+      return issue.due_date === null;
+    case 'sla_asc':
+      return slaDeadline(issue) === null;
+    case 'start_asc':
+      return (issue.start_date ?? null) === null;
+    case 'estimate_desc':
+      return isUnestimated(issue.estimate);
+    default:
+      return false;
+  }
+};
+
+/** Options for ordering rows beyond the ordering itself. */
+export interface SortOptions {
+  /** Read the ordering backwards, rows lacking its value still last. */
+  reverse?: boolean;
+  /** The statuses the status ordering ranks rows by. */
+  context?: IssueContext;
+}
+
 /**
  * Orders rows the way the list route does, so an optimistic change lands in
  * its new place at once rather than on the next read. Priority ties go
- * to the newest created, then the higher id; other ties keep their
- * incoming order.
+ * to the newest created, then the higher id; status ties go to the higher
+ * priority; other ties keep their incoming order. Reversing flips the
+ * comparison but keeps rows lacking the sorted value last, as the server does.
  */
 export const sortIssues = (
   issues: OrderedIssueRead[],
-  ordering: IssueListSort
+  ordering: IssueListSort,
+  options: SortOptions = {}
 ): OrderedIssueRead[] => {
+  const direction = options.reverse === true ? -1 : 1;
   const indexed = issues.map((issue, index) => ({ issue, index }));
   const compare = (left: OrderedIssueRead, right: OrderedIssueRead): number => {
     switch (ordering) {
       case 'manual': {
-        const a = left.sort_order ?? null;
-        const b = right.sort_order ?? null;
-        if (a === b) return 0;
-        if (a === null) return 1;
-        if (b === null) return -1;
-        return a < b ? -1 : 1;
+        const a = left.sort_order ?? '';
+        const b = right.sort_order ?? '';
+        return a < b ? -1 : a > b ? 1 : 0;
       }
       case 'priority_desc':
         return (
@@ -1275,21 +1554,29 @@ export const sortIssues = (
         return right.updated_at.localeCompare(left.updated_at);
       case 'created_desc':
         return right.created_at.localeCompare(left.created_at);
-      case 'due_asc': {
-        const a = left.due_date;
-        const b = right.due_date;
-        if (a === b) return 0;
-        if (a === null) return 1;
-        if (b === null) return -1;
-        return a.localeCompare(b);
-      }
-      case 'sla_asc': {
-        const a = slaDeadline(left);
-        const b = slaDeadline(right);
-        if (a === b) return 0;
-        if (a === null) return 1;
-        if (b === null) return -1;
-        return a - b;
+      case 'due_asc':
+        return (left.due_date ?? '').localeCompare(right.due_date ?? '');
+      case 'sla_asc':
+        return (slaDeadline(left) ?? 0) - (slaDeadline(right) ?? 0);
+      case 'start_asc':
+        return (left.start_date ?? '').localeCompare(right.start_date ?? '');
+      case 'estimate_desc':
+        return (
+          estimatePoints(right.estimate) - estimatePoints(left.estimate) ||
+          right.id.localeCompare(left.id)
+        );
+      case 'status_asc': {
+        const [leftCategory, leftPosition] = statusRank(left, options.context);
+        const [rightCategory, rightPosition] = statusRank(
+          right,
+          options.context
+        );
+        return (
+          leftCategory - rightCategory ||
+          leftPosition - rightPosition ||
+          PRIORITY_RANK[left.priority] - PRIORITY_RANK[right.priority] ||
+          left.id.localeCompare(right.id)
+        );
       }
       case 'key_asc':
         return (
@@ -1302,10 +1589,17 @@ export const sortIssues = (
         return 0;
     }
   };
+  const ranked = (left: OrderedIssueRead, right: OrderedIssueRead): number => {
+    const leftMissing = lacksValue(left, ordering);
+    const rightMissing = lacksValue(right, ordering);
+    if (leftMissing !== rightMissing) return leftMissing ? 1 : -1;
+    if (leftMissing) return 0;
+    return direction * compare(left, right);
+  };
   return indexed
     .sort(
       (left, right) =>
-        compare(left.issue, right.issue) || left.index - right.index
+        ranked(left.issue, right.issue) || left.index - right.index
     )
     .map((entry) => entry.issue);
 };
@@ -1413,8 +1707,9 @@ const labelsForKey = (
  * The change that moves an issue from one group to another: the grouped
  * property set to the target's value. A label move swaps the source label
  * for the target one and keeps the rest. Answers null when the target cannot
- * be expressed for this issue, such as a status another team has and this
- * issue's team does not.
+ * be expressed for this issue, such as a status or cycle another team has and
+ * this issue's team does not, or a parent, team or SLA column, which only
+ * shows where an issue sits.
  */
 export const moveChange = (
   issue: OrderedIssueRead,
@@ -1469,6 +1764,28 @@ export const moveChange = (
         ? null
         : { project_milestone_id: milestone.milestone_id };
     }
+    case 'project': {
+      if (toKey === NONE) return { project_id: null };
+      const project = context.projects.find(
+        (entry) => entry.project_id === toKey
+      );
+      return project === undefined ||
+        (project.team_id !== issue.team_id &&
+          !project.team_ids.includes(issue.team_id))
+        ? null
+        : { project_id: project.project_id };
+    }
+    case 'cycle': {
+      if (toKey === NONE) return { cycle_id: null };
+      const cycle = context.cycles.find((entry) => entry.cycle_id === toKey);
+      return cycle === undefined || cycle.team_id !== issue.team_id
+        ? null
+        : { cycle_id: cycle.cycle_id };
+    }
+    case 'parent':
+    case 'team':
+    case 'sla':
+      return null;
     default:
       return {};
   }

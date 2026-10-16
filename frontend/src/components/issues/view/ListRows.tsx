@@ -80,7 +80,11 @@ export const GroupGlyph: React.FC<{ group: IssueGroup }> = ({ group }) => {
       />
     );
   }
-  if (group.field === 'milestone') {
+  if (
+    group.field === 'milestone' ||
+    group.field === 'project' ||
+    group.field === 'cycle'
+  ) {
     return group.progress === undefined ? (
       <span
         aria-hidden="true"

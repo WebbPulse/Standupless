@@ -157,3 +157,46 @@ def test_display_switches_are_strict_booleans(client: TestClient, workspace: str
     view = _create(client, workspace).json()
     cleared = client.patch(f"/api/workspaces/{workspace}/views/{view['view_id']}", json={"show_sub_issues": None})
     assert cleared.status_code == 422
+
+
+def test_the_new_groupings_and_sorts_round_trip(client: TestClient, workspace: str) -> None:
+    """Project, cycle, parent, team and SLA groupings and the status, start and estimate sorts are kept."""
+    sign_in(client, MEMBER)
+
+    for group, sub_group in (("project", "cycle"), ("parent", "sla"), ("team", "milestone"), ("cycle", "project")):
+        created = _create(client, workspace, group_by=group, sub_group_by=sub_group)
+        assert created.status_code == 201, created.text
+        read = client.get(f"/api/workspaces/{workspace}/views/{created.json()['view_id']}").json()
+        assert (read["group_by"], read["sub_group_by"]) == (group, sub_group)
+
+    for sort in ("status_asc", "start_asc", "estimate_desc"):
+        created = _create(client, workspace, sort=sort, ordering=sort)
+        assert created.status_code == 201, created.text
+        assert (created.json()["sort"], created.json()["ordering"]) == (sort, sort)
+
+
+def test_the_ordering_direction_defaults_forward_and_round_trips(client: TestClient, workspace: str) -> None:
+    """A view reads forward unless it saves the reversed direction, and a patch may turn it back."""
+    sign_in(client, MEMBER)
+
+    assert _create(client, workspace).json()["ordering_reversed"] is False
+
+    view = _create(client, workspace, ordering="status_asc", ordering_reversed=True).json()
+    assert view["ordering_reversed"] is True
+    read = client.get(f"/api/workspaces/{workspace}/views/{view['view_id']}").json()
+    assert read["ordering_reversed"] is True
+
+    patched = client.patch(f"/api/workspaces/{workspace}/views/{view['view_id']}", json={"ordering_reversed": False})
+    assert patched.status_code == 200, patched.text
+    assert patched.json()["ordering_reversed"] is False
+
+
+def test_the_ordering_direction_is_a_strict_boolean(client: TestClient, workspace: str) -> None:
+    """A string is not read as a direction, and a patch may not clear it to null."""
+    sign_in(client, MEMBER)
+
+    assert _create(client, workspace, ordering_reversed="true").status_code == 422
+
+    view = _create(client, workspace).json()
+    cleared = client.patch(f"/api/workspaces/{workspace}/views/{view['view_id']}", json={"ordering_reversed": None})
+    assert cleared.status_code == 422

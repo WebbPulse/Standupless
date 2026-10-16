@@ -501,7 +501,10 @@ export type IssueSort =
   | 'key_asc'
   | 'priority_desc'
   | 'due_asc'
-  | 'sla_asc';
+  | 'sla_asc'
+  | 'status_asc'
+  | 'start_asc'
+  | 'estimate_desc';
 
 /** The kinds of link a pair of issues may hold. */
 export type LinkType = 'blocks' | 'blocked_by' | 'relates_to' | 'duplicate_of';
@@ -1147,7 +1150,16 @@ export type ViewScope = 'personal' | 'team' | 'workspace';
 
 /** How a saved view groups its rows. */
 export type ViewGroupBy =
-  'status' | 'assignee' | 'priority' | 'label' | 'milestone';
+  | 'status'
+  | 'assignee'
+  | 'priority'
+  | 'label'
+  | 'milestone'
+  | 'project'
+  | 'cycle'
+  | 'parent'
+  | 'team'
+  | 'sla';
 
 /** Which saved views a list read asks for. */
 export type ViewListScope = 'mine' | 'team' | 'workspace' | 'all';

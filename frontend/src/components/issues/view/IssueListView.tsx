@@ -50,6 +50,7 @@ import {
   groupIssues,
   hiddenColumnKey,
   narrowFilters,
+  parentsIn,
   shownIssues,
   sortIssues,
   statusGroupKey,
@@ -186,8 +187,16 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
   const location = useLocation();
   const { peekIssue, peekedKey } = usePeekIssue();
   const creator = useCreateIssue();
-  const { context, forTeam, createLabel } = lists;
+  const { context: listContext, forTeam, createLabel } = lists;
   const { update, queryKey } = collection;
+  const byParent = state.groupBy === 'parent' || state.subGroupBy === 'parent';
+  const context = useMemo(
+    () =>
+      byParent
+        ? { ...listContext, parents: parentsIn(collection.issues) }
+        : listContext,
+    [byParent, listContext, collection.issues]
+  );
 
   const [collapsed, onToggle] = useStoredSet(
     collapseKey === undefined
@@ -213,9 +222,17 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
           { showSubIssues, showCompleted },
           context
         ),
-        state.ordering
+        state.ordering,
+        { reverse: state.reverse, context }
       ),
-    [collection.issues, state.ordering, showSubIssues, showCompleted, context]
+    [
+      collection.issues,
+      state.ordering,
+      state.reverse,
+      showSubIssues,
+      showCompleted,
+      context,
+    ]
   );
   const byId = useMemo(
     () => new Map(sorted.map((issue) => [issue.id, issue])),
@@ -741,6 +758,22 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
         context.people.some((person) => person.user_id === group.key)
       ) {
         return { assigneeId: group.key };
+      }
+      if (
+        group.field === 'project' &&
+        context.projects.some((project) => project.project_id === group.key)
+      ) {
+        return { projectId: group.key };
+      }
+      if (
+        group.field === 'cycle' &&
+        context.cycles.some(
+          (cycle) =>
+            cycle.cycle_id === group.key &&
+            (createTeamId === undefined || cycle.team_id === createTeamId)
+        )
+      ) {
+        return { cycleId: group.key };
       }
       return {};
     },
