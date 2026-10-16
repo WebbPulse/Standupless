@@ -159,6 +159,23 @@ CARRY_COUNTERS: tuple[str, ...] = (
 CARRIED_ID_ATTRIBUTES: tuple[str, ...] = ("carried_out_issue_ids", "carried_in_issue_ids")
 """The cycle attributes naming the issues a close rolled out of and into it."""
 
+ESTIMATING_TEAMS = "estimating_teams"
+"""How many teams with an estimate scale a project touches, stored in its and its milestones' `counts` map.
+
+Written by the project recount beside the buckets, so a reader knows whether the
+point buckets hold estimate points or, with no estimating team, issue counts.
+"""
+
+
+ProgressMeasure = Literal["points", "issues"]
+"""The unit a project's, milestone's or initiative's progress reads in."""
+
+
+def progress_measure(estimating_teams: int) -> ProgressMeasure:
+    """Points when any team on the work estimates, otherwise issues, as Linear labels it."""
+    return "points" if estimating_teams > 0 else "issues"
+
+
 COUNTER_KEYS: frozenset[str] = frozenset(COUNT_BUCKETS + POINT_BUCKETS + UNESTIMATED_BUCKETS + CARRY_COUNTERS)
 """Every key a rollup may move inside a planning row's `counts` map."""
 
@@ -479,6 +496,7 @@ class Project(BaseModel):
     member_ids: list[str] = Field(default_factory=list)
     counts: RollupCounts = Field(default_factory=RollupCounts)
     points: RollupCounts = Field(default_factory=RollupCounts)
+    estimating_teams: int = 0
     status_counts: dict[str, int] = Field(default_factory=dict)
     last_update_at: datetime | None = None
     update_interval_days: int | None = None
@@ -487,6 +505,16 @@ class Project(BaseModel):
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
     import_batch_id: str | None = None
+
+    @property
+    def measure(self) -> ProgressMeasure:
+        """Whether progress reads in estimate points or in issues."""
+        return progress_measure(self.estimating_teams)
+
+    @property
+    def progress(self) -> RollupCounts:
+        """The buckets progress is measured by: points when a team estimates, issue counts otherwise."""
+        return self.points if self.measure == "points" else self.counts
 
 
 class Initiative(BaseModel):
@@ -574,11 +602,22 @@ class ProjectMilestone(BaseModel):
     sort_order: str
     counts: RollupCounts = Field(default_factory=RollupCounts)
     points: RollupCounts = Field(default_factory=RollupCounts)
+    estimating_teams: int = 0
     status_counts: dict[str, int] = Field(default_factory=dict)
     created_by: str
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
     import_batch_id: str | None = None
+
+    @property
+    def measure(self) -> ProgressMeasure:
+        """Whether progress reads in estimate points or in issues."""
+        return progress_measure(self.estimating_teams)
+
+    @property
+    def progress(self) -> RollupCounts:
+        """The buckets progress is measured by: points when a team estimates, issue counts otherwise."""
+        return self.points if self.measure == "points" else self.counts
 
 
 class PulseEvent(BaseModel):
@@ -690,6 +729,7 @@ def _with_points_in_counts(item: dict[str, Any]) -> dict[str, Any]:
     """One dumped project or milestone with its points moved into the `counts` map, as a cycle stores them."""
     counts = dict(item.get("counts") or {})
     counts.update({f"{POINT_PREFIX}{bucket}": value for bucket, value in (item.pop("points", None) or {}).items()})
+    counts[ESTIMATING_TEAMS] = int(item.pop(ESTIMATING_TEAMS, 0) or 0)
     item["counts"] = counts
     return item
 
@@ -822,6 +862,14 @@ def status_counts_of(item: Mapping[str, Any]) -> dict[str, int]:
     return {str(status_id): max(0, int(count)) for status_id, count in values.items() if int(count) > 0}
 
 
+def estimating_teams_of(item: Mapping[str, Any]) -> int:
+    """A stored row's count of estimating teams, zero on a row the recount has not reached since it grew it."""
+    values = item.get("counts")
+    if not isinstance(values, Mapping):
+        return 0
+    return max(0, int(values.get(ESTIMATING_TEAMS, 0) or 0))
+
+
 def as_project(item: Mapping[str, Any]) -> Project:
     """One stored item as a `Project`, ignoring the index composites.
 
@@ -831,6 +879,7 @@ def as_project(item: Mapping[str, Any]) -> Project:
     fields = {key: value for key, value in item.items() if key not in INDEX_ATTRIBUTE_NAMES}
     fields["counts"] = RollupCounts.from_item(item)
     fields["points"] = RollupCounts.from_item(item, POINT_PREFIX)
+    fields[ESTIMATING_TEAMS] = estimating_teams_of(item)
     fields["status_counts"] = status_counts_of(item)
     fields["status"] = normalise_project_status(str(item.get("status", "backlog")))
     return Project.model_validate(fields)
@@ -841,6 +890,7 @@ def as_milestone(item: Mapping[str, Any]) -> ProjectMilestone:
     fields = {key: value for key, value in item.items() if key not in INDEX_ATTRIBUTE_NAMES}
     fields["counts"] = RollupCounts.from_item(item)
     fields["points"] = RollupCounts.from_item(item, POINT_PREFIX)
+    fields[ESTIMATING_TEAMS] = estimating_teams_of(item)
     fields["status_counts"] = status_counts_of(item)
     return ProjectMilestone.model_validate(fields)
 
@@ -1532,7 +1582,11 @@ class PlanningRepository:
         names: dict[str, str] = {"#counts": "counts"}
         values: dict[str, Any] = {}
         clauses: list[str] = []
-        buckets = [bucket for bucket in COUNT_BUCKETS + POINT_BUCKETS if bucket in counts or bucket in COUNT_BUCKETS]
+        buckets = [
+            bucket
+            for bucket in (*COUNT_BUCKETS, *POINT_BUCKETS, ESTIMATING_TEAMS)
+            if bucket in counts or bucket in COUNT_BUCKETS
+        ]
         for index, bucket in enumerate(buckets):
             names[f"#b{index}"] = bucket
             values[f":v{index}"] = max(0, int(counts.get(bucket, 0)))

@@ -668,10 +668,12 @@ class InitiativeRead(TypedDict):
     health: NotRequired[Literal["on_track", "at_risk", "off_track"] | None]
     initiative_id: str
     last_update_at: NotRequired[str | None]
+    measure: NotRequired[Literal["points", "issues"]]
     name: str
     next_update_due_at: NotRequired[str | None]
     owner_id: NotRequired[str | None]
     points: NotRequired[CountsRead]
+    progress: NotRequired[CountsRead]
     project_count: NotRequired[int]
     project_health: NotRequired[HealthBreakdownRead]
     project_ids: NotRequired[list[str]]
@@ -1003,9 +1005,11 @@ class MilestoneRead(TypedDict):
     created_at: str
     created_by: str
     description: NotRequired[str | None]
+    measure: NotRequired[Literal["points", "issues"]]
     milestone_id: str
     name: str
     points: NotRequired[CountsRead]
+    progress: NotRequired[CountsRead]
     project_id: str
     sort_order: str
     status_counts: NotRequired[dict[str, int]]
@@ -1132,11 +1136,13 @@ class ProjectRead(TypedDict):
     initiative_id: NotRequired[str | None]
     last_update_at: NotRequired[str | None]
     lead_id: NotRequired[str | None]
+    measure: NotRequired[Literal["points", "issues"]]
     member_ids: NotRequired[list[str]]
     name: str
     next_update_due_at: NotRequired[str | None]
     points: NotRequired[CountsRead]
     priority: NotRequired[Literal["none", "urgent", "high", "medium", "low"]]
+    progress: NotRequired[CountsRead]
     project_id: str
     start_date: NotRequired[str | None]
     status: Literal["backlog", "planned", "in_progress", "paused", "completed", "canceled"]
@@ -1485,8 +1491,10 @@ class RoadmapEntryRead(TypedDict):
     icon: NotRequired[str | None]
     id: str
     kind: Literal["cycle", "project"]
+    measure: NotRequired[Literal["points", "issues"]]
     name: str
     priority: NotRequired[str | None]
+    progress: NotRequired[CountsRead]
     start_date: NotRequired[str | None]
     status: str
     target_date: NotRequired[str | None]

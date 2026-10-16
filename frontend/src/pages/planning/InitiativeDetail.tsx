@@ -63,7 +63,9 @@ import { useOptimisticRecord } from '../../lib/optimistic';
 import { initiativesPath, projectPath } from '../../lib/paths';
 import {
   PROJECT_STATUS_LABELS,
-  completionPercent,
+  progressMeasureOf,
+  progressOf,
+  progressPercent,
 } from '../../lib/planningDisplay';
 import { canEditProject } from '../../lib/planningModel';
 import { shortDateLabel } from '../../lib/propertyOptions';
@@ -118,7 +120,9 @@ interface RollupPanelProps {
 
 /** The side panel summing the initiative's projects' progress and health. */
 const RollupPanel: React.FC<RollupPanelProps> = ({ initiative }) => {
-  const percent = completionPercent(initiative.counts);
+  const percent = progressPercent(initiative);
+  const progress = progressOf(initiative);
+  const measure = progressMeasureOf(initiative);
   const healthTotal = HEALTH_MIX.reduce(
     (sum, slice) => sum + initiative.project_health[slice.key],
     0
@@ -132,16 +136,14 @@ const RollupPanel: React.FC<RollupPanelProps> = ({ initiative }) => {
           <span>{`${String(percent)}% complete`}</span>
         </div>
         <dl className="grid grid-cols-2 gap-y-1 text-xs text-text-muted tabular-nums">
-          <dt>Issues</dt>
-          <dd className="text-right">{String(initiative.counts.total)}</dd>
+          <dt>{measure === 'points' ? 'Points' : 'Issues'}</dt>
+          <dd className="text-right">{String(progress.total)}</dd>
           <dt>Done</dt>
-          <dd className="text-right">{String(initiative.counts.done)}</dd>
+          <dd className="text-right">{String(progress.done)}</dd>
           <dt>In progress</dt>
-          <dd className="text-right">
-            {String(initiative.counts.in_progress)}
-          </dd>
+          <dd className="text-right">{String(progress.in_progress)}</dd>
           <dt>To do</dt>
-          <dd className="text-right">{String(initiative.counts.todo)}</dd>
+          <dd className="text-right">{String(progress.todo)}</dd>
         </dl>
       </section>
       <section className="space-y-2">
@@ -595,7 +597,7 @@ export const InitiativeDetail: React.FC = () => {
                 ) : (
                   <ul className="divide-y divide-line rounded-md border border-line">
                     {members.map((project) => {
-                      const percent = completionPercent(project.counts);
+                      const percent = progressPercent(project);
                       return (
                         <li
                           key={project.project_id}

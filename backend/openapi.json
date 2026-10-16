@@ -4871,6 +4871,16 @@
             ],
             "title": "Last Update At"
           },
+          "measure": {
+            "default": "issues",
+            "description": "The unit `progress` reads in, points when a team on it estimates",
+            "enum": [
+              "points",
+              "issues"
+            ],
+            "title": "Measure",
+            "type": "string"
+          },
           "name": {
             "title": "Name",
             "type": "string"
@@ -4900,6 +4910,10 @@
           },
           "points": {
             "$ref": "#/components/schemas/CountsRead"
+          },
+          "progress": {
+            "$ref": "#/components/schemas/CountsRead",
+            "description": "The buckets scope and completion are measured by, in `measure`"
           },
           "project_count": {
             "default": 0,
@@ -7778,6 +7792,16 @@
             ],
             "title": "Description"
           },
+          "measure": {
+            "default": "issues",
+            "description": "The unit `progress` reads in, points when a team on it estimates",
+            "enum": [
+              "points",
+              "issues"
+            ],
+            "title": "Measure",
+            "type": "string"
+          },
           "milestone_id": {
             "title": "Milestone Id",
             "type": "string"
@@ -7788,6 +7812,10 @@
           },
           "points": {
             "$ref": "#/components/schemas/CountsRead"
+          },
+          "progress": {
+            "$ref": "#/components/schemas/CountsRead",
+            "description": "The buckets scope and completion are measured by, in `measure`"
           },
           "project_id": {
             "title": "Project Id",
@@ -8614,6 +8642,16 @@
             ],
             "title": "Lead Id"
           },
+          "measure": {
+            "default": "issues",
+            "description": "The unit `progress` reads in, points when a team on it estimates",
+            "enum": [
+              "points",
+              "issues"
+            ],
+            "title": "Measure",
+            "type": "string"
+          },
           "member_ids": {
             "items": {
               "type": "string"
@@ -8651,6 +8689,10 @@
             ],
             "title": "Priority",
             "type": "string"
+          },
+          "progress": {
+            "$ref": "#/components/schemas/CountsRead",
+            "description": "The buckets scope and completion are measured by, in `measure`"
           },
           "project_id": {
             "title": "Project Id",
@@ -11561,6 +11603,16 @@
             "title": "Kind",
             "type": "string"
           },
+          "measure": {
+            "default": "issues",
+            "description": "The unit `progress` reads in, points when a team on it estimates",
+            "enum": [
+              "points",
+              "issues"
+            ],
+            "title": "Measure",
+            "type": "string"
+          },
           "name": {
             "title": "Name",
             "type": "string"
@@ -11575,6 +11627,10 @@
               }
             ],
             "title": "Priority"
+          },
+          "progress": {
+            "$ref": "#/components/schemas/CountsRead",
+            "description": "The buckets scope and completion are measured by, in `measure`"
           },
           "start_date": {
             "anyOf": [

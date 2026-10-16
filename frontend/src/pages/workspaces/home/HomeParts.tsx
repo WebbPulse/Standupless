@@ -27,6 +27,7 @@ import RelativeTime from '../../../components/ui/relative-time';
 import { cn } from '../../../lib/cn';
 import {
   completionPercent,
+  progressPercent,
   daysRemainingLabel,
   shortCountsLabel,
 } from '../../../lib/planningDisplay';
@@ -357,7 +358,7 @@ export const CycleRow: React.FC<
 export const ProjectRow: React.FC<
   HomeRowProps & { project: ProjectRead; href: string }
 > = ({ project, href, isActive, rowRef, onPointerEnter }) => {
-  const percent = completionPercent(project.counts);
+  const percent = progressPercent(project);
   return (
     <li
       ref={rowRef}

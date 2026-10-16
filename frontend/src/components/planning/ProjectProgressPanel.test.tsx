@@ -3,7 +3,8 @@
  * the issues once they have all been read, gives way to a note while they
  * have not, lists each milestone's share done as a way into its issues, and
  * leads with the latest update when there is one, and splits the stage list
- * per status.
+ * per status. Progress reads in estimate points when a team on the project
+ * estimates and in issues otherwise.
  */
 
 import { render, screen, within } from '@testing-library/react';
@@ -15,6 +16,7 @@ import type {
   ProjectRead,
   ProjectUpdateRead,
   StatusRead,
+  TeamRead,
 } from '../../types/Api';
 import ProjectProgressPanel from './ProjectProgressPanel';
 
@@ -328,5 +330,72 @@ describe('ProjectProgressPanel', () => {
       'Canceled0',
     ]);
     expect(screen.queryByTestId('project-status-bar')).toBeNull();
+  });
+
+  it('measures scope and the graph in points when the team estimates', () => {
+    const team: TeamRead = {
+      id: 'team-1',
+      workspace_id: 'ws-1',
+      name: 'Engineering',
+      key_prefix: 'ENG',
+      description: null,
+      estimate_scale: 'tshirt',
+      created_at: '2026-09-01T00:00:00Z',
+      updated_at: '2026-09-01T00:00:00Z',
+    };
+    const pointed: ProjectRead = {
+      ...project,
+      measure: 'points',
+      progress: { todo: 5, in_progress: 0, done: 3, cancelled: 0, total: 8 },
+    };
+    render(
+      <ProjectProgressPanel
+        project={pointed}
+        teams={[team]}
+        issues={[
+          { ...issue('1', 'todo'), estimate: 'L' },
+          { ...issue('2', 'done'), estimate: 'M' },
+          issue('3', 'todo'),
+        ]}
+        statuses={statuses}
+        complete
+        milestones={[]}
+        onOpenMilestone={vi.fn()}
+        today="2026-09-26"
+      />
+    );
+
+    expect(stat('Scope')).toHaveTextContent('8points');
+    expect(stat('Completed')).toHaveTextContent('338%');
+    expect(
+      screen.getByRole('img', {
+        name: /Scope 8, started 3, completed 3 points as of 2026-09-26/,
+      })
+    ).toBeInTheDocument();
+  });
+
+  it('reads stored points before the issues load', () => {
+    render(
+      <ProjectProgressPanel
+        project={{
+          ...project,
+          measure: 'points',
+          progress: {
+            todo: 1,
+            in_progress: 0,
+            done: 1,
+            cancelled: 0,
+            total: 2,
+          },
+        }}
+        issues={[]}
+        statuses={statuses}
+        complete={false}
+        milestones={[]}
+        onOpenMilestone={vi.fn()}
+      />
+    );
+
+    expect(stat('Scope')).toHaveTextContent('2points');
   });
 });

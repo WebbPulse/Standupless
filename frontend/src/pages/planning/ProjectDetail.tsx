@@ -79,7 +79,7 @@ import { errorMessage } from '../../lib/errors';
 import { personLabel } from '../../lib/issuePeople';
 import { useOptimisticRecord } from '../../lib/optimistic';
 import { projectsPath } from '../../lib/paths';
-import { completionPercent, updateNudge } from '../../lib/planningDisplay';
+import { progressPercent, updateNudge } from '../../lib/planningDisplay';
 import { canEditProject } from '../../lib/planningModel';
 import {
   initiativesKey,
@@ -344,7 +344,7 @@ export const ProjectDetail: React.FC = () => {
   const canDelete =
     isTeamAdmin(workspace?.role, undefined) ||
     projectTeams.some((team) => isTeamAdmin(workspace?.role, team.role));
-  const percent = completionPercent(project.counts);
+  const percent = progressPercent(project);
   const nudge = updateNudge(project);
   const workspaceCadence = workspace?.project_update_interval_days ?? 7;
   const latestAuthor =
@@ -679,6 +679,7 @@ export const ProjectDetail: React.FC = () => {
             </div>
             <ProjectProgressPanel
               project={project}
+              teams={teams}
               issues={issues.rows}
               statuses={statuses}
               complete={!issues.isLoading && !issues.hasMore}
