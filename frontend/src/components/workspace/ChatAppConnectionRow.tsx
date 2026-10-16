@@ -54,8 +54,8 @@ export interface ChatAppConnectionRowProps {
 /** The second line of the row: where the App is connected, by whom and when. */
 const ConnectedLine: React.FC<{
   placeName: string | null;
-  installedBy?: string | null;
-  installedAt?: string | null;
+  installedBy?: string | null | undefined;
+  installedAt?: string | null | undefined;
 }> = ({ placeName, installedBy, installedAt }) => (
   <p className="flex flex-wrap items-center gap-x-1 text-xs text-text-muted">
     <span>

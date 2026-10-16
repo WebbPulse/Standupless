@@ -776,9 +776,7 @@ def test_the_channel_tools_manage_workspace_channels_without_a_team(
     listed = answer(tool(slack_client, admin, "list_channels", {}))
     assert listed["scope"] == "workspace"
     assert [row["channel_id"] for row in listed["channels"]] == [created["channel_id"]]
-    changed = answer(
-        tool(slack_client, admin, "update_channel", {"channel_id": created["channel_id"], "team_ids": []})
-    )
+    changed = answer(tool(slack_client, admin, "update_channel", {"channel_id": created["channel_id"], "team_ids": []}))
     assert changed["team_ids"] == []
     assert answer(tool(slack_client, admin, "list_channels", {"team_id": "ABC"}))["channels"] == []
 
