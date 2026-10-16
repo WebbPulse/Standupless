@@ -1,0 +1,17 @@
+Daily Pulse for Acme
+
+3 updates from the projects and initiatives you follow this past day.
+
+- Ada Lovelace posted an update on Launch, at risk
+  > Slipping a week.
+- Ada Lovelace marked Expand to Europe on track
+- Beta in Launch is complete
+
+Open Pulse:
+https://standupless.example/w/acme/pulse
+
+--
+You are receiving this because you turned on the Pulse digest for the projects and initiatives you follow. Turn it off in your Standupless notification settings.
+Notification settings: https://standupless.example/w/acme/settings/notifications
+Privacy: https://standupless.example/privacy
+Standupless

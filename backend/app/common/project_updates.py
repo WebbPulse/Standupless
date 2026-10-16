@@ -16,6 +16,7 @@ from typing import Any, Mapping
 from fastapi import HTTPException, status
 from webbpulse.dynamodb import ConditionFailed, encode_start_key
 
+from app.common import pulse
 from app.common.api.dependencies.authz import AuthzContext
 from app.common.api.dependencies.repositories import Repositories
 from app.common.api.pagination import resume_key
@@ -135,6 +136,7 @@ def create_project_update(
     repositories.planning.record_project_health(
         context.workspace_id, project.project_id, health=created.health, last_update_at=created.created_at
     )
+    pulse.record_project_update(repositories, created, project.health)
     return _read(repositories, context, teams, created)
 
 
@@ -182,6 +184,9 @@ def update_project_update(
         repositories.planning.record_project_health(
             context.workspace_id, stored.project_id, health=stored.health, last_update_at=stored.created_at
         )
+    pulse.revise_update(
+        repositories, context.workspace_id, stored.update_id, body=stored.body, health=stored.health, edited_at=now
+    )
     return _read(repositories, context, teams, stored)
 
 
@@ -195,6 +200,7 @@ def delete_project_update(repositories: Repositories, context: AuthzContext, pro
     was_latest = _is_latest(repositories, existing)
     if not repositories.planning.delete(context.workspace_id, existing.planning_key):
         raise not_found()
+    pulse.remove_update(repositories, context.workspace_id, existing.update_id)
     if not was_latest:
         return
     previous = repositories.planning.latest_project_update(context.workspace_id, existing.project_id)

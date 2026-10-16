@@ -26,6 +26,7 @@ from app.domains.integrations.mcp.favorite_tools import FAVORITE_TOOLS
 from app.domains.integrations.mcp.initiative_tools import INITIATIVE_TOOLS
 from app.domains.integrations.mcp.issue_tools import ISSUE_TOOLS
 from app.domains.integrations.mcp.planning_tools import PLANNING_TOOLS
+from app.domains.integrations.mcp.pulse_tools import PULSE_TOOLS
 from app.domains.integrations.mcp.recurring_tools import RECURRING_TOOLS
 from app.domains.integrations.mcp.release_tools import RELEASE_TOOLS
 from app.domains.integrations.mcp.review_tools import REVIEW_TOOLS
@@ -53,6 +54,7 @@ TOOLS: tuple[Tool, ...] = (
     *STANDUP_TOOLS,
     *PLANNING_TOOLS,
     *INITIATIVE_TOOLS,
+    *PULSE_TOOLS,
     *DOCUMENT_TOOLS,
     *RELEASE_TOOLS,
     *VIEW_TOOLS,

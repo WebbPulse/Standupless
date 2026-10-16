@@ -1204,6 +1204,51 @@ class PullRequestSummaryRead(TypedDict):
     pull_requests: list[PullRequestSummaryEntryRead]
 
 
+class PulseCountRead(TypedDict):
+    unread: int
+
+
+class PulseFollowRead(TypedDict):
+    explicit: bool
+    following: bool
+
+
+class PulseItemRead(TypedDict):
+    actor_id: NotRequired[str | None]
+    actor_name: NotRequired[str]
+    body: NotRequired[str | None]
+    created_at: str
+    edited_at: NotRequired[str | None]
+    event_id: str
+    event_type: Literal[
+        "project_update", "initiative_update", "project_health", "initiative_health", "milestone_completed"
+    ]
+    health: NotRequired[Literal["on_track", "at_risk", "off_track"] | None]
+    initiative_id: NotRequired[str | None]
+    initiative_name: NotRequired[str | None]
+    milestone_id: NotRequired[str | None]
+    milestone_name: NotRequired[str | None]
+    previous_health: NotRequired[Literal["on_track", "at_risk", "off_track"] | None]
+    project_color: NotRequired[str | None]
+    project_icon: NotRequired[str | None]
+    project_id: NotRequired[str | None]
+    project_name: NotRequired[str | None]
+    source: NotRequired[Literal["web", "mcp", "cli", "api", "github", "system"] | None]
+    subject_type: Literal["project", "initiative"]
+    unread: NotRequired[bool]
+    update_id: NotRequired[str | None]
+    workspace_id: str
+
+
+class PulseListRead(TypedDict):
+    items: list[PulseItemRead]
+    next_cursor: NotRequired[str | None]
+
+
+class PulseReadMarker(TypedDict):
+    read_at: str
+
+
 class ReactionGroupRead(TypedDict):
     count: int
     emoji: str
@@ -2069,6 +2114,7 @@ class UserPreferencesUpdate(TypedDict):
         ]
         | None
     ]
+    pulse_digest: NotRequired[Literal["off", "daily", "weekly"] | None]
     timezone: NotRequired[str | None]
 
 
@@ -2080,6 +2126,7 @@ class UserRead(TypedDict):
     email_verified: bool
     id: str
     notification_preferences: dict[str, NotificationChannels]
+    pulse_digest: NotRequired[Literal["off", "daily", "weekly"]]
     timezone: NotRequired[str | None]
     two_factor: NotRequired[bool]
 

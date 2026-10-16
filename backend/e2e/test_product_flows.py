@@ -909,6 +909,58 @@ class TestPlanningDomain:
             api.delete(project_path)
 
     @WRITES
+    def test_pulse_lists_a_followed_project_update(
+        self, api: Any, run_scope: RunScope, workspace: "dict[str, Any]", team: "dict[str, Any]"
+    ) -> None:
+        """Following a project brings its update into Pulse, read state clears, and follows undo."""
+        base = f"/api/workspaces/{workspace['id']}"
+        project = _created(
+            api.post(f"{base}/projects", json={"team_id": team["id"], "name": run_scope.name("pulse-project")}),
+            "project",
+        )
+        project_path = f"{base}/projects/{project['id']}"
+        initiative = _created(
+            api.post(f"{base}/initiatives", json={"name": run_scope.name("pulse-init")}), "initiative"
+        )
+        initiative_path = f"{base}/initiatives/{initiative['id']}"
+        try:
+            followed = api.put(f"{project_path}/follow")
+            assert followed.status_code == 200, followed.text[:400]
+            assert followed.json() == {"following": True, "explicit": True}
+            assert api.get(f"{project_path}/follow").json()["following"] is True
+
+            body = run_scope.name("pulse-update")
+            _created(api.post(f"{project_path}/updates", json={"body": body, "health": "on_track"}), "update")
+
+            for scope in ("for_me", "recent"):
+                page = api.get(f"{base}/pulse", params={"scope": scope, "limit": 50})
+                assert page.status_code == 200, page.text[:400]
+                assert body in [row["body"] for row in page.json()["items"]], scope
+
+            count = api.get(f"{base}/pulse/count")
+            assert count.status_code == 200, count.text[:400]
+            assert isinstance(count.json()["unread"], int)
+
+            marked = api.post(f"{base}/pulse/read")
+            assert marked.status_code == 200, marked.text[:400]
+            assert marked.json()["read_at"]
+
+            unfollowed = api.delete(f"{project_path}/follow")
+            assert unfollowed.status_code == 200, unfollowed.text[:400]
+            assert unfollowed.json() == {"following": False, "explicit": True}
+
+            initiative_follow = api.put(f"{initiative_path}/follow")
+            assert initiative_follow.status_code == 200, initiative_follow.text[:400]
+            assert api.get(f"{initiative_path}/follow").json() == {"following": True, "explicit": True}
+            dropped = api.delete(f"{initiative_path}/follow")
+            assert dropped.status_code == 200, dropped.text[:400]
+            assert dropped.json()["following"] is False
+        finally:
+            api.delete(initiative_path)
+            deleted = api.delete(project_path)
+            assert deleted.status_code in (200, 204), deleted.text[:400]
+
+    @WRITES
     def test_a_document_round_trips_with_its_backlink(
         self,
         api: Any,

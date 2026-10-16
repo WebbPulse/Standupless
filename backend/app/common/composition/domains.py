@@ -408,6 +408,7 @@ def _planning_routers() -> "Sequence[RouterSpec]":
         milestones,
         project_updates,
         projects,
+        pulse,
         roadmap,
     )
 
@@ -419,6 +420,7 @@ def _planning_routers() -> "Sequence[RouterSpec]":
         (documents.router, "/workspaces", ("planning",)),
         (initiatives.router, "/workspaces", ("planning",)),
         (roadmap.router, "/workspaces", ("planning",)),
+        (pulse.router, "/workspaces", ("planning",)),
     ]
 
 

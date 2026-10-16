@@ -18,6 +18,7 @@ from datetime import datetime, timezone
 from html import unescape as html_unescape
 
 import pytest
+from webbpulse.email_layout import ListItem
 from webbpulse.identity import IdentitySettings
 from webbpulse.identity.email import (
     EmailMessage,
@@ -35,10 +36,12 @@ from app.common.standup import StandupDigest, StandupItem, StandupPerson, Standu
 from app.domains.identity.email import render_account_deletion
 from app.domains.identity.package_glue import build_identity_settings
 from app.domains.views.email import (
+    pulse_line,
     render_digest,
     render_notification,
     render_project_update_due_notification,
     render_project_update_notification,
+    render_pulse_digest,
     render_standup_digest,
 )
 from app.domains.workspaces.email import render_workspace_deletion
@@ -135,6 +138,16 @@ def _identity_settings() -> IdentitySettings:
     )
 
 
+def _pulse_lines() -> list[ListItem]:
+    """One Pulse digest's lines: an update, a health change and a completed milestone."""
+    common = {"actor_name": "Ada Lovelace", "project_name": "Launch", "initiative_name": "Expand to Europe"}
+    return [
+        pulse_line(event_type="project_update", milestone_name="", health="at_risk", body="Slipping a week.", **common),
+        pulse_line(event_type="initiative_health", milestone_name="", health="on_track", body="", **common),
+        pulse_line(event_type="milestone_completed", milestone_name="Beta", health="", body="", **common),
+    ]
+
+
 def _cases() -> dict[str, Callable[[], EmailMessage]]:
     """Every template, by snapshot name."""
     link = f"{ORIGIN}/auth/link?token=abc123"
@@ -184,6 +197,14 @@ def _cases() -> dict[str, Callable[[], EmailMessage]]:
             workspace_slug="acme",
         ),
         "notification_standup_digest": lambda: render_standup_digest(_standup(), to=TO, workspace_slug="acme"),
+        "notification_pulse_digest": lambda: render_pulse_digest(
+            _pulse_lines(),
+            total=3,
+            cadence="daily",
+            to=TO,
+            workspace_name="Acme",
+            workspace_slug="acme",
+        ),
         "notification_digest_workspace_accent": lambda: render_digest(
             [_entry(1), _entry(2, kind="assigned", excerpt="")],
             to=TO,
