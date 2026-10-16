@@ -13,6 +13,7 @@ export const CHANNELS = {
   navigate: 'standupless:navigate',
   navigateReady: 'standupless:navigate-ready',
   signInWithBrowser: 'standupless:sign-in-with-browser',
+  openExternal: 'standupless:open-external',
 } as const;
 
 /** The longest notification title or body the shell shows. */

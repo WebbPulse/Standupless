@@ -241,7 +241,10 @@ const restrictPermissions = (): void => {
   );
 };
 
-/** Answers the bridge's badge, notification, theme and navigation messages. */
+/**
+ * Answers the bridge's badge, notification, theme, navigation and open in
+ * browser messages.
+ */
 const listen = (): void => {
   ipcMain.on(CHANNELS.badge, (event, raw: unknown) => {
     const badge = parseBadge(raw);
@@ -290,6 +293,11 @@ const listen = (): void => {
   ipcMain.on(CHANNELS.signInWithBrowser, (event) => {
     if (!fromApp(event)) return;
     void startBrowserSignIn(env).catch(() => undefined);
+  });
+
+  ipcMain.on(CHANNELS.openExternal, (event, raw: unknown) => {
+    if (!fromApp(event) || typeof raw !== 'string') return;
+    openExternal(raw);
   });
 
   ipcMain.on(CHANNELS.navigateReady, (event, ready: unknown) => {

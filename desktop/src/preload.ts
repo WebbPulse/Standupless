@@ -15,6 +15,7 @@ const THEME = 'standupless:theme';
 const NAVIGATE = 'standupless:navigate';
 const NAVIGATE_READY = 'standupless:navigate-ready';
 const SIGN_IN_WITH_BROWSER = 'standupless:sign-in-with-browser';
+const OPEN_EXTERNAL = 'standupless:open-external';
 
 /** The prefix the main process passes the app version under. */
 const VERSION_ARG = '--standupless-version=';
@@ -79,6 +80,9 @@ contextBridge.exposeInMainWorld(
     },
     signInWithBrowser(): void {
       ipcRenderer.send(SIGN_IN_WITH_BROWSER);
+    },
+    openExternal(url: string): void {
+      ipcRenderer.send(OPEN_EXTERNAL, url);
     },
   })
 );

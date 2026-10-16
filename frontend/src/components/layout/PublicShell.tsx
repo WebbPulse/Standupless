@@ -11,6 +11,10 @@
  * visitor who lands on one of these pages sees a link back into the app in its
  * place, and their links to the home page hold it open with `?landing` rather
  * than sending them on into their workspace.
+ *
+ * Inside the desktop and mobile apps the public site is never shown, so the
+ * sign in and other signed out pages there carry only the wordmark and, for
+ * someone signed in, the way back into the app: no section links, no footer.
  */
 
 import React from 'react';
@@ -19,6 +23,7 @@ import { Link, NavLink } from 'react-router-dom';
 import { Wordmark } from '../../brand';
 import { useAuth } from '../../hooks/useAuth';
 import { cn } from '../../lib/cn';
+import { isAppShell } from '../../lib/shell';
 import {
   CONTACT_PATH,
   DOWNLOAD_PATH,
@@ -112,6 +117,30 @@ export const PublicNav: React.FC = () => {
             </>
           )}
         </div>
+      </div>
+    </header>
+  );
+};
+
+/** The installable apps' bar: the wordmark, and the way into the app once signed in. */
+export const AppShellNav: React.FC = () => {
+  const { isAuthenticated } = useAuth();
+
+  return (
+    <header className="sticky top-0 z-30 border-b border-line bg-bg/85 backdrop-blur-md">
+      <div className={cn(PUBLIC_CONTAINER, 'flex h-16 items-center gap-8')}>
+        <Wordmark size={20} className="shrink-0" />
+        {isAuthenticated && (
+          <div className="ml-auto flex items-center">
+            <Link
+              to={WORKSPACES_PATH}
+              className={cn(PILL_PRIMARY, 'h-8 px-3.5 text-[13px]')}
+            >
+              Open app
+              <LuArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
+            </Link>
+          </div>
+        )}
       </div>
     </header>
   );
@@ -225,18 +254,22 @@ export interface PublicShellProps {
 }
 
 /**
- * The bar, the page and the footer on the public palette. The page is the
- * `main` landmark, so a page passes its sections rather than its own `main`.
+ * The bar, the page and the footer on the public palette, or the app bar and
+ * no footer inside an installable app. The page is the `main` landmark, so a
+ * page passes its sections rather than its own `main`.
  */
 export const PublicShell: React.FC<PublicShellProps> = ({
   children,
   className = '',
-}) => (
-  <div className="public-site flex min-h-screen flex-col bg-bg text-text">
-    <PublicNav />
-    <main className={cn('flex-1', className)}>{children}</main>
-    <PublicFooter />
-  </div>
-);
+}) => {
+  const inApp = isAppShell();
+  return (
+    <div className="public-site flex min-h-screen flex-col bg-bg text-text">
+      {inApp ? <AppShellNav /> : <PublicNav />}
+      <main className={cn('flex-1', className)}>{children}</main>
+      {!inApp && <PublicFooter />}
+    </div>
+  );
+};
 
 export default PublicShell;
