@@ -112,6 +112,17 @@ export const projectPath = (
       : `?team=${encodeURIComponent(teamKeyPrefix)}`
   }`;
 
+/** One project opened on its issues tab, filtered to one of its milestones. */
+export const projectMilestonePath = (
+  slug: string,
+  projectId: string,
+  milestoneId: string
+): string =>
+  `${projectsPath(slug)}/${projectId}?${new URLSearchParams([
+    ['tab', 'issues'],
+    ['f', `milestone.is:${milestoneId}`],
+  ]).toString()}`;
+
 /** One document, reached by its own id whichever project or initiative holds it. */
 export const documentPath = (slug: string, documentId: string): string =>
   `${workspacePath(slug)}/documents/${documentId}`;

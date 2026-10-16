@@ -20,7 +20,7 @@ import { errorMessage } from '../../lib/errors';
 import { timestampLabel } from '../../lib/issueDisplay';
 import { useOptimisticRecord } from '../../lib/optimistic';
 import { projectPatch } from '../../lib/milestones';
-import { issuePath } from '../../lib/paths';
+import { issuePath, projectMilestonePath, projectPath } from '../../lib/paths';
 import { activityKey, issueKey } from '../../lib/queryKeys';
 import type { IssueRead, IssueUpdate } from '../../types/Api';
 import { ErrorAlert } from '../ui/alert';
@@ -31,6 +31,7 @@ import { RelationMarkers } from './BlockedMarker';
 import IssueBody from './IssueBody';
 import IssueFields, { PropertyRow, PropertySection } from './IssueFields';
 import { IssueMilestonePicker } from './PlanningPickers';
+import PlanningRowLink from './PlanningRowLink';
 import { CyclePicker, ProjectPicker } from './PropertyPickers';
 import { useTeams } from '../../hooks/useTeams';
 import { estimateOptionsOf } from '../../lib/validation';
@@ -179,26 +180,49 @@ export const IssuePeek: React.FC<IssuePeekProps> = ({ issueId, onClose }) => {
               {team !== undefined && (
                 <PropertySection title="Planning">
                   <PropertyRow label="Project">
-                    <ProjectPicker
-                      disabled={!canEdit}
-                      projects={options.projects}
-                      value={issue.project_id}
-                      onChange={(projectId) => {
-                        onUpdate(projectPatch(issue, projectId));
-                      }}
-                    />
+                    <PlanningRowLink
+                      to={
+                        issue.project_id === null || workspace === null
+                          ? null
+                          : projectPath(workspace.slug, issue.project_id)
+                      }
+                      label="Open project"
+                    >
+                      <ProjectPicker
+                        disabled={!canEdit}
+                        projects={options.projects}
+                        value={issue.project_id}
+                        onChange={(projectId) => {
+                          onUpdate(projectPatch(issue, projectId));
+                        }}
+                      />
+                    </PlanningRowLink>
                   </PropertyRow>
                   {issue.project_id !== null && (
                     <PropertyRow label="Milestone">
-                      <IssueMilestonePicker
-                        workspaceId={workspaceId}
-                        projectId={issue.project_id}
-                        value={issue.project_milestone_id ?? null}
-                        disabled={!canEdit}
-                        onChange={(milestoneId) => {
-                          onUpdate({ project_milestone_id: milestoneId });
-                        }}
-                      />
+                      <PlanningRowLink
+                        to={
+                          issue.project_milestone_id == null ||
+                          workspace === null
+                            ? null
+                            : projectMilestonePath(
+                                workspace.slug,
+                                issue.project_id,
+                                issue.project_milestone_id
+                              )
+                        }
+                        label="Open milestone"
+                      >
+                        <IssueMilestonePicker
+                          workspaceId={workspaceId}
+                          projectId={issue.project_id}
+                          value={issue.project_milestone_id ?? null}
+                          disabled={!canEdit}
+                          onChange={(milestoneId) => {
+                            onUpdate({ project_milestone_id: milestoneId });
+                          }}
+                        />
+                      </PlanningRowLink>
                     </PropertyRow>
                   )}
                   <PropertyRow label="Cycle">
