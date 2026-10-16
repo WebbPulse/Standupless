@@ -27,7 +27,7 @@ from urllib.parse import urlsplit
 from fastapi import APIRouter, Depends, HTTPException, Path, Request, Response, status
 from webbpulse.dynamodb import TransactionCanceled
 
-from app.common import audit, plan_usage
+from app.common import audit, plan_usage, scim
 from app.common.api.dependencies.authz import (
     AuthzContext,
     Capability,
@@ -599,7 +599,9 @@ def join_through_sso(
 
     Answers 201 for a new membership and 200 for one that already existed. Only an
     address on one of the workspace's verified domains joins, within the plan's
-    member cap, which is the just in time membership single sign-on promises.
+    member cap, which is the just in time membership single sign-on promises. A
+    person the workspace's directory deactivated is refused with 403, and one the
+    directory provisioned is linked to their directory row and given its teams.
     """
     refuse_delegated_claims(claims)
     subject = str(claims.get("sub", "")).strip()
@@ -620,6 +622,7 @@ def join_through_sso(
     sso_domain = None if domain is None else repositories.memberships.get_sso_domain(workspace_id, domain)
     if sso_domain is None or not sso_domain.verified:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=JOIN_NOT_ALLOWED)
+    directory_row = scim.refuse_deactivated(repositories, workspace_id, user)
     membership = Membership(
         workspace_id=workspace_id,
         member_key=workspace_member_key(subject),
@@ -648,5 +651,6 @@ def join_through_sso(
         target_label=display_name_for(user),
         after={"role": "member", "via": "sso"},
     )
+    scim.adopt(repositories, workspace_id, directory_row, subject)
     response.status_code = status.HTTP_201_CREATED
     return SsoJoinRead(workspace_id=workspace_id, slug=workspace.slug, name=workspace.name, created=True)

@@ -178,6 +178,13 @@ locals {
     "POST /api/billing/stripe/webhook" = { integration = "workspaces", authorization_type = "NONE" }
   } : {}
 
+  # An identity provider provisions with a workspace SCIM token, not an identity
+  # token, so the gateway leaves the route to the function, which refuses any
+  # request without a live SCIM token before it reads a directory row.
+  scim_route_keys = contains(local.routed_lambda_domains, "workspaces") ? {
+    "ANY /api/scim/v2/{proxy+}" = { integration = "workspaces", authorization_type = "NONE" }
+  } : {}
+
   # The MCP endpoint is unauthenticated at the gateway so an unknown client can
   # reach it and receive the WWW-Authenticate challenge naming the authorization
   # server, which is how the discovery handshake starts. The route is not public:
@@ -229,6 +236,7 @@ locals {
     local.attachment_content_route_keys,
     local.icon_content_route_keys,
     local.billing_webhook_route_keys,
+    local.scim_route_keys,
     local.oauth_server_route_keys,
     local.sso_route_keys,
     local.mcp_route_keys,

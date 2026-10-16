@@ -47,6 +47,7 @@ const MEMBERS_POLL_MS = 300000;
 const NON_MEMBER_ACTORS: { id: string; label: string }[] = [
   { id: 'system', label: 'Standupless' },
   { id: 'stripe', label: 'Stripe billing' },
+  { id: 'scim', label: 'Directory sync (SCIM)' },
 ];
 
 /** The labels for the clients a change can come through. */
@@ -55,6 +56,7 @@ const SOURCE_LABELS: Record<string, string> = {
   api: 'API',
   cli: 'CLI',
   mcp: 'MCP',
+  scim: 'SCIM',
   system: 'System',
 };
 

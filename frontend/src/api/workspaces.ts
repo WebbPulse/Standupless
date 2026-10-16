@@ -27,6 +27,8 @@ import type {
   MemberListRead,
   MemberRead,
   MemberUpdate,
+  ScimSettingsRead,
+  ScimTokenCreated,
   SsoConnectionUpdate,
   SsoDomainRead,
   SsoJoinRead,
@@ -287,6 +289,40 @@ export const recordSsoTestResult = async (
     `${ssoPath(workspaceId)}/connection/test-result`
   );
   return response.data;
+};
+
+/** Reads the SCIM base URL and the workspace's live SCIM tokens. */
+export const getScimSettings = async (
+  workspaceId: string,
+  signal?: AbortSignal
+): Promise<ScimSettingsRead> => {
+  const response = await apiClient.get<ScimSettingsRead>(
+    `${ssoPath(workspaceId)}/scim`,
+    signalOptions(signal)
+  );
+  return response.data;
+};
+
+/** Mints a SCIM token, answering its secret this one time. */
+export const createScimToken = async (
+  workspaceId: string,
+  name: string
+): Promise<ScimTokenCreated> => {
+  const response = await apiClient.post<ScimTokenCreated>(
+    `${ssoPath(workspaceId)}/scim/tokens`,
+    { name }
+  );
+  return response.data;
+};
+
+/** Revokes one SCIM token, which stops the directory that holds it. */
+export const revokeScimToken = async (
+  workspaceId: string,
+  keyId: string
+): Promise<void> => {
+  await apiClient.delete<void>(
+    `${ssoPath(workspaceId)}/scim/tokens/${encodeURIComponent(keyId)}`
+  );
 };
 
 /** Turns the single sign-on requirement on or off, answering the new settings. */

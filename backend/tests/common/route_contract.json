@@ -1812,6 +1812,120 @@
     "path": "/api/invites/accept"
   },
   {
+    "auth": "public",
+    "domain": "workspaces",
+    "method": "GET",
+    "path": "/api/scim/v2/Groups"
+  },
+  {
+    "auth": "public",
+    "domain": "workspaces",
+    "method": "POST",
+    "path": "/api/scim/v2/Groups"
+  },
+  {
+    "auth": "public",
+    "domain": "workspaces",
+    "method": "POST",
+    "path": "/api/scim/v2/Groups/.search"
+  },
+  {
+    "auth": "public",
+    "domain": "workspaces",
+    "method": "DELETE",
+    "path": "/api/scim/v2/Groups/{group_id}"
+  },
+  {
+    "auth": "public",
+    "domain": "workspaces",
+    "method": "GET",
+    "path": "/api/scim/v2/Groups/{group_id}"
+  },
+  {
+    "auth": "public",
+    "domain": "workspaces",
+    "method": "PATCH",
+    "path": "/api/scim/v2/Groups/{group_id}"
+  },
+  {
+    "auth": "public",
+    "domain": "workspaces",
+    "method": "PUT",
+    "path": "/api/scim/v2/Groups/{group_id}"
+  },
+  {
+    "auth": "public",
+    "domain": "workspaces",
+    "method": "GET",
+    "path": "/api/scim/v2/ResourceTypes"
+  },
+  {
+    "auth": "public",
+    "domain": "workspaces",
+    "method": "GET",
+    "path": "/api/scim/v2/ResourceTypes/{name}"
+  },
+  {
+    "auth": "public",
+    "domain": "workspaces",
+    "method": "GET",
+    "path": "/api/scim/v2/Schemas"
+  },
+  {
+    "auth": "public",
+    "domain": "workspaces",
+    "method": "GET",
+    "path": "/api/scim/v2/Schemas/{schema_id}"
+  },
+  {
+    "auth": "public",
+    "domain": "workspaces",
+    "method": "GET",
+    "path": "/api/scim/v2/ServiceProviderConfig"
+  },
+  {
+    "auth": "public",
+    "domain": "workspaces",
+    "method": "GET",
+    "path": "/api/scim/v2/Users"
+  },
+  {
+    "auth": "public",
+    "domain": "workspaces",
+    "method": "POST",
+    "path": "/api/scim/v2/Users"
+  },
+  {
+    "auth": "public",
+    "domain": "workspaces",
+    "method": "POST",
+    "path": "/api/scim/v2/Users/.search"
+  },
+  {
+    "auth": "public",
+    "domain": "workspaces",
+    "method": "DELETE",
+    "path": "/api/scim/v2/Users/{user_id}"
+  },
+  {
+    "auth": "public",
+    "domain": "workspaces",
+    "method": "GET",
+    "path": "/api/scim/v2/Users/{user_id}"
+  },
+  {
+    "auth": "public",
+    "domain": "workspaces",
+    "method": "PATCH",
+    "path": "/api/scim/v2/Users/{user_id}"
+  },
+  {
+    "auth": "public",
+    "domain": "workspaces",
+    "method": "PUT",
+    "path": "/api/scim/v2/Users/{user_id}"
+  },
+  {
     "auth": "authenticated",
     "domain": "workspaces",
     "method": "GET",
@@ -2068,5 +2182,23 @@
     "domain": "workspaces",
     "method": "PUT",
     "path": "/api/workspaces/{workspace_id}/sso/policy"
+  },
+  {
+    "auth": "workspace:admin",
+    "domain": "workspaces",
+    "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/sso/scim"
+  },
+  {
+    "auth": "workspace:admin",
+    "domain": "workspaces",
+    "method": "POST",
+    "path": "/api/workspaces/{workspace_id}/sso/scim/tokens"
+  },
+  {
+    "auth": "workspace:admin",
+    "domain": "workspaces",
+    "method": "DELETE",
+    "path": "/api/workspaces/{workspace_id}/sso/scim/tokens/{key_id}"
   }
 ]
