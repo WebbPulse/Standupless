@@ -1,7 +1,9 @@
 """Where a chat App install sends the browser back to once it finishes.
 
-The settings page the install started from, a team's or the workspace's, with the
-outcome in one query parameter the page turns into a toast.
+The settings page the install started from, with the outcome in one query parameter
+the page turns into a toast. Installs start on the workspace integrations page; a
+state minted for a team, from before installs moved there, still returns to that
+team's settings.
 """
 
 from __future__ import annotations
@@ -25,4 +27,4 @@ def return_url(repositories: Repositories, claims: Mapping[str, Any], param: str
     team_id = str(claims.get("team_id", ""))
     if team_id and links.team_prefix(team_id):
         return f"{links.team_settings(team_id)}?{query}"
-    return f"{settings.frontend_base_url}/w/{workspace.slug}/settings?{query}"
+    return f"{links.integrations_settings()}?{query}"

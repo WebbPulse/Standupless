@@ -20,7 +20,7 @@ from webbpulse.events.webhooks import WebhookResponse
 
 from app.common.core.config import settings
 from app.common.db.dynamo.base import utc_now
-from app.common.db.dynamo.channels import ChannelDestination, channel_key, new_channel_id
+from app.common.db.dynamo.channels import ChannelDestination, ChannelScope, channel_key, new_channel_id
 from app.common.db.dynamo.planning import Project, project_key, project_update_key
 from app.domains.integrations.channels import delivery, events, urls
 from app.domains.integrations.channels.messages import ChannelMessage, discord_body, render, slack_body
@@ -709,3 +709,128 @@ def test_delivery_rows_expire(repositories: Any, workspace: str, queue: Queue) -
     row = repositories.github.channels.get_delivery(WORKSPACE, job["channel_id"], job["delivery_id"])
 
     assert row is not None and row.expires_at > int(utc_now().timestamp())
+
+
+def app_channel(
+    repositories: Any,
+    *,
+    scope: ChannelScope = "workspace",
+    team_id: str = "",
+    team_ids: list[str] | None = None,
+    slack_channel_id: str = "C0ENG",
+    events_: list[str] | None = None,
+) -> ChannelDestination:
+    """Store one destination that posts through the Slack App, team or workspace scoped."""
+    channel_id = new_channel_id()
+    destination = ChannelDestination(
+        workspace_id=WORKSPACE,
+        github_key=channel_key(channel_id),
+        channel_id=channel_id,
+        team_id=team_id,
+        scope=scope,
+        team_ids=team_ids or [],
+        provider="slack",
+        label="eng",
+        events=events_ if events_ is not None else ["issue_created"],
+        enabled=True,
+        created_by=OWNER,
+        transport="slack_app",
+        slack_channel_id=slack_channel_id,
+        slack_team_id="T0SLACK01",
+        url_hint=f"#{slack_channel_id}",
+    )
+    return repositories.github.channels.create(destination)
+
+
+def test_a_workspace_channel_follows_every_open_team_or_the_ones_it_names(
+    repositories: Any, workspace: str, queue: Queue
+) -> None:
+    """An all teams channel gets every team's issue; a filtered one only its teams'."""
+    everywhere = app_channel(repositories, slack_channel_id="C0ALL")
+    filtered = app_channel(repositories, slack_channel_id="C0XYZ", team_ids=[OTHER_TEAM])
+
+    stream.handle_record(repositories, record("INSERT", issue_image(repositories)))
+    assert {job["channel_id"] for job in queue.jobs} == {everywhere.channel_id}
+
+    other = issue_image(repositories, team_id=OTHER_TEAM, issue_id="01JB0000000000000000000IS2", key="XYZ-1")
+    stream.handle_record(repositories, record("INSERT", other, event_id="evt-2"))
+    assert sorted(job["channel_id"] for job in queue.jobs) == sorted(
+        [everywhere.channel_id, everywhere.channel_id, filtered.channel_id]
+    )
+
+
+def test_an_all_teams_channel_skips_a_private_team_unless_it_is_named(
+    repositories: Any, workspace: str, queue: Queue
+) -> None:
+    """Making a team private keeps it out of every all teams channel; naming it, by a member, lets it in."""
+    everywhere = app_channel(repositories, slack_channel_id="C0ALL")
+    named = app_channel(repositories, slack_channel_id="C0ABC", team_ids=[TEAM])
+    repositories.memberships.set_team_private(WORKSPACE, TEAM, True)
+    add_team_member(repositories, WORKSPACE, TEAM, OWNER, "member")
+
+    stream.handle_record(repositories, record("INSERT", issue_image(repositories)))
+
+    assert {job["channel_id"] for job in queue.jobs} == {named.channel_id}
+    assert everywhere.channel_id not in {job["channel_id"] for job in queue.jobs}
+
+
+def test_a_channel_a_team_and_the_workspace_both_follow_posts_once(
+    repositories: Any, workspace: str, queue: Queue
+) -> None:
+    """The team's destination wins, and the workspace one for the same Slack channel is skipped, redelivery too."""
+    team_row = app_channel(repositories, scope="team", team_id=TEAM)
+    app_channel(repositories)
+    image = issue_image(repositories)
+
+    stream.handle_record(repositories, record("INSERT", image))
+    stream.handle_record(repositories, record("INSERT", image))
+
+    assert {job["channel_id"] for job in queue.jobs} == {team_row.channel_id}
+
+
+def test_a_project_update_reaches_a_workspace_channel_once(repositories: Any, workspace: str, queue: Queue) -> None:
+    """A project on two teams posts its update once to a workspace channel following both."""
+    repositories.planning.create_project(
+        Project(
+            workspace_id=WORKSPACE,
+            planning_key=project_key("P2"),
+            project_id="P2",
+            team_ids=[TEAM, OTHER_TEAM],
+            name="Launch",
+            created_by=OWNER,
+        )
+    )
+    channel = app_channel(repositories, events_=["project_update_posted"])
+    update = {
+        "workspace_id": WORKSPACE,
+        "planning_key": project_update_key("P2", "U2"),
+        "kind": "project_update",
+        "project_id": "P2",
+        "update_id": "U2",
+        "author_id": OWNER,
+        "body": "On track",
+        "health": "on_track",
+        "created_at": "2026-09-20T12:00:00+00:00",
+    }
+
+    stream.handle_record(repositories, record("INSERT", update, table="planning"))
+
+    assert [job["channel_id"] for job in queue.jobs] == [channel.channel_id]
+
+
+def test_purging_a_team_unfollows_it_from_workspace_channels(
+    repositories: Any, workspace: str, github_env: None
+) -> None:
+    """The purged team leaves every followed list, and a channel left following nothing turns off."""
+    shared = app_channel(repositories, team_ids=[TEAM, OTHER_TEAM])
+    only = app_channel(repositories, slack_channel_id="C0ABC", team_ids=[TEAM])
+    everywhere = app_channel(repositories, slack_channel_id="C0ALL")
+
+    repositories.github.channels.delete_team(WORKSPACE, TEAM)
+
+    kept = repositories.github.channels.get(WORKSPACE, shared.channel_id)
+    emptied = repositories.github.channels.get(WORKSPACE, only.channel_id)
+    untouched = repositories.github.channels.get(WORKSPACE, everywhere.channel_id)
+    assert kept is not None and kept.team_ids == [OTHER_TEAM] and kept.enabled is True
+    assert emptied is not None and emptied.team_ids == [] and emptied.enabled is False
+    assert untouched is not None and untouched.enabled is True

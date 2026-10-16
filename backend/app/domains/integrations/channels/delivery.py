@@ -186,9 +186,12 @@ def _note(repositories: Repositories, destination: ChannelDestination, response:
 
 
 def notice_recipients(repositories: Repositories, workspace_id: str, team_id: str) -> list[str]:
-    """Everybody who administers the team: its own admins and the workspace's owners and admins."""
+    """Everybody who administers the team, its own admins and the workspace's owners and admins.
+
+    An empty `team_id` names a workspace destination, which only workspace owners and admins manage.
+    """
     recipients: dict[str, None] = {}
-    for membership in repositories.memberships.list_team_members(workspace_id, team_id):
+    for membership in repositories.memberships.list_team_members(workspace_id, team_id) if team_id else []:
         if membership.role == "admin":
             recipients[membership.user_id] = None
     for membership in repositories.memberships.list_members(workspace_id):
@@ -198,8 +201,12 @@ def notice_recipients(repositories: Repositories, workspace_id: str, team_id: st
 
 
 def notify_disabled(repositories: Repositories, destination: ChannelDestination) -> int:
-    """Put a notice in every team admin's inbox that a destination was turned off."""
-    team = repositories.teams.get(destination.workspace_id, destination.team_id)
+    """Put a notice in every admin's inbox that a destination was turned off.
+
+    A team notice carries the team key so it opens team settings, and a workspace
+    one carries none so it opens the workspace integrations page.
+    """
+    team = repositories.teams.get(destination.workspace_id, destination.team_id) if destination.team_id else None
     prefix = team.key_prefix if team is not None else ""
     provider = "Slack" if destination.provider == "slack" else "Discord"
     name = destination.label or destination.url_hint
@@ -302,13 +309,13 @@ def run_attempt(
 def build_test_message(
     destination: ChannelDestination, actor_name: str, team_name: str, team_url: str
 ) -> ChannelMessage:
-    """The message the Send test message button posts."""
+    """The message the Send test message button posts, naming the team or teams the channel follows."""
     return ChannelMessage(
         event="test",
         subject=f"Standupless test message for {team_name}",
         url=team_url,
         summary=(
-            f"This channel will get {team_name}'s notifications. "
+            f"This channel will get notifications from {team_name}. "
             f"{len(destination.events)} event{'s' if len(destination.events) != 1 else ''} selected."
         ),
         actor=actor_name,

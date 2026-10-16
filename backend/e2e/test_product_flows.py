@@ -2234,6 +2234,43 @@ class TestSlackApp:
         removed = api.delete(base)
         assert removed.status_code == 404, removed.text[:400]
 
+    @WRITES
+    def test_workspace_channels_answer_before_an_install(
+        self, api: Any, workspace: "dict[str, Any]", team: "dict[str, Any]"
+    ) -> None:
+        """The workspace channel routes list nothing, refuse a create without an App, and 404 an unknown id."""
+        workspace_base = f"/api/workspaces/{workspace['id']}"
+        channels = f"{workspace_base}/webhooks/channels"
+        listed = api.get(channels)
+        assert listed.status_code == 200, listed.text[:400]
+        assert listed.json() == [], listed.json()
+
+        for picker in ("slack", "discord"):
+            answered = api.get(f"{workspace_base}/{picker}/channels")
+            assert answered.status_code == 404, f"{picker}: {answered.text[:400]}"
+
+        link = api.get(f"{workspace_base}/slack/install-url")
+        assert link.status_code in (200, 409), link.text[:400]
+
+        refused = api.post(
+            channels, json={"slack_channel_id": "C0E2E", "events": ["issue_created"], "team_ids": [team["id"]]}
+        )
+        assert refused.status_code == 422, refused.text[:400]
+        assert "SLACK_NOT_INSTALLED" in refused.text, refused.text[:400]
+
+        webhook = {"url": "https://hooks.slack.com/services/T0E2E/B0E2E/e2e", "events": ["issue_created"]}
+        pasted = api.post(channels, json=webhook)
+        assert pasted.status_code == 422, pasted.text[:400]
+
+        unknown = f"{channels}/01HZZZZZZZZZZZZZZZZZZZZZZZ"
+        assert api.patch(unknown, json={"label": "x"}).status_code == 404
+        assert api.post(f"{unknown}/test").status_code == 404
+        assert api.delete(unknown).status_code == 404
+
+        team_channels = api.get(f"{workspace_base}/teams/{team['id']}/webhooks/channels")
+        assert team_channels.status_code == 200, team_channels.text[:400]
+        assert all(row.get("scope", "team") == "team" for row in team_channels.json()), team_channels.json()
+
     def test_the_receivers_refuse_a_request_slack_did_not_sign(self, anon: Any) -> None:
         """Each receiver answers 401 to an unsigned request, or 404 where the App is off."""
         for path, kwargs in (

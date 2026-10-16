@@ -20,7 +20,7 @@ export const SLACK_OUTCOMES: Record<string, ReturnOutcome | undefined> = {
     tone: 'success',
     title: 'Slack connected',
     message:
-      'Pick a Slack channel when you add one here, and issue links unfurl in Slack.',
+      'Every team can now pick Slack channels by name, and issue links unfurl in Slack.',
   },
   denied: {
     tone: 'info',
@@ -31,7 +31,7 @@ export const SLACK_OUTCOMES: Record<string, ReturnOutcome | undefined> = {
     tone: 'danger',
     title: 'The install link expired',
     message:
-      'Each link works once and for a short time. Press Add to Slack to start again.',
+      'Each link works once and for a short time. Press Connect Slack to start again.',
   },
   enterprise_unsupported: {
     tone: 'danger',

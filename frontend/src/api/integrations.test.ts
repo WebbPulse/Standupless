@@ -11,12 +11,18 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
+  channelPath,
+  channelTestPath,
+  channelsPath,
+  createChannel,
   createTransition,
   createWebhook,
   deleteInstallation,
+  deleteChannel,
   deleteSlackConnection,
   deleteTransition,
   deleteWebhook,
+  discordChannelsPath,
   getInstallUrl,
   getInstallation,
   getSlackConnection,
@@ -25,6 +31,7 @@ import {
   installationPath,
   issueLinksPath,
   linkRepository,
+  listChannels,
   listIssueLinks,
   listRepositories,
   listSlackChannels,
@@ -41,8 +48,10 @@ import {
   slackChannelsPath,
   slackConnectionPath,
   slackInstallUrlPath,
+  testChannel,
   transitionPath,
   transitionsPath,
+  updateChannel,
   updateTransition,
   updateWebhook,
   webhookDeliveriesPath,
@@ -345,6 +354,73 @@ describe('the Slack App', () => {
     expect(get).toHaveBeenCalledWith(slackChannelsPath(WS, TEAM), undefined);
     get.mockResolvedValueOnce({ data: null });
     await expect(listSlackChannels(WS, TEAM)).resolves.toEqual([]);
+  });
+});
+
+describe('the workspace channels', () => {
+  it('builds the workspace channel paths without a team segment', () => {
+    expect(channelsPath(WS, null)).toBe(
+      '/workspaces/ws-mine/webhooks/channels'
+    );
+    expect(channelsPath(WS, TEAM)).toBe(
+      '/workspaces/ws-mine/teams/proj-1/webhooks/channels'
+    );
+    expect(channelPath(WS, null, 'ch-1')).toBe(
+      '/workspaces/ws-mine/webhooks/channels/ch-1'
+    );
+    expect(channelTestPath(WS, null, 'ch-1')).toBe(
+      '/workspaces/ws-mine/webhooks/channels/ch-1/test'
+    );
+    expect(slackChannelsPath(WS, null)).toBe(
+      '/workspaces/ws-mine/slack/channels'
+    );
+    expect(discordChannelsPath(WS, null)).toBe(
+      '/workspaces/ws-mine/discord/channels'
+    );
+  });
+
+  it('lists, adds, edits, tests and removes a workspace channel', async () => {
+    get.mockResolvedValue({ data: [] });
+    await expect(listChannels(WS, null)).resolves.toEqual([]);
+    expect(get).toHaveBeenCalledWith(channelsPath(WS, null), undefined);
+
+    post.mockResolvedValue({ data: { channel_id: 'ch-1' } });
+    await createChannel(WS, null, {
+      slack_channel_id: 'C0123',
+      events: ['issue_created'],
+      team_ids: [TEAM],
+    });
+    expect(post).toHaveBeenCalledWith(
+      channelsPath(WS, null),
+      {
+        slack_channel_id: 'C0123',
+        events: ['issue_created'],
+        team_ids: [TEAM],
+      },
+      undefined
+    );
+
+    patch.mockResolvedValue({ data: { channel_id: 'ch-1' } });
+    await updateChannel(WS, null, 'ch-1', { team_ids: [] });
+    expect(patch).toHaveBeenCalledWith(
+      channelPath(WS, null, 'ch-1'),
+      { team_ids: [] },
+      undefined
+    );
+
+    post.mockResolvedValue({
+      data: { delivered: true, status_code: 200, error: null },
+    });
+    await testChannel(WS, null, 'ch-1');
+    expect(post).toHaveBeenCalledWith(
+      channelTestPath(WS, null, 'ch-1'),
+      {},
+      undefined
+    );
+
+    del.mockResolvedValue({ data: null });
+    await deleteChannel(WS, null, 'ch-1');
+    expect(del).toHaveBeenCalledWith(channelPath(WS, null, 'ch-1'), undefined);
   });
 });
 

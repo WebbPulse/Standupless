@@ -200,6 +200,10 @@ class Links:
         """The team settings page, where its labels are managed."""
         return f"{self._base()}/team/{quote(self.team_prefix(team_id), safe='')}/settings"
 
+    def integrations_settings(self) -> str:
+        """The workspace integrations page, where Slack, Discord and workspace channels are managed."""
+        return f"{self._base()}/settings/integrations"
+
 
 type Builder = Callable[[Repositories, Links, str, Mapping[str, Any]], tuple[dict[str, Any], str, tuple[str, ...]]]
 """Build `data`, `url` and the team ids for one image of one type."""

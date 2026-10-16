@@ -213,6 +213,10 @@ export const labelsSettingsPath = (slug: string): string =>
 export const shareLinksSettingsPath = (slug: string): string =>
   `${settingsPath(slug)}/share-links`;
 
+/** The workspace integrations page, where Slack and Discord are connected and workspace channels are managed. */
+export const integrationsSettingsPath = (slug: string): string =>
+  `${settingsPath(slug)}/integrations`;
+
 /** The admin only workspace export page, where JSON bundles are made and downloaded. */
 export const exportSettingsPath = (slug: string): string =>
   `${settingsPath(slug)}/export`;

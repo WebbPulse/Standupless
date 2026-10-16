@@ -28,14 +28,17 @@ answers 409 `NOT_CONFIGURED`, and the settings page offers only the webhook form
 
 ## How it works
 
-- **Install.** Add to Discord on a team's settings page asks
+- **Install.** Connect on the workspace's Settings > Integrations page asks
   `GET /api/workspaces/{id}/discord/install-url` (workspace admins only) for
   Discord's authorize URL with the `bot` and `applications.commands` scopes, the
   bot permissions and a signed, single use state. The admin picks a server, and
   Discord sends the browser back to `/api/discord/oauth/callback`, which redeems
   the state, exchanges the code, records the server, registers the commands and
-  lands the admin on the settings page they started from with
+  lands the admin back on the integrations page with
   `?discord=installed`. One Discord server binds to one Standupless workspace.
+  Teams pick channels on their own settings page, and workspace admins can add
+  workspace channels that follow every open team or a chosen few on the
+  integrations page (picker `/api/workspaces/{id}/discord/channels`).
 - **One bot token.** Unlike Slack, Discord gives one bot token for the whole App
   rather than one per install. It lives in the `app` secret as
   `DISCORD_BOT_TOKEN`, so the installation row holds no credential and the

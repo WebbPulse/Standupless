@@ -300,8 +300,10 @@ class ChannelRead(TypedDict):
     last_delivery_at: NotRequired[str | None]
     last_status: NotRequired[int | None]
     provider: Literal["slack", "discord"]
+    scope: NotRequired[Literal["team", "workspace"]]
     slack_channel_id: NotRequired[str]
     team_id: str
+    team_ids: NotRequired[list[str]]
     transport: NotRequired[Literal["webhook", "slack_app", "discord_app"]]
     updated_at: str
     url_hint: str
@@ -2412,6 +2414,48 @@ class WebhookEndpointUpdate(TypedDict, closed=True):
     ]
     team_id: NotRequired[str | None]
     url: NotRequired[str | None]
+
+
+class WorkspaceChannelCreate(TypedDict, closed=True):
+    discord_channel_id: NotRequired[str | None]
+    discord_channel_name: NotRequired[str]
+    enabled: NotRequired[bool]
+    events: list[
+        Literal[
+            "issue_created",
+            "issue_status_changed",
+            "issue_completed",
+            "issue_assigned",
+            "comment_created",
+            "project_update_posted",
+            "project_update_due",
+        ]
+    ]
+    label: NotRequired[str]
+    slack_channel_id: NotRequired[str | None]
+    slack_channel_name: NotRequired[str]
+    team_ids: NotRequired[list[str]]
+    url: NotRequired[str | None]
+
+
+class WorkspaceChannelUpdate(TypedDict, closed=True):
+    enabled: NotRequired[bool | None]
+    events: NotRequired[
+        list[
+            Literal[
+                "issue_created",
+                "issue_status_changed",
+                "issue_completed",
+                "issue_assigned",
+                "comment_created",
+                "project_update_posted",
+                "project_update_due",
+            ]
+        ]
+        | None
+    ]
+    label: NotRequired[str | None]
+    team_ids: NotRequired[list[str] | None]
 
 
 class WorkspaceConnectedAppRead(TypedDict):

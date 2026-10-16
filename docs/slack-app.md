@@ -23,15 +23,21 @@ secret. Without them the public Slack routes answer 404, the install link answer
 
 ## How it works
 
-- **Install.** Add to Slack on a team's settings page asks
+- **Install.** Connect on the workspace's Settings > Integrations page asks
   `GET /api/workspaces/{id}/slack/install-url` (workspace admins only) for Slack's
   authorize URL with a signed, single use state. Slack sends the browser back to
   `/api/slack/oauth/callback`, which redeems the state, exchanges the code with the
   client secret, seals the bot token under `WEBHOOK_SIGNING_KEY` and lands the
-  admin on the settings page they started from with `?slack=installed`. One Slack
-  workspace binds to one Standupless workspace.
-- **Channels.** The team's add channel dialog lists the bot's channels from
-  `GET .../webhooks/slack-channels` and stores the channel id, never a URL.
+  admin back on the integrations page with `?slack=installed`. One Slack
+  workspace binds to one Standupless workspace, and connecting and disconnecting
+  are both in the audit log.
+- **Channels.** A team's add channel dialog lists the bot's channels from
+  `GET .../webhooks/slack-channels` and stores the channel id, never a URL. Team
+  settings shows the connection read only and links to the integrations page.
+  Workspace admins can also add workspace channels there
+  (`/api/workspaces/{id}/webhooks/channels`, picker `/api/workspaces/{id}/slack/channels`),
+  which follow every open team or a chosen few; a private team is only followed
+  when named. A channel a team and the workspace both post to gets each event once.
   Delivery calls `chat.postMessage` and maps Slack's answers onto the webhook
   rules, so a removed bot or a revoked token turns the channel off the same way a
   dead webhook does.
@@ -114,14 +120,14 @@ every domain.
 1. An unsigned `POST https://api.<host>/api/slack/events` answers 401 once the
    keys are live, and 404 while they are not.
 2. Event Subscriptions on api.slack.com shows the request URL as Verified.
-3. As a workspace admin, open a team's settings, **Add to Slack**, approve, and
+3. As a workspace admin, open Settings > Integrations, **Connect** Slack, approve, and
    check you land back on the same page with a success notice and the Slack
    workspace name shown.
 4. Add a channel through the App, pick a channel, and use **Send test** on it.
 5. In Slack, run `/standupless help` (`/standupless-staging help` on staging), then
    `/standupless ABC-1` with a real key, paste an issue link into a channel to see
    the preview, and use **Create issue** from a message's More actions menu.
-6. Disconnect from the settings page and check the App's channels show as turned
+6. Disconnect from the integrations page and check the App's channels show as turned
    off.
 
 The local stack in CI runs with placeholder keys, and the `TestSlackApp` e2e

@@ -421,12 +421,11 @@ export const transitionsKey = (
   teamId: string
 ): QueryKey => ['github-transitions', workspaceId, teamId];
 
-/** The Slack and Discord channels one team posts its notifications to. */
-export const channelsKey = (workspaceId: string, teamId: string): QueryKey => [
-  'channels',
-  workspaceId,
-  teamId,
-];
+/** The Slack and Discord channels one team, or with no team the workspace, posts its notifications to. */
+export const channelsKey = (
+  workspaceId: string,
+  teamId: string | null
+): QueryKey => ['channels', workspaceId, teamId];
 
 /** Whether the workspace installed the Slack App, and into which Slack workspace. */
 export const slackConnectionKey = (workspaceId: string): QueryKey => [
@@ -434,10 +433,10 @@ export const slackConnectionKey = (workspaceId: string): QueryKey => [
   workspaceId,
 ];
 
-/** The Slack channels the installed bot can post to, offered when adding a team channel. */
+/** The Slack channels the installed bot can post to, offered when adding a team or workspace channel. */
 export const slackChannelsKey = (
   workspaceId: string,
-  teamId: string
+  teamId: string | null
 ): QueryKey => ['slack-channels', workspaceId, teamId];
 
 /** Whether the workspace added the Discord App, and to which Discord server. */
@@ -446,10 +445,10 @@ export const discordConnectionKey = (workspaceId: string): QueryKey => [
   workspaceId,
 ];
 
-/** The Discord channels the installed bot can post to, offered when adding a team channel. */
+/** The Discord channels the installed bot can post to, offered when adding a team or workspace channel. */
 export const discordChannelsKey = (
   workspaceId: string,
-  teamId: string
+  teamId: string | null
 ): QueryKey => ['discord-channels', workspaceId, teamId];
 
 /**

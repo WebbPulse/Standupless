@@ -3,13 +3,14 @@
  * team's Slack and Discord channels; the stored URL is never shown, only its
  * masked hint; a channel turned off because its webhook is gone carries a
  * re-enable action; and anyone else sees a note without a request being made.
- * With the Slack App offered, a workspace admin adds or removes it from a row
- * above the list, and once it is installed a new channel defaults to a Slack
- * channel picked by name. The Discord App works the same way.
+ * The Slack and Discord connections show read only with a link to the
+ * workspace integrations page, and once one is installed a new channel
+ * defaults to a channel picked by name from a filterable list.
  */
 
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type {
   ChannelRead,
@@ -200,6 +201,18 @@ describe('the team notifications section', () => {
     expect(screen.getByText('No messages yet')).toBeInTheDocument();
   });
 
+  it('holds the list place with a skeleton while the first read is in flight', async () => {
+    listChannels.mockReturnValue(new Promise(() => undefined));
+    render(
+      <TeamChannelsSection workspaceId="ws-loading" teamId="team-1" canEdit />
+    );
+
+    expect(
+      await screen.findByRole('status', { name: 'Loading channels' })
+    ).toBeInTheDocument();
+    expect(screen.queryByText('Loading channels')).toBeNull();
+  });
+
   it('adds a channel with the URL, label and chosen events', async () => {
     render(<TeamChannelsSection workspaceId="ws-1" teamId="team-1" canEdit />);
 
@@ -234,6 +247,34 @@ describe('the team notifications section', () => {
     });
   });
 
+  it('shows a new channel at once even when the list read after it is stale', async () => {
+    listChannels.mockResolvedValue([]);
+    createChannel.mockResolvedValue({
+      ...channel,
+      channel_id: 'ch-new',
+      label: 'Alerts',
+    });
+    render(
+      <TeamChannelsSection workspaceId="ws-stale" teamId="team-1" canEdit />
+    );
+
+    expect(await screen.findByText('No channels yet.')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Add channel' }));
+    await userEvent.type(
+      screen.getByLabelText('Webhook URL'),
+      'https://discord.com/api/webhooks/1/abc'
+    );
+    await userEvent.click(
+      within(screen.getByRole('dialog')).getByRole('button', {
+        name: 'Add channel',
+      })
+    );
+
+    expect(await screen.findByText('Alerts')).toBeInTheDocument();
+    expect(screen.queryByText('No channels yet.')).toBeNull();
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
   it('keeps the stored URL when an edit leaves the URL field empty', async () => {
     render(<TeamChannelsSection workspaceId="ws-1" teamId="team-1" canEdit />);
 
@@ -252,7 +293,7 @@ describe('the team notifications section', () => {
     });
   });
 
-  it('sends a test message and says whether it landed', async () => {
+  it('sends a test message from the row and says whether it landed', async () => {
     testChannel.mockResolvedValue({
       delivered: false,
       status_code: 404,
@@ -261,10 +302,9 @@ describe('the team notifications section', () => {
     render(<TeamChannelsSection workspaceId="ws-1" teamId="team-1" canEdit />);
 
     await userEvent.click(
-      await screen.findByRole('button', { name: '#eng actions' })
-    );
-    await userEvent.click(
-      screen.getByRole('menuitem', { name: 'Send test message' })
+      await screen.findByRole('button', {
+        name: 'Send a test message to #eng',
+      })
     );
 
     expect(
@@ -285,7 +325,9 @@ describe('the team notifications section', () => {
         disabled_at: '2026-10-07T01:00:00Z',
       },
     ]);
-    render(<TeamChannelsSection workspaceId="ws-1" teamId="team-1" canEdit />);
+    render(
+      <TeamChannelsSection workspaceId="ws-disabled" teamId="team-1" canEdit />
+    );
 
     expect(
       await screen.findByText('Turned off automatically')
@@ -293,9 +335,12 @@ describe('the team notifications section', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Re-enable' }));
 
     await waitFor(() => {
-      expect(updateChannel).toHaveBeenCalledWith('ws-1', 'team-1', 'ch-1', {
-        enabled: true,
-      });
+      expect(updateChannel).toHaveBeenCalledWith(
+        'ws-disabled',
+        'team-1',
+        'ch-1',
+        { enabled: true }
+      );
     });
   });
 
@@ -313,7 +358,7 @@ describe('the team notifications section', () => {
   });
 });
 
-describe('the Slack app connection', () => {
+describe('the chat app connections in team settings', () => {
   it('shows no Slack row when this environment has no Slack App', async () => {
     render(
       <TeamChannelsSection
@@ -325,43 +370,37 @@ describe('the Slack app connection', () => {
     );
 
     expect(await screen.findByText('#eng')).toBeInTheDocument();
-    expect(screen.queryByText('Slack app')).not.toBeInTheDocument();
-    expect(
-      screen.queryByRole('button', { name: 'Add to Slack' })
-    ).not.toBeInTheDocument();
+    expect(screen.queryByText('Not connected')).not.toBeInTheDocument();
   });
 
-  it('sends a workspace admin to Slack with the team to return to', async () => {
+  it('links a workspace admin to the integrations page instead of installing here', async () => {
     getSlackConnection.mockResolvedValue({
       configured: true,
       installed: false,
     });
-    getSlackInstallUrl.mockResolvedValue({
-      url: 'https://slack.com/oauth/v2/authorize?state=s',
-      expires_at: '2026-10-09T00:10:00Z',
-    });
     render(
-      <TeamChannelsSection
-        workspaceId="ws-slack-add"
-        teamId="team-1"
-        canEdit
-        canManageWorkspace
-      />
+      <MemoryRouter>
+        <TeamChannelsSection
+          workspaceId="ws-slack-add"
+          teamId="team-1"
+          canEdit
+          canManageWorkspace
+          workspaceSlug="acme"
+        />
+      </MemoryRouter>
     );
 
-    await userEvent.click(
-      await screen.findByRole('button', { name: 'Add to Slack' })
-    );
-
-    await waitFor(() => {
-      expect(assign).toHaveBeenCalledWith(
-        'https://slack.com/oauth/v2/authorize?state=s'
-      );
+    const link = await screen.findByRole('link', {
+      name: 'Connect Slack in workspace settings',
     });
-    expect(getSlackInstallUrl).toHaveBeenCalledWith('ws-slack-add', 'team-1');
+    expect(link).toHaveAttribute('href', '/w/acme/settings/integrations');
+    expect(
+      screen.queryByRole('button', { name: 'Connect Slack' })
+    ).not.toBeInTheDocument();
+    expect(getSlackInstallUrl).not.toHaveBeenCalled();
   });
 
-  it('offers a team admin who is not a workspace admin no install', async () => {
+  it('tells a team admin who is not a workspace admin who can connect', async () => {
     getSlackConnection.mockResolvedValue({
       configured: true,
       installed: false,
@@ -371,47 +410,43 @@ describe('the Slack app connection', () => {
         workspaceId="ws-slack-member"
         teamId="team-1"
         canEdit
+        workspaceSlug="acme"
       />
     );
 
     expect(
       await screen.findByText(
-        'A workspace admin can add the Slack app to pick channels by name.'
+        'A workspace admin can connect Slack in workspace settings.'
       )
     ).toBeInTheDocument();
-    expect(
-      screen.queryByRole('button', { name: 'Add to Slack' })
-    ).not.toBeInTheDocument();
+    expect(screen.queryByRole('link')).not.toBeInTheDocument();
   });
 
-  it('names the Slack workspace and disconnects after a confirm', async () => {
+  it('names the connected Slack workspace read only, with no disconnect', async () => {
     getSlackConnection.mockResolvedValue(installedSlack);
-    deleteSlackConnection.mockResolvedValue();
     render(
-      <TeamChannelsSection
-        workspaceId="ws-slack-remove"
-        teamId="team-1"
-        canEdit
-        canManageWorkspace
-      />
+      <MemoryRouter>
+        <TeamChannelsSection
+          workspaceId="ws-slack-readonly"
+          teamId="team-1"
+          canEdit
+          canManageWorkspace
+          workspaceSlug="acme"
+        />
+      </MemoryRouter>
     );
 
     expect(await screen.findByText('Connected')).toBeInTheDocument();
-    expect(screen.getByText(/Posts as a bot in Acme/)).toBeInTheDocument();
-    await userEvent.click(screen.getByRole('button', { name: 'Disconnect' }));
-    expect(deleteSlackConnection).not.toHaveBeenCalled();
-    await userEvent.click(
-      within(screen.getByRole('dialog')).getByRole('button', {
-        name: 'Disconnect Slack',
-      })
-    );
-
-    await waitFor(() => {
-      expect(deleteSlackConnection).toHaveBeenCalledWith('ws-slack-remove');
-    });
+    expect(screen.getByText('Acme')).toBeInTheDocument();
+    expect(
+      screen.getByRole('link', { name: 'Manage in workspace settings' })
+    ).toHaveAttribute('href', '/w/acme/settings/integrations');
+    expect(
+      screen.queryByRole('button', { name: 'Disconnect' })
+    ).not.toBeInTheDocument();
   });
 
-  it('adds a Slack channel picked by name once the App is installed', async () => {
+  it('adds a Slack channel picked from the list by mouse once the App is installed', async () => {
     getSlackConnection.mockResolvedValue(installedSlack);
     listSlackChannels.mockResolvedValue([
       { id: 'C0123', name: 'eng-updates', is_private: false },
@@ -432,10 +467,25 @@ describe('the Slack app connection', () => {
       within(dialog).getByRole('radio', { name: 'Slack app' })
     ).toHaveAttribute('aria-checked', 'true');
     expect(within(dialog).queryByLabelText('Webhook URL')).toBeNull();
-    await within(dialog).findByRole('option', { name: '#leads (private)' });
-    await userEvent.selectOptions(
-      within(dialog).getByLabelText('Slack channel'),
-      'C0123'
+    await userEvent.click(
+      await within(dialog).findByRole('button', {
+        name: 'Slack channel: none',
+      })
+    );
+    expect(
+      await within(dialog).findByRole('option', { name: /#leads/ })
+    ).toBeInTheDocument();
+    await userEvent.click(
+      within(dialog).getByRole('option', { name: /#eng-updates/ })
+    );
+    expect(
+      within(dialog).getByRole('button', {
+        name: 'Slack channel: #eng-updates',
+      })
+    ).toBeInTheDocument();
+    expect(within(dialog).getByLabelText('Label')).toHaveAttribute(
+      'placeholder',
+      'Defaults to #eng-updates'
     );
     await userEvent.click(
       within(dialog).getByRole('button', { name: 'Add channel' })
@@ -458,6 +508,39 @@ describe('the Slack app connection', () => {
       });
     });
     expect(listSlackChannels).toHaveBeenCalledWith('ws-slack-pick', 'team-1');
+  });
+
+  it('picks a Slack channel by keyboard', async () => {
+    getSlackConnection.mockResolvedValue(installedSlack);
+    listSlackChannels.mockResolvedValue([
+      { id: 'C0123', name: 'eng-updates', is_private: false },
+      { id: 'C0456', name: 'leads', is_private: true },
+    ]);
+    render(
+      <TeamChannelsSection
+        workspaceId="ws-slack-keys"
+        teamId="team-1"
+        canEdit
+      />
+    );
+
+    expect(await screen.findByText('Connected')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Add channel' }));
+    const dialog = screen.getByRole('dialog');
+    await userEvent.click(
+      await within(dialog).findByRole('button', {
+        name: 'Slack channel: none',
+      })
+    );
+    await within(dialog).findByRole('option', { name: /#leads/ });
+    await userEvent.keyboard('leads');
+    await userEvent.keyboard('{Enter}');
+
+    expect(
+      await within(dialog).findByRole('button', {
+        name: 'Slack channel: #leads',
+      })
+    ).toBeInTheDocument();
   });
 
   it('still adds an incoming webhook when one is chosen over the App', async () => {
@@ -522,68 +605,21 @@ describe('the Slack app connection', () => {
     expect(screen.queryByLabelText('Webhook URL')).toBeNull();
   });
 
-  it('sends a workspace admin to Discord with the team to return to', async () => {
-    getDiscordConnection.mockResolvedValue({
-      configured: true,
-      installed: false,
-    });
-    getDiscordInstallUrl.mockResolvedValue({
-      url: 'https://discord.com/oauth2/authorize?state=s',
-      expires_at: '2026-10-09T00:10:00Z',
-    });
-    render(
-      <TeamChannelsSection
-        workspaceId="ws-discord-add"
-        teamId="team-1"
-        canEdit
-        canManageWorkspace
-      />
-    );
-
-    await userEvent.click(
-      await screen.findByRole('button', { name: 'Add to Discord' })
-    );
-
-    await waitFor(() => {
-      expect(assign).toHaveBeenCalledWith(
-        'https://discord.com/oauth2/authorize?state=s'
-      );
-    });
-    expect(getDiscordInstallUrl).toHaveBeenCalledWith(
-      'ws-discord-add',
-      'team-1'
-    );
-    expect(
-      screen.queryByRole('button', { name: 'Add to Slack' })
-    ).not.toBeInTheDocument();
-  });
-
-  it('names the Discord server and disconnects after a confirm', async () => {
+  it('names the connected Discord server read only', async () => {
     getDiscordConnection.mockResolvedValue(installedDiscord);
-    deleteDiscordConnection.mockResolvedValue();
     render(
       <TeamChannelsSection
-        workspaceId="ws-discord-remove"
+        workspaceId="ws-discord-readonly"
         teamId="team-1"
         canEdit
-        canManageWorkspace
       />
     );
 
     expect(await screen.findByText('Connected')).toBeInTheDocument();
+    expect(screen.getByText('Acme Discord')).toBeInTheDocument();
     expect(
-      screen.getByText(/Posts as a bot in Acme Discord/)
+      screen.getByText('A workspace admin manages this connection.')
     ).toBeInTheDocument();
-    await userEvent.click(screen.getByRole('button', { name: 'Disconnect' }));
-    await userEvent.click(
-      within(screen.getByRole('dialog')).getByRole('button', {
-        name: 'Disconnect Discord',
-      })
-    );
-
-    await waitFor(() => {
-      expect(deleteDiscordConnection).toHaveBeenCalledWith('ws-discord-remove');
-    });
   });
 
   it('adds a Discord channel picked by name once the App is installed', async () => {
@@ -607,10 +643,13 @@ describe('the Slack app connection', () => {
       within(dialog).getByRole('radio', { name: 'Discord app' })
     ).toHaveAttribute('aria-checked', 'true');
     expect(within(dialog).queryByLabelText('Webhook URL')).toBeNull();
-    await within(dialog).findByRole('option', { name: '#news' });
-    await userEvent.selectOptions(
-      within(dialog).getByLabelText('Discord channel'),
-      '2000000000000000001'
+    await userEvent.click(
+      await within(dialog).findByRole('button', {
+        name: 'Discord channel: none',
+      })
+    );
+    await userEvent.click(
+      await within(dialog).findByRole('option', { name: /#eng-updates/ })
     );
     await userEvent.click(
       within(dialog).getByRole('button', { name: 'Add channel' })
