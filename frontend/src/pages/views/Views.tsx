@@ -177,6 +177,7 @@ export const Views: React.FC = () => {
         group_by: view.group_by,
         sub_group_by: view.sub_group_by,
         ordering: view.ordering,
+        ...(view.ordering_reversed === true ? { ordering_reversed: true } : {}),
         visible_properties: view.visible_properties,
         layout: view.layout,
         show_sub_issues: view.show_sub_issues,

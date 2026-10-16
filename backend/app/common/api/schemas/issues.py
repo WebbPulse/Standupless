@@ -44,7 +44,18 @@ ActivityKindField = Literal[
     "subscriber_removed",
 ]
 
-SortField = Literal["updated_desc", "created_desc", "key_asc", "priority_desc", "due_asc", "sla_asc", "manual"]
+SortField = Literal[
+    "updated_desc",
+    "created_desc",
+    "key_asc",
+    "priority_desc",
+    "due_asc",
+    "sla_asc",
+    "manual",
+    "status_asc",
+    "start_asc",
+    "estimate_desc",
+]
 
 ISSUE_KEY_PATTERN = re.compile(r"^([A-Za-z][A-Za-z0-9]{1,5})-(\d+)$")
 

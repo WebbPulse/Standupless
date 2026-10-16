@@ -88,6 +88,8 @@ export type SavedViewFilter = ViewFilter & ViewFilterNegations;
 export interface SavedViewDisplay {
   sub_group_by: ViewGroupBy | null;
   ordering: IssueListSort | null;
+  /** True when the ordering reads backwards, issues lacking its value still last. */
+  ordering_reversed?: boolean;
   visible_properties: ViewVisibleProperty[] | null;
   layout: ViewLayout;
   show_sub_issues: boolean;
@@ -146,6 +148,7 @@ export interface SavedViewDisplayCreate extends Omit<
   sort?: IssueListSort;
   sub_group_by?: ViewGroupBy | null;
   ordering?: IssueListSort | null;
+  ordering_reversed?: boolean;
   visible_properties?: ViewVisibleProperty[] | null;
   layout?: ViewLayout | null;
   show_sub_issues?: boolean;
@@ -167,6 +170,7 @@ export interface SavedViewDisplayUpdate extends Omit<
   sort?: IssueListSort;
   sub_group_by?: ViewGroupBy | null;
   ordering?: IssueListSort | null;
+  ordering_reversed?: boolean;
   visible_properties?: ViewVisibleProperty[] | null;
   layout?: ViewLayout | null;
   show_sub_issues?: boolean;

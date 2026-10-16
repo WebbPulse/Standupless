@@ -76,6 +76,17 @@ describe('mergeIssueDelta', () => {
     expect(merged.map((row) => row.id)).toEqual(['c', 'b']);
   });
 
+  it('keeps a reversed list reversed', () => {
+    const merged = mergeIssueDelta(
+      held,
+      { issues: [issue('c', '2026-09-17T04:00:00Z')], removedIds: [] },
+      'updated_desc',
+      undefined,
+      { reverse: true }
+    );
+    expect(merged.map((row) => row.id)).toEqual(['a', 'b', 'c']);
+  });
+
   it('hands back the rows unchanged for an empty delta', () => {
     expect(
       mergeIssueDelta(held, { issues: [], removedIds: [] }, 'updated_desc')

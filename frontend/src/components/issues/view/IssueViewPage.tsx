@@ -45,6 +45,7 @@ import { insightsFilters, narrowTo } from '../../../lib/insights';
 import {
   FILTER_FIELDS,
   fieldsFor,
+  GROUP_FIELDS,
   parseViewState,
   sameViewState,
   sharedChange,
@@ -441,6 +442,10 @@ export const IssueViewPage: React.FC<IssueViewPageProps> = ({
     }),
     [lists.context, teams]
   );
+  const viewLists = useMemo(
+    () => ({ ...lists, context: filterContext }),
+    [lists, filterContext]
+  );
   const filterFields = useMemo(
     () =>
       hideFilterFields === undefined
@@ -687,6 +692,7 @@ export const IssueViewPage: React.FC<IssueViewPageProps> = ({
           state={state}
           onChange={setState}
           archive={archive}
+          groupFields={fieldsFor(GROUP_FIELDS, filterContext)}
           onReset={
             sameViewState({ ...state, filters: base.filters, q: base.q }, base)
               ? undefined
@@ -808,7 +814,7 @@ export const IssueViewPage: React.FC<IssueViewPageProps> = ({
             state={state}
             onStateChange={setState}
             collection={collection}
-            lists={lists}
+            lists={viewLists}
             scaleFor={scaleFor}
             estimateOptionsFor={estimateOptionsFor}
             {...(teams.length > 1 ? { teamNameFor } : {})}

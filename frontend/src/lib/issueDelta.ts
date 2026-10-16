@@ -6,7 +6,7 @@
  */
 
 import type { IssueListSort, OrderedIssueRead } from '../api/issues';
-import { sortIssues } from './issueView';
+import { sortIssues, type SortOptions } from './issueView';
 
 /** What one delta read carries. */
 export interface IssueDelta {
@@ -18,13 +18,15 @@ export interface IssueDelta {
  * The held rows with a delta applied: removed ids dropped, changed rows
  * replaced or added, and the result in the list's order. A held list that
  * stopped at its ceiling is cut back to it, so a partial view stays partial
- * rather than growing with every poll.
+ * rather than growing with every poll. `options` carries the list's
+ * direction, so a reversed list stays reversed.
  */
 export const mergeIssueDelta = (
   held: readonly OrderedIssueRead[],
   delta: IssueDelta,
   ordering: IssueListSort,
-  ceiling?: number
+  ceiling?: number,
+  options: SortOptions = {}
 ): OrderedIssueRead[] => {
   if (delta.issues.length === 0 && delta.removedIds.length === 0) {
     return [...held];
@@ -34,6 +36,6 @@ export const mergeIssueDelta = (
   const kept = held
     .filter((issue) => !gone.has(issue.id) && !changed.has(issue.id))
     .concat([...changed.values()].filter((issue) => !gone.has(issue.id)));
-  const ordered = sortIssues(kept, ordering);
+  const ordered = sortIssues(kept, ordering, options);
   return ceiling === undefined ? ordered : ordered.slice(0, ceiling);
 };

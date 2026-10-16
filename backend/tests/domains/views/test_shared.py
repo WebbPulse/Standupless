@@ -248,6 +248,20 @@ def test_a_shared_view_follows_its_saved_sort(client: TestClient, issues_client:
     assert [row["title"] for row in body["issues"]] == ["Urgent", "Medium", "Low"]
 
 
+def test_a_shared_view_follows_a_start_date_sort(client: TestClient, issues_client: TestClient, workspace: str) -> None:
+    """The start date sort reads earliest first with unscheduled issues last, as the member list does."""
+    sign_in(issues_client, MEMBER)
+    seed_issue(issues_client, workspace, title="Unscheduled")
+    seed_issue(issues_client, workspace, title="Later", start_date="2026-12-01")
+    seed_issue(issues_client, workspace, title="Sooner", start_date="2026-01-01")
+
+    view_id = _team_view(client, workspace, sort="start_asc")
+    link = mint(client, workspace, target_type="view", target_id=view_id)
+    body = client.get(f"/api/shared/{link['token']}/view").json()
+
+    assert [row["title"] for row in body["issues"]] == ["Sooner", "Later", "Unscheduled"]
+
+
 def test_a_shared_view_breaks_priority_ties_by_newest_created(
     client: TestClient, issues_client: TestClient, workspace: str
 ) -> None:

@@ -9,7 +9,7 @@ rather than a partition read with a filter behind it.
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Iterator, Literal, Mapping
+from typing import Any, Iterator, Literal, Mapping, get_args
 
 from boto3.dynamodb.conditions import Attr, Key
 from pydantic import BaseModel, Field
@@ -22,9 +22,9 @@ ViewKind = Literal["list", "board"]
 
 VIEW_KINDS: tuple[str, ...] = ("list", "board")
 
-GroupBy = Literal["status", "assignee", "priority", "label"]
+GroupBy = Literal["status", "assignee", "priority", "label", "milestone", "project", "cycle", "parent", "team", "sla"]
 
-GROUP_BY_FIELDS: tuple[str, ...] = ("status", "assignee", "priority", "label")
+GROUP_BY_FIELDS: tuple[str, ...] = get_args(GroupBy)
 
 
 def new_view_id() -> str:
@@ -104,6 +104,7 @@ class SavedView(BaseModel):
     group_by: str | None = None
     sub_group_by: str | None = None
     ordering: str | None = None
+    ordering_reversed: bool | None = None
     visible_properties: list[str] | None = None
     layout: str | None = None
     show_sub_issues: bool | None = None

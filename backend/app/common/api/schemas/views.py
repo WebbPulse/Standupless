@@ -19,7 +19,18 @@ from app.common.change_source import ChangeSource
 from app.common.db.dynamo.inbox import Notification
 from app.common.db.dynamo.views import SavedView
 
-SortField = Literal["updated_desc", "created_desc", "key_asc", "priority_desc", "due_asc", "sla_asc", "manual"]
+SortField = Literal[
+    "updated_desc",
+    "created_desc",
+    "key_asc",
+    "priority_desc",
+    "due_asc",
+    "sla_asc",
+    "manual",
+    "status_asc",
+    "start_asc",
+    "estimate_desc",
+]
 
 ViewKindField = Literal["list", "board"]
 
@@ -44,7 +55,19 @@ VisiblePropertyField = Literal[
 ]
 """The row properties a view may show, a fixed set so a client never meets one it cannot render."""
 
-GroupByField = Literal["status", "assignee", "priority", "label", "milestone"]
+GroupByField = Literal[
+    "status",
+    "assignee",
+    "priority",
+    "label",
+    "milestone",
+    "project",
+    "cycle",
+    "parent",
+    "team",
+    "sla",
+]
+"""The properties a view may group or sub-group its rows by."""
 
 ScopeField = Literal["mine", "team", "workspace", "all"]
 
@@ -210,6 +233,7 @@ class ViewCreate(BaseModel):
     group_by: Optional[GroupByField] = None
     sub_group_by: Optional[GroupByField] = None
     ordering: Optional[SortField] = None
+    ordering_reversed: StrictBool = False
     visible_properties: Optional[list[VisiblePropertyField]] = Field(default=None, max_length=len(VISIBLE_PROPERTIES))
     layout: Optional[LayoutField] = None
     show_sub_issues: StrictBool = True
@@ -244,6 +268,7 @@ class ViewUpdate(BaseModel):
     group_by: Optional[GroupByField] = None
     sub_group_by: Optional[GroupByField] = None
     ordering: Optional[SortField] = None
+    ordering_reversed: Optional[StrictBool] = None
     visible_properties: Optional[list[VisiblePropertyField]] = Field(default=None, max_length=len(VISIBLE_PROPERTIES))
     layout: Optional[LayoutField] = None
     show_sub_issues: Optional[StrictBool] = None
@@ -261,7 +286,7 @@ class ViewUpdate(BaseModel):
         return _unique(value)
 
 
-DISPLAY_SWITCHES: tuple[str, ...] = ("show_sub_issues", "show_completed", "show_archived")
+DISPLAY_SWITCHES: tuple[str, ...] = ("ordering_reversed", "show_sub_issues", "show_completed", "show_archived")
 """The view's boolean display switches, which a patch may set but never clear to null."""
 
 
@@ -283,6 +308,7 @@ class ViewRead(BaseModel):
     group_by: Optional[str] = None
     sub_group_by: Optional[str] = None
     ordering: Optional[str] = None
+    ordering_reversed: bool = False
     visible_properties: Optional[list[str]] = None
     layout: str
     show_sub_issues: bool = True
@@ -311,6 +337,7 @@ class ViewRead(BaseModel):
             group_by=view.group_by,
             sub_group_by=view.sub_group_by,
             ordering=view.ordering,
+            ordering_reversed=view.ordering_reversed is True,
             visible_properties=list(view.visible_properties) if view.visible_properties is not None else None,
             layout=view.layout or view.kind,
             show_sub_issues=view.show_sub_issues is not False,

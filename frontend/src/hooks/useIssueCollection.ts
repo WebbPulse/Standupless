@@ -175,7 +175,8 @@ const readDelta = async (
       held.issues,
       { issues: page.issues, removedIds },
       query.sort ?? 'updated_desc',
-      held.truncated ? COLLECTION_LIMIT : undefined
+      held.truncated ? COLLECTION_LIMIT : undefined,
+      { reverse: query.reverse === true }
     ),
   };
 };

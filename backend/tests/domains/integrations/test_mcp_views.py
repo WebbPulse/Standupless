@@ -126,6 +126,31 @@ def test_update_view_by_name_sets_and_clears_grouping(client: TestClient, reposi
     assert "show_completed" in switch
 
 
+def test_a_view_saves_a_project_grouping_and_a_reversed_status_order(
+    client: TestClient, repositories: Any, workspace: str
+) -> None:
+    """The new groupings and the ordering direction pass through create and update."""
+    secret = mint_for(repositories, MEMBER, VIEWS)
+
+    created = answer(
+        tool(
+            client,
+            secret,
+            "create_view",
+            {"name": "Planned", "group_by": "project", "sub_group_by": "cycle", "sort": "status_asc"},
+        )
+    )
+    reversed_view = answer(
+        tool(client, secret, "update_view", {"view_id": created["view_id"], "ordering_reversed": True})
+    )
+    cleared = refusal(tool(client, secret, "update_view", {"view_id": created["view_id"], "ordering_reversed": None}))
+
+    assert (created["group_by"], created["sub_group_by"], created["sort"]) == ("project", "cycle", "status_asc")
+    assert created["ordering_reversed"] is False
+    assert reversed_view["ordering_reversed"] is True
+    assert "ordering_reversed" in cleared
+
+
 def test_update_view_is_the_owners_or_a_team_admins(client: TestClient, repositories: Any, workspace: str) -> None:
     """A member may not change another's team view; a workspace admin and a team admin may."""
     view_id = owners_team_view(client, repositories)

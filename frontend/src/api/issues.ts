@@ -143,6 +143,8 @@ export interface IssueListFilters {
   /** True to add the sub-teams of `team_id` the caller can see, rolling them up. */
   include_sub_teams?: boolean;
   sort?: IssueListSort;
+  /** True to turn the sort around, issues lacking the sorted value still last. */
+  reverse?: boolean;
   cursor?: string;
   limit?: number;
   /**
