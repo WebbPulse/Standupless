@@ -500,7 +500,10 @@ const ConnectionBlock: React.FC<ConnectionBlockProps> = ({
             <>
               <CopyRow label="ACS URL" value={provider.saml_acs_url} />
               <CopyRow label="Entity ID" value={provider.saml_entity_id} />
-              <CopyRow label="Metadata URL" value={provider.saml_metadata_url} />
+              <CopyRow
+                label="Metadata URL"
+                value={provider.saml_metadata_url}
+              />
             </>
           )}
         </div>
@@ -929,8 +932,8 @@ export const SsoSection: React.FC<SsoSectionProps> = ({ workspace }) => {
         </h2>
         <p className="text-sm text-text-muted">
           Let people sign in to {workspace.name} through your identity provider
-          with OIDC or SAML. New people on a verified domain join as members
-          the first time they sign in.
+          with OIDC or SAML. New people on a verified domain join as members the
+          first time they sign in.
         </p>
       </div>
 
@@ -964,7 +967,11 @@ export const SsoSection: React.FC<SsoSectionProps> = ({ workspace }) => {
             settings={data}
             refetch={refetch}
           />
-          <RequireBlock workspace={workspace} settings={data} refetch={refetch} />
+          <RequireBlock
+            workspace={workspace}
+            settings={data}
+            refetch={refetch}
+          />
         </div>
       )}
     </section>

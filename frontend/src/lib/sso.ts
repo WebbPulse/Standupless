@@ -41,7 +41,11 @@ export const SSO_TEST_REQUIRED = 'SSO_TEST_REQUIRED';
 export const SSO_CONNECTION_INVALID = 'SSO_CONNECTION_INVALID';
 
 /** The pages a finished single sign-on may move on from into its workspace. */
-const LANDING_PATHS: ReadonlySet<string> = new Set(['/', '/workspaces', '/login']);
+const LANDING_PATHS: ReadonlySet<string> = new Set([
+  '/',
+  '/workspaces',
+  '/login',
+]);
 
 const SSO_ERROR_MESSAGES: Record<string, string> = {
   SSO_CANCELLED: 'Sign-in was cancelled.',

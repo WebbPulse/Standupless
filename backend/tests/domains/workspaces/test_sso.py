@@ -170,9 +170,7 @@ def test_adding_a_domain_needs_the_business_plan(client: TestClient, repositorie
     assert response.json()["error_code"] == "PLAN_FEATURE_UNAVAILABLE"
 
 
-def test_a_domain_answers_its_txt_record_and_is_audited(
-    client: TestClient, workspace: str, repositories: Any
-) -> None:
+def test_a_domain_answers_its_txt_record_and_is_audited(client: TestClient, workspace: str, repositories: Any) -> None:
     sign_in(client, ADMIN)
     response = client.post(f"{BASE}/domains", json={"domain": "@Acme.COM"})
     assert response.status_code == 201
@@ -195,9 +193,7 @@ def test_a_public_or_malformed_domain_is_refused(client: TestClient, workspace: 
     assert response.json()["error_code"] == code
 
 
-def test_a_domain_without_its_record_stays_unverified(
-    client: TestClient, workspace: str, dns: dict[str, bool]
-) -> None:
+def test_a_domain_without_its_record_stays_unverified(client: TestClient, workspace: str, dns: dict[str, bool]) -> None:
     sign_in(client, ADMIN)
     client.post(f"{BASE}/domains", json={"domain": "acme.com"})
     response = client.post(f"{BASE}/domains/acme.com/verify")
@@ -441,9 +437,7 @@ def _person(repositories: Any, user_id: str, email: str, *, verified: bool = Tru
     repositories.users.create(User(id=user_id, email=email, display_name="Alice", email_verified=verified))
 
 
-def test_a_person_through_the_connection_joins_as_a_member(
-    client: TestClient, tested: str, repositories: Any
-) -> None:
+def test_a_person_through_the_connection_joins_as_a_member(client: TestClient, tested: str, repositories: Any) -> None:
     _person(repositories, OUTSIDER, "alice@acme.com")
     _sso_session(client, OUTSIDER)
     response = client.post("/api/workspaces/sso/join")

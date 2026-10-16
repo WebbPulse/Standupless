@@ -83,9 +83,7 @@ const Login: React.FC = () => {
         searchParams.get(DESKTOP_HANDOFF_FAILED_PARAM)
       ) ?? describeSsoError(searchParams.get(SSO_ERROR_PARAM))
   );
-  const [ssoReturn] = useState(
-    () => searchParams.get(SSO_LOGIN_PARAM) === '1'
-  );
+  const [ssoReturn] = useState(() => searchParams.get(SSO_LOGIN_PARAM) === '1');
   const signInWithBrowser = desktopBrowserSignIn();
   const authorizeTarget = authorizeReturn(
     searchParams.get('returnTo'),

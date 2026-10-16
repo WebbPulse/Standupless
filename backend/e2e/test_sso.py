@@ -165,6 +165,17 @@ def _grant_business(slug: str) -> None:
     assert result.returncode == 0, f"the comp grant failed: {result.stdout[-400:]} {result.stderr[-400:]}"
 
 
+def _cookie_header(browser: httpx.Client) -> dict[str, str]:
+    """Every cookie the client holds, as the header a browser on loopback would send.
+
+    Keycloak marks its cookies `Secure` even on plain HTTP to localhost, which a browser
+    treats as a secure context and the standard library cookie jar does not, so the jar
+    alone would leave Keycloak's login form without its session cookie.
+    """
+    pairs = [f"{cookie.name}={cookie.value}" for cookie in browser.cookies.jar if cookie.value is not None]
+    return {"Cookie": "; ".join(pairs)} if pairs else {}
+
+
 def _sign_in_through_provider(api_base: str, provider: Provider, workspace_id: str) -> httpx.Client:
     """Run the browser's side of an OIDC sign-in and return a client holding the session cookie.
 
@@ -191,12 +202,13 @@ def _sign_in_through_provider(api_base: str, provider: Provider, workspace_id: s
     submitted = browser.post(
         urljoin(str(page.url), html.unescape(action.group(1))),
         data={"username": provider.email, "password": provider.password, "credentialId": ""},
+        headers=_cookie_header(browser),
     )
     assert submitted.status_code in (302, 303), f"the provider's login answered {submitted.status_code}"
     callback = submitted.headers["location"]
     assert callback.startswith(provider.redirect_uri), "the provider redirected somewhere other than the callback"
 
-    finished = browser.get(callback)
+    finished = browser.get(callback, headers=_cookie_header(browser))
     assert finished.status_code == 303, f"the callback answered {finished.status_code}: {finished.text[:300]}"
     location = finished.headers["location"]
     assert "sso_error" not in location, f"the callback refused the sign-in: {location}"
@@ -208,7 +220,7 @@ def _access_token(browser: httpx.Client, api_base: str) -> str:
     """Exchange the session cookie the callback set for an access token, as the auth shell does."""
     response = browser.post(
         f"{api_base}/api/auth/refresh",
-        headers={"Origin": FRONTEND_ORIGIN, "Sec-Fetch-Site": "same-site"},
+        headers={"Origin": FRONTEND_ORIGIN, "Sec-Fetch-Site": "same-site", **_cookie_header(browser)},
     )
     assert response.status_code == 200, f"refreshing the SSO session answered {response.status_code}"
     return str(response.json()["access_token"])
