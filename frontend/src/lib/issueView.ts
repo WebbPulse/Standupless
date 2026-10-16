@@ -33,7 +33,7 @@ import type {
 } from '../types/Api';
 import { PRIORITIES, PRIORITY_LABELS } from './issueDisplay';
 import { pickableLabels, replacedSiblings } from './labelGroups';
-import { completionPercent } from './planningDisplay';
+import { completionPercent, progressPercent } from './planningDisplay';
 import { personLabel, type Assignable } from './issuePeople';
 import { STATUS_CATEGORY_ORDER } from './propertyOptions';
 import { liveSlaStatus, SLA_STATUS_LABELS } from './sla';
@@ -1305,7 +1305,7 @@ const groupShells = (
             key: milestone.milestone_id,
             field,
             label: milestone.name,
-            progress: completionPercent(milestone.counts),
+            progress: progressPercent(milestone),
           })),
         { key: NONE, field, label: 'No milestone' },
       ];
@@ -1318,7 +1318,7 @@ const groupShells = (
             key: project.project_id,
             field,
             label: project.name,
-            progress: completionPercent(project.counts),
+            progress: progressPercent(project),
           })),
         { key: NONE, field, label: 'No project' },
       ];

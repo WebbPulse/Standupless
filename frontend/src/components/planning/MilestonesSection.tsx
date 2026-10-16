@@ -19,7 +19,12 @@ import {
 } from 'react-icons/lu';
 import { cn } from '../../lib/cn';
 import { reorderKey } from '../../lib/milestones';
-import { completionPercent } from '../../lib/planningDisplay';
+import {
+  measureUnit,
+  progressMeasureOf,
+  progressOf,
+  progressPercent,
+} from '../../lib/planningDisplay';
 import type { MilestoneRead, MilestoneUpdate } from '../../types/Api';
 import { DatePicker } from '../issues/PropertyPickers';
 import { IconButton } from '../ui/button';
@@ -77,8 +82,10 @@ const MilestoneRow: React.FC<MilestoneRowProps> = ({
   onDragEnd,
   onDrop,
 }) => {
-  const percent = completionPercent(milestone.counts);
-  const live = milestone.counts.total - milestone.counts.cancelled;
+  const percent = progressPercent(milestone);
+  const progress = progressOf(milestone);
+  const live = progress.total - progress.cancelled;
+  const unit = measureUnit(progressMeasureOf(milestone), live);
   return (
     <li
       aria-label={milestone.name}
@@ -153,7 +160,7 @@ const MilestoneRow: React.FC<MilestoneRowProps> = ({
       <button
         type="button"
         onClick={onOpenIssues}
-        aria-label={`${milestone.name} issues, ${String(percent)}% of ${String(live)} complete`}
+        aria-label={`${milestone.name} issues, ${String(percent)}% of ${String(live)} ${unit} complete`}
         className="rounded-sm px-1 text-xs text-text-muted tabular-nums hover:text-text focus-visible:outline-2 focus-visible:outline-accent"
       >
         {`${String(percent)}% of ${String(live)}`}

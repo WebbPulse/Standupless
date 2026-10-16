@@ -15,6 +15,10 @@ import {
   countsLabel,
   cycleDatesLabel,
   dateLabel,
+  measureUnit,
+  progressLabel,
+  progressMeasureOf,
+  progressPercent,
   updateNudge,
 } from './planningDisplay';
 import type { RollupCounts } from '../types/Api';
@@ -182,5 +186,45 @@ describe('updateNudge', () => {
     ] as const) {
       expect(updateNudge({ status, last_update_at: null }, now)).toBeNull();
     }
+  });
+});
+
+describe('measured progress', () => {
+  const issues = counts({ todo: 2, done: 2, total: 4 });
+  const points = counts({ todo: 1, in_progress: 3, done: 8, total: 12 });
+
+  it('reads in points when the server measures in points', () => {
+    const row = {
+      counts: issues,
+      measure: 'points' as const,
+      progress: points,
+    };
+    expect(progressMeasureOf(row)).toBe('points');
+    expect(progressPercent(row)).toBe(67);
+    expect(progressLabel(row)).toBe('8 of 12 points');
+  });
+
+  it('falls back to issue counts when no team estimates', () => {
+    const row = {
+      counts: issues,
+      measure: 'issues' as const,
+      progress: issues,
+    };
+    expect(progressMeasureOf(row)).toBe('issues');
+    expect(progressPercent(row)).toBe(50);
+    expect(progressLabel(row)).toBe('2 of 4 issues');
+  });
+
+  it('reads an older response without a measure in issues', () => {
+    expect(progressPercent({ counts: issues })).toBe(50);
+    expect(progressMeasureOf({ counts: issues, measure: 'points' })).toBe(
+      'issues'
+    );
+  });
+
+  it('names the unit, singular for one', () => {
+    expect(measureUnit('points', 1)).toBe('point');
+    expect(measureUnit('points', 3)).toBe('points');
+    expect(measureUnit('issues', 1)).toBe('issue');
   });
 });

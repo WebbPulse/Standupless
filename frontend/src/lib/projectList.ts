@@ -4,7 +4,7 @@
  * group its lanes the same way.
  */
 
-import { completionPercent, PROJECT_STATUS_LABELS } from './planningDisplay';
+import { progressPercent, PROJECT_STATUS_LABELS } from './planningDisplay';
 import { PROJECT_STATUS_ORDER } from './planningModel';
 import { personLabel, type Assignable } from './issuePeople';
 import type { ProjectRead, TeamRead } from '../types/Api';
@@ -91,7 +91,7 @@ export const sortProjects = (
       case 'start':
         return byDate(left.start_date, right.start_date);
       case 'progress':
-        return completionPercent(right.counts) - completionPercent(left.counts);
+        return progressPercent(right) - progressPercent(left);
       case 'created':
         return right.created_at.localeCompare(left.created_at);
       case 'updated':

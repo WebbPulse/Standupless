@@ -46,15 +46,17 @@ from app.common.composition.consumers import CONSUMERS
 from app.common.db.dynamo.planning import (
     CATEGORY_BUCKETS,
     COUNT_BUCKETS,
+    ESTIMATING_TEAMS,
     POINT_PREFIX,
     UNESTIMATED_PREFIX,
+    Project,
     ProjectMilestone,
     cycle_key,
     milestone_key,
     parse_cycle_key,
     project_key,
 )
-from app.common.estimates import estimate_points, is_unestimated
+from app.common.estimates import estimate_points, is_unestimated, issue_weight
 from app.domains.planning.cycle_schedule import is_cycle_schedule, sweep
 
 _log = logging.getLogger(__name__)
@@ -185,22 +187,22 @@ def recount_project(
     already match is left alone. A milestone that no issue names any more is
     written back to zero, so a move out of its last issue leaves it right. Beside
     the category buckets each row keeps a count per status id, so a progress bar
-    can split In Review from In Progress. Points
-    sum each issue's estimate, and an unestimated issue adds one point when its
-    team counts unestimated issues.
+    can split In Review from In Progress.
+
+    Points weigh each issue on its own team's scale through `issue_weight`, so a
+    project spanning teams sums each team's sizes, and every row records how many
+    of the project's teams estimate, which is what makes its progress read in
+    points rather than issues.
     """
     project = repositories.planning.get_project(workspace_id, project_id)
     if project is None:
         return 0
     issues = project_issues(repositories, workspace_id, project_id, record)
+    scales = _TeamScales(repositories, workspace_id)
 
     milestones = repositories.planning.list_milestones(workspace_id, project_id)
-    stored: dict[str, dict[str, int]] = {
-        project_key(project_id): {**project.counts.as_map(), **project.points.as_map(POINT_PREFIX)}
-    }
+    stored: dict[str, dict[str, int]] = {project_key(project_id): _stored_counts(project)}
     stored_statuses: dict[str, dict[str, int]] = {project_key(project_id): dict(project.status_counts)}
-    categories: dict[str, dict[str, str]] = {}
-    counting: dict[str, bool] = {}
     project_counts = _zeroed_counts()
     project_statuses: dict[str, int] = {}
     milestone_counts: dict[str, dict[str, int]] = {}
@@ -208,26 +210,14 @@ def recount_project(
     for milestone in milestones:
         milestone_counts[milestone.milestone_id] = _zeroed_counts()
         milestone_statuses[milestone.milestone_id] = {}
-        stored[milestone_key(project_id, milestone.milestone_id)] = {
-            **milestone.counts.as_map(),
-            **milestone.points.as_map(POINT_PREFIX),
-        }
+        stored[milestone_key(project_id, milestone.milestone_id)] = _stored_counts(milestone)
         stored_statuses[milestone_key(project_id, milestone.milestone_id)] = dict(milestone.status_counts)
     for issue in issues.values():
         team_id = issue["team_id"]
-        if team_id not in categories:
-            categories[team_id] = {
-                row.status_id: row.category for row in repositories.team_config.list_statuses(workspace_id, team_id)
-            }
-            team = repositories.teams.get(workspace_id, team_id)
-            counting[team_id] = bool(
-                team is not None and team.estimate_count_unestimated and team.estimate_scale != "off"
-            )
-        bucket = CATEGORY_BUCKETS.get(categories[team_id].get(issue["status_id"], ""))
+        bucket = CATEGORY_BUCKETS.get(scales.category(team_id, issue["status_id"]))
         if bucket is None:
             continue
-        estimate = issue.get("estimate", "")
-        points = 1 if is_unestimated(estimate) and counting[team_id] else estimate_points(estimate)
+        points = scales.weight(team_id, issue.get("estimate", ""))
         point_bucket = f"{POINT_PREFIX}{bucket}"
         targets = [(project_counts, project_statuses)]
         milestone = milestone_counts.get(issue["project_milestone_id"])
@@ -237,6 +227,11 @@ def recount_project(
             counts[bucket] += 1
             counts[point_bucket] += points
             statuses[issue["status_id"]] = statuses.get(issue["status_id"], 0) + 1
+
+    estimating = scales.estimating_teams({*project.team_ids, *(issue["team_id"] for issue in issues.values())})
+    project_counts[ESTIMATING_TEAMS] = estimating
+    for counts in milestone_counts.values():
+        counts[ESTIMATING_TEAMS] = estimating
 
     wanted = {project_key(project_id): (project_counts, project_statuses)}
     for milestone_id, counts in milestone_counts.items():
@@ -276,6 +271,53 @@ def post_milestone_completion(
         repositories.planning.clear_milestone_completion(
             milestone.workspace_id, milestone.project_id, milestone.milestone_id
         )
+
+
+class _TeamScales:
+    """Each team's status categories and estimate settings, read once per recount."""
+
+    def __init__(self, repositories: Repositories, workspace_id: str) -> None:
+        """Start an empty cache over one workspace's teams."""
+        self._repositories = repositories
+        self._workspace_id = workspace_id
+        self._categories: dict[str, dict[str, str]] = {}
+        self._teams: dict[str, tuple[str, bool]] = {}
+
+    def _settings(self, team_id: str) -> tuple[str, bool]:
+        """A team's estimate scale and whether it counts unestimated issues, off for a team that is gone."""
+        if team_id not in self._teams:
+            team = self._repositories.teams.get(self._workspace_id, team_id)
+            self._teams[team_id] = (
+                ("off", False) if team is None else (team.estimate_scale, bool(team.estimate_count_unestimated))
+            )
+        return self._teams[team_id]
+
+    def category(self, team_id: str, status_id: str) -> str:
+        """The category of one of a team's statuses, empty when the team has no such status."""
+        if team_id not in self._categories:
+            self._categories[team_id] = {
+                row.status_id: row.category
+                for row in self._repositories.team_config.list_statuses(self._workspace_id, team_id)
+            }
+        return self._categories[team_id].get(status_id, "")
+
+    def weight(self, team_id: str, estimate: str) -> int:
+        """What one issue of a team adds to the point buckets."""
+        scale, count_unestimated = self._settings(team_id)
+        return issue_weight(estimate, scale, count_unestimated=count_unestimated)
+
+    def estimating_teams(self, team_ids: set[str]) -> int:
+        """How many of these teams have an estimate scale turned on."""
+        return sum(1 for team_id in team_ids if team_id and self._settings(team_id)[0] != "off")
+
+
+def _stored_counts(row: Project | ProjectMilestone) -> dict[str, int]:
+    """A project's or milestone's stored buckets in the shape a recount produces, to compare against."""
+    return {
+        **row.counts.as_map(),
+        **row.points.as_map(POINT_PREFIX),
+        ESTIMATING_TEAMS: row.estimating_teams,
+    }
 
 
 def _zeroed_counts() -> dict[str, int]:

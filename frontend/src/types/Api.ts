@@ -1745,6 +1745,10 @@ export interface ProjectRead {
   counts: RollupCounts;
   /** The same buckets weighted by estimate points. */
   points?: RollupCounts;
+  /** The unit `progress` reads in: points when a team on it estimates, otherwise issues. */
+  measure?: 'points' | 'issues';
+  /** The buckets scope and completion are measured by, in `measure`. */
+  progress?: RollupCounts;
   /** Issues per status id, beside the category totals; empty until the project's first recount. */
   status_counts?: Record<string, number>;
   /** When the newest project update was posted, or null before the first. */
@@ -1837,6 +1841,10 @@ export interface MilestoneRead {
   counts: RollupCounts;
   /** The same buckets weighted by estimate points. */
   points?: RollupCounts;
+  /** The unit `progress` reads in: points when a team on it estimates, otherwise issues. */
+  measure?: 'points' | 'issues';
+  /** The buckets scope and completion are measured by, in `measure`. */
+  progress?: RollupCounts;
   /** Issues per status id, beside the category totals. */
   status_counts?: Record<string, number>;
   created_by: string;
@@ -1942,6 +1950,10 @@ export interface InitiativeRead {
   project_count: number;
   counts: RollupCounts;
   points: RollupCounts;
+  /** The unit `progress` reads in: points when a team on it estimates, otherwise issues. */
+  measure?: 'points' | 'issues';
+  /** The buckets scope and completion are measured by, in `measure`. */
+  progress?: RollupCounts;
   /** Issues per status id across the visible projects. */
   status_counts?: Record<string, number>;
   project_health: HealthBreakdownRead;
@@ -2093,6 +2105,10 @@ export interface RoadmapEntryRead {
   health?: ProjectHealth | null;
   priority?: IssuePriority | null;
   counts: RollupCounts;
+  /** The unit `progress` reads in: points when a team on it estimates, otherwise issues. */
+  measure?: 'points' | 'issues';
+  /** The buckets scope and completion are measured by, in `measure`. */
+  progress?: RollupCounts;
 }
 
 /** The body the roadmap answers with, by date ascending and undated last. */

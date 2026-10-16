@@ -3,7 +3,9 @@
 The properties worth holding are that every T-shirt size, extended ones included,
 weighs its fixed number of points in the totals, that a zero estimate counts as
 estimated, and that a team's "count unestimated issues" toggle decides whether an
-unestimated issue adds one point or none to its cycle and its project.
+unestimated issue adds one point or none to its cycle and its project. A project
+measures its scope and progress in points once a team on it estimates, weighing
+each issue on its own team's scale, and falls back to issue counts otherwise.
 """
 
 from __future__ import annotations
@@ -13,11 +15,11 @@ from typing import Any
 from fastapi.testclient import TestClient
 
 from app.common.db.dynamo.planning import CycleSnapshot, RollupCounts
-from app.common.estimates import estimate_points, is_unestimated
+from app.common.estimates import estimate_points, is_unestimated, issue_weight
 from app.domains.planning.consumers.rollup import handle_record
 from app.domains.planning.history import burn_up
-from tests.domains.helpers import MEMBER, sign_in
-from tests.domains.planning.conftest import TEAM, WORKSPACE, seed_cycle, seed_issue, seed_project
+from tests.domains.helpers import ADMIN, MEMBER, sign_in
+from tests.domains.planning.conftest import OTHER_TEAM, TEAM, WORKSPACE, seed_cycle, seed_issue, seed_project
 
 
 def _image(**attributes: str) -> "dict[str, Any]":
@@ -145,3 +147,131 @@ def test_a_project_totals_points_and_counts_unestimated_issues_by_team(
     handle_record(repositories, _insert(image, event_id="2"))
     body = client.get(f"/api/workspaces/{workspace}/projects/{project_id}").json()
     assert body["points"]["todo"] == 25
+
+
+def test_an_issue_weighs_on_its_own_teams_scale() -> None:
+    """Off weighs one, a size its points, a number itself, and unestimated one or none by the toggle."""
+    assert issue_weight("XL", "off", count_unestimated=False) == 1
+    assert issue_weight("", "off", count_unestimated=False) == 1
+    assert issue_weight("L", "tshirt", count_unestimated=False) == 5
+    assert issue_weight("8", "fibonacci", count_unestimated=False) == 8
+    assert issue_weight("", "tshirt", count_unestimated=False) == 0
+    assert issue_weight(None, "linear", count_unestimated=True) == 1
+    assert issue_weight("0", "linear", count_unestimated=True) == 0
+
+
+def _statuses_of(repositories: Any, team_id: str) -> "dict[str, str]":
+    """One team's seeded statuses, keyed by category."""
+    return {row.category: row.status_id for row in repositories.team_config.list_statuses(WORKSPACE, team_id)}
+
+
+def _recount(repositories: Any, issue: "dict[str, Any]", project_id: str, event_id: str) -> None:
+    """Run the project recount off one stored issue's insert record."""
+    stored = repositories.issues.get(WORKSPACE, issue["id"])
+    assert stored is not None
+    attributes = {
+        "workspace_id": WORKSPACE,
+        "issue_id": stored.issue_id,
+        "team_id": stored.team_id,
+        "status_id": stored.status_id,
+        "project_id": project_id,
+        "project_milestone_id": stored.project_milestone_id or "",
+        "estimate": stored.estimate or "",
+    }
+    handle_record(repositories, _insert(_image(**{k: v for k, v in attributes.items() if v}), event_id=event_id))
+
+
+def test_a_project_measures_mixed_sizes_in_points(
+    client: TestClient, issues_client: TestClient, repositories: Any, workspace: str
+) -> None:
+    """An L done, an M started and an XS to do read as 5 of 9 points, while counts stay in issues."""
+    repositories.teams.update(WORKSPACE, TEAM, estimate_scale="tshirt")
+    sign_in(client, MEMBER)
+    sign_in(issues_client, MEMBER)
+    project_id = seed_project(client, workspace)["project_id"]
+    milestone = client.post(f"/api/workspaces/{workspace}/projects/{project_id}/milestones", json={"name": "Beta"})
+    assert milestone.status_code == 201, milestone.text
+    milestone_id = milestone.json()["milestone_id"]
+    mine = _statuses_of(repositories, TEAM)
+    first = seed_issue(
+        issues_client,
+        workspace,
+        project_id=project_id,
+        status_id=mine["completed"],
+        estimate="L",
+        project_milestone_id=milestone_id,
+    )
+    seed_issue(issues_client, workspace, project_id=project_id, status_id=mine["started"], estimate="M")
+    seed_issue(issues_client, workspace, project_id=project_id, status_id=mine["unstarted"], estimate="XS")
+    seed_issue(issues_client, workspace, project_id=project_id, status_id=mine["unstarted"])
+
+    _recount(repositories, first, project_id, "1")
+
+    body = client.get(f"/api/workspaces/{workspace}/projects/{project_id}").json()
+    assert body["measure"] == "points"
+    assert body["counts"] == {"todo": 2, "in_progress": 1, "done": 1, "cancelled": 0}
+    assert body["progress"] == {"todo": 1, "in_progress": 3, "done": 5, "cancelled": 0}
+    listed = client.get(f"/api/workspaces/{workspace}/projects/{project_id}/milestones").json()
+    rows = listed.get("milestones") or listed["items"]
+    assert [(row["measure"], row["progress"]["done"]) for row in rows] == [("points", 5)]
+
+    repositories.teams.update(WORKSPACE, TEAM, estimate_count_unestimated=True)
+    _recount(repositories, first, project_id, "2")
+    body = client.get(f"/api/workspaces/{workspace}/projects/{project_id}").json()
+    assert body["progress"]["todo"] == 2
+
+
+def test_a_project_without_estimating_teams_measures_in_issues(
+    client: TestClient, issues_client: TestClient, repositories: Any, workspace: str
+) -> None:
+    """With estimates off on every team, progress is the issue count and the unit says issues."""
+    sign_in(client, MEMBER)
+    sign_in(issues_client, MEMBER)
+    project_id = seed_project(client, workspace)["project_id"]
+    mine = _statuses_of(repositories, TEAM)
+    first = seed_issue(issues_client, workspace, project_id=project_id, status_id=mine["completed"])
+    seed_issue(issues_client, workspace, project_id=project_id, status_id=mine["unstarted"])
+
+    _recount(repositories, first, project_id, "1")
+
+    body = client.get(f"/api/workspaces/{workspace}/projects/{project_id}").json()
+    assert body["measure"] == "issues"
+    assert body["progress"] == body["counts"] == {"todo": 1, "in_progress": 0, "done": 1, "cancelled": 0}
+
+
+def test_a_cross_team_project_sums_each_issue_on_its_own_teams_scale(
+    client: TestClient, issues_client: TestClient, repositories: Any, workspace: str
+) -> None:
+    """A t-shirt XL and a Fibonacci 3 sum to 11 points, and an off team's issue weighs one."""
+    repositories.teams.update(WORKSPACE, TEAM, estimate_scale="tshirt")
+    repositories.teams.update(WORKSPACE, OTHER_TEAM, estimate_scale="fibonacci")
+    sign_in(client, ADMIN)
+    sign_in(issues_client, MEMBER)
+    project_id = seed_project(client, workspace, team_ids=[TEAM, OTHER_TEAM])["project_id"]
+    mine = _statuses_of(repositories, TEAM)
+    theirs = _statuses_of(repositories, OTHER_TEAM)
+    first = seed_issue(issues_client, workspace, project_id=project_id, status_id=mine["completed"], estimate="XL")
+    seed_issue(
+        issues_client, workspace, team_id=OTHER_TEAM, project_id=project_id, status_id=theirs["unstarted"], estimate="3"
+    )
+
+    _recount(repositories, first, project_id, "1")
+    body = client.get(f"/api/workspaces/{workspace}/projects/{project_id}").json()
+    assert body["measure"] == "points"
+    assert body["progress"] == {"todo": 3, "in_progress": 0, "done": 8, "cancelled": 0}
+
+    repositories.teams.update(WORKSPACE, OTHER_TEAM, estimate_scale="off")
+    _recount(repositories, first, project_id, "2")
+    body = client.get(f"/api/workspaces/{workspace}/projects/{project_id}").json()
+    assert body["measure"] == "points"
+    assert body["progress"] == {"todo": 1, "in_progress": 0, "done": 8, "cancelled": 0}
+
+    initiative = client.post(f"/api/workspaces/{workspace}/initiatives", json={"name": "Grow"})
+    assert initiative.status_code == 201, initiative.text
+    initiative_id = initiative.json()["initiative_id"]
+    added = client.put(f"/api/workspaces/{workspace}/initiatives/{initiative_id}/projects/{project_id}")
+    assert added.status_code == 200, added.text
+    rolled = client.get(f"/api/workspaces/{workspace}/initiatives/{initiative_id}").json()
+    assert rolled["measure"] == "points"
+    assert rolled["progress"]["done"] == 8
+    assert rolled["counts"]["done"] == 1

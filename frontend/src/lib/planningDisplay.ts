@@ -99,6 +99,49 @@ export const completionPercent = (counts: RollupCounts): number => {
   return Math.round((counts.done / live) * 100);
 };
 
+/** The unit a project's, milestone's or initiative's progress reads in. */
+export type ProgressMeasure = 'points' | 'issues';
+
+/** A planning row that reports its progress in a measure beside its issue counts. */
+export interface MeasuredProgress {
+  counts: RollupCounts;
+  measure?: ProgressMeasure;
+  progress?: RollupCounts;
+}
+
+/**
+ * Whether a row's progress reads in estimate points or issues. Points only when
+ * the server says a team on the work estimates and sent the weighted buckets.
+ */
+export const progressMeasureOf = (row: MeasuredProgress): ProgressMeasure =>
+  row.measure === 'points' && row.progress !== undefined ? 'points' : 'issues';
+
+/** The buckets a row's scope and completion are measured by, in its measure. */
+export const progressOf = (row: MeasuredProgress): RollupCounts =>
+  progressMeasureOf(row) === 'points' && row.progress !== undefined
+    ? row.progress
+    : row.counts;
+
+/** How far through its scope a row is, as a whole percent in its own measure. */
+export const progressPercent = (row: MeasuredProgress): number =>
+  completionPercent(progressOf(row));
+
+/** The unit word for an amount in one measure, singular for exactly one. */
+export const measureUnit = (
+  measure: ProgressMeasure,
+  value: number
+): string => {
+  if (measure === 'points') return value === 1 ? 'point' : 'points';
+  return value === 1 ? 'issue' : 'issues';
+};
+
+/** How much of a row's scope is done, as "3 of 8 points" or "2 of 5 issues". */
+export const progressLabel = (row: MeasuredProgress): string => {
+  const progress = progressOf(row);
+  const scope = progress.total - progress.cancelled;
+  return `${String(progress.done)} of ${String(scope)} ${measureUnit(progressMeasureOf(row), scope)}`;
+};
+
 /** How a nullable date reads, with an explicit word where there is none. */
 export const dateLabel = (value: string | null, absent: string): string =>
   value === null || value === '' ? absent : value;

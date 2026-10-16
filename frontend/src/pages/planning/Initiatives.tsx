@@ -34,7 +34,7 @@ import {
   INITIATIVE_STATUSES,
   INITIATIVE_STATUS_GLYPHS,
   INITIATIVE_STATUS_LABELS,
-  completionPercent,
+  progressPercent,
 } from '../../lib/planningDisplay';
 import { shortDateLabel } from '../../lib/propertyOptions';
 import type { InitiativeRead } from '../../types/Api';
@@ -56,7 +56,7 @@ const InitiativeRow: React.FC<InitiativeRowProps> = ({
   slug,
   people,
 }) => {
-  const percent = completionPercent(initiative.counts);
+  const percent = progressPercent(initiative);
   const owner = people.find((person) => person.user_id === initiative.owner_id);
   const projects = initiative.project_count;
   return (

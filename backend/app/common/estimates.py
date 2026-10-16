@@ -1,4 +1,4 @@
-"""Estimate scales and arithmetic shared by issue writes, the cycle rollup and insights.
+"""Estimate scales and arithmetic shared by issue writes, the cycle and project rollups and insights.
 
 Held in `common` because the planning consumer and the views and integrations
 images each weigh estimates, and two ladders for what a t-shirt size is worth
@@ -60,6 +60,21 @@ def estimate_points(value: Any) -> int:
 def is_unestimated(value: Any) -> bool:
     """Whether an issue carries no estimate at all; a zero estimate is an estimate."""
     return value is None or not str(value).strip()
+
+
+def issue_weight(value: Any, scale: str, *, count_unestimated: bool) -> int:
+    """What one issue adds to a project's scope on its own team's scale, as Linear weighs it.
+
+    A team with estimates turned off weighs every issue as one, so its work still
+    counts in a project shared with an estimating team. On an estimating team an
+    estimate is its points, and an unestimated issue adds one point only when the
+    team counts unestimated issues.
+    """
+    if scale == "off":
+        return 1
+    if is_unestimated(value):
+        return 1 if count_unestimated else 0
+    return estimate_points(value)
 
 
 def allowed_estimates(scale: str, *, extended: bool = False, allow_zero: bool = False) -> tuple[str, ...]:

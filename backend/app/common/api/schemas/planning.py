@@ -26,6 +26,7 @@ from app.common.db.dynamo.planning import (
     Project,
     ProjectMilestone,
     ProjectUpdateRow,
+    ProgressMeasure,
     PulseEvent,
     RollupCounts,
     normalise_project_status,
@@ -50,6 +51,9 @@ InitiativeStatusField = Literal["planned", "active", "completed"]
 ProjectHealthField = Literal["on_track", "at_risk", "off_track"]
 
 ProjectPriorityField = Literal["none", "urgent", "high", "medium", "low"]
+
+ProgressMeasureField = ProgressMeasure
+"""The unit `progress` reads in: estimate points when a team on the work estimates, otherwise issues."""
 
 ProjectIconField = Literal[
     "box",
@@ -640,6 +644,12 @@ class ProjectRead(BaseModel):
     member_ids: list[str] = Field(default_factory=list)
     counts: CountsRead
     points: CountsRead = Field(default_factory=CountsRead)
+    measure: ProgressMeasureField = Field(
+        default="issues", description="The unit `progress` reads in, points when a team on it estimates"
+    )
+    progress: CountsRead = Field(
+        default_factory=CountsRead, description="The buckets scope and completion are measured by, in `measure`"
+    )
     status_counts: dict[str, int] = Field(
         default_factory=dict, description="Issues per status id, beside the category totals in `counts`"
     )
@@ -688,6 +698,8 @@ class ProjectRead(BaseModel):
             member_ids=list(project.member_ids),
             counts=CountsRead.from_counts(project.counts),
             points=CountsRead.from_counts(project.points),
+            measure=project.measure,
+            progress=CountsRead.from_counts(project.progress),
             status_counts=dict(project.status_counts),
             last_update_at=project.last_update_at,
             update_interval_days=effective_interval(project, default_interval_days),
@@ -872,6 +884,12 @@ class MilestoneRead(BaseModel):
     sort_order: str
     counts: CountsRead
     points: CountsRead = Field(default_factory=CountsRead)
+    measure: ProgressMeasureField = Field(
+        default="issues", description="The unit `progress` reads in, points when a team on it estimates"
+    )
+    progress: CountsRead = Field(
+        default_factory=CountsRead, description="The buckets scope and completion are measured by, in `measure`"
+    )
     status_counts: dict[str, int] = Field(
         default_factory=dict, description="Issues per status id, beside the category totals in `counts`"
     )
@@ -892,6 +910,8 @@ class MilestoneRead(BaseModel):
             sort_order=milestone.sort_order,
             counts=CountsRead.from_counts(milestone.counts),
             points=CountsRead.from_counts(milestone.points),
+            measure=milestone.measure,
+            progress=CountsRead.from_counts(milestone.progress),
             status_counts=dict(milestone.status_counts),
             created_by=milestone.created_by,
             created_at=milestone.created_at,
@@ -924,6 +944,12 @@ class RoadmapEntryRead(BaseModel):
     health: Optional[str] = None
     priority: Optional[str] = None
     counts: CountsRead
+    measure: ProgressMeasureField = Field(
+        default="issues", description="The unit `progress` reads in, points when a team on it estimates"
+    )
+    progress: CountsRead = Field(
+        default_factory=CountsRead, description="The buckets scope and completion are measured by, in `measure`"
+    )
 
     @classmethod
     def from_cycle(cls, cycle: Cycle, today: Optional[str] = None) -> "RoadmapEntryRead":
@@ -938,6 +964,7 @@ class RoadmapEntryRead(BaseModel):
             start_date=cycle.start_date,
             status=cycle.status(today),
             counts=CountsRead.from_counts(cycle.counts),
+            progress=CountsRead.from_counts(cycle.counts),
         )
 
     @classmethod
@@ -961,6 +988,8 @@ class RoadmapEntryRead(BaseModel):
             health=project.health,
             priority=project.priority,
             counts=CountsRead.from_counts(project.counts),
+            measure=project.measure,
+            progress=CountsRead.from_counts(project.progress),
         )
 
 
@@ -1069,6 +1098,12 @@ class InitiativeRead(BaseModel):
     project_count: int = 0
     counts: CountsRead = Field(default_factory=CountsRead)
     points: CountsRead = Field(default_factory=CountsRead)
+    measure: ProgressMeasureField = Field(
+        default="issues", description="The unit `progress` reads in, points when a team on it estimates"
+    )
+    progress: CountsRead = Field(
+        default_factory=CountsRead, description="The buckets scope and completion are measured by, in `measure`"
+    )
     status_counts: dict[str, int] = Field(
         default_factory=dict, description="Issues per status id across the visible projects, beside `counts`"
     )
@@ -1094,11 +1129,13 @@ class InitiativeRead(BaseModel):
         """Build the response shape from a stored initiative and its visible projects."""
         counts = RollupCounts()
         points = RollupCounts()
+        progress = RollupCounts()
         tally = {"on_track": 0, "at_risk": 0, "off_track": 0, "none": 0}
         statuses: dict[str, int] = {}
         for project in projects:
             counts = counts.plus(project.counts)
             points = points.plus(project.points)
+            progress = progress.plus(project.progress)
             for status_id, count in project.status_counts.items():
                 statuses[status_id] = statuses.get(status_id, 0) + count
             bucket = project.health if project.health in tally else "none"
@@ -1116,6 +1153,8 @@ class InitiativeRead(BaseModel):
             project_count=len(projects),
             counts=CountsRead.from_counts(counts),
             points=CountsRead.from_counts(points),
+            measure="points" if any(project.measure == "points" for project in projects) else "issues",
+            progress=CountsRead.from_counts(progress),
             status_counts=statuses,
             project_health=HealthBreakdownRead(**tally),
             last_update_at=initiative.last_update_at,
