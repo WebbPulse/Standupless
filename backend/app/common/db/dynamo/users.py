@@ -27,6 +27,11 @@ NotificationChannel = Literal["in_app", "email"]
 
 NOTIFICATION_CHANNELS: tuple[str, ...] = ("in_app", "email")
 
+PulseDigestField = Literal["off", "daily", "weekly"]
+
+PULSE_DIGESTS: tuple[str, ...] = ("off", "daily", "weekly")
+"""How often a person's Pulse digest email comes, if at all."""
+
 STALE_ACCOUNT_PURGE = timedelta(hours=12)
 """How long a started account purge may go quiet before the sweep starts it again."""
 
@@ -62,6 +67,7 @@ class User(BaseModel):
     email_notifications: bool = True
     notification_preferences: dict[str, dict[str, bool]] = Field(default_factory=dict)
     timezone: Optional[str] = None
+    pulse_digest: str = "off"
     disabled: bool = False
     is_admin: bool = False
     created_at: datetime = Field(default_factory=utc_now)

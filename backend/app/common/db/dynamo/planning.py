@@ -62,6 +62,37 @@ INITIATIVE_UPDATE = "initiative_update"
 
 INITIATIVE_UPDATE_KEY_PREFIX = "initiative_update#"
 
+PULSE_EVENT = "pulse_event"
+
+PULSE_KEY_PREFIX = "pulse#"
+"""Where the workspace's Pulse feed is filed, one row per event, newest last by ULID."""
+
+PULSE_FOLLOW = "pulse_follow"
+
+PULSE_FOLLOW_PREFIX = "pulse_follow#"
+"""Where each person's explicit follows and unfollows of projects and initiatives are filed."""
+
+PULSE_READ = "pulse_read"
+
+PULSE_READ_PREFIX = "pulse_read#"
+"""Where each person's Pulse read marker is filed."""
+
+PulseSubject = Literal["project", "initiative"]
+
+PULSE_SUBJECTS: tuple[str, ...] = ("project", "initiative")
+
+PULSE_EVENT_TYPES: tuple[str, ...] = (
+    "project_update",
+    "initiative_update",
+    "project_health",
+    "initiative_health",
+    "milestone_completed",
+)
+"""What a Pulse event can report."""
+
+MILESTONE_COMPLETED_ATTRIBUTE = "pulse_completed_at"
+"""The milestone attribute that records its completion was posted to Pulse, so it is posted once."""
+
 InitiativeStatus = Literal["planned", "active", "completed"]
 
 INITIATIVE_STATUSES: tuple[str, ...] = ("planned", "active", "completed")
@@ -194,6 +225,26 @@ def initiative_update_prefix(initiative_id: str) -> str:
 def initiative_update_key(initiative_id: str, update_id: str) -> str:
     """The sort key of one initiative update, time sortable by its ULID."""
     return f"{initiative_update_prefix(initiative_id)}{update_id}"
+
+
+def pulse_key(event_id: str) -> str:
+    """The sort key of one Pulse event."""
+    return f"{PULSE_KEY_PREFIX}{event_id}"
+
+
+def pulse_follow_prefix(user_id: str) -> str:
+    """The sort key prefix of one person's follow rows."""
+    return f"{PULSE_FOLLOW_PREFIX}{user_id}#"
+
+
+def pulse_follow_key(user_id: str, subject_type: str, subject_id: str) -> str:
+    """The sort key of one person's follow row for one project or initiative."""
+    return f"{pulse_follow_prefix(user_id)}{subject_type}#{subject_id}"
+
+
+def pulse_read_key(user_id: str) -> str:
+    """The sort key of one person's Pulse read marker."""
+    return f"{PULSE_READ_PREFIX}{user_id}"
 
 
 def cycle_prefix(team_id: str) -> str:
@@ -522,6 +573,52 @@ class ProjectMilestone(BaseModel):
     created_by: str
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
+
+
+class PulseEvent(BaseModel):
+    """One entry of the workspace's Pulse feed: an update posted, a health change or a milestone completed.
+
+    Filed under the workspace with a ULID sort key, so the feed is one descending
+    query and who may read each entry is decided against its project's teams, or
+    its initiative, as it is read. An update's entry is keyed by the update's own
+    id, so an edit or a delete of the update finds it. The body, health and
+    milestone name are copied onto the row, so the feed renders without a read
+    per entry.
+    """
+
+    workspace_id: str
+    planning_key: str
+    event_id: str
+    kind: str = PULSE_EVENT
+    event_type: str
+    subject_type: str
+    project_id: str | None = None
+    initiative_id: str | None = None
+    milestone_id: str | None = None
+    milestone_name: str | None = None
+    update_id: str | None = None
+    body: str | None = None
+    health: str | None = None
+    previous_health: str | None = None
+    actor_id: str = ""
+    source: str | None = None
+    created_at: datetime = Field(default_factory=utc_now)
+    edited_at: datetime | None = None
+
+
+def as_pulse_event_item(event: PulseEvent) -> dict[str, Any]:
+    """One Pulse event as the stored item, null fields dropped."""
+    return {name: value for name, value in event.model_dump(mode="json").items() if value is not None}
+
+
+def as_pulse_event(item: Mapping[str, Any]) -> PulseEvent:
+    """One stored item as a `PulseEvent`."""
+    return PulseEvent.model_validate(dict(item))
+
+
+def is_pulse_event(item: Mapping[str, Any]) -> bool:
+    """Whether one stored row is a Pulse event."""
+    return str(item.get("kind", "")) == PULSE_EVENT
 
 
 def as_cycle_item(cycle: Cycle) -> dict[str, Any]:
@@ -1157,6 +1254,151 @@ class PlanningRepository:
             removed += self._repository.delete_many(
                 [{"workspace_id": workspace_id, "planning_key": item["planning_key"]} for item in page.items]
             )
+
+    def create_pulse_event(self, event: PulseEvent) -> bool:
+        """Store a new Pulse event, answering false when its key is already taken."""
+        try:
+            self._repository.put(as_pulse_event_item(event), condition=Attr("planning_key").not_exists())
+        except ConditionFailed:
+            return False
+        return True
+
+    def get_pulse_event(self, workspace_id: str, event_id: str) -> PulseEvent | None:
+        """One Pulse event, or `None`."""
+        if not event_id:
+            return None
+        item = self._get(workspace_id, pulse_key(event_id))
+        if item is None or not is_pulse_event(item):
+            return None
+        return as_pulse_event(item)
+
+    def revise_pulse_event(
+        self, workspace_id: str, event_id: str, *, body: str, health: str, edited_at: datetime
+    ) -> bool:
+        """Carry an edited update's body and health onto its Pulse event, answering whether it was there."""
+        if not workspace_id or not event_id:
+            return False
+        try:
+            self._repository.update(
+                {"workspace_id": workspace_id, "planning_key": pulse_key(event_id)},
+                update_expression="SET #body = :body, #health = :health, #edited = :edited",
+                expression_names={"#body": "body", "#health": "health", "#edited": "edited_at"},
+                expression_values={":body": body, ":health": health, ":edited": _stored_time(edited_at)},
+                condition=Attr("planning_key").exists() & Attr("kind").eq(PULSE_EVENT),
+            )
+        except ConditionFailed:
+            return False
+        return True
+
+    def list_pulse_events(
+        self,
+        workspace_id: str,
+        *,
+        limit: int,
+        start_key: Mapping[str, Any] | None = None,
+    ) -> tuple[list[PulseEvent], Mapping[str, Any] | None]:
+        """One page of the workspace's Pulse events, newest first, and the key to resume from."""
+        if not workspace_id:
+            return [], None
+        page = self._repository.query(
+            Key("workspace_id").eq(workspace_id) & Key("planning_key").begins_with(PULSE_KEY_PREFIX),
+            limit=limit,
+            start_key=dict(start_key) if start_key else None,
+            ascending=False,
+        )
+        rows = [as_pulse_event(item) for item in page.items if is_pulse_event(item)]
+        return rows, page.last_evaluated_key
+
+    def list_pulse_follows(
+        self, workspace_id: str, user_id: str, *, max_items: int = 2000
+    ) -> dict[tuple[str, str], bool]:
+        """One person's explicit follows and unfollows, keyed by subject type and id."""
+        if not workspace_id or not user_id:
+            return {}
+        items = self._repository.iter_query(
+            Key("workspace_id").eq(workspace_id) & Key("planning_key").begins_with(pulse_follow_prefix(user_id)),
+            max_items=max_items,
+        )
+        return {
+            (str(item.get("subject_type", "")), str(item.get("subject_id", ""))): bool(item.get("following"))
+            for item in items
+            if str(item.get("kind", "")) == PULSE_FOLLOW
+        }
+
+    def get_pulse_follow(self, workspace_id: str, user_id: str, subject_type: str, subject_id: str) -> bool | None:
+        """Whether one person explicitly follows one subject, or `None` when they never chose."""
+        item = self._get(workspace_id, pulse_follow_key(user_id, subject_type, subject_id))
+        if item is None or str(item.get("kind", "")) != PULSE_FOLLOW:
+            return None
+        return bool(item.get("following"))
+
+    def set_pulse_follow(
+        self, workspace_id: str, user_id: str, subject_type: str, subject_id: str, *, following: bool
+    ) -> None:
+        """Record one person's explicit choice to follow or unfollow one subject."""
+        self._repository.put(
+            {
+                "workspace_id": workspace_id,
+                "planning_key": pulse_follow_key(user_id, subject_type, subject_id),
+                "kind": PULSE_FOLLOW,
+                "user_id": user_id,
+                "subject_type": subject_type,
+                "subject_id": subject_id,
+                "following": following,
+                "updated_at": _stored_time(utc_now()),
+            }
+        )
+
+    def get_pulse_read(self, workspace_id: str, user_id: str) -> datetime | None:
+        """When one person last read their Pulse, or `None` when they never have."""
+        item = self._get(workspace_id, pulse_read_key(user_id))
+        if item is None or str(item.get("kind", "")) != PULSE_READ:
+            return None
+        try:
+            return _DATETIME.validate_python(item.get("read_at"))
+        except ValueError:
+            return None
+
+    def set_pulse_read(self, workspace_id: str, user_id: str, read_at: datetime) -> None:
+        """Record that one person has read their Pulse up to `read_at`."""
+        self._repository.put(
+            {
+                "workspace_id": workspace_id,
+                "planning_key": pulse_read_key(user_id),
+                "kind": PULSE_READ,
+                "user_id": user_id,
+                "read_at": _stored_time(read_at),
+            }
+        )
+
+    def claim_milestone_completion(self, workspace_id: str, project_id: str, milestone_id: str) -> bool:
+        """Mark a milestone's completion as posted to Pulse, answering false when it already was or is gone."""
+        try:
+            self._repository.update(
+                {"workspace_id": workspace_id, "planning_key": milestone_key(project_id, milestone_id)},
+                update_expression="SET #done = :now",
+                expression_names={"#done": MILESTONE_COMPLETED_ATTRIBUTE},
+                expression_values={":now": _stored_time(utc_now())},
+                condition=Attr("planning_key").exists()
+                & Attr("kind").eq(MILESTONE)
+                & Attr(MILESTONE_COMPLETED_ATTRIBUTE).not_exists(),
+            )
+        except ConditionFailed:
+            return False
+        return True
+
+    def clear_milestone_completion(self, workspace_id: str, project_id: str, milestone_id: str) -> bool:
+        """Forget a reopened milestone's completion, so completing it again posts again."""
+        try:
+            self._repository.update(
+                {"workspace_id": workspace_id, "planning_key": milestone_key(project_id, milestone_id)},
+                update_expression="REMOVE #done",
+                expression_names={"#done": MILESTONE_COMPLETED_ATTRIBUTE},
+                condition=Attr(MILESTONE_COMPLETED_ATTRIBUTE).exists(),
+            )
+        except ConditionFailed:
+            return False
+        return True
 
     def _get(self, workspace_id: str, planning_key: str) -> Mapping[str, Any] | None:
         """One stored row by its full sort key, or `None`."""

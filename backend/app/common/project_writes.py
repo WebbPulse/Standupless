@@ -12,6 +12,7 @@ from typing import Any, Optional
 from fastapi import HTTPException, status
 from webbpulse.dynamodb import ConditionFailed
 
+from app.common import pulse
 from app.common.api.dependencies.authz import AuthzContext
 from app.common.api.dependencies.repositories import Repositories
 from app.common.api.pagination import decode_offset_cursor, encode_offset_cursor
@@ -203,6 +204,15 @@ def update_project(
         stored = repositories.planning.replace_project(updated)
     except ConditionFailed as exc:
         raise not_found() from exc
+    if "health" in fields:
+        pulse.record_health_change(
+            repositories,
+            context,
+            subject_type="project",
+            subject_id=stored.project_id,
+            health=stored.health,
+            previous_health=existing.health,
+        )
     return ProjectRead.from_row(
         stored,
         visible_project_teams(stored, visible),

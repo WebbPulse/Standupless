@@ -26,7 +26,7 @@ from app.common.api.dependencies.authz import (
 )
 from app.common.api.dependencies.repositories import Repositories, get_repositories
 from app.common.db.dynamo.inbox import NOTIFICATION_KINDS, NotificationKind
-from app.common.db.dynamo.users import User
+from app.common.db.dynamo.users import PULSE_DIGESTS, PulseDigestField, User
 from app.common.email import deliver
 from app.common.icons import (
     IconCommit,
@@ -71,6 +71,7 @@ class UserRead(BaseModel):
     avatar_url: Optional[str] = None
     two_factor: bool = False
     timezone: Optional[str] = None
+    pulse_digest: PulseDigestField = "off"
 
 
 class WorkspaceSummaryRead(BaseModel):
@@ -116,7 +117,8 @@ class UserPreferencesUpdate(BaseModel):
     Every field is optional, so the global email switch, one kind's channels and
     the timezone can each be changed without restating the others. `timezone` is
     the IANA zone due date reminders are judged in, which the browser captures on
-    sign in and the person can change. Deliberately not a settings
+    sign in and the person can change. `pulse_digest` is how often the Pulse
+    digest email comes, `off` by default. Deliberately not a settings
     domain of its own: a few values on the row the product already owns are cheaper
     than a table and a second read on every notification.
     """
@@ -124,6 +126,7 @@ class UserPreferencesUpdate(BaseModel):
     email_notifications: Optional[bool] = None
     notification_preferences: Optional[dict[NotificationKind, NotificationChannelsUpdate]] = None
     timezone: Optional[str] = Field(default=None, min_length=1, max_length=64)
+    pulse_digest: Optional[PulseDigestField] = None
 
     @field_validator("timezone")
     @classmethod
@@ -155,6 +158,7 @@ def _as_read(user: "Any") -> UserRead:
         },
         avatar_url=icon_url(user.icon_key),
         timezone=user.timezone,
+        pulse_digest=user.pulse_digest if user.pulse_digest in PULSE_DIGESTS else "off",
     )
 
 
@@ -252,6 +256,8 @@ def update_current_user_preferences(
         )
     if payload.timezone is not None and payload.timezone != user.timezone:
         changes["timezone"] = payload.timezone
+    if payload.pulse_digest is not None and payload.pulse_digest != user.pulse_digest:
+        changes["pulse_digest"] = payload.pulse_digest
     if not changes:
         return _as_read(user)
     return _as_read(repos.users.update(subject, **changes))
