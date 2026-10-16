@@ -113,6 +113,9 @@ SECOND_FACTOR_METHODS = frozenset({"otp", "recovery", "swk"})
 TWO_FACTOR_CLAIM = "two_factor"
 """The session claim saying the person has an active authenticator app or a passkey second factor."""
 
+SCIM_KEY_KIND = "scim"
+"""The stored kind of a SCIM bearer token, which no product route accepts."""
+
 IDENTITY_BEARER = HTTPBearer(
     auto_error=False,
     scheme_name="IdentityBearer",
@@ -313,6 +316,9 @@ def _api_key_claims(request: Request, repositories: RepositoryBundle | None = No
     the bundle is asked whether it may write and `touch` is switched off where it
     may not. The grant costs the stamp rather than the request, and the stamp a
     key-minting domain writes is the one the settings page renders.
+
+    A SCIM token is an API key too, but it provisions a directory and nothing
+    else, so it answers `None` here and only the SCIM router accepts it.
     """
     from webbpulse.identity.api_keys import claims_for_key, is_api_key, verify
     from webbpulse.identity.scopes import bearer_credential
@@ -328,7 +334,7 @@ def _api_key_claims(request: Request, repositories: RepositoryBundle | None = No
         return None
 
     record = verify(presented, keys, touch=not bundle.is_read_only("api_keys"))
-    if record is None:
+    if record is None or record.kind == SCIM_KEY_KIND:
         return None
     from webbpulse.identity.claims import AuthorizerClaims
 

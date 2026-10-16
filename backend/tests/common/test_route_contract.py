@@ -138,6 +138,25 @@ PUBLIC_ROUTES = {
     ("DELETE", "/api/mcp"),
     ("GET", "/api/mcp"),
     ("POST", "/api/mcp"),
+    ("GET", "/api/scim/v2/Groups"),
+    ("POST", "/api/scim/v2/Groups"),
+    ("POST", "/api/scim/v2/Groups/.search"),
+    ("DELETE", "/api/scim/v2/Groups/{group_id}"),
+    ("GET", "/api/scim/v2/Groups/{group_id}"),
+    ("PATCH", "/api/scim/v2/Groups/{group_id}"),
+    ("PUT", "/api/scim/v2/Groups/{group_id}"),
+    ("GET", "/api/scim/v2/ResourceTypes"),
+    ("GET", "/api/scim/v2/ResourceTypes/{name}"),
+    ("GET", "/api/scim/v2/Schemas"),
+    ("GET", "/api/scim/v2/Schemas/{schema_id}"),
+    ("GET", "/api/scim/v2/ServiceProviderConfig"),
+    ("GET", "/api/scim/v2/Users"),
+    ("POST", "/api/scim/v2/Users"),
+    ("POST", "/api/scim/v2/Users/.search"),
+    ("DELETE", "/api/scim/v2/Users/{user_id}"),
+    ("GET", "/api/scim/v2/Users/{user_id}"),
+    ("PATCH", "/api/scim/v2/Users/{user_id}"),
+    ("PUT", "/api/scim/v2/Users/{user_id}"),
 }
 """Every route that carries no caller identity dependency, and why each one may not.
 
@@ -171,6 +190,12 @@ through a dependency, because an unauthenticated client must receive the
 `WWW-Authenticate` challenge that starts discovery, and a dependency that raised
 before the handler could not set that header. They are listed here because they
 genuinely carry no route dependency, not because they are unauthenticated.
+
+The `/api/scim/v2` routes are the same shape. An identity provider calls them with
+a workspace SCIM token, which the SCIM service verifies inside each handler and
+which names the one workspace it provisions, so a token for one workspace cannot
+reach another's directory. The discovery documents need no token, as RFC 7644
+allows, because they describe the server rather than any directory.
 
 Anything else appearing as public is the regression this test exists to surface.
 """

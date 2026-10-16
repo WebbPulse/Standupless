@@ -586,6 +586,12 @@ export const workspaceSsoKey = (workspaceId: string): QueryKey => [
   workspaceId,
 ];
 
+/** The cache key for a workspace's SCIM base URL and tokens. */
+export const workspaceScimKey = (workspaceId: string): QueryKey => [
+  'workspace-scim',
+  workspaceId,
+];
+
 /** The cache key for a workspace's approved email domains. */
 export const workspaceApprovedDomainsKey = (workspaceId: string): QueryKey => [
   'workspace-approved-domains',

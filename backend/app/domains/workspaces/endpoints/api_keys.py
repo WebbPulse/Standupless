@@ -25,6 +25,7 @@ from webbpulse.identity.api_keys import ApiKeyRecord, mint
 
 from app.common import audit, plan_usage
 from app.common.api.dependencies.authz import (
+    SCIM_KEY_KIND,
     AuthzContext,
     Capability,
     refuse_api_key_actor,
@@ -67,11 +68,14 @@ def list_api_keys(
 
     `mine` is the default rather than `workspace` so the ordinary read shows a
     person only what they are responsible for, and widening it is a deliberate
-    query parameter that an admin check then has to pass.
+    query parameter that an admin check then has to pass. SCIM tokens are left
+    out: they belong to the directory and are managed with single sign-on.
     """
     refuse_api_key_actor(context)
 
-    rows = _newest_first(repositories.api_keys.list_for_tenant(context.workspace_id))
+    rows = _newest_first(
+        [row for row in repositories.api_keys.list_for_tenant(context.workspace_id) if row.kind != SCIM_KEY_KIND]
+    )
 
     if scope == "workspace":
         if not context.is_workspace_admin:
@@ -149,6 +153,9 @@ def revoke_api_key(
     A key the caller neither owns nor administers is a 404 rather than a 403, so a
     member cannot walk key ids to learn what other people hold.
 
+    A SCIM token is a 404 here too: it is listed and revoked on the single sign-on
+    settings, so a key listing never offers to revoke the directory's credential.
+
     Revoking is idempotent: a key already revoked answers 204 rather than 404,
     because the caller's intent is satisfied and a client retrying a revoke should
     not have to distinguish the two.
@@ -156,7 +163,7 @@ def revoke_api_key(
     refuse_api_key_actor(context)
 
     existing = repositories.api_keys.get_by_id(context.workspace_id, key_id)
-    if existing is None:
+    if existing is None or existing.kind == SCIM_KEY_KIND:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=NOT_FOUND)
 
     owns = existing.created_by == context.user_id or existing.user_id == context.user_id

@@ -173,8 +173,11 @@ def join_by_domain(repositories: Repositories, user_id: str, workspace_id: str) 
     same 404 as one that does not exist, so the route reveals nothing about
     workspaces the caller cannot join. An existing member gets their membership
     back unchanged. The membership takes its plan slot in the same transaction as
-    its row.
+    its row. A person the workspace's directory deactivated is refused with 403,
+    and one it provisioned is linked to their directory row and given its teams.
     """
+    from app.common import scim
+
     user = repositories.users.get(user_id)
     existing = repositories.memberships.get(workspace_id, user_id)
     if existing is not None:
@@ -188,6 +191,7 @@ def join_by_domain(repositories: Repositories, user_id: str, workspace_id: str) 
         or repositories.memberships.get_approved_domain(workspace_id, domain) is None
     ):
         raise _not_found()
+    directory_row = scim.refuse_deactivated(repositories, workspace_id, user)
     membership = Membership(
         workspace_id=workspace_id,
         member_key=workspace_member_key(user_id),
@@ -207,4 +211,5 @@ def join_by_domain(repositories: Repositories, user_id: str, workspace_id: str) 
             raise
         return MemberRead.from_rows(current, user), False
     sync_seats(repositories, workspace_id)
+    scim.adopt(repositories, workspace_id, directory_row, user_id)
     return MemberRead.from_rows(membership, user), True

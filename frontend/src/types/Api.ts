@@ -255,6 +255,29 @@ export interface SsoSettingsRead {
   can_require: boolean;
 }
 
+/** One SCIM token, as the provisioning settings list it. The secret is never here. */
+export interface ScimTokenRead {
+  key_id: string;
+  name: string;
+  /** The first characters of the token, so a person can tell tokens apart. */
+  prefix: string;
+  created_by: string | null;
+  created_at: string;
+  last_used_at: string | null;
+}
+
+/** A SCIM token just minted: the only response that carries its secret. */
+export interface ScimTokenCreated extends ScimTokenRead {
+  secret: string;
+}
+
+/** What `GET .../sso/scim` answers: where the directory connects and its tokens. */
+export interface ScimSettingsRead {
+  /** The SCIM 2.0 base URL to give the identity provider. */
+  base_url: string;
+  tokens: ScimTokenRead[];
+}
+
 /**
  * The body `PUT .../sso/connection` takes. A blank OIDC client secret keeps the
  * stored one; SAML takes either the metadata XML or the three provider values.

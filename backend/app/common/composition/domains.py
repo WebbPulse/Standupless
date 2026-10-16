@@ -57,7 +57,9 @@ def _workspaces_routers() -> "Sequence[RouterSpec]":
     Accepting an invite cannot sit under `/workspaces/{workspace_id}`: the caller
     is not yet a member of anything, and the token is what names the workspace.
     The public icon route sits here too, serving workspace, team and person icons,
-    and so does the Stripe webhook, which names no workspace in its path.
+    and so does the Stripe webhook, which names no workspace in its path. So does
+    the SCIM 2.0 router, which a directory reaches with a bearer token that names
+    the workspace, and which the gateway leaves to that token rather than a session.
     """
     from app.domains.workspaces.endpoints import (
         api_keys,
@@ -66,13 +68,17 @@ def _workspaces_routers() -> "Sequence[RouterSpec]":
         billing,
         exports,
         icons,
+        scim,
         security,
         sso,
         workspaces,
     )
+    from app.domains.workspaces.scim_hooks import build_router as build_scim_router
 
     return [
+        (build_scim_router(), "", ("scim",)),
         (sso.router, "/workspaces", ("workspaces",)),
+        (scim.router, "/workspaces", ("workspaces",)),
         (approved_domains.router, "/workspaces", ("workspaces",)),
         (workspaces.router, "/workspaces", ("workspaces",)),
         (icons.router, "/workspaces", ("workspaces",)),
@@ -211,7 +217,7 @@ workspace the consenting user already belongs to.
 
 _WORKSPACES_REPOSITORIES = ("workspaces", "memberships", "invites", "api_keys", "counters", "idempotency", "audit")
 
-_WORKSPACES_READ_REPOSITORIES = ("users",)
+_WORKSPACES_READ_REPOSITORIES = ("users", "teams")
 
 _TEAMS_REPOSITORIES = (
     "teams",

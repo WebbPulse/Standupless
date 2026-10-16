@@ -60,6 +60,13 @@ locals {
       }
     },
     {
+      "refresh-tokens-write-workspaces" = {
+        role_name = module.lambda_domain["workspaces"].role_id
+        tables    = ["refresh-tokens"]
+        actions   = local.dynamodb_domain_write_actions
+      }
+    },
+    {
       for name in local.identity_share_token_writer_domains :
       "share-tokens-write-${name}" => {
         role_name = module.lambda_domain[name].role_id
