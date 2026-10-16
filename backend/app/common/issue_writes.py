@@ -29,8 +29,8 @@ from app.common.db.dynamo.issues import (
     issue_key,
     new_issue_id,
 )
-from app.common.db.dynamo.team_config import Label
-from app.common.estimates import is_unestimated
+from app.common.db.dynamo.team_config import STATUS_CATEGORIES, Label
+from app.common.estimates import estimate_points, is_unestimated
 from app.common.filter_resolution import resolve_issue_filter
 from app.common.issue_archive import archive_issue, unarchive_issue
 from app.common.issue_filters import ME, NONE, IssueFilter, estimate_value
@@ -95,11 +95,43 @@ dropped, and the sort holds within each stretch the budget covers.
 """
 
 
-def sort_key(sort: str) -> Any:
+StatusRanks = dict[tuple[str, str], tuple[int, int]]
+"""Each `(team_id, status_id)` mapped to where that status sits on its team's board."""
+
+TRIAGE_RANK: tuple[int, int] = (-1, 0)
+"""Where an issue waiting in triage sorts by status: ahead of every real status, as its group leads."""
+
+ASCENDING_SORTS: frozenset[str] = frozenset({"key_asc", "due_asc", "sla_asc", "manual", "status_asc", "start_asc"})
+"""The sorts that climb; every other one reads highest or newest first."""
+
+
+def status_ranks(repositories: Repositories, workspace_id: str, teams: list[str]) -> StatusRanks:
+    """Every listed team's statuses mapped to their board place: category first, then position.
+
+    Read only for the status sort, since no other sort needs a team's statuses.
+    """
+    ranks: StatusRanks = {}
+    for team in teams:
+        for row in repositories.team_config.list_statuses(workspace_id, team):
+            known = row.category in STATUS_CATEGORIES
+            category = STATUS_CATEGORIES.index(row.category) if known else len(STATUS_CATEGORIES)
+            ranks[(team, row.status_id)] = (category, row.position)
+    return ranks
+
+
+def status_rank(issue: Issue, ranks: StatusRanks) -> tuple[int, int]:
+    """Where one issue's status sits on its board, triage first and a vanished status last."""
+    if issue.in_triage:
+        return TRIAGE_RANK
+    return ranks.get((issue.team_id, issue.status_id), (len(STATUS_CATEGORIES), 0))
+
+
+def sort_key(sort: str, ranks: Optional[StatusRanks] = None) -> Any:
     """The key one sort orders a merged fan-out by.
 
     Written as one function so the merge and the fallback ordering inside a single
-    team's page cannot disagree about what a sort means.
+    team's page cannot disagree about what a sort means. `ranks` carries the board
+    order the status sort climbs, and every status ties without it.
     """
     if sort == "created_desc":
         return lambda issue: (issue.created_at, issue.issue_id)
@@ -113,17 +145,58 @@ def sort_key(sort: str) -> Any:
         return sla_breach_key
     if sort == "manual":
         return lambda issue: (issue.sort_order is None, issue.sort_order or "", issue.issue_id)
+    if sort == "status_asc":
+        held = ranks or {}
+        return lambda issue: (status_rank(issue, held), PRIORITY_ORDER.get(issue.priority, 4), issue.issue_id)
+    if sort == "start_asc":
+        return lambda issue: (issue.start_date is None, issue.start_date or "", issue.issue_id)
+    if sort == "estimate_desc":
+        return lambda issue: (
+            not is_unestimated(issue.estimate),
+            estimate_points(issue.estimate),
+            issue.issue_id,
+        )
     return lambda issue: (issue.updated_at, issue.issue_id)
 
 
 def descending(sort: str) -> bool:
     """Whether one sort reads newest or highest first.
 
-    `key_asc`, `due_asc`, `sla_asc` and `manual` climb; the rest descend, which is what their
+    The sorts in `ASCENDING_SORTS` climb; the rest descend, which is what their
     names say. A manual order climbs so the smallest key is the top of the list,
     and an issue nobody has placed yet sorts after every placed one.
     """
-    return sort not in ("key_asc", "due_asc", "sla_asc", "manual")
+    return sort not in ASCENDING_SORTS
+
+
+def unset_value(sort: str) -> Optional[Callable[[Issue], bool]]:
+    """Whether an issue lacks the value one sort reads, or `None` for a sort over a value every issue has.
+
+    A reversed sort still lists those issues last, the way a list reads in either
+    direction, so they are held apart from the reversal.
+    """
+    if sort == "due_asc":
+        return lambda issue: issue.due_date is None
+    if sort == "sla_asc":
+        return lambda issue: sla_breach_key(issue)[0]
+    if sort == "manual":
+        return lambda issue: issue.sort_order is None
+    if sort == "start_asc":
+        return lambda issue: issue.start_date is None
+    if sort == "estimate_desc":
+        return lambda issue: is_unestimated(issue.estimate)
+    return None
+
+
+def order_issues(
+    rows: list[Issue], sort: str, *, reverse: bool = False, ranks: Optional[StatusRanks] = None
+) -> list[Issue]:
+    """Rows in one sort's order, or its reverse with issues lacking the sorted value still last."""
+    ordered = merge_sorted(rows, sort_key(sort, ranks), descending=descending(sort) != reverse)
+    missing = unset_value(sort) if reverse else None
+    if missing is None:
+        return ordered
+    return [issue for issue in ordered if not missing(issue)] + [issue for issue in ordered if missing(issue)]
 
 
 def list_issues(
@@ -137,6 +210,7 @@ def list_issues(
     limit: int,
     subscribed: bool = False,
     include_sub_teams: bool = False,
+    reverse: bool = False,
 ) -> tuple[list[Issue], Optional[str]]:
     """One page of the issues the caller may see, filtered and sorted, and the next cursor.
 
@@ -149,7 +223,8 @@ def list_issues(
     A filter on one person, or `subscribed` for the caller's own subscriptions,
     reads that person's index instead of every team; the mode is part of the
     cursor scope, since the keyed and fanned out sets differ. `include_sub_teams`
-    rolls the named team's visible sub-teams into the list.
+    rolls the named team's visible sub-teams into the list, and `reverse` turns the
+    sort around, issues lacking the sorted value still last.
     """
     teams = listed_teams(repositories, context, team_id, include_sub_teams=include_sub_teams)
 
@@ -163,7 +238,11 @@ def list_issues(
             categories.update(status_categories(repositories, context.workspace_id, candidate))
 
     mode = "subscribed" if subscribed else "all"
-    scope = digest_scope(f"issues:{context.workspace_id}:{','.join(teams)}:{sort}:{mode}:{wanted.fingerprint()}")
+    direction = "reverse" if reverse else "forward"
+    scope = digest_scope(
+        f"issues:{context.workspace_id}:{','.join(teams)}:{sort}:{direction}:{mode}:{wanted.fingerprint()}"
+    )
+    ranks = status_ranks(repositories, context.workspace_id, teams) if sort == "status_asc" else None
     keyed = keyed_rows(repositories, context, wanted, subscribed, teams)
     if keyed is None and wanted.archived_only:
         keyed = archived_rows(repositories, context.workspace_id, teams, TEAM_SCAN_BUDGET)
@@ -175,9 +254,10 @@ def list_issues(
         scope=scope,
         limit=limit,
         keep=lambda issue: wanted.matches(issue, categories),
-        key=sort_key(sort),
-        descending=descending(sort),
+        key=sort_key(sort, ranks),
+        descending=descending(sort) != reverse,
         rows=keyed,
+        last=unset_value(sort) if reverse else None,
     )
 
 
@@ -225,6 +305,7 @@ def walk_page(
     descending: bool,
     rows: Optional[list[Issue]] = None,
     budget: Optional[int] = None,
+    last: Optional[Callable[[Issue], bool]] = None,
 ) -> tuple[list[Issue], Optional[str]]:
     """One page of the issues `keep` admits, in `key` order, and the next cursor.
 
@@ -233,7 +314,8 @@ def walk_page(
     budget had stopped the walk, the next cursor starts the following stretch, so
     a page can come back short or empty while a cursor is still answered. `rows`
     stands in for the walk when an index other than the team one already holds
-    every candidate.
+    every candidate. `last` holds the rows it admits after every other row, in
+    their order, so a reversed sort still lists issues lacking its value last.
     """
     position = resume_key(cursor, scope) or {}
     start = (_position(position, "t"), _position(position, "b"))
@@ -242,6 +324,8 @@ def walk_page(
     if rows is None:
         rows, end = walk_teams(repositories, workspace_id, teams, start, budget or TEAM_SCAN_BUDGET)
     ordered = merge_sorted([issue for issue in rows if keep(issue)], key, descending=descending)
+    if last is not None:
+        ordered = [issue for issue in ordered if not last(issue)] + [issue for issue in ordered if last(issue)]
     window_rows = ordered[offset : offset + limit]
     next_offset = offset + len(window_rows)
     if next_offset < len(ordered):

@@ -247,6 +247,26 @@ export const reviewsKey = (workspaceId: string): QueryKey => [
   workspaceId,
 ];
 
+/** The caller's Pulse, which varies on which feed it reads. */
+export const pulseKey = (workspaceId: string, scope: string): QueryKey => [
+  'pulse',
+  workspaceId,
+  scope,
+];
+
+/** The Pulse unread count the sidebar badge shows. */
+export const pulseCountKey = (workspaceId: string): QueryKey => [
+  'pulse-count',
+  workspaceId,
+];
+
+/** Whether the caller follows one project or initiative in Pulse. */
+export const pulseFollowKey = (
+  workspaceId: string,
+  subject: string,
+  subjectId: string
+): QueryKey => ['pulse-follow', workspaceId, subject, subjectId];
+
 /** One team's triage inbox, waiting or snoozed. */
 export const triageKey = (
   workspaceId: string,

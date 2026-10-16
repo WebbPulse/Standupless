@@ -19,6 +19,7 @@ from typing import Any, Mapping, Optional
 from fastapi import HTTPException, status
 from webbpulse.dynamodb import ConditionFailed, encode_start_key
 
+from app.common import pulse
 from app.common.api.dependencies.authz import AuthzContext
 from app.common.api.dependencies.repositories import Repositories
 from app.common.api.pagination import decode_offset_cursor, encode_offset_cursor, resume_key
@@ -184,6 +185,15 @@ def update_initiative(
         stored = repositories.planning.replace_initiative(updated)
     except ConditionFailed as exc:
         raise not_found() from exc
+    if "health" in fields:
+        pulse.record_health_change(
+            repositories,
+            context,
+            subject_type="initiative",
+            subject_id=stored.initiative_id,
+            health=stored.health,
+            previous_health=existing.health,
+        )
     return read_initiative(repositories, context, stored)
 
 
@@ -336,6 +346,7 @@ def create_initiative_update(
     repositories.planning.record_initiative_health(
         context.workspace_id, initiative.initiative_id, health=created.health, last_update_at=created.created_at
     )
+    pulse.record_initiative_update(repositories, created, initiative.health)
     return _update_read(context, initiative, created)
 
 
@@ -383,6 +394,9 @@ def update_initiative_update(
         repositories.planning.record_initiative_health(
             context.workspace_id, stored.initiative_id, health=stored.health, last_update_at=stored.created_at
         )
+    pulse.revise_update(
+        repositories, context.workspace_id, stored.update_id, body=stored.body, health=stored.health, edited_at=now
+    )
     return _update_read(context, initiative, stored)
 
 
@@ -394,6 +408,7 @@ def delete_initiative_update(
     was_latest = _is_latest(repositories, existing)
     if not repositories.planning.delete(context.workspace_id, existing.planning_key):
         raise not_found()
+    pulse.remove_update(repositories, context.workspace_id, existing.update_id)
     if not was_latest:
         return
     previous = repositories.planning.latest_initiative_update(context.workspace_id, existing.initiative_id)

@@ -3,8 +3,10 @@
  * away, optional sub-group headers inside them, and one dense row per issue.
  * A row is a stretched link to the issue with the pickers lifted above it,
  * so a click on the row opens the issue and a click on a glyph edits it.
- * With sub-issues nested, a parent leads with a disclosure chevron and its
- * sub-issues sit indented beneath it.
+ * Every row reserves the same leading slots (select, disclosure, priority,
+ * key, status) at fixed widths, so the glyphs line up across every group
+ * whether or not a group holds a parent. Nested sub-issues indent their
+ * title only.
  */
 
 import React from 'react';
@@ -20,7 +22,7 @@ import { IconButton } from '../../ui/button';
 import { PriorityGlyph } from '../../ui/glyphs';
 import { StatusIcon } from '../../ui/StatusIcon';
 import ProgressRing from '../../planning/ProgressRing';
-import BlockedMarker from '../BlockedMarker';
+import { RelationMarkers } from '../BlockedMarker';
 import {
   AssigneeCell,
   MetaChips,
@@ -78,7 +80,11 @@ export const GroupGlyph: React.FC<{ group: IssueGroup }> = ({ group }) => {
       />
     );
   }
-  if (group.field === 'milestone') {
+  if (
+    group.field === 'milestone' ||
+    group.field === 'project' ||
+    group.field === 'cycle'
+  ) {
     return group.progress === undefined ? (
       <span
         aria-hidden="true"
@@ -227,22 +233,36 @@ export interface IssueTreePlace {
   onToggle: () => void;
 }
 
-/** The width one level of nesting indents a row by, in pixels. */
+/** The width one level of nesting indents a title by, in pixels. */
 const INDENT = 22;
 
+/** The CSS variable that carries the list's key column width, in ch. */
+const KEY_WIDTH_VAR = '--issue-key-ch';
+
+/** The fewest characters the key column is sized for. */
+const MIN_KEY_CH = 6;
+
+/** The key column width, in ch, that fits the longest key in the sections. */
+const keyColumnCh = (sections: IssueSection[]): number =>
+  sections.reduce(
+    (widest, { group }) =>
+      group.issues.reduce(
+        (inner, issue) => Math.max(inner, issue.key.length),
+        widest
+      ),
+    MIN_KEY_CH
+  );
+
 /**
- * The indent and disclosure slot a nested row leads with: a chevron that
- * folds a parent's sub-issues, or an empty slot that keeps titles aligned.
+ * The fixed disclosure slot every row reserves: a chevron that folds a
+ * parent's sub-issues, or an empty slot of the same width.
  */
 const TreeDisclosure: React.FC<{
   issueKey: string;
-  place: IssueTreePlace;
+  place: IssueTreePlace | undefined;
 }> = ({ issueKey, place }) => (
-  <span
-    className="flex shrink-0 items-center"
-    style={{ paddingLeft: place.depth * INDENT }}
-  >
-    {place.childCount > 0 ? (
+  <span data-slot="disclosure" className="flex w-5 shrink-0 items-center">
+    {place !== undefined && place.childCount > 0 ? (
       <button
         type="button"
         aria-expanded={place.expanded}
@@ -259,9 +279,7 @@ const TreeDisclosure: React.FC<{
           )}
         />
       </button>
-    ) : (
-      <span aria-hidden="true" className="w-5" />
-    )}
+    ) : null}
   </span>
 );
 
@@ -308,37 +326,41 @@ export const IssueListRow: React.FC<IssueListRowProps> = ({ issue, tree }) => {
           'before:absolute before:inset-y-0 before:left-0 before:w-0.5 before:bg-accent'
       )}
     >
-      <span
-        className={cn(
-          'relative z-10 flex w-5 shrink-0 justify-center',
-          !selecting && 'pointer-coarse:hidden'
-        )}
-      >
-        <input
-          type="checkbox"
-          aria-label={`Select ${issue.key}`}
-          checked={isSelected}
-          onChange={(event) => {
-            env.toggleSelected(
-              issue.id,
-              (event.nativeEvent as MouseEvent).shiftKey
-            );
-          }}
-          onKeyDown={holdSpace}
+      <span data-slot="select" className="flex shrink-0 items-center">
+        <span
           className={cn(
-            'h-3.5 w-3.5 cursor-pointer accent-accent',
-            !selecting &&
-              !isSelected &&
-              'opacity-0 group-hover/row:opacity-100 focus-visible:opacity-100'
+            'relative z-10 flex w-5 shrink-0 justify-center',
+            !selecting && 'pointer-coarse:hidden'
           )}
-        />
-      </span>
-      {tree !== undefined && (
+        >
+          <input
+            type="checkbox"
+            aria-label={`Select ${issue.key}`}
+            checked={isSelected}
+            onChange={(event) => {
+              env.toggleSelected(
+                issue.id,
+                (event.nativeEvent as MouseEvent).shiftKey
+              );
+            }}
+            onKeyDown={holdSpace}
+            className={cn(
+              'h-3.5 w-3.5 cursor-pointer accent-accent',
+              !selecting &&
+                !isSelected &&
+                'opacity-0 group-hover/row:opacity-100 focus-visible:opacity-100'
+            )}
+          />
+        </span>
         <TreeDisclosure issueKey={issue.key} place={tree} />
-      )}
+      </span>
       {shows('priority') && <PriorityCell issue={issue} />}
       {shows('id') && (
-        <span className="w-14 shrink-0 truncate font-mono text-xs text-text-faint sm:w-16">
+        <span
+          data-slot="key"
+          className="shrink-0 truncate font-mono text-xs text-text-faint"
+          style={{ width: `calc(var(${KEY_WIDTH_VAR}, 8) * 1ch)` }}
+        >
           {issue.key}
         </span>
       )}
@@ -355,6 +377,11 @@ export const IssueListRow: React.FC<IssueListRowProps> = ({ issue, tree }) => {
           }
           env.onOpen?.();
         }}
+        style={
+          tree === undefined || tree.depth === 0
+            ? undefined
+            : { paddingLeft: tree.depth * INDENT }
+        }
         className={cn(
           'min-w-0 flex-1 truncate font-medium after:absolute after:inset-0 focus-visible:outline-none focus-visible:after:outline-2 focus-visible:after:-outline-offset-2 focus-visible:after:outline-accent',
           archived ? 'text-text-muted' : 'text-text'
@@ -363,7 +390,7 @@ export const IssueListRow: React.FC<IssueListRowProps> = ({ issue, tree }) => {
         {issue.title}
       </Link>
       {archived && <ArchivedMarker />}
-      <BlockedMarker count={issue.blocked_by_open_count} />
+      <RelationMarkers issue={issue} />
       <span className="flex shrink-0 items-center gap-1.5">
         <MetaChips issue={issue} />
       </span>
@@ -396,7 +423,6 @@ const Rows: React.FC<{
   const rows = treeRows(issues, nest, (id) =>
     collapsed.has(foldedParentKey(id))
   );
-  const nested = rows.some((row) => row.childCount > 0);
   return (
     <ul aria-label={label}>
       {rows.map((row) => (
@@ -404,7 +430,7 @@ const Rows: React.FC<{
           key={row.issue.id}
           issue={row.issue}
           tree={
-            nested
+            nest
               ? {
                   depth: row.depth,
                   childCount: row.childCount,
@@ -429,7 +455,11 @@ export const ListRows: React.FC<ListRowsProps> = ({
   nest = false,
   createIn,
 }) => (
-  <div>
+  <div
+    style={
+      { [KEY_WIDTH_VAR]: String(keyColumnCh(sections)) } as React.CSSProperties
+    }
+  >
     {sections.map(({ group, subs }) => {
       const grouped = group.field !== 'none';
       const folded = collapsed.has(group.key);

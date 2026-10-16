@@ -29,6 +29,7 @@ import React, {
   useState,
 } from 'react';
 import {
+  LuActivity,
   LuArchive,
   LuArrowLeftRight,
   LuArrowRight,
@@ -81,6 +82,7 @@ import {
   myIssuesPath,
   newViewPath,
   projectsPath,
+  pulsePath,
   reviewsPath,
   roadmapPath,
   routeIssueKey,
@@ -494,6 +496,13 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
         keywords: 'pull requests review requested github',
         icon: <LuGitPullRequest className={ICON} />,
         to: reviewsPath(slug),
+      },
+      {
+        id: 'nav-pulse',
+        label: 'Pulse',
+        keywords: 'project updates initiative updates health milestones feed',
+        icon: <LuActivity className={ICON} />,
+        to: pulsePath(slug),
       },
       {
         id: 'nav-projects',

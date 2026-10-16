@@ -20,10 +20,13 @@ import { LuChevronRight, LuEllipsis, LuEyeOff, LuPlus } from 'react-icons/lu';
 import type { OrderedIssueRead } from '../../../api/issues';
 import { cn } from '../../../lib/cn';
 import {
+  GROUP_LABELS,
   groupIssues,
   hiddenColumnKey,
+  MOVABLE_GROUP_FIELDS,
   moveChange,
   orderKeyAt,
+  type GroupField,
   type IssueChange,
   type IssueGroup,
   type ViewState,
@@ -32,7 +35,7 @@ import { issuePath } from '../../../lib/paths';
 import { showToast } from '../../../lib/toast';
 import { IconButton } from '../../ui/button';
 import { Menu, MenuItem } from '../../ui/menu';
-import BlockedMarker from '../BlockedMarker';
+import { RelationMarkers } from '../BlockedMarker';
 import {
   AssigneeCell,
   MetaChips,
@@ -80,6 +83,15 @@ const joinChanges = (left: IssueChange, right: IssueChange): IssueChange => {
   if (removes.length > 0) merged.remove_label_ids = removes;
   return merged;
 };
+
+/**
+ * Why a drop was refused: a column the grouping cannot set by dragging, or a
+ * value the issue's own team does not have.
+ */
+const refusedMove = (key: string, field: GroupField): string =>
+  MOVABLE_GROUP_FIELDS.has(field)
+    ? `${key} cannot move there, its team has no matching value.`
+    : `${key} stays put, ${GROUP_LABELS[field].toLowerCase()} is not set by dragging.`;
 
 /** Props for BoardCard. */
 interface BoardCardProps {
@@ -164,7 +176,7 @@ const BoardCard: React.FC<BoardCardProps> = ({
         >
           {issue.title}
         </Link>
-        <BlockedMarker count={issue.blocked_by_open_count} className="mt-0.5" />
+        <RelationMarkers issue={issue} className="mt-0.5" />
         {(issue.archived_at ?? null) !== null && (
           <ArchivedMarker className="mt-0.5" />
         )}
@@ -261,10 +273,7 @@ export const BoardLayout: React.FC<BoardLayoutProps> = ({
         context
       );
       if (moved === null) {
-        showToast(
-          `${issue.key} cannot move there, its team has no matching value.`,
-          'info'
-        );
+        showToast(refusedMove(issue.key, columnField), 'info');
         return;
       }
       change = joinChanges(change, moved);
@@ -272,10 +281,7 @@ export const BoardLayout: React.FC<BoardLayoutProps> = ({
     if (laneField !== 'none' && to.lane !== source.lane) {
       const moved = moveChange(issue, laneField, source.lane, to.lane, context);
       if (moved === null) {
-        showToast(
-          `${issue.key} cannot move there, its team has no matching value.`,
-          'info'
-        );
+        showToast(refusedMove(issue.key, laneField), 'info');
         return;
       }
       change = joinChanges(change, moved);
@@ -290,8 +296,8 @@ export const BoardLayout: React.FC<BoardLayoutProps> = ({
       const index = from >= 0 && from < to.index ? to.index - 1 : to.index;
       if (sameCell && index === from) return;
       change.sort_order = orderKeyAt(placed, index, issue.id);
-      if (state.ordering !== 'manual') {
-        onStateChange({ ...state, ordering: 'manual' });
+      if (state.ordering !== 'manual' || state.reverse) {
+        onStateChange({ ...state, ordering: 'manual', reverse: false });
       }
     }
     env.update([issue.id], change);

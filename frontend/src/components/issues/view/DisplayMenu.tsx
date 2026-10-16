@@ -1,12 +1,19 @@
 /**
  * The display options of a list or board: the layout, the grouping and
- * sub-grouping, the ordering, whether empty groups, sub-issues and completed
- * issues show, and which properties the rows carry. Every change lands in the URL at once, so the
- * menu is a live control rather than a form with a save button.
+ * sub-grouping, the ordering and its direction, whether empty groups,
+ * sub-issues and completed issues show, and which properties the rows carry.
+ * Every change lands in the URL at once, so the menu is a live control rather
+ * than a form with a save button.
  */
 
 import React from 'react';
-import { LuKanban, LuList, LuSlidersHorizontal } from 'react-icons/lu';
+import {
+  LuArrowDown,
+  LuArrowUp,
+  LuKanban,
+  LuList,
+  LuSlidersHorizontal,
+} from 'react-icons/lu';
 import type { IssueListSort } from '../../../api/issues';
 import { cn } from '../../../lib/cn';
 import {
@@ -184,20 +191,52 @@ export const DisplayMenu: React.FC<DisplayMenuProps> = ({
           </Select>
         </Row>
         <Row label="Ordering" htmlFor="display-order">
-          <Select
-            id="display-order"
-            className={SELECT_CLASS}
-            value={state.ordering}
-            onChange={(event) => {
-              set({ ordering: event.target.value as IssueListSort });
-            }}
-          >
-            {ORDERINGS.map((ordering) => (
-              <option key={ordering} value={ordering}>
-                {ORDERING_LABELS[ordering]}
-              </option>
-            ))}
-          </Select>
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              aria-label="Reverse ordering"
+              aria-pressed={state.reverse}
+              title={
+                state.ordering === 'manual'
+                  ? 'Manual ordering has one direction'
+                  : 'Reverse ordering'
+              }
+              disabled={state.ordering === 'manual'}
+              onClick={() => {
+                set({ reverse: !state.reverse });
+              }}
+              className={cn(
+                'flex h-7 w-7 items-center justify-center rounded-md border text-text-muted focus-visible:outline-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-50',
+                state.reverse
+                  ? 'border-line-strong bg-raised text-text'
+                  : 'border-line hover:border-line-strong hover:text-text'
+              )}
+            >
+              {state.reverse ? (
+                <LuArrowUp aria-hidden="true" className="h-3.5 w-3.5" />
+              ) : (
+                <LuArrowDown aria-hidden="true" className="h-3.5 w-3.5" />
+              )}
+            </button>
+            <Select
+              id="display-order"
+              className="h-7 w-32 py-0 text-xs"
+              value={state.ordering}
+              onChange={(event) => {
+                const ordering = event.target.value as IssueListSort;
+                set({
+                  ordering,
+                  reverse: ordering === 'manual' ? false : state.reverse,
+                });
+              }}
+            >
+              {ORDERINGS.map((ordering) => (
+                <option key={ordering} value={ordering}>
+                  {ORDERING_LABELS[ordering]}
+                </option>
+              ))}
+            </Select>
+          </div>
         </Row>
       </div>
       <div className="flex flex-col gap-2.5 border-t border-line p-3">

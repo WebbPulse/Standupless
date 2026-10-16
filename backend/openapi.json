@@ -9039,6 +9039,321 @@
         "title": "PullRequestSummaryRead",
         "type": "object"
       },
+      "PulseCountRead": {
+        "description": "How many of the caller's \"for me\" Pulse entries are unread, capped at 99.",
+        "properties": {
+          "unread": {
+            "title": "Unread",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "unread"
+        ],
+        "title": "PulseCountRead",
+        "type": "object"
+      },
+      "PulseFollowRead": {
+        "description": "Whether the caller follows a project or initiative in Pulse.\n\n`explicit` says the caller chose it; otherwise it follows from leading, being\na member of or owning the subject, or following the project's initiative.",
+        "properties": {
+          "explicit": {
+            "title": "Explicit",
+            "type": "boolean"
+          },
+          "following": {
+            "title": "Following",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "following",
+          "explicit"
+        ],
+        "title": "PulseFollowRead",
+        "type": "object"
+      },
+      "PulseItemRead": {
+        "description": "One Pulse entry as the API returns it.\n\nThe project's or initiative's name, icon and colour ride along, so a feed\nrenders without a read per entry. `actor_id` is null for what no person did,\nwhich is a milestone its last closed issue completed, and `actor_name` is\nthen empty. `unread` is this caller's own state.",
+        "properties": {
+          "actor_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actor Id"
+          },
+          "actor_name": {
+            "default": "",
+            "title": "Actor Name",
+            "type": "string"
+          },
+          "body": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Body"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "edited_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Edited At"
+          },
+          "event_id": {
+            "title": "Event Id",
+            "type": "string"
+          },
+          "event_type": {
+            "enum": [
+              "project_update",
+              "initiative_update",
+              "project_health",
+              "initiative_health",
+              "milestone_completed"
+            ],
+            "title": "Event Type",
+            "type": "string"
+          },
+          "health": {
+            "anyOf": [
+              {
+                "enum": [
+                  "on_track",
+                  "at_risk",
+                  "off_track"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Health"
+          },
+          "initiative_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Initiative Id"
+          },
+          "initiative_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Initiative Name"
+          },
+          "milestone_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Milestone Id"
+          },
+          "milestone_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Milestone Name"
+          },
+          "previous_health": {
+            "anyOf": [
+              {
+                "enum": [
+                  "on_track",
+                  "at_risk",
+                  "off_track"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Previous Health"
+          },
+          "project_color": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Color"
+          },
+          "project_icon": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Icon"
+          },
+          "project_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Id"
+          },
+          "project_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Name"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "enum": [
+                  "web",
+                  "mcp",
+                  "cli",
+                  "api",
+                  "github",
+                  "system"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source"
+          },
+          "subject_type": {
+            "enum": [
+              "project",
+              "initiative"
+            ],
+            "title": "Subject Type",
+            "type": "string"
+          },
+          "unread": {
+            "default": false,
+            "title": "Unread",
+            "type": "boolean"
+          },
+          "update_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Update Id"
+          },
+          "workspace_id": {
+            "title": "Workspace Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "event_id",
+          "workspace_id",
+          "event_type",
+          "subject_type",
+          "created_at"
+        ],
+        "title": "PulseItemRead",
+        "type": "object"
+      },
+      "PulseListRead": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/PulseItemRead"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "PulseListRead",
+        "type": "object"
+      },
+      "PulseReadMarker": {
+        "description": "When the caller's Pulse was marked read up to.",
+        "properties": {
+          "read_at": {
+            "format": "date-time",
+            "title": "Read At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "read_at"
+        ],
+        "title": "PulseReadMarker",
+        "type": "object"
+      },
       "ReactionGroupRead": {
         "description": "One emoji's reactions on one target.\n\n`reacted` is resolved against the calling user, which is what lets the frontend\nrender the caller's own reaction as pressed without a second read.",
         "properties": {
@@ -11286,7 +11601,10 @@
                   "priority_desc",
                   "due_asc",
                   "sla_asc",
-                  "manual"
+                  "manual",
+                  "status_asc",
+                  "start_asc",
+                  "estimate_desc"
                 ],
                 "type": "string"
               },
@@ -14778,7 +15096,7 @@
         "type": "object"
       },
       "UserPreferencesUpdate": {
-        "description": "The preferences a person may change on their own account.\n\nEvery field is optional, so the global email switch, one kind's channels and\nthe timezone can each be changed without restating the others. `timezone` is\nthe IANA zone due date reminders are judged in, which the browser captures on\nsign in and the person can change. Deliberately not a settings\ndomain of its own: a few values on the row the product already owns are cheaper\nthan a table and a second read on every notification.",
+        "description": "The preferences a person may change on their own account.\n\nEvery field is optional, so the global email switch, one kind's channels and\nthe timezone can each be changed without restating the others. `timezone` is\nthe IANA zone due date reminders are judged in, which the browser captures on\nsign in and the person can change. `pulse_digest` is how often the Pulse\ndigest email comes, `off` by default. Deliberately not a settings\ndomain of its own: a few values on the row the product already owns are cheaper\nthan a table and a second read on every notification.",
         "properties": {
           "email_notifications": {
             "anyOf": [
@@ -14822,6 +15140,22 @@
               }
             ],
             "title": "Notification Preferences"
+          },
+          "pulse_digest": {
+            "anyOf": [
+              {
+                "enum": [
+                  "off",
+                  "daily",
+                  "weekly"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pulse Digest"
           },
           "timezone": {
             "anyOf": [
@@ -14880,6 +15214,16 @@
             },
             "title": "Notification Preferences",
             "type": "object"
+          },
+          "pulse_digest": {
+            "default": "off",
+            "enum": [
+              "off",
+              "daily",
+              "weekly"
+            ],
+            "title": "Pulse Digest",
+            "type": "string"
           },
           "timezone": {
             "anyOf": [
@@ -15093,7 +15437,12 @@
                   "assignee",
                   "priority",
                   "label",
-                  "milestone"
+                  "milestone",
+                  "project",
+                  "cycle",
+                  "parent",
+                  "team",
+                  "sla"
                 ],
                 "type": "string"
               },
@@ -15156,7 +15505,10 @@
                   "priority_desc",
                   "due_asc",
                   "sla_asc",
-                  "manual"
+                  "manual",
+                  "status_asc",
+                  "start_asc",
+                  "estimate_desc"
                 ],
                 "type": "string"
               },
@@ -15165,6 +15517,11 @@
               }
             ],
             "title": "Ordering"
+          },
+          "ordering_reversed": {
+            "default": false,
+            "title": "Ordering Reversed",
+            "type": "boolean"
           },
           "shared": {
             "default": false,
@@ -15195,7 +15552,10 @@
               "priority_desc",
               "due_asc",
               "sla_asc",
-              "manual"
+              "manual",
+              "status_asc",
+              "start_asc",
+              "estimate_desc"
             ],
             "title": "Sort",
             "type": "string"
@@ -15208,7 +15568,12 @@
                   "assignee",
                   "priority",
                   "label",
-                  "milestone"
+                  "milestone",
+                  "project",
+                  "cycle",
+                  "parent",
+                  "team",
+                  "sla"
                 ],
                 "type": "string"
               },
@@ -15367,6 +15732,11 @@
             ],
             "title": "Ordering"
           },
+          "ordering_reversed": {
+            "default": false,
+            "title": "Ordering Reversed",
+            "type": "boolean"
+          },
           "owner_id": {
             "title": "Owner Id",
             "type": "string"
@@ -15517,7 +15887,12 @@
                   "assignee",
                   "priority",
                   "label",
-                  "milestone"
+                  "milestone",
+                  "project",
+                  "cycle",
+                  "parent",
+                  "team",
+                  "sla"
                 ],
                 "type": "string"
               },
@@ -15578,7 +15953,10 @@
                   "priority_desc",
                   "due_asc",
                   "sla_asc",
-                  "manual"
+                  "manual",
+                  "status_asc",
+                  "start_asc",
+                  "estimate_desc"
                 ],
                 "type": "string"
               },
@@ -15587,6 +15965,17 @@
               }
             ],
             "title": "Ordering"
+          },
+          "ordering_reversed": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ordering Reversed"
           },
           "shared": {
             "anyOf": [
@@ -15642,7 +16031,10 @@
                   "priority_desc",
                   "due_asc",
                   "sla_asc",
-                  "manual"
+                  "manual",
+                  "status_asc",
+                  "start_asc",
+                  "estimate_desc"
                 ],
                 "type": "string"
               },
@@ -15660,7 +16052,12 @@
                   "assignee",
                   "priority",
                   "label",
-                  "milestone"
+                  "milestone",
+                  "project",
+                  "cycle",
+                  "parent",
+                  "team",
+                  "sla"
                 ],
                 "type": "string"
               },
@@ -16614,6 +17011,11 @@
           "blocked_by_open_count": {
             "default": 0,
             "title": "Blocked By Open Count",
+            "type": "integer"
+          },
+          "blocking_count": {
+            "default": 0,
+            "title": "Blocking Count",
             "type": "integer"
           },
           "body": {
@@ -23986,6 +24388,176 @@
         ]
       }
     },
+    "/api/workspaces/{workspace_id}/initiatives/{initiative_id}/follow": {
+      "delete": {
+        "description": "Unfollow an initiative, even one the caller owns.",
+        "operationId": "unfollow_initiative_api_workspaces__workspace_id__initiatives__initiative_id__follow_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "initiative_id",
+            "required": true,
+            "schema": {
+              "title": "Initiative Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PulseFollowRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Unfollow Initiative",
+        "tags": [
+          "planning"
+        ]
+      },
+      "get": {
+        "description": "Whether the caller follows an initiative in Pulse, and whether that is their own choice.",
+        "operationId": "get_initiative_follow_api_workspaces__workspace_id__initiatives__initiative_id__follow_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "initiative_id",
+            "required": true,
+            "schema": {
+              "title": "Initiative Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PulseFollowRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Get Initiative Follow",
+        "tags": [
+          "planning"
+        ]
+      },
+      "put": {
+        "description": "Follow an initiative, and with it every project inside it the caller has not unfollowed.",
+        "operationId": "follow_initiative_api_workspaces__workspace_id__initiatives__initiative_id__follow_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "initiative_id",
+            "required": true,
+            "schema": {
+              "title": "Initiative Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PulseFollowRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Follow Initiative",
+        "tags": [
+          "planning"
+        ]
+      }
+    },
     "/api/workspaces/{workspace_id}/initiatives/{initiative_id}/projects/{project_id}": {
       "delete": {
         "description": "Take a project out of an initiative; needs editor rights on the project.",
@@ -24565,7 +25137,7 @@
     },
     "/api/workspaces/{workspace_id}/issues": {
       "get": {
-        "description": "One page of the issues the caller may see, filtered and sorted.\n\nEvery id filter repeats, ORing its values, and `none` matches the unset field\nwhere the field can be unset. Filters are applied after the key read rather\nthan through an index, so adding one costs no GSI. The cursor is a position in\nthe filtered, sorted set and is bound to the filter, so a cursor carried to a\ndifferent filter starts over rather than skipping rows.\n\nThe exception is a filter on one person: `subscriber_id=me`, one `creator_id`\nor one `assignee_id` reads that person's own index instead of every team, which\nis what the My issues tabs ask for. `subscriber_id` takes only the caller,\nbecause what someone else follows is theirs to know.\n\nArchived issues are left out unless `include_archived` is set, and\n`archived_only` lists nothing but them, the archive view. That read goes\nstraight to each status's archived partition of the status index rather than\nreading every issue of the team and dropping the live ones. Issues awaiting\ntriage are left out the same way unless `include_triage` is set, and\n`triage_only` lists nothing but them.\n\n`include_sub_teams` with a `team_id` rolls that team's sub-teams the caller\nmay see into the list, so a parent team's views show its sub-teams' issues.\n\nEvery body carries `synced_at`. Sent back as `updated_since` with the same\nfilter, it turns the read into a delta: only the issues changed since, every\none in the list's sort order and unpaged, plus `removed_ids` for issues that\nleft the filter, were archived or were deleted. `resync_required` asks for a\nfull read instead, when the cursor is older than deletions are remembered or\nthe delta is too large to carry. A delta costs one key-bounded query per team\non the change feed index, so a poll that finds nothing reads almost nothing.\n\nA delta answer carries a weak `ETag` over its body. Two polls that find the\nsame thing answer the same body, so a poll that sends the tag back in\n`If-None-Match` gets a 304 with no body instead. A full read carries none,\nbecause its cursor moves with the clock.",
+        "description": "One page of the issues the caller may see, filtered and sorted.\n\nEvery id filter repeats, ORing its values, and `none` matches the unset field\nwhere the field can be unset. Filters are applied after the key read rather\nthan through an index, so adding one costs no GSI. The cursor is a position in\nthe filtered, sorted set and is bound to the filter, so a cursor carried to a\ndifferent filter starts over rather than skipping rows.\n\nThe exception is a filter on one person: `subscriber_id=me`, one `creator_id`\nor one `assignee_id` reads that person's own index instead of every team, which\nis what the My issues tabs ask for. `subscriber_id` takes only the caller,\nbecause what someone else follows is theirs to know.\n\nArchived issues are left out unless `include_archived` is set, and\n`archived_only` lists nothing but them, the archive view. That read goes\nstraight to each status's archived partition of the status index rather than\nreading every issue of the team and dropping the live ones. Issues awaiting\ntriage are left out the same way unless `include_triage` is set, and\n`triage_only` lists nothing but them.\n\n`include_sub_teams` with a `team_id` rolls that team's sub-teams the caller\nmay see into the list, so a parent team's views show its sub-teams' issues.\n`reverse` turns the sort around, issues lacking the sorted value still last.\n\nEvery body carries `synced_at`. Sent back as `updated_since` with the same\nfilter, it turns the read into a delta: only the issues changed since, every\none in the list's sort order and unpaged, plus `removed_ids` for issues that\nleft the filter, were archived or were deleted. `resync_required` asks for a\nfull read instead, when the cursor is older than deletions are remembered or\nthe delta is too large to carry. A delta costs one key-bounded query per team\non the change feed index, so a poll that finds nothing reads almost nothing.\n\nA delta answer carries a weak `ETag` over its body. Two polls that find the\nsame thing answer the same body, so a poll that sends the tag back in\n`If-None-Match` gets a 304 with no body instead. A full read carries none,\nbecause its cursor moves with the clock.",
         "operationId": "list_issues_api_workspaces__workspace_id__issues_get",
         "parameters": [
           {
@@ -25292,10 +25864,23 @@
                 "priority_desc",
                 "due_asc",
                 "sla_asc",
-                "manual"
+                "manual",
+                "status_asc",
+                "start_asc",
+                "estimate_desc"
               ],
               "title": "Sort",
               "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "reverse",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Reverse",
+              "type": "boolean"
             }
           },
           {
@@ -29125,6 +29710,176 @@
         ]
       }
     },
+    "/api/workspaces/{workspace_id}/projects/{project_id}/follow": {
+      "delete": {
+        "description": "Unfollow a project, even one the caller leads or is a member of.",
+        "operationId": "unfollow_project_api_workspaces__workspace_id__projects__project_id__follow_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PulseFollowRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Unfollow Project",
+        "tags": [
+          "planning"
+        ]
+      },
+      "get": {
+        "description": "Whether the caller follows a project in Pulse, and whether that is their own choice.",
+        "operationId": "get_project_follow_api_workspaces__workspace_id__projects__project_id__follow_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PulseFollowRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Get Project Follow",
+        "tags": [
+          "planning"
+        ]
+      },
+      "put": {
+        "description": "Follow a project, so its updates, health changes and milestones reach the caller's Pulse.",
+        "operationId": "follow_project_api_workspaces__workspace_id__projects__project_id__follow_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PulseFollowRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Follow Project",
+        "tags": [
+          "planning"
+        ]
+      }
+    },
     "/api/workspaces/{workspace_id}/projects/{project_id}/milestones": {
       "get": {
         "description": "Every milestone of one project, in its manual order, with progress counts.\n\nA project holds a bounded set, so the list is answered whole and never pages.",
@@ -29666,6 +30421,195 @@
           }
         ],
         "summary": "Update Update",
+        "tags": [
+          "planning"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/pulse": {
+      "get": {
+        "description": "One page of the caller's Pulse, newest first: what they follow, or everything they may read.",
+        "operationId": "list_pulse_api_workspaces__workspace_id__pulse_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "scope",
+            "required": false,
+            "schema": {
+              "default": "for_me",
+              "enum": [
+                "for_me",
+                "recent"
+              ],
+              "title": "Scope",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 25,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PulseListRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "List Pulse",
+        "tags": [
+          "planning"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/pulse/count": {
+      "get": {
+        "description": "How many entries of the caller's \"for me\" Pulse are unread, which the sidebar badge shows.",
+        "operationId": "count_pulse_api_workspaces__workspace_id__pulse_count_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PulseCountRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Count Pulse",
+        "tags": [
+          "planning"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/pulse/read": {
+      "post": {
+        "description": "Mark everything in the caller's Pulse read as of now.",
+        "operationId": "read_pulse_api_workspaces__workspace_id__pulse_read_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PulseReadMarker"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Read Pulse",
         "tags": [
           "planning"
         ]

@@ -25,9 +25,10 @@ from app.common.db.dynamo.comments import Comment
 from app.common.db.dynamo.issues import PRIORITY_ORDER, Issue, as_issue
 from app.common.db.dynamo.memberships import WORKSPACE_ROLES
 from app.common.db.dynamo.share_links import ShareLinkView
-from app.common.db.dynamo.team_config import Label, Status
+from app.common.db.dynamo.team_config import STATUS_CATEGORIES, Label, Status
 from app.common.db.dynamo.users import User
 from app.common.db.dynamo.views import SavedView
+from app.common.estimates import estimate_points, is_unestimated
 from app.common.filter_resolution import resolve_issue_filter
 from app.common.issue_filters import IssueFilter, UnknownStatusCategory, build_issue_filter
 from app.common.issue_keys import current_all
@@ -324,22 +325,36 @@ def shared_issues(
 
     wanted = resolve_issue_filter(repositories, workspace_id, [team_id], wanted)
     categories: dict[str, str] = {}
-    if wanted.needs_categories:
-        categories = {
-            row.status_id: row.category for row in repositories.team_config.list_statuses(workspace_id, team_id)
-        }
+    ranks: dict[str, tuple[int, int]] = {}
+    if wanted.needs_categories or sort == "status_asc":
+        statuses = repositories.team_config.list_statuses(workspace_id, team_id)
+        categories = {row.status_id: row.category for row in statuses}
+        ranks = {row.status_id: (_category_rank(row.category), row.position) for row in statuses}
 
     matched = [issue for issue in rows if wanted.matches(issue, categories)]
-    ordered = merge_sorted(matched, shared_sort_key(sort), descending=shared_sort_descending(sort))
+    ordered = merge_sorted(matched, shared_sort_key(sort, ranks), descending=shared_sort_descending(sort))
     chosen = ordered[start : start + limit]
     return chosen, start + len(chosen) < len(ordered)
 
 
-def shared_sort_key(sort: str) -> Callable[[Issue], Any]:
+def _category_rank(category: str) -> int:
+    """Where one status category sits on a board, an unknown one after every known one."""
+    return STATUS_CATEGORIES.index(category) if category in STATUS_CATEGORIES else len(STATUS_CATEGORIES)
+
+
+def _status_rank(issue: Issue, ranks: Mapping[str, tuple[int, int]]) -> tuple[int, int]:
+    """Where one issue's status sits on its team's board, triage first and a vanished status last."""
+    if issue.in_triage:
+        return (-1, 0)
+    return ranks.get(issue.status_id, (len(STATUS_CATEGORIES), 0))
+
+
+def shared_sort_key(sort: str, ranks: Optional[Mapping[str, tuple[int, int]]] = None) -> Callable[[Issue], Any]:
     """The key one saved sort orders a shared listing by.
 
     The same meaning the member issue list gives each sort, spelled here because
-    the issues domain is not importable from this one.
+    the issues domain is not importable from this one. `ranks` maps the team's
+    status ids to their board place for the status sort.
     """
     if sort == "created_desc":
         return lambda issue: (issue.created_at, issue.issue_id)
@@ -353,12 +368,19 @@ def shared_sort_key(sort: str) -> Callable[[Issue], Any]:
         return sla_breach_key
     if sort == "manual":
         return lambda issue: (issue.sort_order is None, issue.sort_order or "", issue.issue_id)
+    if sort == "status_asc":
+        held = ranks or {}
+        return lambda issue: (_status_rank(issue, held), PRIORITY_ORDER.get(issue.priority, 4), issue.issue_id)
+    if sort == "start_asc":
+        return lambda issue: (issue.start_date is None, issue.start_date or "", issue.issue_id)
+    if sort == "estimate_desc":
+        return lambda issue: (not is_unestimated(issue.estimate), estimate_points(issue.estimate), issue.issue_id)
     return lambda issue: (issue.updated_at, issue.issue_id)
 
 
 def shared_sort_descending(sort: str) -> bool:
     """Whether one saved sort reads newest or highest first."""
-    return sort not in ("key_asc", "due_asc", "sla_asc", "manual")
+    return sort not in ("key_asc", "due_asc", "sla_asc", "manual", "status_asc", "start_asc")
 
 
 DEFAULT_SORT: SortField = "updated_desc"

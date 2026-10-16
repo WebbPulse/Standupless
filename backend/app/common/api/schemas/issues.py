@@ -44,7 +44,18 @@ ActivityKindField = Literal[
     "subscriber_removed",
 ]
 
-SortField = Literal["updated_desc", "created_desc", "key_asc", "priority_desc", "due_asc", "sla_asc", "manual"]
+SortField = Literal[
+    "updated_desc",
+    "created_desc",
+    "key_asc",
+    "priority_desc",
+    "due_asc",
+    "sla_asc",
+    "manual",
+    "status_asc",
+    "start_asc",
+    "estimate_desc",
+]
 
 ISSUE_KEY_PATTERN = re.compile(r"^([A-Za-z][A-Za-z0-9]{1,5})-(\d+)$")
 
@@ -333,6 +344,7 @@ class IssueRead(BaseModel):
     sort_order: Optional[str] = None
     progress: ProgressRead
     blocked_by_open_count: int = 0
+    blocking_count: int = 0
     pull_request_summary: Optional[PullRequestSummaryRead] = None
     created_by: str
     created_at: datetime
@@ -370,6 +382,7 @@ class IssueRead(BaseModel):
             sort_order=issue.sort_order,
             progress=ProgressRead(total=issue.progress.total, completed=issue.progress.completed),
             blocked_by_open_count=issue.blocked_by_open_count,
+            blocking_count=issue.blocking_count,
             pull_request_summary=PullRequestSummaryRead.from_summary(issue.pull_request_summary),
             created_by=issue.created_by,
             created_at=issue.created_at,

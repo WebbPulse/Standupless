@@ -3,7 +3,8 @@
  * names, that the running cycle leads the page while the rest group into
  * upcoming and past, that creating sends no status because the server derives
  * it, that the controls a role may not use are not drawn, and that velocity
- * and capacity guidance read under the current cycle. A parent team's list
+ * and capacity guidance read under the current cycle, with the velocity chart
+ * at a fixed height and small text whatever the width. A parent team's list
  * rolls up its sub-teams' cycles on the same dates until the toggle narrows
  * it to the team alone.
  */
@@ -214,6 +215,17 @@ describe('velocity', () => {
       within(panel).getByText('Average 5 issues over the last 2 cycles')
     ).toBeInTheDocument();
     expect(within(panel).getAllByTestId('velocity-bar')).toHaveLength(2);
+  });
+
+  it('draws the velocity chart at a fixed height with small text', async () => {
+    renderPage();
+
+    const panel = await screen.findByRole('region', { name: 'Velocity' });
+    const svg = within(panel).getByTestId('velocity-svg');
+    expect(svg).toHaveAttribute('height', '160');
+    for (const label of Array.from(svg.querySelectorAll('text'))) {
+      expect(label).toHaveAttribute('font-size', '11');
+    }
   });
 
   it('guides capacity against the average and counts the carry-over', async () => {

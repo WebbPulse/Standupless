@@ -49,6 +49,7 @@ def test_the_caller_reads_their_own_row(client: TestClient, repositories: Any) -
         "avatar_url": None,
         "two_factor": False,
         "timezone": None,
+        "pulse_digest": "off",
     }
 
 
@@ -74,6 +75,22 @@ def test_email_notifications_default_on_and_can_be_turned_off(client: TestClient
 
     assert repositories.users.get(OWNER).email_notifications is False
     assert client.get("/api/users/me").json()["email_notifications"] is False
+
+
+def test_the_pulse_digest_defaults_off_and_takes_a_cadence(client: TestClient, repositories: Any) -> None:
+    """The digest is opt in, takes daily or weekly, and refuses a cadence it does not have."""
+    make_user(repositories, OWNER, "owner@example.com", display_name="Owner")
+    sign_in(client, OWNER)
+
+    assert client.get("/api/users/me").json()["pulse_digest"] == "off"
+
+    response = client.patch("/api/users/me/preferences", json={"pulse_digest": "weekly"})
+    assert response.status_code == 200
+    assert response.json()["pulse_digest"] == "weekly"
+    assert repositories.users.get(OWNER).pulse_digest == "weekly"
+
+    assert client.patch("/api/users/me/preferences", json={"pulse_digest": "hourly"}).status_code == 422
+    assert client.patch("/api/users/me/preferences", json={"pulse_digest": "off"}).json()["pulse_digest"] == "off"
 
 
 def test_one_kind_can_be_turned_off_per_channel(client: TestClient, repositories: Any) -> None:

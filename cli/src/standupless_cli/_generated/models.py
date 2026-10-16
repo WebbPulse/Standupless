@@ -1204,6 +1204,51 @@ class PullRequestSummaryRead(TypedDict):
     pull_requests: list[PullRequestSummaryEntryRead]
 
 
+class PulseCountRead(TypedDict):
+    unread: int
+
+
+class PulseFollowRead(TypedDict):
+    explicit: bool
+    following: bool
+
+
+class PulseItemRead(TypedDict):
+    actor_id: NotRequired[str | None]
+    actor_name: NotRequired[str]
+    body: NotRequired[str | None]
+    created_at: str
+    edited_at: NotRequired[str | None]
+    event_id: str
+    event_type: Literal[
+        "project_update", "initiative_update", "project_health", "initiative_health", "milestone_completed"
+    ]
+    health: NotRequired[Literal["on_track", "at_risk", "off_track"] | None]
+    initiative_id: NotRequired[str | None]
+    initiative_name: NotRequired[str | None]
+    milestone_id: NotRequired[str | None]
+    milestone_name: NotRequired[str | None]
+    previous_health: NotRequired[Literal["on_track", "at_risk", "off_track"] | None]
+    project_color: NotRequired[str | None]
+    project_icon: NotRequired[str | None]
+    project_id: NotRequired[str | None]
+    project_name: NotRequired[str | None]
+    source: NotRequired[Literal["web", "mcp", "cli", "api", "github", "system"] | None]
+    subject_type: Literal["project", "initiative"]
+    unread: NotRequired[bool]
+    update_id: NotRequired[str | None]
+    workspace_id: str
+
+
+class PulseListRead(TypedDict):
+    items: list[PulseItemRead]
+    next_cursor: NotRequired[str | None]
+
+
+class PulseReadMarker(TypedDict):
+    read_at: str
+
+
 class ReactionGroupRead(TypedDict):
     count: int
     emoji: str
@@ -1452,7 +1497,19 @@ class ShareLinkCreate(TypedDict):
     expires_in_days: NotRequired[int | None]
     filter: NotRequired[dict[str, Any] | None]
     sort: NotRequired[
-        Literal["updated_desc", "created_desc", "key_asc", "priority_desc", "due_asc", "sla_asc", "manual"] | None
+        Literal[
+            "updated_desc",
+            "created_desc",
+            "key_asc",
+            "priority_desc",
+            "due_asc",
+            "sla_asc",
+            "manual",
+            "status_asc",
+            "start_asc",
+            "estimate_desc",
+        ]
+        | None
     ]
     target_id: str
     target_type: Literal["issue", "view", "filter"]
@@ -2057,6 +2114,7 @@ class UserPreferencesUpdate(TypedDict):
         ]
         | None
     ]
+    pulse_digest: NotRequired[Literal["off", "daily", "weekly"] | None]
     timezone: NotRequired[str | None]
 
 
@@ -2068,6 +2126,7 @@ class UserRead(TypedDict):
     email_verified: bool
     id: str
     notification_preferences: dict[str, NotificationChannels]
+    pulse_digest: NotRequired[Literal["off", "daily", "weekly"]]
     timezone: NotRequired[str | None]
     two_factor: NotRequired[bool]
 
@@ -2106,22 +2165,52 @@ class ViewCreate(TypedDict):
     ]
     description: NotRequired[str | None]
     filter: NotRequired[dict[str, Any]]
-    group_by: NotRequired[Literal["status", "assignee", "priority", "label", "milestone"] | None]
+    group_by: NotRequired[
+        Literal["status", "assignee", "priority", "label", "milestone", "project", "cycle", "parent", "team", "sla"]
+        | None
+    ]
     icon: NotRequired[str | None]
     kind: NotRequired[Literal["list", "board"]]
     layout: NotRequired[Literal["list", "board"] | None]
     name: str
     ordering: NotRequired[
-        Literal["updated_desc", "created_desc", "key_asc", "priority_desc", "due_asc", "sla_asc", "manual"] | None
+        Literal[
+            "updated_desc",
+            "created_desc",
+            "key_asc",
+            "priority_desc",
+            "due_asc",
+            "sla_asc",
+            "manual",
+            "status_asc",
+            "start_asc",
+            "estimate_desc",
+        ]
+        | None
     ]
+    ordering_reversed: NotRequired[bool]
     shared: NotRequired[bool]
     show_archived: NotRequired[bool]
     show_completed: NotRequired[bool]
     show_sub_issues: NotRequired[bool]
     sort: NotRequired[
-        Literal["updated_desc", "created_desc", "key_asc", "priority_desc", "due_asc", "sla_asc", "manual"]
+        Literal[
+            "updated_desc",
+            "created_desc",
+            "key_asc",
+            "priority_desc",
+            "due_asc",
+            "sla_asc",
+            "manual",
+            "status_asc",
+            "start_asc",
+            "estimate_desc",
+        ]
     ]
-    sub_group_by: NotRequired[Literal["status", "assignee", "priority", "label", "milestone"] | None]
+    sub_group_by: NotRequired[
+        Literal["status", "assignee", "priority", "label", "milestone", "project", "cycle", "parent", "team", "sla"]
+        | None
+    ]
     team_id: NotRequired[str | None]
     visible_properties: NotRequired[
         list[
@@ -2159,6 +2248,7 @@ class ViewRead(TypedDict):
     layout: str
     name: str
     ordering: NotRequired[str | None]
+    ordering_reversed: NotRequired[bool]
     owner_id: str
     scope: str
     show_archived: NotRequired[bool]
@@ -2179,21 +2269,52 @@ class ViewUpdate(TypedDict):
     ]
     description: NotRequired[str | None]
     filter: NotRequired[dict[str, Any] | None]
-    group_by: NotRequired[Literal["status", "assignee", "priority", "label", "milestone"] | None]
+    group_by: NotRequired[
+        Literal["status", "assignee", "priority", "label", "milestone", "project", "cycle", "parent", "team", "sla"]
+        | None
+    ]
     icon: NotRequired[str | None]
     layout: NotRequired[Literal["list", "board"] | None]
     name: NotRequired[str | None]
     ordering: NotRequired[
-        Literal["updated_desc", "created_desc", "key_asc", "priority_desc", "due_asc", "sla_asc", "manual"] | None
+        Literal[
+            "updated_desc",
+            "created_desc",
+            "key_asc",
+            "priority_desc",
+            "due_asc",
+            "sla_asc",
+            "manual",
+            "status_asc",
+            "start_asc",
+            "estimate_desc",
+        ]
+        | None
     ]
+    ordering_reversed: NotRequired[bool | None]
     shared: NotRequired[bool | None]
     show_archived: NotRequired[bool | None]
     show_completed: NotRequired[bool | None]
     show_sub_issues: NotRequired[bool | None]
     sort: NotRequired[
-        Literal["updated_desc", "created_desc", "key_asc", "priority_desc", "due_asc", "sla_asc", "manual"] | None
+        Literal[
+            "updated_desc",
+            "created_desc",
+            "key_asc",
+            "priority_desc",
+            "due_asc",
+            "sla_asc",
+            "manual",
+            "status_asc",
+            "start_asc",
+            "estimate_desc",
+        ]
+        | None
     ]
-    sub_group_by: NotRequired[Literal["status", "assignee", "priority", "label", "milestone"] | None]
+    sub_group_by: NotRequired[
+        Literal["status", "assignee", "priority", "label", "milestone", "project", "cycle", "parent", "team", "sla"]
+        | None
+    ]
     visible_properties: NotRequired[
         list[
             Literal[
@@ -2346,6 +2467,7 @@ class AppCommonApiSchemasIssuesIssueRead(TypedDict):
     archived_at: NotRequired[str | None]
     assignee_id: NotRequired[str | None]
     blocked_by_open_count: NotRequired[int]
+    blocking_count: NotRequired[int]
     body: NotRequired[str | None]
     created_at: str
     created_by: str

@@ -40,6 +40,7 @@ from typing import Any, Mapping
 from fastapi import APIRouter
 from webbpulse.events import deserialize_image, record_id, register_stream_consumer
 
+from app.common import pulse
 from app.common.api.dependencies.repositories import Repositories
 from app.common.composition.consumers import CONSUMERS
 from app.common.db.dynamo.planning import (
@@ -47,6 +48,7 @@ from app.common.db.dynamo.planning import (
     COUNT_BUCKETS,
     POINT_PREFIX,
     UNESTIMATED_PREFIX,
+    ProjectMilestone,
     cycle_key,
     milestone_key,
     parse_cycle_key,
@@ -245,7 +247,35 @@ def recount_project(
             continue
         if repositories.planning.set_counts(workspace_id, planning_key, counts, statuses):
             written += 1
+    for milestone in milestones:
+        before = stored[milestone_key(project_id, milestone.milestone_id)]
+        post_milestone_completion(repositories, milestone, before, milestone_counts[milestone.milestone_id])
     return written
+
+
+def is_complete(counts: Mapping[str, int]) -> bool:
+    """Whether a milestone is complete: something in it is done and nothing is left to do."""
+    return counts.get("done", 0) > 0 and counts.get("todo", 0) == 0 and counts.get("in_progress", 0) == 0
+
+
+def post_milestone_completion(
+    repositories: Repositories, milestone: ProjectMilestone, before: Mapping[str, int], after: Mapping[str, int]
+) -> None:
+    """Post a milestone to Pulse when its last open issue closed, and forget that when it reopens.
+
+    The completion is claimed on the milestone row before it is posted, so a
+    redelivered record posts it once.
+    """
+    was, now = is_complete(before), is_complete(after)
+    if now and not was:
+        if repositories.planning.claim_milestone_completion(
+            milestone.workspace_id, milestone.project_id, milestone.milestone_id
+        ):
+            pulse.record_milestone_completed(repositories, milestone)
+    elif was and not now:
+        repositories.planning.clear_milestone_completion(
+            milestone.workspace_id, milestone.project_id, milestone.milestone_id
+        )
 
 
 def _zeroed_counts() -> dict[str, int]:

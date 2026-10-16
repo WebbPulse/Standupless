@@ -1,7 +1,9 @@
 """One page of an issue's history, shared by the activity route and the MCP tool.
 
 Both read the same rows through the same visibility check and the same cursor
-scope, so a cursor one hands out is one the other accepts.
+scope, so a cursor one hands out is one the other accepts. A row naming another
+issue answers that issue under its team's current key prefix, so history written
+before a team key change reads the keys shown everywhere else.
 """
 
 from __future__ import annotations
@@ -15,7 +17,37 @@ from app.common.api.dependencies.repositories import Repositories
 from app.common.api.pagination import resume_key
 from app.common.change_source import source_for
 from app.common.db.dynamo.activity import Activity, as_activity
+from app.common.issue_keys import current_reference_value, is_issue_reference, retired_prefixes
 from app.common.issue_rules import load_visible_issue
+
+
+def _names_an_issue(value: object) -> bool:
+    """Whether an activity value, or any item of a list one, names an issue by key."""
+    if isinstance(value, list):
+        return any(is_issue_reference(item) for item in value)
+    return is_issue_reference(value)
+
+
+def with_current_keys(repositories: Repositories, workspace_id: str, rows: list[Activity]) -> list[Activity]:
+    """`rows` with every issue they name under its team's current key prefix.
+
+    The workspace's retired prefixes are read only when a row on the page names an
+    issue, so a page of status and field changes costs no extra read.
+    """
+    if not any(_names_an_issue(row.from_value) or _names_an_issue(row.to_value) for row in rows):
+        return rows
+    renames = retired_prefixes(repositories.teams, workspace_id)
+    if not renames:
+        return rows
+    return [
+        row.model_copy(
+            update={
+                "from_value": current_reference_value(row.from_value, renames),
+                "to_value": current_reference_value(row.to_value, renames),
+            }
+        )
+        for row in rows
+    ]
 
 
 def activity_page(
@@ -44,4 +76,5 @@ def activity_page(
     rows = [as_activity(item) for item in page.items]
     if source is not None:
         rows = [row for row in rows if source_for(row.source, row.actor_kind) == source]
+    rows = with_current_keys(repositories, context.workspace_id, rows)
     return rows, encode_start_key(page.last_evaluated_key, scope=scope)

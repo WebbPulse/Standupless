@@ -455,6 +455,10 @@ export const IssuePropertiesPanel: React.FC<IssuePropertiesPanelProps> = ({
           links={links}
           canEdit={canEdit}
           hideEmpty
+          resolved={['completed', 'cancelled'].includes(
+            statuses.find((status) => status.id === issue.status_id)
+              ?.category ?? ''
+          )}
           onAdd={onAddRelation}
         />
         <IssueResources

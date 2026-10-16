@@ -166,6 +166,7 @@ def create_saved_view(repositories: Repositories, context: AuthzContext, payload
         group_by=payload.group_by,
         sub_group_by=payload.sub_group_by,
         ordering=payload.ordering,
+        ordering_reversed=payload.ordering_reversed,
         visible_properties=list(payload.visible_properties) if payload.visible_properties is not None else None,
         layout=payload.layout or payload.kind,
         show_sub_issues=payload.show_sub_issues,

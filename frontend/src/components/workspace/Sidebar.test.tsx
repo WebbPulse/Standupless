@@ -51,6 +51,7 @@ const listViews = vi.fn<() => Promise<SavedViewRead[]>>();
 const listFavorites = vi.fn<() => Promise<FavoriteRead[]>>();
 const getTriageSummary = vi.fn<() => Promise<TriageSummaryRead>>();
 const getReviews = vi.fn<() => Promise<ReviewsRead>>();
+const getPulseCount = vi.fn<() => Promise<number>>();
 
 vi.mock('../../hooks/useAuth', () => ({
   useAuth: () => ({
@@ -88,6 +89,10 @@ vi.mock('../../api/triage', () => ({
 
 vi.mock('../../api/reviews', () => ({
   getReviews: () => getReviews(),
+}));
+
+vi.mock('../../api/pulse', () => ({
+  getPulseCount: () => getPulseCount(),
 }));
 
 vi.mock('@webbpulse/auth/react', async () => {
@@ -229,6 +234,8 @@ beforeEach(() => {
     counts: { needs_review: 0, changes_requested: 0, approved: 0 },
     items: [],
   });
+  getPulseCount.mockReset();
+  getPulseCount.mockResolvedValue(0);
   globalThis.localStorage.clear();
 });
 
@@ -247,6 +254,10 @@ describe('the workspace level links', () => {
     expect(screen.getByRole('link', { name: 'Reviews' })).toHaveAttribute(
       'href',
       '/w/mine/reviews'
+    );
+    expect(screen.getByRole('link', { name: 'Pulse' })).toHaveAttribute(
+      'href',
+      '/w/mine/pulse'
     );
     expect(screen.getByRole('link', { name: 'Projects' })).toHaveAttribute(
       'href',
@@ -279,6 +290,26 @@ describe('the reviews badge', () => {
 
     expect(
       await screen.findByLabelText('3 waiting for your review')
+    ).toBeInTheDocument();
+  });
+});
+
+describe('the Pulse badge', () => {
+  it('counts the unread Pulse entries', async () => {
+    getPulseCount.mockResolvedValue(4);
+    renderSidebar();
+
+    expect(
+      await screen.findByLabelText('4 unread in Pulse')
+    ).toBeInTheDocument();
+  });
+
+  it('saturates at 99+', async () => {
+    getPulseCount.mockResolvedValue(250);
+    renderSidebar();
+
+    expect(
+      await screen.findByLabelText('99+ unread in Pulse')
     ).toBeInTheDocument();
   });
 });

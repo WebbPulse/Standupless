@@ -174,6 +174,16 @@ def test_list_issues_pages_with_a_cursor(client: TestClient, repositories: Any, 
     assert second["next_cursor"] is None
 
 
+def test_list_issues_reverses_the_sort(client: TestClient, repositories: Any, issue: Issue) -> None:
+    """`reverse` turns the key order around, the newest number first."""
+    seed_issue(repositories, WORKSPACE, TEAM, "01JB0000000000000000000IS3", "ABC", 2)
+    secret = mint_for(repositories, MEMBER, ("issues:read",))
+
+    rows = answer(tool(client, secret, "list_issues", {"team_id": TEAM, "sort": "key_asc", "reverse": True}))["issues"]
+
+    assert [row["issue_key"] for row in rows] == ["ABC-2", "ABC-1"]
+
+
 def test_list_issues_filters_by_cycle_project_label_and_status(
     client: TestClient, repositories: Any, issue: Issue, planning: dict[str, str]
 ) -> None:
@@ -584,6 +594,34 @@ def test_project_updates_are_posted_and_listed_newest_first(
     assert listed["updates"][0]["created_at"] >= listed["updates"][1]["created_at"]
     assert repositories.planning.get_project(WORKSPACE, project_id).health == "at_risk"
     assert refused
+
+
+def test_the_pulse_lists_followed_updates_and_follows_change_it(
+    client: TestClient, repositories: Any, planning: dict[str, str]
+) -> None:
+    """A followed project's update reaches the caller's Pulse unread, and unfollowing drops it."""
+    poster = mint_for(repositories, ADMIN, ("projects:write",))
+    writer = mint_for(repositories, MEMBER, ("projects:write",))
+    reader = mint_for(repositories, MEMBER, ("projects:read",))
+    project_id = planning["project_id"]
+
+    followed = answer(tool(client, writer, "follow_project", {"project_id": project_id}))
+    update = {"project_id": project_id, "body": "Shipped", "health": "on_track"}
+    answer(tool(client, poster, "create_project_update", update))
+    listed = answer(tool(client, reader, "list_pulse", {}))
+    marked = answer(tool(client, writer, "mark_pulse_read", {}))
+    after_read = answer(tool(client, reader, "list_pulse", {}))
+    unfollowed = answer(tool(client, writer, "unfollow_project", {"project_id": project_id}))
+    after_unfollow = answer(tool(client, reader, "list_pulse", {}))
+
+    assert (followed["project_id"], followed["following"], followed["explicit"]) == (project_id, True, True)
+    assert [row["body"] for row in listed["items"]] == ["Shipped"]
+    assert listed["items"][0]["unread"] is True
+    assert listed["unread"] == 1
+    assert marked["read_at"]
+    assert after_read["unread"] == 0
+    assert unfollowed["following"] is False
+    assert after_unfollow["items"] == []
 
 
 def test_a_guest_cannot_create_a_project_on_a_team_they_cannot_see(

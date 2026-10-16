@@ -529,3 +529,90 @@ def render_standup_digest(
         tags={"purpose": "notification", "kind": STANDUP_DIGEST},
         accent=accent,
     )
+
+
+PULSE_DIGEST = "pulse_digest"
+
+PULSE_DIGEST_LINE_LIMIT = 20
+"""How many entries a Pulse digest lists before pointing at the Pulse page."""
+
+_PULSE_REASON = (
+    "You are receiving this because you turned on the Pulse digest for the projects and initiatives you follow. "
+    "Turn it off in your {product} notification settings."
+)
+
+
+def pulse_url(workspace_slug: str) -> str:
+    """The SPA link to one workspace's Pulse, or to the workspace list when the slug is gone."""
+    base = settings.frontend_base_url
+    if not workspace_slug:
+        return f"{base}/workspaces"
+    return f"{base}/w/{quote(workspace_slug, safe='')}/pulse"
+
+
+def pulse_line(
+    *,
+    event_type: str,
+    actor_name: str,
+    project_name: str,
+    initiative_name: str,
+    milestone_name: str,
+    health: str,
+    body: str,
+) -> ListItem:
+    """One Pulse entry as one line of the digest, with the update's excerpt beneath it."""
+    actor = actor_name.strip() or "Someone"
+    project = project_name.strip() or "Untitled project"
+    initiative = initiative_name.strip() or "Untitled initiative"
+    health_label = _HEALTH_LABELS.get(health, "updated").lower()
+    if event_type == "project_update":
+        return ListItem(f"{actor} posted an update on {project}, {health_label}", excerpt(body))
+    if event_type == "initiative_update":
+        return ListItem(f"{actor} posted an update on {initiative}, {health_label}", excerpt(body))
+    if event_type == "project_health":
+        return ListItem(f"{actor} marked {project} {health_label}")
+    if event_type == "initiative_health":
+        return ListItem(f"{actor} marked {initiative} {health_label}")
+    milestone = milestone_name.strip() or "A milestone"
+    return ListItem(f"{milestone} in {project} is complete")
+
+
+def render_pulse_digest(
+    lines: Sequence[ListItem],
+    *,
+    total: int,
+    cadence: str,
+    to: str,
+    workspace_name: str,
+    workspace_slug: str,
+    accent: str | None = None,
+) -> EmailMessage:
+    """Render one person's Pulse digest: what changed in what they follow since the last one.
+
+    The subject names the workspace, so each workspace's digest threads apart.
+    Past `PULSE_DIGEST_LINE_LIMIT` entries it points at the Pulse page, which
+    always holds the whole feed.
+    """
+    workspace = workspace_name.strip() or "your workspace"
+    period = "week" if cadence == "weekly" else "day"
+    label = "Weekly" if cadence == "weekly" else "Daily"
+    count = "1 update" if total == 1 else f"{total} updates"
+    blocks: list[EmailBlock] = [
+        Heading(f"{label} Pulse for {workspace}"),
+        Paragraph(f"{count} from the projects and initiatives you follow this past {period}."),
+        BulletList(tuple(lines[:PULSE_DIGEST_LINE_LIMIT])),
+    ]
+    hidden = total - min(len(lines), PULSE_DIGEST_LINE_LIMIT)
+    if hidden > 0:
+        blocks.append(Paragraph(f"And {hidden} more in Pulse.", muted=True))
+    blocks.append(Button("Open Pulse", pulse_url(workspace_slug), show_url=True))
+    return render(
+        to=to,
+        subject=f"{label} Pulse for {workspace}",
+        preheader=f"{count} from the projects and initiatives you follow.",
+        blocks=blocks,
+        footer_note=_PULSE_REASON.format(product=settings.PROJECT_NAME),
+        footer_links=_settings_link(workspace_slug),
+        tags={"purpose": "notification", "kind": PULSE_DIGEST},
+        accent=accent,
+    )

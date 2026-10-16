@@ -11,6 +11,10 @@ rather than a read at list time. A list or board page would otherwise query the
 relations of every row it shows, one query per issue, while the count only moves
 on a link write or a blocker's status change, both of which already pass through
 this domain.
+
+The blocking marker is `blocking_count` on the blocker's row for the same reason:
+how many `blocks` links an issue holds while its own status is open, the same
+rule the `is_blocking` filter reads, and zero once the issue is finished.
 """
 
 from __future__ import annotations
@@ -39,6 +43,15 @@ def issue_reference(repositories: Repositories, issue: Issue) -> dict[str, str]:
     """
     shown = current(repositories.teams, issue)
     return {"id": shown.issue_id, "key": shown.key, "title": shown.title}
+
+
+def blocking_side(relation: Relation) -> str | None:
+    """Which issue of a link is the blocker, or `None` for a non-blocking link."""
+    if relation.relation_type == "blocked_by":
+        return relation.target_issue_id
+    if relation.relation_type == "blocks":
+        return relation.issue_id
+    return None
 
 
 def blocked_side(relation: Relation) -> str | None:
@@ -82,6 +95,29 @@ def recount_blocked(repositories: Repositories, workspace_id: str, issue_id: str
     return count
 
 
+def recount_blocking(repositories: Repositories, workspace_id: str, issue_id: str) -> int | None:
+    """Write how many issues one open issue blocks, answering the count.
+
+    Recounted from the stored links like `recount_blocked`, and zero while the
+    issue itself is completed or cancelled, which is when Linear stops showing it
+    as blocking. Nothing is written when the count already holds or the issue is gone.
+    """
+    issue = repositories.issues.get(workspace_id, issue_id)
+    if issue is None:
+        return None
+    categories = categories_for(repositories, workspace_id, [issue.team_id])
+    count = 0
+    if categories.get(issue.status_id) not in COMPLETED_CATEGORIES:
+        count = sum(
+            1
+            for relation in repositories.relations.list_for_issue(workspace_id, issue_id, limit=1000)
+            if relation.relation_type == "blocks"
+        )
+    if issue.blocking_count != count:
+        repositories.issues.set_blocking_count(workspace_id, issue_id, count)
+    return count
+
+
 def recount_blocked_by(repositories: Repositories, workspace_id: str, blocker_id: str) -> list[str]:
     """Recount every issue one issue blocks, answering their ids.
 
@@ -100,19 +136,20 @@ def recount_blocked_by(repositories: Repositories, workspace_id: str, blocker_id
 
 
 def delete_relations(repositories: Repositories, workspace_id: str, issue_id: str) -> None:
-    """Remove every link of an issue being deleted, then recount the issues it blocked.
+    """Remove every link of an issue being deleted, then recount both sides it touched.
 
-    The blocked side is read before the rows go, because afterwards nothing names
-    it, and an issue that lost its only open blocker must lose its marker too.
+    The far sides are read before the rows go, because afterwards nothing names
+    them: an issue that lost its only open blocker must lose its blocked marker,
+    and a blocker that lost its only blocked issue must lose its blocking marker.
     """
-    blocked = [
-        relation.target_issue_id
-        for relation in repositories.relations.list_for_issue(workspace_id, issue_id, limit=1000)
-        if relation.relation_type == "blocks"
-    ]
+    relations = repositories.relations.list_for_issue(workspace_id, issue_id, limit=1000)
+    blocked = [relation.target_issue_id for relation in relations if relation.relation_type == "blocks"]
+    blockers = [relation.target_issue_id for relation in relations if relation.relation_type == "blocked_by"]
     repositories.relations.delete_for_issue(workspace_id, issue_id)
     for blocked_id in dict.fromkeys(blocked):
         recount_blocked(repositories, workspace_id, blocked_id)
+    for blocker_id in dict.fromkeys(blockers):
+        recount_blocking(repositories, workspace_id, blocker_id)
 
 
 def cancelled_status(repositories: Repositories, workspace_id: str, team_id: str) -> Status | None:

@@ -1,7 +1,9 @@
 """What a link or a parent change writes beyond its own rows.
 
 Closing a duplicate, the sub-issue history on a parent, the target named in a
-removed link, the denormalised blocked count and the status a link carries back.
+removed link, the denormalised blocked and blocking counts and the status a link
+carries back. History written before a team key change names its issues under
+the current key.
 """
 
 from __future__ import annotations
@@ -10,9 +12,11 @@ from typing import Any
 
 from fastapi.testclient import TestClient
 
+from app.common import issue_keys
+from app.common.issue_keys import current_reference_value
 from app.domains.issues.consumers.rollup import handle_record, status_moved
 from tests.domains.helpers import OWNER, sign_in
-from tests.domains.issues.conftest import OTHER_TEAM, create_issue
+from tests.domains.issues.conftest import OTHER_TEAM, TEAM, create_issue
 
 
 def _link(client: TestClient, workspace: str, source: Any, target: Any, kind: str) -> Any:
@@ -108,6 +112,45 @@ def test_setting_a_parent_writes_child_added_on_it(client: TestClient, workspace
     assert added["to"] == {"id": child["id"], "key": child["key"], "title": "Child"}
     assert added["actor_id"] == OWNER
     assert any(row["field"] == "parent_id" for row in _feed(client, workspace, child))
+
+
+def test_history_written_before_a_key_change_shows_the_current_key(
+    client: TestClient, workspace: str, repositories: Any, statuses: Any
+) -> None:
+    """A sub-issue and a link recorded as `ABC-n` read as `NEW-n` once the team is renamed."""
+    sign_in(client, OWNER)
+    parent = create_issue(client, workspace, title="Parent")
+    child = create_issue(client, workspace, title="Child")
+    blocker = create_issue(client, workspace, title="Blocker")
+    client.patch(f"/api/workspaces/{workspace}/issues/{child['id']}", json={"parent_id": parent["id"]})
+    _link(client, workspace, parent, blocker, "blocked_by")
+    stored = [row.get("to_value") for row in repositories.activity.list_for_issue(workspace, parent["id"]).items]
+    assert {"id": child["id"], "key": child["key"], "title": "Child"} in stored
+
+    repositories.teams.change_key_prefix(workspace, TEAM, "NEW")
+    issue_keys.clear()
+
+    feed = _feed(client, workspace, parent)
+    added = next(row for row in feed if row["kind"] == "child_added")
+    linked = next(row for row in feed if isinstance(row["to"], dict) and row["to"].get("id") == blocker["id"])
+    number = child["key"].rpartition("-")[2]
+    assert added["to"] == {"id": child["id"], "key": f"NEW-{number}", "title": "Child"}
+    assert linked["to"]["key"] == f"NEW-{blocker['key'].rpartition('-')[2]}"
+
+
+def test_current_reference_value_rewrites_only_retired_issue_keys() -> None:
+    """Only the key of an issue reference under a retired prefix changes."""
+    renames = {"SUP": "STUP"}
+
+    assert current_reference_value({"id": "i1", "key": "SUP-28", "title": "T"}, renames) == {
+        "id": "i1",
+        "key": "STUP-28",
+        "title": "T",
+    }
+    assert current_reference_value([{"id": "i1", "key": "SUP-1"}], renames) == [{"id": "i1", "key": "STUP-1"}]
+    assert current_reference_value({"id": "i2", "key": "CAR-3"}, renames) == {"id": "i2", "key": "CAR-3"}
+    assert current_reference_value("SUP-28", renames) == "SUP-28"
+    assert current_reference_value({"id": "i1", "key": "SUP-28"}, {}) == {"id": "i1", "key": "SUP-28"}
 
 
 def test_moving_a_child_writes_on_both_parents(client: TestClient, workspace: str, statuses: Any) -> None:
@@ -257,6 +300,74 @@ def test_deleting_a_blocker_clears_the_count(client: TestClient, workspace: str,
     client.delete(f"/api/workspaces/{workspace}/issues/{blocker['id']}")
 
     assert _issue(client, workspace, blocked)["blocked_by_open_count"] == 0
+
+
+def test_a_blocking_link_counts_on_the_blocker(client: TestClient, workspace: str, statuses: Any) -> None:
+    """Either direction of the write lands the blocking count on the blocker."""
+    sign_in(client, OWNER)
+    blocker = create_issue(client, workspace, title="Blocker")
+    first = create_issue(client, workspace, title="First")
+    second = create_issue(client, workspace, title="Second")
+
+    _link(client, workspace, blocker, first, "blocks")
+    link = _link(client, workspace, second, blocker, "blocked_by")
+
+    assert _issue(client, workspace, blocker)["blocking_count"] == 2
+    assert _issue(client, workspace, first)["blocking_count"] == 0
+
+    _unlink(client, workspace, second, link)
+
+    assert _issue(client, workspace, blocker)["blocking_count"] == 1
+
+
+def test_a_finished_blocker_stops_blocking_through_the_stream(
+    client: TestClient, workspace: str, repositories: Any, statuses: Any
+) -> None:
+    """A blocker moved to a finished status loses its blocking count, and regains it on reopen."""
+    sign_in(client, OWNER)
+    blocker = create_issue(client, workspace, title="Blocker")
+    blocked = create_issue(client, workspace, title="Blocked")
+    _link(client, workspace, blocker, blocked, "blocks")
+    done = statuses["completed"].status_id
+
+    client.patch(f"/api/workspaces/{workspace}/issues/{blocker['id']}", json={"status_id": done})
+    handle_record(repositories, _status_record(workspace, blocker["id"], blocker["status_id"], done))
+
+    assert _issue(client, workspace, blocker)["blocking_count"] == 0
+
+    client.patch(f"/api/workspaces/{workspace}/issues/{blocker['id']}", json={"status_id": blocker["status_id"]})
+    handle_record(repositories, _status_record(workspace, blocker["id"], done, blocker["status_id"]))
+
+    assert _issue(client, workspace, blocker)["blocking_count"] == 1
+
+
+def test_deleting_a_blocked_issue_clears_the_blocking_count(client: TestClient, workspace: str, statuses: Any) -> None:
+    """A deleted blocked issue stops counting on its blocker at once."""
+    sign_in(client, OWNER)
+    blocker = create_issue(client, workspace, title="Blocker")
+    blocked = create_issue(client, workspace, title="Blocked")
+    _link(client, workspace, blocker, blocked, "blocks")
+
+    client.delete(f"/api/workspaces/{workspace}/issues/{blocked['id']}")
+
+    assert _issue(client, workspace, blocker)["blocking_count"] == 0
+
+
+def test_the_recount_script_fills_blocking_counts_once(
+    client: TestClient, workspace: str, repositories: Any, statuses: Any
+) -> None:
+    """A blocker from before the count gains it, and a rerun writes nothing."""
+    from scripts.recount_blocking_counts import run
+
+    sign_in(client, OWNER)
+    blocker = create_issue(client, workspace, title="Blocker")
+    blocked = create_issue(client, workspace, title="Blocked")
+    _link(client, workspace, blocker, blocked, "blocks")
+    repositories.issues.set_blocking_count(workspace, blocker["id"], 0)
+
+    assert run(repositories, [workspace]) == (1, 1, 1)
+    assert _issue(client, workspace, blocker)["blocking_count"] == 1
+    assert run(repositories, [workspace]) == (1, 1, 0)
 
 
 def test_a_link_carries_its_target_status_across_teams(client: TestClient, workspace: str, statuses: Any) -> None:

@@ -26,6 +26,7 @@ from app.common.db.dynamo.planning import (
     Project,
     ProjectMilestone,
     ProjectUpdateRow,
+    PulseEvent,
     RollupCounts,
     normalise_project_status,
 )
@@ -1193,3 +1194,106 @@ class InitiativeUpdateRead(BaseModel):
 
 InitiativeUpdateListRead = cursor_page(InitiativeUpdateRead, "updates", model_name="InitiativeUpdateListRead")
 """The body the initiative update feed answers with, items under `updates`, newest first."""
+
+
+PulseEventTypeField = Literal[
+    "project_update", "initiative_update", "project_health", "initiative_health", "milestone_completed"
+]
+
+PulseScopeField = Literal["for_me", "recent"]
+
+
+class PulseItemRead(BaseModel):
+    """One Pulse entry as the API returns it.
+
+    The project's or initiative's name, icon and colour ride along, so a feed
+    renders without a read per entry. `actor_id` is null for what no person did,
+    which is a milestone its last closed issue completed, and `actor_name` is
+    then empty. `unread` is this caller's own state.
+    """
+
+    event_id: str
+    workspace_id: str
+    event_type: PulseEventTypeField
+    subject_type: Literal["project", "initiative"]
+    project_id: Optional[str] = None
+    project_name: Optional[str] = None
+    project_icon: Optional[str] = None
+    project_color: Optional[str] = None
+    initiative_id: Optional[str] = None
+    initiative_name: Optional[str] = None
+    milestone_id: Optional[str] = None
+    milestone_name: Optional[str] = None
+    update_id: Optional[str] = None
+    body: Optional[str] = None
+    health: Optional[ProjectHealthField] = None
+    previous_health: Optional[ProjectHealthField] = None
+    actor_id: Optional[str] = None
+    actor_name: str = ""
+    source: Optional[ChangeSource] = None
+    created_at: datetime
+    edited_at: Optional[datetime] = None
+    unread: bool = False
+
+    @classmethod
+    def from_event(
+        cls,
+        event: PulseEvent,
+        *,
+        project: Optional[Project],
+        initiative: Optional[Initiative],
+        unread: bool,
+        actor_name: str = "",
+    ) -> "PulseItemRead":
+        """Build the response shape from a stored event and what it is about."""
+        return cls(
+            event_id=event.event_id,
+            workspace_id=event.workspace_id,
+            event_type=event.event_type,  # pyright: ignore[reportArgumentType]
+            subject_type=event.subject_type,  # pyright: ignore[reportArgumentType]
+            project_id=event.project_id,
+            project_name=project.name if project is not None else None,
+            project_icon=project.icon if project is not None else None,
+            project_color=project.color if project is not None else None,
+            initiative_id=initiative.initiative_id if initiative is not None else event.initiative_id,
+            initiative_name=initiative.name if initiative is not None else None,
+            milestone_id=event.milestone_id,
+            milestone_name=event.milestone_name,
+            update_id=event.update_id,
+            body=event.body,
+            health=event.health,  # pyright: ignore[reportArgumentType]
+            previous_health=event.previous_health,  # pyright: ignore[reportArgumentType]
+            actor_id=event.actor_id or None,
+            actor_name=actor_name if event.actor_id else "",
+            source=event.source,  # pyright: ignore[reportArgumentType]
+            created_at=event.created_at,
+            edited_at=event.edited_at,
+            unread=unread,
+        )
+
+
+PulseListRead = cursor_page(PulseItemRead, "items", model_name="PulseListRead")
+"""The body the Pulse feed answers with, entries under `items`, newest first."""
+
+
+class PulseCountRead(BaseModel):
+    """How many of the caller's "for me" Pulse entries are unread, capped at 99."""
+
+    unread: int
+
+
+class PulseReadMarker(BaseModel):
+    """When the caller's Pulse was marked read up to."""
+
+    read_at: datetime
+
+
+class PulseFollowRead(BaseModel):
+    """Whether the caller follows a project or initiative in Pulse.
+
+    `explicit` says the caller chose it; otherwise it follows from leading, being
+    a member of or owning the subject, or following the project's initiative.
+    """
+
+    following: bool
+    explicit: bool
