@@ -2,12 +2,13 @@
  * Reads what the workspace sidebar shows beyond the team list once, above the
  * pages. Every page mounts its own sidebar, so a read held inside it started
  * again from nothing on each navigation and the triage entries, the view list,
- * the inbox badge, the reviews badge and the favorites blinked out until it settled.
+ * the inbox badge, the reviews badge, the Pulse badge and the favorites blinked out until it settled.
  */
 
 import React, { useMemo } from 'react';
 import { useQueryAuth } from '@webbpulse/auth/react';
 import { usePolledQuery } from '@webbpulse/api-client/react';
+import { getPulseCount } from '../api/pulse';
 import { getReviews } from '../api/reviews';
 import { getTriageSummary } from '../api/triage';
 import { getInboxCount, listViews } from '../api/views';
@@ -15,6 +16,7 @@ import { useFavoritesState } from '../hooks/useFavorites';
 import { useWorkspace } from '../hooks/useWorkspace';
 import {
   inboxCountKey,
+  pulseCountKey,
   reviewsKey,
   triageSummaryKey,
   viewsKey,
@@ -76,11 +78,29 @@ export const SidebarDataProvider: React.FC<{ children: React.ReactNode }> = ({
     }
   );
 
+  const { data: pulseCount } = usePolledQuery(
+    ({ signal }) => getPulseCount(workspaceId, signal),
+    {
+      intervalMs: SIDEBAR_POLL_MS,
+      enabled,
+      queryKey: pulseCountKey(workspaceId),
+      auth,
+    }
+  );
+
   const favorites = useFavoritesState(workspaceId, enabled);
 
   const value = useMemo<SidebarDataContextType>(
-    () => ({ workspaceId, triage, views, inboxCount, reviews, favorites }),
-    [workspaceId, triage, views, inboxCount, reviews, favorites]
+    () => ({
+      workspaceId,
+      triage,
+      views,
+      inboxCount,
+      reviews,
+      pulseCount,
+      favorites,
+    }),
+    [workspaceId, triage, views, inboxCount, reviews, pulseCount, favorites]
   );
 
   return (

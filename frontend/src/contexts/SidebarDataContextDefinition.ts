@@ -24,6 +24,8 @@ export interface SidebarDataContextType {
   inboxCount: number | null;
   /** The caller's Reviews list, or null before the first read. */
   reviews: ReviewsRead | null;
+  /** The caller's unread Pulse count, or null before the first read. */
+  pulseCount: number | null;
   /** The caller's favorites and the writes that change them. */
   favorites: FavoritesState;
 }

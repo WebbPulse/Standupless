@@ -34,6 +34,7 @@ import React, {
   useState,
 } from 'react';
 import {
+  LuActivity,
   LuChevronRight,
   LuChevronsUpDown,
   LuEllipsis,
@@ -69,6 +70,7 @@ import {
   myIssuesPath,
   projectsPath,
   initiativesPath,
+  pulsePath,
   reviewsPath,
   roadmapPath,
   routeTeamPrefix,
@@ -101,6 +103,7 @@ import Menu, { MenuItem, MenuSeparator } from '../ui/menu';
 import { Skeleton } from '../ui/skeleton';
 import ThemeToggle from '../ui/theme-toggle';
 import InboxBadge from '../views/InboxBadge';
+import PulseBadge from '../views/PulseBadge';
 import ReviewsBadge from '../views/ReviewsBadge';
 import FavoritesSection from './FavoritesSection';
 import { useTeamsFor } from '../../hooks/useTeams';
@@ -736,6 +739,16 @@ export const Sidebar: React.FC<SidebarProps> = ({ workspace, onNavigate }) => {
             <LuGitPullRequest className={ICON} aria-hidden="true" />
             <span className="flex-1">Reviews</span>
             <ReviewsBadge workspaceId={workspace.id} />
+          </NavLink>
+          <NavLink
+            to={pulsePath(slug)}
+            end
+            className={itemClass}
+            onClick={onNavigate}
+          >
+            <LuActivity className={ICON} aria-hidden="true" />
+            <span className="flex-1">Pulse</span>
+            <PulseBadge workspaceId={workspace.id} />
           </NavLink>
         </div>
 

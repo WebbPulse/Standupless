@@ -20,7 +20,12 @@ export interface UserRead {
   two_factor?: boolean;
   /** The IANA zone due dates are judged in, or null when none is stored yet. */
   timezone?: string | null;
+  /** How often the Pulse email digest goes out, or `off`. */
+  pulse_digest?: PulseDigest;
 }
+
+/** How often a person's Pulse email digest goes out. */
+export type PulseDigest = 'off' | 'daily' | 'weekly';
 
 /** One workspace as the account deletion plan names it. */
 export interface WorkspaceSummaryRead {
@@ -64,6 +69,7 @@ export interface UserPreferencesUpdate {
     Record<NotificationKind, Partial<NotificationChannels>>
   >;
   timezone?: string;
+  pulse_digest?: PulseDigest;
 }
 
 /** A role held at the workspace level. */
@@ -1993,6 +1999,67 @@ export interface InitiativeUpdateRead extends StatusUpdateRead {
 export interface InitiativeUpdateListRead {
   updates: InitiativeUpdateRead[];
   next_cursor: string | null;
+}
+
+/** Which Pulse feed a page reads: what the caller follows, or everything they may read. */
+export type PulseScope = 'for_me' | 'recent';
+
+/** What one Pulse entry reports. */
+export type PulseEventType =
+  | 'project_update'
+  | 'initiative_update'
+  | 'project_health'
+  | 'initiative_health'
+  | 'milestone_completed';
+
+/** One Pulse entry, with the project or initiative it is about. */
+export interface PulseItemRead {
+  event_id: string;
+  workspace_id: string;
+  event_type: PulseEventType;
+  subject_type: 'project' | 'initiative';
+  project_id: string | null;
+  project_name: string | null;
+  project_icon: ProjectIconName | null;
+  project_color: string | null;
+  initiative_id: string | null;
+  initiative_name: string | null;
+  milestone_id: string | null;
+  milestone_name: string | null;
+  update_id: string | null;
+  body: string | null;
+  health: ProjectHealth | null;
+  previous_health: ProjectHealth | null;
+  /** Who made it, or null for what no person did, such as a milestone its last issue completed. */
+  actor_id: string | null;
+  /** Who made it, as a name to show; empty when no person did. */
+  actor_name: string;
+  source: ChangeSource | null;
+  created_at: string;
+  edited_at: string | null;
+  unread: boolean;
+}
+
+/** One page of the caller's Pulse, newest first. */
+export interface PulseListRead {
+  items: PulseItemRead[];
+  next_cursor: string | null;
+}
+
+/** How many entries of the caller's Pulse are unread. */
+export interface PulseCountRead {
+  unread: number;
+}
+
+/** When the caller last marked their Pulse read. */
+export interface PulseReadMarker {
+  read_at: string;
+}
+
+/** Whether the caller follows a project or initiative, and whether that is their own choice. */
+export interface PulseFollowRead {
+  following: boolean;
+  explicit: boolean;
 }
 
 /** The filters the project list reads. Without a team it is workspace wide. */

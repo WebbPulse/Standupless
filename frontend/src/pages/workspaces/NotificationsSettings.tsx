@@ -30,6 +30,7 @@ import { browserTimezone } from '../../lib/viewerTimezone';
 import type {
   NotificationChannels,
   NotificationKind,
+  PulseDigest,
   UserPreferencesUpdate,
   UserRead,
 } from '../../types/Api';
@@ -117,6 +118,13 @@ const zoneChoices = (current: string): string[] => {
   return known.includes(current) ? known : [current, ...known];
 };
 
+/** The Pulse digest cadences, in the order the picker lists them. */
+const DIGEST_CHOICES: { value: PulseDigest; label: string }[] = [
+  { value: 'off', label: 'Off' },
+  { value: 'daily', label: 'Daily' },
+  { value: 'weekly', label: 'Weekly' },
+];
+
 /** The column layout the header and every row share. */
 const COLUMNS =
   'grid grid-cols-[minmax(0,1fr)_4rem_4rem] items-center gap-3 px-3';
@@ -137,6 +145,8 @@ const NotificationsSettings: React.FC = () => {
   const user = saved ?? data;
   const emailOn = user?.email_notifications ?? true;
   const zoneId = useId();
+  const digestId = useId();
+  const digest: PulseDigest = user?.pulse_digest ?? 'off';
   const zone = user?.timezone ?? browserTimezone();
   const zones = useMemo(() => zoneChoices(zone), [zone]);
 
@@ -231,6 +241,42 @@ const NotificationsSettings: React.FC = () => {
               </div>
               <p className="text-xs text-text-faint">
                 Due date reminders arrive on your calendar day in this zone.
+              </p>
+            </div>
+
+            <div className="space-y-1 rounded-md border border-line p-3">
+              <div className="flex items-center justify-between gap-3">
+                <label
+                  htmlFor={digestId}
+                  className="text-sm font-medium text-text"
+                >
+                  Pulse digest
+                </label>
+                <Select
+                  id={digestId}
+                  className="w-64"
+                  value={digest}
+                  disabled={saving || !emailOn}
+                  onChange={(event) => {
+                    const choice = DIGEST_CHOICES.find(
+                      (option) => option.value === event.target.value
+                    );
+                    if (choice !== undefined) {
+                      save({ pulse_digest: choice.value });
+                    }
+                  }}
+                >
+                  {DIGEST_CHOICES.map((choice) => (
+                    <option key={choice.value} value={choice.value}>
+                      {choice.label}
+                    </option>
+                  ))}
+                </Select>
+              </div>
+              <p className="text-xs text-text-faint">
+                An email of the updates in your Pulse, at 8:00 in your timezone:
+                every day, or on Mondays for the week. It is skipped when
+                nothing is new.
               </p>
             </div>
 

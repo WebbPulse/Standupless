@@ -85,6 +85,7 @@ describe('TeamTabs', () => {
             views: null,
             inboxCount: null,
             reviews: null,
+            pulseCount: null,
             favorites: EMPTY_FAVORITES,
           }}
         >

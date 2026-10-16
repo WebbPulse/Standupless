@@ -17,6 +17,7 @@ import type {
   MemberRead,
   ProjectListRead,
   ProjectRead,
+  PulseFollowRead,
   TeamRead,
   WorkspaceRead,
   WorkspaceRole,
@@ -32,6 +33,21 @@ const removeInitiativeProject = vi.fn<(id: string) => Promise<ProjectRead>>();
 const listProjects = vi.fn<() => Promise<ProjectListRead>>();
 const listTeams = vi.fn<() => Promise<TeamRead[]>>();
 const listMembers = vi.fn<() => Promise<MemberRead[]>>();
+const getFollow = vi.fn<() => Promise<PulseFollowRead>>();
+const setFollow =
+  vi.fn<
+    (
+      subject: string,
+      id: string,
+      following: boolean
+    ) => Promise<PulseFollowRead>
+  >();
+
+vi.mock('../../api/pulse', () => ({
+  getFollow: () => getFollow(),
+  setFollow: (_w: string, subject: string, id: string, following: boolean) =>
+    setFollow(subject, id, following),
+}));
 
 vi.mock('../../hooks/useAuth', () => ({
   useAuth: () => ({
@@ -217,6 +233,20 @@ describe('InitiativeDetail', () => {
       ],
       next_cursor: null,
     });
+    getFollow.mockResolvedValue({ following: false, explicit: false });
+  });
+
+  it('follows the initiative in Pulse', async () => {
+    const user = userEvent.setup();
+    setFollow.mockResolvedValue({ following: true, explicit: true });
+    renderPage();
+
+    await user.click(await screen.findByRole('button', { name: 'Follow' }));
+
+    expect(setFollow).toHaveBeenCalledWith('initiative', 'ini-1', true);
+    expect(
+      await screen.findByRole('button', { name: 'Following' })
+    ).toHaveAttribute('aria-pressed', 'true');
   });
 
   it('rolls up the projects progress and health', async () => {

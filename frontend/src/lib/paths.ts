@@ -170,6 +170,10 @@ export const inboxPath = (slug: string): string =>
 export const reviewsPath = (slug: string): string =>
   `${workspacePath(slug)}/reviews`;
 
+/** The caller's Pulse of project and initiative updates. */
+export const pulsePath = (slug: string): string =>
+  `${workspacePath(slug)}/pulse`;
+
 /** Workspace search. */
 export const searchPath = (slug: string): string =>
   `${workspacePath(slug)}/search`;
