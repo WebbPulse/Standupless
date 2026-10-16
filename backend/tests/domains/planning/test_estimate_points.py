@@ -209,8 +209,8 @@ def test_a_project_measures_mixed_sizes_in_points(
 
     body = client.get(f"/api/workspaces/{workspace}/projects/{project_id}").json()
     assert body["measure"] == "points"
-    assert body["counts"] == {"todo": 2, "in_progress": 1, "done": 1, "cancelled": 0}
-    assert body["progress"] == {"todo": 1, "in_progress": 3, "done": 5, "cancelled": 0}
+    assert body["counts"] == {"todo": 2, "in_progress": 1, "done": 1, "cancelled": 0, "total": 4}
+    assert body["progress"] == {"todo": 1, "in_progress": 3, "done": 5, "cancelled": 0, "total": 9}
     listed = client.get(f"/api/workspaces/{workspace}/projects/{project_id}/milestones").json()
     rows = listed.get("milestones") or listed["items"]
     assert [(row["measure"], row["progress"]["done"]) for row in rows] == [("points", 5)]
@@ -236,7 +236,7 @@ def test_a_project_without_estimating_teams_measures_in_issues(
 
     body = client.get(f"/api/workspaces/{workspace}/projects/{project_id}").json()
     assert body["measure"] == "issues"
-    assert body["progress"] == body["counts"] == {"todo": 1, "in_progress": 0, "done": 1, "cancelled": 0}
+    assert body["progress"] == body["counts"] == {"todo": 1, "in_progress": 0, "done": 1, "cancelled": 0, "total": 2}
 
 
 def test_a_cross_team_project_sums_each_issue_on_its_own_teams_scale(
@@ -258,13 +258,13 @@ def test_a_cross_team_project_sums_each_issue_on_its_own_teams_scale(
     _recount(repositories, first, project_id, "1")
     body = client.get(f"/api/workspaces/{workspace}/projects/{project_id}").json()
     assert body["measure"] == "points"
-    assert body["progress"] == {"todo": 3, "in_progress": 0, "done": 8, "cancelled": 0}
+    assert body["progress"] == {"todo": 3, "in_progress": 0, "done": 8, "cancelled": 0, "total": 11}
 
     repositories.teams.update(WORKSPACE, OTHER_TEAM, estimate_scale="off")
     _recount(repositories, first, project_id, "2")
     body = client.get(f"/api/workspaces/{workspace}/projects/{project_id}").json()
     assert body["measure"] == "points"
-    assert body["progress"] == {"todo": 1, "in_progress": 0, "done": 8, "cancelled": 0}
+    assert body["progress"] == {"todo": 1, "in_progress": 0, "done": 8, "cancelled": 0, "total": 9}
 
     initiative = client.post(f"/api/workspaces/{workspace}/initiatives", json={"name": "Grow"})
     assert initiative.status_code == 201, initiative.text
