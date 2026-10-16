@@ -195,10 +195,10 @@ describe('the Pulse page', () => {
     });
     expect(entries).toHaveLength(2);
     expect(
-      within(entries[0]).getByRole('img', { name: 'Unread' })
+      within(entries[0]!).getByRole('img', { name: 'Unread' })
     ).toBeInTheDocument();
     expect(
-      within(entries[1]).queryByRole('img', { name: 'Unread' })
+      within(entries[1]!).queryByRole('img', { name: 'Unread' })
     ).not.toBeInTheDocument();
     await waitFor(() => {
       expect(markPulseRead).toHaveBeenCalledTimes(1);
