@@ -24,6 +24,7 @@ from webbpulse.audit import AuditQuery
 from app.common import issue_import, linear_api, linear_import
 from app.common.linear_api import LinearClient
 from app.domains.integrations.consumers import import_jobs
+from app.domains.integrations.mcp.transport import INSUFFICIENT_SCOPE
 from tests.domains.helpers import ADMIN, MEMBER, OWNER, sign_in
 from tests.domains.integrations.conftest import TEAM, WORKSPACE, sqs_record
 from tests.domains.integrations.linear_fake import FAKE_KEY, FakeLinear, sample
@@ -121,7 +122,7 @@ def imported_issue(repositories: Any, fake: FakeLinear, number: int) -> Any:
 
 def team_issues(repositories: Any) -> list[Any]:
     """Every issue in the team."""
-    return list(repositories.issues.list_for_team(WORKSPACE, TEAM, limit=100).items)
+    return repositories.issues.read_team_newest(WORKSPACE, TEAM, below=None, max_items=100)
 
 
 def status_name(repositories: Any, status_id: str) -> str:
@@ -606,7 +607,7 @@ def test_the_mcp_tools_list_start_follow_and_cancel_an_import(
     client: TestClient, repositories: Any, workspace: str, queued: list[tuple[str, Any]], linear: FakeLinear
 ) -> None:
     """An agent with an admin's key lists Linear teams, starts an import, reads it and cancels it."""
-    secret = mint_for(repositories, OWNER, ("settings:read", "settings:write"))
+    secret = mint_for(repositories, OWNER, ("settings:read", "settings:write", "admin"))
 
     teams = answer(tool(client, secret, "list_linear_teams", {"api_key": FAKE_KEY}))
     started = answer(
@@ -639,11 +640,11 @@ def test_a_member_key_cannot_import_over_mcp(
     client: TestClient, repositories: Any, workspace: str, bucket: str, linear: FakeLinear
 ) -> None:
     """The tools check the same admin capability the routes do."""
-    secret = mint_for(repositories, MEMBER, ("settings:read", "settings:write"))
+    secret = mint_for(repositories, MEMBER, ("settings:read", "settings:write", "admin"))
 
-    text = refusal(tool(client, secret, "list_linear_teams", {"api_key": FAKE_KEY}))
+    refused = tool(client, secret, "list_linear_teams", {"api_key": FAKE_KEY})
 
-    assert text
+    assert refused.json()["error"]["code"] == INSUFFICIENT_SCOPE
     assert linear.requests == []
 
 
