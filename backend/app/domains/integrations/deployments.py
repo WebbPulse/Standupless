@@ -90,6 +90,7 @@ class _GitHub:
     stored_pulls: Callable[[list[int]], Mapping[int, Any]] | None = None
     best_effort_pulls: bool = False
     pulls_unread: int = 0
+    _version_tags: dict[str, list[str]] | None = None
 
     def token(self) -> str:
         """An installation token, minted on first use."""
@@ -182,6 +183,25 @@ class _GitHub:
             )
         return self._pulls[sha]
 
+    def version_tag(self, sha: str, ref: str | None) -> str | None:
+        """The semantic version a deployment ships: its ref when that is one, else the highest such tag on its commit.
+
+        The repository's tags are listed once per instance, so a backfill page reads them once.
+        """
+        from app.domains.integrations import github_deployments, tag_releases
+
+        tag = github_deployments.semver_tag(ref)
+        if tag is not None:
+            return tag
+        if self._version_tags is None:
+            rows = _readable(lambda: github_deployments.list_tags(self.token(), self.repository_id), [], "tags")
+            self._version_tags = {}
+            for row in rows:
+                if github_deployments.semver_tag(row.name) is not None:
+                    self._version_tags.setdefault(row.sha.lower(), []).append(row.name)
+        found = self._version_tags.get(sha.lower(), [])
+        return max(found, key=tag_releases.version_key) if found else None
+
     def previous_success(
         self, environment: str, sha: str, deployment_id: int | None, *, start_page: int = 1
     ) -> str | None:
@@ -195,6 +215,15 @@ class _GitHub:
             None,
             "deployments",
         )
+
+
+def _version_for(github: _GitHub, pull: Any, sha: str, ref: str | None) -> str | None:
+    """The version tag that names a deployment's release, or `None` for a promotion, which its branch names."""
+    from app.domains.integrations import github_deployments
+
+    if pull is not None and github_deployments.promotion_name(pull) is not None:
+        return None
+    return github.version_tag(sha, ref)
 
 
 def _pull_number(message: str) -> int | None:
@@ -241,6 +270,7 @@ def handle_deployment_status(repositories: Repositories, workspace_id: str, body
         return
     installation_id = str(installation.get("id", "")) if isinstance(installation, Mapping) else ""
     deployment_id = deployment.get("id") if isinstance(deployment.get("id"), int) else None
+    ref = deployment.get("ref") if isinstance(deployment.get("ref"), str) else None
     full_name = str(repository.get("full_name") or stored.full_name)
     url = _environment_url(status)
     github = _GitHub(installation_id, repository_id)
@@ -261,6 +291,7 @@ def handle_deployment_status(repositories: Repositories, workspace_id: str, body
         if previous not in ranges:
             ranges[previous] = github.commits(previous, sha)
         pinned = stored.team_id == team_id
+        pull = github.merged_pull(sha)
         release = _record_for_team(
             repositories,
             workspace_id,
@@ -274,7 +305,8 @@ def handle_deployment_status(repositories: Repositories, workspace_id: str, body
             environment=environment,
             url=url,
             pinned=pinned,
-            pull=github.merged_pull(sha),
+            pull=pull,
+            tag=_version_for(github, pull, sha, ref),
         )
         if release is not None and pinned and stage.publish_github_release:
             _publish(repositories, github, release, stage, pipeline.stages)
@@ -338,16 +370,18 @@ def _record_for_team(
     url: str | None,
     pinned: bool,
     pull: Any = None,
+    tag: str | None = None,
     at: datetime | None = None,
     automate: bool = True,
 ) -> Release | None:
     """Advance the team's releases of these commits to the stage, and release what none of them carried.
 
     Answers the release of the deployed commit, or `None` when the deployment
-    made none. A deployed pull request merge names its release and carries every
-    issue of the range, so a promotion reads as one release in the later stage,
-    and the earlier releases it advanced are recorded as included in it rather
-    than listed beside it.
+    made none. A deployed pull request merge carries every issue of the range,
+    so a promotion reads as one release in the later stage, and the earlier
+    releases it advanced are recorded as included in it rather than listed beside
+    it. A promotion's branch names its release; any other deployment is named by
+    its version `tag`, or by the date without one, never by a pull request title.
     """
     shas = [*(commit_sha for commit_sha, _ in commits), sha]
     known = repositories.releases.releases_for_shas(workspace_id, team_id, repository_id, shas)
@@ -376,8 +410,9 @@ def _record_for_team(
         return None
     if not issues and pull is None and earlier:
         return None
-    from app.domains.integrations import github_deployments
+    from app.domains.integrations import github_deployments, tag_releases
 
+    promoted = github_deployments.promotion_name(pull) if pull is not None else None
     release, created = releases.record_release(
         repositories,
         workspace_id,
@@ -385,7 +420,8 @@ def _record_for_team(
         stage=stage,
         source=SOURCE,
         issues=issues,
-        name=github_deployments.release_name(pull) if pull is not None else None,
+        name=promoted or tag,
+        version=tag_releases.version_of(tag) if tag and not promoted else None,
         sha=sha,
         previous_sha=previous_sha,
         repository_id=repository_id,
@@ -700,6 +736,7 @@ def backfill(
                         )
                     pull = github.merged_pull(deployment.sha)
                     commits = github.commits(previous, deployment.sha)
+                    tag = _version_for(github, pull, deployment.sha, deployment.ref)
                 except github_budget.BudgetSpent as error:
                     if not first or error.reason != github_budget.TIME:
                         raise
@@ -729,6 +766,7 @@ def backfill(
                     url=None,
                     pinned=pinned,
                     pull=pull,
+                    tag=tag,
                     at=deployment.created_at,
                     automate=False,
                 )
@@ -863,6 +901,7 @@ def _retry(
                     previous = github.previous_success(payload.environment, deployment.sha, deployment.deployment_id)
                     pull = github.merged_pull(deployment.sha)
                     commits = github.commits(previous, deployment.sha)
+                    tag = _version_for(github, pull, deployment.sha, deployment.ref)
                 except github_budget.BudgetSpent as error:
                     if not first or error.reason != github_budget.TIME:
                         raise
@@ -892,6 +931,7 @@ def _retry(
                     url=None,
                     pinned=pinned,
                     pull=pull,
+                    tag=tag,
                     at=deployment.created_at,
                     automate=False,
                 )
