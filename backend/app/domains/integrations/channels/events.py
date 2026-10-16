@@ -4,7 +4,9 @@ The stream consumer hands every issue, comment and planning record here as well 
 to the outbound webhooks. A record becomes an ordered list of candidate events, the
 most specific first, and each destination of the record's team gets the first one it
 subscribes to, so moving an issue to Done posts one "completed" message to a channel
-that wants both completions and status changes, not two.
+that wants both completions and status changes, not two. Workspace destinations
+covering the record's team get it too, and one channel never gets the same record
+twice.
 
 A workspace's destinations are remembered for a few seconds per process, as the
 webhook endpoints are, so a workspace with no channels costs one Query per batch.
@@ -76,24 +78,38 @@ def _rows(repositories: Repositories, workspace_id: str, cache: DestinationCache
 def _enabled(
     repositories: Repositories, workspace_id: str, team_ids: tuple[str, ...], cache: DestinationCache | None
 ) -> list[ChannelDestination]:
-    """The enabled destinations of these teams, checked before any record is described."""
+    """The enabled destinations covering any of these teams, checked before any record is described."""
     if not workspace_id or not team_ids or not settings.WEBHOOK_DISPATCH_QUEUE_URL:
         return []
     rows = _rows(repositories, workspace_id, cache)
-    wanted = [row for row in rows if row.enabled and row.team_id in team_ids and row.events]
-    return _carrying(repositories, workspace_id, wanted)
+    return [row for row in rows if row.enabled and row.events and any(row.covers(team) for team in team_ids)]
+
+
+def _reaches(
+    repositories: Repositories, workspace_id: str, row: ChannelDestination, team_id: str, private: set[str]
+) -> bool:
+    """Whether one team's content may go out through one destination.
+
+    A team destination carries its own team while its creator can still read it. A
+    workspace destination set to every team carries the open ones only, and a
+    private team only when it is named and its creator can still read it, so making
+    a team private never leaks it into a channel set up for the whole workspace.
+    """
+    if not row.covers(team_id):
+        return False
+    if row.scope == "workspace" and team_id in private and team_id not in row.team_ids:
+        return False
+    return destination_can_carry(repositories, workspace_id, team_id, row.created_by, private)
 
 
 def _carrying(
-    repositories: Repositories, workspace_id: str, rows: list[ChannelDestination]
+    repositories: Repositories, workspace_id: str, rows: list[ChannelDestination], team_ids: tuple[str, ...]
 ) -> list[ChannelDestination]:
-    """The destinations whose creator can still read their team, so a private team stays inside."""
-    if not rows:
-        return rows
+    """The destinations that may carry content of at least one of these teams."""
+    if not rows or not team_ids:
+        return []
     private = set(repositories.memberships.list_private_team_ids(workspace_id))
-    return [
-        row for row in rows if destination_can_carry(repositories, workspace_id, row.team_id, row.created_by, private)
-    ]
+    return [row for row in rows if any(_reaches(repositories, workspace_id, row, team, private) for team in team_ids)]
 
 
 def _live(repositories: Repositories, workspace_id: str, team_ids: tuple[str, ...]) -> tuple[str, ...]:
@@ -223,20 +239,32 @@ def deliver(
     destinations: list[ChannelDestination] | None = None,
     send: Enqueue | None = None,
 ) -> int:
-    """Schedule each destination's first wanted candidate, returning how many were scheduled."""
-    if not candidates:
+    """Schedule each destination's first wanted candidate, returning how many were scheduled.
+
+    Team destinations go first, then workspace ones, and a channel already posted
+    to for this record is skipped, so a channel a team and the workspace both
+    subscribe, or a workspace channel several teams of a project reach, gets one
+    message. A destination that wanted the record claims its channel even when its
+    delivery row already existed, so a redelivered record cannot fall through to a
+    second destination of the same channel.
+    """
+    if not candidates or not destinations:
         return 0
     live = _live(repositories, workspace_id, team_ids)
     events = tuple(event for event, _ in candidates)
     messages = dict(reversed(candidates))
+    ordered = sorted(
+        _carrying(repositories, workspace_id, destinations, live),
+        key=lambda row: (row.scope != "team", row.channel_id),
+    )
+    claimed: set[str] = set()
     scheduled = 0
-    for destination in destinations if destinations is not None else []:
-        if destination.team_id not in live:
-            continue
+    for destination in ordered:
         wanted = destination.wants(events)
-        if wanted is not None and schedule(
-            repositories, destination, wanted, messages[wanted], seed=seed, at=at, send=send
-        ):
+        if wanted is None or destination.identity() in claimed:
+            continue
+        claimed.add(destination.identity())
+        if schedule(repositories, destination, wanted, messages[wanted], seed=seed, at=at, send=send):
             scheduled += 1
     return scheduled
 
@@ -290,7 +318,7 @@ def on_planning(repositories: Repositories, record: Mapping[str, Any], cache: De
     if not any(row.enabled and "project_update_posted" in row.events for row in rows):
         return 0
     candidates, teams = project_update_candidates(repositories, workspace_id, new)
-    destinations = _carrying(repositories, workspace_id, [row for row in rows if row.enabled and row.team_id in teams])
+    destinations = [row for row in rows if row.enabled and any(row.covers(team) for team in teams)]
     seed, at = _stamp(record)
     return deliver(repositories, workspace_id, teams, candidates, seed=seed, at=at, destinations=destinations)
 

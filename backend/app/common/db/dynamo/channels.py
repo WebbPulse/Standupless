@@ -1,4 +1,4 @@
-"""Team channel destinations: Slack and Discord incoming webhooks, in the `github` table.
+"""Team and workspace channel destinations: Slack and Discord channels, in the `github` table.
 
 A destination lives beside the outbound webhook endpoints under `channel#<id>`, and
 each message sent to it leaves a short lived `chdelivery#<id>#<delivery_id>` row so a
@@ -10,6 +10,11 @@ key, and `url_hint` is the masked tail a settings page shows.
 A `slack_app` or `discord_app` destination holds no URL at all: it names a Slack or
 Discord channel id and posts through the workspace's installed bot, so its `url_*`
 fields stay empty and `url_hint` carries the channel name.
+
+A destination is scoped to one team, or to the whole workspace. A workspace
+destination has an empty `team_id` and lists the teams it covers in `team_ids`,
+where an empty list means every open team, and it always posts through an
+installed App so its channel has one well defined identity.
 """
 
 from __future__ import annotations
@@ -54,6 +59,9 @@ CHANNEL_EVENTS: tuple[str, ...] = (
 )
 """Every event a destination may filter on, in the order a settings page lists them."""
 
+ChannelScope = Literal["team", "workspace"]
+"""Whether a destination belongs to one team or covers the whole workspace."""
+
 ChannelDeliveryState = Literal["pending", "retrying", "delivered", "failed"]
 
 CHANNEL_DELIVERY_RETENTION_SECONDS = 7 * 24 * 3600
@@ -81,12 +89,14 @@ def channel_delivery_key(channel_id: str, delivery_id: str) -> str:
 
 
 class ChannelDestination(BaseModel):
-    """One Slack or Discord channel a team posts its notifications to."""
+    """One Slack or Discord channel a team, or the whole workspace, posts its notifications to."""
 
     workspace_id: str
     github_key: str
     channel_id: str
-    team_id: str
+    team_id: str = ""
+    scope: ChannelScope = "team"
+    team_ids: list[str] = Field(default_factory=list)
     provider: ChannelProvider
     label: str = ""
     events: list[str] = Field(default_factory=list)
@@ -114,6 +124,24 @@ class ChannelDestination(BaseModel):
         if not self.enabled:
             return None
         return next((event for event in events if event in self.events), None)
+
+    def covers(self, team_id: str) -> bool:
+        """Whether an event of `team_id` is in this destination's scope, before any privacy check."""
+        if self.scope == "workspace":
+            return not self.team_ids or team_id in self.team_ids
+        return self.team_id == team_id
+
+    def identity(self) -> str:
+        """The channel this destination posts into, so one event posts to a channel once.
+
+        Two destinations naming the same App channel share an identity. A pasted
+        webhook's channel is unknowable, so it is its own identity.
+        """
+        if self.transport == "slack_app" and self.slack_channel_id:
+            return f"slack:{self.slack_team_id}:{self.slack_channel_id}"
+        if self.transport == "discord_app" and self.discord_channel_id:
+            return f"discord:{self.discord_channel_id}"
+        return f"channel:{self.channel_id}"
 
 
 class ChannelDelivery(BaseModel):
@@ -174,15 +202,23 @@ class ChannelStore:
         return destination
 
     def list(
-        self, workspace_id: str, team_id: str | None = None, *, limit: int = 500, consistent: bool = True
+        self,
+        workspace_id: str,
+        team_id: str | None = None,
+        *,
+        scope: ChannelScope | None = None,
+        limit: int = 500,
+        consistent: bool = True,
     ) -> list[ChannelDestination]:
-        """A workspace's destinations, or one team's, oldest first."""
+        """A workspace's destinations, one team's own, or only one scope's, oldest first."""
         rows = [
             ChannelDestination.model_validate(dict(item))
             for item in self._query(workspace_id, CHANNEL_PREFIX, limit, consistent=consistent)
         ]
         if team_id is not None:
-            rows = [row for row in rows if row.team_id == team_id]
+            rows = [row for row in rows if row.scope == "team" and row.team_id == team_id]
+        if scope is not None:
+            rows = [row for row in rows if row.scope == scope]
         return sorted(rows, key=lambda row: row.channel_id)
 
     def update(self, workspace_id: str, channel_id: str, **attributes: Any) -> ChannelDestination | None:
@@ -242,11 +278,23 @@ class ChannelStore:
         return True
 
     def delete_team(self, workspace_id: str, team_id: str) -> int:
-        """Remove every destination of one team, for the team purge."""
+        """Remove every destination of one team, for the team purge.
+
+        A workspace destination naming the team drops it from `team_ids`, and one left
+        naming no team is turned off rather than widened to every team.
+        """
+        if not team_id:
+            return 0
         removed = 0
         for destination in self.list(workspace_id, team_id):
-            if team_id and self.delete(workspace_id, destination.channel_id):
+            if self.delete(workspace_id, destination.channel_id):
                 removed += 1
+        for destination in self.list(workspace_id, scope="workspace"):
+            if team_id not in destination.team_ids:
+                continue
+            remaining = [listed for listed in destination.team_ids if listed != team_id]
+            enabled = destination.enabled and bool(remaining)
+            self.update(workspace_id, destination.channel_id, team_ids=remaining, enabled=enabled)
         return removed
 
     def create_delivery(self, delivery: ChannelDelivery) -> bool:

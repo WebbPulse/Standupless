@@ -297,7 +297,7 @@ def test_a_denied_or_forged_install_binds_nothing(
     monkeypatch.setattr(api, "exchange_code", lambda code: _answer())
     state, _ = mint_state(WORKSPACE, ADMIN, audience=install.STATE_AUDIENCE)
     path, query = _callback(slack_client, error="access_denied", state=state)
-    assert (path, query["slack"]) == ("/w/acme/settings", ["denied"])
+    assert (path, query["slack"]) == ("/w/acme/settings/integrations", ["denied"])
 
     github_state, _ = mint_state(WORKSPACE, ADMIN)
     _, forged = _callback(slack_client, code="a-code", state=github_state)
@@ -694,3 +694,158 @@ def test_the_guest_role_is_kept_for_a_slack_person(installed: SlackInstallation,
     assert context.user_id == GUEST
     assert context.role == "guest"
     assert context.team_ids == (TEAM,)
+
+
+WORKSPACE_CHANNELS = f"/api/workspaces/{WORKSPACE}/webhooks/channels"
+
+
+def _logged(repositories: Any, action: str) -> list[Any]:
+    """The workspace's audit entries of one kind, newest first."""
+    from webbpulse.audit import AuditQuery
+
+    return repositories.audit.list_events(WORKSPACE, AuditQuery(action=action)).events
+
+
+def test_an_install_from_the_integrations_page_returns_there_and_is_audited(
+    slack_client: TestClient, workspace: str, repositories: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A state minted without a team lands on the integrations page, and connect and disconnect are logged."""
+    monkeypatch.setattr(api, "exchange_code", lambda code: _answer())
+    state, _ = mint_state(WORKSPACE, ADMIN, audience=install.STATE_AUDIENCE)
+
+    path, query = _callback(slack_client, code="a-code", state=state)
+
+    assert path == "/w/acme/settings/integrations"
+    assert query["slack"] == ["installed"]
+    [connected] = _logged(repositories, "slack.connected")
+    assert connected.actor.id == ADMIN
+    assert connected.target.id == SLACK_TEAM and connected.target.label == "Acme Slack"
+    assert BOT_TOKEN not in json.dumps(dict(connected.after or {}))
+
+    sign_in(slack_client, ADMIN)
+    assert slack_client.delete(f"/api/workspaces/{WORKSPACE}/slack").status_code == 204
+    [disconnected] = _logged(repositories, "slack.disconnected")
+    assert disconnected.actor.id == ADMIN and disconnected.target.id == SLACK_TEAM
+
+
+@pytest.mark.parametrize("caller", [MEMBER, GUEST])
+def test_only_workspace_admins_manage_workspace_channels(
+    slack_client: TestClient, installed: SlackInstallation, caller: str
+) -> None:
+    """Every workspace channel route and its picker refuse a member and a guest."""
+    sign_in(slack_client, caller)
+    assert slack_client.get(WORKSPACE_CHANNELS).status_code == 403
+    assert slack_client.get(f"/api/workspaces/{WORKSPACE}/slack/channels").status_code == 403
+    created = slack_client.post(WORKSPACE_CHANNELS, json={"slack_channel_id": "C0ENG", "events": ["issue_created"]})
+    assert created.status_code == 403
+
+
+def test_a_workspace_channel_is_added_changed_tested_and_removed(
+    slack_client: TestClient, installed: SlackInstallation, repositories: Any, slack: FakeSlack
+) -> None:
+    """A workspace admin picks a channel and teams; team routes never see it, and each step is audited."""
+    sign_in(slack_client, ADMIN)
+    listed = slack_client.get(f"/api/workspaces/{WORKSPACE}/slack/channels")
+    assert [row["id"] for row in listed.json()] == ["C0ENG", "C0OPS"]
+
+    created = slack_client.post(
+        WORKSPACE_CHANNELS,
+        json={
+            "slack_channel_id": "C0ENG",
+            "slack_channel_name": "eng",
+            "events": ["issue_created"],
+            "team_ids": [TEAM, TEAM],
+        },
+    )
+    assert created.status_code == 201, created.text
+    body = created.json()
+    assert body["scope"] == "workspace" and body["team_id"] == "" and body["team_ids"] == [TEAM]
+    assert body["transport"] == "slack_app"
+    channel_id = body["channel_id"]
+
+    assert [row["channel_id"] for row in slack_client.get(WORKSPACE_CHANNELS).json()] == [channel_id]
+    assert slack_client.get(CHANNELS_PATH).json() == []
+    assert slack_client.delete(f"{CHANNELS_PATH}/{channel_id}").status_code == 404
+
+    every = slack_client.patch(f"{WORKSPACE_CHANNELS}/{channel_id}", json={"team_ids": []})
+    assert every.status_code == 200 and every.json()["team_ids"] == []
+
+    tested = slack_client.post(f"{WORKSPACE_CHANNELS}/{channel_id}/test")
+    assert tested.status_code == 200 and tested.json()["delivered"] is True
+    posted = slack.last("chat.postMessage")
+    assert posted["channel"] == "C0ENG"
+    assert "every open team" in json.dumps(posted)
+
+    assert slack_client.delete(f"{WORKSPACE_CHANNELS}/{channel_id}").status_code == 204
+    assert slack_client.delete(f"{WORKSPACE_CHANNELS}/{channel_id}").status_code == 404
+
+    [added] = _logged(repositories, "channel.created")
+    [changed] = _logged(repositories, "channel.updated")
+    [removed] = _logged(repositories, "channel.deleted")
+    assert added.after is not None and added.after["scope"] == "workspace" and added.after["team_ids"] == [TEAM]
+    assert changed.before == {"scope": "workspace", "team_ids": [TEAM]}
+    assert changed.after == {"scope": "workspace", "team_ids": []}
+    assert removed.actor.id == ADMIN
+
+
+def test_a_team_channel_is_not_reachable_from_the_workspace_routes(
+    slack_client: TestClient, installed: SlackInstallation, repositories: Any
+) -> None:
+    """A team's channel is a 404 on every workspace route."""
+    destination = _slack_destination(repositories)
+    sign_in(slack_client, ADMIN)
+    assert slack_client.get(WORKSPACE_CHANNELS).json() == []
+    path = f"{WORKSPACE_CHANNELS}/{destination.channel_id}"
+    assert slack_client.patch(path, json={"label": "x"}).status_code == 404
+    assert slack_client.post(f"{path}/test").status_code == 404
+    assert slack_client.delete(path).status_code == 404
+
+
+def test_a_workspace_channel_needs_an_app_and_teams_the_admin_can_read(
+    slack_client: TestClient, workspace: str, repositories: Any, github_env: None
+) -> None:
+    """No install, a pasted webhook, an unknown team or a private team the admin is outside are each refused."""
+    sign_in(slack_client, ADMIN)
+    assert slack_client.get(f"/api/workspaces/{WORKSPACE}/slack/channels").status_code == 404
+    refused = slack_client.post(WORKSPACE_CHANNELS, json={"slack_channel_id": "C0ENG", "events": ["issue_created"]})
+    assert refused.status_code == 422 and "SLACK_NOT_INSTALLED" in refused.text
+    webhook = {"url": "https://hooks.slack.com/services/T/B/x", "events": ["issue_created"]}
+    assert slack_client.post(WORKSPACE_CHANNELS, json=webhook).status_code == 422
+
+    install.bind(repositories, WORKSPACE, OWNER, _answer())
+    unknown = {"slack_channel_id": "C0ENG", "events": ["issue_created"], "team_ids": ["01JB000000000000000000NOPE"]}
+    missing = slack_client.post(WORKSPACE_CHANNELS, json=unknown)
+    assert missing.status_code == 422 and "TEAM_NOT_FOUND" in missing.text
+
+    repositories.memberships.set_team_private(WORKSPACE, OTHER_TEAM, True)
+    hidden = {"slack_channel_id": "C0ENG", "events": ["issue_created"], "team_ids": [OTHER_TEAM]}
+    private = slack_client.post(WORKSPACE_CHANNELS, json=hidden)
+    assert private.status_code == 403 and "PRIVATE_TEAM" in private.text
+    assert slack_client.get(WORKSPACE_CHANNELS).json() == []
+
+
+def test_the_channel_tools_manage_workspace_channels_without_a_team(
+    slack_client: TestClient, installed: SlackInstallation, repositories: Any
+) -> None:
+    """Leaving `team_id` out acts on the workspace's channels, held to workspace admin."""
+    from tests.domains.integrations.test_mcp import tool
+    from tests.domains.integrations.test_mcp_tools import answer, mint_for, refusal
+
+    admin = mint_for(repositories, ADMIN, ("teams:read", "teams:write"))
+    member = mint_for(repositories, MEMBER, ("teams:read", "teams:write"))
+    arguments = {"slack_channel_id": "C0ENG", "slack_channel_name": "eng", "events": ["issue_created"]}
+
+    created = answer(tool(slack_client, admin, "create_channel", {**arguments, "team_ids": ["ABC"]}))
+    assert created["scope"] == "workspace" and created["team_ids"] == [TEAM]
+    listed = answer(tool(slack_client, admin, "list_channels", {}))
+    assert listed["scope"] == "workspace"
+    assert [row["channel_id"] for row in listed["channels"]] == [created["channel_id"]]
+    changed = answer(tool(slack_client, admin, "update_channel", {"channel_id": created["channel_id"], "team_ids": []}))
+    assert changed["team_ids"] == []
+    assert answer(tool(slack_client, admin, "list_channels", {"team_id": "ABC"}))["channels"] == []
+
+    assert tool(slack_client, member, "list_channels", {}).json()["result"]["isError"] is True
+    team_ids_on_team = {"team_id": "ABC", **arguments, "team_ids": ["ABC"]}
+    assert "team_ids only applies" in refusal(tool(slack_client, admin, "create_channel", team_ids_on_team))
+    deleted = answer(tool(slack_client, admin, "delete_channel", {"channel_id": created["channel_id"]}))
+    assert deleted == {"deleted": created["channel_id"]}

@@ -2898,6 +2898,9 @@ export type ChannelProvider = 'slack' | 'discord';
 /** How a team channel posts: through its incoming webhook, or as the installed Slack or Discord App's bot. */
 export type ChannelTransport = 'webhook' | 'slack_app' | 'discord_app';
 
+/** Who owns a channel: one team, or the workspace, which follows several teams. */
+export type ChannelScope = 'team' | 'workspace';
+
 /**
  * One Slack or Discord channel a team posts its notifications to. The webhook
  * URL is never returned; `url_hint` names the host and its last characters.
@@ -2906,7 +2909,12 @@ export type ChannelTransport = 'webhook' | 'slack_app' | 'discord_app';
  */
 export interface ChannelRead {
   channel_id: string;
+  /** The team a team channel belongs to, empty for a workspace channel. */
   team_id: string;
+  /** Whether one team or the whole workspace owns the channel. Absent from an older backend. */
+  scope?: ChannelScope;
+  /** The teams a workspace channel follows, empty for every open team. */
+  team_ids?: string[];
   provider: ChannelProvider;
   /** Absent from an older backend, which only had webhooks. */
   transport?: ChannelTransport;
@@ -3032,6 +3040,22 @@ export interface ChannelUpdate {
   label?: string;
   events?: ChannelEvent[];
   enabled?: boolean;
+}
+
+/**
+ * What adding a workspace channel takes: the Slack or Discord channel an
+ * installed App posts to, and the teams it follows, empty for every open team.
+ */
+export interface WorkspaceChannelCreate extends Omit<ChannelCreate, 'url'> {
+  team_ids?: string[];
+}
+
+/** What editing a workspace channel takes; unset fields are left alone. */
+export interface WorkspaceChannelUpdate {
+  label?: string;
+  events?: ChannelEvent[];
+  enabled?: boolean;
+  team_ids?: string[];
 }
 
 /** Whether this environment has a Slack App and whether this workspace installed it. */

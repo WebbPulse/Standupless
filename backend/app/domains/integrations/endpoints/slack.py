@@ -19,6 +19,7 @@ from urllib.parse import parse_qs
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from fastapi.responses import JSONResponse, RedirectResponse
 
+from app.common import audit
 from app.common.api.dependencies.authz import AuthzContext, Capability, require
 from app.common.api.dependencies.repositories import Repositories, get_repositories
 from app.common.core.config import settings
@@ -92,8 +93,18 @@ def get_slack_install_url(
 @router.delete("/{workspace_id}/slack", status_code=status.HTTP_204_NO_CONTENT)
 def delete_slack_connection(context: WorkspaceAdmin, repositories: Bundle) -> Response:
     """Remove the Slack App from this workspace and turn off the channels that posted through it."""
-    if not install.disconnect(repositories, context.workspace_id):
+    current = repositories.github.slack.get(context.workspace_id)
+    if current is None or not install.disconnect(repositories, context.workspace_id):
         raise not_found()
+    audit.record(
+        repositories,
+        context,
+        "slack.disconnected",
+        target_type="slack",
+        target_id=current.slack_team_id,
+        target_label=current.slack_team_name,
+        before={"slack_team_id": current.slack_team_id, "name": current.slack_team_name},
+    )
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
@@ -163,7 +174,7 @@ def slack_oauth_callback(
         )
         return _back(repositories, claims, "error")
     try:
-        install.bind(repositories, str(claims["workspace_id"]), str(claims["user_id"]), answer)
+        installation = install.bind(repositories, str(claims["workspace_id"]), str(claims["user_id"]), answer)
     except install.InstallRejected as rejection:
         _log.warning(
             "A Slack install could not be bound.",
@@ -171,6 +182,18 @@ def slack_oauth_callback(
         )
         return _back(repositories, claims, rejection.reason)
     _log.info("Bound a Slack install.", extra={"event": "integrations.slack.installed"})
+    audit.record_system(
+        repositories,
+        installation.workspace_id,
+        "slack.connected",
+        actor_id=installation.installed_by,
+        actor_kind="user",
+        source="web",
+        target_type="slack",
+        target_id=installation.slack_team_id,
+        target_label=installation.slack_team_name,
+        after={"slack_team_id": installation.slack_team_id, "name": installation.slack_team_name},
+    )
     return _back(repositories, claims, "installed")
 
 

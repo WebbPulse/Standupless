@@ -22,6 +22,7 @@ from typing import Annotated, Any, Mapping
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
+from app.common import audit
 from app.common.api.dependencies.authz import AuthzContext, Capability, require
 from app.common.api.dependencies.repositories import Repositories, get_repositories
 from app.common.core.config import settings
@@ -105,8 +106,18 @@ def get_discord_install_url(
 @router.delete("/{workspace_id}/discord", status_code=status.HTTP_204_NO_CONTENT)
 def delete_discord_connection(context: WorkspaceAdmin, repositories: Bundle) -> Response:
     """Take the Discord App out of this workspace's server and turn off the channels that posted through it."""
-    if not install.disconnect(repositories, context.workspace_id):
+    current = repositories.github.discord.get(context.workspace_id)
+    if current is None or not install.disconnect(repositories, context.workspace_id):
         raise not_found()
+    audit.record(
+        repositories,
+        context,
+        "discord.disconnected",
+        target_type="discord",
+        target_id=current.guild_id,
+        target_label=current.guild_name,
+        before={"guild_id": current.guild_id, "name": current.guild_name},
+    )
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
@@ -214,7 +225,7 @@ def _complete_install(repositories: Repositories, state: str, code: str, error: 
         )
         return _back(repositories, claims, "error")
     try:
-        install.bind(repositories, str(claims["workspace_id"]), str(claims["user_id"]), answer)
+        installation = install.bind(repositories, str(claims["workspace_id"]), str(claims["user_id"]), answer)
     except install.InstallRejected as rejection:
         _log.warning(
             "A Discord install could not be bound.",
@@ -222,6 +233,18 @@ def _complete_install(repositories: Repositories, state: str, code: str, error: 
         )
         return _back(repositories, claims, rejection.reason)
     _log.info("Bound a Discord install.", extra={"event": "integrations.discord.installed"})
+    audit.record_system(
+        repositories,
+        installation.workspace_id,
+        "discord.connected",
+        actor_id=installation.installed_by,
+        actor_kind="user",
+        source="web",
+        target_type="discord",
+        target_id=installation.guild_id,
+        target_label=installation.guild_name,
+        after={"guild_id": installation.guild_id, "name": installation.guild_name},
+    )
     return _back(repositories, claims, "installed")
 
 

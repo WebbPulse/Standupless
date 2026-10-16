@@ -18,6 +18,7 @@ import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 from fastapi.testclient import TestClient
+from webbpulse.audit import AuditQuery
 
 from app.common.db.dynamo.base import utc_now
 from app.common.db.dynamo.channels import ChannelDestination, channel_key, new_channel_id
@@ -272,6 +273,8 @@ def test_an_install_binds_the_server_and_registers_the_commands(
     assert repositories.github.discord.installation_for_guild(GUILD) is not None
     assert discord.paths("PUT") == [f"/applications/{APPLICATION_ID}/commands"]
     assert discord.calls[-1][2] == list(commands.COMMANDS)
+    [connected] = repositories.audit.list_events(WORKSPACE, AuditQuery(action="discord.connected")).events
+    assert connected.actor.id == ADMIN and connected.target.id == GUILD
 
     replay_path, replay = _callback(discord_client, code="a-code", state=state)
     assert replay["discord"] == ["invalid_state"]
@@ -290,7 +293,7 @@ def test_a_denied_or_forged_install_binds_nothing(
     """A refusal on Discord's consent screen or a state minted for another flow changes nothing."""
     state, _ = mint_state(WORKSPACE, ADMIN, audience=install.STATE_AUDIENCE)
     path, query = _callback(discord_client, error="access_denied", state=state)
-    assert (path, query["discord"]) == ("/w/acme/settings", ["denied"])
+    assert (path, query["discord"]) == ("/w/acme/settings/integrations", ["denied"])
 
     github_state, _ = mint_state(WORKSPACE, ADMIN)
     _, forged = _callback(discord_client, code="a-code", state=github_state)
@@ -701,6 +704,8 @@ def test_disconnecting_leaves_the_server_and_turns_off_bot_channels(
     stored = repositories.github.channels.get(WORKSPACE, destination.channel_id)
     assert stored is not None and stored.enabled is False
     assert discord_client.delete(f"/api/workspaces/{WORKSPACE}/discord").status_code == 404
+    [entry] = repositories.audit.list_events(WORKSPACE, AuditQuery(action="discord.disconnected")).events
+    assert entry.actor.id == ADMIN and entry.target.id == GUILD
 
 
 def test_the_guest_role_is_kept_for_a_discord_person(linked: DiscordInstallation, repositories: Any) -> None:

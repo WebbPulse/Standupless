@@ -5,7 +5,7 @@
  * Workspace administration is admin only, but the team list, the workflow
  * and labels every team inherits (read only below admin), the plan, a person's own
  * API keys, connected apps, MCP and CLI setup and private agent profiles are not, and notification
- * preferences are personal, so the workspace, security, audit log, export and import links are gated and the
+ * preferences are personal, so the workspace, security, integrations, audit log, export and import links are gated and the
  * others are not. That mirrors what the server allows rather than hiding a page somebody
  * is entitled to open.
  */
@@ -30,7 +30,7 @@ const tabClass = ({ isActive }: { isActive: boolean }): string =>
       : 'text-text-muted hover:text-text'
   );
 
-/** Renders the links between the workspace, security, team, workflow, label, template, billing, API key, connected app, MCP and CLI, agent profile, share link, export, import, audit log and notification settings. */
+/** Renders the links between the workspace, security, team, workflow, label, template, billing, API key, integrations, connected app, MCP and CLI, agent profile, share link, export, import, audit log and notification settings. */
 export const SettingsNav: React.FC<SettingsNavProps> = ({ workspace }) => (
   <nav aria-label="Settings sections" className="flex flex-wrap gap-1">
     {canManageMembers(workspace.role) && (
@@ -67,6 +67,14 @@ export const SettingsNav: React.FC<SettingsNavProps> = ({ workspace }) => (
     <NavLink to={`/w/${workspace.slug}/settings/api-keys`} className={tabClass}>
       API keys
     </NavLink>
+    {canManageMembers(workspace.role) && (
+      <NavLink
+        to={`/w/${workspace.slug}/settings/integrations`}
+        className={tabClass}
+      >
+        Integrations
+      </NavLink>
+    )}
     <NavLink
       to={`/w/${workspace.slug}/settings/connected-apps`}
       className={tabClass}

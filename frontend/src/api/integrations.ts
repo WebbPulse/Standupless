@@ -37,6 +37,8 @@ import type {
   WebhookEndpointCreate,
   WebhookEndpointRead,
   WebhookEndpointUpdate,
+  WorkspaceChannelCreate,
+  WorkspaceChannelUpdate,
 } from '../types/Api';
 
 /** The route the install URL is minted on. */
@@ -95,9 +97,17 @@ export const webhooksPath = (scope: WebhookScope): string =>
     ? `/workspaces/${scope.workspaceId}/webhooks`
     : `/workspaces/${scope.workspaceId}/teams/${scope.teamId}/webhooks`;
 
-/** The route a team's Slack and Discord channels are listed and added on. */
-export const channelsPath = (workspaceId: string, teamId: string): string =>
-  `/workspaces/${workspaceId}/teams/${teamId}/webhooks/channels`;
+/**
+ * The route a team's Slack and Discord channels are listed and added on, or
+ * the workspace's own channels when there is no team.
+ */
+export const channelsPath = (
+  workspaceId: string,
+  teamId: string | null
+): string =>
+  teamId === null
+    ? `/workspaces/${workspaceId}/webhooks/channels`
+    : `/workspaces/${workspaceId}/teams/${teamId}/webhooks/channels`;
 
 /** The route a workspace's Slack App connection is read and removed on. */
 export const slackConnectionPath = (workspaceId: string): string =>
@@ -107,12 +117,14 @@ export const slackConnectionPath = (workspaceId: string): string =>
 export const slackInstallUrlPath = (workspaceId: string): string =>
   `${slackConnectionPath(workspaceId)}/install-url`;
 
-/** The route listing the Slack channels a team can pick for the bot to post to. */
+/** The route listing the Slack channels a team, or the workspace, can pick for the bot to post to. */
 export const slackChannelsPath = (
   workspaceId: string,
-  teamId: string
+  teamId: string | null
 ): string =>
-  `/workspaces/${workspaceId}/teams/${teamId}/webhooks/slack-channels`;
+  teamId === null
+    ? `${slackConnectionPath(workspaceId)}/channels`
+    : `/workspaces/${workspaceId}/teams/${teamId}/webhooks/slack-channels`;
 
 /** The route a workspace's Discord App connection is read and removed on. */
 export const discordConnectionPath = (workspaceId: string): string =>
@@ -122,24 +134,26 @@ export const discordConnectionPath = (workspaceId: string): string =>
 export const discordInstallUrlPath = (workspaceId: string): string =>
   `${discordConnectionPath(workspaceId)}/install-url`;
 
-/** The route listing the Discord channels a team can pick for the bot to post to. */
+/** The route listing the Discord channels a team, or the workspace, can pick for the bot to post to. */
 export const discordChannelsPath = (
   workspaceId: string,
-  teamId: string
+  teamId: string | null
 ): string =>
-  `/workspaces/${workspaceId}/teams/${teamId}/webhooks/discord-channels`;
+  teamId === null
+    ? `${discordConnectionPath(workspaceId)}/channels`
+    : `/workspaces/${workspaceId}/teams/${teamId}/webhooks/discord-channels`;
 
-/** The route one team channel is edited and deleted through. */
+/** The route one team or workspace channel is edited and deleted through. */
 export const channelPath = (
   workspaceId: string,
-  teamId: string,
+  teamId: string | null,
   channelId: string
 ): string => `${channelsPath(workspaceId, teamId)}/${channelId}`;
 
-/** The route a team channel's test message is sent through. */
+/** The route a team or workspace channel's test message is sent through. */
 export const channelTestPath = (
   workspaceId: string,
-  teamId: string,
+  teamId: string | null,
   channelId: string
 ): string => `${channelPath(workspaceId, teamId, channelId)}/test`;
 
@@ -556,10 +570,10 @@ export const redeliverWebhookDelivery = async (
   return response.data;
 };
 
-/** Lists a team's Slack and Discord channels, oldest first. */
+/** Lists a team's Slack and Discord channels, or the workspace's own with no team, oldest first. */
 export const listChannels = async (
   workspaceId: string,
-  teamId: string,
+  teamId: string | null,
   signal?: AbortSignal
 ): Promise<ChannelRead[]> => {
   const response = await apiClient.get<ChannelRead[]>(
@@ -575,8 +589,8 @@ export const listChannels = async (
  */
 export const createChannel = async (
   workspaceId: string,
-  teamId: string,
-  payload: ChannelCreate
+  teamId: string | null,
+  payload: ChannelCreate | WorkspaceChannelCreate
 ): Promise<ChannelRead> => {
   const response = await apiClient.post<ChannelRead>(
     channelsPath(workspaceId, teamId),
@@ -585,12 +599,12 @@ export const createChannel = async (
   return response.data;
 };
 
-/** Edits a channel's URL, label, events or enabled flag. */
+/** Edits a channel's URL, label, events or enabled flag, or a workspace channel's teams. */
 export const updateChannel = async (
   workspaceId: string,
-  teamId: string,
+  teamId: string | null,
   channelId: string,
-  payload: ChannelUpdate
+  payload: ChannelUpdate | WorkspaceChannelUpdate
 ): Promise<ChannelRead> => {
   const response = await apiClient.patch<ChannelRead>(
     channelPath(workspaceId, teamId, channelId),
@@ -602,7 +616,7 @@ export const updateChannel = async (
 /** Removes a channel. */
 export const deleteChannel = async (
   workspaceId: string,
-  teamId: string,
+  teamId: string | null,
   channelId: string
 ): Promise<void> => {
   await apiClient.delete(channelPath(workspaceId, teamId, channelId));
@@ -611,7 +625,7 @@ export const deleteChannel = async (
 /** Posts a test message to a channel and says whether it landed. */
 export const testChannel = async (
   workspaceId: string,
-  teamId: string,
+  teamId: string | null,
   channelId: string
 ): Promise<ChannelTestRead> => {
   const response = await apiClient.post<ChannelTestRead>(
@@ -635,7 +649,8 @@ export const getSlackConnection = async (
 
 /**
  * Mints the link that adds the Slack App, returning to the team it was started
- * from. The signed state inside it expires, so it is fetched on the click.
+ * from, or to the workspace integrations page without one. The signed state
+ * inside it expires, so it is fetched on the click.
  */
 export const getSlackInstallUrl = async (
   workspaceId: string,
@@ -658,7 +673,7 @@ export const deleteSlackConnection = async (
 /** Lists the Slack channels the installed bot can post to, for the channel picker. */
 export const listSlackChannels = async (
   workspaceId: string,
-  teamId: string,
+  teamId: string | null,
   signal?: AbortSignal
 ): Promise<SlackChannelRead[]> => {
   const response = await apiClient.get<SlackChannelRead[]>(
@@ -682,7 +697,8 @@ export const getDiscordConnection = async (
 
 /**
  * Mints the link that adds the Discord App to a server, returning to the team it
- * was started from. The signed state inside it expires, so it is fetched on the click.
+ * was started from, or to the workspace integrations page without one. The
+ * signed state inside it expires, so it is fetched on the click.
  */
 export const getDiscordInstallUrl = async (
   workspaceId: string,
@@ -705,7 +721,7 @@ export const deleteDiscordConnection = async (
 /** Lists the Discord channels the installed bot can post to, for the channel picker. */
 export const listDiscordChannels = async (
   workspaceId: string,
-  teamId: string,
+  teamId: string | null,
   signal?: AbortSignal
 ): Promise<DiscordChannelRead[]> => {
   const response = await apiClient.get<DiscordChannelRead[]>(
