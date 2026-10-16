@@ -317,7 +317,7 @@ locals {
       domain.ses ? {
         EMAIL_FROM            = local.email_from
         EMAIL_ENABLED         = "true"
-        SES_CONFIGURATION_SET = aws_sesv2_configuration_set.transactional.configuration_set_name
+        SES_CONFIGURATION_SET = module.ses.configuration_set_name
 
         # The account is in the SES sandbox, so a send to anything but a verified
         # identity is refused at the API. The product skips those before the call,
@@ -335,7 +335,7 @@ locals {
         IDENTITY_MCP_LOGIN_URL     = "${local.frontend_url}/login"
 
         IDENTITY_EMAIL_FROM            = local.email_from
-        IDENTITY_SES_CONFIGURATION_SET = aws_sesv2_configuration_set.transactional.configuration_set_name
+        IDENTITY_SES_CONFIGURATION_SET = module.ses.configuration_set_name
 
         IDENTITY_REGISTRATION_ENABLED = "true"
 
@@ -542,7 +542,7 @@ module "lambda_domain" {
   for_each = local.lambda_domains
 
   source  = "terraform.webbpulse.com/WebbPulse/platform-modules/aws//modules/lambda-function"
-  version = "~> 2.27"
+  version = "~> 2.39"
 
   function_name = "${local.prefix}-${each.key}"
   role_name     = "${local.prefix}-lambda-${each.key}"
@@ -579,6 +579,10 @@ module "lambda_domain" {
   tracing_mode             = "Active"
   attach_xray_write_policy = true
 
+  enable_log_write = true
+  enable_xray      = true
+  app_secret_arns  = each.value.secrets ? [module.app_secrets.arns["app"]] : []
+
   tags = { Name = "${local.prefix}-${each.key}" }
 }
 
@@ -588,23 +592,11 @@ resource "aws_iam_role_policy" "lambda_domain" {
   name = "${each.key}-runtime"
   role = module.lambda_domain[each.key].role_id
 
+  depends_on = [module.lambda_domain]
+
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = concat(
-      [
-        {
-          Sid      = "WriteOwnLogs"
-          Effect   = "Allow"
-          Action   = ["logs:CreateLogStream", "logs:PutLogEvents"]
-          Resource = "${module.lambda_domain[each.key].log_group_arn}:*"
-        },
-        {
-          Sid      = "WriteSpansToTheXRayOTLPEndpoint"
-          Effect   = "Allow"
-          Action   = ["xray:PutSpans", "xray:PutSpansForIndexing"]
-          Resource = "*"
-        },
-      ],
       length(local.lambda_domain_write_arns[each.key]) > 0 ? [
         {
           Sid      = "ReadWriteOwnTables"
@@ -619,14 +611,6 @@ resource "aws_iam_role_policy" "lambda_domain" {
           Effect   = "Allow"
           Action   = local.dynamodb_domain_read_actions
           Resource = local.lambda_domain_read_arns[each.key]
-        },
-      ] : [],
-      each.value.secrets ? [
-        {
-          Sid      = "ReadTheAppSecret"
-          Effect   = "Allow"
-          Action   = ["secretsmanager:GetSecretValue"]
-          Resource = [module.app_secrets.arns["app"]]
         },
       ] : [],
       each.key == "admin" ? [
@@ -743,7 +727,7 @@ resource "aws_iam_role_policy" "lambda_domain" {
           Action = ["ses:SendEmail"]
           Resource = [
             "arn:aws:ses:${var.aws_region}:${data.aws_caller_identity.current.account_id}:identity/*",
-            "arn:aws:ses:${var.aws_region}:${data.aws_caller_identity.current.account_id}:configuration-set/${aws_sesv2_configuration_set.transactional.configuration_set_name}",
+            "arn:aws:ses:${var.aws_region}:${data.aws_caller_identity.current.account_id}:configuration-set/${module.ses.configuration_set_name}",
           ]
         },
       ] : [],

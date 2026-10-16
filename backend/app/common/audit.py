@@ -90,6 +90,8 @@ EVENTS: dict[str, str] = {
     "github.repository_pinned": "GitHub repository pinned",
     "github.repository_unpinned": "GitHub repository unpinned",
     "label.merged": "Labels merged",
+    "platform_admin.granted": "Platform admin granted",
+    "platform_admin.revoked": "Platform admin revoked",
 }
 """Every event the log records, with the label the settings page shows."""
 

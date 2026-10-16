@@ -189,7 +189,11 @@ describe.each(['list', 'board'] as const)('the chip on the %s', (layout) => {
     });
     expect(chip).toHaveTextContent('3 PRs');
     expect(chip).toHaveAttribute('href', 'https://github.com/acme/api/pull/42');
-    expect(chip.nextElementSibling?.textContent).toBe(
+    expect(
+      screen
+        .getAllByRole('tooltip', { hidden: true })
+        .map((bubble) => bubble.textContent)
+    ).toContain(
       'acme/api#7 Ship it (Merged)\nacme/api#9 Follow up (Open)\nand 1 more'
     );
   });

@@ -24,6 +24,10 @@ team's active cycle, when the team has automatic cycles on with the auto-add
 setting, which is Linear's "auto-add started issues". The write is conditional
 on the issue still having no cycle.
 
+Any record that lands an issue with a running SLA timer in a new status, team or
+deadline is checked against the status category, and a finished issue loses the
+timer, so a write path that skipped `apply_sla` cannot leave a breach behind.
+
 The cycle close schedule posts one synthetic record to the same route, told apart
 by its `eventSource`, and that record runs the recurring issue, close, auto-close and
 auto-archive sweeps instead.
@@ -263,6 +267,9 @@ def auto_add_to_cycle(repositories: Any, record: Mapping[str, Any]) -> bool:
 def handle_record(repositories: Repositories, record: Mapping[str, Any]) -> None:
     """Recount every parent and blocked issue one stream record made stale, or detach a deleted milestone.
 
+    A record that leaves a running SLA timer on a finished issue also has the
+    timer cleared.
+
     Raising puts this record alone into `batchItemFailures`, so a transient failure
     retries the record rather than the whole batch. The hourly trigger runs the
     recurring issue sweep, the cycle close sweep, the auto-close sweep, the
@@ -286,6 +293,10 @@ def handle_record(repositories: Repositories, record: Mapping[str, Any]) -> None
         return
 
     auto_add_to_cycle(repositories, record)
+
+    finished = sla_repair.finished_timer(record)
+    if finished is not None:
+        sla_repair.clear_if_finished(repositories, *finished)
 
     stale = parents_to_recount(record)
     blocker = status_moved(record)

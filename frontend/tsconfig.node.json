@@ -4,5 +4,10 @@
     "incremental": true,
     "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.node.tsbuildinfo"
   },
-  "include": ["vite.config.ts", "vitest.config.ts", "prerender.ts"]
+  "include": [
+    "vite.config.ts",
+    "vitest.config.ts",
+    "prerender.ts",
+    "devProxy.ts"
+  ]
 }

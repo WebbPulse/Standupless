@@ -63,6 +63,25 @@ uv run bandit -r app -ll
 systemd-run --user --scope -p MemoryMax=8G -p MemorySwapMax=0 uv run pytest
 ```
 
+### Operator scripts
+
+Run from `backend/` with credentials for the environment's account. `--stage` is
+`staging` or `production`.
+
+- `scripts/grant_admin.py` sets or clears the platform admin flag
+  (`users.is_admin`) for one person, named by `--user-id` or `--email`. It is a
+  dry run unless `--apply` is passed, `--revoke` clears the flag, and it refuses
+  an unknown person, a disabled account and the last admin who can sign in. Each
+  write is recorded in the audit log of every workspace the person belongs to.
+  It prints the user id and outcome, never an email.
+- `scripts/grant_comp_plan.py` grants or revokes an internal comp plan on one
+  workspace.
+
+```bash
+uv run python scripts/grant_admin.py --stage production --user-id <id>
+uv run python scripts/grant_admin.py --stage production --user-id <id> --apply
+```
+
 ### Frontend
 
 ```bash
@@ -70,6 +89,18 @@ cd frontend
 npm ci
 npm run dev
 ```
+
+`npm run dev` proxies `/api` to the local backend on port 8000.
+`npm run dev:staging` and `npm run dev:production` proxy it to the deployed API
+instead, rewriting the Origin, Referer and cookie domain so the API sees the
+deployed site and its CORS list never has to admit localhost. Set
+`VITE_STAGING_API_URL` or `VITE_PROD_API_URL` to point either at another host.
+If the dev server dies with `ENOSPC` because the inotify watch limit is low, run
+it with `DEV_WATCH_POLLING=1` to poll for changes instead.
+
+Against a deployed API, sign in on localhost with email and password, plus TOTP
+when the account has it. Passkeys do not work there, because they are bound to
+the `standupless.dev` relying party id.
 
 Checks: `npm run lint`, `npm run type-check`, `npm run test:run`, `npm run build`.
 

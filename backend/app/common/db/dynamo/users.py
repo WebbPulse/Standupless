@@ -231,6 +231,11 @@ class UserRepository:
         items = self._repository.iter_scan(filter_expression=Attr("purge_after").exists())
         return [_as_user(item) for item in items]
 
+    def list_admins(self) -> list[User]:
+        """Every platform admin whose account can still sign in, for the last admin check."""
+        items = self._repository.iter_scan(filter_expression=Attr("is_admin").eq(True))
+        return [user for user in map(_as_user, items) if not user.disabled and not user.is_deleted]
+
     def begin_purge(self, user_id: str, workspace_ids: list[str], *, now: datetime | None = None) -> bool:
         """Mark the account purge as started, reporting whether this caller started it.
 

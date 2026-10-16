@@ -7,7 +7,9 @@ closes to the team's Done, or the configured status, or nowhere when moves are
 off. A tag outside the pattern, a branch, a draft or a repository releasing from
 deployments records nothing, and a deployment of a tag repository is ignored. A
 published Release records under its own source, and a backfill walks the tags
-newest first through a cursor without moving any issue.
+newest first through a cursor without moving any issue, passing over a tag GitHub
+will not read. A tag's commit is read through its full ref, so annotated and
+lightweight tags both resolve.
 """
 
 from __future__ import annotations
@@ -16,7 +18,9 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
 
+import httpx
 import pytest
+from webbpulse.integrations.github import GitHubUnprocessable
 
 from app.common.api.schemas.releases import ReleaseBackfill
 from app.common.db.dynamo.github import RepositoryReleaseSource
@@ -59,6 +63,7 @@ class FakeGitHub:
     releases: list[PublishedRelease] = field(default_factory=list)
     compares: list[tuple[str, str]] = field(default_factory=list)
     dates: dict[str, int] = field(default_factory=dict)
+    unreadable: set[str] = field(default_factory=set)
 
 
 @pytest.fixture
@@ -77,6 +82,8 @@ def github(monkeypatch: pytest.MonkeyPatch) -> FakeGitHub:
 
     def tag_commit(token: str, repository_id: Any, tag: str) -> tuple[str, datetime | None] | None:
         """The stood-in tag's commit, committed on the day of October `dates` names, else the first."""
+        if tag in state.unreadable:
+            raise GitHubUnprocessable(f"No commit found for SHA: tags/{tag}", status_code=422)
         sha = next((row.sha for row in state.tags if row.name == tag), None)
         return (sha, datetime(2026, 10, state.dates.get(tag, 1), tzinfo=timezone.utc)) if sha else None
 
@@ -321,6 +328,65 @@ def test_a_backfill_walks_the_tags_newest_first_without_moving_issues(
     again = backfill(repositories, WORKSPACE, TEAM, ReleaseBackfill(limit=5))
     assert again.releases_created == 0
     assert again.deployments_skipped == 3
+
+
+def test_a_backfill_passes_over_a_tag_github_will_not_read(
+    repositories: Any, installed: str, github: FakeGitHub
+) -> None:
+    """An unreadable tag is named in unreadable_tags, the tags around it are recorded, and the cursor moves past it."""
+    _source(repositories, tag_pattern="v*")
+    github.messages = {FIRST: "ABC-1", SECOND: "ABC-2", THIRD: "Bump"}
+    github.tags = [
+        TagRef(name="v1.2.0", sha=THIRD),
+        TagRef(name="v1.1.0", sha=SECOND),
+        TagRef(name="v1.0.0", sha=FIRST),
+    ]
+    github.unreadable = {"v1.1.0"}
+
+    page = backfill(repositories, WORKSPACE, TEAM, ReleaseBackfill(limit=2))
+    assert page.releases_created == 1
+    assert page.unreadable_tags == ["v1.1.0"]
+    assert page.deployments_scanned == 2
+    assert page.next_cursor == f"tag:{REPOSITORY_ID}:v1.1.0"
+
+    rest = backfill(repositories, WORKSPACE, TEAM, ReleaseBackfill(limit=2, cursor=page.next_cursor))
+    assert rest.releases_created == 1
+    assert rest.unreadable_tags == []
+    assert rest.next_cursor is None
+    assert {row.name for row in _releases(repositories)} == {"standupless v1.2.0", "standupless v1.0.0"}
+
+
+def test_a_tag_commit_reads_annotated_and_lightweight_tags_through_the_full_ref() -> None:
+    """The full `refs/tags/` ref peels an annotated tag to its commit, where the bare `tags/` form answers 422."""
+    from app.domains.integrations import github_deployments
+
+    annotated = {"v2.0.0": SECOND}
+    lightweight = {"v1.0.0": FIRST}
+    paths: list[str] = []
+
+    def answer(request: httpx.Request) -> httpx.Response:
+        """GitHub's commit read: the full ref resolves every tag, the bare form only a lightweight one."""
+        path = request.url.path
+        paths.append(path)
+        base = f"/repositories/{REPOSITORY_ID}/commits/"
+        name = path.rsplit("/", 1)[-1]
+        if path.startswith(f"{base}refs/tags/") or (path.startswith(f"{base}tags/") and name in lightweight):
+            sha = annotated.get(name) or lightweight.get(name)
+            if sha:
+                return httpx.Response(200, json={"sha": sha, "commit": {"committer": {"date": "2026-10-03T00:00:00Z"}}})
+            return httpx.Response(404, json={"message": "Not Found"})
+        return httpx.Response(422, json={"message": f"No commit found for SHA: tags/{name}"})
+
+    with httpx.Client(transport=httpx.MockTransport(answer)) as http:
+        annotated_sha, annotated_at = github_deployments.tag_commit("ghs_test", REPOSITORY_ID, "v2.0.0", client=http)
+        light_sha, light_at = github_deployments.tag_commit("ghs_test", REPOSITORY_ID, "v1.0.0", client=http)
+
+    assert (annotated_sha, light_sha) == (SECOND, FIRST)
+    assert annotated_at == light_at == datetime(2026, 10, 3, tzinfo=timezone.utc)
+    assert paths == [
+        f"/repositories/{REPOSITORY_ID}/commits/refs/tags/v2.0.0",
+        f"/repositories/{REPOSITORY_ID}/commits/refs/tags/v1.0.0",
+    ]
 
 
 def test_the_repositories_route_sets_the_release_source_and_keeps_the_team(
