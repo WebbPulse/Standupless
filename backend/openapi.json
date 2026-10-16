@@ -17867,7 +17867,7 @@
     },
     "/api/discord/oauth/callback": {
       "get": {
-        "description": "Finish a server install or a person's account link, whichever the signed state was minted for.\n\nThe workspace comes from the state alone, redeemed once, and the code is\nexchanged with the client secret before anything is written, so a callback\nnobody started from Standupless binds and links nothing.",
+        "description": "Finish a server install or a person's account link, whichever the signed state was minted for.\n\nThe workspace comes from the state alone, redeemed once, and the code is\nexchanged with the client secret before anything is written, so a callback\nnobody started from Standupless binds and links nothing. A `link` start ticket\nwith no state begins a person's account link instead.",
         "operationId": "discord_oauth_callback_api_discord_oauth_callback_get",
         "parameters": [
           {
@@ -17897,6 +17897,16 @@
             "schema": {
               "default": "",
               "title": "Error",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "link",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "Link",
               "type": "string"
             }
           }

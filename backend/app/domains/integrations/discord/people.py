@@ -7,24 +7,50 @@ link was minted for and Discord says its email is verified, and only when that
 email is a live member of the workspace the server is bound to. Every later
 command checks the link against the member again, so a member who leaves, is
 disabled or changes their email is no longer acted for.
+
+The consent URL with its signed state is about 600 characters, past the 512 a
+Discord link button allows, so the button carries a short signed start link
+instead. Following it mints the full single use state there and then and sends the
+browser on to Discord, so the callback's checks are exactly the same.
 """
 
 from __future__ import annotations
 
+from datetime import timedelta
 from typing import Any, Mapping
+from urllib.parse import urlencode
+
+from webbpulse.security import ExpiredToken, InvalidToken, create_token, decode_token
 
 from app.common.api.dependencies.authz import AuthzContext
 from app.common.api.dependencies.repositories import Repositories
+from app.common.core.config import settings
 from app.common.db.dynamo.discord import DiscordInstallation, DiscordUserLink, discord_user_key
 from app.domains.integrations.chat.people import NotLinked, member_context
 from app.domains.integrations.discord import api
-from app.domains.integrations.install_state import mint_state
+from app.domains.integrations.install_state import STATE_TTL_SECONDS, mint_state
 
 LINK_AUDIENCE = "standupless.discord-link"
 
 LINK_NONCE_SCOPE = "discord-link-state"
 
-__all__ = ["LINK_AUDIENCE", "LINK_NONCE_SCOPE", "LinkRejected", "NotLinked", "complete_link", "context_for", "link_url"]
+START_AUDIENCE = "standupless.discord-link-start"
+
+START_PARAMETER = "link"
+
+__all__ = [
+    "LINK_AUDIENCE",
+    "LINK_NONCE_SCOPE",
+    "START_AUDIENCE",
+    "START_PARAMETER",
+    "LinkRejected",
+    "NotLinked",
+    "complete_link",
+    "context_for",
+    "link_url",
+    "start_link",
+    "start_url",
+]
 
 
 class LinkRejected(Exception):
@@ -58,6 +84,33 @@ def link_url(installation: DiscordInstallation, discord_user_id: str) -> str:
         extra={"discord_user_id": discord_user_id, "guild_id": installation.guild_id},
     )
     return api.link_url(state)
+
+
+def start_url(installation: DiscordInstallation, discord_user_id: str) -> str:
+    """The short link a button sends one Discord person to, good for ten minutes, which starts their consent."""
+    ticket = create_token(
+        {"g": installation.guild_id, "u": discord_user_id},
+        settings.SECRET_KEY,
+        expires_in=timedelta(seconds=STATE_TTL_SECONDS),
+        audience=START_AUDIENCE,
+    )
+    return f"{api.redirect_uri()}?{urlencode({START_PARAMETER: ticket})}"
+
+
+def start_link(repositories: Repositories, ticket: str) -> str:
+    """The consent URL a start link leads to, minted fresh for the person it names, or `LinkRejected`."""
+    try:
+        claims = decode_token(ticket, settings.SECRET_KEY, audience=START_AUDIENCE, require=["exp", "iat", "g", "u"])
+    except (ExpiredToken, InvalidToken) as error:
+        raise LinkRejected("invalid_state") from error
+    guild_id = str(claims.get("g", ""))
+    discord_user_id = str(claims.get("u", ""))
+    installation = repositories.github.discord.installation_for_guild(guild_id) if guild_id.isdigit() else None
+    if installation is None:
+        raise LinkRejected("not_installed")
+    if not discord_user_id:
+        raise LinkRejected("invalid_state")
+    return link_url(installation, discord_user_id)
 
 
 def _verified_email(person: Mapping[str, Any]) -> str:

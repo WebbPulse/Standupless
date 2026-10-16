@@ -153,12 +153,13 @@ def _form(client: TestClient, path: str, fields: Mapping[str, str]) -> Any:
     return client.post(path, content=body, headers=headers)
 
 
-def _command(client: TestClient, text: str, user: str = "UOWNER") -> Any:
-    """Send `/standupless <text>` as one Slack user."""
+def _command(client: TestClient, text: str, user: str = "UOWNER", channel: str = "C0ENG") -> Any:
+    """Send `/standupless <text>` as one Slack user in one channel."""
     fields = {
         "command": "/standupless",
         "text": text,
         "team_id": SLACK_TEAM,
+        "channel_id": channel,
         "user_id": user,
         "trigger_id": "trigger-1",
         "response_url": "https://hooks.slack.com/commands/T0/1/x",
@@ -412,12 +413,51 @@ def test_the_command_shows_help_and_an_issue_the_person_can_see(
     assert "create" in helped["text"]
 
     shown = _command(slack_client, "abc-1").json()
-    assert shown["text"] == "ABC-1"
+    assert shown["text"].startswith("ABC-1")
     assert "An issue" in json.dumps(shown["blocks"])
+    assert shown["unfurl_links"] is False and shown["unfurl_media"] is False
 
     hidden = _command(slack_client, "XYZ-1", user="UGUEST").json()
     assert "No issue" in hidden["text"]
     assert "blocks" not in hidden
+
+
+def test_show_and_a_bare_key_both_show_and_unknown_input_says_what_it_did_not_recognise(
+    slack_client: TestClient, installed: SlackInstallation, issue: Any
+) -> None:
+    """`show KEY` matches the Discord verb, and an unknown verb or key is named before the help."""
+    for text in ("show ABC-1", "abc-1", "SHOW abc-1"):
+        reply = _command(slack_client, text).json()
+        assert reply["text"].startswith("ABC-1"), text
+        card = json.dumps(reply["blocks"])
+        assert "ABC-1" in card and "An issue" in card, text
+
+    unknown = _command(slack_client, "frobnicate the thing", user="USTRANGER").json()
+    assert unknown["text"].startswith("Didn't recognise `frobnicate the thing`.")
+    assert "show ABC-12" in unknown["text"]
+    assert "blocks" not in unknown
+
+    bad_key = _command(slack_client, "show nonsense").json()
+    assert bad_key["text"].startswith("Didn't recognise `nonsense` as an issue key.")
+
+    bare_show = _command(slack_client, "show").json()
+    assert bare_show["text"].startswith("Name the issue to show")
+
+    assert "show ABC-12" in _command(slack_client, "help").json()["text"]
+
+
+def test_the_issue_card_names_status_priority_assignee_and_team(
+    slack_client: TestClient, installed: SlackInstallation, issue: Any, repositories: Any
+) -> None:
+    """The card links the key and title and lists the facts beneath them."""
+    shown = _command(slack_client, "ABC-1").json()
+    heading, facts = shown["blocks"]
+    assert heading["type"] == "section"
+    assert "/issues/ABC-1|ABC-1 An issue>" in heading["text"]["text"]
+    assert facts["type"] == "context"
+    line = facts["elements"][0]["text"]
+    team = repositories.teams.get(WORKSPACE, TEAM)
+    assert team.name in line and "Unassigned" in line
 
 
 def test_a_slack_person_without_a_confirmed_matching_account_is_not_linked(
@@ -449,6 +489,29 @@ def test_create_opens_the_form_with_the_teams_the_person_can_write(
     assert [option["value"] for option in options] == [TEAM]
 
 
+def _initial_team(view: Mapping[str, Any]) -> str:
+    """The team the form's picker starts on, or `""`."""
+    return str((view["blocks"][0]["element"].get("initial_option") or {}).get("value", ""))
+
+
+def test_the_form_starts_on_the_team_the_channel_posts_for(
+    slack_client: TestClient, installed: SlackInstallation, repositories: Any, slack: FakeSlack
+) -> None:
+    """A channel connected to a team the person can write preselects it; anywhere else they pick."""
+    _slack_destination(repositories, team_id=OTHER_TEAM)
+
+    _command(slack_client, "create Mapped", channel="C0ENG")
+    mapped = slack.last("views.open")["view"]
+    assert len(mapped["blocks"][0]["element"]["options"]) > 1
+    assert _initial_team(mapped) == OTHER_TEAM
+
+    _command(slack_client, "create Unmapped", channel="C0ELSEWHERE")
+    assert _initial_team(slack.last("views.open")["view"]) == ""
+
+    _command(slack_client, "create Out of reach", user="UGUEST", channel="C0ENG")
+    assert _initial_team(slack.last("views.open")["view"]) == TEAM
+
+
 def _submission(team_id: str, title: str, *, user: str = "UOWNER", permalink: str = "") -> dict[str, Any]:
     """The `view_submission` payload of the create issue form."""
     values = {
@@ -477,7 +540,8 @@ def test_submitting_the_form_creates_the_issue_as_that_person(
     assert response.status_code == 200
     reply = response.json()
     assert reply["response_action"] == "update"
-    assert "ABC-" in json.dumps(reply["view"])
+    card = json.dumps(reply["view"]["blocks"])
+    assert "ABC-" in card and "Login loops" in card
     rows = repositories.issues.list_for_team(WORKSPACE, TEAM).items
     created = [row for row in rows if row.get("title") == "Login loops"]
     assert len(created) == 1
