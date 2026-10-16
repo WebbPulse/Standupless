@@ -66,8 +66,9 @@ answers 409 `NOT_CONFIGURED`, and the settings page offers only the webhook form
 1. Sign in to https://discord.com/developers/applications with the WebbPulse
    Discord account and press **New Application**. Name it as in the table above.
 2. On **General Information**, set the description, Terms of Service URL and
-   Privacy Policy URL from the settings file, upload the app icon
-   (`frontend/public/github-app-logo.png`), and set **Interactions Endpoint URL**
+   Privacy Policy URL from the settings file, upload the app icon (the same
+   512x512 copy of `frontend/public/github-app-logo.png` as the Slack App, since
+   the file itself is only 200x200), and set **Interactions Endpoint URL**
    to the file's `interactions_endpoint_url` only after the keys are set and the
    backend is redeployed (step 6). Copy the **Application ID** and **Public Key**
    straight into the secret (next section).
@@ -104,18 +105,20 @@ write keeps them as they are.
 Run these from `backend/` with the environment account's AdministratorAccess
 profile (for example `assume Standupless-Staging/AdministratorAccess`). Each
 `secret set` reads the value from a hidden prompt, so it never lands in shell
-history, and `secret keys` lists names only.
+history, and `secret keys` lists names only. The Granted profiles carry no
+region, so every call passes `--region us-west-2`.
 
 ```sh
-uv run webbpulse-config --prefix standupless-staging secret set DISCORD_APPLICATION_ID
-uv run webbpulse-config --prefix standupless-staging secret set DISCORD_PUBLIC_KEY
-uv run webbpulse-config --prefix standupless-staging secret set DISCORD_CLIENT_SECRET
-uv run webbpulse-config --prefix standupless-staging secret set DISCORD_BOT_TOKEN
-uv run webbpulse-config --prefix standupless-staging secret keys
+uv run webbpulse-config --region us-west-2 --prefix standupless-staging secret set DISCORD_APPLICATION_ID
+uv run webbpulse-config --region us-west-2 --prefix standupless-staging secret set DISCORD_PUBLIC_KEY
+uv run webbpulse-config --region us-west-2 --prefix standupless-staging secret set DISCORD_CLIENT_SECRET
+uv run webbpulse-config --region us-west-2 --prefix standupless-staging secret set DISCORD_BOT_TOKEN
+uv run webbpulse-config --region us-west-2 --prefix standupless-staging secret keys
 ```
 
 For production, assume `Standupless-Production/AdministratorAccess` and run the
-same five commands with `--prefix standupless-production`.
+same five commands with `--prefix standupless-production` (and still
+`--region us-west-2`).
 
 To rotate the client secret or bot token, reset it in the portal and set the new
 value the same way, then redeploy. Resetting the bot token takes effect at once

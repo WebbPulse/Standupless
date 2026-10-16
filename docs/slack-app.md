@@ -54,8 +54,9 @@ secret. Without them the public Slack routes answer 404, the install link answer
 2. Pick the WebbPulse Slack workspace as the development workspace.
 3. Paste the environment's manifest file (JSON tab), review, and **Create**.
 4. On **Basic Information**, under **Display Information**, upload the app icon
-   (`frontend/public/github-app-logo.png` works, Slack wants 512x512 to 2000x2000,
-   so scale it up) and keep the background colour `#141518`.
+   and keep the background colour `#141518`. Slack wants 512x512 to 2000x2000,
+   and `frontend/public/github-app-logo.png` is only 200x200, so upload a copy
+   scaled up to 512x512 rather than the file itself.
 5. Still on **Basic Information**, copy the three credentials below from **App
    Credentials** straight into the secret (next section). Do not paste them
    anywhere else.
@@ -83,17 +84,19 @@ write keeps them as they are.
 Run these from `backend/` with the environment account's AdministratorAccess
 profile (for example `assume Standupless-Staging/AdministratorAccess`). Each
 `secret set` reads the value from a hidden prompt, so it never lands in shell
-history, and `secret keys` lists names only.
+history, and `secret keys` lists names only. The Granted profiles carry no
+region, so every call passes `--region us-west-2`.
 
 ```sh
-uv run webbpulse-config --prefix standupless-staging secret set SLACK_CLIENT_ID
-uv run webbpulse-config --prefix standupless-staging secret set SLACK_CLIENT_SECRET
-uv run webbpulse-config --prefix standupless-staging secret set SLACK_SIGNING_SECRET
-uv run webbpulse-config --prefix standupless-staging secret keys
+uv run webbpulse-config --region us-west-2 --prefix standupless-staging secret set SLACK_CLIENT_ID
+uv run webbpulse-config --region us-west-2 --prefix standupless-staging secret set SLACK_CLIENT_SECRET
+uv run webbpulse-config --region us-west-2 --prefix standupless-staging secret set SLACK_SIGNING_SECRET
+uv run webbpulse-config --region us-west-2 --prefix standupless-staging secret keys
 ```
 
 For production, assume `Standupless-Production/AdministratorAccess` and run the
-same four commands with `--prefix standupless-production`.
+same four commands with `--prefix standupless-production` (and still
+`--region us-west-2`).
 
 To rotate the client secret or signing secret, press **Regenerate** next to it in
 Slack and set the new value the same way, then redeploy.
