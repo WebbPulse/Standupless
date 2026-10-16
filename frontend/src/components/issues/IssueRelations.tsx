@@ -3,7 +3,9 @@
  * by how they relate in a rail section. Each row links to the other issue and
  * shows its status, which the links route carries for every target in any team
  * the caller can see; adding one opens the relation
- * dialog, so the rail stays a list rather than a form.
+ * dialog, so the rail stays a list rather than a form. Each group heading
+ * carries its relation glyph, and a blocking link whose blocker is finished
+ * reads under Related, so only live blocks show a flag.
  */
 
 import React from 'react';
@@ -19,6 +21,7 @@ import type { LinkRead, LinkTypeRead } from '../../types/Api';
 import { IconButton } from '../ui/button';
 import { StatusIcon } from '../ui/StatusIcon';
 import RailSection from './RailSection';
+import { RelationGlyph } from './RelationGlyphs';
 
 /** Props for IssueRelations. */
 export interface IssueRelationsProps {
@@ -31,6 +34,8 @@ export interface IssueRelationsProps {
   onAdd: () => void;
   /** Renders nothing while the section has no content, for a compact panel. */
   hideEmpty?: boolean;
+  /** Whether this issue is completed or cancelled, so it no longer blocks. */
+  resolved?: boolean;
 }
 
 /** The groups in the order they read, each with its heading. */
@@ -42,6 +47,22 @@ const GROUPS: { type: LinkTypeRead; heading: string }[] = [
   { type: 'duplicated_by', heading: 'Duplicates' },
 ];
 
+/** Whether a link's far side is completed or cancelled. */
+const targetResolved = (link: LinkRead): boolean => {
+  const category = link.target_status?.category;
+  return category === 'completed' || category === 'cancelled';
+};
+
+/**
+ * The group a link reads under. A blocking link whose blocker is finished no
+ * longer blocks anything, so it moves under Related, as Linear moves it.
+ */
+const groupOf = (link: LinkRead, resolved: boolean): LinkTypeRead => {
+  if (link.type === 'blocked_by' && targetResolved(link)) return 'relates_to';
+  if (link.type === 'blocks' && resolved) return 'relates_to';
+  return link.type;
+};
+
 /** The relations section of the rail. */
 export const IssueRelations: React.FC<IssueRelationsProps> = ({
   workspaceId,
@@ -51,6 +72,7 @@ export const IssueRelations: React.FC<IssueRelationsProps> = ({
   canEdit,
   onAdd,
   hideEmpty = false,
+  resolved = false,
 }) => {
   const remove = (link: LinkRead): void => {
     deleteLink(workspaceId, issueId, link.link_id)
@@ -69,7 +91,7 @@ export const IssueRelations: React.FC<IssueRelationsProps> = ({
 
   const groups = GROUPS.map((group) => ({
     ...group,
-    rows: links.filter((link) => link.type === group.type),
+    rows: links.filter((link) => groupOf(link, resolved) === group.type),
   })).filter((group) => group.rows.length > 0);
 
   return (
@@ -84,7 +106,8 @@ export const IssueRelations: React.FC<IssueRelationsProps> = ({
         <div className="space-y-2">
           {groups.map((group) => (
             <div key={group.type}>
-              <h4 className="py-0.5 text-2xs font-medium text-text-faint">
+              <h4 className="flex items-center gap-1.5 py-0.5 text-2xs font-medium text-text-faint">
+                <RelationGlyph type={group.type} className="h-3 w-3" />
                 {group.heading}
               </h4>
               <ul aria-label={group.heading}>

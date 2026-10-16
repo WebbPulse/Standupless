@@ -11,7 +11,6 @@
 
 import React, { useState } from 'react';
 import {
-  LuBan,
   LuBox,
   LuCalendar,
   LuCalendarClock,
@@ -20,7 +19,6 @@ import {
   LuClock,
   LuIterationCw,
   LuLink,
-  LuOctagonAlert,
   LuPenLine,
   LuUsers,
   LuListFilter,
@@ -70,6 +68,12 @@ import { Input } from '../../ui/input';
 import { PriorityGlyph } from '../../ui/glyphs';
 import { StatusIcon } from '../../ui/StatusIcon';
 import { Popover } from '../../ui/popover';
+import {
+  BlockedGlyph,
+  BlockedIcon,
+  BlockingGlyph,
+  BlockingIcon,
+} from '../RelationGlyphs';
 import { useShortcut } from '../../../hooks/useShortcuts';
 
 const FIELD_ICONS: Record<FilterField, React.ReactNode> = {
@@ -87,8 +91,8 @@ const FIELD_ICONS: Record<FilterField, React.ReactNode> = {
   updated: <LuCalendarClock className="h-3.5 w-3.5" />,
   due: <LuCalendar className="h-3.5 w-3.5" />,
   sla: <LuClock className="h-3.5 w-3.5" />,
-  blocked: <LuOctagonAlert className="h-3.5 w-3.5" />,
-  blocking: <LuBan className="h-3.5 w-3.5" />,
+  blocked: <BlockedGlyph className="h-3.5 w-3.5" />,
+  blocking: <BlockingGlyph className="h-3.5 w-3.5" />,
   relation: <LuLink className="h-3.5 w-3.5" />,
 };
 
@@ -467,9 +471,9 @@ const filterChoices = (
         ids: [status],
       }));
     case 'blocked':
-      return yesNo(<LuOctagonAlert className="h-3.5 w-3.5 text-danger" />);
+      return yesNo(<BlockedIcon className="h-3.5 w-3.5" />);
     case 'blocking':
-      return yesNo(<LuBan className="h-3.5 w-3.5 text-warning" />);
+      return yesNo(<BlockingIcon className="h-3.5 w-3.5" />);
     case 'relation':
       return RELATION_CHOICES.map((choice) => ({
         option: {

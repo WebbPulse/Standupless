@@ -22,7 +22,7 @@ import { IconButton } from '../../ui/button';
 import { PriorityGlyph } from '../../ui/glyphs';
 import { StatusIcon } from '../../ui/StatusIcon';
 import ProgressRing from '../../planning/ProgressRing';
-import BlockedMarker from '../BlockedMarker';
+import { RelationMarkers } from '../BlockedMarker';
 import {
   AssigneeCell,
   MetaChips,
@@ -386,7 +386,7 @@ export const IssueListRow: React.FC<IssueListRowProps> = ({ issue, tree }) => {
         {issue.title}
       </Link>
       {archived && <ArchivedMarker />}
-      <BlockedMarker count={issue.blocked_by_open_count} />
+      <RelationMarkers issue={issue} />
       <span className="flex shrink-0 items-center gap-1.5">
         <MetaChips issue={issue} />
       </span>

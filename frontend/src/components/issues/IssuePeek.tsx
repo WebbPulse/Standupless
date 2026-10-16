@@ -27,6 +27,7 @@ import { ErrorAlert } from '../ui/alert';
 import { IconButton } from '../ui/button';
 import Spinner from '../ui/spinner';
 import { Toaster } from '../ui/toast';
+import { RelationMarkers } from './BlockedMarker';
 import IssueBody from './IssueBody';
 import IssueFields, { PropertyRow, PropertySection } from './IssueFields';
 import { IssueMilestonePicker } from './PlanningPickers';
@@ -109,8 +110,11 @@ export const IssuePeek: React.FC<IssuePeekProps> = ({ issueId, onClose }) => {
     >
       <Toaster />
       <div className="flex h-11 shrink-0 items-center justify-between gap-2 border-b border-line px-3">
-        <span className="truncate font-mono text-xs text-text-muted">
-          {issue?.key ?? ''}
+        <span className="flex min-w-0 items-center gap-1.5">
+          <span className="truncate font-mono text-xs text-text-muted">
+            {issue?.key ?? ''}
+          </span>
+          {issue !== null && <RelationMarkers issue={issue} />}
         </span>
         <div className="flex items-center gap-1">
           {issue !== null && workspace !== null && (

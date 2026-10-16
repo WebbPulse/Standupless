@@ -32,7 +32,7 @@ import { issuePath } from '../../../lib/paths';
 import { showToast } from '../../../lib/toast';
 import { IconButton } from '../../ui/button';
 import { Menu, MenuItem } from '../../ui/menu';
-import BlockedMarker from '../BlockedMarker';
+import { RelationMarkers } from '../BlockedMarker';
 import {
   AssigneeCell,
   MetaChips,
@@ -164,7 +164,7 @@ const BoardCard: React.FC<BoardCardProps> = ({
         >
           {issue.title}
         </Link>
-        <BlockedMarker count={issue.blocked_by_open_count} className="mt-0.5" />
+        <RelationMarkers issue={issue} className="mt-0.5" />
         {(issue.archived_at ?? null) !== null && (
           <ArchivedMarker className="mt-0.5" />
         )}

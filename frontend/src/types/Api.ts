@@ -595,6 +595,11 @@ export interface IssueRead {
    */
   blocked_by_open_count?: number;
   /**
+   * How many issues this one blocks while its own status is open, zero once it
+   * is completed or cancelled. Optional so older fixtures still type.
+   */
+  blocking_count?: number;
+  /**
    * The pull requests linked to the issue, most advanced first, kept by the
    * server from GitHub deliveries. Absent when the issue links none.
    */

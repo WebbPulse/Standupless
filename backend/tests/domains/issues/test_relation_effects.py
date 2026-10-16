@@ -1,8 +1,9 @@
 """What a link or a parent change writes beyond its own rows.
 
 Closing a duplicate, the sub-issue history on a parent, the target named in a
-removed link, the denormalised blocked count and the status a link carries back.
-History written before a team key change names its issues under the current key.
+removed link, the denormalised blocked and blocking counts and the status a link
+carries back. History written before a team key change names its issues under
+the current key.
 """
 
 from __future__ import annotations
@@ -299,6 +300,74 @@ def test_deleting_a_blocker_clears_the_count(client: TestClient, workspace: str,
     client.delete(f"/api/workspaces/{workspace}/issues/{blocker['id']}")
 
     assert _issue(client, workspace, blocked)["blocked_by_open_count"] == 0
+
+
+def test_a_blocking_link_counts_on_the_blocker(client: TestClient, workspace: str, statuses: Any) -> None:
+    """Either direction of the write lands the blocking count on the blocker."""
+    sign_in(client, OWNER)
+    blocker = create_issue(client, workspace, title="Blocker")
+    first = create_issue(client, workspace, title="First")
+    second = create_issue(client, workspace, title="Second")
+
+    _link(client, workspace, blocker, first, "blocks")
+    link = _link(client, workspace, second, blocker, "blocked_by")
+
+    assert _issue(client, workspace, blocker)["blocking_count"] == 2
+    assert _issue(client, workspace, first)["blocking_count"] == 0
+
+    _unlink(client, workspace, second, link)
+
+    assert _issue(client, workspace, blocker)["blocking_count"] == 1
+
+
+def test_a_finished_blocker_stops_blocking_through_the_stream(
+    client: TestClient, workspace: str, repositories: Any, statuses: Any
+) -> None:
+    """A blocker moved to a finished status loses its blocking count, and regains it on reopen."""
+    sign_in(client, OWNER)
+    blocker = create_issue(client, workspace, title="Blocker")
+    blocked = create_issue(client, workspace, title="Blocked")
+    _link(client, workspace, blocker, blocked, "blocks")
+    done = statuses["completed"].status_id
+
+    client.patch(f"/api/workspaces/{workspace}/issues/{blocker['id']}", json={"status_id": done})
+    handle_record(repositories, _status_record(workspace, blocker["id"], blocker["status_id"], done))
+
+    assert _issue(client, workspace, blocker)["blocking_count"] == 0
+
+    client.patch(f"/api/workspaces/{workspace}/issues/{blocker['id']}", json={"status_id": blocker["status_id"]})
+    handle_record(repositories, _status_record(workspace, blocker["id"], done, blocker["status_id"]))
+
+    assert _issue(client, workspace, blocker)["blocking_count"] == 1
+
+
+def test_deleting_a_blocked_issue_clears_the_blocking_count(client: TestClient, workspace: str, statuses: Any) -> None:
+    """A deleted blocked issue stops counting on its blocker at once."""
+    sign_in(client, OWNER)
+    blocker = create_issue(client, workspace, title="Blocker")
+    blocked = create_issue(client, workspace, title="Blocked")
+    _link(client, workspace, blocker, blocked, "blocks")
+
+    client.delete(f"/api/workspaces/{workspace}/issues/{blocked['id']}")
+
+    assert _issue(client, workspace, blocker)["blocking_count"] == 0
+
+
+def test_the_recount_script_fills_blocking_counts_once(
+    client: TestClient, workspace: str, repositories: Any, statuses: Any
+) -> None:
+    """A blocker from before the count gains it, and a rerun writes nothing."""
+    from scripts.recount_blocking_counts import run
+
+    sign_in(client, OWNER)
+    blocker = create_issue(client, workspace, title="Blocker")
+    blocked = create_issue(client, workspace, title="Blocked")
+    _link(client, workspace, blocker, blocked, "blocks")
+    repositories.issues.set_blocking_count(workspace, blocker["id"], 0)
+
+    assert run(repositories, [workspace]) == (1, 1, 1)
+    assert _issue(client, workspace, blocker)["blocking_count"] == 1
+    assert run(repositories, [workspace]) == (1, 1, 0)
 
 
 def test_a_link_carries_its_target_status_across_teams(client: TestClient, workspace: str, statuses: Any) -> None:
