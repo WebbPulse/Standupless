@@ -6168,6 +6168,14 @@
       "IssueImportRead": {
         "description": "One import job and how far it has got.",
         "properties": {
+          "counts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "description": "A Linear import's tallies: issues, comments, labels, cycles, projects, milestones and more.",
+            "title": "Counts",
+            "type": "object"
+          },
           "created_at": {
             "format": "date-time",
             "title": "Created At",
@@ -6208,14 +6216,52 @@
             "title": "Import Id",
             "type": "string"
           },
+          "kind": {
+            "default": "csv",
+            "enum": [
+              "csv",
+              "linear"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
           "labels_created": {
             "title": "Labels Created",
             "type": "integer"
+          },
+          "linear_teams": {
+            "items": {
+              "$ref": "#/components/schemas/LinearTeamMappingRead"
+            },
+            "title": "Linear Teams",
+            "type": "array"
           },
           "linked_count": {
             "default": 0,
             "description": "How many imported issues were made sub-issues of another.",
             "title": "Linked Count",
+            "type": "integer"
+          },
+          "phase": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "What a running Linear import is reading now.",
+            "title": "Phase"
+          },
+          "phase_count": {
+            "default": 0,
+            "title": "Phase Count",
+            "type": "integer"
+          },
+          "phase_index": {
+            "default": 0,
+            "title": "Phase Index",
             "type": "integer"
           },
           "preset": {
@@ -6266,7 +6312,8 @@
               "queued",
               "running",
               "completed",
-              "failed"
+              "failed",
+              "cancelled"
             ],
             "title": "Status",
             "type": "string"
@@ -6283,6 +6330,12 @@
             "format": "date-time",
             "title": "Updated At",
             "type": "string"
+          },
+          "updated_count": {
+            "default": 0,
+            "description": "How many issues a Linear import found already imported and updated.",
+            "title": "Updated Count",
+            "type": "integer"
           },
           "workspace_id": {
             "title": "Workspace Id",
@@ -7182,6 +7235,143 @@
           }
         },
         "title": "LabelUpdate",
+        "type": "object"
+      },
+      "LinearImportRequest": {
+        "description": "A Linear import: the key, sealed while the job runs and deleted after, and the team mapping.",
+        "properties": {
+          "api_key": {
+            "description": "A Linear personal API key with read access.",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Api Key",
+            "type": "string"
+          },
+          "teams": {
+            "items": {
+              "$ref": "#/components/schemas/LinearTeamChoice"
+            },
+            "maxItems": 50,
+            "minItems": 1,
+            "title": "Teams",
+            "type": "array"
+          }
+        },
+        "required": [
+          "api_key",
+          "teams"
+        ],
+        "title": "LinearImportRequest",
+        "type": "object"
+      },
+      "LinearKeyRequest": {
+        "description": "A Linear personal API key, used for this request only and never stored.",
+        "properties": {
+          "api_key": {
+            "description": "A Linear personal API key with read access.",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Api Key",
+            "type": "string"
+          }
+        },
+        "required": [
+          "api_key"
+        ],
+        "title": "LinearKeyRequest",
+        "type": "object"
+      },
+      "LinearTeamChoice": {
+        "description": "One Linear team to import and the Standupless team it goes into.",
+        "properties": {
+          "linear_team_id": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Linear Team Id",
+            "type": "string"
+          },
+          "team_id": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Team Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "linear_team_id",
+          "team_id"
+        ],
+        "title": "LinearTeamChoice",
+        "type": "object"
+      },
+      "LinearTeamListRead": {
+        "description": "Every team the key can read in Linear.",
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/LinearTeamRead"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "LinearTeamListRead",
+        "type": "object"
+      },
+      "LinearTeamMappingRead": {
+        "description": "One Linear team a Linear import reads and the Standupless team it writes into.",
+        "properties": {
+          "linear_key": {
+            "title": "Linear Key",
+            "type": "string"
+          },
+          "linear_team_id": {
+            "title": "Linear Team Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "team_id": {
+            "title": "Team Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "linear_team_id",
+          "linear_key",
+          "name",
+          "team_id"
+        ],
+        "title": "LinearTeamMappingRead",
+        "type": "object"
+      },
+      "LinearTeamRead": {
+        "description": "One team the key can read in Linear.",
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "key",
+          "name"
+        ],
+        "title": "LinearTeamRead",
         "type": "object"
       },
       "LinkCreate": {
@@ -23447,6 +23637,124 @@
         ]
       }
     },
+    "/api/workspaces/{workspace_id}/imports/linear": {
+      "post": {
+        "description": "Queue an import of Linear teams into Standupless teams, refusing a second while one is running.",
+        "operationId": "start_linear_import_api_workspaces__workspace_id__imports_linear_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LinearImportRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IssueImportRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Start Linear Import",
+        "tags": [
+          "integrations"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/imports/linear/teams": {
+      "post": {
+        "description": "The Linear teams a personal API key can read, to choose from; the key is not kept.",
+        "operationId": "list_linear_teams_api_workspaces__workspace_id__imports_linear_teams_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LinearKeyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LinearTeamListRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "List Linear Teams",
+        "tags": [
+          "integrations"
+        ]
+      }
+    },
     "/api/workspaces/{workspace_id}/imports/preview": {
       "post": {
         "description": "Read a file against one team and answer what an import would do, row by row, writing nothing.",
@@ -23561,6 +23869,66 @@
           }
         ],
         "summary": "Get Issue Import",
+        "tags": [
+          "integrations"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/imports/{import_id}/cancel": {
+      "post": {
+        "description": "Stop an import that is queued or running, keeping what it already wrote; a finished one is answered as is.",
+        "operationId": "cancel_issue_import_api_workspaces__workspace_id__imports__import_id__cancel_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "import_id",
+            "required": true,
+            "schema": {
+              "maxLength": 64,
+              "minLength": 1,
+              "title": "Import Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IssueImportRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Cancel Issue Import",
         "tags": [
           "integrations"
         ]

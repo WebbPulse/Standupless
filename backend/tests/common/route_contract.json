@@ -351,6 +351,18 @@
     "auth": "workspace:admin",
     "domain": "integrations",
     "method": "POST",
+    "path": "/api/workspaces/{workspace_id}/imports/linear"
+  },
+  {
+    "auth": "workspace:admin",
+    "domain": "integrations",
+    "method": "POST",
+    "path": "/api/workspaces/{workspace_id}/imports/linear/teams"
+  },
+  {
+    "auth": "workspace:admin",
+    "domain": "integrations",
+    "method": "POST",
     "path": "/api/workspaces/{workspace_id}/imports/preview"
   },
   {
@@ -358,6 +370,12 @@
     "domain": "integrations",
     "method": "GET",
     "path": "/api/workspaces/{workspace_id}/imports/{import_id}"
+  },
+  {
+    "auth": "workspace:admin",
+    "domain": "integrations",
+    "method": "POST",
+    "path": "/api/workspaces/{workspace_id}/imports/{import_id}/cancel"
   },
   {
     "auth": "workspace:read",

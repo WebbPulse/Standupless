@@ -60,6 +60,9 @@ export interface ProjectUpdateCardProps {
   onDelete: (updateId: string) => Promise<unknown>;
 }
 
+/** The author id prefix of an update imported from Linear whose author is not a member. */
+const LINEAR_AUTHOR_PREFIX = 'linear:';
+
 /** One update, with edit and delete for the people allowed to. */
 export const ProjectUpdateCard: React.FC<ProjectUpdateCardProps> = ({
   update,
@@ -70,9 +73,11 @@ export const ProjectUpdateCard: React.FC<ProjectUpdateCardProps> = ({
 }) => {
   const [editing, setEditing] = useState(false);
   const [confirming, setConfirming] = useState(false);
-  const author = personLabel(
-    people.find((person) => person.user_id === update.author_id)
-  );
+  const author = update.author_id.startsWith(LINEAR_AUTHOR_PREFIX)
+    ? `${update.author_id.slice(LINEAR_AUTHOR_PREFIX.length)} (Linear)`
+    : personLabel(
+        people.find((person) => person.user_id === update.author_id)
+      );
 
   const save = (body: string, health: ProjectHealth): Promise<boolean> =>
     onEdit(update.update_id, { body, health }).then(

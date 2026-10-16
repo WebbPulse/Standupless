@@ -1,25 +1,31 @@
 /**
- * The issue import: an admin picks the tracker a CSV came from, a target team
- * and the file, checks what every row would become, adjusts the column
- * mapping, and starts a job that writes the issues in the background.
+ * The issue import. An admin picks where the work comes from: a Linear
+ * workspace read through Linear's API, or a CSV export. For a CSV they pick
+ * the tracker it came from, a target team and the file, check what every row
+ * would become, adjust the column mapping, and start a job that writes the
+ * issues in the background.
  *
  * The dry run runs again on every mapping change, so the summary always
  * describes the mapping the start button would send. The job list polls
- * quickly while an import is queued or running and slowly after.
+ * quickly while an import is queued or running and slowly after, and offers
+ * a cancel on a job that has not finished.
  */
 
 import React, { useState } from 'react';
-import { LuUpload } from 'react-icons/lu';
+import { LuFileSpreadsheet, LuKeyRound, LuUpload } from 'react-icons/lu';
 import { useQueryAuth } from '@webbpulse/auth/react';
 import {
   useMutationWithRefetch,
   usePolledQuery,
 } from '@webbpulse/api-client/react';
 import {
+  cancelIssueImport,
+  getIssueImport,
   listIssueImports,
   previewIssueImport,
   startIssueImport,
 } from '../../api/imports';
+import { cn } from '../../lib/cn';
 import { useTeamsFor } from '../../hooks/useTeams';
 import { errorMessage } from '../../lib/errors';
 import { workspaceImportsKey } from '../../lib/queryKeys';
@@ -30,6 +36,9 @@ import type {
   IssueImportPreviewRead,
   IssueImportRead,
   IssueImportRequest,
+  LinearImportCount,
+  RowProblemRead,
+  TeamRead,
   WorkspaceRead,
 } from '../../types/Api';
 import { ErrorAlert } from '../ui/alert';
@@ -39,6 +48,7 @@ import Label from '../ui/label';
 import RelativeTime from '../ui/relative-time';
 import { Select, SelectField } from '../ui/select';
 import Spinner from '../ui/spinner';
+import LinearImportForm from './LinearImportForm';
 
 /** Props for WorkspaceImportSection: the workspace issues are imported into. */
 export interface WorkspaceImportSectionProps {
@@ -50,6 +60,30 @@ const ACTIVE_POLL_MS = 3000;
 
 /** How often the list is read once every job has settled. */
 const IDLE_POLL_MS = 60000;
+
+/** Where an import reads from: a Linear workspace through its API, or a CSV file. */
+type Source = 'linear' | 'csv';
+
+/** The sources the picker offers, in order, with the line under each. */
+const SOURCES: {
+  value: Source;
+  title: string;
+  detail: string;
+  icon: React.ReactNode;
+}[] = [
+  {
+    value: 'linear',
+    title: 'Linear',
+    detail: 'Teams, issues, cycles and projects through the Linear API',
+    icon: <LuKeyRound aria-hidden="true" className="h-4 w-4" />,
+  },
+  {
+    value: 'csv',
+    title: 'CSV file',
+    detail: 'An export from Jira, Linear or any other tracker',
+    icon: <LuFileSpreadsheet aria-hidden="true" className="h-4 w-4" />,
+  },
+];
 
 /** The trackers a file can come from, in the order the picker offers them. */
 const PRESETS: { value: ImportPreset; label: string }[] = [
@@ -86,7 +120,33 @@ const STATUS_DISPLAY: Record<ImportStatus, { label: string; tone: BadgeTone }> =
     running: { label: 'Importing', tone: 'accent' },
     completed: { label: 'Completed', tone: 'success' },
     failed: { label: 'Failed', tone: 'danger' },
+    cancelled: { label: 'Cancelled', tone: 'neutral' },
   };
+
+/** How each step of a Linear import reads while it runs. */
+const PHASE_LABELS: Record<string, string> = {
+  cycles: 'Reading cycles',
+  projects: 'Reading projects',
+  issues: 'Reading issues',
+  links: 'Linking sub-issues and relations',
+  initiatives: 'Reading initiatives',
+};
+
+/** How many steps each Linear team takes, matching the server's phase list. */
+const TEAM_PHASES = 4;
+
+/** The tallies a finished Linear import lists, in order, with the noun each counts. */
+const LINEAR_TALLIES: { name: LinearImportCount; noun: string }[] = [
+  { name: 'comments', noun: 'comment' },
+  { name: 'labels', noun: 'new label' },
+  { name: 'sub_issues', noun: 'sub-issue link' },
+  { name: 'relations', noun: 'relation' },
+  { name: 'cycles', noun: 'cycle' },
+  { name: 'projects', noun: 'project' },
+  { name: 'milestones', noun: 'milestone' },
+  { name: 'project_updates', noun: 'project update' },
+  { name: 'initiatives', noun: 'initiative' },
+];
 
 /** A file the admin picked, read as text. */
 interface PickedFile {
@@ -115,8 +175,45 @@ const readFile = (file: File): Promise<string> =>
 const count = (n: number, noun: string): string =>
   `${n} ${noun}${n === 1 ? '' : 's'}`;
 
+/** The line under a running Linear job that says which step it is on. */
+const linearProgress = (job: IssueImportRead): string => {
+  if (job.status === 'queued') return 'Waiting to start';
+  const index = job.phase_index ?? 0;
+  const total = job.phase_count ?? 0;
+  const teams = job.linear_teams ?? [];
+  const team =
+    index < teams.length * TEAM_PHASES
+      ? teams[Math.floor(index / TEAM_PHASES)]
+      : undefined;
+  const step = PHASE_LABELS[job.phase ?? ''] ?? 'Importing';
+  const parts = [team === undefined ? step : `${step} in ${team.linear_key}`];
+  if (total > 0) parts.push(`step ${Math.min(index + 1, total)} of ${total}`);
+  parts.push(`${count(job.created_count, 'issue')} so far`);
+  return parts.join(', ');
+};
+
+/** The line under a finished Linear job that lists what it brought over. */
+const linearOutcome = (job: IssueImportRead): string => {
+  const counts = job.counts ?? {};
+  const parts = [`${count(job.created_count, 'issue')} created`];
+  const updated = job.updated_count ?? counts.issues_updated ?? 0;
+  if (updated > 0) parts.push(`${updated} updated`);
+  for (const { name, noun } of LINEAR_TALLIES) {
+    const n = counts[name] ?? 0;
+    if (n > 0) parts.push(count(n, noun));
+  }
+  return parts.join(', ');
+};
+
 /** The line under a job that says how far it got. */
 const jobSummary = (job: IssueImportRead): string => {
+  if (job.status === 'cancelled') {
+    return `Cancelled after ${count(job.created_count, 'issue')}.`;
+  }
+  if (job.kind === 'linear') {
+    if (job.status === 'completed') return linearOutcome(job);
+    if (job.status !== 'failed') return linearProgress(job);
+  }
   if (job.status === 'failed') {
     return `Stopped after ${count(job.created_count, 'issue')}. ${job.error ?? ''}`.trim();
   }

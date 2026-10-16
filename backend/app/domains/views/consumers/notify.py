@@ -372,9 +372,10 @@ def handle_comment_record(repositories: Repositories, record: Mapping[str, Any])
     The thread is walked from the record's own `parent_comment_id` rather than from
     the new comment's id. The record is the comment's insert, so at this point the
     row may not be readable yet, and walking from it would find no ancestors and
-    quietly notify nobody who was being replied to.
+    quietly notify nobody who was being replied to. A comment a bulk import
+    wrote notifies nobody.
     """
-    if str(record.get("eventName", "")).upper() != "INSERT":
+    if str(record.get("eventName", "")).upper() != "INSERT" or from_bulk_import(record):
         return 0
 
     new_image = deserialize_image(record, "NewImage")
@@ -553,9 +554,10 @@ def handle_planning_record(repositories: Repositories, record: Mapping[str, Any]
     """Notify from one `planning` record, answering how many rows were written.
 
     Only a newly posted project update is news. It reaches the project's lead and
-    members, each once, except its author; an edit or a delete notifies nobody.
+    members, each once, except its author; an edit or a delete notifies nobody,
+    and neither does an update a bulk import wrote.
     """
-    if str(record.get("eventName", "")).upper() != "INSERT":
+    if str(record.get("eventName", "")).upper() != "INSERT" or from_bulk_import(record):
         return 0
     new_image = deserialize_image(record, "NewImage")
     if not new_image or _text(new_image, "kind") != PROJECT_UPDATE:

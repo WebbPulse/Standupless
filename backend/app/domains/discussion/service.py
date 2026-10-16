@@ -137,6 +137,9 @@ def is_team_admin(repositories: Repositories, context: AuthzContext, team_id: st
 GITHUB_AUTHOR_PREFIX = "github:"
 """The author id prefix of a comment synced from an unlinked GitHub account."""
 
+LINEAR_AUTHOR_PREFIX = "linear:"
+"""The author id prefix of a comment imported from Linear whose author matched no member."""
+
 
 def authors_for(repositories: Repositories, user_ids: Iterable[str]) -> dict[str, AuthorRead]:
     """The author block for each named user, in one batched read.
@@ -147,7 +150,9 @@ def authors_for(repositories: Repositories, user_ids: Iterable[str]) -> dict[str
     list they appear in.
 
     A comment synced from GitHub by someone with no linked account is authored as
-    `github:<login>` and renders under that login, without a user lookup.
+    `github:<login>` and renders under that login, without a user lookup. A
+    comment imported from Linear by someone who is not a member is authored as
+    `linear:<name>` and renders the same way.
     """
     wanted = [user_id for user_id in dict.fromkeys(user_ids) if user_id]
     if not wanted:
@@ -158,6 +163,11 @@ def authors_for(repositories: Repositories, user_ids: Iterable[str]) -> dict[str
             resolved[user_id] = AuthorRead(
                 user_id=user_id,
                 display_name=f"{user_id.removeprefix(GITHUB_AUTHOR_PREFIX)} (GitHub)",
+            )
+        elif user_id.startswith(LINEAR_AUTHOR_PREFIX):
+            resolved[user_id] = AuthorRead(
+                user_id=user_id,
+                display_name=f"{user_id.removeprefix(LINEAR_AUTHOR_PREFIX)} (Linear)",
             )
     wanted = [user_id for user_id in wanted if user_id not in resolved]
     users = repositories.users.get_many(wanted) if wanted else {}

@@ -429,7 +429,7 @@ class IssueRepository:
         self._repository.put(as_issue_item(issue), condition=Attr("issue_id").not_exists())
         return issue
 
-    def replace(self, issue: Issue, *, condition: Any = None) -> Issue:
+    def replace(self, issue: Issue, *, condition: Any = None, keep_import_batch: bool = False) -> Issue:
         """Write one issue over an existing row, recomputing its index composites.
 
         Every field and composite is rebuilt from the finished model so the
@@ -439,10 +439,12 @@ class IssueRepository:
         the write is conditioned on the row still holding it; a write landing in
         between raises `IssueWriteConflict` rather than being silently reverted.
         `condition` is ANDed on, and a miss of it or of the existence check raises
-        `ConditionFailed`.
+        `ConditionFailed`. `keep_import_batch` is the importer's re-run, which
+        writes the new batch id so its update stays off the announcing paths too.
         """
         item = as_issue_item(issue)
-        for attribute in ("workspace_id", "issue_id", "import_batch_id", *CONSUMER_OWNED_ATTRIBUTES):
+        dropped = ("workspace_id", "issue_id", *CONSUMER_OWNED_ATTRIBUTES)
+        for attribute in dropped if keep_import_batch else (*dropped, "import_batch_id"):
             item.pop(attribute, None)
         read_at = issue.read_revision()
         guard = Attr("issue_id").exists()

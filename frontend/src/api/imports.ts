@@ -1,7 +1,9 @@
 /**
  * Issue imports: an admin uploads a CSV from another tracker, dry runs it
  * against a team to see what every row would become, then starts a job that
- * writes the issues a page at a time and polls it until it finishes.
+ * writes the issues a page at a time and polls it until it finishes. A Linear
+ * import reads a Linear workspace through its API with a pasted key instead,
+ * which the server keeps only while the job runs.
  */
 
 import apiClient from './client';
@@ -10,6 +12,9 @@ import type {
   IssueImportPreviewRead,
   IssueImportRead,
   IssueImportRequest,
+  LinearImportRequest,
+  LinearTeamListRead,
+  LinearTeamRead,
 } from '../types/Api';
 
 /** The route a workspace's imports are started and listed on. */
@@ -74,6 +79,42 @@ export const getIssueImport = async (
   const response = await apiClient.get<IssueImportRead>(
     issueImportPath(workspaceId, importId),
     signalOptions(signal)
+  );
+  return response.data;
+};
+
+/** Answers the Linear teams a personal API key can read. The key is not kept. */
+export const listLinearTeams = async (
+  workspaceId: string,
+  apiKey: string
+): Promise<LinearTeamRead[]> => {
+  const response = await apiClient.post<Partial<LinearTeamListRead>>(
+    `${issueImportsPath(workspaceId)}/linear/teams`,
+    { api_key: apiKey }
+  );
+  const items = response.data?.items;
+  return Array.isArray(items) ? items : [];
+};
+
+/** Starts a Linear import. Refused with 409 while another is running in the workspace. */
+export const startLinearImport = async (
+  workspaceId: string,
+  body: LinearImportRequest
+): Promise<IssueImportRead> => {
+  const response = await apiClient.post<IssueImportRead>(
+    `${issueImportsPath(workspaceId)}/linear`,
+    body
+  );
+  return response.data;
+};
+
+/** Stops a queued or running import, keeping what it already wrote. */
+export const cancelIssueImport = async (
+  workspaceId: string,
+  importId: string
+): Promise<IssueImportRead> => {
+  const response = await apiClient.post<IssueImportRead>(
+    `${issueImportPath(workspaceId, importId)}/cancel`
   );
   return response.data;
 };
