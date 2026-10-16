@@ -3,7 +3,10 @@
 Every action runs as the Standupless member behind the Slack user, resolved by
 `people.context_for`, so the teams offered and the issue written are exactly what
 that person could do in the web app. Replies are ephemeral: only the person who
-asked sees them.
+asked sees them. An issue is answered with the Standupless card rather than a bare
+link, and Slack's own link preview is turned off on those replies, because the issue
+page is behind sign in and its preview would only ever be the site's landing card.
+The form preselects the team whose notifications the channel already carries.
 """
 
 from __future__ import annotations
@@ -19,11 +22,9 @@ from app.common.api.dependencies.authz import AuthzContext
 from app.common.api.dependencies.repositories import Repositories
 from app.common.api.schemas.issues import TITLE_MAX, IssueCreate
 from app.common.db.dynamo.slack import SlackInstallation
-from app.common.issue_keys import display_key
 from app.common.issue_writes import create_issue
-from app.domains.integrations.channels.messages import slack_escape
+from app.domains.integrations.channels.messages import clip, slack_escape
 from app.domains.integrations.chat import issues as chat_issues
-from app.domains.integrations.outbound.payloads import Links
 from app.domains.integrations.slack import install, people
 from app.domains.integrations.slack.api import SlackError, respond
 from app.domains.integrations.slack.unfurls import issue_blocks, issue_by_key, split_key
@@ -51,10 +52,12 @@ NOT_LINKED = (
 
 NO_TEAMS = "You are not a member of any team you can create issues in."
 
+UNRECOGNISED_MAX = 60
+
 
 def ephemeral(text: str, blocks: list[dict[str, Any]] | None = None) -> dict[str, Any]:
-    """A reply only the person who asked sees."""
-    reply: dict[str, Any] = {"response_type": "ephemeral", "text": text}
+    """A reply only the person who asked sees, with Slack's link previews off."""
+    reply: dict[str, Any] = {"response_type": "ephemeral", "text": text, "unfurl_links": False, "unfurl_media": False}
     if blocks:
         reply["blocks"] = blocks
     return reply
@@ -64,10 +67,19 @@ def help_text(command: str) -> str:
     """What the command can do, named the way this environment's App spells it."""
     name = command or "/standupless"
     return (
-        f"`{name} ABC-12` shows an issue.\n"
+        f"`{name} show ABC-12` or `{name} ABC-12` shows an issue.\n"
         f"`{name} create Fix the login redirect` opens the form to create an issue.\n"
         "The *Create issue* shortcut on any message files it as an issue."
     )
+
+
+def unrecognised(command: str, what: str, *, as_key: bool = False) -> dict[str, Any]:
+    """The reply to input the command cannot read: what it did not recognise, then the help."""
+    if not what:
+        return ephemeral(f"Name the issue to show, such as `show ABC-12`.\n{help_text(command)}")
+    shown = slack_escape(clip(what, UNRECOGNISED_MAX)).replace("`", "'")
+    kind = " as an issue key" if as_key else ""
+    return ephemeral(f"Didn't recognise `{shown}`{kind}.\n{help_text(command)}")
 
 
 def writable_teams(repositories: Repositories, context: AuthzContext) -> list[tuple[str, str]]:
@@ -81,11 +93,25 @@ def _option(team_id: str, label: str) -> dict[str, Any]:
     return {"text": {"type": "plain_text", "text": label[:75]}, "value": team_id}
 
 
-def create_view(teams: list[tuple[str, str]], *, title: str = "", description: str = "", permalink: str = "") -> dict:
-    """The modal that creates an issue, prefilled from a command or a message."""
-    options = [_option(team_id, label) for team_id, label in teams]
+def create_view(
+    teams: list[tuple[str, str]],
+    *,
+    title: str = "",
+    description: str = "",
+    permalink: str = "",
+    team_id: str = "",
+) -> dict:
+    """The modal that creates an issue, prefilled from a command or a message.
+
+    The team picker starts on `team_id` when it is one of the offered teams, and on
+    the only team when there is just one.
+    """
+    options = [_option(option_id, label) for option_id, label in teams]
     team_select: dict[str, Any] = {"type": "static_select", "action_id": TEAM_BLOCK, "options": options}
-    if len(options) == 1:
+    preselected = [option for option in options if option["value"] == team_id] if team_id else []
+    if preselected:
+        team_select["initial_option"] = preselected[0]
+    elif len(options) == 1:
         team_select["initial_option"] = options[0]
     title_input: dict[str, Any] = {"type": "plain_text_input", "action_id": TITLE_BLOCK, "max_length": TITLE_MAX}
     if title:
@@ -150,29 +176,54 @@ def _context(repositories: Repositories, installation: SlackInstallation, slack_
         return None
 
 
+def _channel_team(repositories: Repositories, context: AuthzContext, channel_id: str) -> str:
+    """The team the channel posts notifications for, when the person may create issues in it."""
+    return chat_issues.channel_team(repositories, context, slack_channel_ids=(channel_id,))
+
+
+def _show(repositories: Repositories, context: AuthzContext, key: str) -> dict[str, Any]:
+    """The card of one issue the member can see, or a reply saying there is none."""
+    wanted = key.upper()
+    issue = issue_by_key(repositories, context.workspace_id, wanted)
+    if issue is None or not context.can_see_team(issue.team_id):
+        return ephemeral(f"No issue {slack_escape(wanted)} that you can see.")
+    blocks = issue_blocks(repositories, issue)
+    summary = chat_issues.summarize(repositories, issue)
+    return ephemeral(f"{summary.key} {clip(summary.title, 150)}", blocks)
+
+
 def slash_command(repositories: Repositories, installation: SlackInstallation, form: Mapping[str, str]) -> dict:
-    """Answer one `/standupless` invocation."""
+    """Answer one `/standupless` invocation.
+
+    `show KEY` and a bare `KEY` both show an issue, matching the Discord App's
+    `show`, and anything else that is not `create` or `help` names what was not
+    recognised before the help, rather than silently answering the help alone.
+    """
     command = form.get("command", "")
     text = " ".join(form.get("text", "").split())
     if not text or text.lower() == "help":
         return ephemeral(help_text(command))
+    verb, _, rest = text.partition(" ")
+    if verb.lower() == "show":
+        key = rest
+        if split_key(key) is None:
+            return unrecognised(command, key, as_key=True)
+    elif verb.lower() == "create" or split_key(text) is not None:
+        key = text
+    else:
+        return unrecognised(command, text)
     context = _context(repositories, installation, form.get("user_id", ""))
     if context is None:
         return ephemeral(NOT_LINKED)
-    verb, _, rest = text.partition(" ")
-    if verb.lower() == "create":
-        teams = writable_teams(repositories, context)
-        if not teams:
-            return ephemeral(NO_TEAMS)
-        if not _open(installation, form.get("trigger_id", ""), create_view(teams, title=rest)):
-            return ephemeral("Slack could not open the form. Try again.")
-        return {}
-    if split_key(text) is not None:
-        issue = issue_by_key(repositories, context.workspace_id, text)
-        if issue is None or not context.can_see_team(issue.team_id):
-            return ephemeral(f"No issue {slack_escape(text.upper())} that you can see.")
-        return ephemeral(text.upper(), issue_blocks(repositories, issue))
-    return ephemeral(help_text(command))
+    if verb.lower() != "create":
+        return _show(repositories, context, key)
+    teams = writable_teams(repositories, context)
+    if not teams:
+        return ephemeral(NO_TEAMS)
+    team_id = _channel_team(repositories, context, form.get("channel_id", ""))
+    if not _open(installation, form.get("trigger_id", ""), create_view(teams, title=rest, team_id=team_id)):
+        return ephemeral("Slack could not open the form. Try again.")
+    return {}
 
 
 def _permalink(installation: SlackInstallation, channel_id: str, message_ts: str) -> str:
@@ -206,16 +257,16 @@ def message_shortcut(repositories: Repositories, installation: SlackInstallation
     message = payload.get("message") or {}
     channel = payload.get("channel") or {}
     text = str(message.get("text", "")) if isinstance(message, Mapping) else ""
-    permalink = _permalink(
-        installation,
-        str(channel.get("id", "")) if isinstance(channel, Mapping) else "",
-        str(message.get("ts", "")) if isinstance(message, Mapping) else "",
+    channel_id = str(channel.get("id", "")) if isinstance(channel, Mapping) else ""
+    permalink = _permalink(installation, channel_id, str(message.get("ts", "")) if isinstance(message, Mapping) else "")
+    view = create_view(
+        teams,
+        title=_title_from(text),
+        description=text,
+        permalink=permalink,
+        team_id=_channel_team(repositories, context, channel_id),
     )
-    _open(
-        installation,
-        str(payload.get("trigger_id", "")),
-        create_view(teams, title=_title_from(text), description=text, permalink=permalink),
-    )
+    _open(installation, str(payload.get("trigger_id", "")), view)
     return {}
 
 
@@ -231,13 +282,13 @@ def _errors(errors: Mapping[str, str]) -> dict[str, Any]:
     return {"response_action": "errors", "errors": dict(errors)}
 
 
-def _created_view(key: str, url: str) -> dict[str, Any]:
-    """The modal shown once the issue exists, linking to it."""
+def _created_view(blocks: list[dict[str, Any]]) -> dict[str, Any]:
+    """The modal shown once the issue exists, carrying its card."""
     return {
         "type": "modal",
         "title": {"type": "plain_text", "text": "Issue created"},
         "close": {"type": "plain_text", "text": "Done"},
-        "blocks": [{"type": "section", "text": {"type": "mrkdwn", "text": f"Created <{url}|{slack_escape(key)}>."}}],
+        "blocks": blocks,
     }
 
 
@@ -269,10 +320,8 @@ def submit_create(repositories: Repositories, installation: SlackInstallation, p
         issue = create_issue(repositories, context, payload_in)
     except HTTPException:
         return _errors({TEAM_BLOCK: "You cannot create issues in this team."})
-    key = display_key(repositories.teams, context.workspace_id, issue.team_id, issue.key)
-    url = Links(repositories, context.workspace_id).issue(key)
     _log.info("Created an issue from Slack.", extra={"event": "integrations.slack.issue_created"})
-    return {"response_action": "update", "view": _created_view(key, url)}
+    return {"response_action": "update", "view": _created_view(issue_blocks(repositories, issue))}
 
 
 def interaction(repositories: Repositories, installation: SlackInstallation, payload: Mapping[str, Any]) -> dict:

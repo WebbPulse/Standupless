@@ -3,7 +3,11 @@
 Every action runs as the Standupless member a Discord person is linked to, resolved
 by `people.context_for`, so the teams offered and the issue written are exactly
 what that person could do in the web app. A person not linked yet is answered with
-their own consent link. Replies are ephemeral and mention nobody.
+a button to their own consent link. Replies are ephemeral and mention nobody. An
+issue is answered with the Standupless card as an embed and no link in the message
+text, so Discord never unfurls the issue URL into the site's landing card, which is
+all its crawler can see behind sign in. A `create` with no team named, and the
+form, default to the team whose notifications the channel already carries.
 """
 
 from __future__ import annotations
@@ -18,12 +22,10 @@ from app.common.api.dependencies.authz import AuthzContext
 from app.common.api.dependencies.repositories import Repositories
 from app.common.api.schemas.issues import TITLE_MAX, IssueCreate
 from app.common.db.dynamo.discord import DiscordInstallation
-from app.common.issue_keys import display_key
 from app.common.issue_writes import create_issue
 from app.domains.integrations.channels.messages import clip, discord_escape
 from app.domains.integrations.chat import issues as chat_issues
 from app.domains.integrations.discord import people
-from app.domains.integrations.outbound.payloads import Links
 
 _log = logging.getLogger(__name__)
 
@@ -39,6 +41,12 @@ AUTOCOMPLETE_RESULT = 8
 MODAL = 9
 
 EPHEMERAL = 1 << 6
+
+ACTION_ROW = 1
+BUTTON = 2
+LINK_BUTTON_STYLE = 5
+
+CARD_COLOR = 0x5E6AD2
 
 CHAT_INPUT = 1
 MESSAGE_COMMAND = 3
@@ -69,8 +77,10 @@ KEY_MAX = 24
 
 NOT_LINKED = (
     "Your Discord account is not linked to a member of this Standupless workspace yet. "
-    "Link it with the same confirmed email address you use in Standupless: {url}"
+    "Link it with the same confirmed email address you use in Standupless, then run the command again."
 )
+
+LINK_LABEL = "Link Discord account"
 
 UNKNOWN_PERSON = "Discord did not say who you are, so Standupless cannot act for you."
 
@@ -145,12 +155,24 @@ HELP_TEXT = (
 )
 
 
-def ephemeral(content: str, embeds: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+def ephemeral(
+    content: str,
+    embeds: list[dict[str, Any]] | None = None,
+    components: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
     """A reply only the person who asked sees, which can mention nobody."""
     data: dict[str, Any] = {"content": content, "flags": EPHEMERAL, "allowed_mentions": {"parse": []}}
     if embeds:
         data["embeds"] = embeds
+    if components:
+        data["components"] = components
     return {"type": CHANNEL_MESSAGE, "data": data}
+
+
+def link_button(label: str, url: str) -> dict[str, Any]:
+    """One row holding a single button that opens `url`."""
+    button = {"type": BUTTON, "style": LINK_BUTTON_STYLE, "label": label, "url": url}
+    return {"type": ACTION_ROW, "components": [button]}
 
 
 def _user_id(payload: Mapping[str, Any]) -> str:
@@ -178,7 +200,7 @@ def _not_linked(installation: DiscordInstallation, discord_user_id: str) -> dict
     """The reply to a person who is not linked, carrying their own consent link."""
     if not discord_user_id:
         return ephemeral(UNKNOWN_PERSON)
-    return ephemeral(NOT_LINKED.format(url=people.link_url(installation, discord_user_id)))
+    return ephemeral(NOT_LINKED, components=[link_button(LINK_LABEL, people.start_url(installation, discord_user_id))])
 
 
 def _options(data: Mapping[str, Any]) -> tuple[str, dict[str, Any]]:
@@ -197,13 +219,29 @@ def _options(data: Mapping[str, Any]) -> tuple[str, dict[str, Any]]:
 
 
 def issue_embed(summary: chat_issues.IssueSummary) -> dict[str, Any]:
-    """The card one issue shows as: key and title linking to it, then team, status and assignee."""
+    """The card one issue shows as: key and title linking to it, then its status, priority, assignee and team."""
     return {
         "title": clip(f"{summary.key} {summary.title}", 256),
         "url": summary.url,
-        "description": discord_escape(" · ".join(summary.details)),
-        "color": 0x5E6AD2,
+        "color": CARD_COLOR,
+        "fields": [
+            {"name": name, "value": clip(discord_escape(value), 1024), "inline": True} for name, value in summary.fields
+        ],
     }
+
+
+def _channel_ids(payload: Mapping[str, Any]) -> tuple[str, ...]:
+    """The channel an interaction came from and, in a thread, the channel the thread belongs to."""
+    channel = payload.get("channel") or {}
+    ids = [str(payload.get("channel_id", ""))]
+    if isinstance(channel, Mapping):
+        ids += [str(channel.get("id", "")), str(channel.get("parent_id", "") or "")]
+    return tuple(dict.fromkeys(channel_id for channel_id in ids if channel_id))
+
+
+def _channel_team(repositories: Repositories, context: AuthzContext, payload: Mapping[str, Any]) -> str:
+    """The team the channel posts notifications for, when the person may create issues in it."""
+    return chat_issues.channel_team(repositories, context, discord_channel_ids=_channel_ids(payload))
 
 
 def _team_choices(teams: list[tuple[str, str, str]]) -> list[tuple[str, str]]:
@@ -211,11 +249,13 @@ def _team_choices(teams: list[tuple[str, str, str]]) -> list[tuple[str, str]]:
     return [(team_id, clip(f"{name} ({prefix})", 100)) for team_id, name, prefix in teams]
 
 
-def _pick_team(teams: list[tuple[str, str, str]], wanted: str) -> str:
-    """The team a person named by id, key prefix or name, the only team when they named none, or `""`."""
+def _pick_team(teams: list[tuple[str, str, str]], wanted: str, default: str = "") -> str:
+    """The team a person named by id, key prefix or name, else the only team or the channel's, or `""`."""
     text = wanted.strip()
     if not text:
-        return teams[0][0] if len(teams) == 1 else ""
+        if len(teams) == 1:
+            return teams[0][0]
+        return default if any(team_id == default for team_id, _, _ in teams) else ""
     for team_id, name, prefix in teams:
         if text == team_id or text.upper() == prefix.upper() or text.lower() == name.lower():
             return team_id
@@ -238,10 +278,9 @@ def _create(
         issue = create_issue(repositories, context, payload)
     except HTTPException:
         return ephemeral("You cannot create issues in this team.")
-    key = display_key(repositories.teams, context.workspace_id, issue.team_id, issue.key)
-    url = Links(repositories, context.workspace_id).issue(key)
+    summary = chat_issues.summarize(repositories, issue)
     _log.info("Created an issue from Discord.", extra={"event": "integrations.discord.issue_created"})
-    return ephemeral(f"Created [{key}]({url}).")
+    return ephemeral(f"Created {summary.key}.", [issue_embed(summary)])
 
 
 def _teams_hint(teams: list[tuple[str, str, str]]) -> str:
@@ -278,7 +317,8 @@ def slash_command(
     teams = chat_issues.writable_teams(repositories, context)
     if not teams:
         return ephemeral(NO_TEAMS)
-    team_id = _pick_team(teams, str(values.get("team") or ""))
+    wanted = str(values.get("team") or "")
+    team_id = _pick_team(teams, wanted, "" if wanted.strip() else _channel_team(repositories, context, payload))
     if not team_id:
         return ephemeral(_teams_hint(teams))
     return _create(repositories, context, team_id, str(values.get("title") or ""), str(values.get("description") or ""))
@@ -317,9 +357,20 @@ def _text_input(custom_id: str, label: str, *, style: int, value: str, required:
     return {"type": 1, "components": [field]}
 
 
-def create_modal(teams: list[tuple[str, str, str]], channel_id: str, message_id: str, text: str) -> dict[str, Any]:
-    """The form that files one message as an issue, prefilled from it."""
-    only = teams[0][2] if len(teams) == 1 else ""
+def create_modal(
+    teams: list[tuple[str, str, str]],
+    channel_id: str,
+    message_id: str,
+    text: str,
+    team_id: str = "",
+) -> dict[str, Any]:
+    """The form that files one message as an issue, prefilled from it.
+
+    The team field starts on the only team, or else on `team_id` when that is one
+    of the person's teams.
+    """
+    chosen = [prefix for option_id, _, prefix in teams if option_id == team_id] if team_id else []
+    only = teams[0][2] if len(teams) == 1 else (chosen[0] if chosen else "")
     team_field = _text_input(TEAM_INPUT, "Team key", style=1, value=only, required=True, max_length=10)
     if not only:
         team_field["components"][0]["placeholder"] = clip(", ".join(prefix for _, _, prefix in teams), 100)
@@ -373,7 +424,7 @@ def message_command(
     channel_id = str(payload.get("channel_id", ""))
     if not channel_id and isinstance(message, Mapping):
         channel_id = str(message.get("channel_id", ""))
-    return create_modal(teams, channel_id, target_id, text)
+    return create_modal(teams, channel_id, target_id, text, _channel_team(repositories, context, payload))
 
 
 def _submitted(data: Mapping[str, Any]) -> dict[str, str]:
