@@ -1723,6 +1723,8 @@ class SsoDomainCreate(TypedDict):
 class SsoDomainRead(TypedDict):
     added_at: str
     domain: str
+    lapsed: NotRequired[bool]
+    lapsed_at: NotRequired[str | None]
     record_name: str
     record_type: str
     record_value: str

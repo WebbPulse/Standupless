@@ -210,6 +210,10 @@ export interface SsoDomainRead {
   domain: string;
   verified: boolean;
   verified_at?: string | null;
+  /** Whether the domain was verified and lost it because its TXT record went missing. */
+  lapsed?: boolean;
+  /** When the recheck found the record gone. */
+  lapsed_at?: string | null;
   added_at: string;
   /** Where the TXT record goes. */
   record_name: string;

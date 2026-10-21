@@ -1,5 +1,8 @@
 """The workspaces stage of the purge chain, and the hourly sweep that starts every purge.
 
+The same hourly sweep runs the single sign-on domain recheck in `sso_recheck`,
+because this function already holds the memberships and audit grants it needs.
+
 The sweep reads the schedules on the workspaces and users tables. A workspace
 whose grace period has run out is marked as purging, loses its API keys, invites
 and memberships at once so nobody can reach it any more, and is handed to the
@@ -35,6 +38,7 @@ from app.common.db.dynamo.users import STALE_ACCOUNT_PURGE
 from app.common.db.dynamo.workspaces import STALE_PURGE
 from app.common.icons import delete_icon_objects, user_owner, workspace_owner
 from app.common.team_purge import Deadline, PurgeJob
+from app.domains.workspaces.consumers import sso_recheck
 
 STAGE = team_purge.WORKSPACE_STAGE
 
@@ -124,7 +128,8 @@ def sweep(repositories: Repositories, deadline: Deadline, user_id: str = "") -> 
     A purge already under way is skipped unless it has gone quiet for longer than
     its stale window, in which case it is started again from the top. Naming a user
     is how the deletion route starts that account's purge at once without waiting
-    for the hourly run.
+    for the hourly run. The hourly run then rechecks the single sign-on domains due
+    for it, with whatever budget the purges left.
     """
     now = utc_now()
     if user_id:
@@ -132,6 +137,13 @@ def sweep(repositories: Repositories, deadline: Deadline, user_id: str = "") -> 
         if user is not None and user.is_deleted and not _purge_running(user.purging_at, now):
             begin_account_purge(repositories, user_id, now=now)
         return
+    _start_purges(repositories, deadline, now)
+    if not deadline.expired():
+        sso_recheck.recheck(repositories, deadline, now=now)
+
+
+def _start_purges(repositories: Repositories, deadline: Deadline, now: datetime) -> None:
+    """Start every due workspace purge and every deleted account's purge, until the deadline."""
     for workspace in repositories.workspaces.list_scheduled():
         if deadline.expired():
             return

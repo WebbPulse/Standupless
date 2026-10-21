@@ -57,6 +57,7 @@ EVENTS: dict[str, str] = {
     "sso.domain_added": "Single sign-on domain added",
     "sso.domain_verified": "Single sign-on domain verified",
     "sso.domain_removed": "Single sign-on domain removed",
+    "sso.domain_lapsed": "Single sign-on domain lapsed",
     "sso.connection_saved": "Single sign-on connection saved",
     "sso.connection_tested": "Single sign-on connection tested",
     "sso.connection_removed": "Single sign-on connection removed",
