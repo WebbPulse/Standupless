@@ -49,6 +49,11 @@ vi.mock('../../api/workspaces', () => ({
   joinSsoWorkspace: vi.fn(),
 }));
 
+vi.mock('./ScimBlock', () => ({
+  default: () => null,
+  ScimBlock: () => null,
+}));
+
 vi.mock('../../lib/sso', async () => {
   const actual =
     await vi.importActual<typeof import('../../lib/sso')>('../../lib/sso');

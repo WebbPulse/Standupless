@@ -59,6 +59,7 @@ import Input, { Textarea } from '../ui/input';
 import Label from '../ui/label';
 import TextLink from '../ui/link';
 import RelativeTime from '../ui/relative-time';
+import ScimBlock from './ScimBlock';
 import { SelectField } from '../ui/select';
 import Spinner from '../ui/spinner';
 
@@ -979,6 +980,10 @@ export const SsoSection: React.FC<SsoSectionProps> = ({ workspace }) => {
             workspace={workspace}
             settings={data}
             refetch={refetch}
+          />
+          <ScimBlock
+            workspaceId={workspace.id}
+            canCreate={workspace.role === 'owner'}
           />
         </div>
       )}

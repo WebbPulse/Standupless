@@ -1514,6 +1514,29 @@ class RowProblemRead(TypedDict):
     severity: Literal["error", "warning"]
 
 
+class ScimTokenCreate(TypedDict):
+    name: NotRequired[str]
+
+
+class ScimTokenCreated(TypedDict):
+    created_at: str
+    created_by: str
+    key_id: str
+    last_used_at: NotRequired[str | None]
+    name: str
+    prefix: str
+    secret: str
+
+
+class ScimTokenRead(TypedDict):
+    created_at: str
+    created_by: str
+    key_id: str
+    last_used_at: NotRequired[str | None]
+    name: str
+    prefix: str
+
+
 class SearchResultRead(TypedDict):
     assignee_id: NotRequired[str | None]
     issue_id: str
@@ -3104,6 +3127,11 @@ class RepositoryRead(TypedDict):
     release_source: NotRequired[RepositoryReleaseSourceRead]
     repository_id: str
     team_id: NotRequired[str | None]
+
+
+class ScimSettingsRead(TypedDict):
+    base_url: str
+    tokens: list[ScimTokenRead]
 
 
 class SearchRead(TypedDict):

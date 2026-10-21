@@ -26,6 +26,15 @@ row takes `user_id = sso_domain#<domain>` only once its TXT record is verified, 
 "which workspace signs in acme.com" is one query on the user index that never
 meets a domain still pending, and no user id can take that form either.
 
+`scim_user#<scim_id>` is one person a workspace's directory provisioned over SCIM,
+and `scim_name#<user_name>` reserves that person's lowercased `userName`, so two
+provisioning calls racing on one name cannot both land. `scim_group#<team_id>`
+links a directory group to an existing team, and `scim_member#<team_id>#<scim_id>`
+records one directory member of that group, with whether SCIM created the team
+membership it stands for. None of these rows carries a `user_id`, so the user
+index never meets them, and none starts with `user#` or `team#`, so no member or
+team membership read does either.
+
 The workspace membership also carries the person's own sidebar team order,
 because it is the one row that is already per person and per workspace.
 
@@ -40,7 +49,7 @@ from typing import Any, Literal, Mapping
 
 from boto3.dynamodb.conditions import Attr, Key
 from pydantic import BaseModel, Field
-from webbpulse.dynamodb import ConditionFailed, Repository
+from webbpulse.dynamodb import ConditionFailed, Repository, TransactionCanceled
 
 from app.common.db.dynamo.base import as_item, build_repository, delete_partition, utc_now
 from app.common.db.dynamo.tables import MEMBERSHIPS
@@ -174,6 +183,89 @@ class SsoConnectionRow(BaseModel):
     def tested(self) -> bool:
         """Whether a sign-in has completed through these settings."""
         return self.tested_at is not None
+
+
+SCIM_USER_PREFIX = "scim_user#"
+
+SCIM_NAME_PREFIX = "scim_name#"
+
+SCIM_GROUP_PREFIX = "scim_group#"
+
+SCIM_MEMBER_PREFIX = "scim_member#"
+
+SCIM_SCAN_LIMIT = 20_000
+"""The safety ceiling on one read of a workspace's directory rows, far above any plan's seats."""
+
+
+class ScimNameTaken(Exception):
+    """Another directory user in the workspace already holds this `userName`."""
+
+
+def scim_user_key(scim_id: str) -> str:
+    """The sort key of one provisioned directory user."""
+    return f"{SCIM_USER_PREFIX}{scim_id}"
+
+
+def scim_name_key(user_name: str) -> str:
+    """The sort key reserving one lowercased `userName` in a workspace."""
+    return f"{SCIM_NAME_PREFIX}{user_name.strip().lower()}"
+
+
+def scim_group_key(team_id: str) -> str:
+    """The sort key of the link between a directory group and a team."""
+    return f"{SCIM_GROUP_PREFIX}{team_id}"
+
+
+def scim_member_key(team_id: str, scim_id: str) -> str:
+    """The sort key of one directory member of a linked group."""
+    return f"{SCIM_MEMBER_PREFIX}{team_id}#{scim_id}"
+
+
+class ScimUserRow(BaseModel):
+    """One directory user, as the workspace's identity provider last described them.
+
+    `resource` holds the SCIM attributes this product does not model, such as the
+    name parts and the enterprise extension, as JSON, so a provider reads back what
+    it wrote. `linked_user_id` is the Standupless account the directory user stands
+    for, empty until that person has an account on a verified domain.
+    """
+
+    workspace_id: str
+    scim_id: str
+    user_name: str
+    external_id: str = ""
+    active: bool = True
+    display_name: str = ""
+    email_lower: str = ""
+    linked_user_id: str = ""
+    resource: str = "{}"
+    created: str = ""
+    last_modified: str = ""
+
+
+class ScimGroupRow(BaseModel):
+    """A directory group linked to one existing team, whose id is the group's id."""
+
+    workspace_id: str
+    team_id: str
+    display_name: str
+    external_id: str = ""
+    attributes: str = "{}"
+    created: str = ""
+    last_modified: str = ""
+
+
+class ScimMemberRow(BaseModel):
+    """One directory user in one linked group.
+
+    `applied` is whether SCIM created the team membership, so removing the person
+    from the group never removes a membership someone granted by hand.
+    """
+
+    workspace_id: str
+    team_id: str
+    scim_id: str
+    applied: bool = False
 
 
 MEMBERSHIP_SCAN_LIMIT = 100_000
@@ -697,6 +789,213 @@ class MembershipRepository:
             consistent=True,
         )
         return sum(1 for _ in items)
+
+    def get_scim_user(self, workspace_id: str, scim_id: str) -> ScimUserRow | None:
+        """One provisioned directory user, or `None`."""
+        if not workspace_id or not scim_id:
+            return None
+        item = self._repository.get(
+            {"workspace_id": workspace_id, "member_key": scim_user_key(scim_id)}, consistent=True
+        )
+        return None if item is None else ScimUserRow.model_validate(dict(item))
+
+    def get_scim_user_by_name(self, workspace_id: str, user_name: str) -> ScimUserRow | None:
+        """The directory user holding this `userName`, compared without case, or `None`."""
+        if not workspace_id or not user_name.strip():
+            return None
+        item = self._repository.get(
+            {"workspace_id": workspace_id, "member_key": scim_name_key(user_name)}, consistent=True
+        )
+        if item is None:
+            return None
+        return self.get_scim_user(workspace_id, str(item.get("scim_id", "")))
+
+    def list_scim_users(
+        self,
+        workspace_id: str,
+        *,
+        external_id: str | None = None,
+        email_lower: str | None = None,
+        linked_user_id: str | None = None,
+        limit: int = SCIM_SCAN_LIMIT,
+    ) -> list[ScimUserRow]:
+        """The workspace's directory users, oldest first, narrowed by any attribute given."""
+        if not workspace_id:
+            return []
+        condition = None
+        for name, value in (
+            ("external_id", external_id),
+            ("email_lower", email_lower),
+            ("linked_user_id", linked_user_id),
+        ):
+            if value is None:
+                continue
+            clause = Attr(name).eq(value)
+            condition = clause if condition is None else condition & clause
+        items = self._repository.iter_query(
+            Key("workspace_id").eq(workspace_id) & Key("member_key").begins_with(SCIM_USER_PREFIX),
+            filter_expression=condition,
+            max_items=limit,
+            consistent=True,
+        )
+        rows = [ScimUserRow.model_validate(dict(item)) for item in items]
+        return sorted(rows, key=lambda row: (row.created, row.scim_id))
+
+    def _scim_name_item(self, row: ScimUserRow) -> dict[str, Any]:
+        """The row reserving a directory user's `userName`."""
+        return {
+            "workspace_id": row.workspace_id,
+            "member_key": scim_name_key(row.user_name),
+            "scim_id": row.scim_id,
+        }
+
+    def create_scim_user(self, row: ScimUserRow) -> ScimUserRow:
+        """Store a new directory user with its `userName` reserved, raising `ScimNameTaken` on a duplicate."""
+        try:
+            self._repository.transact_write(
+                [
+                    self._repository.put_action(
+                        as_item(row, member_key=scim_user_key(row.scim_id)),
+                        condition=Attr("member_key").not_exists(),
+                    ),
+                    self._repository.put_action(self._scim_name_item(row), condition=Attr("member_key").not_exists()),
+                ]
+            )
+        except TransactionCanceled as exc:
+            raise ScimNameTaken(row.user_name) from exc
+        return row
+
+    def put_scim_user(self, row: ScimUserRow, *, previous_name: str | None = None) -> ScimUserRow:
+        """Replace a directory user, moving its `userName` reservation when the name changed.
+
+        Raises `ScimNameTaken` when the new name is already reserved by someone else.
+        """
+        item = as_item(row, member_key=scim_user_key(row.scim_id))
+        if previous_name is None or scim_name_key(previous_name) == scim_name_key(row.user_name):
+            self._repository.put(item)
+            return row
+        try:
+            self._repository.transact_write(
+                [
+                    self._repository.put_action(item),
+                    self._repository.delete_action(
+                        {"workspace_id": row.workspace_id, "member_key": scim_name_key(previous_name)}
+                    ),
+                    self._repository.put_action(self._scim_name_item(row), condition=Attr("member_key").not_exists()),
+                ]
+            )
+        except TransactionCanceled as exc:
+            raise ScimNameTaken(row.user_name) from exc
+        return row
+
+    def delete_scim_user(self, row: ScimUserRow) -> None:
+        """Remove a directory user, its `userName` reservation and its group memberships."""
+        keys = [
+            {"workspace_id": row.workspace_id, "member_key": scim_user_key(row.scim_id)},
+            {"workspace_id": row.workspace_id, "member_key": scim_name_key(row.user_name)},
+        ]
+        keys.extend(
+            {"workspace_id": row.workspace_id, "member_key": scim_member_key(member.team_id, member.scim_id)}
+            for member in self.list_scim_memberships_for_user(row.workspace_id, row.scim_id)
+        )
+        self._repository.delete_many(keys)
+
+    def get_scim_group(self, workspace_id: str, team_id: str) -> ScimGroupRow | None:
+        """The directory group linked to this team, or `None`."""
+        if not workspace_id or not team_id:
+            return None
+        item = self._repository.get(
+            {"workspace_id": workspace_id, "member_key": scim_group_key(team_id)}, consistent=True
+        )
+        return None if item is None else ScimGroupRow.model_validate(dict(item))
+
+    def list_scim_groups(self, workspace_id: str, *, limit: int = SCIM_SCAN_LIMIT) -> list[ScimGroupRow]:
+        """Every directory group linked to a team in this workspace, oldest first."""
+        if not workspace_id:
+            return []
+        items = self._repository.iter_query(
+            Key("workspace_id").eq(workspace_id) & Key("member_key").begins_with(SCIM_GROUP_PREFIX),
+            max_items=limit,
+            consistent=True,
+        )
+        rows = [ScimGroupRow.model_validate(dict(item)) for item in items]
+        return sorted(rows, key=lambda row: (row.created, row.team_id))
+
+    def link_scim_group(self, row: ScimGroupRow) -> bool:
+        """Link a directory group to its team, answering false when the team is already linked."""
+        try:
+            self._repository.put(
+                as_item(row, member_key=scim_group_key(row.team_id)), condition=Attr("member_key").not_exists()
+            )
+        except ConditionFailed:
+            return False
+        return True
+
+    def put_scim_group(self, row: ScimGroupRow) -> ScimGroupRow:
+        """Replace a linked group's directory attributes."""
+        self._repository.put(as_item(row, member_key=scim_group_key(row.team_id)))
+        return row
+
+    def delete_scim_group(self, workspace_id: str, team_id: str) -> None:
+        """Unlink a directory group from its team, with every member row it held."""
+        keys = [{"workspace_id": workspace_id, "member_key": scim_group_key(team_id)}]
+        keys.extend(
+            {"workspace_id": workspace_id, "member_key": scim_member_key(team_id, member.scim_id)}
+            for member in self.list_scim_members(workspace_id, team_id)
+        )
+        self._repository.delete_many(keys)
+
+    def list_scim_members(
+        self, workspace_id: str, team_id: str, *, limit: int = SCIM_SCAN_LIMIT
+    ) -> list[ScimMemberRow]:
+        """Every directory member of the group linked to this team."""
+        if not workspace_id or not team_id:
+            return []
+        items = self._repository.iter_query(
+            Key("workspace_id").eq(workspace_id) & Key("member_key").begins_with(f"{SCIM_MEMBER_PREFIX}{team_id}#"),
+            max_items=limit,
+            consistent=True,
+        )
+        return [ScimMemberRow.model_validate(dict(item)) for item in items]
+
+    def list_all_scim_members(self, workspace_id: str, *, limit: int = SCIM_SCAN_LIMIT) -> list[ScimMemberRow]:
+        """Every directory member of every linked group, read once for a page of users."""
+        if not workspace_id:
+            return []
+        items = self._repository.iter_query(
+            Key("workspace_id").eq(workspace_id) & Key("member_key").begins_with(SCIM_MEMBER_PREFIX),
+            max_items=limit,
+            consistent=True,
+        )
+        return [ScimMemberRow.model_validate(dict(item)) for item in items]
+
+    def list_scim_memberships_for_user(self, workspace_id: str, scim_id: str) -> list[ScimMemberRow]:
+        """Every linked group this directory user is a member of."""
+        if not workspace_id or not scim_id:
+            return []
+        items = self._repository.iter_query(
+            Key("workspace_id").eq(workspace_id) & Key("member_key").begins_with(SCIM_MEMBER_PREFIX),
+            filter_expression=Attr("scim_id").eq(scim_id),
+            max_items=SCIM_SCAN_LIMIT,
+            consistent=True,
+        )
+        return [ScimMemberRow.model_validate(dict(item)) for item in items]
+
+    def get_scim_member(self, workspace_id: str, team_id: str, scim_id: str) -> ScimMemberRow | None:
+        """One directory user's row in one linked group, or `None`."""
+        item = self._repository.get(
+            {"workspace_id": workspace_id, "member_key": scim_member_key(team_id, scim_id)}, consistent=True
+        )
+        return None if item is None else ScimMemberRow.model_validate(dict(item))
+
+    def put_scim_member(self, row: ScimMemberRow) -> ScimMemberRow:
+        """Record one directory user in one linked group."""
+        self._repository.put(as_item(row, member_key=scim_member_key(row.team_id, row.scim_id)))
+        return row
+
+    def delete_scim_member(self, workspace_id: str, team_id: str, scim_id: str) -> None:
+        """Forget one directory user in one linked group. Idempotent."""
+        self._repository.delete({"workspace_id": workspace_id, "member_key": scim_member_key(team_id, scim_id)})
 
 
 def _as_membership(item: Mapping[str, Any]) -> Membership:
