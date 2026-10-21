@@ -12,6 +12,7 @@ remove. A SCIM token reaches the SCIM routes and nothing else.
 from __future__ import annotations
 
 import base64
+import time
 from typing import Any, Iterator
 
 import pytest
@@ -382,9 +383,9 @@ SSO_AMR = ["sso", "oidc"]
 @pytest.fixture
 def connection(client: TestClient, token: str) -> str:
     """The workspace's OIDC connection saved and tested, so people can join through it."""
-    sign_in(client, ADMIN)
+    sign_in(client, OWNER)
     assert client.put(f"/api/workspaces/{WORKSPACE}/sso/connection", json=OIDC_CONNECTION).status_code == 200
-    sign_in(client, ADMIN, amr=SSO_AMR, sso_connection=WORKSPACE)
+    sign_in(client, ADMIN, amr=SSO_AMR, sso_connection=WORKSPACE, auth_time=int(time.time()))
     assert client.post(f"/api/workspaces/{WORKSPACE}/sso/connection/test-result").status_code == 200
     sign_out(client)
     return token

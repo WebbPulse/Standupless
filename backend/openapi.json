@@ -33996,7 +33996,7 @@
     },
     "/api/workspaces/{workspace_id}/sso/scim/tokens": {
       "post": {
-        "description": "Mint a SCIM token and show its plaintext, the only time it is ever shown.",
+        "description": "Mint a SCIM token and show its plaintext, the only time it is ever shown. Owners only.",
         "operationId": "create_scim_token_api_workspaces__workspace_id__sso_scim_tokens_post",
         "parameters": [
           {
