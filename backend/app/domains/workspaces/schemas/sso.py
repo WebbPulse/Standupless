@@ -26,6 +26,11 @@ class SsoDomainRead(BaseModel):
     domain: str
     verified: bool
     verified_at: Optional[datetime] = None
+    lapsed: bool = Field(
+        default=False,
+        description="Whether the domain was verified and lost it because its TXT record went missing.",
+    )
+    lapsed_at: Optional[datetime] = Field(default=None, description="When the recheck found the record gone.")
     added_at: datetime
     record_name: str = Field(description="Where the TXT record goes: the domain's apex.")
     record_type: str = Field(description="Always TXT.")
@@ -43,6 +48,8 @@ class SsoDomainRead(BaseModel):
             domain=row.domain,
             verified=row.verified,
             verified_at=row.verified_at,
+            lapsed=row.lapsed,
+            lapsed_at=row.lapsed_at if row.lapsed else None,
             added_at=row.added_at,
             record_name=challenge.record_name,
             record_type=challenge.record_type,

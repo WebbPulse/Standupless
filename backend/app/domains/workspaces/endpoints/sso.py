@@ -47,6 +47,7 @@ from app.common.db.dynamo.memberships import (
     Membership,
     SsoConnectionRow,
     SsoDomain,
+    SsoDomainTaken,
     workspace_member_key,
 )
 from app.common.db.dynamo.users import User
@@ -272,7 +273,12 @@ def verify_sso_domain(
     context: Annotated[AuthzContext, Depends(require(Capability.WORKSPACE_ADMIN))],
     repositories: Annotated[Repositories, Depends(get_repositories)],
 ) -> SsoDomainRead:
-    """Look the domain's TXT record up now, and mark the domain verified when it is there."""
+    """Look the domain's TXT record up now, and claim the domain for this workspace when it is there.
+
+    The claim is a conditional write, so of two workspaces verifying one domain at
+    once only one wins and the other is answered `SSO_DOMAIN_TAKEN`. A domain whose
+    verification lapsed is verified again the same way.
+    """
     from webbpulse.identity import DomainVerificationUnavailable
 
     from app.common.sso import domain_is_verified
@@ -283,22 +289,26 @@ def verify_sso_domain(
     row = repositories.memberships.get_sso_domain(context.workspace_id, name)
     if row is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=DOMAIN_NOT_FOUND)
-    if row.verified:
+    claim = repositories.memberships.get_sso_domain_claim(name)
+    if claim is not None and claim.holder_workspace_id == context.workspace_id and row.verified:
         return SsoDomainRead.from_row(row)
-    holders = [
-        workspace_id
-        for workspace_id in repositories.memberships.workspaces_verifying_sso_domain(name)
-        if workspace_id != context.workspace_id
-    ]
-    if holders:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=DOMAIN_TAKEN)
+    if claim is not None and claim.holder_workspace_id != context.workspace_id:
+        if not repositories.memberships.sso_domain_claim_is_stale(claim):
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=DOMAIN_TAKEN)
     try:
         found = domain_is_verified(name, row.token)
     except DomainVerificationUnavailable as exc:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=DNS_UNAVAILABLE) from exc
     if not found:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=DOMAIN_RECORD_MISSING)
-    verified = repositories.memberships.mark_sso_domain_verified(row, verified_by=context.user_id)
+    try:
+        verified = repositories.memberships.mark_sso_domain_verified(row, verified_by=context.user_id)
+    except SsoDomainTaken as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=DOMAIN_TAKEN) from exc
+    except TransactionCanceled:
+        if repositories.memberships.get_sso_domain(context.workspace_id, name) is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=DOMAIN_NOT_FOUND) from None
+        raise
     audit.record(
         repositories,
         context,

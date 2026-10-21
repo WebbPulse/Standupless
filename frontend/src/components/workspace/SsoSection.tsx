@@ -202,6 +202,8 @@ const DomainRow: React.FC<DomainRowProps> = ({
         </span>
         {row.verified ? (
           <Badge tone="success">Verified</Badge>
+        ) : row.lapsed === true ? (
+          <Badge tone="danger">Verification lapsed</Badge>
         ) : (
           <Badge tone="warning">Not verified</Badge>
         )}
@@ -240,10 +242,23 @@ const DomainRow: React.FC<DomainRowProps> = ({
       )
     ) : (
       <div className="space-y-1">
-        <p className="text-xs text-text-muted">
-          Add this TXT record at your DNS provider, then verify. Records can
-          take a few minutes to appear.
-        </p>
+        {row.lapsed === true ? (
+          <p className="text-xs text-text-muted">
+            This TXT record is gone, so people on this domain cannot sign in or
+            join through single sign-on until you publish it again and verify.
+            {row.lapsed_at !== null && row.lapsed_at !== undefined && (
+              <>
+                {' '}
+                Lapsed <RelativeTime value={row.lapsed_at} />.
+              </>
+            )}
+          </p>
+        ) : (
+          <p className="text-xs text-text-muted">
+            Add this TXT record at your DNS provider, then verify. Records can
+            take a few minutes to appear.
+          </p>
+        )}
         <div className="divide-y divide-line rounded-md border border-line">
           <CopyRow label="Name" value={row.record_name} />
           <CopyRow label="Type" value={row.record_type} />
