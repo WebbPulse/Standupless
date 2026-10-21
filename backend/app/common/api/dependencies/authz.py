@@ -46,6 +46,9 @@ __all__ = [
     "AuthStrength",
     "amr_of",
     "auth_policy_refusal",
+    "credential_issued_at",
+    "delegated_policy_refusal",
+    "epoch_of",
     "auth_strength_of",
     "has_two_factor",
     "is_stepped_up",
@@ -339,7 +342,23 @@ def _api_key_claims(request: Request, repositories: RepositoryBundle | None = No
         return None
     from webbpulse.identity.claims import AuthorizerClaims
 
-    return AuthorizerClaims({**claims_for_key(record).raw, CREATOR_CLAIM: record.created_by or ""})
+    return AuthorizerClaims(
+        {
+            **claims_for_key(record).raw,
+            CREATOR_CLAIM: record.created_by or "",
+            ISSUED_AT_CLAIM: epoch_of(record.created_at),
+        }
+    )
+
+
+def epoch_of(iso: str) -> int:
+    """The epoch seconds of a stored ISO 8601 time, or 0 when it is missing or unreadable."""
+    from datetime import datetime
+
+    try:
+        return int(datetime.fromisoformat(iso).timestamp()) if iso else 0
+    except ValueError:
+        return 0
 
 
 def _mcp_token_claims(request: Request) -> Any:
@@ -488,6 +507,13 @@ def _not_found() -> HTTPException:
     """
     return HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=NOT_FOUND_DETAIL)
 
+
+ISSUED_AT_CLAIM = "credential_issued_at"
+"""The claim carrying when a verified API key was minted, in epoch seconds.
+
+Stamped from the stored record in `_api_key_claims`, so the authentication policy can
+tell a key minted before the policy tightened from one minted under it.
+"""
 
 CREATOR_CLAIM = "api_key_created_by"
 """The claim naming the person who minted a verified API key.
@@ -679,19 +705,71 @@ def auth_policy_refusal(
 ) -> Optional[AuthPolicyRefusal]:
     """Why the workspace's authentication policy refuses this credential, or `None`.
 
-    Only a person's own session is held to the policy. An API key or an MCP token is
-    a delegated credential minted from a session, so it carries no session claims to
-    check. `role` is the caller's workspace role, which decides the owner's way past
-    a single sign-on requirement.
+    A person's own session is held to the policy through its claims. An API key or an
+    MCP token is a delegated credential minted from a session, so it carries no session
+    claims; one issued since the policy last tightened was minted by a session the
+    policy admitted and passes, and one issued before is held to the policy with no
+    sign-in to show, see `delegated_policy_refusal`. A workspace key decides the
+    owner's way past single sign-on by its creator's role. `role` is the caller's
+    workspace role.
     """
-    if _actor(claims) is not ActorKind.USER:
+    actor = _actor(claims)
+    if actor is ActorKind.SERVICE:
         return None
-    return policy_refusal(
-        repositories.memberships.get_auth_policy(workspace_id),
-        claims,
-        workspace_id=workspace_id,
-        role=role,
-    )
+    policy = repositories.memberships.get_auth_policy(workspace_id)
+    if actor is ActorKind.USER:
+        return policy_refusal(policy, claims, workspace_id=workspace_id, role=role)
+    issued_at = credential_issued_at(claims)
+    if not _issued_before(policy, issued_at):
+        return None
+    from app.common.db.dynamo.api_keys import is_service_subject
+
+    creator = _creator_of(claims)
+    if creator and is_service_subject(str(claims.get("sub", "") or "")):
+        role = _role_for(repositories, workspace_id, creator)
+    return delegated_policy_refusal(policy, issued_at, workspace_id=workspace_id, role=role)
+
+
+def credential_issued_at(claims: Any) -> int:
+    """When a delegated credential was issued, in epoch seconds, or 0 when it does not say.
+
+    An API key carries `ISSUED_AT_CLAIM` from its stored record and an MCP access
+    token carries its signed `iat`.
+    """
+    for name in (ISSUED_AT_CLAIM, "iat"):
+        try:
+            value = int(claims.get(name) or 0)
+        except (TypeError, ValueError):
+            value = 0
+        if value:
+            return value
+    return 0
+
+
+def _issued_before(policy: AuthPolicy, issued_at: float) -> bool:
+    """Whether a credential issued at `issued_at` predates the policy's last tightening."""
+    cutoff = policy.delegated_cutoff()
+    return cutoff is not None and int(issued_at) < int(cutoff.timestamp())
+
+
+def delegated_policy_refusal(
+    policy: AuthPolicy,
+    issued_at: float,
+    *,
+    workspace_id: str = "",
+    role: Optional[str] = None,
+) -> Optional[AuthPolicyRefusal]:
+    """Why this policy refuses a delegated credential issued at `issued_at`, or `None`.
+
+    A credential issued since the policy last tightened passes, because only a session
+    the policy admitted could mint it. One issued before is checked as a sign-in with no
+    method, connection or second factor, so it is refused for whatever the policy now
+    requires, while an owner keeps the single sign-on way past. Turning the requirement
+    off again admits it, and nothing is revoked.
+    """
+    if not _issued_before(policy, issued_at):
+        return None
+    return policy_refusal(policy, {}, workspace_id=workspace_id, role=role)
 
 
 def policy_refusal(

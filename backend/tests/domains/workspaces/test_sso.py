@@ -419,11 +419,20 @@ def test_the_workspace_list_flags_the_sso_reason(client: TestClient, required: s
     assert listed[required]["auth_policy_blocked"] is False
 
 
-def test_a_delegated_credential_is_not_held_to_the_requirement(repositories: Any, required: str) -> None:
-    from app.common.api.dependencies.authz import blocked_by_auth_policy
+def test_a_delegated_credential_is_held_to_the_requirement_only_when_issued_before(
+    repositories: Any, required: str
+) -> None:
+    from app.common.api.dependencies.authz import ISSUED_AT_CLAIM, auth_policy_refusal, blocked_by_auth_policy
 
+    fresh, stale = int(time.time()) + 60, int(time.time()) - 3600
+    issued_since = {"sub": MEMBER, "actor": "api_key", ISSUED_AT_CLAIM: fresh}
+    issued_before = {"sub": MEMBER, "actor": "api_key", ISSUED_AT_CLAIM: stale}
     assert blocked_by_auth_policy(repositories, required, {"sub": MEMBER}, role="member") is True
-    assert blocked_by_auth_policy(repositories, required, {"sub": MEMBER, "actor": "api_key"}, role="member") is False
+    assert blocked_by_auth_policy(repositories, required, issued_since, role="member") is False
+    refusal = auth_policy_refusal(repositories, required, issued_before, role="member")
+    assert refusal is not None and refusal.detail()["error_code"] == "SSO_REQUIRED"
+    owners = {"sub": OWNER, "actor": "api_key", ISSUED_AT_CLAIM: stale}
+    assert blocked_by_auth_policy(repositories, required, owners, role="owner") is False
 
 
 def test_the_connection_and_last_domain_stay_while_required(client: TestClient, required: str) -> None:

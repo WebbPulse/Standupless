@@ -4,8 +4,9 @@ Turning the policy on needs the Business plan and an admin whose own session
 already has a second factor; turning it off never needs either. While it is on,
 every workspace route refuses a session without the `two_factor` claim with
 `AUTH_POLICY_REQUIRED`, the workspace list flags the workspace instead of hiding
-it, delegated credentials are left to their own scopes, and MCP consent stops
-offering the workspace to a person without a second factor.
+it, a delegated credential issued before the policy turned on is refused while one
+issued since passes, and MCP consent stops offering the workspace to a person
+without a second factor.
 
 Limiting the sign-in methods works the same way off the first factor in the
 session's `amr`, and the admin saving it must have signed in one of the allowed
@@ -14,6 +15,8 @@ ways. Each setting that changes is recorded as its own audit event.
 
 from __future__ import annotations
 
+import time
+from functools import partial
 from types import SimpleNamespace
 from typing import Any, Iterator, cast
 
@@ -155,12 +158,30 @@ def test_the_workspace_list_flags_a_blocked_workspace(client: TestClient, enforc
     assert listed[enforced]["auth_policy_blocked"] is False
 
 
-def test_a_delegated_credential_is_not_held_to_the_session_claim(repositories: Any, enforced: str) -> None:
-    from app.common.api.dependencies.authz import blocked_by_auth_policy
+def test_a_delegated_credential_issued_under_the_policy_is_not_held_to_the_session_claim(
+    repositories: Any, enforced: str
+) -> None:
+    from app.common.api.dependencies.authz import ISSUED_AT_CLAIM, blocked_by_auth_policy
 
-    assert blocked_by_auth_policy(repositories, enforced, {"sub": MEMBER}) is True
-    assert blocked_by_auth_policy(repositories, enforced, {"sub": MEMBER, "scopes": ["issues:read"]}) is False
-    assert blocked_by_auth_policy(repositories, enforced, {"sub": MEMBER, "actor": "api_key"}) is False
+    blocked = partial(blocked_by_auth_policy, repositories, enforced)
+    fresh = int(time.time()) + 60
+    assert blocked({"sub": MEMBER}) is True
+    assert blocked({"sub": MEMBER, "scopes": ["issues:read"], "iat": fresh}) is False
+    assert blocked({"sub": MEMBER, "actor": "api_key", ISSUED_AT_CLAIM: fresh}) is False
+
+
+def test_a_delegated_credential_issued_before_the_policy_is_refused(repositories: Any, enforced: str) -> None:
+    from app.common.api.dependencies.authz import ISSUED_AT_CLAIM, auth_policy_refusal
+
+    stale = int(time.time()) - 3600
+    for claims in (
+        {"sub": MEMBER, "scopes": ["issues:read"], "iat": stale},
+        {"sub": MEMBER, "actor": "api_key", ISSUED_AT_CLAIM: stale},
+        {"sub": MEMBER, "actor": "api_key"},
+    ):
+        refusal = auth_policy_refusal(repositories, enforced, claims, role="member")
+        assert refusal is not None
+        assert refusal.detail()["error_code"] == "AUTH_POLICY_REQUIRED"
 
 
 def test_the_session_claim_follows_the_totp_factor() -> None:
@@ -436,12 +457,17 @@ def test_the_workspace_list_says_why_a_workspace_is_blocked(client: TestClient, 
     assert listed[google_only]["auth_policy_reason"] is None
 
 
-def test_a_delegated_credential_is_not_held_to_the_methods(repositories: Any, google_only: str) -> None:
-    from app.common.api.dependencies.authz import blocked_by_auth_policy
+def test_a_delegated_credential_is_held_to_the_methods_only_when_issued_before(
+    repositories: Any, google_only: str
+) -> None:
+    from app.common.api.dependencies.authz import ISSUED_AT_CLAIM, blocked_by_auth_policy
 
-    assert blocked_by_auth_policy(repositories, google_only, {"sub": MEMBER, "amr": ["pwd"]}) is True
-    assert blocked_by_auth_policy(repositories, google_only, {"sub": MEMBER, "scopes": ["issues:read"]}) is False
-    assert blocked_by_auth_policy(repositories, google_only, {"sub": MEMBER, "actor": "api_key"}) is False
+    blocked = partial(blocked_by_auth_policy, repositories, google_only)
+    fresh, stale = int(time.time()) + 60, int(time.time()) - 3600
+    assert blocked({"sub": MEMBER, "amr": ["pwd"]}) is True
+    assert blocked({"sub": MEMBER, "scopes": ["issues:read"], "iat": fresh}) is False
+    assert blocked({"sub": MEMBER, "actor": "api_key", ISSUED_AT_CLAIM: fresh}) is False
+    assert blocked({"sub": MEMBER, "scopes": ["issues:read"], "iat": stale}) is True
 
 
 def test_changing_the_methods_is_audited_apart_from_two_factor(

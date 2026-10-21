@@ -115,6 +115,23 @@ class AuthPolicy(BaseModel):
     require_sso: bool = False
     updated_at: datetime | None = None
     updated_by: str | None = None
+    enforced_since: datetime | None = None
+
+    def tightened_from(self, previous: "AuthPolicy") -> bool:
+        """Whether this policy asks more of a sign-in than `previous` did."""
+        return (
+            (self.require_two_factor and not previous.require_two_factor)
+            or (self.require_sso and not previous.require_sso)
+            or not set(previous.allowed_methods).issubset(self.allowed_methods)
+        )
+
+    def delegated_cutoff(self) -> datetime | None:
+        """When this policy last tightened, before which delegated credentials are held to it.
+
+        A row written before the field existed falls back to its last update, the
+        earliest moment the stored requirements are known to have held.
+        """
+        return self.enforced_since or self.updated_at
 
 
 SSO_CONNECTION_KEY = "sso#connection"
@@ -624,21 +641,28 @@ class MembershipRepository:
         `allowed_methods` of `None` allows every sign-in method. `require_sso` of
         `None` keeps the stored value, so the two-factor and methods route never
         turns single sign-on off by saving its own fields.
+
+        `enforced_since` moves to now whenever the policy asks more than it did, so
+        API keys and MCP grants issued before that moment are held to it; loosening
+        or resaving keeps the earlier moment.
         """
+        previous = self.get_auth_policy(workspace_id)
         if require_sso is None:
-            require_sso = self.get_auth_policy(workspace_id).require_sso
+            require_sso = previous.require_sso
         methods: list[SignInMethod] = (
             list(SIGN_IN_METHODS)
             if allowed_methods is None
             else [method for method in SIGN_IN_METHODS if method in allowed_methods]
         )
+        moment = utc_now()
         policy = AuthPolicy(
             require_two_factor=require_two_factor,
             allowed_methods=methods,
             require_sso=require_sso,
-            updated_at=utc_now(),
+            updated_at=moment,
             updated_by=updated_by,
         )
+        policy.enforced_since = moment if policy.tightened_from(previous) else previous.delegated_cutoff()
         self._repository.put(as_item(policy, workspace_id=workspace_id, member_key=AUTH_POLICY_KEY))
         return policy
 
