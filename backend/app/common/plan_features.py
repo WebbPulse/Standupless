@@ -31,6 +31,7 @@ class Feature(StrEnum):
     ISSUE_SLAS = "issue_slas"
     AUDIT_LOG = "audit_log"
     AUTH_POLICY = "auth_policy"
+    SSO = "sso"
 
 
 FEATURE_NAMES: Mapping[Feature, str] = {
@@ -42,6 +43,7 @@ FEATURE_NAMES: Mapping[Feature, str] = {
     Feature.ISSUE_SLAS: "Issue SLAs",
     Feature.AUDIT_LOG: "Audit log",
     Feature.AUTH_POLICY: "Authentication policy",
+    Feature.SSO: "Single sign-on",
 }
 
 STANDARD_FEATURES: frozenset[Feature] = frozenset({Feature.GUESTS, Feature.TRIAGE, Feature.PUBLIC_ROADMAP})
@@ -52,6 +54,7 @@ BUSINESS_FEATURES: frozenset[Feature] = STANDARD_FEATURES | {
     Feature.ISSUE_SLAS,
     Feature.AUDIT_LOG,
     Feature.AUTH_POLICY,
+    Feature.SSO,
 }
 
 PLAN_FEATURES: dict[str, frozenset[Feature]] = {

@@ -7619,7 +7619,7 @@
         "type": "object"
       },
       "MemberRead": {
-        "description": "One workspace member, joined with the user row for a renderable identity.",
+        "description": "One workspace member, joined with the user row for a renderable identity.\n\n`display_name` is the member's handle. `previous_handles` are the handles they\ngave up, so a client can render a mention written under one as the current name.",
         "properties": {
           "avatar_url": {
             "anyOf": [
@@ -7640,10 +7640,22 @@
             "title": "Email",
             "type": "string"
           },
+          "full_name": {
+            "default": "",
+            "title": "Full Name",
+            "type": "string"
+          },
           "joined_at": {
             "format": "date-time",
             "title": "Joined At",
             "type": "string"
+          },
+          "previous_handles": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Previous Handles",
+            "type": "array"
           },
           "role": {
             "enum": [
@@ -11748,6 +11760,142 @@
         "title": "RowProblemRead",
         "type": "object"
       },
+      "ScimSettingsRead": {
+        "description": "What an identity provider needs to provision the workspace: the base URL and the live tokens.",
+        "properties": {
+          "base_url": {
+            "title": "Base Url",
+            "type": "string"
+          },
+          "tokens": {
+            "items": {
+              "$ref": "#/components/schemas/ScimTokenRead"
+            },
+            "title": "Tokens",
+            "type": "array"
+          }
+        },
+        "required": [
+          "base_url",
+          "tokens"
+        ],
+        "title": "ScimSettingsRead",
+        "type": "object"
+      },
+      "ScimTokenCreate": {
+        "description": "The body `POST /api/workspaces/{workspace_id}/sso/scim/tokens` takes.",
+        "properties": {
+          "name": {
+            "default": "SCIM",
+            "description": "A label, such as the directory's name.",
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "title": "ScimTokenCreate",
+        "type": "object"
+      },
+      "ScimTokenCreated": {
+        "description": "The one response that carries a SCIM token's plaintext.",
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "created_by": {
+            "title": "Created By",
+            "type": "string"
+          },
+          "key_id": {
+            "title": "Key Id",
+            "type": "string"
+          },
+          "last_used_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Used At"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "prefix": {
+            "title": "Prefix",
+            "type": "string"
+          },
+          "secret": {
+            "title": "Secret",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key_id",
+          "name",
+          "prefix",
+          "created_by",
+          "created_at",
+          "secret"
+        ],
+        "title": "ScimTokenCreated",
+        "type": "object"
+      },
+      "ScimTokenRead": {
+        "description": "One live SCIM bearer token, without its secret.",
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "created_by": {
+            "title": "Created By",
+            "type": "string"
+          },
+          "key_id": {
+            "title": "Key Id",
+            "type": "string"
+          },
+          "last_used_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Used At"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "prefix": {
+            "title": "Prefix",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key_id",
+          "name",
+          "prefix",
+          "created_by",
+          "created_at"
+        ],
+        "title": "ScimTokenRead",
+        "type": "object"
+      },
       "SearchRead": {
         "description": "Every search hit, ranked. No cursor, per the contract.\n\n`documents` holds the project and initiative documents whose title and body\nmatch every term, for a caller allowed to read projects.",
         "properties": {
@@ -11823,6 +11971,35 @@
           "score"
         ],
         "title": "SearchResultRead",
+        "type": "object"
+      },
+      "ServiceProviderRead": {
+        "description": "What the workspace registers with its identity provider.",
+        "properties": {
+          "oidc_redirect_uri": {
+            "title": "Oidc Redirect Uri",
+            "type": "string"
+          },
+          "saml_acs_url": {
+            "title": "Saml Acs Url",
+            "type": "string"
+          },
+          "saml_entity_id": {
+            "title": "Saml Entity Id",
+            "type": "string"
+          },
+          "saml_metadata_url": {
+            "title": "Saml Metadata Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "oidc_redirect_uri",
+          "saml_acs_url",
+          "saml_metadata_url",
+          "saml_entity_id"
+        ],
+        "title": "ServiceProviderRead",
         "type": "object"
       },
       "ShareLinkCreate": {
@@ -12774,6 +12951,342 @@
           "expires_at"
         ],
         "title": "SlackInstallUrlRead",
+        "type": "object"
+      },
+      "SsoConnectionRead": {
+        "description": "The stored connection, without its secret.",
+        "properties": {
+          "display_name": {
+            "title": "Display Name",
+            "type": "string"
+          },
+          "has_client_secret": {
+            "title": "Has Client Secret",
+            "type": "boolean"
+          },
+          "oidc_client_id": {
+            "title": "Oidc Client Id",
+            "type": "string"
+          },
+          "oidc_issuer": {
+            "title": "Oidc Issuer",
+            "type": "string"
+          },
+          "oidc_scopes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Oidc Scopes",
+            "type": "array"
+          },
+          "protocol": {
+            "enum": [
+              "oidc",
+              "saml"
+            ],
+            "title": "Protocol",
+            "type": "string"
+          },
+          "saml_certificate_count": {
+            "title": "Saml Certificate Count",
+            "type": "integer"
+          },
+          "saml_idp_entity_id": {
+            "title": "Saml Idp Entity Id",
+            "type": "string"
+          },
+          "saml_idp_sso_url": {
+            "title": "Saml Idp Sso Url",
+            "type": "string"
+          },
+          "tested": {
+            "title": "Tested",
+            "type": "boolean"
+          },
+          "tested_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tested At"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "protocol",
+          "display_name",
+          "oidc_issuer",
+          "oidc_client_id",
+          "oidc_scopes",
+          "has_client_secret",
+          "saml_idp_entity_id",
+          "saml_idp_sso_url",
+          "saml_certificate_count",
+          "tested",
+          "updated_at"
+        ],
+        "title": "SsoConnectionRead",
+        "type": "object"
+      },
+      "SsoConnectionUpdate": {
+        "description": "The body `PUT /api/workspaces/{workspace_id}/sso/connection` takes.\n\nFor OIDC, `oidc_client_secret` may be left out to keep the stored one. For SAML,\neither `saml_metadata_xml` or the three provider fields are given.",
+        "properties": {
+          "display_name": {
+            "default": "",
+            "maxLength": 80,
+            "title": "Display Name",
+            "type": "string"
+          },
+          "oidc_client_id": {
+            "default": "",
+            "maxLength": 512,
+            "title": "Oidc Client Id",
+            "type": "string"
+          },
+          "oidc_client_secret": {
+            "default": "",
+            "maxLength": 4096,
+            "title": "Oidc Client Secret",
+            "type": "string"
+          },
+          "oidc_issuer": {
+            "default": "",
+            "maxLength": 2048,
+            "title": "Oidc Issuer",
+            "type": "string"
+          },
+          "oidc_scopes": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 20,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Oidc Scopes"
+          },
+          "protocol": {
+            "enum": [
+              "oidc",
+              "saml"
+            ],
+            "title": "Protocol",
+            "type": "string"
+          },
+          "saml_idp_certificate": {
+            "default": "",
+            "maxLength": 16384,
+            "title": "Saml Idp Certificate",
+            "type": "string"
+          },
+          "saml_idp_entity_id": {
+            "default": "",
+            "maxLength": 2048,
+            "title": "Saml Idp Entity Id",
+            "type": "string"
+          },
+          "saml_idp_sso_url": {
+            "default": "",
+            "maxLength": 2048,
+            "title": "Saml Idp Sso Url",
+            "type": "string"
+          },
+          "saml_metadata_xml": {
+            "default": "",
+            "maxLength": 262144,
+            "title": "Saml Metadata Xml",
+            "type": "string"
+          }
+        },
+        "required": [
+          "protocol"
+        ],
+        "title": "SsoConnectionUpdate",
+        "type": "object"
+      },
+      "SsoDomainCreate": {
+        "description": "The body `POST /api/workspaces/{workspace_id}/sso/domains` takes.",
+        "properties": {
+          "domain": {
+            "description": "The email domain to prove, such as example.com.",
+            "maxLength": 254,
+            "minLength": 3,
+            "title": "Domain",
+            "type": "string"
+          }
+        },
+        "required": [
+          "domain"
+        ],
+        "title": "SsoDomainCreate",
+        "type": "object"
+      },
+      "SsoDomainRead": {
+        "description": "One domain and the TXT record that proves it.",
+        "properties": {
+          "added_at": {
+            "format": "date-time",
+            "title": "Added At",
+            "type": "string"
+          },
+          "domain": {
+            "title": "Domain",
+            "type": "string"
+          },
+          "record_name": {
+            "description": "Where the TXT record goes: the domain's apex.",
+            "title": "Record Name",
+            "type": "string"
+          },
+          "record_type": {
+            "description": "Always TXT.",
+            "title": "Record Type",
+            "type": "string"
+          },
+          "record_value": {
+            "description": "Exactly what the TXT record says.",
+            "title": "Record Value",
+            "type": "string"
+          },
+          "verified": {
+            "title": "Verified",
+            "type": "boolean"
+          },
+          "verified_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Verified At"
+          }
+        },
+        "required": [
+          "domain",
+          "verified",
+          "added_at",
+          "record_name",
+          "record_type",
+          "record_value"
+        ],
+        "title": "SsoDomainRead",
+        "type": "object"
+      },
+      "SsoJoinRead": {
+        "description": "The workspace a single sign-on session belongs to, after joining it if needed.",
+        "properties": {
+          "created": {
+            "description": "Whether this call made the caller a member.",
+            "title": "Created",
+            "type": "boolean"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "slug": {
+            "title": "Slug",
+            "type": "string"
+          },
+          "workspace_id": {
+            "title": "Workspace Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "workspace_id",
+          "slug",
+          "name",
+          "created"
+        ],
+        "title": "SsoJoinRead",
+        "type": "object"
+      },
+      "SsoPolicyUpdate": {
+        "description": "The body `PUT /api/workspaces/{workspace_id}/sso/policy` takes.",
+        "properties": {
+          "require_sso": {
+            "description": "Whether members must sign in through the workspace's connection.",
+            "title": "Require Sso",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "require_sso"
+        ],
+        "title": "SsoPolicyUpdate",
+        "type": "object"
+      },
+      "SsoSettingsRead": {
+        "description": "Everything the single sign-on settings section shows.",
+        "properties": {
+          "available": {
+            "description": "Whether the workspace's plan includes single sign-on.",
+            "title": "Available",
+            "type": "boolean"
+          },
+          "can_require": {
+            "description": "Whether single sign-on can be required now: a tested connection and a verified domain.",
+            "title": "Can Require",
+            "type": "boolean"
+          },
+          "connection": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SsoConnectionRead"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "current_session_sso": {
+            "description": "Whether the caller's own session came through this workspace's connection.",
+            "title": "Current Session Sso",
+            "type": "boolean"
+          },
+          "domains": {
+            "items": {
+              "$ref": "#/components/schemas/SsoDomainRead"
+            },
+            "title": "Domains",
+            "type": "array"
+          },
+          "require_sso": {
+            "title": "Require Sso",
+            "type": "boolean"
+          },
+          "service_provider": {
+            "$ref": "#/components/schemas/ServiceProviderRead"
+          }
+        },
+        "required": [
+          "available",
+          "domains",
+          "require_sso",
+          "service_provider",
+          "current_session_sso",
+          "can_require"
+        ],
+        "title": "SsoSettingsRead",
         "type": "object"
       },
       "StackRead": {
@@ -15436,6 +15949,38 @@
         "title": "UserPreferencesUpdate",
         "type": "object"
       },
+      "UserProfileUpdate": {
+        "description": "A change to the caller's name or handle; an omitted field keeps its value.\n\n`display_name` is the handle an `@mention` names the person by, so it takes the\nhandle's shape. `full_name` is free text and may be cleared with an empty string.",
+        "properties": {
+          "display_name": {
+            "anyOf": [
+              {
+                "maxLength": 39,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Name"
+          },
+          "full_name": {
+            "anyOf": [
+              {
+                "maxLength": 120,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Full Name"
+          }
+        },
+        "title": "UserProfileUpdate",
+        "type": "object"
+      },
       "UserRead": {
         "description": "The caller's own account, in the shape the frontend's `UserRead` expects.",
         "properties": {
@@ -15465,6 +16010,11 @@
           "email_verified": {
             "title": "Email Verified",
             "type": "boolean"
+          },
+          "full_name": {
+            "default": "",
+            "title": "Full Name",
+            "type": "string"
           },
           "id": {
             "title": "Id",
@@ -17231,7 +17781,8 @@
               {
                 "enum": [
                   "two_factor",
-                  "sign_in_method"
+                  "sign_in_method",
+                  "sso"
                 ],
                 "type": "string"
               },
@@ -18577,6 +19128,727 @@
         ]
       }
     },
+    "/api/scim/v2/Groups": {
+      "get": {
+        "description": "List groups. `excludedAttributes=members` skips loading members unless the filter names them.",
+        "operationId": "scim_list_groups_api_scim_v2_Groups_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Scim List Groups Api Scim V2 Groups Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "summary": "Scim List Groups",
+        "tags": [
+          "scim",
+          "scim"
+        ]
+      },
+      "post": {
+        "description": "Create a group with its members, answering 201 with `Location`.",
+        "operationId": "scim_create_group_api_scim_v2_Groups_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Scim Create Group Api Scim V2 Groups Post"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "summary": "Scim Create Group",
+        "tags": [
+          "scim",
+          "scim"
+        ]
+      }
+    },
+    "/api/scim/v2/Groups/.search": {
+      "post": {
+        "description": "List groups from a `SearchRequest` body.",
+        "operationId": "scim_search_groups_api_scim_v2_Groups__search_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Scim Search Groups Api Scim V2 Groups  Search Post"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "summary": "Scim Search Groups",
+        "tags": [
+          "scim",
+          "scim"
+        ]
+      }
+    },
+    "/api/scim/v2/Groups/{group_id}": {
+      "delete": {
+        "description": "Delete a group, answering 204.",
+        "operationId": "scim_delete_group_api_scim_v2_Groups__group_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "group_id",
+            "required": true,
+            "schema": {
+              "title": "Group Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Scim Delete Group Api Scim V2 Groups  Group Id  Delete"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "summary": "Scim Delete Group",
+        "tags": [
+          "scim",
+          "scim"
+        ]
+      },
+      "get": {
+        "description": "One group, members left unloaded when `excludedAttributes=members`.",
+        "operationId": "scim_get_group_api_scim_v2_Groups__group_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "group_id",
+            "required": true,
+            "schema": {
+              "title": "Group Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Scim Get Group Api Scim V2 Groups  Group Id  Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "summary": "Scim Get Group",
+        "tags": [
+          "scim",
+          "scim"
+        ]
+      },
+      "patch": {
+        "description": "Patch a group, answering 204. Member adds and removes never load the whole group.",
+        "operationId": "scim_patch_group_api_scim_v2_Groups__group_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "group_id",
+            "required": true,
+            "schema": {
+              "title": "Group Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Scim Patch Group Api Scim V2 Groups  Group Id  Patch"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "summary": "Scim Patch Group",
+        "tags": [
+          "scim",
+          "scim"
+        ]
+      },
+      "put": {
+        "description": "Replace a group, members included.",
+        "operationId": "scim_replace_group_api_scim_v2_Groups__group_id__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "group_id",
+            "required": true,
+            "schema": {
+              "title": "Group Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Scim Replace Group Api Scim V2 Groups  Group Id  Put"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "summary": "Scim Replace Group",
+        "tags": [
+          "scim",
+          "scim"
+        ]
+      }
+    },
+    "/api/scim/v2/ResourceTypes": {
+      "get": {
+        "description": "The User and Group resource types.",
+        "operationId": "scim_resource_types_api_scim_v2_ResourceTypes_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Scim Resource Types Api Scim V2 Resourcetypes Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "summary": "Scim Resource Types",
+        "tags": [
+          "scim",
+          "scim"
+        ]
+      }
+    },
+    "/api/scim/v2/ResourceTypes/{name}": {
+      "get": {
+        "description": "One resource type by name.",
+        "operationId": "scim_resource_type_api_scim_v2_ResourceTypes__name__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Scim Resource Type Api Scim V2 Resourcetypes  Name  Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "summary": "Scim Resource Type",
+        "tags": [
+          "scim",
+          "scim"
+        ]
+      }
+    },
+    "/api/scim/v2/Schemas": {
+      "get": {
+        "description": "The User, Enterprise User and Group schemas.",
+        "operationId": "scim_schemas_api_scim_v2_Schemas_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Scim Schemas Api Scim V2 Schemas Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "summary": "Scim Schemas",
+        "tags": [
+          "scim",
+          "scim"
+        ]
+      }
+    },
+    "/api/scim/v2/Schemas/{schema_id}": {
+      "get": {
+        "description": "One schema by URN.",
+        "operationId": "scim_schema_api_scim_v2_Schemas__schema_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "schema_id",
+            "required": true,
+            "schema": {
+              "title": "Schema Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Scim Schema Api Scim V2 Schemas  Schema Id  Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "summary": "Scim Schema",
+        "tags": [
+          "scim",
+          "scim"
+        ]
+      }
+    },
+    "/api/scim/v2/ServiceProviderConfig": {
+      "get": {
+        "description": "What this server supports: PATCH, filters and ETags, but not bulk, sort or passwords.",
+        "operationId": "scim_service_provider_config_api_scim_v2_ServiceProviderConfig_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Scim Service Provider Config Api Scim V2 Serviceproviderconfig Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "summary": "Scim Service Provider Config",
+        "tags": [
+          "scim",
+          "scim"
+        ]
+      }
+    },
+    "/api/scim/v2/Users": {
+      "get": {
+        "description": "List users, with `filter`, `startIndex`, `count`, `attributes` and `excludedAttributes`.",
+        "operationId": "scim_list_users_api_scim_v2_Users_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Scim List Users Api Scim V2 Users Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "summary": "Scim List Users",
+        "tags": [
+          "scim",
+          "scim"
+        ]
+      },
+      "post": {
+        "description": "Create a user, answering 201 with `Location`, or 409 `uniqueness` for a taken `userName`.",
+        "operationId": "scim_create_user_api_scim_v2_Users_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Scim Create User Api Scim V2 Users Post"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "summary": "Scim Create User",
+        "tags": [
+          "scim",
+          "scim"
+        ]
+      }
+    },
+    "/api/scim/v2/Users/.search": {
+      "post": {
+        "description": "List users from a `SearchRequest` body.",
+        "operationId": "scim_search_users_api_scim_v2_Users__search_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Scim Search Users Api Scim V2 Users  Search Post"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "summary": "Scim Search Users",
+        "tags": [
+          "scim",
+          "scim"
+        ]
+      }
+    },
+    "/api/scim/v2/Users/{user_id}": {
+      "delete": {
+        "description": "Delete a user, answering 204.",
+        "operationId": "scim_delete_user_api_scim_v2_Users__user_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "title": "User Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Scim Delete User Api Scim V2 Users  User Id  Delete"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "summary": "Scim Delete User",
+        "tags": [
+          "scim",
+          "scim"
+        ]
+      },
+      "get": {
+        "description": "One user, or 304 when `If-None-Match` names its version.",
+        "operationId": "scim_get_user_api_scim_v2_Users__user_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "title": "User Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Scim Get User Api Scim V2 Users  User Id  Get"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "summary": "Scim Get User",
+        "tags": [
+          "scim",
+          "scim"
+        ]
+      },
+      "patch": {
+        "description": "Patch a user and answer it. `active` replaced with false deactivates it.",
+        "operationId": "scim_patch_user_api_scim_v2_Users__user_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "title": "User Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Scim Patch User Api Scim V2 Users  User Id  Patch"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "summary": "Scim Patch User",
+        "tags": [
+          "scim",
+          "scim"
+        ]
+      },
+      "put": {
+        "description": "Replace a user. `active: false` deactivates it.",
+        "operationId": "scim_replace_user_api_scim_v2_Users__user_id__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "title": "User Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Response Scim Replace User Api Scim V2 Users  User Id  Put"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "summary": "Scim Replace User",
+        "tags": [
+          "scim",
+          "scim"
+        ]
+      }
+    },
     "/api/shared/{token}": {
       "get": {
         "description": "What one token resolves to, and the minimum needed to render a heading.\n\nLoaded first by the public page so the client knows which of the two follow-up\nreads to make. It answers names rather than ids, so learning that a token is\nvalid teaches nothing that can be spent on another route.",
@@ -19609,6 +20881,53 @@
         ]
       }
     },
+    "/api/users/me/profile": {
+      "patch": {
+        "description": "Change the caller's full name or handle.\n\nA new handle must be free in every workspace the caller belongs to, which is a\n409 `HANDLE_TAKEN` naming those workspaces otherwise. The handle given up is\nkept on the account, so mentions written under it keep resolving to the caller.\nNames are read from the row on every request, so the change shows everywhere\nwithout a new sign in.",
+        "operationId": "update_current_user_profile_api_users_me_profile_patch",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UserProfileUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Update Current User Profile",
+        "tags": [
+          "identity"
+        ]
+      }
+    },
     "/api/workspaces": {
       "get": {
         "description": "Every workspace the caller is a member of, with their role on each.\n\nRead through the memberships user index rather than an owner field, so a\nmember who does not own the workspace still sees it. A workspace whose\nauthentication policy refuses the caller's session is still listed, flagged,\nso the client can say why instead of failing every call inside it.",
@@ -19728,6 +21047,43 @@
         ]
       }
     },
+    "/api/workspaces/sso/join": {
+      "post": {
+        "description": "Join the workspace whose connection this session came through, as a member.\n\nAnswers 201 for a new membership and 200 for one that already existed. Only an\naddress on one of the workspace's verified domains joins, within the plan's\nmember cap, which is the just in time membership single sign-on promises. A\nperson the workspace's directory deactivated is refused with 403, and one the\ndirectory provisioned is linked to their directory row and given its teams.",
+        "operationId": "join_through_sso_api_workspaces_sso_join_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SsoJoinRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Join Through Sso",
+        "tags": [
+          "workspaces"
+        ]
+      }
+    },
     "/api/workspaces/{workspace_id}": {
       "get": {
         "description": "One workspace the caller belongs to, carrying their role and any scheduled deletion.",
@@ -19836,7 +21192,7 @@
     },
     "/api/workspaces/{workspace_id}/api-keys": {
       "get": {
-        "description": "The caller's own keys, or every key in the workspace for an admin.\n\n`mine` is the default rather than `workspace` so the ordinary read shows a\nperson only what they are responsible for, and widening it is a deliberate\nquery parameter that an admin check then has to pass.",
+        "description": "The caller's own keys, or every key in the workspace for an admin.\n\n`mine` is the default rather than `workspace` so the ordinary read shows a\nperson only what they are responsible for, and widening it is a deliberate\nquery parameter that an admin check then has to pass. SCIM tokens are left\nout: they belong to the directory and are managed with single sign-on.",
         "operationId": "list_api_keys_api_workspaces__workspace_id__api_keys_get",
         "parameters": [
           {
@@ -19956,7 +21312,7 @@
     },
     "/api/workspaces/{workspace_id}/api-keys/{key_id}": {
       "delete": {
-        "description": "Revoke one key the caller owns, or any key for a workspace admin.\n\nA key the caller neither owns nor administers is a 404 rather than a 403, so a\nmember cannot walk key ids to learn what other people hold.\n\nRevoking is idempotent: a key already revoked answers 204 rather than 404,\nbecause the caller's intent is satisfied and a client retrying a revoke should\nnot have to distinguish the two.",
+        "description": "Revoke one key the caller owns, or any key for a workspace admin.\n\nA key the caller neither owns nor administers is a 404 rather than a 403, so a\nmember cannot walk key ids to learn what other people hold.\n\nA SCIM token is a 404 here too: it is listed and revoked on the single sign-on\nsettings, so a key listing never offers to revoke the directory's credential.\n\nRevoking is idempotent: a key already revoked answers 204 rather than 404,\nbecause the caller's intent is satisfied and a client retrying a revoke should\nnot have to distinguish the two.",
         "operationId": "revoke_api_key_api_workspaces__workspace_id__api_keys__key_id__delete",
         "parameters": [
           {
@@ -32254,6 +33610,594 @@
         "summary": "Get Slack Install Url",
         "tags": [
           "integrations"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/sso": {
+      "get": {
+        "description": "The workspace's single sign-on domains, connection and requirement.",
+        "operationId": "read_sso_api_workspaces__workspace_id__sso_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SsoSettingsRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Read Sso",
+        "tags": [
+          "workspaces"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/sso/connection": {
+      "delete": {
+        "description": "Remove the workspace's connection. Refused while single sign-on is required. Idempotent.",
+        "operationId": "remove_sso_connection_api_workspaces__workspace_id__sso_connection_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Remove Sso Connection",
+        "tags": [
+          "workspaces"
+        ]
+      },
+      "put": {
+        "description": "Save the workspace's connection, which then needs a new test sign-in. Owners only.\n\nRefused while single sign-on is required, because an untested change could lock\nevery member out at once.",
+        "operationId": "save_sso_connection_api_workspaces__workspace_id__sso_connection_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SsoConnectionUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SsoSettingsRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Save Sso Connection",
+        "tags": [
+          "workspaces"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/sso/connection/test-result": {
+      "post": {
+        "description": "Record that the caller just signed in through the connection, which proves its settings.\n\nThe caller's own session is the proof: it must have come through this\nworkspace's connection after its last save, so the record cannot be made\nwithout a real sign-in through the settings now stored.",
+        "operationId": "record_sso_test_api_workspaces__workspace_id__sso_connection_test_result_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SsoSettingsRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Record Sso Test",
+        "tags": [
+          "workspaces"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/sso/domains": {
+      "post": {
+        "description": "List a domain to prove, answering the TXT record that proves it.",
+        "operationId": "add_sso_domain_api_workspaces__workspace_id__sso_domains_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SsoDomainCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SsoDomainRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Add Sso Domain",
+        "tags": [
+          "workspaces"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/sso/domains/{domain}": {
+      "delete": {
+        "description": "Stop using a domain for single sign-on. Idempotent.\n\nThe last verified domain cannot go while single sign-on is required, because\nnobody could then sign in through the connection.",
+        "operationId": "remove_sso_domain_api_workspaces__workspace_id__sso_domains__domain__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "domain",
+            "required": true,
+            "schema": {
+              "maxLength": 254,
+              "minLength": 3,
+              "title": "Domain",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Remove Sso Domain",
+        "tags": [
+          "workspaces"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/sso/domains/{domain}/verify": {
+      "post": {
+        "description": "Look the domain's TXT record up now, and mark the domain verified when it is there.",
+        "operationId": "verify_sso_domain_api_workspaces__workspace_id__sso_domains__domain__verify_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "domain",
+            "required": true,
+            "schema": {
+              "maxLength": 254,
+              "minLength": 3,
+              "title": "Domain",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SsoDomainRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Verify Sso Domain",
+        "tags": [
+          "workspaces"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/sso/policy": {
+      "put": {
+        "description": "Require single sign-on for every member but owners, or stop requiring it.\n\nTurning it on needs a tested connection, a verified domain and, unless the\ncaller is an owner, a caller signed in through the connection, so an admin\nnever locks themselves out. Turning it off is always allowed.",
+        "operationId": "update_sso_policy_api_workspaces__workspace_id__sso_policy_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SsoPolicyUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SsoSettingsRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Update Sso Policy",
+        "tags": [
+          "workspaces"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/sso/scim": {
+      "get": {
+        "description": "The base URL to give the identity provider and the workspace's live tokens.",
+        "operationId": "read_scim_api_workspaces__workspace_id__sso_scim_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScimSettingsRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Read Scim",
+        "tags": [
+          "workspaces"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/sso/scim/tokens": {
+      "post": {
+        "description": "Mint a SCIM token and show its plaintext, the only time it is ever shown. Owners only.",
+        "operationId": "create_scim_token_api_workspaces__workspace_id__sso_scim_tokens_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ScimTokenCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScimTokenCreated"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Create Scim Token",
+        "tags": [
+          "workspaces"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/sso/scim/tokens/{key_id}": {
+      "delete": {
+        "description": "Revoke one SCIM token. Revoking one already revoked answers 204, as API keys do.",
+        "operationId": "revoke_scim_token_api_workspaces__workspace_id__sso_scim_tokens__key_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "key_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Key Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Revoke Scim Token",
+        "tags": [
+          "workspaces"
         ]
       }
     },

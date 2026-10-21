@@ -1,9 +1,14 @@
 /**
- * The account page: the avatar, passkeys, two-factor authentication, connected
- * sign-in providers, and deleting the account.
+ * The account page outside any workspace: the profile and avatar, the sign-in
+ * email, live sessions, passkeys, two-factor authentication, connected sign-in
+ * providers, and deleting the account. The same sections sit under each
+ * workspace's settings, so a person with no workspace yet can still reach them.
  */
 
 import React from 'react';
+import EmailSection from '../../components/account/EmailSection';
+import ProfileSection from '../../components/account/ProfileSection';
+import SessionsSection from '../../components/account/SessionsSection';
 import AccountDeletionPanel from '../../components/auth/AccountDeletionPanel';
 import AvatarPanel from '../../components/auth/AvatarPanel';
 import ConnectedAccountsPanel from '../../components/auth/ConnectedAccountsPanel';
@@ -18,12 +23,15 @@ const Security: React.FC = () => (
   <AccountShell>
     <div className="space-y-6">
       <div className="space-y-1">
-        <h1 className="text-lg font-semibold">Security</h1>
+        <h1 className="text-lg font-semibold">Account</h1>
         <p className="text-sm text-text-muted">
-          How you sign in to this account.
+          Your profile and how you sign in to this account.
         </p>
       </div>
+      <ProfileSection />
       <AvatarPanel />
+      <EmailSection />
+      <SessionsSection />
       <PasskeyPanel />
       <TwoFactorPanel />
       <ConnectedAccountsPanel />

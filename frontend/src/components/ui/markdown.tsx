@@ -7,6 +7,7 @@
  */
 
 import React, { useMemo } from 'react';
+import { useMentionLabel } from '../../contexts/MentionDirectoryContextDefinition';
 import { cn } from '../../lib/cn';
 import { isContentPath } from '../../lib/media';
 import {
@@ -36,6 +37,16 @@ export interface MarkdownProps {
   /** How tightly the body sets. Defaults to comfortable. */
   density?: MarkdownDensity;
 }
+
+/** A mention, shown as the handle the person uses today. */
+const Mention: React.FC<{ handle: string }> = ({ handle }) => {
+  const label = useMentionLabel(handle);
+  return (
+    <span className="rounded-xs bg-accent-soft px-0.5 font-medium text-accent">
+      @{label}
+    </span>
+  );
+};
 
 /** Renders a run of inline nodes. */
 const renderInline = (nodes: InlineNode[], prefix: string): React.ReactNode[] =>
@@ -99,14 +110,7 @@ const renderInline = (nodes: InlineNode[], prefix: string): React.ReactNode[] =>
           </a>
         );
       case 'mention':
-        return (
-          <span
-            key={key}
-            className="rounded-xs bg-accent-soft px-0.5 font-medium text-accent"
-          >
-            @{node.handle}
-          </span>
-        );
+        return <Mention key={key} handle={node.handle} />;
     }
   });
 

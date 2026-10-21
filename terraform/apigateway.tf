@@ -94,6 +94,10 @@ locals {
     "POST /api/auth/password"   = { integration = "identity", require_identity_jwt = true }
     "POST /api/auth/logout-all" = { integration = "identity", require_identity_jwt = true }
 
+    "GET /api/auth/sessions"                = { integration = "identity", require_identity_jwt = true }
+    "DELETE /api/auth/sessions/{family_id}" = { integration = "identity", require_identity_jwt = true }
+    "POST /api/auth/email/change"           = { integration = "identity", require_identity_jwt = true }
+
     "POST /api/auth/totp/enrol"     = { integration = "identity", require_identity_jwt = true }
     "POST /api/auth/totp/activate"  = { integration = "identity", require_identity_jwt = true }
     "POST /api/auth/totp/disable"   = { integration = "identity", require_identity_jwt = true }
@@ -178,6 +182,13 @@ locals {
     "POST /api/billing/stripe/webhook" = { integration = "workspaces", authorization_type = "NONE" }
   } : {}
 
+  # An identity provider provisions with a workspace SCIM token, not an identity
+  # token, so the gateway leaves the route to the function, which refuses any
+  # request without a live SCIM token before it reads a directory row.
+  scim_route_keys = contains(local.routed_lambda_domains, "workspaces") ? {
+    "ANY /api/scim/v2/{proxy+}" = { integration = "workspaces", authorization_type = "NONE" }
+  } : {}
+
   # The MCP endpoint is unauthenticated at the gateway so an unknown client can
   # reach it and receive the WWW-Authenticate challenge naming the authorization
   # server, which is how the discovery handshake starts. The route is not public:
@@ -212,6 +223,11 @@ locals {
     "POST /api/auth/register-client" = { integration = "identity", authorization_type = "NONE" }
   } : {}
 
+  sso_route_keys = contains(local.routed_lambda_domains, "identity") ? {
+    "POST /api/auth/sso/saml/{connection_id}/acs"     = { integration = "identity", authorization_type = "NONE" }
+    "GET /api/auth/sso/saml/{connection_id}/metadata" = { integration = "identity", authorization_type = "NONE" }
+  } : {}
+
   lambda_domain_route_keys = merge(
     local.lambda_domain_generated_route_keys,
     local.identity_jwt_route_keys,
@@ -224,7 +240,9 @@ locals {
     local.attachment_content_route_keys,
     local.icon_content_route_keys,
     local.billing_webhook_route_keys,
+    local.scim_route_keys,
     local.oauth_server_route_keys,
+    local.sso_route_keys,
     local.mcp_route_keys,
   )
 }

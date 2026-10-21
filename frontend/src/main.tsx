@@ -8,6 +8,7 @@ import { createRoot } from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';
 import App from './App';
 import { BootSplashHandoff } from './components/layout/BootSplash';
+import SsoReturnHandler from './components/auth/SsoReturnHandler';
 import DesktopShellBridge from './components/desktop/DesktopShellBridge';
 import MobileShellBridge from './components/mobile/MobileShellBridge';
 import { AuthProvider } from './contexts/AuthContext';
@@ -25,6 +26,7 @@ createRoot(rootElement).render(
       <AuthProvider>
         <DesktopShellBridge />
         <MobileShellBridge />
+        <SsoReturnHandler />
         <App />
       </AuthProvider>
     </BrowserRouter>

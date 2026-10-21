@@ -4,18 +4,12 @@
  * name, events and last response, an enabled switch and a Send test action on
  * each row, and a menu to edit or remove one.
  *
- * A write's answer is shown at once rather than waiting on the list read it
- * triggers, since a poll already in flight can land after the write with the
- * list from before it. A row the server returned stands in for the listed one
- * until the list catches up, a new row shows before the list carries it, and a
- * removed row stays hidden.
- *
  * A channel the server turned off because its webhook is gone carries a
  * warning with its own re-enable action, since the person reading the list did
  * not turn it off and may not know why it went quiet.
  */
 
-import React, { useMemo, useState } from 'react';
+import React, { useState } from 'react';
 import {
   LuEllipsis,
   LuPencil,
@@ -153,27 +147,6 @@ const updateBody = (
     : {}),
 });
 
-/** The rows to show: the listed ones, with every write's answer laid over them. */
-const mergeRows = (
-  listed: readonly ChannelRead[] | null,
-  written: Readonly<Record<string, ChannelRead>>,
-  removed: ReadonlySet<string>
-): ChannelRead[] | null => {
-  if (listed === null && Object.keys(written).length === 0) return null;
-  const base = listed ?? [];
-  const known = new Set(base.map((row) => row.channel_id));
-  const rows = base.map((row) => {
-    const newer = written[row.channel_id];
-    return newer !== undefined && newer.updated_at > row.updated_at
-      ? newer
-      : row;
-  });
-  const added = Object.values(written)
-    .filter((row) => !known.has(row.channel_id))
-    .sort((a, b) => a.created_at.localeCompare(b.created_at));
-  return [...rows, ...added].filter((row) => !removed.has(row.channel_id));
-};
-
 /** Props for ChannelsPanel. */
 export interface ChannelsPanelProps {
   workspaceId: string;
@@ -217,22 +190,13 @@ export const ChannelsPanel: React.FC<ChannelsPanelProps> = ({
   const [removing, setRemoving] = useState<ChannelRead | null>(null);
   const [outcome, setOutcome] = useState<TestOutcome | null>(null);
   const [testing, setTesting] = useState<string | null>(null);
-  const [written, setWritten] = useState<Record<string, ChannelRead>>({});
-  const [removed, setRemoved] = useState<ReadonlySet<string>>(new Set());
 
   const { data, error, isLoading } = usePolledQuery(
     ({ signal }) => listChannels(workspaceId, teamId, signal),
     { intervalMs: POLL_MS, queryKey, auth }
   );
 
-  const rows = useMemo(
-    () => mergeRows(isLoading ? null : data, written, removed),
-    [data, isLoading, written, removed]
-  );
-
-  const remember = (row: ChannelRead): void => {
-    setWritten((current) => ({ ...current, [row.channel_id]: row }));
-  };
+  const rows = isLoading ? null : data;
 
   const {
     mutate: create,
@@ -282,11 +246,11 @@ export const ChannelsPanel: React.FC<ChannelsPanelProps> = ({
   );
 
   const onSave = async (body: ChannelFormBody): Promise<void> => {
-    const row =
-      form?.mode === 'edit'
-        ? await save({ channelId: form.channel.channel_id, body })
-        : await create(body);
-    remember(row);
+    if (form?.mode === 'edit') {
+      await save({ channelId: form.channel.channel_id, body });
+    } else {
+      await create(body);
+    }
     setForm(null);
   };
 
@@ -308,7 +272,6 @@ export const ChannelsPanel: React.FC<ChannelsPanelProps> = ({
     const { channel_id: channelId } = removing;
     void remove(channelId)
       .then(() => {
-        setRemoved((current) => new Set([...current, channelId]));
         setRemoving(null);
         if (outcome?.channelId === channelId) setOutcome(null);
       })
@@ -316,9 +279,9 @@ export const ChannelsPanel: React.FC<ChannelsPanelProps> = ({
   };
 
   const setEnabled = (channel: ChannelRead, enabled: boolean): void => {
-    void toggle({ channelId: channel.channel_id, enabled })
-      .then(remember)
-      .catch(() => undefined);
+    void toggle({ channelId: channel.channel_id, enabled }).catch(
+      () => undefined
+    );
   };
 
   return (

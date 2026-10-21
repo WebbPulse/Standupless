@@ -383,9 +383,10 @@ describe('the workspace integrations page', () => {
   it('adds a workspace channel that follows the picked teams', async () => {
     useWorkspaceMock.mockReturnValue(resolved('admin', 'ws-add'));
     getSlackConnection.mockResolvedValue(installedSlack);
-    createChannel.mockResolvedValue({
-      ...workspaceChannel,
-      team_ids: ['team-2'],
+    const created = { ...workspaceChannel, team_ids: ['team-2'] };
+    createChannel.mockImplementation(() => {
+      listChannels.mockResolvedValue([created]);
+      return Promise.resolve(created);
     });
     renderPage();
 

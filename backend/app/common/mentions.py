@@ -9,15 +9,17 @@ from __future__ import annotations
 from webbpulse.messages import extract_mentions
 
 from app.common.api.dependencies.repositories import Repositories
+from app.common.handles import current_handles
 
 
 def resolve_mentions(repositories: Repositories, workspace_id: str, handles: list[str]) -> list[str]:
     """The workspace members the `@handle` mentions in a body name, as user ids.
 
-    A handle is matched against the local part of a member's email and against
-    their display name with spaces removed, both case insensitively, because the
-    identity package stores no handle of its own and the contract's `mentions` is a
-    list of user ids rather than of the text that was typed.
+    A handle is matched against a member's current handles, their display name
+    with spaces removed and the local part of their email, and then against the
+    handles they gave up in a rename, all case insensitively. A current handle
+    always wins over a former one, so a rename keeps old mentions pointing at the
+    same person without ever taking a handle from someone who holds it now.
 
     Scoped to the workspace's own members, so a mention can only ever name someone
     the author could already see, and an unmatched handle is dropped rather than
@@ -30,18 +32,16 @@ def resolve_mentions(repositories: Repositories, workspace_id: str, handles: lis
     if not member_ids:
         return []
     users = repositories.users.get_many(member_ids)
+    present = [users[user_id] for user_id in member_ids if user_id in users]
 
     by_handle: dict[str, str] = {}
-    for user_id in member_ids:
-        user = users.get(user_id)
-        if user is None:
-            continue
-        local_part = str(user.email).split("@", 1)[0].strip().lower()
-        if local_part:
-            by_handle.setdefault(local_part, user_id)
-        display = user.display_name.replace(" ", "").strip().lower()
-        if display:
-            by_handle.setdefault(display, user_id)
+    for user in present:
+        for handle in current_handles(user):
+            by_handle.setdefault(handle, user.id)
+    for user in present:
+        for handle in user.previous_handles:
+            if handle:
+                by_handle.setdefault(handle, user.id)
 
     resolved: list[str] = []
     for handle in handles:

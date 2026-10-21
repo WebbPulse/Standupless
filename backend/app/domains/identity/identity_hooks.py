@@ -126,6 +126,18 @@ class StanduplessIdentityHooks:
             )
         self._users.update(user_id, email_verified=True)
 
+    def change_email(self, user_id: str, email: str) -> None:
+        """Move this user's sign-in address to `email` and mark it verified.
+
+        The package calls it only once a link mailed to `email` has been spent and
+        the address re-checked as unused. The repository rewrites the indexed
+        `email_lower` alongside, so the new address signs in at once. Raises
+        `ValueError` for a missing row, because the link is already spent.
+        """
+        if self._users.get(user_id) is None:
+            raise ValueError(f"change_email found no user with id {user_id!r}. The link was consumed.")
+        self._users.update(user_id, email=email, email_verified=True)
+
     def delete_user(self, user_id: str) -> bool:
         """Hard-delete this product's users row, returning whether one was there.
 

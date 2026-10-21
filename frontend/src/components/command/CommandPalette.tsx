@@ -74,6 +74,7 @@ import { displayKeys, useRegisteredShortcuts } from '../../hooks/useShortcuts';
 import { useTheme } from '../../hooks/useTheme';
 import { cn } from '../../lib/cn';
 import {
+  accountSecuritySettingsPath,
   cliSetupPath,
   documentPath,
   inboxPath,
@@ -82,6 +83,7 @@ import {
   myIssuesPath,
   newViewPath,
   projectsPath,
+  profileSettingsPath,
   pulsePath,
   reviewsPath,
   roadmapPath,
@@ -580,6 +582,21 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
         hint: 'G then S',
         icon: <LuSettings className={ICON} />,
         to: settingsLanding(workspace),
+      },
+      {
+        id: 'nav-edit-profile',
+        label: 'Edit profile',
+        keywords: 'account profile name username handle avatar',
+        icon: <LuUserRound className={ICON} />,
+        to: profileSettingsPath(slug),
+      },
+      {
+        id: 'nav-account-security',
+        label: 'Security & access',
+        keywords:
+          'account email sessions passkeys api keys two factor delete account',
+        icon: <LuSettings className={ICON} />,
+        to: accountSecuritySettingsPath(slug),
       },
       {
         id: 'nav-settings-teams',

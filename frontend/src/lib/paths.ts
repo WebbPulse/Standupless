@@ -236,6 +236,18 @@ export const exportSettingsPath = (slug: string): string =>
 export const importSettingsPath = (slug: string): string =>
   `${settingsPath(slug)}/import`;
 
+/** The caller's own profile: their name, handle and avatar. */
+export const profileSettingsPath = (slug: string): string =>
+  `${settingsPath(slug)}/account/profile`;
+
+/** The caller's own sign-in email, sessions, passkeys and account deletion. */
+export const accountSecuritySettingsPath = (slug: string): string =>
+  `${settingsPath(slug)}/account/security`;
+
+/** The caller's own notification preferences, timezone and digest. */
+export const notificationSettingsPath = (slug: string): string =>
+  `${settingsPath(slug)}/notifications`;
+
 /** The caller's own API keys, the settings page every role may open. */
 export const apiKeysPath = (slug: string): string =>
   `${settingsPath(slug)}/api-keys`;

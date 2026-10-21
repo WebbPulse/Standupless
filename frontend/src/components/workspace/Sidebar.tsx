@@ -85,6 +85,8 @@ import {
   teamTriagePath,
   viewsPath,
   workspacePath,
+  accountSecuritySettingsPath,
+  profileSettingsPath,
 } from '../../lib/paths';
 import {
   applyTeamOrder,
@@ -656,7 +658,12 @@ export const Sidebar: React.FC<SidebarProps> = ({ workspace, onNavigate }) => {
             <MenuItem onSelect={createTeam.open}>Create team</MenuItem>
           )}
           <MenuItem to={ALL_WORKSPACES_PATH}>All workspaces</MenuItem>
-          <MenuItem to="/security">Account security</MenuItem>
+          <MenuItem to={profileSettingsPath(workspace.slug)}>
+            Edit profile
+          </MenuItem>
+          <MenuItem to={accountSecuritySettingsPath(workspace.slug)}>
+            Security &amp; access
+          </MenuItem>
           <MenuSeparator />
           <MenuItem to={PRIVACY_PATH}>Privacy Policy</MenuItem>
           <MenuItem to={TERMS_PATH}>Terms of Service</MenuItem>
