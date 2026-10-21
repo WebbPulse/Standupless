@@ -1,10 +1,14 @@
 /**
- * The composer's @mention autocomplete. The server reads a handle as a letter
- * or digit followed by letters, digits, underscores and hyphens, and resolves
- * it against a member's email local part or their display name with the spaces
- * removed, so the composer inserts whichever of those fits the handle form.
+ * The composer's @mention autocomplete and the directory a rendered mention is
+ * read against. The server reads a handle as a letter or digit followed by
+ * letters, digits, underscores and hyphens, and resolves it against a member's
+ * display name with the spaces removed, their email local part, and then any
+ * handle they gave up in a rename, so the composer inserts the first of those
+ * that fits the handle form, and a mention written under an old handle renders
+ * as the person's handle today.
  */
 
+import type { MemberRead } from '../types/Api';
 import type { Assignable } from './issuePeople';
 
 /** The mention being typed: where its `@` sits and what follows it. */
@@ -35,16 +39,52 @@ export const mentionQuery = (
 const HANDLE = /^[A-Za-z0-9][A-Za-z0-9_-]{0,38}$/;
 
 /**
- * The handle a person is mentioned by: their email's local part when it fits
- * the handle form, else their display name without spaces, else the local
- * part with the characters a handle cannot hold dropped.
+ * The handle a person is mentioned by: their display name without spaces when
+ * it fits the handle form, else their email's local part, else the local part
+ * with the characters a handle cannot hold dropped.
  */
 export const mentionHandle = (person: Assignable): string => {
-  const local = person.email.split('@')[0] ?? person.email;
-  if (HANDLE.test(local)) return local;
   const display = (person.display_name ?? '').replace(/\s+/g, '');
   if (HANDLE.test(display)) return display;
+  const local = person.email.split('@')[0] ?? person.email;
+  if (HANDLE.test(local)) return local;
   return local.replace(/[^A-Za-z0-9_-]/g, '');
+};
+
+/** The handles a member answers to now, lowercased, display name first. */
+const currentHandles = (member: Assignable): string[] => {
+  const display = (member.display_name ?? '').replace(/\s+/g, '').toLowerCase();
+  const local = (member.email.split('@')[0] ?? '').trim().toLowerCase();
+  return [display, local].filter((handle) => handle !== '');
+};
+
+/**
+ * Maps every handle that names a member, lowercased, to the handle they are
+ * mentioned by today. Current handles are entered before former ones and the
+ * first entry wins, the same order the server resolves in, so a former handle
+ * never takes over a name somebody holds now.
+ */
+export const mentionDirectory = (
+  members: Pick<
+    MemberRead,
+    'user_id' | 'email' | 'display_name' | 'previous_handles'
+  >[]
+): ReadonlyMap<string, string> => {
+  const directory = new Map<string, string>();
+  for (const member of members) {
+    const shown = mentionHandle(member);
+    for (const handle of currentHandles(member)) {
+      if (!directory.has(handle)) directory.set(handle, shown);
+    }
+  }
+  for (const member of members) {
+    const shown = mentionHandle(member);
+    for (const handle of member.previous_handles ?? []) {
+      const key = handle.toLowerCase();
+      if (key !== '' && !directory.has(key)) directory.set(key, shown);
+    }
+  }
+  return directory;
 };
 
 /** The people whose name or email matches the query, best matches first. */

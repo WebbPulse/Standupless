@@ -57,11 +57,18 @@ class User(BaseModel):
     package endpoint answered 500. Strict validation stays at the API request
     boundary, on `UserRegister` and the profile update schema, where a human typing
     an unreachable address should be told.
+
+    `display_name` is the person's handle, the word an `@mention` names them by.
+    `full_name` is their name as they write it. `previous_handles` keeps every handle
+    they have given up, normalised, so a mention written under an old one still
+    resolves to them after a rename.
     """
 
     id: str = Field(default_factory=new_user_id)
     email: str
     display_name: str = ""
+    full_name: str = ""
+    previous_handles: list[str] = Field(default_factory=list)
     icon_key: Optional[str] = None
     email_verified: bool = False
     email_notifications: bool = True

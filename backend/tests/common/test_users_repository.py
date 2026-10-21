@@ -153,3 +153,26 @@ def test_a_registration_cannot_grant_itself_platform_admin(dynamo_tables: None) 
     assert stored.id != "chosen-id"
     assert stored.email_notifications is True
     assert stored.display_name == "Climber"
+
+
+def test_change_email_moves_the_address_and_the_index(users: UserRepository) -> None:
+    """The email change hook rewrites the lookup index and marks the new address verified."""
+    from app.domains.identity.identity_hooks import StanduplessIdentityHooks
+
+    _create(users)
+    StanduplessIdentityHooks(users).change_email("user-1", "moved@example.com")
+
+    stored = users.get("user-1")
+    assert stored is not None
+    assert stored.email == "moved@example.com"
+    assert stored.email_verified is True
+    assert users.get_by_email("moved@example.com") is not None
+    assert users.get_by_email(EMAIL) is None
+
+
+def test_change_email_refuses_a_missing_row(users: UserRepository) -> None:
+    """The link is already spent, so a missing row has to fail loudly."""
+    from app.domains.identity.identity_hooks import StanduplessIdentityHooks
+
+    with pytest.raises(ValueError):
+        StanduplessIdentityHooks(users).change_email("nobody", "moved@example.com")

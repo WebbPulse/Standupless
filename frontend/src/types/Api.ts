@@ -8,7 +8,10 @@
 export interface UserRead {
   id: string;
   email: string;
+  /** The handle the person is mentioned by and the name shown beside their work. */
   display_name: string | null;
+  /** The person's written name, or an empty string when none is set. */
+  full_name?: string;
   email_verified: boolean;
   /** The URL of the person's avatar image, or null when they use their initials. */
   avatar_url?: string | null;
@@ -372,6 +375,16 @@ export interface MemberRead {
   joined_at: string;
   /** The URL of the person's avatar image, or null when they use their initials. */
   avatar_url?: string | null;
+  /** The person's written name, or an empty string when none is set. */
+  full_name?: string;
+  /** Handles the person gave up in a rename, which old mentions still use. */
+  previous_handles?: string[];
+}
+
+/** A change to the caller's own name or handle. Fields left out keep their value. */
+export interface UserProfileUpdate {
+  full_name?: string;
+  display_name?: string;
 }
 
 /** The body the workspace members route answers with. */
