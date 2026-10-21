@@ -184,7 +184,8 @@ def test_narrowing_the_methods_holds_older_keys(
     set_policy(repositories, monkeypatch, offset=120, allowed_methods=["google"])
     refused = read(client, secret, issue)
     assert refused.status_code == 403
-    assert refused.json()["reason"] == "sign_in_method"
+    assert refused.json()["error_code"] == "AUTH_POLICY_REQUIRED"
+    assert "Google" in refused.json()["message"]
 
 
 def test_only_a_tightening_moves_the_cutoff(repositories: Any, workspace: str, monkeypatch: pytest.MonkeyPatch) -> None:
