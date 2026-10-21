@@ -148,11 +148,12 @@ class TestEmailChange:
     def _require_email_routes(response: Any) -> None:
         """Skip on a stage that sends no email, or once the runner's address is rate limited.
 
-        A stage with no sender does not mount the email routes. The request route allows
+        A stage with no sender does not mount the email routes, so they answer the generic
+        NOT_FOUND. The request route allows
         ten calls an hour from one address, which back to back runs from one runner can
         spend, and that limit is the route working rather than failing.
         """
-        if response.status_code == 404 and not _error_code(response):
+        if response.status_code == 404 and _error_code(response) in ("", "NOT_FOUND"):
             pytest.skip("this stage sends no email, so the email change routes are not mounted")
         if response.status_code == 429:
             pytest.skip("the email change rate limit for this runner's address is spent for the hour")
