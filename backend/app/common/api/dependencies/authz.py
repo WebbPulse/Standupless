@@ -853,7 +853,7 @@ def require(
             amr=amr_of(claims),
             sign_in_method=sign_in_method_of(claims) if actor is ActorKind.USER else None,
             sso_connection=sso_connection_of(claims) if actor is ActorKind.USER else None,
-        auth_time=auth_time_of(claims) if actor is ActorKind.USER else 0,
+            auth_time=auth_time_of(claims) if actor is ActorKind.USER else 0,
         )
         _enforce_route_scopes(request, context)
         return context
