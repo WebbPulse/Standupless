@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import base64
 import datetime
+import time
 from typing import Any, Iterator
 
 import pytest
@@ -43,8 +44,8 @@ OIDC_CONNECTION = {
 
 
 def _sso_session(client: TestClient, subject: str, workspace_id: str = WORKSPACE) -> None:
-    """Sign in as `subject` through the workspace's connection."""
-    sign_in(client, subject, amr=SSO_AMR, sso_connection=workspace_id)
+    """Sign in as `subject` through the workspace's connection, just now."""
+    sign_in(client, subject, amr=SSO_AMR, sso_connection=workspace_id, auth_time=int(time.time()))
 
 
 def _certificate() -> str:
@@ -112,6 +113,7 @@ def connected(client: TestClient, workspace: str, dns: dict[str, bool]) -> str:
     sign_in(client, ADMIN)
     assert client.post(f"{BASE}/domains", json={"domain": "acme.com"}).status_code == 201
     assert client.post(f"{BASE}/domains/acme.com/verify").status_code == 200
+    sign_in(client, OWNER)
     assert client.put(f"{BASE}/connection", json=OIDC_CONNECTION).status_code == 200
     return workspace
 
@@ -240,28 +242,28 @@ def test_the_oidc_connection_never_answers_its_secret(client: TestClient, connec
 
 def test_saving_without_a_secret_keeps_the_stored_one(client: TestClient, connected: str, repositories: Any) -> None:
     before = repositories.memberships.get_sso_connection(connected).oidc_sealed_secret
-    sign_in(client, ADMIN)
+    sign_in(client, OWNER)
     response = client.put(f"{BASE}/connection", json={**OIDC_CONNECTION, "oidc_client_secret": ""})
     assert response.status_code == 200
     assert repositories.memberships.get_sso_connection(connected).oidc_sealed_secret == before
 
 
 def test_a_first_oidc_connection_needs_a_secret(client: TestClient, workspace: str) -> None:
-    sign_in(client, ADMIN)
+    sign_in(client, OWNER)
     response = client.put(f"{BASE}/connection", json={**OIDC_CONNECTION, "oidc_client_secret": ""})
     assert response.status_code == 422
     assert response.json()["details"]["field"] == "oidc_client_secret"
 
 
 def test_a_plain_http_issuer_is_refused(client: TestClient, workspace: str) -> None:
-    sign_in(client, ADMIN)
+    sign_in(client, OWNER)
     response = client.put(f"{BASE}/connection", json={**OIDC_CONNECTION, "oidc_issuer": "http://acme.okta.example"})
     assert response.status_code == 422
     assert response.json()["details"]["field"] == "oidc_issuer"
 
 
 def test_a_saml_connection_is_saved_from_its_three_values(client: TestClient, workspace: str) -> None:
-    sign_in(client, ADMIN)
+    sign_in(client, OWNER)
     response = client.put(
         f"{BASE}/connection",
         json={
@@ -279,7 +281,7 @@ def test_a_saml_connection_is_saved_from_its_three_values(client: TestClient, wo
 
 
 def test_a_saml_certificate_that_does_not_parse_is_refused(client: TestClient, workspace: str) -> None:
-    sign_in(client, ADMIN)
+    sign_in(client, OWNER)
     response = client.put(
         f"{BASE}/connection",
         json={
@@ -310,6 +312,26 @@ def test_recording_a_test_needs_a_session_through_the_connection(client: TestCli
     assert client.post(f"{BASE}/connection/test-result").status_code == 409
 
 
+def test_only_an_owner_may_save_the_connection(client: TestClient, workspace: str, repositories: Any) -> None:
+    sign_in(client, ADMIN)
+    response = client.put(f"{BASE}/connection", json=OIDC_CONNECTION)
+    assert response.status_code == 403
+    assert response.json()["error_code"] == "FORBIDDEN"
+    assert repositories.memberships.get_sso_connection(workspace) is None
+
+
+def test_a_session_from_before_the_last_save_does_not_record_a_test(
+    client: TestClient, connected: str, repositories: Any
+) -> None:
+    saved = repositories.memberships.get_sso_connection(connected)
+    stale = int(saved.updated_at.timestamp()) - 60
+    sign_in(client, ADMIN, amr=SSO_AMR, sso_connection=WORKSPACE, auth_time=stale)
+    response = client.post(f"{BASE}/connection/test-result")
+    assert response.status_code == 409
+    assert response.json()["error_code"] == "SSO_TEST_REQUIRED"
+    assert client.get(BASE).json()["current_session_sso"] is False
+
+
 def test_a_test_through_the_connection_makes_it_ready(client: TestClient, tested: str, repositories: Any) -> None:
     _sso_session(client, ADMIN)
     body = client.get(BASE).json()
@@ -321,7 +343,7 @@ def test_a_test_through_the_connection_makes_it_ready(client: TestClient, tested
 
 
 def test_saving_the_connection_again_clears_its_test(client: TestClient, tested: str) -> None:
-    sign_in(client, ADMIN)
+    sign_in(client, OWNER)
     response = client.put(f"{BASE}/connection", json=OIDC_CONNECTION)
     assert response.json()["connection"]["tested"] is False
     assert response.json()["can_require"] is False

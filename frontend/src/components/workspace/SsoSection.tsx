@@ -419,6 +419,8 @@ const ConnectionBlock: React.FC<ConnectionBlockProps> = ({
     [queryKey]
   );
   const busy = save.isMutating || remove.isMutating || testing;
+  const owner = workspace.role === 'owner';
+  const locked = busy || !owner;
   const badField = ssoInvalidField(save.error);
   const fieldError = (field: SsoConnectionField): string | null =>
     badField === field ? errorMessage(save.error, 'Check this value.') : null;
@@ -487,6 +489,12 @@ const ConnectionBlock: React.FC<ConnectionBlockProps> = ({
           Connect the provider your company signs in with, such as Okta, Google
           Workspace or Microsoft Entra ID.
         </p>
+        {!owner && (
+          <p className="text-xs text-text-muted">
+            Only an owner can change the identity provider, because it can sign
+            in as anyone on your verified domains.
+          </p>
+        )}
       </div>
 
       <div className="space-y-1">
@@ -520,7 +528,7 @@ const ConnectionBlock: React.FC<ConnectionBlockProps> = ({
           id="sso-protocol"
           label="Protocol"
           value={form.protocol}
-          disabled={busy}
+          disabled={locked}
           onChange={(event) =>
             change({ protocol: event.target.value as SsoProtocol })
           }
@@ -533,7 +541,7 @@ const ConnectionBlock: React.FC<ConnectionBlockProps> = ({
           label="Name"
           hint="Optional. Shown to people when they sign in."
           value={form.displayName}
-          disabled={busy}
+          disabled={locked}
           onChange={(event) => change({ displayName: event.target.value })}
         />
 
@@ -545,7 +553,7 @@ const ConnectionBlock: React.FC<ConnectionBlockProps> = ({
                 label="Issuer URL"
                 placeholder="https://login.example.com"
                 value={form.oidcIssuer}
-                disabled={busy}
+                disabled={locked}
                 onChange={(event) => change({ oidcIssuer: event.target.value })}
                 {...fieldProps('oidc_issuer')}
               />
@@ -559,7 +567,7 @@ const ConnectionBlock: React.FC<ConnectionBlockProps> = ({
                 id="sso-oidc_client_id"
                 label="Client ID"
                 value={form.oidcClientId}
-                disabled={busy}
+                disabled={locked}
                 onChange={(event) =>
                   change({ oidcClientId: event.target.value })
                 }
@@ -581,7 +589,7 @@ const ConnectionBlock: React.FC<ConnectionBlockProps> = ({
                   ? { hint: 'Leave blank to keep the stored secret.' }
                   : {})}
                 value={form.oidcClientSecret}
-                disabled={busy}
+                disabled={locked}
                 onChange={(event) =>
                   change({ oidcClientSecret: event.target.value })
                 }
@@ -598,7 +606,7 @@ const ConnectionBlock: React.FC<ConnectionBlockProps> = ({
               placeholder="openid email profile"
               hint="Optional. Separate with spaces. openid is always included."
               value={form.oidcScopes}
-              disabled={busy}
+              disabled={locked}
               onChange={(event) => change({ oidcScopes: event.target.value })}
             />
           </>
@@ -610,7 +618,7 @@ const ConnectionBlock: React.FC<ConnectionBlockProps> = ({
                 id="sso-saml_metadata_xml"
                 className="font-mono text-xs"
                 value={form.samlMetadataXml}
-                disabled={busy}
+                disabled={locked}
                 onChange={(event) =>
                   change({ samlMetadataXml: event.target.value })
                 }
@@ -630,7 +638,7 @@ const ConnectionBlock: React.FC<ConnectionBlockProps> = ({
                 id="sso-saml_idp_entity_id"
                 label="Provider entity ID"
                 value={form.samlEntityId}
-                disabled={busy}
+                disabled={locked}
                 onChange={(event) =>
                   change({ samlEntityId: event.target.value })
                 }
@@ -647,7 +655,7 @@ const ConnectionBlock: React.FC<ConnectionBlockProps> = ({
                 label="Provider sign-in URL"
                 placeholder="https://login.example.com/saml"
                 value={form.samlSsoUrl}
-                disabled={busy}
+                disabled={locked}
                 onChange={(event) => change({ samlSsoUrl: event.target.value })}
                 {...fieldProps('saml_idp_sso_url')}
               />
@@ -665,7 +673,7 @@ const ConnectionBlock: React.FC<ConnectionBlockProps> = ({
                 className="font-mono text-xs"
                 placeholder="-----BEGIN CERTIFICATE-----"
                 value={form.samlCertificate}
-                disabled={busy}
+                disabled={locked}
                 onChange={(event) =>
                   change({ samlCertificate: event.target.value })
                 }
@@ -697,14 +705,14 @@ const ConnectionBlock: React.FC<ConnectionBlockProps> = ({
         )}
 
         <div className="flex flex-wrap items-center gap-2">
-          <Button type="submit" size="sm" variant="primary" disabled={busy}>
+          <Button type="submit" size="sm" variant="primary" disabled={locked}>
             {save.isMutating ? 'Saving' : 'Save connection'}
           </Button>
           {connection !== null && (
             <Button
               size="sm"
               variant="secondary"
-              disabled={busy}
+              disabled={locked}
               onClick={() => {
                 void drop();
               }}

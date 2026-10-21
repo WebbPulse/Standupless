@@ -1,10 +1,13 @@
 """Workspace single sign-on routes: prove a domain, connect a provider, test it, then require it.
 
 Setting single sign-on up is for a workspace owner or admin, from a signed in
-session only. Every step that widens who can sign in, adding or verifying a
-domain, saving a connection, recording a test and turning the requirement on,
-needs a plan that includes single sign-on; removing things and turning the
-requirement off are always allowed, so a downgraded workspace can still undo it.
+session only, and saving the connection is for an owner alone: the provider it
+names can sign in as anyone on the verified domains, so an admin pointing it at
+a provider of their own would reach every account there, owners included. Every
+step that widens who can sign in, adding or verifying a domain, saving a
+connection, recording a test and turning the requirement on, needs a plan that
+includes single sign-on; removing things and turning the requirement off are
+always allowed, so a downgraded workspace can still undo it.
 
 The sign-in itself is the identity function's: these routes only store the rows it
 reads. The one exception is joining, `POST /sso/join`, which the sign-in page calls
@@ -114,6 +117,13 @@ NOT_THROUGH_CONNECTION = {
     "message": "Sign in through this workspace's connection first, then record the test.",
 }
 
+OWNER_ONLY_CONNECTION = {
+    "error_code": "FORBIDDEN",
+    "message": (
+        "Only an owner can change the identity provider, because it can sign in as anyone on your verified domains."
+    ),
+}
+
 NOT_READY = {
     "error_code": "SSO_NOT_READY",
     "message": "Verify a domain and complete a test sign-in before requiring single sign-on.",
@@ -185,7 +195,7 @@ def _settings(repositories: Repositories, context: AuthzContext) -> SsoSettingsR
         connection=None if connection is None else SsoConnectionRead.from_row(connection),
         require_sso=policy.require_sso,
         service_provider=ServiceProviderRead(**service_provider_urls(workspace_id)),
-        current_session_sso=context.sso_connection == workspace_id,
+        current_session_sso=_signed_in_through(context, connection),
         can_require=_ready(connection, domains),
     )
 
@@ -199,6 +209,17 @@ def _admin(context: AuthzContext) -> AuthzContext:
     """Refuse an API key, which never changes how the people of a workspace sign in."""
     refuse_api_key_actor(context)
     return context
+
+
+def _signed_in_through(context: AuthzContext, connection: Optional[SsoConnectionRow]) -> bool:
+    """Whether the caller's session came through this workspace's connection as it is now saved.
+
+    A session from before the connection's last save proves the old settings, not
+    the current ones, so it counts only when its `auth_time` is at or after that save.
+    """
+    if connection is None or context.sso_connection != context.workspace_id:
+        return False
+    return context.auth_time >= int(connection.updated_at.timestamp())
 
 
 @router.get("/{workspace_id}/sso", response_model=SsoSettingsRead)
@@ -411,7 +432,7 @@ def save_sso_connection(
     context: Annotated[AuthzContext, Depends(require(Capability.WORKSPACE_ADMIN))],
     repositories: Annotated[Repositories, Depends(get_repositories)],
 ) -> SsoSettingsRead:
-    """Save the workspace's connection, which then needs a new test sign-in.
+    """Save the workspace's connection, which then needs a new test sign-in. Owners only.
 
     Refused while single sign-on is required, because an untested change could lock
     every member out at once.
@@ -419,6 +440,8 @@ def save_sso_connection(
     from app.common.db.dynamo.base import utc_now
 
     _admin(context)
+    if context.role != "owner":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=OWNER_ONLY_CONNECTION)
     enforce_feature(repositories, context.workspace_id, Feature.SSO)
     if repositories.memberships.get_auth_policy(context.workspace_id).require_sso:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=CONNECTION_IN_USE)
@@ -482,7 +505,8 @@ def record_sso_test(
     """Record that the caller just signed in through the connection, which proves its settings.
 
     The caller's own session is the proof: it must have come through this
-    workspace's connection, so the record cannot be made without a real sign-in.
+    workspace's connection after its last save, so the record cannot be made
+    without a real sign-in through the settings now stored.
     """
     from app.common.db.dynamo.base import utc_now
 
@@ -491,7 +515,7 @@ def record_sso_test(
     current = repositories.memberships.get_sso_connection(context.workspace_id)
     if current is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=CONNECTION_NOT_FOUND)
-    if context.sso_connection != context.workspace_id:
+    if not _signed_in_through(context, current):
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=NOT_THROUGH_CONNECTION)
     if not current.tested:
         repositories.memberships.put_sso_connection(
@@ -529,7 +553,7 @@ def update_sso_policy(
         domains = repositories.memberships.list_sso_domains(context.workspace_id)
         if not _ready(connection, domains):
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=NOT_READY)
-        if context.sso_connection != context.workspace_id and context.role != "owner":
+        if context.role != "owner" and not _signed_in_through(context, connection):
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=SIGN_IN_WITH_SSO_FIRST)
     if payload.require_sso != policy.require_sso:
         repositories.memberships.set_auth_policy(

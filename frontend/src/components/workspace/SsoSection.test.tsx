@@ -229,7 +229,7 @@ describe('the single sign-on section', () => {
   it('saves an OIDC connection and keeps a blank secret', async () => {
     getSsoSettings.mockResolvedValue(settings({ connection: connection() }));
     saveSsoConnection.mockResolvedValue(settings({ connection: connection() }));
-    renderSection();
+    renderSection('owner');
 
     const secret = await screen.findByLabelText('Client secret');
     expect(secret).toHaveAttribute('placeholder', 'Stored');
@@ -267,7 +267,7 @@ describe('the single sign-on section', () => {
         method: 'PUT',
       })
     );
-    renderSection();
+    renderSection('owner');
 
     await userEvent.type(
       await screen.findByLabelText('Issuer URL'),
@@ -286,6 +286,20 @@ describe('the single sign-on section', () => {
       'aria-invalid',
       'true'
     );
+  });
+
+  it('leaves the connection read only for an admin', async () => {
+    getSsoSettings.mockResolvedValue(settings({ connection: connection() }));
+    renderSection('admin');
+
+    expect(
+      await screen.findByText(/Only an owner can change the identity provider/)
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'Save connection' })
+    ).toBeDisabled();
+    expect(screen.getByLabelText('Issuer URL')).toBeDisabled();
+    expect(screen.getByTestId('sso-test')).toBeEnabled();
   });
 
   it('shows the SAML service provider values', async () => {
