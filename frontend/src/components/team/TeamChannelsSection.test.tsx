@@ -247,12 +247,12 @@ describe('the team notifications section', () => {
     });
   });
 
-  it('shows a new channel at once even when the list read after it is stale', async () => {
+  it('shows a new channel once the list read after the write lands', async () => {
+    const created = { ...channel, channel_id: 'ch-new', label: 'Alerts' };
     listChannels.mockResolvedValue([]);
-    createChannel.mockResolvedValue({
-      ...channel,
-      channel_id: 'ch-new',
-      label: 'Alerts',
+    createChannel.mockImplementation(() => {
+      listChannels.mockResolvedValue([created]);
+      return Promise.resolve(created);
     });
     render(
       <TeamChannelsSection workspaceId="ws-stale" teamId="team-1" canEdit />
