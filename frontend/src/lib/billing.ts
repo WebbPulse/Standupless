@@ -168,6 +168,7 @@ export const FEATURE_LABELS: Record<string, string> = {
   issue_slas: 'Issue SLAs',
   audit_log: 'Audit log',
   auth_policy: 'Authentication policy',
+  sso: 'Single sign-on',
 };
 
 /** Sends the browser to a hosted Stripe page. */

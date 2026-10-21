@@ -1836,6 +1836,12 @@
     "path": "/api/workspaces/joinable"
   },
   {
+    "auth": "authenticated",
+    "domain": "workspaces",
+    "method": "POST",
+    "path": "/api/workspaces/sso/join"
+  },
+  {
     "auth": "workspace:read",
     "domain": "workspaces",
     "method": "GET",
@@ -2014,5 +2020,53 @@
     "domain": "workspaces",
     "method": "PATCH",
     "path": "/api/workspaces/{workspace_id}/members/{user_id}"
+  },
+  {
+    "auth": "workspace:admin",
+    "domain": "workspaces",
+    "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/sso"
+  },
+  {
+    "auth": "workspace:admin",
+    "domain": "workspaces",
+    "method": "DELETE",
+    "path": "/api/workspaces/{workspace_id}/sso/connection"
+  },
+  {
+    "auth": "workspace:admin",
+    "domain": "workspaces",
+    "method": "PUT",
+    "path": "/api/workspaces/{workspace_id}/sso/connection"
+  },
+  {
+    "auth": "workspace:admin",
+    "domain": "workspaces",
+    "method": "POST",
+    "path": "/api/workspaces/{workspace_id}/sso/connection/test-result"
+  },
+  {
+    "auth": "workspace:admin",
+    "domain": "workspaces",
+    "method": "POST",
+    "path": "/api/workspaces/{workspace_id}/sso/domains"
+  },
+  {
+    "auth": "workspace:admin",
+    "domain": "workspaces",
+    "method": "DELETE",
+    "path": "/api/workspaces/{workspace_id}/sso/domains/{domain}"
+  },
+  {
+    "auth": "workspace:admin",
+    "domain": "workspaces",
+    "method": "POST",
+    "path": "/api/workspaces/{workspace_id}/sso/domains/{domain}/verify"
+  },
+  {
+    "auth": "workspace:admin",
+    "domain": "workspaces",
+    "method": "PUT",
+    "path": "/api/workspaces/{workspace_id}/sso/policy"
   }
 ]

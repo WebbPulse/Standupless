@@ -1525,6 +1525,13 @@ class SearchResultRead(TypedDict):
     updated_at: str
 
 
+class ServiceProviderRead(TypedDict):
+    oidc_redirect_uri: str
+    saml_acs_url: str
+    saml_entity_id: str
+    saml_metadata_url: str
+
+
 class ShareLinkCreate(TypedDict):
     expires_in_days: NotRequired[int | None]
     filter: NotRequired[dict[str, Any] | None]
@@ -1654,6 +1661,69 @@ class SlackConnectionRead(TypedDict):
 class SlackInstallUrlRead(TypedDict):
     expires_at: str
     url: str
+
+
+class SsoConnectionRead(TypedDict):
+    display_name: str
+    has_client_secret: bool
+    oidc_client_id: str
+    oidc_issuer: str
+    oidc_scopes: list[str]
+    protocol: Literal["oidc", "saml"]
+    saml_certificate_count: int
+    saml_idp_entity_id: str
+    saml_idp_sso_url: str
+    tested: bool
+    tested_at: NotRequired[str | None]
+    updated_at: str
+
+
+class SsoConnectionUpdate(TypedDict):
+    display_name: NotRequired[str]
+    oidc_client_id: NotRequired[str]
+    oidc_client_secret: NotRequired[str]
+    oidc_issuer: NotRequired[str]
+    oidc_scopes: NotRequired[list[str] | None]
+    protocol: Literal["oidc", "saml"]
+    saml_idp_certificate: NotRequired[str]
+    saml_idp_entity_id: NotRequired[str]
+    saml_idp_sso_url: NotRequired[str]
+    saml_metadata_xml: NotRequired[str]
+
+
+class SsoDomainCreate(TypedDict):
+    domain: str
+
+
+class SsoDomainRead(TypedDict):
+    added_at: str
+    domain: str
+    record_name: str
+    record_type: str
+    record_value: str
+    verified: bool
+    verified_at: NotRequired[str | None]
+
+
+class SsoJoinRead(TypedDict):
+    created: bool
+    name: str
+    slug: str
+    workspace_id: str
+
+
+class SsoPolicyUpdate(TypedDict):
+    require_sso: bool
+
+
+class SsoSettingsRead(TypedDict):
+    available: bool
+    can_require: bool
+    connection: NotRequired[SsoConnectionRead | None]
+    current_session_sso: bool
+    domains: list[SsoDomainRead]
+    require_sso: bool
+    service_provider: ServiceProviderRead
 
 
 class StackRead(TypedDict):
@@ -2510,7 +2580,7 @@ class WorkspaceRead(TypedDict):
     accent_color: NotRequired[str | None]
     auth_policy_allowed_methods: NotRequired[list[str] | None]
     auth_policy_blocked: NotRequired[bool]
-    auth_policy_reason: NotRequired[Literal["two_factor", "sign_in_method"] | None]
+    auth_policy_reason: NotRequired[Literal["two_factor", "sign_in_method", "sso"] | None]
     created_at: str
     deletion_scheduled_at: NotRequired[str | None]
     deletion_scheduled_by: NotRequired[str | None]

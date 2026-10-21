@@ -67,10 +67,12 @@ def _workspaces_routers() -> "Sequence[RouterSpec]":
         exports,
         icons,
         security,
+        sso,
         workspaces,
     )
 
     return [
+        (sso.router, "/workspaces", ("workspaces",)),
         (approved_domains.router, "/workspaces", ("workspaces",)),
         (workspaces.router, "/workspaces", ("workspaces",)),
         (icons.router, "/workspaces", ("workspaces",)),
@@ -184,8 +186,11 @@ def _views_unprefixed_routers(settings: "Any") -> "Sequence[APIRouter]":
     return [build_notify_router(), build_search_router(), shared.router]
 
 
-_IDENTITY_REPOSITORIES: Tuple[str, ...] = ("users", "api_keys", "audit", "agent_profiles")
+_IDENTITY_REPOSITORIES: Tuple[str, ...] = ("users", "api_keys", "audit", "agent_profiles", "idempotency")
 """The users row, and `api_keys`, which deleting an account empties of the person's keys at once.
+
+`idempotency` holds the SAML assertion ids single sign-on has accepted, each until
+its TTL, so a replayed response is refused by every execution environment.
 
 `audit` records connected app grants and revocations in each workspace's log, and
 the person's own agent profile trail. `agent_profiles` serves the account settings

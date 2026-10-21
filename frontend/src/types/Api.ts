@@ -122,7 +122,7 @@ export interface WorkspaceRead {
 export type SignInMethod = 'password' | 'google' | 'github' | 'passkey';
 
 /** Why a workspace's authentication policy refuses a session. */
-export type AuthPolicyReason = 'two_factor' | 'sign_in_method';
+export type AuthPolicyReason = 'two_factor' | 'sign_in_method' | 'sso';
 
 /** A workspace's authentication policy, as `GET .../auth-policy` answers it. */
 export interface AuthPolicyRead {
@@ -197,6 +197,112 @@ export interface ApprovedDomainRead {
 /** The body `GET .../approved-domains` answers with. */
 export interface ApprovedDomainListRead {
   domains: ApprovedDomainRead[];
+}
+
+/** The protocol a workspace's single sign-on connection speaks. */
+export type SsoProtocol = 'oidc' | 'saml';
+
+/** One single sign-on domain and the DNS TXT record that proves it. */
+export interface SsoDomainRead {
+  domain: string;
+  verified: boolean;
+  verified_at?: string | null;
+  added_at: string;
+  /** Where the TXT record goes. */
+  record_name: string;
+  /** Always TXT. */
+  record_type: string;
+  /** Exactly what the TXT record says. */
+  record_value: string;
+}
+
+/** A workspace's stored single sign-on connection, never carrying its secret. */
+export interface SsoConnectionRead {
+  protocol: SsoProtocol;
+  display_name: string;
+  oidc_issuer: string;
+  oidc_client_id: string;
+  oidc_scopes: string[];
+  has_client_secret: boolean;
+  saml_idp_entity_id: string;
+  saml_idp_sso_url: string;
+  saml_certificate_count: number;
+  /** Whether someone has finished a test sign-in since the connection was saved. */
+  tested: boolean;
+  tested_at?: string | null;
+  updated_at: string;
+}
+
+/** What a workspace registers with its identity provider. */
+export interface SsoServiceProviderRead {
+  oidc_redirect_uri: string;
+  saml_acs_url: string;
+  saml_metadata_url: string;
+  saml_entity_id: string;
+}
+
+/** Everything the single sign-on settings show, as `GET .../sso` answers it. */
+export interface SsoSettingsRead {
+  /** Whether the workspace's plan includes single sign-on. */
+  available: boolean;
+  domains: SsoDomainRead[];
+  connection: SsoConnectionRead | null;
+  require_sso: boolean;
+  service_provider: SsoServiceProviderRead;
+  /** Whether the caller's own session came through this workspace's connection. */
+  current_session_sso: boolean;
+  /** Whether single sign-on can be required now. */
+  can_require: boolean;
+}
+
+/**
+ * The body `PUT .../sso/connection` takes. A blank OIDC client secret keeps the
+ * stored one; SAML takes either the metadata XML or the three provider values.
+ */
+export interface SsoConnectionUpdate {
+  protocol: SsoProtocol;
+  display_name?: string;
+  oidc_issuer?: string;
+  oidc_client_id?: string;
+  oidc_client_secret?: string;
+  oidc_scopes?: string[] | null;
+  saml_metadata_xml?: string;
+  saml_idp_entity_id?: string;
+  saml_idp_sso_url?: string;
+  saml_idp_certificate?: string;
+}
+
+/** The connection fields a `SSO_CONNECTION_INVALID` refusal can name. */
+export type SsoConnectionField =
+  | 'oidc_issuer'
+  | 'oidc_client_id'
+  | 'oidc_client_secret'
+  | 'saml_metadata_xml'
+  | 'saml_idp_entity_id'
+  | 'saml_idp_sso_url'
+  | 'saml_idp_certificate';
+
+/** The workspace a single sign-on session belongs to, after joining it if needed. */
+export interface SsoJoinRead {
+  workspace_id: string;
+  slug: string;
+  name: string;
+  /** Whether this call made the caller a member. */
+  created: boolean;
+}
+
+/** The body `POST /api/auth/sso/start` takes: one of the ways to find the connection. */
+export interface SsoStartRequest {
+  email?: string;
+  tenant?: string;
+  connection_id?: string;
+  return_to?: string;
+}
+
+/** Where the browser goes to sign in with the identity provider. */
+export interface SsoStartRead {
+  authorization_url: string;
+  connection_id: string;
 }
 
 /** A workspace the caller may join through their verified email domain. */

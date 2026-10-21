@@ -11825,6 +11825,35 @@
         "title": "SearchResultRead",
         "type": "object"
       },
+      "ServiceProviderRead": {
+        "description": "What the workspace registers with its identity provider.",
+        "properties": {
+          "oidc_redirect_uri": {
+            "title": "Oidc Redirect Uri",
+            "type": "string"
+          },
+          "saml_acs_url": {
+            "title": "Saml Acs Url",
+            "type": "string"
+          },
+          "saml_entity_id": {
+            "title": "Saml Entity Id",
+            "type": "string"
+          },
+          "saml_metadata_url": {
+            "title": "Saml Metadata Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "oidc_redirect_uri",
+          "saml_acs_url",
+          "saml_metadata_url",
+          "saml_entity_id"
+        ],
+        "title": "ServiceProviderRead",
+        "type": "object"
+      },
       "ShareLinkCreate": {
         "description": "The body `POST /api/workspaces/{workspace_id}/share-links` takes.\n\nAn `issue` or `view` link names its row by `target_id`. A `filter` link\npublishes an unsaved team filter: `target_id` is the team, and `filter`, `sort`\nand `title` are snapshotted onto the link, so what it shows cannot drift from\nwhat the person saw when they published it.",
         "properties": {
@@ -12774,6 +12803,342 @@
           "expires_at"
         ],
         "title": "SlackInstallUrlRead",
+        "type": "object"
+      },
+      "SsoConnectionRead": {
+        "description": "The stored connection, without its secret.",
+        "properties": {
+          "display_name": {
+            "title": "Display Name",
+            "type": "string"
+          },
+          "has_client_secret": {
+            "title": "Has Client Secret",
+            "type": "boolean"
+          },
+          "oidc_client_id": {
+            "title": "Oidc Client Id",
+            "type": "string"
+          },
+          "oidc_issuer": {
+            "title": "Oidc Issuer",
+            "type": "string"
+          },
+          "oidc_scopes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Oidc Scopes",
+            "type": "array"
+          },
+          "protocol": {
+            "enum": [
+              "oidc",
+              "saml"
+            ],
+            "title": "Protocol",
+            "type": "string"
+          },
+          "saml_certificate_count": {
+            "title": "Saml Certificate Count",
+            "type": "integer"
+          },
+          "saml_idp_entity_id": {
+            "title": "Saml Idp Entity Id",
+            "type": "string"
+          },
+          "saml_idp_sso_url": {
+            "title": "Saml Idp Sso Url",
+            "type": "string"
+          },
+          "tested": {
+            "title": "Tested",
+            "type": "boolean"
+          },
+          "tested_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tested At"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "protocol",
+          "display_name",
+          "oidc_issuer",
+          "oidc_client_id",
+          "oidc_scopes",
+          "has_client_secret",
+          "saml_idp_entity_id",
+          "saml_idp_sso_url",
+          "saml_certificate_count",
+          "tested",
+          "updated_at"
+        ],
+        "title": "SsoConnectionRead",
+        "type": "object"
+      },
+      "SsoConnectionUpdate": {
+        "description": "The body `PUT /api/workspaces/{workspace_id}/sso/connection` takes.\n\nFor OIDC, `oidc_client_secret` may be left out to keep the stored one. For SAML,\neither `saml_metadata_xml` or the three provider fields are given.",
+        "properties": {
+          "display_name": {
+            "default": "",
+            "maxLength": 80,
+            "title": "Display Name",
+            "type": "string"
+          },
+          "oidc_client_id": {
+            "default": "",
+            "maxLength": 512,
+            "title": "Oidc Client Id",
+            "type": "string"
+          },
+          "oidc_client_secret": {
+            "default": "",
+            "maxLength": 4096,
+            "title": "Oidc Client Secret",
+            "type": "string"
+          },
+          "oidc_issuer": {
+            "default": "",
+            "maxLength": 2048,
+            "title": "Oidc Issuer",
+            "type": "string"
+          },
+          "oidc_scopes": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 20,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Oidc Scopes"
+          },
+          "protocol": {
+            "enum": [
+              "oidc",
+              "saml"
+            ],
+            "title": "Protocol",
+            "type": "string"
+          },
+          "saml_idp_certificate": {
+            "default": "",
+            "maxLength": 16384,
+            "title": "Saml Idp Certificate",
+            "type": "string"
+          },
+          "saml_idp_entity_id": {
+            "default": "",
+            "maxLength": 2048,
+            "title": "Saml Idp Entity Id",
+            "type": "string"
+          },
+          "saml_idp_sso_url": {
+            "default": "",
+            "maxLength": 2048,
+            "title": "Saml Idp Sso Url",
+            "type": "string"
+          },
+          "saml_metadata_xml": {
+            "default": "",
+            "maxLength": 262144,
+            "title": "Saml Metadata Xml",
+            "type": "string"
+          }
+        },
+        "required": [
+          "protocol"
+        ],
+        "title": "SsoConnectionUpdate",
+        "type": "object"
+      },
+      "SsoDomainCreate": {
+        "description": "The body `POST /api/workspaces/{workspace_id}/sso/domains` takes.",
+        "properties": {
+          "domain": {
+            "description": "The email domain to prove, such as example.com.",
+            "maxLength": 254,
+            "minLength": 3,
+            "title": "Domain",
+            "type": "string"
+          }
+        },
+        "required": [
+          "domain"
+        ],
+        "title": "SsoDomainCreate",
+        "type": "object"
+      },
+      "SsoDomainRead": {
+        "description": "One domain and the TXT record that proves it.",
+        "properties": {
+          "added_at": {
+            "format": "date-time",
+            "title": "Added At",
+            "type": "string"
+          },
+          "domain": {
+            "title": "Domain",
+            "type": "string"
+          },
+          "record_name": {
+            "description": "Where the TXT record goes: the domain's apex.",
+            "title": "Record Name",
+            "type": "string"
+          },
+          "record_type": {
+            "description": "Always TXT.",
+            "title": "Record Type",
+            "type": "string"
+          },
+          "record_value": {
+            "description": "Exactly what the TXT record says.",
+            "title": "Record Value",
+            "type": "string"
+          },
+          "verified": {
+            "title": "Verified",
+            "type": "boolean"
+          },
+          "verified_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Verified At"
+          }
+        },
+        "required": [
+          "domain",
+          "verified",
+          "added_at",
+          "record_name",
+          "record_type",
+          "record_value"
+        ],
+        "title": "SsoDomainRead",
+        "type": "object"
+      },
+      "SsoJoinRead": {
+        "description": "The workspace a single sign-on session belongs to, after joining it if needed.",
+        "properties": {
+          "created": {
+            "description": "Whether this call made the caller a member.",
+            "title": "Created",
+            "type": "boolean"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "slug": {
+            "title": "Slug",
+            "type": "string"
+          },
+          "workspace_id": {
+            "title": "Workspace Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "workspace_id",
+          "slug",
+          "name",
+          "created"
+        ],
+        "title": "SsoJoinRead",
+        "type": "object"
+      },
+      "SsoPolicyUpdate": {
+        "description": "The body `PUT /api/workspaces/{workspace_id}/sso/policy` takes.",
+        "properties": {
+          "require_sso": {
+            "description": "Whether members must sign in through the workspace's connection.",
+            "title": "Require Sso",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "require_sso"
+        ],
+        "title": "SsoPolicyUpdate",
+        "type": "object"
+      },
+      "SsoSettingsRead": {
+        "description": "Everything the single sign-on settings section shows.",
+        "properties": {
+          "available": {
+            "description": "Whether the workspace's plan includes single sign-on.",
+            "title": "Available",
+            "type": "boolean"
+          },
+          "can_require": {
+            "description": "Whether single sign-on can be required now: a tested connection and a verified domain.",
+            "title": "Can Require",
+            "type": "boolean"
+          },
+          "connection": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SsoConnectionRead"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "current_session_sso": {
+            "description": "Whether the caller's own session came through this workspace's connection.",
+            "title": "Current Session Sso",
+            "type": "boolean"
+          },
+          "domains": {
+            "items": {
+              "$ref": "#/components/schemas/SsoDomainRead"
+            },
+            "title": "Domains",
+            "type": "array"
+          },
+          "require_sso": {
+            "title": "Require Sso",
+            "type": "boolean"
+          },
+          "service_provider": {
+            "$ref": "#/components/schemas/ServiceProviderRead"
+          }
+        },
+        "required": [
+          "available",
+          "domains",
+          "require_sso",
+          "service_provider",
+          "current_session_sso",
+          "can_require"
+        ],
+        "title": "SsoSettingsRead",
         "type": "object"
       },
       "StackRead": {
@@ -17231,7 +17596,8 @@
               {
                 "enum": [
                   "two_factor",
-                  "sign_in_method"
+                  "sign_in_method",
+                  "sso"
                 ],
                 "type": "string"
               },
@@ -19723,6 +20089,43 @@
           }
         ],
         "summary": "List Joinable Workspaces",
+        "tags": [
+          "workspaces"
+        ]
+      }
+    },
+    "/api/workspaces/sso/join": {
+      "post": {
+        "description": "Join the workspace whose connection this session came through, as a member.\n\nAnswers 201 for a new membership and 200 for one that already existed. Only an\naddress on one of the workspace's verified domains joins, within the plan's\nmember cap, which is the just in time membership single sign-on promises.",
+        "operationId": "join_through_sso_api_workspaces_sso_join_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SsoJoinRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Join Through Sso",
         "tags": [
           "workspaces"
         ]
@@ -32254,6 +32657,434 @@
         "summary": "Get Slack Install Url",
         "tags": [
           "integrations"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/sso": {
+      "get": {
+        "description": "The workspace's single sign-on domains, connection and requirement.",
+        "operationId": "read_sso_api_workspaces__workspace_id__sso_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SsoSettingsRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Read Sso",
+        "tags": [
+          "workspaces"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/sso/connection": {
+      "delete": {
+        "description": "Remove the workspace's connection. Refused while single sign-on is required. Idempotent.",
+        "operationId": "remove_sso_connection_api_workspaces__workspace_id__sso_connection_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Remove Sso Connection",
+        "tags": [
+          "workspaces"
+        ]
+      },
+      "put": {
+        "description": "Save the workspace's connection, which then needs a new test sign-in. Owners only.\n\nRefused while single sign-on is required, because an untested change could lock\nevery member out at once.",
+        "operationId": "save_sso_connection_api_workspaces__workspace_id__sso_connection_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SsoConnectionUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SsoSettingsRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Save Sso Connection",
+        "tags": [
+          "workspaces"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/sso/connection/test-result": {
+      "post": {
+        "description": "Record that the caller just signed in through the connection, which proves its settings.\n\nThe caller's own session is the proof: it must have come through this\nworkspace's connection after its last save, so the record cannot be made\nwithout a real sign-in through the settings now stored.",
+        "operationId": "record_sso_test_api_workspaces__workspace_id__sso_connection_test_result_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SsoSettingsRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Record Sso Test",
+        "tags": [
+          "workspaces"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/sso/domains": {
+      "post": {
+        "description": "List a domain to prove, answering the TXT record that proves it.",
+        "operationId": "add_sso_domain_api_workspaces__workspace_id__sso_domains_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SsoDomainCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SsoDomainRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Add Sso Domain",
+        "tags": [
+          "workspaces"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/sso/domains/{domain}": {
+      "delete": {
+        "description": "Stop using a domain for single sign-on. Idempotent.\n\nThe last verified domain cannot go while single sign-on is required, because\nnobody could then sign in through the connection.",
+        "operationId": "remove_sso_domain_api_workspaces__workspace_id__sso_domains__domain__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "domain",
+            "required": true,
+            "schema": {
+              "maxLength": 254,
+              "minLength": 3,
+              "title": "Domain",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Remove Sso Domain",
+        "tags": [
+          "workspaces"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/sso/domains/{domain}/verify": {
+      "post": {
+        "description": "Look the domain's TXT record up now, and mark the domain verified when it is there.",
+        "operationId": "verify_sso_domain_api_workspaces__workspace_id__sso_domains__domain__verify_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "domain",
+            "required": true,
+            "schema": {
+              "maxLength": 254,
+              "minLength": 3,
+              "title": "Domain",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SsoDomainRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Verify Sso Domain",
+        "tags": [
+          "workspaces"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/sso/policy": {
+      "put": {
+        "description": "Require single sign-on for every member but owners, or stop requiring it.\n\nTurning it on needs a tested connection, a verified domain and, unless the\ncaller is an owner, a caller signed in through the connection, so an admin\nnever locks themselves out. Turning it off is always allowed.",
+        "operationId": "update_sso_policy_api_workspaces__workspace_id__sso_policy_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SsoPolicyUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SsoSettingsRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Update Sso Policy",
+        "tags": [
+          "workspaces"
         ]
       }
     },

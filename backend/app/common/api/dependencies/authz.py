@@ -87,6 +87,15 @@ AUTH_POLICY_REQUIRED_DETAIL = {
     ),
 }
 
+SSO_REQUIRED_DETAIL = {
+    "error_code": "SSO_REQUIRED",
+    "reason": "sso",
+    "message": "This workspace requires signing in with single sign-on. Sign out and continue with SSO.",
+}
+
+SSO_CONNECTION_CLAIM = "sso_connection"
+"""The access token claim naming the single sign-on connection a session came through."""
+
 SIGN_IN_METHOD_LABELS: dict[str, str] = {
     "password": "a password",
     "google": "Google",
@@ -193,6 +202,8 @@ class AuthzContext:
     ip: str = ""
     amr: tuple[str, ...] = field(default_factory=tuple)
     sign_in_method: Optional[str] = None
+    sso_connection: Optional[str] = None
+    auth_time: int = 0
 
     @property
     def is_guest(self) -> bool:
@@ -585,6 +596,31 @@ def amr_of(claims: Any) -> tuple[str, ...]:
     return tuple(part for part in parts if part)
 
 
+def auth_time_of(claims: Any) -> int:
+    """When the session's sign-in happened, in epoch seconds, or 0 when the token does not say."""
+    if claims is None:
+        return 0
+    try:
+        return int(claims.get("auth_time") or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def sso_connection_of(claims: Any) -> Optional[str]:
+    """The single sign-on connection a session came through, or `None` for any other sign-in.
+
+    Read from the `sso_connection` claim, which the identity package mints only on a
+    session that finished at a connection's callback. The `sso` amr value must sit
+    beside it, so a claim alone never passes for a single sign-on session.
+    """
+    if claims is None:
+        return None
+    value = str(claims.get(SSO_CONNECTION_CLAIM, "") or "").strip()
+    if not value or "sso" not in amr_of(claims):
+        return None
+    return value
+
+
 def sign_in_method_of(claims: Any) -> Optional[str]:
     """How the session's person signed in, read from the first factor in `amr`.
 
@@ -614,6 +650,8 @@ class AuthPolicyRefusal:
 
     def detail(self) -> dict[str, Any]:
         """The 403 body this refusal answers with."""
+        if self.reason == "sso":
+            return dict(SSO_REQUIRED_DETAIL)
         if self.reason != "sign_in_method":
             return dict(AUTH_POLICY_REQUIRED_DETAIL)
         names = [SIGN_IN_METHOD_LABELS.get(method, method) for method in self.allowed_methods]
@@ -626,24 +664,53 @@ class AuthPolicyRefusal:
         }
 
 
-def auth_policy_refusal(repositories: RepositoryBundle, workspace_id: str, claims: Any) -> Optional[AuthPolicyRefusal]:
+def auth_policy_refusal(
+    repositories: RepositoryBundle,
+    workspace_id: str,
+    claims: Any,
+    *,
+    role: Optional[str] = None,
+) -> Optional[AuthPolicyRefusal]:
     """Why the workspace's authentication policy refuses this credential, or `None`.
 
     Only a person's own session is held to the policy. An API key or an MCP token is
     a delegated credential minted from a session, so it carries no session claims to
-    check.
+    check. `role` is the caller's workspace role, which decides the owner's way past
+    a single sign-on requirement.
     """
     if _actor(claims) is not ActorKind.USER:
         return None
-    return policy_refusal(repositories.memberships.get_auth_policy(workspace_id), claims)
+    return policy_refusal(
+        repositories.memberships.get_auth_policy(workspace_id),
+        claims,
+        workspace_id=workspace_id,
+        role=role,
+    )
 
 
-def policy_refusal(policy: AuthPolicy, claims: Any) -> Optional[AuthPolicyRefusal]:
+def policy_refusal(
+    policy: AuthPolicy,
+    claims: Any,
+    *,
+    workspace_id: str = "",
+    role: Optional[str] = None,
+) -> Optional[AuthPolicyRefusal]:
     """Why this policy refuses a session with these claims, or `None`.
 
-    A session is refused first for the way it signed in, then for a missing second
-    factor. MCP consent asks the same question of each workspace it might offer.
+    A session through this workspace's own single sign-on connection passes every
+    check, because the identity provider owns how its people sign in and their second
+    factor. With single sign-on required, any other session is refused unless the
+    caller is an owner: an owner keeps a way in when the provider is down or
+    misconfigured, and is then held to the remaining checks as usual.
+
+    Otherwise a session is refused first for the way it signed in, then for a
+    missing second factor. MCP consent asks the same question of each workspace it
+    might offer.
     """
+    if workspace_id and sso_connection_of(claims) == workspace_id:
+        return None
+    if policy.require_sso and role != "owner":
+        return AuthPolicyRefusal(reason="sso")
     allowed = tuple(policy.allowed_methods)
     if set(allowed) != set(SIGN_IN_METHODS) and sign_in_method_of(claims) not in allowed:
         return AuthPolicyRefusal(reason="sign_in_method", allowed_methods=allowed)
@@ -652,14 +719,26 @@ def policy_refusal(policy: AuthPolicy, claims: Any) -> Optional[AuthPolicyRefusa
     return None
 
 
-def blocked_by_auth_policy(repositories: RepositoryBundle, workspace_id: str, claims: Any) -> bool:
+def blocked_by_auth_policy(
+    repositories: RepositoryBundle,
+    workspace_id: str,
+    claims: Any,
+    *,
+    role: Optional[str] = None,
+) -> bool:
     """Whether the workspace's authentication policy refuses this credential."""
-    return auth_policy_refusal(repositories, workspace_id, claims) is not None
+    return auth_policy_refusal(repositories, workspace_id, claims, role=role) is not None
 
 
-def _check_auth_policy(repositories: RepositoryBundle, workspace_id: str, claims: Any) -> None:
+def _check_auth_policy(
+    repositories: RepositoryBundle,
+    workspace_id: str,
+    claims: Any,
+    *,
+    role: Optional[str] = None,
+) -> None:
     """Refuse with a 403 a session the workspace's authentication policy does not admit."""
-    refusal = auth_policy_refusal(repositories, workspace_id, claims)
+    refusal = auth_policy_refusal(repositories, workspace_id, claims, role=role)
     if refusal is not None:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=refusal.detail())
 
@@ -729,7 +808,7 @@ def require(
         _check_tenant_binding(claims, workspace_id)
 
         role = _membership_role(repositories, workspace_id, user_id, _creator_of(claims))
-        _check_auth_policy(repositories, workspace_id, claims)
+        _check_auth_policy(repositories, workspace_id, claims, role=role)
 
         allowed = WORKSPACE_CAPABILITIES[capability]
         if role not in allowed:
@@ -773,6 +852,8 @@ def require(
             ip=client_ip_of(request),
             amr=amr_of(claims),
             sign_in_method=sign_in_method_of(claims) if actor is ActorKind.USER else None,
+            sso_connection=sso_connection_of(claims) if actor is ActorKind.USER else None,
+            auth_time=auth_time_of(claims) if actor is ActorKind.USER else 0,
         )
         _enforce_route_scopes(request, context)
         return context
@@ -855,7 +936,7 @@ def resolve_context(
     role = _role_for(repositories, workspace_id, user_id, _creator_of(claims))
     if role is None:
         return None
-    if blocked_by_auth_policy(repositories, workspace_id, claims):
+    if blocked_by_auth_policy(repositories, workspace_id, claims, role=role):
         return None
 
     team_ids, private_team_ids = _team_access(repositories, workspace_id, user_id, role)
@@ -878,6 +959,8 @@ def resolve_context(
         ip=client_ip_of(request),
         amr=amr_of(claims),
         sign_in_method=sign_in_method_of(claims) if actor is ActorKind.USER else None,
+        sso_connection=sso_connection_of(claims) if actor is ActorKind.USER else None,
+        auth_time=auth_time_of(claims) if actor is ActorKind.USER else 0,
     )
 
 

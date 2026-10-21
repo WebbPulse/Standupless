@@ -580,6 +580,12 @@ export const workspaceAuthPolicyKey = (workspaceId: string): QueryKey => [
   workspaceId,
 ];
 
+/** The cache key for a workspace's single sign-on settings. */
+export const workspaceSsoKey = (workspaceId: string): QueryKey => [
+  'workspace-sso',
+  workspaceId,
+];
+
 /** The cache key for a workspace's approved email domains. */
 export const workspaceApprovedDomainsKey = (workspaceId: string): QueryKey => [
   'workspace-approved-domains',
