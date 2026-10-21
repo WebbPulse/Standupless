@@ -303,7 +303,7 @@ describe('the single sign-on section', () => {
   });
 
   it('shows the SAML service provider values', async () => {
-    renderSection();
+    renderSection('owner');
 
     await userEvent.selectOptions(
       await screen.findByLabelText('Protocol'),

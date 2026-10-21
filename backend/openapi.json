@@ -32751,7 +32751,7 @@
         ]
       },
       "put": {
-        "description": "Save the workspace's connection, which then needs a new test sign-in.\n\nRefused while single sign-on is required, because an untested change could lock\nevery member out at once.",
+        "description": "Save the workspace's connection, which then needs a new test sign-in. Owners only.\n\nRefused while single sign-on is required, because an untested change could lock\nevery member out at once.",
         "operationId": "save_sso_connection_api_workspaces__workspace_id__sso_connection_put",
         "parameters": [
           {
@@ -32810,7 +32810,7 @@
     },
     "/api/workspaces/{workspace_id}/sso/connection/test-result": {
       "post": {
-        "description": "Record that the caller just signed in through the connection, which proves its settings.\n\nThe caller's own session is the proof: it must have come through this\nworkspace's connection, so the record cannot be made without a real sign-in.",
+        "description": "Record that the caller just signed in through the connection, which proves its settings.\n\nThe caller's own session is the proof: it must have come through this\nworkspace's connection after its last save, so the record cannot be made\nwithout a real sign-in through the settings now stored.",
         "operationId": "record_sso_test_api_workspaces__workspace_id__sso_connection_test_result_post",
         "parameters": [
           {
