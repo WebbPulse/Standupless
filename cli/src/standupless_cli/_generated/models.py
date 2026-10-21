@@ -984,7 +984,9 @@ class MemberRead(TypedDict):
     avatar_url: NotRequired[str | None]
     display_name: str
     email: str
+    full_name: NotRequired[str]
     joined_at: str
+    previous_handles: NotRequired[list[str]]
     role: Literal["owner", "admin", "member", "guest"]
     user_id: str
 
@@ -2220,12 +2222,18 @@ class UserPreferencesUpdate(TypedDict):
     timezone: NotRequired[str | None]
 
 
+class UserProfileUpdate(TypedDict):
+    display_name: NotRequired[str | None]
+    full_name: NotRequired[str | None]
+
+
 class UserRead(TypedDict):
     avatar_url: NotRequired[str | None]
     display_name: str
     email: str
     email_notifications: bool
     email_verified: bool
+    full_name: NotRequired[str]
     id: str
     notification_preferences: dict[str, NotificationChannels]
     pulse_digest: NotRequired[Literal["off", "daily", "weekly"]]

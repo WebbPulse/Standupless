@@ -100,9 +100,7 @@ def test_a_handle_must_take_the_mention_shape(client: TestClient, people: None) 
         assert client.patch("/api/users/me/profile", json={"display_name": bad}).status_code == 422
 
 
-def test_changing_only_the_case_keeps_no_previous_handle(
-    client: TestClient, repositories: Any, people: None
-) -> None:
+def test_changing_only_the_case_keeps_no_previous_handle(client: TestClient, repositories: Any, people: None) -> None:
     """A case change names the same handle, so nothing is recorded or checked."""
     sign_in(client, OWNER)
     assert client.patch("/api/users/me/profile", json={"display_name": "Owner"}).status_code == 200

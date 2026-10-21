@@ -325,9 +325,7 @@ def update_current_user_profile(
                         "error_code": "HANDLE_TAKEN",
                         "message": "Someone in your workspace already uses that name",
                         "details": {
-                            "workspaces": [
-                                {"id": row.workspace_id, "name": row.workspace_name} for row in conflicts
-                            ]
+                            "workspaces": [{"id": row.workspace_id, "name": row.workspace_name} for row in conflicts]
                         },
                     },
                 )
