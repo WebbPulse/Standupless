@@ -7619,7 +7619,7 @@
         "type": "object"
       },
       "MemberRead": {
-        "description": "One workspace member, joined with the user row for a renderable identity.",
+        "description": "One workspace member, joined with the user row for a renderable identity.\n\n`display_name` is the member's handle. `previous_handles` are the handles they\ngave up, so a client can render a mention written under one as the current name.",
         "properties": {
           "avatar_url": {
             "anyOf": [
@@ -7640,10 +7640,22 @@
             "title": "Email",
             "type": "string"
           },
+          "full_name": {
+            "default": "",
+            "title": "Full Name",
+            "type": "string"
+          },
           "joined_at": {
             "format": "date-time",
             "title": "Joined At",
             "type": "string"
+          },
+          "previous_handles": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Previous Handles",
+            "type": "array"
           },
           "role": {
             "enum": [
@@ -15801,6 +15813,38 @@
         "title": "UserPreferencesUpdate",
         "type": "object"
       },
+      "UserProfileUpdate": {
+        "description": "A change to the caller's name or handle; an omitted field keeps its value.\n\n`display_name` is the handle an `@mention` names the person by, so it takes the\nhandle's shape. `full_name` is free text and may be cleared with an empty string.",
+        "properties": {
+          "display_name": {
+            "anyOf": [
+              {
+                "maxLength": 39,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Name"
+          },
+          "full_name": {
+            "anyOf": [
+              {
+                "maxLength": 120,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Full Name"
+          }
+        },
+        "title": "UserProfileUpdate",
+        "type": "object"
+      },
       "UserRead": {
         "description": "The caller's own account, in the shape the frontend's `UserRead` expects.",
         "properties": {
@@ -15830,6 +15874,11 @@
           "email_verified": {
             "title": "Email Verified",
             "type": "boolean"
+          },
+          "full_name": {
+            "default": "",
+            "title": "Full Name",
+            "type": "string"
           },
           "id": {
             "title": "Id",
@@ -19970,6 +20019,53 @@
           }
         ],
         "summary": "Update Current User Preferences",
+        "tags": [
+          "identity"
+        ]
+      }
+    },
+    "/api/users/me/profile": {
+      "patch": {
+        "description": "Change the caller's full name or handle.\n\nA new handle must be free in every workspace the caller belongs to, which is a\n409 `HANDLE_TAKEN` naming those workspaces otherwise. The handle given up is\nkept on the account, so mentions written under it keep resolving to the caller.\nNames are read from the row on every request, so the change shows everywhere\nwithout a new sign in.",
+        "operationId": "update_current_user_profile_api_users_me_profile_patch",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UserProfileUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Update Current User Profile",
         "tags": [
           "identity"
         ]

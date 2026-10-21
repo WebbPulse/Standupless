@@ -179,11 +179,17 @@ class WorkspaceListRead(BaseModel):
 
 
 class MemberRead(BaseModel):
-    """One workspace member, joined with the user row for a renderable identity."""
+    """One workspace member, joined with the user row for a renderable identity.
+
+    `display_name` is the member's handle. `previous_handles` are the handles they
+    gave up, so a client can render a mention written under one as the current name.
+    """
 
     user_id: str
     email: str
     display_name: str
+    full_name: str = ""
+    previous_handles: list[str] = Field(default_factory=list)
     avatar_url: Optional[str] = None
     role: WorkspaceRoleField
     joined_at: datetime
@@ -199,6 +205,8 @@ class MemberRead(BaseModel):
             user_id=membership.user_id,
             email=user.email if user is not None else "",
             display_name=display_name_for(user),
+            full_name=user.full_name if user is not None else "",
+            previous_handles=list(user.previous_handles) if user is not None else [],
             avatar_url=icon_url(user.icon_key) if user is not None else None,
             role=membership.role,  # pyright: ignore[reportArgumentType]
             joined_at=membership.joined_at,

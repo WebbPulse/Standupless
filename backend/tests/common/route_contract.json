@@ -210,6 +210,12 @@
     "path": "/api/users/me/preferences"
   },
   {
+    "auth": "authenticated",
+    "domain": "identity",
+    "method": "PATCH",
+    "path": "/api/users/me/profile"
+  },
+  {
     "auth": "workspace:admin",
     "domain": "identity",
     "method": "GET",

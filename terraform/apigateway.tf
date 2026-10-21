@@ -94,6 +94,10 @@ locals {
     "POST /api/auth/password"   = { integration = "identity", require_identity_jwt = true }
     "POST /api/auth/logout-all" = { integration = "identity", require_identity_jwt = true }
 
+    "GET /api/auth/sessions"                = { integration = "identity", require_identity_jwt = true }
+    "DELETE /api/auth/sessions/{family_id}" = { integration = "identity", require_identity_jwt = true }
+    "POST /api/auth/email/change"           = { integration = "identity", require_identity_jwt = true }
+
     "POST /api/auth/totp/enrol"     = { integration = "identity", require_identity_jwt = true }
     "POST /api/auth/totp/activate"  = { integration = "identity", require_identity_jwt = true }
     "POST /api/auth/totp/disable"   = { integration = "identity", require_identity_jwt = true }

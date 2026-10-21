@@ -23,6 +23,9 @@
  * HTML. Inside the desktop and mobile apps `ShellPublicRoute` opens them in
  * the system browser instead, and `/` starts on sign in or the workspace.
  *
+ * `/verify-email-change` sits outside both too, because an email change link
+ * is opened from the new mailbox, possibly in a browser with no session.
+ *
  * `/desktop-handoff` sits outside both as well. It sends a signed out visitor
  * to sign in itself, with the desktop app's request in `returnTo`, because the
  * protected guard would drop the query that carries it.
@@ -47,6 +50,7 @@ import Register from './pages/authentication/Register';
 import ResetPassword from './pages/authentication/ResetPassword';
 import Security from './pages/authentication/Security';
 import VerifyEmail from './pages/authentication/VerifyEmail';
+import VerifyEmailChange from './pages/authentication/VerifyEmailChange';
 import GithubApp from './pages/admin/GithubApp';
 import GithubAppCreated from './pages/admin/GithubAppCreated';
 import Board from './pages/board/Board';
@@ -115,6 +119,9 @@ import WorkspaceLabelsSettings from './pages/workspaces/WorkspaceLabelsSettings'
 import WorkspaceTemplatesSettings from './pages/workspaces/WorkspaceTemplatesSettings';
 import WorkspaceWorkflowSettings from './pages/workspaces/WorkspaceWorkflowSettings';
 import TeamsSettings from './pages/workspaces/TeamsSettings';
+import ProfileSettings from './pages/workspaces/ProfileSettings';
+import AccountSecuritySettings from './pages/workspaces/AccountSecuritySettings';
+import { VERIFY_EMAIL_CHANGE_PATH } from '@webbpulse/auth';
 
 /** Maps every path this application serves onto its page. */
 const App: React.FC = () => (
@@ -141,6 +148,7 @@ const App: React.FC = () => (
     <Route path="/shared/:token" element={<SharedView />} />
 
     <Route path="/verify-email" element={<VerifyEmail />} />
+    <Route path={VERIFY_EMAIL_CHANGE_PATH} element={<VerifyEmailChange />} />
     <Route path="/invites/accept" element={<AcceptInvite />} />
 
     <Route element={<ProtectedRoute />}>
@@ -188,6 +196,14 @@ const App: React.FC = () => (
           <Route
             path="settings/notifications"
             element={<NotificationsSettings />}
+          />
+          <Route
+            path="settings/account/profile"
+            element={<ProfileSettings />}
+          />
+          <Route
+            path="settings/account/security"
+            element={<AccountSecuritySettings />}
           />
 
           <Route path="team/:keyPrefix" element={<Team />} />

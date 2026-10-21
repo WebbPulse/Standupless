@@ -1,6 +1,8 @@
 /**
- * The navigation between the workspace settings pages, as a row of tabs in
- * the page bar's toolbar row.
+ * The navigation between the settings pages, as a row of tabs in the page
+ * bar's toolbar row. The personal pages come first, Linear's Account group:
+ * Profile, Notifications and Security & access belong to the person and apply
+ * in every workspace, so every member sees them. The workspace pages follow.
  *
  * Workspace administration is admin only, but the team list, the workflow
  * and labels every team inherits (read only below admin), the plan, a person's own
@@ -30,9 +32,28 @@ const tabClass = ({ isActive }: { isActive: boolean }): string =>
       : 'text-text-muted hover:text-text'
   );
 
-/** Renders the links between the workspace, security, team, workflow, label, template, billing, API key, integrations, connected app, MCP and CLI, agent profile, share link, export, import, audit log and notification settings. */
+/** Renders the links between the personal profile, notification and security pages, then the workspace, security, team, workflow, label, template, billing, API key, integrations, connected app, MCP and CLI, agent profile, share link, export, import and audit log settings. */
 export const SettingsNav: React.FC<SettingsNavProps> = ({ workspace }) => (
   <nav aria-label="Settings sections" className="flex flex-wrap gap-1">
+    <NavLink
+      to={`/w/${workspace.slug}/settings/account/profile`}
+      className={tabClass}
+    >
+      Profile
+    </NavLink>
+    <NavLink
+      to={`/w/${workspace.slug}/settings/notifications`}
+      className={tabClass}
+    >
+      Notifications
+    </NavLink>
+    <NavLink
+      to={`/w/${workspace.slug}/settings/account/security`}
+      className={tabClass}
+    >
+      Security & access
+    </NavLink>
+    <span aria-hidden="true" className="mx-1 my-1.5 w-px bg-line" />
     {canManageMembers(workspace.role) && (
       <NavLink to={`/w/${workspace.slug}/settings`} end className={tabClass}>
         Workspace
@@ -117,12 +138,6 @@ export const SettingsNav: React.FC<SettingsNavProps> = ({ workspace }) => (
         Audit log
       </NavLink>
     )}
-    <NavLink
-      to={`/w/${workspace.slug}/settings/notifications`}
-      className={tabClass}
-    >
-      Notifications
-    </NavLink>
   </nav>
 );
 

@@ -28,6 +28,7 @@ from app.common.api.dependencies.repositories import Repositories, get_repositor
 from app.common.db.dynamo.inbox import NOTIFICATION_KINDS, NotificationKind
 from app.common.db.dynamo.users import PULSE_DIGESTS, PulseDigestField, User
 from app.common.email import deliver
+from app.common.handles import HANDLE_PATTERN, handle_conflicts, normalise_handle, previous_after_rename
 from app.common.icons import (
     IconCommit,
     IconUploadCreate,
@@ -51,6 +52,8 @@ EMAIL_MISMATCH = {"error_code": "CONFIRMATION_MISMATCH", "message": "Type your e
 
 ACCOUNT_DELETED = {"error_code": "ACCOUNT_DELETED", "message": "This account has been deleted"}
 
+HANDLE_RULE = "Use 1 to 39 letters, digits, hyphens or underscores, starting with a letter or digit"
+
 
 class NotificationChannels(BaseModel):
     """Where one kind of notification is delivered: the inbox and email."""
@@ -65,6 +68,7 @@ class UserRead(BaseModel):
     id: str
     email: str
     display_name: str
+    full_name: str = ""
     email_verified: bool
     email_notifications: bool
     notification_preferences: dict[str, NotificationChannels]
@@ -141,12 +145,41 @@ class UserPreferencesUpdate(BaseModel):
         return value
 
 
+class UserProfileUpdate(BaseModel):
+    """A change to the caller's name or handle; an omitted field keeps its value.
+
+    `display_name` is the handle an `@mention` names the person by, so it takes the
+    handle's shape. `full_name` is free text and may be cleared with an empty string.
+    """
+
+    full_name: Optional[str] = Field(default=None, max_length=120)
+    display_name: Optional[str] = Field(default=None, min_length=1, max_length=39)
+
+    @field_validator("full_name")
+    @classmethod
+    def _tidy_name(cls, value: Optional[str]) -> Optional[str]:
+        """Collapse runs of whitespace, so a pasted name stores the way it reads."""
+        return None if value is None else " ".join(value.split())
+
+    @field_validator("display_name")
+    @classmethod
+    def _handle_shape(cls, value: Optional[str]) -> Optional[str]:
+        """Refuse a handle the mention parser could not read back."""
+        if value is None:
+            return None
+        candidate = value.strip()
+        if not HANDLE_PATTERN.fullmatch(candidate):
+            raise ValueError(HANDLE_RULE)
+        return candidate
+
+
 def _as_read(user: "Any") -> UserRead:
     """One stored user row in the response shape."""
     return UserRead(
         id=user.id,
         email=str(user.email),
         display_name=user.display_name,
+        full_name=user.full_name,
         email_verified=user.email_verified,
         email_notifications=user.email_notifications,
         notification_preferences={
@@ -258,6 +291,48 @@ def update_current_user_preferences(
         changes["timezone"] = payload.timezone
     if payload.pulse_digest is not None and payload.pulse_digest != user.pulse_digest:
         changes["pulse_digest"] = payload.pulse_digest
+    if not changes:
+        return _as_read(user)
+    return _as_read(repos.users.update(subject, **changes))
+
+
+@router.patch("/me/profile", response_model=UserRead, dependencies=[Depends(require_person)])
+def update_current_user_profile(
+    payload: UserProfileUpdate,
+    subject: str = Depends(caller_subject),
+    repos: Repositories = Depends(get_repositories),
+) -> UserRead:
+    """Change the caller's full name or handle.
+
+    A new handle must be free in every workspace the caller belongs to, which is a
+    409 `HANDLE_TAKEN` naming those workspaces otherwise. The handle given up is
+    kept on the account, so mentions written under it keep resolving to the caller.
+    Names are read from the row on every request, so the change shows everywhere
+    without a new sign in.
+    """
+    user = _live_user(repos, subject)
+    changes: dict[str, Any] = {}
+    if payload.full_name is not None and payload.full_name != user.full_name:
+        changes["full_name"] = payload.full_name
+    if payload.display_name is not None and payload.display_name != user.display_name:
+        renamed = normalise_handle(payload.display_name) != normalise_handle(user.display_name)
+        if renamed:
+            conflicts = handle_conflicts(repos, subject, payload.display_name)
+            if conflicts:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail={
+                        "error_code": "HANDLE_TAKEN",
+                        "message": "Someone in your workspace already uses that name",
+                        "details": {
+                            "workspaces": [
+                                {"id": row.workspace_id, "name": row.workspace_name} for row in conflicts
+                            ]
+                        },
+                    },
+                )
+            changes["previous_handles"] = previous_after_rename(user, payload.display_name)
+        changes["display_name"] = payload.display_name
     if not changes:
         return _as_read(user)
     return _as_read(repos.users.update(subject, **changes))
