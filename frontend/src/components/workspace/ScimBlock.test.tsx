@@ -50,10 +50,10 @@ const token = (over: Partial<ScimTokenRead> = {}): ScimTokenRead => ({
 });
 
 /** Mounts the block inside a router. */
-const renderBlock = () =>
+const renderBlock = (canCreate = true) =>
   render(
     <MemoryRouter>
-      <ScimBlock workspaceId="ws-1" />
+      <ScimBlock workspaceId="ws-1" canCreate={canCreate} />
     </MemoryRouter>
   );
 
@@ -88,6 +88,15 @@ describe('ScimBlock', () => {
     await user.click(screen.getByRole('button', { name: 'Dismiss' }));
     expect(screen.queryByText('wpk_secret')).not.toBeInTheDocument();
     expect(await screen.findByText('wpk_abc12345')).toBeInTheDocument();
+  });
+
+  it('leaves token creation to an owner', async () => {
+    getScimSettings.mockResolvedValue({ base_url: BASE_URL, tokens: [] });
+    renderBlock(false);
+    expect(
+      await screen.findByText(/Only an owner can create a SCIM token/)
+    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Create token' })).toBeDisabled();
   });
 
   it('revokes a token from the list', async () => {

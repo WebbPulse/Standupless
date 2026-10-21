@@ -981,7 +981,10 @@ export const SsoSection: React.FC<SsoSectionProps> = ({ workspace }) => {
             settings={data}
             refetch={refetch}
           />
-          <ScimBlock workspaceId={workspace.id} />
+          <ScimBlock
+            workspaceId={workspace.id}
+            canCreate={workspace.role === 'owner'}
+          />
         </div>
       )}
     </section>

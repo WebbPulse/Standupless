@@ -2,9 +2,11 @@
 
 A SCIM token is an API key of its own kind. It counts toward the workspace's API
 key allowance, it is never listed or revoked on the API key routes, and product
-authorization refuses it, so the only thing it can reach is the SCIM router. Only
-a workspace admin manages them, an API key never can, and minting one needs the
-plan that includes single sign-on, because provisioning is part of that feature.
+authorization refuses it, so the only thing it can reach is the SCIM router. A
+workspace admin reads and revokes them and an API key never can. Minting one is
+for an owner alone, because the directory can remove anyone on a verified domain,
+owners included, which an admin may not do. Minting also needs the plan that
+includes single sign-on, because provisioning is part of that feature.
 """
 
 from __future__ import annotations
@@ -40,6 +42,11 @@ TOKEN_LIMIT: Final = 5
 """Live SCIM tokens per workspace: enough to rotate one while another directory runs."""
 
 NOT_FOUND = {"error_code": "NOT_FOUND", "message": "Resource not found"}
+
+OWNER_ONLY = {
+    "error_code": "FORBIDDEN",
+    "message": "Only an owner can create a SCIM token, because the directory can remove anyone, owners included.",
+}
 
 TOO_MANY = {
     "error_code": "SCIM_TOKEN_LIMIT",
@@ -84,8 +91,10 @@ def create_scim_token(
     context: Annotated[AuthzContext, Depends(require(Capability.WORKSPACE_ADMIN))],
     repositories: Annotated[Repositories, Depends(get_repositories)],
 ) -> ScimTokenCreated:
-    """Mint a SCIM token and show its plaintext, the only time it is ever shown."""
+    """Mint a SCIM token and show its plaintext, the only time it is ever shown. Owners only."""
     refuse_api_key_actor(context)
+    if context.role != "owner":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=OWNER_ONLY)
     enforce_feature(repositories, context.workspace_id, Feature.SSO)
     if len(_live_tokens(repositories, context.workspace_id)) >= TOKEN_LIMIT:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=TOO_MANY)

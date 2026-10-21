@@ -100,8 +100,8 @@ def workspace(repositories: Any) -> str:
 
 
 def _mint(client: TestClient, name: str = "Okta") -> Any:
-    """Mint a SCIM token as the admin."""
-    sign_in(client, ADMIN)
+    """Mint a SCIM token as the owner."""
+    sign_in(client, OWNER)
     return client.post(TOKENS, json={"name": name})
 
 
@@ -142,12 +142,15 @@ def _set_active(client: TestClient, token: str, scim_id: str, active: bool) -> A
     return client.patch(f"{SCIM}/Users/{scim_id}", json=body, headers=_bearer(token))
 
 
-def test_an_admin_mints_lists_and_revokes_a_token(client: TestClient, workspace: str, repositories: Any) -> None:
+def test_an_owner_mints_and_an_admin_lists_and_revokes_a_token(
+    client: TestClient, workspace: str, repositories: Any
+) -> None:
     created = _mint(client)
     assert created.status_code == 201, created.text
     body = created.json()
     assert body["secret"].startswith("wpk_")
     assert body["name"] == "Okta"
+    sign_in(client, ADMIN)
     settings = client.get(f"/api/workspaces/{WORKSPACE}/sso/scim")
     assert settings.status_code == 200
     assert settings.json()["base_url"].endswith("/api/scim/v2")
@@ -175,7 +178,15 @@ def test_tokens_stop_at_the_cap(client: TestClient, workspace: str) -> None:
     assert refused.json()["error_code"] == "SCIM_TOKEN_LIMIT"
 
 
-def test_only_an_admin_on_business_mints_a_token(client: TestClient, workspace: str, repositories: Any) -> None:
+def test_an_admin_may_not_mint_a_token(client: TestClient, workspace: str) -> None:
+    sign_in(client, ADMIN)
+    refused = client.post(TOKENS, json={"name": "Okta"})
+    assert refused.status_code == 403
+    assert refused.json()["error_code"] == "FORBIDDEN"
+    assert client.get(f"/api/workspaces/{WORKSPACE}/sso/scim").json()["tokens"] == []
+
+
+def test_only_an_owner_on_business_mints_a_token(client: TestClient, workspace: str, repositories: Any) -> None:
     sign_in(client, MEMBER)
     assert client.post(TOKENS, json={"name": "Okta"}).status_code in (403, 404)
     repositories.workspaces.set_billing(WORKSPACE, plan="free")

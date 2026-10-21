@@ -33,6 +33,8 @@ import Spinner from '../ui/spinner';
 /** Props for ScimBlock: the workspace whose directory provisioning is shown. */
 export interface ScimBlockProps {
   workspaceId: string;
+  /** Whether the caller is an owner, the only role that creates a token. */
+  canCreate: boolean;
 }
 
 /** How often the token list is re-read while the tab is open. */
@@ -75,7 +77,10 @@ const TokenRow: React.FC<{
 );
 
 /** The SCIM base URL, the live tokens, and minting and revoking them. */
-export const ScimBlock: React.FC<ScimBlockProps> = ({ workspaceId }) => {
+export const ScimBlock: React.FC<ScimBlockProps> = ({
+  workspaceId,
+  canCreate,
+}) => {
   const auth = useQueryAuth();
   const queryKey = workspaceScimKey(workspaceId);
   const inputId = useId();
@@ -133,6 +138,12 @@ export const ScimBlock: React.FC<ScimBlockProps> = ({ workspaceId }) => {
           with the same name or key, and removing someone in the directory signs
           them out and revokes their API keys.
         </p>
+        {!canCreate && (
+          <p className="text-xs text-text-muted">
+            Only an owner can create a SCIM token, because the directory can
+            remove anyone, owners included.
+          </p>
+        )}
       </div>
       {error !== null && (
         <ErrorAlert
@@ -240,14 +251,14 @@ export const ScimBlock: React.FC<ScimBlockProps> = ({ workspaceId }) => {
                   placeholder="Okta"
                   maxLength={80}
                   value={name}
-                  disabled={busy}
+                  disabled={busy || !canCreate}
                   onChange={(event) => setName(event.target.value)}
                 />
                 <Button
                   type="submit"
                   size="sm"
                   variant="secondary"
-                  disabled={busy}
+                  disabled={busy || !canCreate}
                 >
                   Create token
                 </Button>
