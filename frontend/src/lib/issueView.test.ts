@@ -758,9 +758,7 @@ describe('moving and ordering', () => {
 
     const placements = manualMoveKeys(rows, 'c', -1) ?? [];
     expect(placements.map((each) => each.id)).toEqual(['c', 'b']);
-    const [first = '', second = ''] = placements.map(
-      (each) => each.sort_order
-    );
+    const [first = '', second = ''] = placements.map((each) => each.sort_order);
     expect(first > 'a0').toBe(true);
     expect(second > first).toBe(true);
     const sorted = sortIssues(

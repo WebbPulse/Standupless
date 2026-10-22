@@ -22,11 +22,7 @@ import {
  * as `O` then `P` landing on the project list.
  */
 export type PalettePicker =
-  | 'favorites'
-  | 'projects'
-  | 'cycles'
-  | 'teams'
-  | 'views';
+  'favorites' | 'projects' | 'cycles' | 'teams' | 'views';
 
 /** What {@link useCommandPalette} hands back to the shell. */
 export interface CommandPaletteState {

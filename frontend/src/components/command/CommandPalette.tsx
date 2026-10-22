@@ -925,9 +925,7 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
           to: projectPath(slug, project.project_id),
         }))
         .filter((command) => matches(command, deferred));
-      return rows.length === 0
-        ? []
-        : [{ heading: 'Projects', commands: rows }];
+      return rows.length === 0 ? [] : [{ heading: 'Projects', commands: rows }];
     }
 
     if (page === 'cycles') {
