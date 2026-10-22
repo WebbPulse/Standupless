@@ -56,12 +56,11 @@ export const VelocityChart: React.FC<VelocityChartProps> = ({
     cycle,
     ...valuesOf(cycle, measure),
   }));
-  const ticks = axisTicks(
-    Math.max(
-      average,
-      ...rows.map((row) => Math.max(row.scope, row.completed))
-    )
+  const highest = Math.max(
+    average,
+    ...rows.map((row) => Math.max(row.scope, row.completed))
   );
+  const ticks = axisTicks(highest);
   const top = ticks[ticks.length - 1] ?? 1;
   const plotWidth = width - PAD_LEFT - PAD_RIGHT;
   const plotHeight = HEIGHT - PAD_TOP - PAD_BOTTOM;
