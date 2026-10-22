@@ -779,6 +779,11 @@ export interface IssueRead {
   /** When the issue breaches its SLA, or null when it has none. */
   sla_breaches_at?: string | null;
   /**
+   * When the issue's SLA timer paused because it entered one of its team's
+   * paused statuses, or null while the timer runs.
+   */
+  sla_paused_at?: string | null;
+  /**
    * Where the issue stands against its SLA, derived by the server at read
    * time. Optional so a row read before SLAs existed reads as none.
    */
@@ -1786,9 +1791,10 @@ export interface ArchiveSettingsUpdate {
 }
 
 /**
- * A team's SLA rules: whether they are on, and the hours an issue of each
+ * A team's SLA rules: whether they are on, the hours an issue of each
  * priority may stay open before it breaches, null for no rule at that
- * priority. `updated_at` is null until first saved.
+ * priority, and the open statuses whose time does not count toward a breach.
+ * `updated_at` is null until first saved.
  */
 export interface SlaSettingsRead {
   team_id: string;
@@ -1797,16 +1803,22 @@ export interface SlaSettingsRead {
   high_hours: number | null;
   medium_hours: number | null;
   low_hours: number | null;
+  /** Open statuses that pause the timer. Optional so an older answer reads as none. */
+  paused_status_ids?: string[];
   updated_at: string | null;
 }
 
-/** The editable fields of a team's SLA rules. Hours are whole, 1 to 2160. */
+/**
+ * The editable fields of a team's SLA rules. Hours are whole, 1 to 2160.
+ * `paused_status_ids` replaces the paused set, at most 50 open statuses.
+ */
 export interface SlaSettingsUpdate {
   enabled?: boolean;
   urgent_hours?: number | null;
   high_hours?: number | null;
   medium_hours?: number | null;
   low_hours?: number | null;
+  paused_status_ids?: string[] | null;
 }
 
 /**

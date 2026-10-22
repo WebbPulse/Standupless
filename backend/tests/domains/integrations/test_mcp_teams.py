@@ -292,6 +292,32 @@ def test_sla_settings_set_clear_and_validate(client: TestClient, repositories: A
     assert team["sla_settings"]["medium_hours"] == 120
 
 
+def test_sla_paused_statuses_take_ids_or_names(client: TestClient, repositories: Any, workspace: str) -> None:
+    """A status name resolves within the team, an unknown name or a finished status is refused, null clears."""
+    repositories.workspaces.set_billing(WORKSPACE, plan="business")
+    admin = mint_for(repositories, ADMIN, ("teams:write", "teams:read"))
+    statuses = {row.name: row for row in repositories.team_config.list_statuses(WORKSPACE, TEAM)}
+    done = next(row for row in statuses.values() if row.category == "completed")
+
+    saved = answer(
+        tool(client, admin, "update_team_sla_settings", {"team_id": "ABC", "paused_status_ids": ["in progress"]})
+    )
+    unknown = refusal(
+        tool(client, admin, "update_team_sla_settings", {"team_id": "ABC", "paused_status_ids": ["Nope"]})
+    )
+    finished = refusal(
+        tool(client, admin, "update_team_sla_settings", {"team_id": "ABC", "paused_status_ids": [done.status_id]})
+    )
+    team = answer(tool(client, admin, "get_team", {"team_id": TEAM}))
+    cleared = answer(tool(client, admin, "update_team_sla_settings", {"team_id": "ABC", "paused_status_ids": None}))
+
+    assert saved["paused_status_ids"] == [statuses["In Progress"].status_id]
+    assert "Nope" in unknown
+    assert "paused_status_ids" in finished
+    assert team["sla_settings"]["paused_status_ids"] == [statuses["In Progress"].status_id]
+    assert cleared["paused_status_ids"] == []
+
+
 def test_sla_settings_need_business(client: TestClient, repositories: Any, workspace: str) -> None:
     """Below Business the tool answers the plan refusal and the rules stay unsaved."""
     admin = mint_for(repositories, ADMIN, ("teams:write", "teams:read"))

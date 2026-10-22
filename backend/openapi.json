@@ -12791,6 +12791,13 @@
             ],
             "title": "Medium Hours"
           },
+          "paused_status_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Paused Status Ids",
+            "type": "array"
+          },
           "team_id": {
             "title": "Team Id",
             "type": "string"
@@ -12827,7 +12834,7 @@
         "type": "object"
       },
       "SlaSettingsUpdate": {
-        "description": "The body a team's SLA settings patch takes.\n\nEach `*_hours` is how long an issue of that priority may stay open before it\nbreaches, from one hour to ninety days; `null` removes that priority's rule.",
+        "description": "The body a team's SLA settings patch takes.\n\nEach `*_hours` is how long an issue of that priority may stay open before it\nbreaches, from one hour to ninety days; `null` removes that priority's rule.\n`paused_status_ids` replaces the set of open statuses whose time does not\ncount toward a breach; `null` or an empty list pauses in none.",
         "properties": {
           "enabled": {
             "anyOf": [
@@ -12878,6 +12885,21 @@
               }
             ],
             "title": "Medium Hours"
+          },
+          "paused_status_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 50,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Paused Status Ids"
           },
           "urgent_hours": {
             "anyOf": [
@@ -18239,6 +18261,18 @@
               }
             ],
             "title": "Sla Breaches At"
+          },
+          "sla_paused_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sla Paused At"
           },
           "sla_started_at": {
             "anyOf": [

@@ -355,6 +355,7 @@ class IssueRead(BaseModel):
     snoozed_until: Optional[datetime] = None
     sla_started_at: Optional[datetime] = None
     sla_breaches_at: Optional[datetime] = None
+    sla_paused_at: Optional[datetime] = None
     sla_status: SlaStatusField = "none"
     completed_at: Optional[datetime] = None
     external_ref: Optional[str] = None
@@ -394,6 +395,7 @@ class IssueRead(BaseModel):
             snoozed_until=issue.snoozed_until,
             sla_started_at=issue.sla_started_at,
             sla_breaches_at=issue.sla_breaches_at,
+            sla_paused_at=issue.sla_paused_at,
             sla_status=sla_status(issue),
             completed_at=issue.completed_at,
             external_ref=issue.external_ref,

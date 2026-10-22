@@ -1658,6 +1658,7 @@ class SlaSettingsRead(TypedDict):
     high_hours: NotRequired[int | None]
     low_hours: NotRequired[int | None]
     medium_hours: NotRequired[int | None]
+    paused_status_ids: NotRequired[list[str]]
     team_id: str
     updated_at: NotRequired[str | None]
     urgent_hours: NotRequired[int | None]
@@ -1668,6 +1669,7 @@ class SlaSettingsUpdate(TypedDict):
     high_hours: NotRequired[int | None]
     low_hours: NotRequired[int | None]
     medium_hours: NotRequired[int | None]
+    paused_status_ids: NotRequired[list[str] | None]
     urgent_hours: NotRequired[int | None]
 
 
@@ -2668,6 +2670,7 @@ class AppCommonApiSchemasIssuesIssueRead(TypedDict):
     project_milestone_id: NotRequired[str | None]
     pull_request_summary: NotRequired[PullRequestSummaryRead | None]
     sla_breaches_at: NotRequired[str | None]
+    sla_paused_at: NotRequired[str | None]
     sla_started_at: NotRequired[str | None]
     sla_status: NotRequired[Literal["none", "on_track", "at_risk", "breached"]]
     snoozed_until: NotRequired[str | None]

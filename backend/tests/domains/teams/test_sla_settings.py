@@ -1,12 +1,14 @@
 """The team SLA settings routes, against real tables in moto.
 
 These pin who may read and change a team's SLA rules, that each priority's
-hours are bounded and may be cleared on their own, and that deleting the team
-removes the row with the rest of its config.
+hours are bounded and may be cleared on their own, that the paused statuses
+are open statuses of the team and retime the issues already in them, and that
+deleting the team removes the row with the rest of its config.
 """
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
 from typing import Any, Iterator
 
 import pytest
@@ -14,7 +16,8 @@ from fastapi.testclient import TestClient
 
 from app.common.composition.domains import DOMAINS
 from app.common.composition.wiring import build_domain_app
-from app.common.db.dynamo.team_config import MAX_SLA_HOURS, sla_settings_key
+from app.common.db.dynamo.issues import Issue
+from app.common.db.dynamo.team_config import MAX_SLA_HOURS, MAX_SLA_PAUSED_STATUSES, sla_settings_key
 from tests.domains.helpers import ADMIN, GUEST, MEMBER, OWNER, add_member, make_team, make_workspace, sign_in
 
 WORKSPACE = "01JB00000000000000000000WS"
@@ -60,6 +63,7 @@ def test_unsaved_settings_read_as_off_with_the_defaults(client: TestClient, team
         "high_hours": 72,
         "medium_hours": None,
         "low_hours": None,
+        "paused_status_ids": [],
         "updated_at": None,
     }
 
@@ -165,3 +169,73 @@ def test_turning_them_off_or_clearing_a_rule_after_a_downgrade_is_allowed(
 
     assert response.status_code == 200, response.text
     assert (response.json()["enabled"], response.json()["urgent_hours"]) == (False, None)
+
+
+def _status(repositories: Any, category: str) -> str:
+    """The id of `TEAM`'s seeded status of one category."""
+    rows = repositories.team_config.list_statuses(WORKSPACE, TEAM)
+    return next(row.status_id for row in rows if row.category == category)
+
+
+def test_an_admin_picks_the_paused_statuses(client: TestClient, team: str, repositories: Any) -> None:
+    """The set saves whole, repeats collapse, and null or an empty list pauses in none."""
+    started, backlog = _status(repositories, "started"), _status(repositories, "backlog")
+    sign_in(client, ADMIN)
+
+    saved = client.patch(URL, json={"paused_status_ids": [started, backlog, started]})
+    kept = client.patch(URL, json={"enabled": True})
+    cleared = client.patch(URL, json={"paused_status_ids": None})
+
+    assert saved.status_code == 200, saved.text
+    assert saved.json()["paused_status_ids"] == [started, backlog]
+    assert kept.json()["paused_status_ids"] == [started, backlog]
+    assert cleared.json()["paused_status_ids"] == []
+
+
+def test_a_paused_status_must_be_an_open_status_of_the_team(client: TestClient, team: str, repositories: Any) -> None:
+    """An unknown id or a finished status is refused, and so is a set past the cap."""
+    sign_in(client, ADMIN)
+
+    unknown = client.patch(URL, json={"paused_status_ids": ["nope"]})
+    finished = client.patch(URL, json={"paused_status_ids": [_status(repositories, "completed")]})
+    crowd = [f"s{index}" for index in range(MAX_SLA_PAUSED_STATUSES + 1)]
+    too_many = client.patch(URL, json={"paused_status_ids": crowd})
+
+    assert (unknown.status_code, finished.status_code, too_many.status_code) == (422, 422, 422)
+    assert repositories.team_config.get_sla_settings(WORKSPACE, team) is None
+
+
+def test_saving_the_set_pauses_and_resumes_issues_already_there(
+    client: TestClient, team: str, repositories: Any
+) -> None:
+    """An issue sitting in a newly paused status stops, and resumes with its time left when the status is removed."""
+    started = _status(repositories, "started")
+    began = datetime.now(timezone.utc) - timedelta(hours=2)
+    created = repositories.issues.create(
+        Issue(
+            workspace_id=WORKSPACE,
+            team_id=team,
+            key="APO-1",
+            number=1,
+            title="Waiting on promotion",
+            status_id=started,
+            priority="urgent",
+            created_by=OWNER,
+            sla_started_at=began,
+            sla_breaches_at=began + timedelta(hours=24),
+        )
+    )
+    sign_in(client, ADMIN)
+
+    assert client.patch(URL, json={"enabled": True, "paused_status_ids": [started]}).status_code == 200
+    paused = repositories.issues.get(WORKSPACE, created.issue_id)
+    assert client.patch(URL, json={"paused_status_ids": []}).status_code == 200
+    resumed = repositories.issues.get(WORKSPACE, created.issue_id)
+
+    assert paused is not None and resumed is not None
+    assert resumed.sla_breaches_at is not None and resumed.sla_started_at is not None
+    assert paused.sla_paused_at is not None
+    assert paused.sla_breaches_at == began + timedelta(hours=24)
+    assert resumed.sla_paused_at is None
+    assert resumed.sla_breaches_at >= began + timedelta(hours=24)
+    assert resumed.sla_breaches_at - resumed.sla_started_at == timedelta(hours=24)

@@ -572,6 +572,12 @@ describe('grouping', () => {
           sla_status: 'breached',
           sla_breaches_at: '2026-10-02T00:00:00Z',
         }),
+        issue({
+          id: 'paused',
+          sla_status: 'on_track',
+          sla_breaches_at: '2026-10-01T00:00:00Z',
+          sla_paused_at: '2026-09-30T00:00:00Z',
+        }),
       ],
       'sla_asc'
     );
@@ -579,6 +585,7 @@ describe('grouping', () => {
     expect(sorted.map((row) => row.id)).toEqual([
       'breached',
       'later',
+      'paused',
       'none',
       'stopped',
     ]);

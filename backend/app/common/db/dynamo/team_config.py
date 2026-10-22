@@ -142,6 +142,9 @@ SLA_PRIORITIES: tuple[str, ...] = ("urgent", "high", "medium", "low")
 MAX_SLA_HOURS = 2160
 """The longest SLA a rule may set, ninety days."""
 
+MAX_SLA_PAUSED_STATUSES = 50
+"""The most statuses a team may pause its SLA timers in."""
+
 DEFAULT_SLA_HOURS: dict[str, int | None] = {"urgent": 24, "high": 72, "medium": None, "low": None}
 """The rules a team that never saved its SLA settings reads as, ready to switch on."""
 
@@ -428,7 +431,9 @@ class SlaSettings(BaseModel):
     """How long an open issue of each priority may go before it breaches, one row per team.
 
     Off until a team turns it on. A priority whose hours are `None` has no rule,
-    so an issue of that priority carries no SLA.
+    so an issue of that priority carries no SLA. `paused_status_ids` are the
+    open statuses whose time does not count toward a breach, the way Linear lets
+    a team leave statuses out of its SLAs.
     """
 
     workspace_id: str
@@ -440,7 +445,12 @@ class SlaSettings(BaseModel):
     high_hours: int | None = DEFAULT_SLA_HOURS["high"]
     medium_hours: int | None = DEFAULT_SLA_HOURS["medium"]
     low_hours: int | None = DEFAULT_SLA_HOURS["low"]
+    paused_status_ids: list[str] = Field(default_factory=list)
     updated_at: datetime | None = None
+
+    def pauses_in(self, status_id: str) -> bool:
+        """Whether an issue's SLA timer stands still while it sits in `status_id`."""
+        return bool(status_id) and status_id in self.paused_status_ids
 
     def hours_for(self, priority: str) -> int | None:
         """The SLA in hours an issue of `priority` gets, or `None` when no rule applies."""

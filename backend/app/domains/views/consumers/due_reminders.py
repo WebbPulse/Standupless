@@ -220,11 +220,11 @@ def remind_issue(repositories: Repositories, issue: Issue, now: datetime, zone: 
 def sla_notice_for(issue: Issue, now: datetime) -> tuple[str, datetime] | None:
     """Which SLA notice an issue is owed at `now`, and the moment it became owed.
 
-    Answers `None` while the SLA is on track, when the issue carries none, and
-    once a breach is older than the overdue window.
+    Answers `None` while the SLA is on track or paused, when the issue carries
+    none, and once a breach is older than the overdue window.
     """
     breaches_at = issue.sla_breaches_at
-    if breaches_at is None:
+    if breaches_at is None or issue.sla_paused_at is not None:
         return None
     if now >= breaches_at:
         if now - breaches_at > OVERDUE_WINDOW:
