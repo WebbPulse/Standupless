@@ -55,6 +55,13 @@ def test_the_caller_reads_their_own_row(client: TestClient, repositories: Any) -
         "week_start": "monday",
         "name_display": "username",
         "font_size": "default",
+        "projects_display": {
+            "layout": "list",
+            "group": "status",
+            "order": "target",
+            "closed": "all",
+            "zoom": "month",
+        },
     }
 
 
@@ -143,6 +150,41 @@ def test_a_retired_stored_preference_reads_as_the_default(client: TestClient, re
     body = client.get("/api/users/me").json()
     assert body["home_view"] == "home"
     assert body["font_size"] == "default"
+
+
+def test_the_projects_display_is_kept_whole_and_refuses_unknown_choices(client: TestClient, repositories: Any) -> None:
+    """The projects list arrangement replaces as a whole, follows the account and refuses a choice it lacks."""
+    make_user(repositories, OWNER, "owner@example.com", display_name="Owner")
+    sign_in(client, OWNER)
+
+    response = client.patch(
+        "/api/users/me/preferences",
+        json={"projects_display": {"layout": "board", "group": "health", "closed": "month"}},
+    )
+    assert response.status_code == 200
+    assert response.json()["projects_display"] == {
+        "layout": "board",
+        "group": "health",
+        "order": "target",
+        "closed": "month",
+        "zoom": "month",
+    }
+    assert repositories.users.get(OWNER).projects_display["group"] == "health"
+    assert client.get("/api/users/me").json()["projects_display"]["layout"] == "board"
+
+    for field, value in (("layout", "gallery"), ("group", "label"), ("closed", "year"), ("zoom", "day")):
+        refused = client.patch("/api/users/me/preferences", json={"projects_display": {field: value}})
+        assert refused.status_code == 422
+
+
+def test_a_retired_projects_display_choice_reads_as_the_default(client: TestClient, repositories: Any) -> None:
+    """A stored arrangement naming a withdrawn choice reads that field as the default and keeps the rest."""
+    make_user(repositories, OWNER, "owner@example.com", display_name="Owner")
+    repositories.users.update(OWNER, projects_display={"layout": "gallery", "group": "initiative"})
+    sign_in(client, OWNER)
+    display = client.get("/api/users/me").json()["projects_display"]
+    assert display["layout"] == "list"
+    assert display["group"] == "initiative"
 
 
 def test_one_kind_can_be_turned_off_per_channel(client: TestClient, repositories: Any) -> None:

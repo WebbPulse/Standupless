@@ -86,6 +86,9 @@ class User(BaseModel):
     `home_view`, `week_start`, `name_display` and `font_size` are the interface
     preferences that follow the person to every device. They default to the values
     the interface used before they existed, so an older row reads unchanged.
+    `projects_display` is how the person last arranged the projects list, its
+    layout, grouping, ordering, closed window and timeline zoom, kept as plain
+    strings that the read falls back from when a choice is retired.
     """
 
     id: str = Field(default_factory=new_user_id)
@@ -103,6 +106,7 @@ class User(BaseModel):
     week_start: str = "monday"
     name_display: str = "username"
     font_size: str = "default"
+    projects_display: dict[str, str] = Field(default_factory=dict)
     disabled: bool = False
     is_admin: bool = False
     created_at: datetime = Field(default_factory=utc_now)

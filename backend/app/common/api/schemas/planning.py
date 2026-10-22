@@ -689,6 +689,9 @@ class ProjectRead(BaseModel):
         default=None,
         description="Issues still open in the project, answered by a patch that leaves it completed or canceled",
     )
+    completed_at: Optional[datetime] = Field(
+        default=None, description="When the project last became completed or canceled, null while it is open"
+    )
     created_by: str
     created_at: datetime
     updated_at: datetime
@@ -737,6 +740,7 @@ class ProjectRead(BaseModel):
             next_update_due_at=next_update_due_at(project, default_interval_days),
             update_due_state=update_due_state(project, default_interval_days, now),
             initiative_id=project.initiative_id,
+            completed_at=project.completed_at,
             created_by=project.created_by,
             created_at=project.created_at,
             updated_at=project.updated_at,

@@ -8,7 +8,7 @@ own that table.
 from __future__ import annotations
 
 import logging
-from typing import Any, Optional
+from typing import Any, Literal, Optional, get_args
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
@@ -74,6 +74,54 @@ class NotificationChannels(BaseModel):
     email: bool
 
 
+ProjectsLayoutField = Literal["list", "board", "timeline"]
+
+ProjectsGroupField = Literal["status", "health", "priority", "initiative", "lead", "team", "none"]
+
+ProjectsOrderField = Literal["target", "start", "name", "priority", "progress", "created", "updated"]
+
+ProjectsClosedField = Literal["all", "week", "month", "quarter", "none"]
+
+ProjectsZoomField = Literal["week", "month", "quarter", "year"]
+
+
+class ProjectsDisplay(BaseModel):
+    """How the person arranges the workspace projects list.
+
+    `closed` is how far back completed and canceled projects show: all of them,
+    those closed in the past week, month or quarter, or none. `zoom` is the
+    timeline layout's scale. Every field has the list's own default, so an
+    account that never arranged the list reads as the list opens.
+    """
+
+    layout: ProjectsLayoutField = "list"
+    group: ProjectsGroupField = "status"
+    order: ProjectsOrderField = "target"
+    closed: ProjectsClosedField = "all"
+    zoom: ProjectsZoomField = "month"
+
+
+PROJECTS_DISPLAY_FIELDS: dict[str, tuple[str, ...]] = {
+    "layout": get_args(ProjectsLayoutField),
+    "group": get_args(ProjectsGroupField),
+    "order": get_args(ProjectsOrderField),
+    "closed": get_args(ProjectsClosedField),
+    "zoom": get_args(ProjectsZoomField),
+}
+"""The choices each stored projects display field may still hold."""
+
+
+def _projects_display(stored: dict[str, str]) -> ProjectsDisplay:
+    """The stored projects display, each field the default once its choice is retired."""
+    defaults = ProjectsDisplay()
+    return ProjectsDisplay(
+        **{
+            field: _known(str(stored.get(field, "")), allowed, getattr(defaults, field))
+            for field, allowed in PROJECTS_DISPLAY_FIELDS.items()
+        }
+    )
+
+
 class UserRead(BaseModel):
     """The caller's own account, in the shape the frontend's `UserRead` expects."""
 
@@ -92,6 +140,7 @@ class UserRead(BaseModel):
     week_start: WeekStartField = "monday"
     name_display: NameDisplayField = "username"
     font_size: FontSizeField = "default"
+    projects_display: ProjectsDisplay = Field(default_factory=ProjectsDisplay)
 
 
 class WorkspaceSummaryRead(BaseModel):
@@ -141,7 +190,8 @@ class UserPreferencesUpdate(BaseModel):
     digest email comes, `off` by default. `home_view`, `week_start`,
     `name_display` and `font_size` are the interface preferences the account
     Preferences page sets, kept on the row so they follow the person to every
-    device. Deliberately not a settings
+    device. `projects_display` replaces how the projects list is arranged as a
+    whole. Deliberately not a settings
     domain of its own: a few values on the row the product already owns are cheaper
     than a table and a second read on every notification.
     """
@@ -154,6 +204,7 @@ class UserPreferencesUpdate(BaseModel):
     week_start: Optional[WeekStartField] = None
     name_display: Optional[NameDisplayField] = None
     font_size: Optional[FontSizeField] = None
+    projects_display: Optional[ProjectsDisplay] = None
 
     @field_validator("timezone")
     @classmethod
@@ -219,6 +270,7 @@ def _as_read(user: "Any") -> UserRead:
         week_start=_known(user.week_start, WEEK_STARTS, "monday"),
         name_display=_known(user.name_display, NAME_DISPLAYS, "username"),
         font_size=_known(user.font_size, FONT_SIZES, "default"),
+        projects_display=_projects_display(user.projects_display),
     )
 
 
@@ -327,6 +379,10 @@ def update_current_user_preferences(
         value = getattr(payload, field)
         if value is not None and value != getattr(user, field):
             changes[field] = value
+    if payload.projects_display is not None:
+        display = payload.projects_display.model_dump()
+        if display != _projects_display(user.projects_display).model_dump():
+            changes["projects_display"] = display
     if not changes:
         return _as_read(user)
     return _as_read(repos.users.update(subject, **changes))

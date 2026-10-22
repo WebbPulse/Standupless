@@ -4,10 +4,19 @@
  * status from the URL, links each row to its project, edits the status and
  * health in place, draws each project's own icon, and only offers creating to a role that may write.
  * Filtered to a parent team, the list rolls in its sub-teams' projects until
- * the toggle narrows it to the team alone.
+ * the toggle narrows it to the team alone. The Display menu switches to a
+ * board whose columns follow the grouping and take dropped cards, or to a
+ * timeline; groups by health or priority; and hides completed projects
+ * outside the chosen window.
  */
 
-import { render, screen, waitFor, within } from '@testing-library/react';
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -76,6 +85,10 @@ vi.mock('@webbpulse/auth/react', async () => {
 });
 
 const useWorkspaceMock = vi.fn<() => WorkspaceContextType>();
+
+vi.mock('../../api/notifications', () => ({
+  updatePreferences: vi.fn(() => Promise.resolve({})),
+}));
 
 vi.mock('../../hooks/useWorkspace', () => ({
   useWorkspace: () => useWorkspaceMock(),
@@ -426,6 +439,125 @@ describe('Projects', () => {
     expect(
       await screen.findByRole('button', { name: 'New project' })
     ).toBeInTheDocument();
+  });
+
+  it('switches to a board with a column per status from the Display menu', async () => {
+    const user = userEvent.setup();
+    renderPage();
+
+    await screen.findByRole('link', { name: 'Launch' });
+    await user.click(screen.getByRole('button', { name: 'Display' }));
+    await user.click(screen.getByRole('radio', { name: 'Board' }));
+
+    const backlog = await screen.findByRole('list', {
+      name: 'Backlog projects',
+    });
+    expect(within(backlog).queryAllByRole('listitem')).toHaveLength(0);
+    expect(
+      within(
+        screen.getByRole('list', { name: 'In progress projects' })
+      ).getByRole('link', { name: 'Launch' })
+    ).toBeInTheDocument();
+  });
+
+  it('moves a project by dropping its card in another column', async () => {
+    updateProject.mockResolvedValue({
+      ...launch,
+      status: 'paused',
+      updated_at: '2026-09-19T00:00:00Z',
+    });
+    renderPage('/w/mine/projects?layout=board');
+
+    const link = await screen.findByRole('link', { name: 'Launch' });
+    const card = link.closest('li');
+    if (card === null) throw new Error('no card');
+    const data = { setData: vi.fn(), effectAllowed: '', dropEffect: '' };
+    fireEvent.dragStart(card, { dataTransfer: data });
+    const paused = screen.getByRole('list', { name: 'Paused projects' });
+    fireEvent.dragOver(paused, { dataTransfer: data });
+    fireEvent.drop(paused, { dataTransfer: data });
+
+    await waitFor(() => {
+      expect(updateProject).toHaveBeenCalledWith('prj-1', {
+        status: 'paused',
+      });
+    });
+    expect(
+      within(paused).getByRole('link', { name: 'Launch' })
+    ).toBeInTheDocument();
+  });
+
+  it('asks about open issues before a drop completes a project', async () => {
+    renderPage('/w/mine/projects?layout=board');
+
+    const link = await screen.findByRole('link', { name: 'Launch' });
+    const card = link.closest('li');
+    if (card === null) throw new Error('no card');
+    const data = { setData: vi.fn(), effectAllowed: '', dropEffect: '' };
+    fireEvent.dragStart(card, { dataTransfer: data });
+    const completed = screen.getByRole('list', { name: 'Completed projects' });
+    fireEvent.dragOver(completed, { dataTransfer: data });
+    fireEvent.drop(completed, { dataTransfer: data });
+
+    expect(
+      await screen.findByRole('button', { name: 'Complete project' })
+    ).toBeInTheDocument();
+    expect(updateProject).not.toHaveBeenCalled();
+  });
+
+  it('draws the timeline layout from the URL', async () => {
+    renderPage('/w/mine/projects?layout=timeline');
+
+    expect(await screen.findByTestId('projects-timeline')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Today' })).toBeInTheDocument();
+  });
+
+  it('groups by health and priority from the URL', async () => {
+    listProjects.mockResolvedValue({
+      projects: [launch, { ...rebrand, health: 'at_risk', priority: 'high' }],
+      next_cursor: null,
+    });
+    const { unmount } = renderPage('/w/mine/projects?group=health');
+
+    expect(
+      within(await screen.findByRole('region', { name: 'At risk' })).getByRole(
+        'link',
+        { name: 'Rebrand' }
+      )
+    ).toBeInTheDocument();
+    expect(
+      within(screen.getByRole('region', { name: 'No updates' })).getByRole(
+        'link',
+        { name: 'Launch' }
+      )
+    ).toBeInTheDocument();
+    unmount();
+
+    renderPage('/w/mine/projects?group=priority');
+    expect(
+      within(await screen.findByRole('region', { name: 'High' })).getByRole(
+        'link',
+        { name: 'Rebrand' }
+      )
+    ).toBeInTheDocument();
+  });
+
+  it('hides completed projects when the window says none', async () => {
+    const shipped = {
+      ...rebrand,
+      project_id: 'prj-5',
+      name: 'Shipped',
+      status: 'completed' as const,
+      completed_at: '2026-01-01T00:00:00Z',
+    };
+    listProjects.mockResolvedValue({
+      projects: [launch, shipped],
+      next_cursor: null,
+    });
+    renderPage('/w/mine/projects?closed=none');
+
+    await screen.findByRole('link', { name: 'Launch' });
+    expect(screen.queryByRole('link', { name: 'Shipped' })).toBeNull();
   });
 
   describe('with a sub-team', () => {

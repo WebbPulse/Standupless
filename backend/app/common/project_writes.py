@@ -7,6 +7,7 @@ date rules a person's does.
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any, Optional
 
 from fastapi import HTTPException, status
@@ -153,6 +154,7 @@ def create_project(repositories: Repositories, context: AuthzContext, payload: P
         member_ids=list(payload.member_ids),
         update_interval_days=payload.update_interval_days,
         initiative_id=payload.initiative_id,
+        completed_at=utc_now() if payload.status in CLOSED_STATUSES else None,
         created_by=context.user_id,
     )
     try:
@@ -237,6 +239,20 @@ def store_open_issues(repositories: Repositories, context: AuthzContext, planned
     return written
 
 
+def closed_since(existing: Project, closed: bool, now: datetime) -> Optional[datetime]:
+    """When a patched project closed: now on closing, kept while closed, None once open.
+
+    A project that moves between completed and canceled keeps the time it first
+    closed, and one closed before the field existed takes the time of the patch
+    that next touches it, so the projects list can always window closed rows.
+    """
+    if not closed:
+        return None
+    if normalise_project_status(existing.status) in CLOSED_STATUSES and existing.completed_at is not None:
+        return existing.completed_at
+    return now
+
+
 def update_project(
     repositories: Repositories, context: AuthzContext, project_id: str, payload: ProjectUpdate
 ) -> ProjectRead:
@@ -280,10 +296,12 @@ def update_project(
         if fields["initiative_id"] is not None:
             require_initiative_target(repositories, context, fields["initiative_id"])
 
-    updated = existing.model_copy(update={**fields, "updated_at": utc_now()})
+    now = utc_now()
+    updated = existing.model_copy(update={**fields, "updated_at": now})
     check_project_dates(updated.start_date, updated.target_date)
 
     closed = normalise_project_status(updated.status) in CLOSED_STATUSES
+    updated.completed_at = closed_since(existing, closed, now)
     if choice is not None and not closed:
         raise unprocessable("open_issues applies only to a patch that leaves the project completed or canceled")
     open_issues: list[Issue] = []
