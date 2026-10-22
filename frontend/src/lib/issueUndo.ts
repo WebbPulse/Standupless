@@ -73,7 +73,7 @@ export interface IssueRevert {
 
 /** A nullable field's value, with an absent one read as null. */
 const valueOf = (issue: IssueRead, field: PlainField): string | null =>
-  (issue[field] as string | null | undefined) ?? null;
+  issue[field] ?? null;
 
 /** Whether two label lists hold the same labels in any order. */
 const sameLabels = (left: string[], right: string[]): boolean =>
