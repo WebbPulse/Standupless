@@ -15,6 +15,13 @@
  * header starts the draft over from that template. The fields stay editable
  * and the dialog sends what they hold, never the template id, so a field the
  * person clears stays cleared.
+ *
+ * Milestone, parent, sub-issues and attachments are filed in the same save.
+ * The milestone chip appears once a project is chosen, the parent chip
+ * searches the team's top level issues, and sub-issue rows become issues
+ * under the new one, carrying its project, milestone and cycle. A file
+ * pasted, dropped or picked is held with a placeholder in the description
+ * and uploaded once the issue exists, the placeholder becoming its embed.
  */
 
 import React, {
@@ -26,15 +33,32 @@ import React, {
 } from 'react';
 import { useQueryAuth } from '@webbpulse/auth/react';
 import { usePolledQuery } from '@webbpulse/api-client/react';
-import { createIssue, createLink } from '../../api/issues';
+import {
+  LuCircleDashed,
+  LuMaximize2,
+  LuMinimize2,
+  LuPaperclip,
+  LuPlus,
+  LuX,
+} from 'react-icons/lu';
+import { uploadAttachment } from '../../api/discussion';
+import { createIssue, createLink, updateIssue } from '../../api/issues';
 import { listTeamTemplates } from '../../api/templates';
 import { WorkspaceContext } from '../../contexts/WorkspaceContextDefinition';
 import { useAutoGrow } from '../../hooks/useAutoGrow';
 import { useTeamOptions } from '../../hooks/useTeamOptions';
 import { useTriageOn } from '../../hooks/useTriageTeams';
 import { canWriteIssues } from '../../lib/capabilities';
+import { dragHasFiles, filesFrom } from '../../lib/attachments';
 import { cn } from '../../lib/cn';
+import {
+  namesPending,
+  pendingReference,
+  resolvePending,
+  stripPending,
+} from '../../lib/draftUploads';
 import { errorMessage } from '../../lib/errors';
+import { contentPath, mediaKindOf } from '../../lib/media';
 import type { Assignable } from '../../lib/issuePeople';
 import {
   templatePrefill,
@@ -44,8 +68,13 @@ import { templatesKey } from '../../lib/queryKeys';
 import { sortStatuses } from '../../lib/propertyOptions';
 import { issuePath } from '../../lib/paths';
 import { submitKeysLabel } from '../../lib/platform';
-import { showToast } from '../../lib/toast';
+import { showErrorToast, showToast } from '../../lib/toast';
 import { TRIAGE_STATUS_ID } from '../../lib/triageStatus';
+import {
+  UPLOAD_CONTENT_TYPES,
+  describeUploadRefusal,
+  sizeLabel,
+} from '../../lib/uploads';
 import {
   estimateOptionsOf,
   validateDateRange,
@@ -65,7 +94,7 @@ import type {
   TemplateRead,
 } from '../../types/Api';
 import { ErrorAlert } from '../ui/alert';
-import Button from '../ui/button';
+import Button, { IconButton } from '../ui/button';
 import { Combobox, type ComboboxOption } from '../ui/combobox';
 import Dialog from '../ui/dialog';
 import { Popover } from '../ui/popover';
@@ -79,6 +108,8 @@ import {
   ProjectPicker,
   StatusPicker,
 } from './PropertyPickers';
+import { DraftParentPicker, type DraftParent } from './DraftParentPicker';
+import { IssueMilestonePicker } from './PlanningPickers';
 import { useTeams } from '../../hooks/useTeams';
 import { SimilarIssues, useSimilarIssues } from './SimilarIssues';
 import { teamTree } from '../../lib/teamOrder';
@@ -137,7 +168,7 @@ interface Draft {
   priority: IssuePriority;
   startDate: string | null;
   dueDate: string | null;
-  parentId: string | null;
+  parent: DraftParent | null;
 }
 
 const EMPTY_DRAFT: Draft = {
@@ -151,7 +182,7 @@ const EMPTY_DRAFT: Draft = {
   priority: 'none',
   startDate: null,
   dueDate: null,
-  parentId: null,
+  parent: null,
 };
 
 /** The draft a preset starts from. */
@@ -161,7 +192,10 @@ const presetDraft = (preset: CreateIssuePreset | undefined): Draft => ({
   assigneeId: preset?.assigneeId ?? null,
   projectId: preset?.projectId ?? null,
   cycleId: preset?.cycleId ?? null,
-  parentId: preset?.parentId ?? null,
+  parent:
+    preset?.parentId === undefined
+      ? null
+      : { id: preset.parentId, key: preset.parentKey ?? 'Parent', title: '' },
 });
 
 /** The team scoped half of a draft, cleared when the team changes. */
@@ -174,7 +208,7 @@ const clearTeamScoped = (draft: Draft): Draft => ({
   projectId: null,
   projectMilestoneId: null,
   cycleId: null,
-  parentId: null,
+  parent: null,
 });
 
 /** The draft with a template's properties filled into what is still unset. */
@@ -238,7 +272,32 @@ const toPayload = (
     ? {}
     : { project_milestone_id: draft.projectMilestoneId }),
   ...(draft.cycleId === null ? {} : { cycle_id: draft.cycleId }),
-  ...(draft.parentId === null ? {} : { parent_id: draft.parentId }),
+  ...(draft.parent === null ? {} : { parent_id: draft.parent.id }),
+});
+
+/** One sub-issue row, filed under the new issue when it is created. */
+interface SubIssueRow {
+  id: string;
+  title: string;
+}
+
+/** One file held until the issue it belongs to exists. */
+interface HeldFile {
+  id: string;
+  file: File;
+}
+
+/** The create body for a sub-issue, carrying its parent's plan. */
+const subIssuePayload = (parent: IssueRead, title: string): IssueCreate => ({
+  team_id: parent.team_id,
+  title: title.trim(),
+  parent_id: parent.id,
+  ...(parent.project_id === null ? {} : { project_id: parent.project_id }),
+  ...(parent.project_milestone_id === null ||
+  parent.project_milestone_id === undefined
+    ? {}
+    : { project_milestone_id: parent.project_milestone_id }),
+  ...(parent.cycle_id === null ? {} : { cycle_id: parent.cycle_id }),
 });
 
 /** Props for TeamSwitcher: the teams a person may file into and the choice. */
@@ -351,9 +410,17 @@ export const CreateIssueDialog: React.FC<CreateIssueDialogProps> = ({
     similar.some((issue) => issue.issue_id === duplicateOf.issue_id)
       ? similar
       : [duplicateOf, ...similar];
+  const [expanded, setExpanded] = useState(false);
+  const [subIssues, setSubIssues] = useState<SubIssueRow[]>([]);
+  const [attached, setAttached] = useState<HeldFile[]>([]);
+  const [dragging, setDragging] = useState(false);
+  const nextId = useRef(0);
+  const subInputs = useRef(new Map<string, HTMLInputElement>());
+  const focusRow = useRef<string | null>(null);
+  const filePicker = useRef<HTMLInputElement>(null);
   const titleInput = useRef<HTMLInputElement>(null);
   const bodyInput = useRef<HTMLTextAreaElement>(null);
-  useAutoGrow(bodyInput, 320);
+  useAutoGrow(bodyInput, expanded ? 640 : 320);
 
   const { data: teams } = useTeams();
   const writable = (teams ?? []).filter((team) =>
@@ -386,14 +453,22 @@ export const CreateIssueDialog: React.FC<CreateIssueDialogProps> = ({
     draft.startDate ?? '',
     draft.dueDate ?? ''
   );
+  const subIssueError =
+    subIssues
+      .map((row) => (row.title.trim() === '' ? null : validateTitle(row.title)))
+      .find((problem) => problem !== null) ?? null;
   const canSubmit =
     title.trim() !== '' &&
     titleError === null &&
     dateError === null &&
+    subIssueError === null &&
     !isSaving;
   const dirty =
     title.trim() !== templateText.title.trim() ||
-    body.trim() !== templateText.body.trim();
+    body.trim() !== templateText.body.trim() ||
+    attached.length > 0 ||
+    subIssues.some((row) => row.title.trim() !== '');
+  const canNest = draft.parent === null;
 
   const { data: templateList } = usePolledQuery(
     async ({ signal }): Promise<TeamTemplates> => ({
@@ -488,7 +563,140 @@ export const CreateIssueDialog: React.FC<CreateIssueDialogProps> = ({
   }, [finish]);
 
   const patch = (change: Partial<Draft>): void => {
-    setDraft((held) => ({ ...held, ...change }));
+    setDraft((current) => ({ ...current, ...change }));
+  };
+
+  const localId = (prefix: string): string => {
+    nextId.current += 1;
+    return `${prefix}${String(nextId.current)}`;
+  };
+
+  useEffect(() => {
+    const id = focusRow.current;
+    if (id === null) return;
+    focusRow.current = null;
+    subInputs.current.get(id)?.focus();
+  });
+
+  const addSubIssue = (after?: string): void => {
+    const id = localId('sub-');
+    focusRow.current = id;
+    setSubIssues((rows) => {
+      const at =
+        after === undefined
+          ? rows.length
+          : rows.findIndex((row) => row.id === after) + 1;
+      return [...rows.slice(0, at), { id, title: '' }, ...rows.slice(at)];
+    });
+  };
+
+  const removeSubIssue = (id: string): void => {
+    const index = subIssues.findIndex((row) => row.id === id);
+    const before = subIssues[index - 1];
+    setSubIssues((rows) => rows.filter((row) => row.id !== id));
+    if (before === undefined) bodyInput.current?.focus();
+    else focusRow.current = before.id;
+  };
+
+  const holdFiles = (files: File[]): void => {
+    const accepted: HeldFile[] = [];
+    for (const file of files) {
+      const refusal = describeUploadRefusal(file);
+      if (refusal !== null) {
+        showErrorToast(`${file.name}: ${refusal}`);
+        continue;
+      }
+      accepted.push({ id: localId('file-'), file });
+    }
+    if (accepted.length === 0) return;
+    const field = bodyInput.current;
+    const atCaret = field !== null && document.activeElement === field;
+    const start = atCaret ? field.selectionStart : body.length;
+    const end = atCaret ? field.selectionEnd : body.length;
+    const before = body.slice(0, start);
+    const after = body.slice(end);
+    const lead = before === '' || before.endsWith('\n') ? '' : '\n';
+    const trail = after.startsWith('\n') ? '' : '\n';
+    const references = accepted
+      .map((item) => pendingReference(item.id, item.file))
+      .join('\n');
+    setBody(`${before}${lead}${references}${trail}${after}`);
+    setAttached((current) => [...current, ...accepted]);
+    setConfirming(false);
+  };
+
+  const dropFile = (id: string): void => {
+    setAttached((current) => current.filter((item) => item.id !== id));
+    setBody((current) =>
+      namesPending(current, id)
+        ? resolvePending(current, (other) =>
+            other === id ? null : `pending-upload:${other}`
+          )
+        : current
+    );
+  };
+
+  const uploadHeld = async (issue: IssueRead): Promise<IssueRead> => {
+    if (attached.length === 0) return issue;
+    const paths = new Map<string, string>();
+    await Promise.all(
+      attached.map(async (item) => {
+        try {
+          const attachment = await uploadAttachment(
+            workspaceId,
+            issue.id,
+            item.file
+          );
+          paths.set(
+            item.id,
+            contentPath(
+              workspaceId,
+              attachment.attachment_id,
+              issue.id,
+              mediaKindOf(item.file.type)
+            )
+          );
+        } catch (failure: unknown) {
+          showErrorToast(
+            errorMessage(failure, `Could not upload ${item.file.name}.`)
+          );
+        }
+      })
+    );
+    if (!attached.some((item) => namesPending(body, item.id))) return issue;
+    const resolved = resolvePending(body, (id) => paths.get(id) ?? null);
+    try {
+      return await updateIssue(workspaceId, issue.id, {
+        body: resolved === '' ? null : resolved,
+      });
+    } catch (failure: unknown) {
+      showErrorToast(
+        errorMessage(
+          failure,
+          `Created ${issue.key}, but could not add its files`
+        )
+      );
+      return issue;
+    }
+  };
+
+  const createSubIssues = async (parent: IssueRead): Promise<void> => {
+    const titles = subIssues
+      .map((row) => row.title.trim())
+      .filter((text) => text !== '');
+    let failed = 0;
+    for (const text of titles) {
+      try {
+        await createIssue(workspaceId, subIssuePayload(parent, text));
+      } catch {
+        failed += 1;
+      }
+    }
+    if (failed > 0) {
+      showErrorToast(
+        `Created ${parent.key}, but ${String(failed)} of ${String(titles.length)} sub-issues could not be created`
+      );
+    }
   };
 
   const submit = (): void => {
@@ -496,8 +704,11 @@ export const CreateIssueDialog: React.FC<CreateIssueDialogProps> = ({
     setIsSaving(true);
     setError(null);
     const original = duplicateOf;
-    createIssue(workspaceId, toPayload(activeTeamId, title, body, draft))
-      .then(async (issue) => {
+    const sentBody = attached.length === 0 ? body : stripPending(body);
+    createIssue(workspaceId, toPayload(activeTeamId, title, sentBody, draft))
+      .then(async (made) => {
+        const issue = await uploadHeld(made);
+        await createSubIssues(issue);
         if (original !== null) {
           await createLink(workspaceId, issue.id, {
             type: 'duplicate_of',
@@ -517,6 +728,8 @@ export const CreateIssueDialog: React.FC<CreateIssueDialogProps> = ({
         setLastCreated(issue);
         setTitle(templateText.title);
         setBody(templateText.body);
+        setAttached([]);
+        setSubIssues([]);
         setConfirming(false);
         showToast(
           `Created ${issue.key}`,
@@ -548,8 +761,35 @@ export const CreateIssueDialog: React.FC<CreateIssueDialogProps> = ({
     }
   };
 
+  const dropProps = {
+    onDragOver: (event: React.DragEvent) => {
+      if (!dragHasFiles(event.dataTransfer)) return;
+      event.preventDefault();
+      setDragging(true);
+    },
+    onDragLeave: (event: React.DragEvent) => {
+      if (event.currentTarget.contains(event.relatedTarget as Node | null)) {
+        return;
+      }
+      setDragging(false);
+    },
+    onDrop: (event: React.DragEvent) => {
+      const files = filesFrom(event.dataTransfer);
+      setDragging(false);
+      if (files.length === 0) return;
+      event.preventDefault();
+      holdFiles(files);
+    },
+  };
+
   return (
-    <Dialog open onClose={requestClose} title="New issue" size="lg" hideTitle>
+    <Dialog
+      open
+      onClose={requestClose}
+      title="New issue"
+      size={expanded ? 'xl' : 'lg'}
+      hideTitle
+    >
       <form
         aria-label="New issue"
         className="-mt-8 space-y-3"
@@ -582,12 +822,12 @@ export const CreateIssueDialog: React.FC<CreateIssueDialogProps> = ({
             /
           </span>
           <span className="text-text-muted">
-            {draft.parentId !== null && preset?.parentKey !== undefined
-              ? `New sub-issue of ${preset.parentKey}`
-              : 'New issue'}
+            {draft.parent === null
+              ? 'New issue'
+              : `New sub-issue of ${draft.parent.key}`}
           </span>
-          {templates.length > 0 && (
-            <span className="ml-auto">
+          <span className="ml-auto flex items-center gap-1">
+            {templates.length > 0 && (
               <TemplatePicker
                 templates={templates}
                 value={templateId}
@@ -596,8 +836,22 @@ export const CreateIssueDialog: React.FC<CreateIssueDialogProps> = ({
                   titleInput.current?.focus();
                 }}
               />
-            </span>
-          )}
+            )}
+            <IconButton
+              label={expanded ? 'Collapse' : 'Expand'}
+              size="sm"
+              aria-pressed={expanded}
+              onClick={() => {
+                setExpanded((open) => !open);
+              }}
+            >
+              {expanded ? (
+                <LuMinimize2 className="h-3.5 w-3.5" />
+              ) : (
+                <LuMaximize2 className="h-3.5 w-3.5" />
+              )}
+            </IconButton>
+          </span>
         </div>
 
         {error !== null && (
@@ -606,7 +860,14 @@ export const CreateIssueDialog: React.FC<CreateIssueDialogProps> = ({
           />
         )}
 
-        <div className="space-y-1 pt-2">
+        <div
+          className={cn(
+            'space-y-1 rounded-md pt-2 transition-colors duration-100',
+            dragging &&
+              'bg-accent/5 outline-1 outline-offset-4 outline-accent outline-dashed'
+          )}
+          {...dropProps}
+        >
           <input
             ref={titleInput}
             aria-label="Title"
@@ -644,8 +905,51 @@ export const CreateIssueDialog: React.FC<CreateIssueDialogProps> = ({
               setBody(event.target.value);
               setConfirming(false);
             }}
-            className="block min-h-16 w-full resize-none bg-transparent text-sm text-text outline-none placeholder:text-text-faint"
+            onPaste={(event) => {
+              const files = filesFrom(event.clipboardData);
+              if (files.length === 0) return;
+              event.preventDefault();
+              holdFiles(files);
+            }}
+            className={cn(
+              'block w-full resize-none bg-transparent text-sm text-text outline-none placeholder:text-text-faint',
+              expanded ? 'min-h-64' : 'min-h-16'
+            )}
           />
+          {dragging && (
+            <p className="text-xs text-accent">
+              Drop to add to the description
+            </p>
+          )}
+          {attached.length > 0 && (
+            <ul aria-label="Attachments" className="flex flex-wrap gap-1.5">
+              {attached.map((item) => (
+                <li
+                  key={item.id}
+                  className="inline-flex h-6 max-w-56 items-center gap-1.5 rounded-sm border border-line pr-0.5 pl-2 text-xs text-text"
+                >
+                  <LuPaperclip
+                    aria-hidden="true"
+                    className="h-3 w-3 shrink-0 text-text-faint"
+                  />
+                  <span className="min-w-0 truncate">{item.file.name}</span>
+                  <span className="shrink-0 text-text-faint">
+                    {sizeLabel(item.file.size)}
+                  </span>
+                  <button
+                    type="button"
+                    aria-label={`Remove ${item.file.name}`}
+                    onClick={() => {
+                      dropFile(item.id);
+                    }}
+                    className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-sm text-text-faint hover:bg-raised hover:text-text"
+                  >
+                    <LuX aria-hidden="true" className="h-3 w-3" />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
 
         <div
@@ -710,6 +1014,18 @@ export const CreateIssueDialog: React.FC<CreateIssueDialogProps> = ({
               patch({ projectId, projectMilestoneId: null });
             }}
           />
+          {draft.projectId !== null && (
+            <IssueMilestonePicker
+              variant="chip"
+              workspaceId={workspaceId}
+              projectId={draft.projectId}
+              value={draft.projectMilestoneId}
+              disabled={false}
+              onChange={(projectMilestoneId) => {
+                patch({ projectMilestoneId });
+              }}
+            />
+          )}
           <CyclePicker
             variant="chip"
             cycles={options.cycles}
@@ -736,8 +1052,79 @@ export const CreateIssueDialog: React.FC<CreateIssueDialogProps> = ({
               patch({ dueDate });
             }}
           />
+          <DraftParentPicker
+            workspaceId={workspaceId}
+            teamId={activeTeamId}
+            value={draft.parent}
+            onChange={(parent) => {
+              patch({ parent });
+              if (parent !== null) setSubIssues([]);
+            }}
+          />
         </div>
         <ErrorAlert message={dateError} />
+
+        {canNest && subIssues.length > 0 && (
+          <ul aria-label="Sub-issues" className="space-y-0.5">
+            {subIssues.map((row, index) => (
+              <li
+                key={row.id}
+                className="group flex h-7 items-center gap-2 rounded-sm px-1 hover:bg-raised"
+              >
+                <LuCircleDashed
+                  aria-hidden="true"
+                  className="h-3.5 w-3.5 shrink-0 text-text-faint"
+                />
+                <input
+                  ref={(element) => {
+                    if (element === null) subInputs.current.delete(row.id);
+                    else subInputs.current.set(row.id, element);
+                  }}
+                  aria-label={`Sub-issue ${String(index + 1)} title`}
+                  placeholder="Sub-issue title"
+                  autoComplete="off"
+                  value={row.title}
+                  onChange={(event) => {
+                    const next = event.target.value;
+                    setSubIssues((rows) =>
+                      rows.map((item) =>
+                        item.id === row.id ? { ...item, title: next } : item
+                      )
+                    );
+                    setConfirming(false);
+                  }}
+                  onKeyDown={(event) => {
+                    if (
+                      event.key === 'Enter' &&
+                      !event.metaKey &&
+                      !event.ctrlKey
+                    ) {
+                      event.preventDefault();
+                      if (row.title.trim() !== '') addSubIssue(row.id);
+                      return;
+                    }
+                    if (event.key === 'Backspace' && row.title === '') {
+                      event.preventDefault();
+                      removeSubIssue(row.id);
+                    }
+                  }}
+                  className="min-w-0 flex-1 bg-transparent text-sm text-text outline-none placeholder:text-text-faint"
+                />
+                <button
+                  type="button"
+                  aria-label={`Remove sub-issue ${String(index + 1)}`}
+                  onClick={() => {
+                    removeSubIssue(row.id);
+                  }}
+                  className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-sm text-text-faint opacity-0 group-focus-within:opacity-100 group-hover:opacity-100 hover:text-text pointer-coarse:opacity-100"
+                >
+                  <LuX aria-hidden="true" className="h-3 w-3" />
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+        <ErrorAlert message={subIssueError} />
 
         {confirming ? (
           <div
@@ -765,42 +1152,79 @@ export const CreateIssueDialog: React.FC<CreateIssueDialogProps> = ({
           </div>
         ) : (
           <div className="flex items-center justify-between gap-3 border-t border-line pt-3">
-            <label className="inline-flex cursor-pointer items-center gap-2 text-xs text-text-muted select-none">
-              <button
-                type="button"
-                role="switch"
-                aria-checked={createMore}
-                aria-label="Create more"
-                onClick={() => {
-                  setCreateMore((held) => !held);
+            <div className="flex items-center gap-1">
+              <input
+                ref={filePicker}
+                type="file"
+                multiple
+                hidden
+                accept={UPLOAD_CONTENT_TYPES.join(',')}
+                aria-label="Attach files"
+                onChange={(event) => {
+                  holdFiles(Array.from(event.target.files ?? []));
+                  event.target.value = '';
                 }}
-                className={cn(
-                  'relative inline-flex h-4 w-7 shrink-0 items-center rounded-full transition-colors duration-100',
-                  createMore
-                    ? 'bg-accent hover:bg-accent-strong'
-                    : 'bg-line-strong hover:bg-text-faint',
-                  'active:brightness-90'
-                )}
+              />
+              <IconButton
+                label="Attach files"
+                size="sm"
+                onClick={() => {
+                  filePicker.current?.click();
+                }}
               >
-                <span
-                  aria-hidden="true"
+                <LuPaperclip className="h-3.5 w-3.5" />
+              </IconButton>
+              {canNest && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    addSubIssue();
+                  }}
+                >
+                  <LuPlus aria-hidden="true" className="mr-1 h-3.5 w-3.5" />
+                  Add sub-issues
+                </Button>
+              )}
+            </div>
+            <div className="flex items-center gap-3">
+              <label className="inline-flex cursor-pointer items-center gap-2 text-xs text-text-muted select-none">
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={createMore}
+                  aria-label="Create more"
+                  onClick={() => {
+                    setCreateMore((held) => !held);
+                  }}
                   className={cn(
-                    'inline-block h-3 w-3 rounded-full bg-white transition-transform duration-100',
-                    createMore ? 'translate-x-3.5' : 'translate-x-0.5'
+                    'relative inline-flex h-4 w-7 shrink-0 items-center rounded-full transition-colors duration-100',
+                    createMore
+                      ? 'bg-accent hover:bg-accent-strong'
+                      : 'bg-line-strong hover:bg-text-faint',
+                    'active:brightness-90'
                   )}
-                />
-              </button>
-              <span aria-hidden="true">Create more</span>
-            </label>
-            <Button type="submit" variant="primary" disabled={!canSubmit}>
-              {isSaving ? 'Creating' : 'Create issue'}
-              <kbd
-                aria-hidden="true"
-                className="ml-2 font-sans text-[10px] opacity-70 pointer-coarse:hidden"
-              >
-                {submitKeysLabel()}
-              </kbd>
-            </Button>
+                >
+                  <span
+                    aria-hidden="true"
+                    className={cn(
+                      'inline-block h-3 w-3 rounded-full bg-white transition-transform duration-100',
+                      createMore ? 'translate-x-3.5' : 'translate-x-0.5'
+                    )}
+                  />
+                </button>
+                <span aria-hidden="true">Create more</span>
+              </label>
+              <Button type="submit" variant="primary" disabled={!canSubmit}>
+                {isSaving ? 'Creating' : 'Create issue'}
+                <kbd
+                  aria-hidden="true"
+                  className="ml-2 font-sans text-[10px] opacity-70 pointer-coarse:hidden"
+                >
+                  {submitKeysLabel()}
+                </kbd>
+              </Button>
+            </div>
           </div>
         )}
       </form>

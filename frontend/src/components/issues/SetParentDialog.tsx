@@ -7,27 +7,15 @@
  * never offers a target as its own parent.
  */
 
-import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { useQueryAuth } from '@webbpulse/auth/react';
-import { usePolledQuery } from '@webbpulse/api-client/react';
+import React, { useMemo, useState } from 'react';
 import { LuCornerUpLeft, LuX } from 'react-icons/lu';
-import { listIssues } from '../../api/issues';
-import { parentSearchKey } from '../../lib/queryKeys';
+import { useParentSearch } from '../../hooks/useParentSearch';
 import type { IssueRead } from '../../types/Api';
 import { Combobox, type ComboboxOption } from '../ui/combobox';
 import Dialog from '../ui/dialog';
 
 /** The keys that open the parent picker. */
 export const SET_PARENT_KEYS = 'mod+shift+p';
-
-/** The most candidates one search reads. */
-const SEARCH_LIMIT = 25;
-
-/** How long typing pauses before the search is read again. */
-const SEARCH_DEBOUNCE_MS = 150;
-
-/** How often an open picker re-reads its candidates. */
-const SEARCH_POLL_MS = 30000;
 
 /** The value of the row that detaches the targets from their parent. */
 const REMOVE = '\u0000remove';
@@ -61,55 +49,17 @@ export const parentBlocker = (
   return null;
 };
 
-/** The search text, settled after a short pause in typing. */
-const useSettled = (value: string): string => {
-  const [settled, setSettled] = useState(value);
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setSettled(value);
-    }, SEARCH_DEBOUNCE_MS);
-    return () => {
-      clearTimeout(timer);
-    };
-  }, [value]);
-  return settled;
-};
-
 /** The dialog. */
 export const SetParentDialog: React.FC<SetParentDialogProps> = ({
   issues,
   onPick,
   onClose,
 }) => {
-  const auth = useQueryAuth();
   const [query, setQuery] = useState('');
-  const term = useSettled(query.trim());
   const blocker = parentBlocker(issues);
   const workspaceId = issues[0]?.workspace_id ?? '';
   const teamId = issues[0]?.team_id ?? '';
-  const { data } = usePolledQuery(
-    ({ signal }) =>
-      listIssues(
-        workspaceId,
-        {
-          team_id: teamId,
-          parent_id: 'none',
-          sort: 'updated_desc',
-          limit: SEARCH_LIMIT,
-          ...(term === '' ? {} : { q: term }),
-        },
-        signal
-      ),
-    {
-      intervalMs: SEARCH_POLL_MS,
-      enabled: blocker === null && teamId !== '',
-      queryKey: parentSearchKey(teamId, term),
-      auth,
-    }
-  );
-  const last = useRef(data);
-  if (data !== null) last.current = data;
-  const found = data ?? last.current;
+  const found = useParentSearch(workspaceId, teamId, query, blocker === null);
 
   const targetIds = useMemo(
     () => new Set(issues.map((issue) => issue.id)),
@@ -128,7 +78,7 @@ export const SetParentDialog: React.FC<SetParentDialogProps> = ({
     });
   }
   if (blocker === null) {
-    for (const candidate of found?.issues ?? []) {
+    for (const candidate of found ?? []) {
       if (targetIds.has(candidate.id)) continue;
       options.push({
         value: candidate.id,
@@ -171,7 +121,7 @@ export const SetParentDialog: React.FC<SetParentDialogProps> = ({
           selected={shared === null ? [] : [shared]}
           emptyMessage={
             blocker ??
-            (found === null || found === undefined
+            (found === null
               ? 'Searching...'
               : 'No top level issue in this team matches.')
           }
