@@ -18,7 +18,9 @@
  * date is written issue by issue, because the bulk route never takes dates.
  * Deleting hides the rows at once and puts back any the server refuses.
  * Archiving goes through the bulk route and does the same when the view
- * leaves archived issues out, as restoring does in the archive view.
+ * leaves archived issues out, as restoring does in the archive view. Every
+ * landed change and archive is recorded for undo, and an undo lays the old
+ * values over the rows the same way until the re-read catches up.
  */
 
 import { useCallback, useMemo, useRef, useState } from 'react';
@@ -37,8 +39,10 @@ import {
 } from '../api/issues';
 import { errorMessage } from '../lib/errors';
 import { mergeIssueDelta } from '../lib/issueDelta';
+import { recordArchive, recordIssueChange } from '../lib/issueUndo';
 import { applyChange, changeIsNoop, type IssueChange } from '../lib/issueView';
 import { showErrorToast, showToast } from '../lib/toast';
+import type { IssueRead } from '../types/Api';
 
 /** How many rows one page reads, the list route's cap. */
 export const PAGE_SIZE = 100;
@@ -275,6 +279,24 @@ export const useIssueCollection = (
     }
   );
 
+  const layOver = useCallback((written: readonly IssueRead[]): void => {
+    const base = new Map(
+      (heldRef.current?.read.issues ?? []).map((row) => [row.id, row])
+    );
+    setOverlays((held) => {
+      const next = { ...held };
+      for (const issue of written) {
+        const row = held[issue.id]?.issue ?? base.get(issue.id);
+        if (row === undefined) continue;
+        next[issue.id] = {
+          since: base.get(issue.id)?.updated_at ?? '',
+          issue: { ...row, ...issue, sort_order: row.sort_order ?? null },
+        };
+      }
+      return next;
+    });
+  }, []);
+
   const read = data?.issues;
   const issues = useMemo(
     () =>
@@ -334,7 +356,21 @@ export const useIssueCollection = (
         invalidateQueries(queryKey);
       };
 
+      const landed: OrderedIssueRead[] = [];
+      const record = (): void => {
+        const before = new Map(planned.map(({ issue }) => [issue.id, issue]));
+        recordIssueChange(
+          workspaceId,
+          landed.flatMap((after) => {
+            const prior = before.get(after.id);
+            return prior === undefined ? [] : [{ before: prior, after }];
+          }),
+          { invalidate: [queryKey], onReverted: layOver }
+        );
+      };
+
       const confirm = (written: OrderedIssueRead[]): void => {
+        landed.push(...written);
         setOverlays((held) => {
           const next = { ...held };
           for (const issue of written) {
@@ -369,6 +405,7 @@ export const useIssueCollection = (
           )
         );
         void Promise.all(writes).then(() => {
+          record();
           invalidateQueries(queryKey);
         });
         return;
@@ -401,10 +438,11 @@ export const useIssueCollection = (
         )
       );
       void Promise.all(writes).then(() => {
+        record();
         invalidateQueries(queryKey);
       });
     },
-    [issues, read, workspaceId, queryKey]
+    [issues, read, workspaceId, queryKey, layOver]
   );
 
   const remove = useCallback(
@@ -492,14 +530,33 @@ export const useIssueCollection = (
         );
       }
       if (done > 0) {
-        const past = restore ? 'restored' : 'archived';
-        showToast(
-          done === 1 ? `Issue ${past}` : `${String(done)} issues ${past}`
+        const byId = new Map(issues.map((issue) => [issue.id, issue]));
+        const unhide = (): void => {
+          if (!hides) return;
+          setHidden((held) => {
+            const next = new Set(held);
+            for (const id of targets) next.delete(id);
+            return next;
+          });
+        };
+        recordArchive(
+          workspaceId,
+          targets
+            .filter((id) => !failed.includes(id))
+            .map((id) => ({ id, key: byId.get(id)?.key ?? 'issue' })),
+          restore,
+          {
+            invalidate: [queryKey],
+            onReverted: (written) => {
+              unhide();
+              layOver(written);
+            },
+          }
         );
       }
       invalidateQueries(queryKey);
     },
-    [workspaceId, queryKey, listsArchived, archivedOnly]
+    [workspaceId, queryKey, listsArchived, archivedOnly, issues, layOver]
   );
 
   return {

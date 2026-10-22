@@ -9,11 +9,21 @@
 export type ToastTone = 'error' | 'info';
 
 /** A link a notice carries to what it announces, such as a new issue. */
-export interface ToastAction {
+export interface ToastLinkAction {
   label: string;
   /** The in-app route the action opens. */
   to: string;
 }
+
+/** A button a notice carries, such as Undo, run once when pressed. */
+export interface ToastButtonAction {
+  label: string;
+  /** Runs when the button is pressed, after the notice is dismissed. */
+  run: () => void;
+}
+
+/** What a notice offers beside its message: a link or a button. */
+export type ToastAction = ToastLinkAction | ToastButtonAction;
 
 /** One notice on screen. */
 export interface Toast {
@@ -26,6 +36,8 @@ export interface Toast {
 /** Extras a notice may carry. */
 export interface ToastOptions {
   action?: ToastAction;
+  /** How long the notice stays, overriding the default for its kind. */
+  timeoutMs?: number;
 }
 
 /** How long a notice stays before it dismisses itself. */
@@ -91,7 +103,10 @@ export const showToast = (
       () => {
         dismissToast(id);
       },
-      options.action === undefined ? TOAST_TIMEOUT_MS : ACTION_TOAST_TIMEOUT_MS
+      options.timeoutMs ??
+        (options.action === undefined
+          ? TOAST_TIMEOUT_MS
+          : ACTION_TOAST_TIMEOUT_MS)
     )
   );
   emit();

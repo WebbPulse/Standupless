@@ -3,6 +3,7 @@
  * in, opened from the rail, the issue menu, the palette or Cmd+Shift+M.
  * Picking one moves the issue, which takes the next key in that team while
  * the old key keeps resolving, so the page follows it to the new address.
+ * The move is recorded for undo, which moves the issue back.
  */
 
 import React, { useState } from 'react';
@@ -10,7 +11,9 @@ import { LuUsers } from 'react-icons/lu';
 import { moveIssue } from '../../api/issues';
 import { canWriteIssues } from '../../lib/capabilities';
 import { errorMessage } from '../../lib/errors';
-import { showErrorToast, showToast } from '../../lib/toast';
+import { recordMove } from '../../lib/issueUndo';
+import { issueKey } from '../../lib/queryKeys';
+import { showErrorToast } from '../../lib/toast';
 import type { IssueRead, TeamRead, WorkspaceRole } from '../../types/Api';
 import { Combobox, type ComboboxOption } from '../ui/combobox';
 import Dialog from '../ui/dialog';
@@ -81,8 +84,11 @@ export const MoveIssueDialog: React.FC<MoveIssueDialogProps> = ({
     setBusy(true);
     try {
       const moved = await moveIssue(workspaceId, issue.id, teamId);
-      showToast(
-        `Moved ${issue.key} to ${target?.name ?? 'the team'} as ${moved.key}`
+      recordMove(
+        workspaceId,
+        issue,
+        `Moved ${issue.key} to ${target?.name ?? 'the team'} as ${moved.key}`,
+        { invalidate: [issueKey(workspaceId, moved.key)] }
       );
       onMoved(moved);
       onClose();

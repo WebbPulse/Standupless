@@ -30,6 +30,24 @@ const emitOwners = (): void => {
 /** The id of the instance that draws, or null when none is mounted. */
 const currentOwner = (): string | null => owners[0] ?? null;
 
+/** A notice's button action, which dismisses the notice before it runs. */
+const ToastButton: React.FC<{
+  label: string;
+  run: () => void;
+  onDone: () => void;
+}> = ({ label, run, onDone }) => (
+  <button
+    type="button"
+    className="shrink-0 rounded-sm px-1 font-medium text-accent hover:underline"
+    onClick={() => {
+      onDone();
+      run();
+    }}
+  >
+    {label}
+  </button>
+);
+
 /** The stack of notices, drawn in the bottom right corner. */
 export const Toaster: React.FC = () => {
   const id = useId();
@@ -67,7 +85,7 @@ export const Toaster: React.FC = () => {
             )}
           />
           <p className="min-w-0 flex-1 text-text">{toast.message}</p>
-          {toast.action !== undefined && (
+          {toast.action !== undefined && 'to' in toast.action && (
             <Link
               to={toast.action.to}
               className="shrink-0 rounded-sm px-1 font-medium text-accent hover:underline"
@@ -77,6 +95,15 @@ export const Toaster: React.FC = () => {
             >
               {toast.action.label}
             </Link>
+          )}
+          {toast.action !== undefined && 'run' in toast.action && (
+            <ToastButton
+              label={toast.action.label}
+              run={toast.action.run}
+              onDone={() => {
+                dismissToast(toast.id);
+              }}
+            />
           )}
           <button
             type="button"
