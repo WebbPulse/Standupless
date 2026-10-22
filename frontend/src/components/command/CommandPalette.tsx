@@ -126,7 +126,7 @@ import {
 } from '../../lib/paths';
 import { COPY_ISSUE_URL_KEYS } from '../../lib/copyIssue';
 import { favoriteHref } from '../../lib/favorites';
-import { projectGlyph } from '../../lib/projectLook';
+import ProjectIcon from '../planning/ProjectIcon';
 import {
   matchesTerm,
   settingsDestinations,
@@ -912,20 +912,18 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
 
     if (page === 'projects') {
       const rows = (projectList?.projects ?? [])
-        .map((project) => {
-          const Glyph = projectGlyph(project.icon);
-          return {
-            id: `project-${project.project_id}`,
-            label: project.name,
-            icon: (
-              <Glyph
-                className={ICON}
-                {...(project.color === null ? {} : { color: project.color })}
-              />
-            ),
-            to: projectPath(slug, project.project_id),
-          };
-        })
+        .map((project) => ({
+          id: `project-${project.project_id}`,
+          label: project.name,
+          icon: (
+            <ProjectIcon
+              icon={project.icon}
+              color={project.color}
+              className="h-4 w-4"
+            />
+          ),
+          to: projectPath(slug, project.project_id),
+        }))
         .filter((command) => matches(command, deferred));
       return rows.length === 0
         ? []
