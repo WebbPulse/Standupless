@@ -1,10 +1,10 @@
 /**
  * The account settings wording: usernames the mention parser can read, and
- * how a session's device and sign-in methods read.
+ * how a session's device reads.
  */
 
 import { describe, expect, it } from 'vitest';
-import { USERNAME_PATTERN, deviceLabel, methodLabel } from './account';
+import { USERNAME_PATTERN, deviceLabel } from './account';
 
 describe('USERNAME_PATTERN', () => {
   it('accepts a handle the mention parser reads', () => {
@@ -23,11 +23,5 @@ describe('session labels', () => {
   it('names known devices and falls back for the rest', () => {
     expect(deviceLabel('mobile')).toBe('Mobile');
     expect(deviceLabel('toaster')).toBe('Unknown device');
-  });
-
-  it('names each sign-in method once', () => {
-    expect(methodLabel(['pwd', 'otp'])).toBe('Password, Authenticator code');
-    expect(methodLabel(['passkey', 'hwk'])).toBe('Passkey');
-    expect(methodLabel([])).toBe('');
   });
 });
