@@ -38,6 +38,8 @@ from app.common.api.schemas.teams import (
     CycleSettingsUpdate,
     SlaSettingsRead,
     SlaSettingsUpdate,
+    TeamDisplayDefaultsRead,
+    TeamDisplayDefaultsUpdate,
     TeamCreate,
     TeamListRead,
     TeamOrderUpdate,
@@ -239,6 +241,36 @@ def update_cycle_settings(
     team = _load(repositories, context)
     saved = team_writes.update_cycle_settings(repositories, context.workspace_id, team.team_id, payload)
     return CycleSettingsRead.from_row(saved)
+
+
+@router.get("/{workspace_id}/teams/{team_id}/display-defaults", response_model=TeamDisplayDefaultsRead)
+def read_display_defaults(
+    context: Annotated[AuthzContext, Depends(require(Capability.TEAM_READ))],
+    repositories: Annotated[Repositories, Depends(get_repositories)],
+) -> TeamDisplayDefaultsRead:
+    """What the team's issue list and board open with for a member who has not changed them."""
+    team = _load(repositories, context)
+    return TeamDisplayDefaultsRead.from_row(
+        team_writes.display_defaults(repositories, context.workspace_id, team.team_id)
+    )
+
+
+@router.patch("/{workspace_id}/teams/{team_id}/display-defaults", response_model=TeamDisplayDefaultsRead)
+def update_display_defaults(
+    payload: TeamDisplayDefaultsUpdate,
+    context: Annotated[AuthzContext, Depends(require(Capability.TEAM_ADMIN))],
+    repositories: Annotated[Repositories, Depends(get_repositories)],
+) -> TeamDisplayDefaultsRead:
+    """Set or clear the layout, grouping, ordering and properties the team's pages open with.
+
+    A team admin's call. Members who changed a page's display keep their own
+    options until they reset to the team default.
+    """
+    team = _load(repositories, context)
+    saved = team_writes.update_display_defaults(
+        repositories, context.workspace_id, team.team_id, context.user_id, payload
+    )
+    return TeamDisplayDefaultsRead.from_row(saved)
 
 
 @router.get("/{workspace_id}/teams/{team_id}/auto-close-settings", response_model=AutoCloseSettingsRead)

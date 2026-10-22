@@ -51,10 +51,29 @@ VisiblePropertyField = Literal[
     "parent",
     "sub_issues",
     "pull_requests",
+    "milestone",
+    "links",
     "created_at",
     "updated_at",
 ]
 """The row properties a view may show, a fixed set so a client never meets one it cannot render."""
+
+CompletedWindowField = Literal["all", "past_week", "past_month", "none"]
+"""How many completed and cancelled issues a view shows: all, those finished in the last week or month, or none."""
+
+COMPLETED_WINDOWS: tuple[str, ...] = get_args(CompletedWindowField)
+
+
+def completed_window_of(window: Optional[str], show_completed: Optional[bool]) -> CompletedWindowField:
+    """The window a stored view shows, read from `show_completed` when it predates the window."""
+    if window == "past_week":
+        return "past_week"
+    if window == "past_month":
+        return "past_month"
+    if window == "none" or (window is None and show_completed is False):
+        return "none"
+    return "all"
+
 
 GroupByField = Literal[
     "status",
@@ -325,6 +344,7 @@ class ViewCreate(BaseModel):
     layout: Optional[LayoutField] = None
     show_sub_issues: StrictBool = True
     show_completed: StrictBool = True
+    completed_window: Optional[CompletedWindowField] = None
     show_archived: StrictBool = False
     icon: Optional[str] = Field(default=None, min_length=1, max_length=VIEW_ICON_MAX)
     color: Optional[ViewColorField] = None
@@ -366,6 +386,7 @@ class ViewUpdate(BaseModel):
     layout: Optional[LayoutField] = None
     show_sub_issues: Optional[StrictBool] = None
     show_completed: Optional[StrictBool] = None
+    completed_window: Optional[CompletedWindowField] = None
     show_archived: Optional[StrictBool] = None
     icon: Optional[str] = Field(default=None, min_length=1, max_length=VIEW_ICON_MAX)
     color: Optional[ViewColorField] = None
@@ -385,8 +406,14 @@ class ViewUpdate(BaseModel):
         return normalize_filter(value)
 
 
-DISPLAY_SWITCHES: tuple[str, ...] = ("ordering_reversed", "show_sub_issues", "show_completed", "show_archived")
-"""The view's boolean display switches, which a patch may set but never clear to null."""
+DISPLAY_SWITCHES: tuple[str, ...] = (
+    "ordering_reversed",
+    "show_sub_issues",
+    "show_completed",
+    "completed_window",
+    "show_archived",
+)
+"""The view's display switches, booleans and the completed window, which a patch may set but never clear to null."""
 
 
 class ViewRead(BaseModel):
@@ -412,6 +439,7 @@ class ViewRead(BaseModel):
     layout: str
     show_sub_issues: bool = True
     show_completed: bool = True
+    completed_window: CompletedWindowField = "all"
     show_archived: bool = False
     icon: Optional[str] = None
     color: Optional[str] = None
@@ -441,6 +469,7 @@ class ViewRead(BaseModel):
             layout=view.layout or view.kind,
             show_sub_issues=view.show_sub_issues is not False,
             show_completed=view.show_completed is not False,
+            completed_window=completed_window_of(view.completed_window, view.show_completed),
             show_archived=view.show_archived is True,
             icon=view.icon,
             color=view.color,

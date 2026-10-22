@@ -36,6 +36,7 @@ import {
   type CreateIssueOptions,
 } from '../../../hooks/useCreateIssue';
 import type { IssueCollection } from '../../../hooks/useIssueCollection';
+import { useMilestoneContext } from '../../../hooks/useMilestoneContext';
 import { useStoredSet } from '../../../hooks/useStoredSet';
 import { COLLECTION_LIMIT } from '../../../hooks/useIssueCollection';
 import {
@@ -228,15 +229,11 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
   const [deleting, setDeleting] = useState<OrderedIssueRead[] | null>(null);
   const scrollOnFocus = useRef(false);
 
-  const { showSubIssues, showCompleted } = state;
+  const { showSubIssues, completed } = state;
   const sorted = useMemo(
     () =>
       sortIssues(
-        shownIssues(
-          collection.issues,
-          { showSubIssues, showCompleted },
-          context
-        ),
+        shownIssues(collection.issues, { showSubIssues, completed }, context),
         state.ordering,
         { reverse: state.reverse, context }
       ),
@@ -245,7 +242,7 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
       state.ordering,
       state.reverse,
       showSubIssues,
-      showCompleted,
+      completed,
       context,
     ]
   );
@@ -907,6 +904,11 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
     [filterFields, context, onStateChange, state]
   );
 
+  const named = useMilestoneContext(
+    context,
+    state.visible.includes('milestone')
+  );
+  const milestones = named.milestones;
   const env = useMemo<IssueViewEnv>(
     () => ({
       slug,
@@ -929,6 +931,7 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
       openMenu,
       onOpen: rememberOrder,
       filterFor,
+      milestones,
     }),
     [
       slug,
@@ -950,6 +953,7 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
       openMenu,
       rememberOrder,
       filterFor,
+      milestones,
     ]
   );
 

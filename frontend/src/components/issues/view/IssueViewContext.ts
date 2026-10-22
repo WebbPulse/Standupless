@@ -14,7 +14,11 @@ import type {
   ViewState,
 } from '../../../lib/issueView';
 import type { EstimateOptions } from '../../../lib/validation';
-import type { EstimateScale, LabelRead } from '../../../types/Api';
+import type {
+  EstimateScale,
+  LabelRead,
+  MilestoneRead,
+} from '../../../types/Api';
 
 /** The shared state of one issue view. */
 export interface IssueViewEnv {
@@ -55,6 +59,12 @@ export interface IssueViewEnv {
    * for a field the view cannot filter on, where the chip stays inert.
    */
   filterFor?: (field: FilterField) => ((value: string) => void) | undefined;
+  /**
+   * The milestones the milestone property names. A project's own list has
+   * them in its context; a list elsewhere reads them from each project it
+   * knows while the property shows.
+   */
+  milestones?: MilestoneRead[] | undefined;
 }
 
 /** The view's shared state. Null outside an issue view. */

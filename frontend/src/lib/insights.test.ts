@@ -35,7 +35,7 @@ describe('insightsFilters', () => {
   it('leaves out what the display options hide', () => {
     const state: ViewState = {
       ...base,
-      showCompleted: false,
+      completed: 'none',
       showSubIssues: false,
     };
 
@@ -97,5 +97,13 @@ describe('INSIGHT_DIMENSIONS', () => {
   it('offers team as a dimension, drawn as plain rows', () => {
     expect(INSIGHT_DIMENSIONS).toContainEqual({ value: 'team', label: 'Team' });
     expect(FILTER_FOR.team).toBeUndefined();
+  });
+});
+
+describe('a bounded completed window', () => {
+  it('keeps closed issues in the panel, as the list route cannot split them', () => {
+    const state: ViewState = { ...base, completed: 'past_week' };
+
+    expect(insightsFilters(state, {}).status_category_not).toBeUndefined();
   });
 });

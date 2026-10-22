@@ -12,7 +12,7 @@
  * title and description.
  */
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   LuBell,
   LuBox,
@@ -40,7 +40,7 @@ import {
   LuX,
 } from 'react-icons/lu';
 import { NONE } from '../../../api/issues';
-import { listMilestones } from '../../../api/planning';
+import { useMilestoneContext } from '../../../hooks/useMilestoneContext';
 import { useTriageTeamIds } from '../../../hooks/useTriageTeams';
 import { PRIORITIES, PRIORITY_LABELS } from '../../../lib/issueDisplay';
 import { personAvatar, personLabel } from '../../../lib/issuePeople';
@@ -74,7 +74,7 @@ import {
   TRIAGE_STATUS_NAME,
 } from '../../../lib/triageStatus';
 import { cn } from '../../../lib/cn';
-import type { LinkType, MilestoneRead, ProjectRead } from '../../../types/Api';
+import type { LinkType } from '../../../types/Api';
 import { estimateChoices } from '../../../lib/validation';
 import Avatar from '../../ui/avatar';
 import Button from '../../ui/button';
@@ -132,34 +132,6 @@ const RELATION_CHOICES: { value: LinkType; label: string }[] = [
   { value: 'duplicate_of', label: 'Duplicate of' },
 ];
 
-/** How long a project's milestones read for a filter stay fresh. */
-const MILESTONE_READ_TTL_MS = 60000;
-
-/** The most projects a milestone filter outside a project reads the milestones of. */
-const MILESTONE_PROJECT_LIMIT = 50;
-
-const milestoneReads = new Map<
-  string,
-  { at: number; read: Promise<MilestoneRead[]> }
->();
-
-/** One project's milestones, shared by every picker open within the freshness window. */
-const readMilestones = (project: ProjectRead): Promise<MilestoneRead[]> => {
-  const key = `${project.workspace_id}/${project.project_id}`;
-  const held = milestoneReads.get(key);
-  if (held !== undefined && Date.now() - held.at < MILESTONE_READ_TTL_MS) {
-    return held.read;
-  }
-  const read = listMilestones(project.workspace_id, project.project_id).catch(
-    () => {
-      milestoneReads.delete(key);
-      return [];
-    }
-  );
-  milestoneReads.set(key, { at: Date.now(), read });
-  return read;
-};
-
 /**
  * The context a field's choices are drawn from. Outside a project's own list
  * the context carries no milestones, so a milestone filter reads them from
@@ -168,26 +140,7 @@ const readMilestones = (project: ProjectRead): Promise<MilestoneRead[]> => {
 const useChoiceContext = (
   context: IssueContext,
   field: FilterField
-): IssueContext => {
-  const wanted = field === 'milestone' && context.milestones === undefined;
-  const [loaded, setLoaded] = useState<MilestoneRead[]>([]);
-  useEffect(() => {
-    if (!wanted) return undefined;
-    let live = true;
-    void Promise.all(
-      context.projects.slice(0, MILESTONE_PROJECT_LIMIT).map(readMilestones)
-    ).then((lists) => {
-      if (live) setLoaded(lists.flat());
-    });
-    return () => {
-      live = false;
-    };
-  }, [wanted, context.projects]);
-  return useMemo(
-    () => (wanted ? { ...context, milestones: loaded } : context),
-    [wanted, context, loaded]
-  );
-};
+): IssueContext => useMilestoneContext(context, field === 'milestone');
 
 /** A day as `YYYY-MM-DD` in local time, the way a date input reads it. */
 const isoDay = (date: Date): string => {

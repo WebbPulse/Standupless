@@ -3326,6 +3326,200 @@
         "title": "DiscordInstallUrlRead",
         "type": "object"
       },
+      "DisplayOptionsBody": {
+        "description": "The display options one team page opens with, each null where the page keeps its built-in default.\n\nHeld to the saved view's own choices, so a team default is always one a view\ncould save: a sub grouping needs a grouping and must differ from it. Either\ngrouping may be `none`, which a page reads as no grouping rather than as its\nbuilt-in one.",
+        "properties": {
+          "completed_window": {
+            "anyOf": [
+              {
+                "enum": [
+                  "all",
+                  "past_week",
+                  "past_month",
+                  "none"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed Window"
+          },
+          "group_by": {
+            "anyOf": [
+              {
+                "enum": [
+                  "status",
+                  "assignee",
+                  "priority",
+                  "label",
+                  "milestone",
+                  "project",
+                  "cycle",
+                  "parent",
+                  "team",
+                  "sla"
+                ],
+                "type": "string"
+              },
+              {
+                "const": "none",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Group By"
+          },
+          "layout": {
+            "anyOf": [
+              {
+                "enum": [
+                  "list",
+                  "board"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Layout"
+          },
+          "ordering": {
+            "anyOf": [
+              {
+                "enum": [
+                  "updated_desc",
+                  "created_desc",
+                  "key_asc",
+                  "priority_desc",
+                  "due_asc",
+                  "sla_asc",
+                  "manual",
+                  "status_asc",
+                  "start_asc",
+                  "estimate_desc"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ordering"
+          },
+          "ordering_reversed": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ordering Reversed"
+          },
+          "show_archived": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Show Archived"
+          },
+          "show_empty_groups": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Show Empty Groups"
+          },
+          "show_sub_issues": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Show Sub Issues"
+          },
+          "sub_group_by": {
+            "anyOf": [
+              {
+                "enum": [
+                  "status",
+                  "assignee",
+                  "priority",
+                  "label",
+                  "milestone",
+                  "project",
+                  "cycle",
+                  "parent",
+                  "team",
+                  "sla"
+                ],
+                "type": "string"
+              },
+              {
+                "const": "none",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sub Group By"
+          },
+          "visible_properties": {
+            "anyOf": [
+              {
+                "items": {
+                  "enum": [
+                    "id",
+                    "status",
+                    "priority",
+                    "assignee",
+                    "labels",
+                    "estimate",
+                    "start_date",
+                    "due_date",
+                    "project",
+                    "cycle",
+                    "parent",
+                    "sub_issues",
+                    "pull_requests",
+                    "milestone",
+                    "links",
+                    "created_at",
+                    "updated_at"
+                  ],
+                  "type": "string"
+                },
+                "maxItems": 17,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Visible Properties"
+          }
+        },
+        "title": "DisplayOptionsBody",
+        "type": "object"
+      },
       "DocumentCreate": {
         "description": "The body a document create takes; the parent comes from the path.",
         "properties": {
@@ -14731,6 +14925,90 @@
         "title": "TeamCreate",
         "type": "object"
       },
+      "TeamDisplayDefaultsRead": {
+        "description": "A team's display defaults as the API returns them, null for a page on its built-in default.",
+        "properties": {
+          "board_display": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DisplayOptionsBody"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "list_display": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DisplayOptionsBody"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "team_id": {
+            "title": "Team Id",
+            "type": "string"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          },
+          "updated_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated By"
+          }
+        },
+        "required": [
+          "team_id"
+        ],
+        "title": "TeamDisplayDefaultsRead",
+        "type": "object"
+      },
+      "TeamDisplayDefaultsUpdate": {
+        "description": "The body a team's display defaults patch takes.\n\n`list_display` sets what the team's issue list opens with and `board_display`\nwhat its board opens with. A page left out keeps its saved default, and null\nclears it back to the built-in one. Each page's options are replaced whole.",
+        "properties": {
+          "board_display": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DisplayOptionsBody"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "list_display": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DisplayOptionsBody"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "title": "TeamDisplayDefaultsUpdate",
+        "type": "object"
+      },
       "TeamListRead": {
         "description": "The body the teams list route answers with.",
         "properties": {
@@ -16597,6 +16875,23 @@
             ],
             "title": "Color"
           },
+          "completed_window": {
+            "anyOf": [
+              {
+                "enum": [
+                  "all",
+                  "past_week",
+                  "past_month",
+                  "none"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed Window"
+          },
           "description": {
             "anyOf": [
               {
@@ -16797,12 +17092,14 @@
                     "parent",
                     "sub_issues",
                     "pull_requests",
+                    "milestone",
+                    "links",
                     "created_at",
                     "updated_at"
                   ],
                   "type": "string"
                 },
-                "maxItems": 15,
+                "maxItems": 17,
                 "type": "array"
               },
               {
@@ -16845,6 +17142,17 @@
               }
             ],
             "title": "Color"
+          },
+          "completed_window": {
+            "default": "all",
+            "enum": [
+              "all",
+              "past_week",
+              "past_month",
+              "none"
+            ],
+            "title": "Completed Window",
+            "type": "string"
           },
           "created_at": {
             "format": "date-time",
@@ -17039,6 +17347,23 @@
               }
             ],
             "title": "Color"
+          },
+          "completed_window": {
+            "anyOf": [
+              {
+                "enum": [
+                  "all",
+                  "past_week",
+                  "past_month",
+                  "none"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed Window"
           },
           "description": {
             "anyOf": [
@@ -17270,12 +17595,14 @@
                     "parent",
                     "sub_issues",
                     "pull_requests",
+                    "milestone",
+                    "links",
                     "created_at",
                     "updated_at"
                   ],
                   "type": "string"
                 },
-                "maxItems": 15,
+                "maxItems": 17,
                 "type": "array"
               },
               {
@@ -18530,6 +18857,11 @@
                 "type": "null"
               }
             ]
+          },
+          "relation_count": {
+            "default": 0,
+            "title": "Relation Count",
+            "type": "integer"
           },
           "sla_breaches_at": {
             "anyOf": [
@@ -36053,6 +36385,112 @@
           }
         ],
         "summary": "Update Cycle Settings",
+        "tags": [
+          "teams"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/teams/{team_id}/display-defaults": {
+      "get": {
+        "description": "What the team's issue list and board open with for a member who has not changed them.",
+        "operationId": "read_display_defaults_api_workspaces__workspace_id__teams__team_id__display_defaults_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TeamDisplayDefaultsRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Read Display Defaults",
+        "tags": [
+          "teams"
+        ]
+      },
+      "patch": {
+        "description": "Set or clear the layout, grouping, ordering and properties the team's pages open with.\n\nA team admin's call. Members who changed a page's display keep their own\noptions until they reset to the team default.",
+        "operationId": "update_display_defaults_api_workspaces__workspace_id__teams__team_id__display_defaults_patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TeamDisplayDefaultsUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TeamDisplayDefaultsRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Update Display Defaults",
         "tags": [
           "teams"
         ]

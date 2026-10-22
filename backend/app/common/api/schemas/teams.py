@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import re
 from datetime import datetime
-from typing import Literal, Optional
+from typing import Literal, Optional, Union
 
 from pydantic import BaseModel, Field, StrictBool, field_validator, model_validator
 
@@ -21,14 +21,24 @@ from app.common.db.dynamo.team_config import (
     ArchiveSettings,
     AutoCloseSettings,
     CycleSettings,
+    DisplayOptions,
     Label,
     SlaSettings,
     Status,
+    TeamDisplayDefaults,
     TriageSettings,
 )
 from app.common.db.dynamo.teams import Team, is_valid_key_prefix
 from app.common.db.dynamo.users import User
 from app.common.icons import icon_url
+from app.common.api.schemas.views import (
+    VISIBLE_PROPERTIES,
+    CompletedWindowField,
+    GroupByField,
+    LayoutField,
+    SortField,
+    VisiblePropertyField,
+)
 from app.common.status_appearance import StatusColor, StatusIcon, check_icon
 
 EstimateScaleField = Literal["off", "exponential", "fibonacci", "linear", "tshirt"]
@@ -619,6 +629,91 @@ class TriageSettingsRead(BaseModel):
     def from_row(cls, settings: TriageSettings) -> "TriageSettingsRead":
         """Build the response from a stored or default settings row."""
         return cls(team_id=settings.team_id, enabled=settings.enabled, updated_at=settings.updated_at)
+
+
+DisplayGroupField = Union[GroupByField, Literal["none"]]
+"""A grouping a team default may hold: any a view groups by, or `none` for no grouping."""
+
+
+class DisplayOptionsBody(BaseModel):
+    """The display options one team page opens with, each null where the page keeps its built-in default.
+
+    Held to the saved view's own choices, so a team default is always one a view
+    could save: a sub grouping needs a grouping and must differ from it. Either
+    grouping may be `none`, which a page reads as no grouping rather than as its
+    built-in one.
+    """
+
+    layout: Optional[LayoutField] = None
+    group_by: Optional[DisplayGroupField] = None
+    sub_group_by: Optional[DisplayGroupField] = None
+    ordering: Optional[SortField] = None
+    ordering_reversed: Optional[StrictBool] = None
+    visible_properties: Optional[list[VisiblePropertyField]] = Field(default=None, max_length=len(VISIBLE_PROPERTIES))
+    show_sub_issues: Optional[StrictBool] = None
+    completed_window: Optional[CompletedWindowField] = None
+    show_empty_groups: Optional[StrictBool] = None
+    show_archived: Optional[StrictBool] = None
+
+    @field_validator("visible_properties")
+    @classmethod
+    def _unique_properties(cls, value: Optional[list[str]]) -> Optional[list[str]]:
+        """Drop repeats, keeping the order the admin chose to show them in."""
+        return list(dict.fromkeys(value)) if value is not None else None
+
+    @model_validator(mode="after")
+    def _sub_group_needs_group(self) -> "DisplayOptionsBody":
+        """Refuse a sub grouping with no grouping, or one repeating the grouping."""
+        if self.sub_group_by is not None and self.sub_group_by != "none":
+            if self.group_by is None or self.group_by == "none":
+                raise ValueError("sub_group_by needs group_by")
+            if self.sub_group_by == self.group_by:
+                raise ValueError("sub_group_by must differ from group_by")
+        return self
+
+    def as_row(self) -> DisplayOptions:
+        """The stored shape of these options."""
+        return DisplayOptions.model_validate(self.model_dump())
+
+    @classmethod
+    def from_row(cls, options: Optional[DisplayOptions]) -> Optional["DisplayOptionsBody"]:
+        """The response shape of stored options, or `None` when the page keeps its built-in default."""
+        if options is None:
+            return None
+        return cls.model_validate(options.model_dump())
+
+
+class TeamDisplayDefaultsUpdate(BaseModel):
+    """The body a team's display defaults patch takes.
+
+    `list_display` sets what the team's issue list opens with and `board_display`
+    what its board opens with. A page left out keeps its saved default, and null
+    clears it back to the built-in one. Each page's options are replaced whole.
+    """
+
+    list_display: Optional[DisplayOptionsBody] = None
+    board_display: Optional[DisplayOptionsBody] = None
+
+
+class TeamDisplayDefaultsRead(BaseModel):
+    """A team's display defaults as the API returns them, null for a page on its built-in default."""
+
+    team_id: str
+    list_display: Optional[DisplayOptionsBody] = None
+    board_display: Optional[DisplayOptionsBody] = None
+    updated_by: Optional[str] = None
+    updated_at: Optional[datetime] = None
+
+    @classmethod
+    def from_row(cls, defaults: TeamDisplayDefaults) -> "TeamDisplayDefaultsRead":
+        """Build the response from a stored or default row."""
+        return cls(
+            team_id=defaults.team_id,
+            list_display=DisplayOptionsBody.from_row(defaults.list_display),
+            board_display=DisplayOptionsBody.from_row(defaults.board_display),
+            updated_by=defaults.updated_by,
+            updated_at=defaults.updated_at,
+        )
 
 
 def display_name(user: Optional[User]) -> str:

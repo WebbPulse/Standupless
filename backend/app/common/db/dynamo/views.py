@@ -109,6 +109,7 @@ class SavedView(BaseModel):
     layout: str | None = None
     show_sub_issues: bool | None = None
     show_completed: bool | None = None
+    completed_window: str | None = None
     show_archived: bool | None = None
     icon: str | None = None
     color: str | None = None

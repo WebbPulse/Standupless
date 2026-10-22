@@ -182,6 +182,9 @@ export const Views: React.FC = () => {
         layout: view.layout,
         show_sub_issues: view.show_sub_issues,
         show_completed: view.show_completed,
+        ...(view.completed_window === undefined
+          ? {}
+          : { completed_window: view.completed_window }),
         ...(view.show_archived === undefined
           ? {}
           : { show_archived: view.show_archived }),

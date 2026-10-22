@@ -3,7 +3,8 @@
  * sub-grouping, the ordering and its direction, whether empty groups,
  * sub-issues and completed issues show, and which properties the rows carry.
  * Every change lands in the URL at once, so the menu is a live control rather
- * than a form with a save button.
+ * than a form with a save button. On a team's own issues an admin may also
+ * keep the current display as the team default every member opens with.
  */
 
 import React from 'react';
@@ -17,6 +18,8 @@ import {
 import type { IssueListSort } from '../../../api/issues';
 import { cn } from '../../../lib/cn';
 import {
+  COMPLETED_WINDOWS,
+  COMPLETED_WINDOW_LABELS,
   DISPLAY_PROPERTIES,
   GROUP_FIELDS,
   GROUP_LABELS,
@@ -24,6 +27,7 @@ import {
   ORDERINGS,
   ORDERING_LABELS,
   PROPERTY_LABELS,
+  type CompletedWindow,
   type GroupField,
   type ViewState,
   withLayout,
@@ -45,6 +49,21 @@ export interface DisplayMenuProps {
   groupFields?: GroupField[];
   /** True in an archive, whose rows are all archived, so the archived toggle is left out. */
   archive?: boolean;
+  /**
+   * The team default actions an admin sees, or undefined where the list has
+   * no team default or the caller cannot change it.
+   */
+  teamDefault?: TeamDefaultActions | undefined;
+}
+
+/** What an admin can do with a team's default display from the menu. */
+export interface TeamDefaultActions {
+  /** Keeps the current display as what every member of the team opens with. */
+  onSave?: (() => void) | undefined;
+  /** Drops the team default, so members open with the built-in display. */
+  onClear?: (() => void) | undefined;
+  /** True while a save or clear is in flight. */
+  busy?: boolean;
 }
 
 /** One labelled row of the menu. */
@@ -62,6 +81,10 @@ const Row: React.FC<{
 );
 
 const SELECT_CLASS = 'h-7 w-40 py-0 text-xs';
+
+/** The look of a text action in the menu's footer. */
+const FOOTER_ACTION =
+  'text-xs text-text-muted hover:text-text focus-visible:outline-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-50';
 
 /** One on or off view option, drawn as a labelled switch. */
 const Toggle: React.FC<{
@@ -91,7 +114,11 @@ export const DisplayMenu: React.FC<DisplayMenuProps> = ({
   onReset,
   groupFields = fieldsFor(GROUP_FIELDS, {}),
   archive = false,
+  teamDefault,
 }) => {
+  const teamSave = teamDefault?.onSave;
+  const teamClear = teamDefault?.onClear;
+  const busy = teamDefault?.busy === true;
   const set = (patch: Partial<ViewState>): void => {
     onChange({ ...state, ...patch });
   };
@@ -249,14 +276,22 @@ export const DisplayMenu: React.FC<DisplayMenuProps> = ({
             set({ showSubIssues });
           }}
         />
-        <Toggle
-          id="display-done"
-          label="Show completed issues"
-          checked={state.showCompleted}
-          onChange={(showCompleted) => {
-            set({ showCompleted });
-          }}
-        />
+        <Row label="Completed issues" htmlFor="display-done">
+          <Select
+            id="display-done"
+            className={SELECT_CLASS}
+            value={state.completed}
+            onChange={(event) => {
+              set({ completed: event.target.value as CompletedWindow });
+            }}
+          >
+            {COMPLETED_WINDOWS.map((window) => (
+              <option key={window} value={window}>
+                {COMPLETED_WINDOW_LABELS[window]}
+              </option>
+            ))}
+          </Select>
+        </Row>
         {!archive && (
           <Toggle
             id="display-archived"
@@ -309,15 +344,35 @@ export const DisplayMenu: React.FC<DisplayMenuProps> = ({
           })}
         </div>
       </div>
-      {onReset !== undefined && (
-        <div className="flex justify-end border-t border-line px-3 py-2">
-          <button
-            type="button"
-            onClick={onReset}
-            className="text-xs text-text-muted hover:text-text focus-visible:outline-2 focus-visible:outline-accent"
-          >
-            Reset to default
-          </button>
+      {(onReset !== undefined ||
+        teamSave !== undefined ||
+        teamClear !== undefined) && (
+        <div className="flex flex-wrap items-center justify-end gap-x-3 gap-y-1 border-t border-line px-3 py-2">
+          {teamClear !== undefined && (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={teamClear}
+              className={FOOTER_ACTION}
+            >
+              Clear team default
+            </button>
+          )}
+          {teamSave !== undefined && (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={teamSave}
+              className={FOOTER_ACTION}
+            >
+              Save as team default
+            </button>
+          )}
+          {onReset !== undefined && (
+            <button type="button" onClick={onReset} className={FOOTER_ACTION}>
+              Reset to default
+            </button>
+          )}
         </div>
       )}
     </Popover>

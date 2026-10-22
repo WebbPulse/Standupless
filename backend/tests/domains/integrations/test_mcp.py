@@ -233,6 +233,7 @@ def test_the_contract_fixes_the_tool_set() -> None:
         "update_team_archive_settings",
         "update_team_auto_close_settings",
         "update_team_cycle_settings",
+        "update_team_display_defaults",
         "update_team_github_sync",
         "pin_team_repository",
         "update_team_member_role",
@@ -292,7 +293,7 @@ def test_the_contract_fixes_the_tool_set() -> None:
         "save_agent_profile",
         "delete_agent_profile",
     }
-    assert len(TOOLS) == 178
+    assert len(TOOLS) == 179
 
 
 def test_a_notification_gets_no_body(client: TestClient, workspace: str, repositories: Any) -> None:
