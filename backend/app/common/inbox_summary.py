@@ -19,6 +19,7 @@ _FIXED: dict[str, str] = {
     "standup_digest": "Standup ready",
     "sla_at_risk": "SLA at risk",
     "sla_breached": "SLA breached",
+    "reminder": "Reminder",
     "channel_disabled": "Channel turned off",
     "export_ready": "Export ready",
     "export_failed": "Export failed",
