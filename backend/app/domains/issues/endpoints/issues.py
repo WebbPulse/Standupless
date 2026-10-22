@@ -24,6 +24,7 @@ from app.common.api.schemas.issues import (
     MAX_LIMIT,
     IssueBulkRead,
     IssueBulkUpdate,
+    IssueConversionRead,
     IssueCreate,
     IssueListRead,
     IssueMove,
@@ -41,6 +42,7 @@ from app.common.db.dynamo.issues import (
 from app.common.issue_archive import archive_issue as archive_issue_row
 from app.common.issue_archive import unarchive_issue as unarchive_issue_row
 from app.common.issue_changes import list_issue_changes, sync_cursor
+from app.common.issue_conversion import convert_to_project, duplicate_issue
 from app.common.issue_filters import UnknownStatusCategory, build_issue_filter, subscribed_by_caller
 from app.common.issue_keys import current
 from app.common.issue_move import find_issue_by_number
@@ -385,6 +387,46 @@ def move_issue(
     issue = load_visible_issue(repositories, context, issue_id)
     stored = move_issue_row(repositories, context, issue, payload.team_id)
     return IssueRead.from_row(current(repositories.teams, stored))
+
+
+@router.post(
+    "/{workspace_id}/issues/{issue_id}/duplicate", response_model=IssueRead, status_code=status.HTTP_201_CREATED
+)
+def duplicate(
+    issue_id: Annotated[str, Path(min_length=1)],
+    context: Annotated[AuthzContext, Depends(require(Capability.WORKSPACE_READ))],
+    repositories: Annotated[Repositories, Depends(get_repositories)],
+) -> IssueRead:
+    """Create a copy of an issue in its team, answering the new issue under its own key.
+
+    The copy carries the title with a copy suffix, the description, labels,
+    priority, estimate, parent, project and milestone, and starts in the team's
+    default status, unassigned and outside any cycle, as in Linear.
+    """
+    issue = load_visible_issue(repositories, context, issue_id)
+    return IssueRead.from_row(current(repositories.teams, duplicate_issue(repositories, context, issue)))
+
+
+@router.post("/{workspace_id}/issues/{issue_id}/convert-to-project", response_model=IssueConversionRead)
+def convert_issue_to_project(
+    issue_id: Annotated[str, Path(min_length=1)],
+    context: Annotated[AuthzContext, Depends(require(Capability.WORKSPACE_READ))],
+    repositories: Annotated[Repositories, Depends(get_repositories)],
+) -> IssueConversionRead:
+    """Turn an issue into a project on its team, moving its sub-issues into the project and closing it.
+
+    The project takes the issue's title, description, priority, assignee as lead
+    and dates. The issue is pointed at the project, which is the link back, and
+    moved to the team's first completed status, or cancelled when the team has no
+    completed one.
+    """
+    issue = load_visible_issue(repositories, context, issue_id)
+    project, closed, moved = convert_to_project(repositories, context, issue)
+    return IssueConversionRead(
+        project=project,
+        issue=IssueRead.from_row(current(repositories.teams, closed)),
+        moved_issue_ids=[child.issue_id for child in moved],
+    )
 
 
 @router.post("/{workspace_id}/issues/{issue_id}/archive", response_model=IssueRead)

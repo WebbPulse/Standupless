@@ -2917,6 +2917,12 @@ class IssueBulkRead(TypedDict):
     skipped: NotRequired[list[str]]
 
 
+class IssueConversionRead(TypedDict):
+    issue: AppCommonApiSchemasIssuesIssueRead
+    moved_issue_ids: NotRequired[list[str]]
+    project: ProjectRead
+
+
 class IssueImportPreviewRead(TypedDict):
     headers: list[str]
     importable_rows: int

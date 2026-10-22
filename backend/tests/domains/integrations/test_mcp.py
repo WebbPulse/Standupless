@@ -200,6 +200,8 @@ def test_the_contract_fixes_the_tool_set() -> None:
         "merge_labels",
         "merge_workspace_labels",
         "move_issue",
+        "duplicate_issue",
+        "convert_issue_to_project",
         "override_team_label",
         "override_team_status",
         "remove_issues_from_cycle",
@@ -290,7 +292,7 @@ def test_the_contract_fixes_the_tool_set() -> None:
         "save_agent_profile",
         "delete_agent_profile",
     }
-    assert len(TOOLS) == 176
+    assert len(TOOLS) == 178
 
 
 def test_a_notification_gets_no_body(client: TestClient, workspace: str, repositories: Any) -> None:
