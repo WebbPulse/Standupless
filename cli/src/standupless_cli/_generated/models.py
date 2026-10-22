@@ -1542,12 +1542,51 @@ class ScimTokenRead(TypedDict):
     prefix: str
 
 
+class SearchCommentRead(TypedDict):
+    author_id: str
+    comment_id: str
+    created_at: str
+    issue_id: str
+    issue_key: str
+    issue_title: str
+    snippet: str
+    team_id: str
+
+
+class SearchInitiativeRead(TypedDict):
+    health: NotRequired[str | None]
+    initiative_id: str
+    name: str
+    owner_id: NotRequired[str | None]
+    status: str
+    target_date: NotRequired[str | None]
+    updated_at: str
+
+
+class SearchProjectRead(TypedDict):
+    color: NotRequired[str | None]
+    health: NotRequired[str | None]
+    icon: NotRequired[str | None]
+    lead_id: NotRequired[str | None]
+    name: str
+    project_id: str
+    status: str
+    target_date: NotRequired[str | None]
+    team_ids: NotRequired[list[str]]
+    updated_at: str
+
+
 class SearchResultRead(TypedDict):
     assignee_id: NotRequired[str | None]
     issue_id: str
     key: str
+    priority: NotRequired[str | None]
     score: int
+    status_category: NotRequired[str | None]
+    status_color: NotRequired[str | None]
+    status_icon: NotRequired[str | None]
     status_id: str
+    status_name: NotRequired[str | None]
     team_id: str
     title: str
     updated_at: str
@@ -3158,7 +3197,10 @@ class ScimSettingsRead(TypedDict):
 
 
 class SearchRead(TypedDict):
+    comments: NotRequired[list[SearchCommentRead]]
     documents: NotRequired[list[DocumentSummaryRead]]
+    initiatives: NotRequired[list[SearchInitiativeRead]]
+    projects: NotRequired[list[SearchProjectRead]]
     results: NotRequired[list[SearchResultRead]]
 
 

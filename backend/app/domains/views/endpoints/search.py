@@ -19,13 +19,24 @@ as a merge join, one page at a time, so it stops reading once `limit` matches ar
 found. Only those matches are fetched, and the page is ordered by score and then
 by recency as before. When more than `limit` issues match, the page is the most
 recently created matches rather than a read of every match.
+
+Comments are posted in the same partitions under `c:` prefixed terms, so a
+comment search is the same merge join over the same teams, and a hit is shown
+only when its issue still exists in a team the caller sees. Projects and
+initiatives are few per workspace, so they are matched in memory against one
+read of each, the same read the documents search already makes, with the
+visibility the project and initiative reads apply: a project is visible through
+any one of its teams and initiatives are hidden from guests.
+
+Issue hits carry their status, read once per team the page touches, and a
+status filter narrows only the issue hits.
 """
 
 from __future__ import annotations
 
 import heapq
 import re
-from typing import Iterator, Optional
+from typing import Callable, Iterator, Optional
 
 from fastapi import APIRouter, Depends, Path, Query
 
@@ -34,11 +45,13 @@ from app.common.api.dependencies.repositories import Repositories, get_repositor
 from app.common.api.dependencies.scopes import PROJECTS_READ
 from app.common.api.schemas.documents import DocumentSummaryRead
 from app.common.db.dynamo.issues import Issue
-from app.common.db.dynamo.search_index import ref_term, tokenize
+from app.common.db.dynamo.search_index import comment_term, ref_term, split_comment_doc, tokenize
+from app.common.db.dynamo.team_config import Status
 from app.common.documents import search_documents
 from app.common.issue_keys import current
 from app.common.issue_move import find_issue_by_number
 from app.common.issue_rules import TRIAGE_STATUS_CATEGORY, TRIAGE_STATUS_ID, TRIAGE_STATUS_NAME
+from app.common.planning_rules import visible_project_teams
 from app.common.similar_issues import DEFAULT_LIMIT as SIMILAR_DEFAULT_LIMIT
 from app.common.similar_issues import MAX_LIMIT as SIMILAR_MAX_LIMIT
 from app.common.similar_issues import SimilarIssue, find_similar
@@ -47,14 +60,27 @@ from app.domains.views.schemas.view import (
     SEARCH_MAX_LIMIT,
     SEARCH_QUERY_MAX,
     SEARCH_QUERY_MIN,
+    SEARCH_TYPES,
+    SearchCommentRead,
+    SearchInitiativeRead,
+    SearchProjectRead,
     SearchRead,
     SearchResultRead,
+    SearchTypeField,
     SimilarIssueRead,
     SimilarListRead,
 )
 from app.domains.views.service import query_too_short, readable_teams
 
 router = APIRouter()
+
+SNIPPET_BEFORE = 60
+"""How many characters of a comment the excerpt keeps ahead of the first match."""
+
+SNIPPET_LENGTH = 180
+"""The longest excerpt a comment hit carries, ellipses aside."""
+
+IssuePredicate = Callable[[Issue], bool]
 
 KEY_PATTERN = re.compile(r"^([A-Za-z][A-Za-z0-9]{1,5})-(\d+)$")
 """What counts as an issue key typed into the search box.
@@ -115,13 +141,14 @@ def _ref_hits(
     teams: list[str],
     query: str,
     limit: int,
+    keep: IssuePredicate | None = None,
 ) -> list[Issue]:
     """Imported issues whose source key is the query, in teams the caller sees."""
     term = source_ref_term(query)
     if term is None or not teams:
         return []
     matches = _matching_ids(repositories, workspace_id, teams, {term})
-    return _first_hits(repositories, context, workspace_id, matches, limit)
+    return _first_hits(repositories, context, workspace_id, matches, limit, keep)
 
 
 def _merge_hits(first: list[Issue], second: list[Issue], limit: int) -> list[Issue]:
@@ -190,11 +217,12 @@ def _first_hits(
     workspace_id: str,
     matches: Iterator[str],
     limit: int,
+    keep: IssuePredicate | None = None,
 ) -> list[Issue]:
     """Fetch matches until `limit` visible issues are in hand, never more than the shortfall at once.
 
-    A stale posting whose issue is gone, or an issue the caller cannot see, is
-    skipped and the next match is fetched in its place.
+    A stale posting whose issue is gone, an issue the caller cannot see, or one
+    `keep` turns away is skipped and the next match is fetched in its place.
     """
     hits: list[Issue] = []
     while len(hits) < limit:
@@ -205,9 +233,70 @@ def _first_hits(
         hits.extend(
             issues[issue_id]
             for issue_id in batch
-            if issue_id in issues and context.can_see_team(issues[issue_id].team_id)
+            if issue_id in issues
+            and context.can_see_team(issues[issue_id].team_id)
+            and (keep is None or keep(issues[issue_id]))
         )
     return hits
+
+
+class StatusBook:
+    """Each team's statuses by id, read once per team a page of hits touches."""
+
+    def __init__(self, repositories: Repositories, workspace_id: str) -> None:
+        """Hold the bundle and workspace the reads are made against."""
+        self._repositories = repositories
+        self._workspace_id = workspace_id
+        self._teams: dict[str, dict[str, Status]] = {}
+
+    def status_of(self, issue: Issue) -> Status | None:
+        """The status one issue is in, or `None` when its team no longer has it."""
+        statuses = self._teams.get(issue.team_id)
+        if statuses is None:
+            rows = self._repositories.team_config.list_statuses(self._workspace_id, issue.team_id)
+            statuses = {row.status_id: row for row in rows}
+            self._teams[issue.team_id] = statuses
+        return statuses.get(issue.status_id)
+
+
+def status_filter(book: StatusBook, status_ids: list[str], categories: list[str]) -> IssuePredicate | None:
+    """The predicate a status filter narrows issue hits by, or `None` when nothing is filtered.
+
+    `triage` names the issues awaiting triage, as the issue list filter does, and
+    a triaged issue reads as the triage status's category.
+    """
+    if not status_ids and not categories:
+        return None
+    wanted_ids = set(status_ids)
+    wanted_categories = set(categories)
+
+    def keep(issue: Issue) -> bool:
+        """Whether one issue's status is among those asked for."""
+        if issue.in_triage:
+            return TRIAGE_STATUS_ID in wanted_ids or TRIAGE_STATUS_CATEGORY in wanted_categories
+        if issue.status_id in wanted_ids:
+            return True
+        if not wanted_categories:
+            return False
+        status = book.status_of(issue)
+        return status is not None and status.category in wanted_categories
+
+    return keep
+
+
+def _issue_reads(
+    repositories: Repositories, book: StatusBook, issues: list[Issue], score: int
+) -> list[SearchResultRead]:
+    """The issue hits as rows, each under its current key and with its status."""
+    return [
+        SearchResultRead.from_row(current(repositories.teams, issue), score=score, status=book.status_of(issue))
+        for issue in issues
+    ]
+
+
+def _reads_projects(context: AuthzContext) -> bool:
+    """Whether a caller may see project-level results: any person, or a key holding the projects scope."""
+    return context.actor is ActorKind.USER or not missing_scopes(context.scopes, PROJECTS_READ)
 
 
 def _document_hits(
@@ -219,11 +308,145 @@ def _document_hits(
     project or an initiative rather than a team, and a key without the projects
     scope never sees them.
     """
-    if team_id:
-        return []
-    if context.actor is not ActorKind.USER and missing_scopes(context.scopes, PROJECTS_READ):
+    if team_id or not _reads_projects(context):
         return []
     return search_documents(repositories, context, terms, limit)
+
+
+def text_matches(terms: set[str], *parts: str | None) -> bool:
+    """Whether every term appears somewhere in the text, case folded, so a term also matches inside a longer word."""
+    text = " ".join(part for part in parts if part).lower()
+    return bool(text) and all(term in text for term in terms)
+
+
+def _name_first(name: str, terms: set[str]) -> bool:
+    """Whether every term is in the name itself, which ranks a hit ahead of a description match."""
+    return text_matches(terms, name)
+
+
+def _project_hits(
+    repositories: Repositories,
+    context: AuthzContext,
+    teams: list[str],
+    terms: set[str],
+    limit: int,
+) -> list[SearchProjectRead]:
+    """Projects on a team the caller sees whose name or description holds every term, name matches first."""
+    if not _reads_projects(context):
+        return []
+    visible = set(teams)
+    hits: list[tuple[SearchProjectRead, bool]] = []
+    for project in repositories.planning.list_projects(context.workspace_id):
+        shown = visible_project_teams(project, visible)
+        if not shown or not text_matches(terms, project.name, project.description):
+            continue
+        hits.append(
+            (
+                SearchProjectRead(
+                    project_id=project.project_id,
+                    name=project.name,
+                    status=project.status,
+                    health=project.health,
+                    icon=project.icon,
+                    color=project.color,
+                    lead_id=project.lead_id,
+                    team_ids=shown,
+                    target_date=project.target_date,
+                    updated_at=project.updated_at,
+                ),
+                _name_first(project.name, terms),
+            )
+        )
+    hits.sort(key=lambda hit: (not hit[1], -hit[0].updated_at.timestamp()))
+    return [read for read, _ in hits[:limit]]
+
+
+def _initiative_hits(
+    repositories: Repositories, context: AuthzContext, team_id: Optional[str], terms: set[str], limit: int
+) -> list[SearchInitiativeRead]:
+    """Initiatives whose name or description holds every term, for a workspace-wide search by a non-guest.
+
+    An initiative belongs to no team, so a search narrowed to one skips them, as
+    it does documents.
+    """
+    if team_id or context.is_guest or not _reads_projects(context):
+        return []
+    hits: list[tuple[SearchInitiativeRead, bool]] = [
+        (
+            SearchInitiativeRead(
+                initiative_id=initiative.initiative_id,
+                name=initiative.name,
+                status=initiative.status,
+                health=initiative.health,
+                owner_id=initiative.owner_id,
+                target_date=initiative.target_date,
+                updated_at=initiative.updated_at,
+            ),
+            _name_first(initiative.name, terms),
+        )
+        for initiative in repositories.planning.list_initiatives(context.workspace_id)
+        if text_matches(terms, initiative.name, initiative.description)
+    ]
+    hits.sort(key=lambda hit: (not hit[1], -hit[0].updated_at.timestamp()))
+    return [read for read, _ in hits[:limit]]
+
+
+def snippet(body: str, terms: set[str]) -> str:
+    """An excerpt of a comment around its first matching term, whitespace collapsed and trimmed with ellipses."""
+    text = " ".join(body.split())
+    lowered = text.lower()
+    found = [index for index in (lowered.find(term) for term in terms) if index >= 0]
+    start = max(0, min(found) - SNIPPET_BEFORE) if found else 0
+    end = min(len(text), start + SNIPPET_LENGTH)
+    excerpt = text[start:end].strip()
+    return f"{'... ' if start > 0 else ''}{excerpt}{' ...' if end < len(text) else ''}"
+
+
+def _comment_hits(
+    repositories: Repositories,
+    context: AuthzContext,
+    workspace_id: str,
+    teams: list[str],
+    terms: set[str],
+    limit: int,
+) -> list[SearchCommentRead]:
+    """Comments holding every term, newest first, on issues that exist in a team the caller sees.
+
+    Read like issue hits: the postings are merged lazily and fetched a shortfall
+    at a time, so a stale posting or one on an issue out of sight is skipped and
+    replaced rather than shrinking the page.
+    """
+    if not teams:
+        return []
+    matches = _matching_ids(repositories, workspace_id, teams, {comment_term(term) for term in terms})
+    hits: list[SearchCommentRead] = []
+    while len(hits) < limit:
+        batch = [split_comment_doc(doc) for _, doc in zip(range(limit - len(hits)), matches)]
+        if not batch:
+            break
+        wanted = [pair for pair in batch if pair is not None]
+        issues = repositories.issues.get_many(workspace_id, sorted({issue_id for _, issue_id in wanted}))
+        for comment_id, issue_id in wanted:
+            issue = issues.get(issue_id)
+            if issue is None or not context.can_see_team(issue.team_id):
+                continue
+            comment = repositories.comments.get(workspace_id, issue_id, comment_id)
+            if comment is None:
+                continue
+            shown = current(repositories.teams, issue)
+            hits.append(
+                SearchCommentRead(
+                    comment_id=comment.comment_id,
+                    issue_id=issue.issue_id,
+                    issue_key=shown.key,
+                    issue_title=issue.title,
+                    team_id=issue.team_id,
+                    author_id=comment.author_id,
+                    snippet=snippet(comment.body, terms),
+                    created_at=comment.created_at,
+                )
+            )
+    return hits[:limit]
 
 
 @router.get("/{workspace_id}/search", response_model=SearchRead)
@@ -231,49 +454,64 @@ def search(
     workspace_id: str = Path(..., min_length=1),
     q: str = Query(..., min_length=SEARCH_QUERY_MIN, max_length=SEARCH_QUERY_MAX),
     team_id: Optional[str] = Query(default=None),
+    kinds_wanted: Optional[list[SearchTypeField]] = Query(default=None, alias="type"),
+    status_id: Optional[list[str]] = Query(default=None),
+    status_category: Optional[list[str]] = Query(default=None),
     limit: int = Query(default=SEARCH_DEFAULT_LIMIT, ge=1, le=SEARCH_MAX_LIMIT),
     context: AuthzContext = Depends(require(Capability.WORKSPACE_READ)),
     repositories: Repositories = Depends(get_repositories),
 ) -> SearchRead:
-    """Ranked search hits, by matched term count and then by recency."""
+    """Ranked search hits grouped by kind: issues by matched term count and then recency, the rest by recency.
+
+    `type` narrows the kinds answered, every kind when absent, and `status_id`
+    and `status_category` narrow the issue hits alone. An issue key or a source
+    key answers issues only.
+    """
+    kinds = set(kinds_wanted or SEARCH_TYPES)
     teams = readable_teams(repositories, context, team_id)
+    book = StatusBook(repositories, workspace_id)
+    keep = status_filter(book, status_id or [], status_category or [])
     parsed = parse_key(q)
     if parsed is not None:
-        if not teams:
+        if not teams or "issues" not in kinds:
             return SearchRead(results=[])
         prefix, number = parsed
         hits = _merge_hits(
-            _key_hit(repositories, context, teams, number, prefix),
-            _ref_hits(repositories, context, workspace_id, teams, q, limit),
+            [issue for issue in _key_hit(repositories, context, teams, number, prefix) if keep is None or keep(issue)],
+            _ref_hits(repositories, context, workspace_id, teams, q, limit, keep),
             limit,
         )
-        return SearchRead(
-            results=[SearchResultRead.from_row(current(repositories.teams, issue), score=1) for issue in hits]
-        )
+        return SearchRead(results=_issue_reads(repositories, book, hits, 1))
 
     terms = tokenize(q)
-    referenced = _ref_hits(repositories, context, workspace_id, teams, q, limit)
+    referenced = _ref_hits(repositories, context, workspace_id, teams, q, limit, keep) if "issues" in kinds else []
     if not terms:
         if not teams:
             return SearchRead(results=[])
         if referenced:
-            return SearchRead(
-                results=[SearchResultRead.from_row(current(repositories.teams, issue), score=1) for issue in referenced]
-            )
+            return SearchRead(results=_issue_reads(repositories, book, referenced, 1))
         raise query_too_short()
 
-    documents = _document_hits(repositories, context, team_id, terms, limit)
+    documents = _document_hits(repositories, context, team_id, terms, limit) if "documents" in kinds else []
+    initiatives = _initiative_hits(repositories, context, team_id, terms, limit) if "initiatives" in kinds else []
     if not teams:
-        return SearchRead(results=[], documents=documents)
+        return SearchRead(results=[], documents=documents, initiatives=initiatives)
 
-    score = len(terms)
-    hits = _first_hits(
-        repositories, context, workspace_id, _matching_ids(repositories, workspace_id, teams, terms), limit
-    )
-    ordered = _merge_hits(referenced, sorted(hits, key=lambda row: row.updated_at, reverse=True), limit)
+    projects = _project_hits(repositories, context, teams, terms, limit) if "projects" in kinds else []
+    comments = _comment_hits(repositories, context, workspace_id, teams, terms, limit) if "comments" in kinds else []
+    results: list[SearchResultRead] = []
+    if "issues" in kinds:
+        hits = _first_hits(
+            repositories, context, workspace_id, _matching_ids(repositories, workspace_id, teams, terms), limit, keep
+        )
+        ordered = _merge_hits(referenced, sorted(hits, key=lambda row: row.updated_at, reverse=True), limit)
+        results = _issue_reads(repositories, book, ordered, len(terms))
     return SearchRead(
-        results=[SearchResultRead.from_row(current(repositories.teams, issue), score=score) for issue in ordered],
+        results=results,
         documents=documents,
+        projects=projects,
+        initiatives=initiatives,
+        comments=comments,
     )
 
 

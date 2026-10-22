@@ -1,16 +1,19 @@
 /**
  * The search page. Covers that a term too short for the index is refused here
  * rather than sent, that an issue key short circuits instead of searching, that
- * the read carries no cursor because the contract caps rather than pages, and
- * that a team filter narrows the call.
+ * the read carries no cursor because the contract caps rather than pages, that
+ * the team and status filters narrow the call, that the term and filters live
+ * in the address, and that each kind of hit is grouped and linked.
  */
 
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { WorkspaceContextType } from '../../contexts/WorkspaceContextDefinition';
 import type {
+  MemberRead,
+  SearchListRead,
   TeamRead,
   SearchResultRead,
   WorkspaceRead,
@@ -21,6 +24,8 @@ import { hasIndexableTerm } from '../../lib/searchTerms';
 const search =
   vi.fn<(q: string, query: unknown) => Promise<SearchResultRead[]>>();
 const listTeams = vi.fn<() => Promise<TeamRead[]>>();
+const others = vi.fn<() => Omit<Required<SearchListRead>, 'results'>>();
+const listMembers = vi.fn<() => Promise<MemberRead[]>>();
 
 vi.mock('../../hooks/useAuth', () => ({
   useAuth: () => ({
@@ -42,7 +47,7 @@ vi.mock('../../api/views', async () => {
     search: (_w: string, q: string, query: unknown) => search(q, query),
     searchAll: async (_w: string, q: string, query: unknown) => ({
       results: await search(q, query),
-      documents: [],
+      ...others(),
     }),
   };
 });
@@ -50,6 +55,16 @@ vi.mock('../../api/views', async () => {
 vi.mock('../../api/teams', () => ({
   listTeams: () => listTeams(),
 }));
+
+vi.mock('../../api/workspaces', async () => {
+  const actual = await vi.importActual<typeof import('../../api/workspaces')>(
+    '../../api/workspaces'
+  );
+  return {
+    ...actual,
+    listMembers: () => listMembers(),
+  };
+});
 
 vi.mock('@webbpulse/auth/react', async () => {
   const actual = await vi.importActual<typeof import('@webbpulse/auth/react')>(
@@ -110,14 +125,44 @@ const resolved = (): WorkspaceContextType => {
   };
 };
 
-const renderPage = () =>
+/** Prints the address the page has written, so a test can read it back. */
+const Address = () => {
+  const location = useLocation();
+  return <output aria-label="Address">{location.search}</output>;
+};
+
+const renderPage = (entry = '/w/mine/search') =>
   render(
-    <MemoryRouter initialEntries={['/w/mine/search']}>
+    <MemoryRouter initialEntries={[entry]}>
       <Routes>
-        <Route path="/w/:slug/search" element={<Search />} />
+        <Route
+          path="/w/:slug/search"
+          element={
+            <>
+              <Search />
+              <Address />
+            </>
+          }
+        />
       </Routes>
     </MemoryRouter>
   );
+
+const member: MemberRead = {
+  user_id: 'user-1',
+  email: 'ada@example.com',
+  display_name: 'Ada',
+  role: 'member',
+  joined_at: '2026-09-17T00:00:00Z',
+  avatar_url: null,
+};
+
+const noOthers = (): Omit<Required<SearchListRead>, 'results'> => ({
+  documents: [],
+  projects: [],
+  initiatives: [],
+  comments: [],
+});
 
 beforeEach(() => {
   search.mockReset();
@@ -126,6 +171,10 @@ beforeEach(() => {
   useWorkspaceMock.mockReturnValue(resolved());
   listTeams.mockResolvedValue([team]);
   search.mockResolvedValue([result()]);
+  others.mockReset();
+  others.mockImplementation(noOthers);
+  listMembers.mockReset();
+  listMembers.mockResolvedValue([member]);
 });
 
 describe('indexable terms', () => {
@@ -156,7 +205,7 @@ describe('search page', () => {
     const user = userEvent.setup();
     renderPage();
 
-    await user.type(screen.getByLabelText('Find issues'), 'the');
+    await user.type(screen.getByLabelText('Search'), 'the');
 
     expect(
       await screen.findByText(
@@ -170,7 +219,7 @@ describe('search page', () => {
     const user = userEvent.setup();
     renderPage();
 
-    await user.type(screen.getByLabelText('Find issues'), 'cache');
+    await user.type(screen.getByLabelText('Search'), 'cache');
 
     await waitFor(() => {
       expect(search).toHaveBeenCalledWith('cache', expect.anything());
@@ -182,7 +231,7 @@ describe('search page', () => {
     const user = userEvent.setup();
     renderPage();
 
-    await user.type(screen.getByLabelText('Find issues'), 'cache');
+    await user.type(screen.getByLabelText('Search'), 'cache');
 
     await waitFor(() => {
       expect(search).toHaveBeenCalled();
@@ -195,7 +244,7 @@ describe('search page', () => {
     const user = userEvent.setup();
     renderPage();
 
-    await user.type(screen.getByLabelText('Find issues'), 'ENG-1');
+    await user.type(screen.getByLabelText('Search'), 'ENG-1');
 
     expect(
       await screen.findByRole('link', { name: 'Go to ENG-1' })
@@ -207,7 +256,7 @@ describe('search page', () => {
     const user = userEvent.setup();
     renderPage();
 
-    await user.type(screen.getByLabelText('Find issues'), 'ENG-');
+    await user.type(screen.getByLabelText('Search'), 'ENG-');
 
     await waitFor(() => {
       expect(search).not.toHaveBeenCalled();
@@ -218,7 +267,7 @@ describe('search page', () => {
     const user = userEvent.setup();
     renderPage();
 
-    await user.type(screen.getByLabelText('Find issues'), 'cache');
+    await user.type(screen.getByLabelText('Search'), 'cache');
     await screen.findByText('Cache the token');
     await user.selectOptions(screen.getByLabelText('Team'), 'proj-1');
 
@@ -234,7 +283,7 @@ describe('search page', () => {
     const user = userEvent.setup();
     renderPage();
 
-    await user.type(screen.getByLabelText('Find issues'), 'cache');
+    await user.type(screen.getByLabelText('Search'), 'cache');
 
     expect(await screen.findByRole('link', { name: /ENG-1/ })).toHaveAttribute(
       'href',
@@ -247,7 +296,7 @@ describe('search page', () => {
     const user = userEvent.setup();
     renderPage();
 
-    await user.type(screen.getByLabelText('Find issues'), 'cache');
+    await user.type(screen.getByLabelText('Search'), 'cache');
 
     expect(
       await screen.findByText('Nothing matched that search.')
@@ -259,10 +308,141 @@ describe('search page', () => {
     const user = userEvent.setup();
     renderPage();
 
-    await user.type(screen.getByLabelText('Find issues'), 'cache');
+    await user.type(screen.getByLabelText('Search'), 'cache');
 
     expect(
       await screen.findByText('Could not run that search.')
     ).toBeInTheDocument();
+  });
+
+  it('restores the term and filters from the address on load', async () => {
+    renderPage('/w/mine/search?q=cache&team=proj-1&status=started');
+
+    expect(screen.getByLabelText('Search')).toHaveValue('cache');
+    await waitFor(() => {
+      expect(search).toHaveBeenCalledWith(
+        'cache',
+        expect.objectContaining({
+          team_id: 'proj-1',
+          status_category: 'started',
+        })
+      );
+    });
+    expect(screen.getByLabelText('Status')).toHaveValue('started');
+  });
+
+  it('keeps the term and filters in the address', async () => {
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.type(screen.getByLabelText('Search'), 'cache');
+    await screen.findByText('Cache the token');
+    await user.selectOptions(screen.getByLabelText('Status'), 'completed');
+
+    const address = new URLSearchParams(
+      screen.getByLabelText('Address').textContent ?? ''
+    );
+    expect(address.get('q')).toBe('cache');
+    expect(address.get('status')).toBe('completed');
+  });
+
+  it('shows the status, team and assignee of an issue hit', async () => {
+    search.mockResolvedValue([
+      result({
+        status_name: 'In Progress',
+        status_category: 'started',
+        status_color: '#f2c94c',
+        status_icon: null,
+        assignee_id: 'user-1',
+      }),
+    ]);
+    renderPage('/w/mine/search?q=cache');
+
+    expect(
+      await screen.findByRole('img', { name: 'In Progress' })
+    ).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /ENG-1/ })).toHaveTextContent(
+      'Engine'
+    );
+    expect(
+      await screen.findByRole('img', { name: 'Assigned to Ada' })
+    ).toBeInTheDocument();
+  });
+
+  it('groups projects, initiatives and comments, linking a comment to itself', async () => {
+    others.mockReturnValue({
+      documents: [],
+      projects: [
+        {
+          project_id: 'pj-1',
+          name: 'Cache rollout',
+          status: 'in_progress',
+          health: null,
+          icon: null,
+          color: null,
+          lead_id: null,
+          team_ids: ['proj-1'],
+          target_date: null,
+          updated_at: '2026-09-17T00:00:00Z',
+        },
+      ],
+      initiatives: [
+        {
+          initiative_id: 'in-1',
+          name: 'Cache everything',
+          status: 'active',
+          health: null,
+          owner_id: null,
+          target_date: null,
+          updated_at: '2026-09-17T00:00:00Z',
+        },
+      ],
+      comments: [
+        {
+          comment_id: 'cm-1',
+          issue_id: 'iss-2',
+          issue_key: 'ENG-2',
+          issue_title: 'Slow login',
+          team_id: 'proj-1',
+          author_id: 'user-1',
+          snippet: 'The cache expires too early',
+          created_at: '2026-09-17T00:00:00Z',
+        },
+      ],
+    });
+    renderPage('/w/mine/search?q=cache');
+
+    expect(
+      await screen.findByRole('heading', { name: /Projects/ })
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', { name: /Initiatives/ })
+    ).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /Cache rollout/ })).toHaveAttribute(
+      'href',
+      '/w/mine/projects/pj-1'
+    );
+    expect(
+      screen.getByRole('link', { name: /Cache everything/ })
+    ).toHaveAttribute('href', '/w/mine/initiatives/in-1');
+    expect(screen.getByRole('link', { name: /Slow login/ })).toHaveAttribute(
+      'href',
+      '/w/mine/issues/ENG-2#comment-cm-1'
+    );
+    expect(screen.getByText('The cache expires too early')).toBeInTheDocument();
+  });
+
+  it('narrows to one kind on its tab and remembers the tab', async () => {
+    const user = userEvent.setup();
+    renderPage('/w/mine/search?q=cache');
+
+    await screen.findByText('Cache the token');
+    await user.click(screen.getByRole('tab', { name: /Comments/ }));
+
+    expect(
+      await screen.findByText('No comments matched that search.')
+    ).toBeInTheDocument();
+    expect(screen.queryByText('Cache the token')).not.toBeInTheDocument();
+    expect(screen.getByLabelText('Address')).toHaveTextContent('type=comments');
   });
 });

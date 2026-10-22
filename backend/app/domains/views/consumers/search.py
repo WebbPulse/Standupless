@@ -1,4 +1,4 @@
-"""The search consumer: keeps the term projection matching the issues table.
+"""The search consumer: keeps the term projection matching the issues and comments tables.
 
 For each record it computes the term set of the new image and of the old one and
 writes only the difference, so editing one word of a long body costs two rows
@@ -31,7 +31,7 @@ from webbpulse.events import deserialize_image, register_stream_consumer
 
 from app.common.api.dependencies.repositories import Repositories
 from app.common.composition.consumers import CONSUMERS
-from app.common.db.dynamo.search_index import issue_terms, legacy_terms
+from app.common.db.dynamo.search_index import comment_doc, comment_terms, issue_terms, legacy_terms
 
 _log = logging.getLogger(__name__)
 
@@ -85,9 +85,59 @@ def _move_postings(
         appeared=issue_terms(new_image),
         departed=set(),
     )
+    for comment in repositories.comments.iter_for_issue(workspace_id, issue_id):
+        terms = comment_terms({"body": comment.body})
+        doc = comment_doc(comment.comment_id, issue_id)
+        repositories.search_index.apply(workspace_id, old_team_id, doc, appeared=set(), departed=terms)
+        repositories.search_index.apply(workspace_id, team_id, doc, appeared=terms, departed=set())
     _log.info(
         "Refiled a moved issue in the search projection.",
         extra={"event": "views.search.move", "workspace_id": workspace_id, "issue_id": issue_id},
+    )
+
+
+def _is_comment(new_image: Mapping[str, Any], old_image: Mapping[str, Any]) -> bool:
+    """Whether a record comes from the comments table, which alone carries a comment id."""
+    return bool(_text(new_image, "comment_id") or _text(old_image, "comment_id"))
+
+
+def _comment_team(repositories: Repositories, workspace_id: str, issue_id: str, fallback: str) -> str:
+    """The team an issue is in now, or the comment row's own team when the issue is gone."""
+    issue = repositories.issues.get(workspace_id, issue_id)
+    return issue.team_id if issue is not None else fallback
+
+
+def _handle_comment(
+    repositories: Repositories, record: Mapping[str, Any], new_image: Mapping[str, Any], old_image: Mapping[str, Any]
+) -> None:
+    """Bring one comment's postings in line with its body, a difference like an issue's."""
+    image = new_image or old_image
+    workspace_id = _text(image, "workspace_id")
+    issue_id = _text(image, "issue_id")
+    comment_id = _text(image, "comment_id")
+    row_team = _text(image, "team_id")
+    if not workspace_id or not issue_id or not comment_id or not row_team:
+        return
+    removed = str(record.get("eventName", "")).upper() == "REMOVE"
+    wanted = set() if removed else comment_terms(new_image)
+    held = comment_terms(old_image)
+    appeared = wanted - held
+    departed = held - wanted
+    if not appeared and not departed:
+        return
+    team_id = _comment_team(repositories, workspace_id, issue_id, row_team)
+    repositories.search_index.apply(
+        workspace_id, team_id, comment_doc(comment_id, issue_id), appeared=appeared, departed=departed
+    )
+    _log.info(
+        "Updated the comment search projection.",
+        extra={
+            "event": "views.search.comment",
+            "workspace_id": workspace_id,
+            "issue_id": issue_id,
+            "added": len(appeared),
+            "removed": len(departed),
+        },
     )
 
 
@@ -100,6 +150,9 @@ def handle_record(repositories: Repositories, record: Mapping[str, Any]) -> None
     repositories = _GRANT.narrow(repositories)
     new_image = deserialize_image(record, "NewImage")
     old_image = deserialize_image(record, "OldImage")
+    if _is_comment(new_image, old_image):
+        _handle_comment(repositories, record, new_image, old_image)
+        return
 
     workspace_id, team_id, issue_id = _identity(new_image, old_image)
     if not workspace_id or not team_id or not issue_id:

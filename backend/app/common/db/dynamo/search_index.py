@@ -35,6 +35,8 @@ REF_PREFIX = "ref:"
 
 REF_MAX = 128
 
+COMMENT_PREFIX = "c:"
+
 STOPWORDS = frozenset(
     {
         "about",
@@ -176,6 +178,34 @@ def issue_terms(image: Mapping[str, Any]) -> set[str]:
     if not image:
         return set()
     return ranked_terms(*_issue_parts(image)) | _ref_terms(image)
+
+
+def comment_term(term: str) -> str:
+    """The posting term one word of a comment is filed under, kept apart from issue terms.
+
+    Issue terms are alphanumeric or carry `ref:`, so the `c:` prefix means a
+    comment never answers an issue search and an issue never answers a comment one.
+    """
+    return f"{COMMENT_PREFIX}{term}"
+
+
+def comment_doc(comment_id: str, issue_id: str) -> str:
+    """The posting id of one comment: its own id first, so postings read newest comment first."""
+    return f"{comment_id}#{issue_id}"
+
+
+def split_comment_doc(doc: str) -> tuple[str, str] | None:
+    """A comment posting id as its comment and issue ids, or `None` when it is malformed."""
+    comment_id, separator, issue_id = doc.partition("#")
+    return (comment_id, issue_id) if separator and comment_id and issue_id else None
+
+
+def comment_terms(image: Mapping[str, Any]) -> set[str]:
+    """The prefixed terms one comment image is posted under, at most `TERM_CAP` of them."""
+    if not image:
+        return set()
+    body = image.get("body")
+    return {comment_term(term) for term in ranked_terms(truncate_body(body if isinstance(body, str) else None))}
 
 
 def legacy_terms(image: Mapping[str, Any]) -> set[str]:

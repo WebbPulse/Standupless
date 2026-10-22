@@ -29,8 +29,10 @@ import type {
   SavedViewUpdate,
   SearchListRead,
   SearchResultRead,
+  SearchType,
   SimilarIssueRead,
   SimilarListRead,
+  StatusCategory,
   ViewFilter,
   ViewGroupBy,
   ViewListScope,
@@ -494,13 +496,20 @@ export const search = async (
 };
 
 /**
- * Searches the visible teams and, across the workspace, the documents the
- * caller can read. A search narrowed to one team answers no documents.
+ * Searches the visible teams and, across the workspace, the documents,
+ * projects and initiatives the caller can read. A search narrowed to one team
+ * answers no documents or initiatives, `type` answers one kind alone, and
+ * `status_category` narrows the issue hits.
  */
 export const searchAll = async (
   workspaceId: string,
   q: string,
-  query: { team_id?: string; limit?: number } = {},
+  query: {
+    team_id?: string;
+    limit?: number;
+    type?: SearchType;
+    status_category?: StatusCategory;
+  } = {},
   signal?: AbortSignal
 ): Promise<Required<SearchListRead>> => {
   const response = await apiClient.get<SearchListRead>(
@@ -511,6 +520,9 @@ export const searchAll = async (
   return {
     results: Array.isArray(body?.results) ? body.results : [],
     documents: Array.isArray(body?.documents) ? body.documents : [],
+    projects: Array.isArray(body?.projects) ? body.projects : [],
+    initiatives: Array.isArray(body?.initiatives) ? body.initiatives : [],
+    comments: Array.isArray(body?.comments) ? body.comments : [],
   };
 };
 

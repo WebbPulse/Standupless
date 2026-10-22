@@ -11947,14 +11947,240 @@
         "title": "ScimTokenRead",
         "type": "object"
       },
-      "SearchRead": {
-        "description": "Every search hit, ranked. No cursor, per the contract.\n\n`documents` holds the project and initiative documents whose title and body\nmatch every term, for a caller allowed to read projects.",
+      "SearchCommentRead": {
+        "description": "One comment whose body holds every term, with its issue and an excerpt around the first match.",
         "properties": {
+          "author_id": {
+            "title": "Author Id",
+            "type": "string"
+          },
+          "comment_id": {
+            "title": "Comment Id",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "issue_id": {
+            "title": "Issue Id",
+            "type": "string"
+          },
+          "issue_key": {
+            "title": "Issue Key",
+            "type": "string"
+          },
+          "issue_title": {
+            "title": "Issue Title",
+            "type": "string"
+          },
+          "snippet": {
+            "title": "Snippet",
+            "type": "string"
+          },
+          "team_id": {
+            "title": "Team Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "comment_id",
+          "issue_id",
+          "issue_key",
+          "issue_title",
+          "team_id",
+          "author_id",
+          "snippet",
+          "created_at"
+        ],
+        "title": "SearchCommentRead",
+        "type": "object"
+      },
+      "SearchInitiativeRead": {
+        "description": "One initiative whose name or description holds every term.",
+        "properties": {
+          "health": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Health"
+          },
+          "initiative_id": {
+            "title": "Initiative Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "owner_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner Id"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "target_date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Date"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "initiative_id",
+          "name",
+          "status",
+          "updated_at"
+        ],
+        "title": "SearchInitiativeRead",
+        "type": "object"
+      },
+      "SearchProjectRead": {
+        "description": "One project whose name or description holds every term, with the teams the caller sees on it.",
+        "properties": {
+          "color": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Color"
+          },
+          "health": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Health"
+          },
+          "icon": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Icon"
+          },
+          "lead_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lead Id"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "project_id": {
+            "title": "Project Id",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "target_date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Date"
+          },
+          "team_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Team Ids",
+            "type": "array"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "project_id",
+          "name",
+          "status",
+          "updated_at"
+        ],
+        "title": "SearchProjectRead",
+        "type": "object"
+      },
+      "SearchRead": {
+        "description": "Every search hit, grouped by kind and ranked within each. No cursor, per the contract.\n\n`documents`, `projects` and `initiatives` are answered for a caller allowed to\nread projects, and only for a workspace-wide search, except that a search\nnarrowed to one team still answers the projects that team is on. `comments`\nlink to the comment rather than only its issue.",
+        "properties": {
+          "comments": {
+            "items": {
+              "$ref": "#/components/schemas/SearchCommentRead"
+            },
+            "title": "Comments",
+            "type": "array"
+          },
           "documents": {
             "items": {
               "$ref": "#/components/schemas/DocumentSummaryRead"
             },
             "title": "Documents",
+            "type": "array"
+          },
+          "initiatives": {
+            "items": {
+              "$ref": "#/components/schemas/SearchInitiativeRead"
+            },
+            "title": "Initiatives",
+            "type": "array"
+          },
+          "projects": {
+            "items": {
+              "$ref": "#/components/schemas/SearchProjectRead"
+            },
+            "title": "Projects",
             "type": "array"
           },
           "results": {
@@ -11969,7 +12195,7 @@
         "type": "object"
       },
       "SearchResultRead": {
-        "description": "One search hit: enough of an issue to render a row, plus its score.",
+        "description": "One search hit: enough of an issue to render a row with its status, plus its score.\n\nThe status fields name the issue's status as its team configures it, or the\ntriage status's name and category while it waits there, so a row renders its icon\nwithout a read of every team's workflow.",
         "properties": {
           "assignee_id": {
             "anyOf": [
@@ -11990,13 +12216,68 @@
             "title": "Key",
             "type": "string"
           },
+          "priority": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Priority"
+          },
           "score": {
             "title": "Score",
             "type": "integer"
           },
+          "status_category": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status Category"
+          },
+          "status_color": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status Color"
+          },
+          "status_icon": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status Icon"
+          },
           "status_id": {
             "title": "Status Id",
             "type": "string"
+          },
+          "status_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status Name"
           },
           "team_id": {
             "title": "Team Id",
@@ -33666,7 +33947,7 @@
     },
     "/api/workspaces/{workspace_id}/search": {
       "get": {
-        "description": "Ranked search hits, by matched term count and then by recency.",
+        "description": "Ranked search hits grouped by kind: issues by matched term count and then recency, the rest by recency.\n\n`type` narrows the kinds answered, every kind when absent, and `status_id`\nand `status_category` narrow the issue hits alone. An issue key or a source\nkey answers issues only.",
         "operationId": "search_api_workspaces__workspace_id__search_get",
         "parameters": [
           {
@@ -33704,6 +33985,70 @@
                 }
               ],
               "title": "Team Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "type",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "enum": [
+                      "issues",
+                      "projects",
+                      "initiatives",
+                      "documents",
+                      "comments"
+                    ],
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Type"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status_category",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status Category"
             }
           },
           {

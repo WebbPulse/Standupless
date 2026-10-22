@@ -224,8 +224,10 @@ export const viewKey = (workspaceId: string, viewId: string): QueryKey => [
 export const searchKey = (
   workspaceId: string,
   term: string,
-  teamId: string
-): QueryKey => ['search', workspaceId, term, teamId];
+  teamId: string,
+  type = '',
+  statusCategory = ''
+): QueryKey => ['search', workspaceId, term, teamId, type, statusCategory];
 
 /** Which slice of the inbox a list reads, serialised from its filter and display options. */
 export type InboxFilter = string;
