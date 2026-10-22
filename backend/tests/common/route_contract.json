@@ -1016,6 +1016,12 @@
   {
     "auth": "workspace:read",
     "domain": "planning",
+    "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/initiatives/{initiative_id}/progress"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "planning",
     "method": "DELETE",
     "path": "/api/workspaces/{workspace_id}/initiatives/{initiative_id}/projects/{project_id}"
   },

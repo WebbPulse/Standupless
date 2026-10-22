@@ -38,6 +38,7 @@ def arguments(foreign: dict[str, str], home_issue: str) -> dict[str, dict[str, A
     return {
         "list_initiatives": {},
         "get_initiative": {"initiative_id": initiative},
+        "get_initiative_progress": {"initiative_id": initiative},
         "create_initiative": {"name": "Lands at home"},
         "update_initiative": {"initiative_id": initiative, "name": "Should not land"},
         "delete_initiative": {"initiative_id": initiative},

@@ -333,6 +333,12 @@ export const initiativesKey = (
   status: string
 ): QueryKey => ['initiatives', workspaceId, status];
 
+/** One initiative's progress graph over its whole subtree. */
+export const initiativeProgressKey = (
+  workspaceId: string,
+  initiativeId: string
+): QueryKey => ['initiativeProgress', workspaceId, initiativeId];
+
 /** One initiative read by its id, as its page polls it. */
 export const initiativeDetailKey = (
   workspaceId: string,

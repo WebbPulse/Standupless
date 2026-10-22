@@ -10,6 +10,11 @@ the caller can see, so an initiative never reveals work on a hidden team. A
 project joins an initiative through its own `initiative_id`, which is why it
 belongs to at most one, and joining or leaving is an edit of that project. Only
 the initiative's creator, its owner or a workspace admin deletes it.
+
+An initiative may sit under a parent as a sub-initiative. The parent's rollup
+takes in every project below it, and deleting an initiative lifts its
+sub-initiatives up to its own parent rather than leaving them pointing at a row
+that is gone.
 """
 
 from __future__ import annotations
@@ -55,6 +60,7 @@ from app.common.planning_rules import (
     visible_project_teams,
     visible_team_ids,
 )
+from app.common.initiative_tree import InitiativeTree
 from app.common.project_cadence import workspace_interval
 
 NOT_NULLABLE = ("name", "status")
@@ -97,13 +103,43 @@ def visible_projects_by_initiative(repositories: Repositories, context: AuthzCon
     return grouped
 
 
-def read_initiative(repositories: Repositories, context: AuthzContext, initiative: Initiative) -> InitiativeRead:
-    """One initiative in its response shape, rolled up from the projects this caller sees."""
-    projects = visible_projects_by_initiative(repositories, context).get(initiative.initiative_id, [])
+def initiative_tree(repositories: Repositories, workspace_id: str, *rows: Initiative) -> InitiativeTree:
+    """The workspace's sub-initiative tree, with any freshly written rows taking the place of what the list read."""
+    indexed = {row.initiative_id: row for row in repositories.planning.list_initiatives(workspace_id)}
+    for row in rows:
+        indexed[row.initiative_id] = row
+    return InitiativeTree.build(indexed.values())
+
+
+def rollup_projects(tree: InitiativeTree, grouped: Mapping[str, list[Project]], initiative_id: str) -> list[Project]:
+    """The visible projects of an initiative and of every sub-initiative below it, its own first."""
+    return [project for node in tree.subtree(initiative_id) for project in grouped.get(node, [])]
+
+
+def _initiative_read(
+    initiative: Initiative,
+    tree: InitiativeTree,
+    grouped: Mapping[str, list[Project]],
+    default_interval_days: int,
+) -> InitiativeRead:
+    """One initiative in its response shape from an already built tree and project grouping."""
     return InitiativeRead.from_row(
         initiative,
-        projects,
-        default_interval_days=workspace_interval(repositories.workspaces, context.workspace_id),
+        rollup_projects(tree, grouped, initiative.initiative_id),
+        direct_project_ids=[project.project_id for project in grouped.get(initiative.initiative_id, [])],
+        ancestors=tree.ancestors(initiative.initiative_id),
+        sub_initiative_ids=list(tree.children.get(initiative.initiative_id, [])),
+        default_interval_days=default_interval_days,
+    )
+
+
+def read_initiative(repositories: Repositories, context: AuthzContext, initiative: Initiative) -> InitiativeRead:
+    """One initiative in its response shape, rolled up from the projects this caller sees across its subtree."""
+    return _initiative_read(
+        initiative,
+        initiative_tree(repositories, context.workspace_id, initiative),
+        visible_projects_by_initiative(repositories, context),
+        workspace_interval(repositories.workspaces, context.workspace_id),
     )
 
 
@@ -126,9 +162,11 @@ def list_initiatives(
         raise unprocessable(f"Unknown initiative status: {status_filter}")
     grouped = visible_projects_by_initiative(repositories, context)
     default_days = workspace_interval(repositories.workspaces, context.workspace_id)
+    rows = repositories.planning.list_initiatives(context.workspace_id)
+    tree = InitiativeTree.build(rows)
     bodies = [
-        InitiativeRead.from_row(row, grouped.get(row.initiative_id, []), default_interval_days=default_days)
-        for row in repositories.planning.list_initiatives(context.workspace_id)
+        _initiative_read(row, tree, grouped, default_days)
+        for row in rows
         if status_filter is None or row.status == status_filter
     ]
     scope = f"initiatives:{context.workspace_id}:{status_filter or 'all'}"
@@ -139,11 +177,22 @@ def list_initiatives(
     return window, next_cursor
 
 
+def require_parent(
+    repositories: Repositories, context: AuthzContext, initiative_id: Optional[str], parent_id: str
+) -> None:
+    """Hold that an initiative may sit under a parent, or 422 for a missing parent, a cycle or too deep a chain."""
+    refusal = initiative_tree(repositories, context.workspace_id).refusal(initiative_id, parent_id)
+    if refusal is not None:
+        raise unprocessable(refusal)
+
+
 def create_initiative(repositories: Repositories, context: AuthzContext, payload: InitiativeCreate) -> InitiativeRead:
-    """Create an initiative with no projects yet; any member but a guest may."""
+    """Create an initiative with no projects yet, under a parent when one is named; any member but a guest may."""
     require_initiative_access(context)
     if payload.owner_id is not None:
         require_workspace_member(repositories, context, payload.owner_id)
+    if payload.parent_initiative_id is not None:
+        require_parent(repositories, context, None, payload.parent_initiative_id)
     initiative_id = new_planning_id()
     initiative = Initiative(
         workspace_id=context.workspace_id,
@@ -152,6 +201,7 @@ def create_initiative(repositories: Repositories, context: AuthzContext, payload
         name=payload.name,
         description=payload.description,
         owner_id=payload.owner_id,
+        parent_initiative_id=payload.parent_initiative_id,
         status=payload.status,
         health=payload.health,
         target_date=payload.target_date,
@@ -171,7 +221,7 @@ def create_initiative(repositories: Repositories, context: AuthzContext, payload
 def update_initiative(
     repositories: Repositories, context: AuthzContext, initiative_id: str, payload: InitiativeUpdate
 ) -> InitiativeRead:
-    """Patch an initiative's fields; null clears the description, owner, health, date or cadence."""
+    """Patch an initiative's fields; null clears the description, owner, health, date, cadence or parent."""
     existing = load_initiative(repositories, context, initiative_id)
     fields: dict[str, Any] = payload.model_dump(exclude_unset=True)
     for name in NOT_NULLABLE:
@@ -180,6 +230,9 @@ def update_initiative(
     owner_id = fields.get("owner_id")
     if owner_id is not None and owner_id != existing.owner_id:
         require_workspace_member(repositories, context, owner_id)
+    parent_id = fields.get("parent_initiative_id")
+    if parent_id is not None and parent_id != existing.parent_initiative_id:
+        require_parent(repositories, context, existing.initiative_id, parent_id)
     updated = existing.model_copy(update={**fields, "updated_at": utc_now()})
     try:
         stored = repositories.planning.replace_initiative(updated)
@@ -207,6 +260,8 @@ def delete_initiative(repositories: Repositories, context: AuthzContext, initiat
 
     Every project carrying it is detached, the ones on teams the caller cannot
     see included, so no project is left pointing at an initiative that is gone.
+    Its sub-initiatives move up to its own parent, which keeps them within the
+    depth cap since each sits one level higher than before.
     """
     initiative = load_initiative(repositories, context, initiative_id)
     if not can_delete_initiative(context, initiative):
@@ -214,6 +269,15 @@ def delete_initiative(repositories: Repositories, context: AuthzContext, initiat
     for project in repositories.planning.list_projects(context.workspace_id):
         if project.initiative_id == initiative.initiative_id:
             repositories.planning.set_project_initiative(context.workspace_id, project.project_id, None)
+    for child in repositories.planning.list_initiatives(context.workspace_id):
+        if child.parent_initiative_id == initiative.initiative_id:
+            lifted = child.model_copy(
+                update={"parent_initiative_id": initiative.parent_initiative_id, "updated_at": utc_now()}
+            )
+            try:
+                repositories.planning.replace_initiative(lifted)
+            except ConditionFailed:
+                continue
     repositories.planning.delete_initiative_updates(context.workspace_id, initiative.initiative_id)
     repositories.documents.delete_for_parent(context.workspace_id, "initiative", initiative.initiative_id)
     repositories.planning.delete(context.workspace_id, initiative.planning_key)

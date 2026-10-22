@@ -2,6 +2,7 @@
  * The new initiative dialog: a large name field, a summary, and a footer of
  * property chips for status, owner and target date, the way a new project is
  * written. Cmd or Ctrl and Enter creates it from anywhere in the dialog.
+ * Opened from a parent's page, it creates a sub-initiative of that parent.
  */
 
 import React, { useState } from 'react';
@@ -23,6 +24,8 @@ export interface CreateInitiativeDialogProps {
   people: Assignable[];
   /** The owner the initiative starts with, the creator by default. */
   initialOwnerId: string | null;
+  /** The parent a sub-initiative is created under, none for a top-level one. */
+  parent?: { initiative_id: string; name: string } | null;
   onClose: () => void;
   onCreated: (initiative: InitiativeRead) => void;
 }
@@ -32,6 +35,7 @@ export const CreateInitiativeDialog: React.FC<CreateInitiativeDialogProps> = ({
   workspaceId,
   people,
   initialOwnerId,
+  parent = null,
   onClose,
   onCreated,
 }) => {
@@ -55,6 +59,9 @@ export const CreateInitiativeDialog: React.FC<CreateInitiativeDialogProps> = ({
       owner_id: ownerId,
       status,
       target_date: targetDate,
+      ...(parent === null
+        ? {}
+        : { parent_initiative_id: parent.initiative_id }),
     }).then(
       (initiative) => {
         setIsSaving(false);
@@ -68,7 +75,13 @@ export const CreateInitiativeDialog: React.FC<CreateInitiativeDialogProps> = ({
   };
 
   return (
-    <Dialog open title="New initiative" size="lg" hideTitle onClose={onClose}>
+    <Dialog
+      open
+      title={parent === null ? 'New initiative' : 'New sub-initiative'}
+      size="lg"
+      hideTitle
+      onClose={onClose}
+    >
       <div
         className="space-y-3"
         onKeyDown={(event) => {
@@ -78,7 +91,11 @@ export const CreateInitiativeDialog: React.FC<CreateInitiativeDialogProps> = ({
           }
         }}
       >
-        <p className="text-xs font-medium text-text-muted">New initiative</p>
+        <p className="truncate text-xs font-medium text-text-muted">
+          {parent === null
+            ? 'New initiative'
+            : `New sub-initiative in ${parent.name}`}
+        </p>
         {error !== null && (
           <ErrorAlert
             message={errorMessage(error, 'Could not create that initiative.')}

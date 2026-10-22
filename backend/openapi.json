@@ -4941,6 +4941,19 @@
             ],
             "title": "Owner Id"
           },
+          "parent_initiative_id": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The initiative this one sits under as a sub-initiative",
+            "title": "Parent Initiative Id"
+          },
           "status": {
             "default": "planned",
             "enum": [
@@ -5007,9 +5020,86 @@
         "title": "InitiativeListRead",
         "type": "object"
       },
-      "InitiativeRead": {
-        "description": "One initiative as the API returns it, rolled up from the projects the caller can see.\n\n`project_ids`, `counts`, `points` and `project_health` count only the\nprojects visible to this caller, so the rollup never reveals work on a team\nthey cannot read.",
+      "InitiativeProgressPointRead": {
+        "description": "One day of an initiative's progress graph, in the series' measure.",
         "properties": {
+          "completed": {
+            "title": "Completed",
+            "type": "number"
+          },
+          "date": {
+            "title": "Date",
+            "type": "string"
+          },
+          "scope": {
+            "title": "Scope",
+            "type": "number"
+          },
+          "started": {
+            "title": "Started",
+            "type": "number"
+          }
+        },
+        "required": [
+          "date",
+          "scope",
+          "started",
+          "completed"
+        ],
+        "title": "InitiativeProgressPointRead",
+        "type": "object"
+      },
+      "InitiativeProgressRead": {
+        "description": "An initiative's scope, started and completed work per day, across its whole subtree.\n\nDerived from the visible issues' own dates, the way a project's graph is,\nso it needs no stored history. `days` runs from `start_date` through today\nand `end_date` is where the graph's axis ends, the target date when it is\nstill ahead.",
+        "properties": {
+          "days": {
+            "items": {
+              "$ref": "#/components/schemas/InitiativeProgressPointRead"
+            },
+            "title": "Days",
+            "type": "array"
+          },
+          "end_date": {
+            "title": "End Date",
+            "type": "string"
+          },
+          "initiative_id": {
+            "title": "Initiative Id",
+            "type": "string"
+          },
+          "measure": {
+            "default": "issues",
+            "enum": [
+              "points",
+              "issues"
+            ],
+            "title": "Measure",
+            "type": "string"
+          },
+          "start_date": {
+            "title": "Start Date",
+            "type": "string"
+          }
+        },
+        "required": [
+          "initiative_id",
+          "start_date",
+          "end_date"
+        ],
+        "title": "InitiativeProgressRead",
+        "type": "object"
+      },
+      "InitiativeRead": {
+        "description": "One initiative as the API returns it, rolled up from the projects the caller can see.\n\n`project_ids` are the projects held directly, and `rollup_project_ids` adds\nevery sub-initiative's below it. `counts`, `points`, `progress` and\n`project_health` roll up that whole subtree, and count only the projects\nvisible to this caller, so the rollup never reveals work on a team they\ncannot read.",
+        "properties": {
+          "ancestors": {
+            "description": "The chain of parent initiatives, root first",
+            "items": {
+              "$ref": "#/components/schemas/InitiativeRefRead"
+            },
+            "title": "Ancestors",
+            "type": "array"
+          },
           "counts": {
             "$ref": "#/components/schemas/CountsRead"
           },
@@ -5102,6 +5192,17 @@
             ],
             "title": "Owner Id"
           },
+          "parent_initiative_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Initiative Id"
+          },
           "points": {
             "$ref": "#/components/schemas/CountsRead"
           },
@@ -5111,6 +5212,7 @@
           },
           "project_count": {
             "default": 0,
+            "description": "How many projects the rollup covers",
             "title": "Project Count",
             "type": "integer"
           },
@@ -5118,10 +5220,19 @@
             "$ref": "#/components/schemas/HealthBreakdownRead"
           },
           "project_ids": {
+            "description": "The visible projects held directly",
             "items": {
               "type": "string"
             },
             "title": "Project Ids",
+            "type": "array"
+          },
+          "rollup_project_ids": {
+            "description": "The visible projects of this initiative and every sub-initiative below it",
+            "items": {
+              "type": "string"
+            },
+            "title": "Rollup Project Ids",
             "type": "array"
           },
           "status": {
@@ -5140,6 +5251,14 @@
             "description": "Issues per status id across the visible projects, beside `counts`",
             "title": "Status Counts",
             "type": "object"
+          },
+          "sub_initiative_ids": {
+            "description": "The initiatives directly below this one",
+            "items": {
+              "type": "string"
+            },
+            "title": "Sub Initiative Ids",
+            "type": "array"
           },
           "target_date": {
             "anyOf": [
@@ -5200,8 +5319,27 @@
         "title": "InitiativeRead",
         "type": "object"
       },
+      "InitiativeRefRead": {
+        "description": "An initiative named by id and name, enough to draw a breadcrumb or a link.",
+        "properties": {
+          "initiative_id": {
+            "title": "Initiative Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "initiative_id",
+          "name"
+        ],
+        "title": "InitiativeRefRead",
+        "type": "object"
+      },
       "InitiativeUpdate": {
-        "description": "The body an initiative patch takes; null clears the description, owner, health, date or cadence.",
+        "description": "The body an initiative patch takes; null clears the description, owner, health, date, cadence or parent.",
         "properties": {
           "description": {
             "anyOf": [
@@ -5254,6 +5392,19 @@
               }
             ],
             "title": "Owner Id"
+          },
+          "parent_initiative_id": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The initiative to nest this one under; null makes it top level",
+            "title": "Parent Initiative Id"
           },
           "status": {
             "anyOf": [
@@ -27440,7 +27591,7 @@
         ]
       },
       "get": {
-        "description": "One initiative, rolled up from the projects the caller can see.",
+        "description": "One initiative, rolled up from the projects the caller can see across its sub-initiatives.",
         "operationId": "read_initiative_row_api_workspaces__workspace_id__initiatives__initiative_id__get",
         "parameters": [
           {
@@ -27496,7 +27647,7 @@
         ]
       },
       "patch": {
-        "description": "Patch an initiative's fields; null clears the description, owner, health, date or cadence.",
+        "description": "Patch an initiative's fields; null clears the description, owner, health, date, cadence or parent.",
         "operationId": "update_initiative_row_api_workspaces__workspace_id__initiatives__initiative_id__patch",
         "parameters": [
           {
@@ -27851,6 +28002,64 @@
           }
         ],
         "summary": "Follow Initiative",
+        "tags": [
+          "planning"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/initiatives/{initiative_id}/progress": {
+      "get": {
+        "description": "Scope, started and completed work per day across the initiative and its sub-initiatives.",
+        "operationId": "read_initiative_progress_api_workspaces__workspace_id__initiatives__initiative_id__progress_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "initiative_id",
+            "required": true,
+            "schema": {
+              "title": "Initiative Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InitiativeProgressRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Read Initiative Progress",
         "tags": [
           "planning"
         ]

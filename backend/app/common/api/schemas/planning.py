@@ -1050,6 +1050,9 @@ class InitiativeCreate(BaseModel):
     health: Optional[ProjectHealthField] = None
     target_date: Optional[str] = None
     update_interval_days: Optional[int] = None
+    parent_initiative_id: Optional[str] = Field(
+        default=None, min_length=1, description="The initiative this one sits under as a sub-initiative"
+    )
 
     @field_validator("update_interval_days")
     @classmethod
@@ -1077,7 +1080,7 @@ class InitiativeCreate(BaseModel):
 
 
 class InitiativeUpdate(BaseModel):
-    """The body an initiative patch takes; null clears the description, owner, health, date or cadence."""
+    """The body an initiative patch takes; null clears the description, owner, health, date, cadence or parent."""
 
     name: Optional[str] = Field(default=None, min_length=1, max_length=NAME_MAX)
     description: Optional[str] = None
@@ -1086,6 +1089,9 @@ class InitiativeUpdate(BaseModel):
     health: Optional[ProjectHealthField] = None
     target_date: Optional[str] = None
     update_interval_days: Optional[int] = None
+    parent_initiative_id: Optional[str] = Field(
+        default=None, min_length=1, description="The initiative to nest this one under; null makes it top level"
+    )
 
     @field_validator("update_interval_days")
     @classmethod
@@ -1112,12 +1118,21 @@ class InitiativeUpdate(BaseModel):
         return _check_date(value)
 
 
+class InitiativeRefRead(BaseModel):
+    """An initiative named by id and name, enough to draw a breadcrumb or a link."""
+
+    initiative_id: str
+    name: str
+
+
 class InitiativeRead(BaseModel):
     """One initiative as the API returns it, rolled up from the projects the caller can see.
 
-    `project_ids`, `counts`, `points` and `project_health` count only the
-    projects visible to this caller, so the rollup never reveals work on a team
-    they cannot read.
+    `project_ids` are the projects held directly, and `rollup_project_ids` adds
+    every sub-initiative's below it. `counts`, `points`, `progress` and
+    `project_health` roll up that whole subtree, and count only the projects
+    visible to this caller, so the rollup never reveals work on a team they
+    cannot read.
     """
 
     initiative_id: str
@@ -1128,8 +1143,16 @@ class InitiativeRead(BaseModel):
     status: InitiativeStatusField
     health: Optional[ProjectHealthField] = None
     target_date: Optional[str] = None
-    project_ids: list[str] = Field(default_factory=list)
-    project_count: int = 0
+    parent_initiative_id: Optional[str] = None
+    ancestors: list[InitiativeRefRead] = Field(
+        default_factory=list, description="The chain of parent initiatives, root first"
+    )
+    sub_initiative_ids: list[str] = Field(default_factory=list, description="The initiatives directly below this one")
+    project_ids: list[str] = Field(default_factory=list, description="The visible projects held directly")
+    rollup_project_ids: list[str] = Field(
+        default_factory=list, description="The visible projects of this initiative and every sub-initiative below it"
+    )
+    project_count: int = Field(default=0, description="How many projects the rollup covers")
     counts: CountsRead = Field(default_factory=CountsRead)
     points: CountsRead = Field(default_factory=CountsRead)
     measure: ProgressMeasureField = Field(
@@ -1157,10 +1180,17 @@ class InitiativeRead(BaseModel):
         initiative: Initiative,
         projects: list[Project],
         *,
+        direct_project_ids: Optional[list[str]] = None,
+        ancestors: Optional[list[Initiative]] = None,
+        sub_initiative_ids: Optional[list[str]] = None,
         default_interval_days: int = DEFAULT_INTERVAL_DAYS,
         now: Optional[datetime] = None,
     ) -> "InitiativeRead":
-        """Build the response shape from a stored initiative and its visible projects."""
+        """Build the response shape from a stored initiative and the visible projects its subtree rolls up.
+
+        `direct_project_ids` narrows `project_ids` to the ones the initiative
+        holds itself; left out, every rolled up project counts as direct.
+        """
         counts = RollupCounts()
         points = RollupCounts()
         progress = RollupCounts()
@@ -1183,7 +1213,13 @@ class InitiativeRead(BaseModel):
             status=initiative.status,  # pyright: ignore[reportArgumentType]
             health=initiative.health,  # pyright: ignore[reportArgumentType]
             target_date=initiative.target_date,
-            project_ids=[project.project_id for project in projects],
+            parent_initiative_id=initiative.parent_initiative_id,
+            ancestors=[InitiativeRefRead(initiative_id=row.initiative_id, name=row.name) for row in ancestors or []],
+            sub_initiative_ids=list(sub_initiative_ids or []),
+            project_ids=(
+                [project.project_id for project in projects] if direct_project_ids is None else direct_project_ids
+            ),
+            rollup_project_ids=[project.project_id for project in projects],
             project_count=len(projects),
             counts=CountsRead.from_counts(counts),
             points=CountsRead.from_counts(points),
@@ -1204,6 +1240,31 @@ class InitiativeRead(BaseModel):
 
 InitiativeListRead = cursor_page(InitiativeRead, "initiatives", model_name="InitiativeListRead")
 """The body the initiative list route answers with, items under `initiatives`."""
+
+
+class InitiativeProgressPointRead(BaseModel):
+    """One day of an initiative's progress graph, in the series' measure."""
+
+    date: str
+    scope: float
+    started: float
+    completed: float
+
+
+class InitiativeProgressRead(BaseModel):
+    """An initiative's scope, started and completed work per day, across its whole subtree.
+
+    Derived from the visible issues' own dates, the way a project's graph is,
+    so it needs no stored history. `days` runs from `start_date` through today
+    and `end_date` is where the graph's axis ends, the target date when it is
+    still ahead.
+    """
+
+    initiative_id: str
+    measure: ProgressMeasureField = "issues"
+    start_date: str
+    end_date: str
+    days: list[InitiativeProgressPointRead] = Field(default_factory=list)
 
 
 class InitiativeUpdateCreate(BaseModel):

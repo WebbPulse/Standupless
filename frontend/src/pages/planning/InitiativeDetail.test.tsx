@@ -2,8 +2,10 @@
  * One initiative's page. Covers that it reads the initiative from the id and
  * rolls up its projects' progress and health, that a status change is written
  * in place, that a project is added from the picker and removed from its row,
- * that deleting is offered to an admin and returns to the list, and that the
- * updates tab speaks of an initiative rather than a project.
+ * that deleting is offered to an admin and returns to the list, that the
+ * updates tab speaks of an initiative rather than a project, and that
+ * sub-initiatives show as breadcrumbs, a parent picker, a list of children,
+ * rolled-up projects and a progress graph.
  */
 
 import { render, screen, waitFor, within } from '@testing-library/react';
@@ -12,6 +14,7 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { WorkspaceContextType } from '../../contexts/WorkspaceContextDefinition';
 import type {
+  InitiativeProgressRead,
   InitiativeRead,
   InitiativeUpdate,
   MemberRead,
@@ -25,8 +28,11 @@ import type {
 import InitiativeDetail from './InitiativeDetail';
 
 const getInitiative = vi.fn<() => Promise<InitiativeRead>>();
+const listInitiatives =
+  vi.fn<() => Promise<{ initiatives: InitiativeRead[]; next_cursor: null }>>();
+const getInitiativeProgress = vi.fn<() => Promise<InitiativeProgressRead>>();
 const updateInitiative =
-  vi.fn<(body: InitiativeUpdate) => Promise<InitiativeRead>>();
+  vi.fn<(body: InitiativeUpdate, id?: string) => Promise<InitiativeRead>>();
 const deleteInitiative = vi.fn<() => Promise<void>>();
 const addInitiativeProject = vi.fn<(id: string) => Promise<ProjectRead>>();
 const removeInitiativeProject = vi.fn<(id: string) => Promise<ProjectRead>>();
@@ -75,15 +81,15 @@ vi.mock('../../api/documents', () => ({
 
 vi.mock('../../api/initiatives', () => ({
   getInitiative: () => getInitiative(),
-  updateInitiative: (_w: string, _id: string, body: InitiativeUpdate) =>
-    updateInitiative(body),
+  updateInitiative: (_w: string, id: string, body: InitiativeUpdate) =>
+    updateInitiative(body, id),
+  getInitiativeProgress: () => getInitiativeProgress(),
   deleteInitiative: () => deleteInitiative(),
   addInitiativeProject: (_w: string, _i: string, id: string) =>
     addInitiativeProject(id),
   removeInitiativeProject: (_w: string, _i: string, id: string) =>
     removeInitiativeProject(id),
-  listInitiatives: () =>
-    Promise.resolve({ initiatives: [], next_cursor: null }),
+  listInitiatives: () => listInitiatives(),
   listInitiativeUpdates: () =>
     Promise.resolve({ updates: [], next_cursor: null }),
   createInitiativeUpdate: vi.fn(),
@@ -234,6 +240,20 @@ describe('InitiativeDetail', () => {
       next_cursor: null,
     });
     getFollow.mockResolvedValue({ following: false, explicit: false });
+    listInitiatives.mockResolvedValue({
+      initiatives: [grow],
+      next_cursor: null,
+    });
+    getInitiativeProgress.mockResolvedValue({
+      initiative_id: 'ini-1',
+      measure: 'issues',
+      start_date: '2026-10-01',
+      end_date: '2026-10-03',
+      days: [
+        { date: '2026-10-01', scope: 2, started: 0, completed: 0 },
+        { date: '2026-10-02', scope: 3, started: 1, completed: 1 },
+      ],
+    });
   });
 
   it('follows the initiative in Pulse', async () => {
@@ -277,7 +297,10 @@ describe('InitiativeDetail', () => {
     await user.click(await screen.findByRole('option', { name: /Completed/ }));
 
     await waitFor(() => {
-      expect(updateInitiative).toHaveBeenCalledWith({ status: 'completed' });
+      expect(updateInitiative).toHaveBeenCalledWith(
+        { status: 'completed' },
+        'ini-1'
+      );
     });
   });
 
@@ -348,5 +371,175 @@ describe('InitiativeDetail', () => {
         'No updates yet. Share how the initiative is going and whether it is on track.'
       )
     ).toBeInTheDocument();
+  });
+
+  describe('sub-initiatives', () => {
+    const company: InitiativeRead = {
+      ...grow,
+      initiative_id: 'ini-0',
+      name: 'Company goals',
+      project_ids: [],
+      sub_initiative_ids: ['ini-1'],
+    };
+    const nested: InitiativeRead = {
+      ...grow,
+      initiative_id: 'ini-1',
+      parent_initiative_id: 'ini-0',
+      ancestors: [{ initiative_id: 'ini-0', name: 'Company goals' }],
+      sub_initiative_ids: ['ini-2'],
+      rollup_project_ids: ['prj-1', 'prj-3'],
+    };
+    const europe: InitiativeRead = {
+      ...grow,
+      initiative_id: 'ini-2',
+      name: 'Europe',
+      parent_initiative_id: 'ini-1',
+      project_ids: ['prj-3'],
+    };
+    const spare: InitiativeRead = {
+      ...grow,
+      initiative_id: 'ini-3',
+      name: 'Hiring',
+      project_ids: [],
+    };
+
+    beforeEach(() => {
+      getInitiative.mockResolvedValue(nested);
+      listInitiatives.mockResolvedValue({
+        initiatives: [company, nested, europe, spare],
+        next_cursor: null,
+      });
+      listProjects.mockResolvedValue({
+        projects: [
+          project('prj-1', 'Launch', { initiative_id: 'ini-1' }),
+          project('prj-3', 'Berlin office', { initiative_id: 'ini-2' }),
+        ],
+        next_cursor: null,
+      });
+    });
+
+    it('walks the breadcrumbs up to the parent', async () => {
+      renderPage();
+
+      expect(
+        await screen.findByRole('link', { name: 'Company goals' })
+      ).toHaveAttribute('href', '/w/mine/initiatives/ini-0');
+      const row = screen.getByRole('group', { name: 'Properties' });
+      expect(
+        within(row).getByRole('button', { name: 'Parent: Company goals' })
+      ).toBeInTheDocument();
+    });
+
+    it('lists its sub-initiatives and the projects they roll up', async () => {
+      renderPage();
+
+      const children = await screen.findByRole('region', {
+        name: 'Sub-initiatives',
+      });
+      expect(
+        await within(children).findByRole('link', { name: 'Europe' })
+      ).toHaveAttribute('href', '/w/mine/initiatives/ini-2');
+      const projects = screen.getByRole('region', { name: 'Projects' });
+      expect(
+        await within(projects).findByRole('link', { name: 'Berlin office' })
+      ).toBeInTheDocument();
+      expect(within(projects).getByText('via Europe')).toBeInTheDocument();
+      expect(
+        within(projects).queryByRole('button', { name: 'Remove Berlin office' })
+      ).not.toBeInTheDocument();
+    });
+
+    it('detaches a sub-initiative from its row', async () => {
+      updateInitiative.mockResolvedValue({
+        ...europe,
+        parent_initiative_id: null,
+      });
+      const user = userEvent.setup();
+      renderPage();
+
+      const children = await screen.findByRole('region', {
+        name: 'Sub-initiatives',
+      });
+      await user.click(
+        await within(children).findByRole('button', {
+          name: 'Remove Europe from this initiative',
+        })
+      );
+
+      await waitFor(() => {
+        expect(updateInitiative).toHaveBeenCalledWith(
+          { parent_initiative_id: null },
+          'ini-2'
+        );
+      });
+    });
+
+    it('adopts an existing initiative as a sub-initiative', async () => {
+      updateInitiative.mockResolvedValue({
+        ...spare,
+        parent_initiative_id: 'ini-1',
+      });
+      const user = userEvent.setup();
+      renderPage();
+
+      const children = await screen.findByRole('region', {
+        name: 'Sub-initiatives',
+      });
+      await user.click(
+        await within(children).findByRole('button', { name: 'Add existing' })
+      );
+      expect(
+        screen.queryByRole('option', { name: /Company goals/ })
+      ).not.toBeInTheDocument();
+      await user.click(await screen.findByRole('option', { name: /Hiring/ }));
+
+      await waitFor(() => {
+        expect(updateInitiative).toHaveBeenCalledWith(
+          { parent_initiative_id: 'ini-1' },
+          'ini-3'
+        );
+      });
+    });
+
+    it('moves the initiative to the top level from the parent picker', async () => {
+      updateInitiative.mockResolvedValue({
+        ...nested,
+        parent_initiative_id: null,
+        ancestors: [],
+      });
+      const user = userEvent.setup();
+      renderPage();
+
+      const row = await screen.findByRole('group', { name: 'Properties' });
+      await user.click(
+        await within(row).findByRole('button', {
+          name: 'Parent: Company goals',
+        })
+      );
+      expect(
+        screen.queryByRole('option', { name: /Europe/ })
+      ).not.toBeInTheDocument();
+      await user.click(
+        await screen.findByRole('option', { name: /No parent/ })
+      );
+
+      await waitFor(() => {
+        expect(updateInitiative).toHaveBeenCalledWith(
+          { parent_initiative_id: null },
+          'ini-1'
+        );
+      });
+    });
+
+    it('draws the progress graph across the subtree', async () => {
+      renderPage();
+
+      expect(
+        await screen.findByTestId('initiative-progress-graph')
+      ).toBeInTheDocument();
+      await waitFor(() => {
+        expect(getInitiativeProgress).toHaveBeenCalled();
+      });
+    });
   });
 });

@@ -20,6 +20,7 @@ from app.common.api.schemas.planning import (
     UPDATES_DEFAULT_LIMIT,
     InitiativeCreate,
     InitiativeListRead,
+    InitiativeProgressRead,
     InitiativeRead,
     InitiativeUpdate,
     InitiativeUpdateCreate,
@@ -28,6 +29,7 @@ from app.common.api.schemas.planning import (
     InitiativeUpdateRead,
     ProjectRead,
 )
+from app.common.initiative_progress import initiative_progress
 from app.common.initiative_writes import (
     add_project_to_initiative,
     create_initiative,
@@ -77,8 +79,19 @@ def read_initiative_row(
     workspace_id: Annotated[str, Path()],
     initiative_id: Annotated[str, Path()],
 ) -> InitiativeRead:
-    """One initiative, rolled up from the projects the caller can see."""
+    """One initiative, rolled up from the projects the caller can see across its sub-initiatives."""
     return get_initiative(repositories, context, initiative_id)
+
+
+@router.get("/{workspace_id}/initiatives/{initiative_id}/progress", response_model=InitiativeProgressRead)
+def read_initiative_progress(
+    context: Annotated[AuthzContext, Depends(require(Capability.WORKSPACE_READ))],
+    repositories: Annotated[Repositories, Depends(get_repositories)],
+    workspace_id: Annotated[str, Path()],
+    initiative_id: Annotated[str, Path()],
+) -> InitiativeProgressRead:
+    """Scope, started and completed work per day across the initiative and its sub-initiatives."""
+    return initiative_progress(repositories, context, initiative_id)
 
 
 @router.patch("/{workspace_id}/initiatives/{initiative_id}", response_model=InitiativeRead)
@@ -89,7 +102,7 @@ def update_initiative_row(
     workspace_id: Annotated[str, Path()],
     initiative_id: Annotated[str, Path()],
 ) -> InitiativeRead:
-    """Patch an initiative's fields; null clears the description, owner, health, date or cadence."""
+    """Patch an initiative's fields; null clears the description, owner, health, date, cadence or parent."""
     return update_initiative(repositories, context, initiative_id, payload)
 
 

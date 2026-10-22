@@ -527,6 +527,8 @@ class Initiative(BaseModel):
     project belongs to at most one initiative and removing a project needs no
     second write. `health` and `last_update_at` mirror the newest update, as a
     project's do, and `update_interval_days` follows the same cadence rules.
+    `parent_initiative_id` nests it under another initiative as a sub-initiative,
+    held on the child so a parent keeps no list of children to hold in step.
     """
 
     workspace_id: str
@@ -536,6 +538,7 @@ class Initiative(BaseModel):
     name: str
     description: str | None = None
     owner_id: str | None = None
+    parent_initiative_id: str | None = None
     status: str = "planned"
     health: str | None = None
     target_date: str | None = None
@@ -710,6 +713,7 @@ PROJECT_OPTIONAL_FIELDS: tuple[str, ...] = (
 INITIATIVE_OPTIONAL_FIELDS: tuple[str, ...] = (
     "description",
     "owner_id",
+    "parent_initiative_id",
     "health",
     "target_date",
     "last_update_at",
