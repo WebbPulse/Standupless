@@ -119,6 +119,7 @@ import WorkspaceLabelsSettings from './pages/workspaces/WorkspaceLabelsSettings'
 import WorkspaceTemplatesSettings from './pages/workspaces/WorkspaceTemplatesSettings';
 import WorkspaceWorkflowSettings from './pages/workspaces/WorkspaceWorkflowSettings';
 import TeamsSettings from './pages/workspaces/TeamsSettings';
+import PreferencesSettings from './pages/workspaces/PreferencesSettings';
 import ProfileSettings from './pages/workspaces/ProfileSettings';
 import AccountSecuritySettings from './pages/workspaces/AccountSecuritySettings';
 import { VERIFY_EMAIL_CHANGE_PATH } from '@webbpulse/auth';
@@ -200,6 +201,10 @@ const App: React.FC = () => (
           <Route
             path="settings/account/profile"
             element={<ProfileSettings />}
+          />
+          <Route
+            path="settings/account/preferences"
+            element={<PreferencesSettings />}
           />
           <Route
             path="settings/account/security"

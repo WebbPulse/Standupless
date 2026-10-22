@@ -40,6 +40,7 @@ import { cn } from '../../lib/cn';
 import { errorMessage } from '../../lib/errors';
 import { readLastWorkspace, wantsResume } from '../../lib/lastWorkspace';
 import { NEW_WORKSPACE_PATH, workspacePath } from '../../lib/paths';
+import { homeViewPath, preferencesOf } from '../../lib/preferences';
 import { JOINABLE_WORKSPACES_KEY, WORKSPACES_KEY } from '../../lib/queryKeys';
 import type { JoinableWorkspaceRead, WorkspaceRead } from '../../types/Api';
 
@@ -60,6 +61,8 @@ const Workspaces: React.FC = () => {
   const [params] = useSearchParams();
   const location = useLocation();
   const browsing = params.has('all');
+  const { homeView } = preferencesOf(user);
+  const openPath = (slug: string): string => homeViewPath(slug, homeView);
   const resuming = !browsing && wantsResume(location.state);
 
   const { data, error, isLoading } = usePolledQuery(
@@ -104,7 +107,7 @@ const Workspaces: React.FC = () => {
     onActivate: (index) => {
       const chosen = workspaces[index];
       void navigate(
-        chosen === undefined ? NEW_WORKSPACE_PATH : workspacePath(chosen.slug)
+        chosen === undefined ? NEW_WORKSPACE_PATH : openPath(chosen.slug)
       );
     },
   });
@@ -115,7 +118,7 @@ const Workspaces: React.FC = () => {
     if (joining) return;
     try {
       await join(workspace);
-      void navigate(workspacePath(workspace.slug));
+      void navigate(openPath(workspace.slug));
     } catch {
       return;
     }
@@ -131,12 +134,12 @@ const Workspaces: React.FC = () => {
       ? undefined
       : workspaces.find((workspace) => workspace.slug === last);
   if (settled && resumed !== undefined) {
-    return <Navigate to={workspacePath(resumed.slug)} replace />;
+    return <Navigate to={openPath(resumed.slug)} replace />;
   }
 
   const only = workspaces.length === 1 ? workspaces[0] : undefined;
   if (settled && !browsing && only !== undefined && joinable.length === 0) {
-    return <Navigate to={workspacePath(only.slug)} replace />;
+    return <Navigate to={openPath(only.slug)} replace />;
   }
 
   const host = typeof window === 'undefined' ? '' : window.location.host;
@@ -175,7 +178,7 @@ const Workspaces: React.FC = () => {
                   <li key={workspace.id}>
                     <Link
                       ref={registerItem(index)}
-                      to={workspacePath(workspace.slug)}
+                      to={openPath(workspace.slug)}
                       aria-current={activeIndex === index ? 'true' : undefined}
                       onPointerEnter={() => {
                         setActiveIndex(index);

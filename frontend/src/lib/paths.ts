@@ -263,6 +263,10 @@ export const auditLogSettingsPath = (slug: string): string =>
 export const profileSettingsPath = (slug: string): string =>
   `${settingsPath(slug)}/account/profile`;
 
+/** The caller's own interface preferences: home view, week start, names, text size and theme. */
+export const preferencesSettingsPath = (slug: string): string =>
+  `${settingsPath(slug)}/account/preferences`;
+
 /** The caller's own sign-in email, sessions, passkeys and account deletion. */
 export const accountSecuritySettingsPath = (slug: string): string =>
   `${settingsPath(slug)}/account/security`;

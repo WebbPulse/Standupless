@@ -1,8 +1,8 @@
 /**
  * Sources the frontend's Content-Security-Policy adds to the spa-frontend baseline.
  *
- * The script hashes cover the inline scripts in frontend/index.html (theme and
- * accent, boot splash phase) and the ones src/prerender/document.ts writes (the
+ * The script hashes cover the inline scripts in frontend/index.html (theme, accent
+ * and text size, boot splash phase) and the ones src/prerender/document.ts writes (the
  * signed in resume redirect, and the stale guard of each of the seven
  * prerendered pages, whose hash embeds the page path). A change to any of them
  * changes its hash; under report_only that only logs a violation.
@@ -22,7 +22,7 @@ locals {
   ]
 
   frontend_inline_script_hashes = [
-    "'sha256-p4DNzpEHnefRBRAbPbKoJ/NXI1aeywrY6g08+kdA6fU='",
+    "'sha256-CA5GmqIxPIosCNhtIYRq2uallsAeWsW7SHiVQ3PjyOY='",
     "'sha256-OJ51BiuphfP+CCkdfbfEQjk0YXcMl7sov6F3sFWxcno='",
     "'sha256-hPlJVYV04ts5jAK5M+zBzpirVVSdqVa4867rMqqtjSw='",
     "'sha256-7/80D4r4ucpgYeiI1HmNzb88iy+cYVm1gu3nv2axxH8='",

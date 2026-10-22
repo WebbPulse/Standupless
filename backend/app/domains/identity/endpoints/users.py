@@ -26,7 +26,19 @@ from app.common.api.dependencies.authz import (
 )
 from app.common.api.dependencies.repositories import Repositories, get_repositories
 from app.common.db.dynamo.inbox import NOTIFICATION_KINDS, NotificationKind
-from app.common.db.dynamo.users import PULSE_DIGESTS, PulseDigestField, User
+from app.common.db.dynamo.users import (
+    FONT_SIZES,
+    HOME_VIEWS,
+    NAME_DISPLAYS,
+    PULSE_DIGESTS,
+    WEEK_STARTS,
+    FontSizeField,
+    HomeViewField,
+    NameDisplayField,
+    PulseDigestField,
+    User,
+    WeekStartField,
+)
 from app.common.email import deliver
 from app.common.handles import HANDLE_PATTERN, handle_conflicts, normalise_handle, previous_after_rename
 from app.common.icons import (
@@ -76,6 +88,10 @@ class UserRead(BaseModel):
     two_factor: bool = False
     timezone: Optional[str] = None
     pulse_digest: PulseDigestField = "off"
+    home_view: HomeViewField = "home"
+    week_start: WeekStartField = "monday"
+    name_display: NameDisplayField = "username"
+    font_size: FontSizeField = "default"
 
 
 class WorkspaceSummaryRead(BaseModel):
@@ -122,7 +138,10 @@ class UserPreferencesUpdate(BaseModel):
     the timezone can each be changed without restating the others. `timezone` is
     the IANA zone due date reminders are judged in, which the browser captures on
     sign in and the person can change. `pulse_digest` is how often the Pulse
-    digest email comes, `off` by default. Deliberately not a settings
+    digest email comes, `off` by default. `home_view`, `week_start`,
+    `name_display` and `font_size` are the interface preferences the account
+    Preferences page sets, kept on the row so they follow the person to every
+    device. Deliberately not a settings
     domain of its own: a few values on the row the product already owns are cheaper
     than a table and a second read on every notification.
     """
@@ -131,6 +150,10 @@ class UserPreferencesUpdate(BaseModel):
     notification_preferences: Optional[dict[NotificationKind, NotificationChannelsUpdate]] = None
     timezone: Optional[str] = Field(default=None, min_length=1, max_length=64)
     pulse_digest: Optional[PulseDigestField] = None
+    home_view: Optional[HomeViewField] = None
+    week_start: Optional[WeekStartField] = None
+    name_display: Optional[NameDisplayField] = None
+    font_size: Optional[FontSizeField] = None
 
     @field_validator("timezone")
     @classmethod
@@ -192,7 +215,16 @@ def _as_read(user: "Any") -> UserRead:
         avatar_url=icon_url(user.icon_key),
         timezone=user.timezone,
         pulse_digest=user.pulse_digest if user.pulse_digest in PULSE_DIGESTS else "off",
+        home_view=_known(user.home_view, HOME_VIEWS, "home"),
+        week_start=_known(user.week_start, WEEK_STARTS, "monday"),
+        name_display=_known(user.name_display, NAME_DISPLAYS, "username"),
+        font_size=_known(user.font_size, FONT_SIZES, "default"),
     )
+
+
+def _known(value: str, allowed: tuple[str, ...], fallback: str) -> Any:
+    """A stored choice when it is still one of `allowed`, else the default, so a retired value never fails a read."""
+    return value if value in allowed else fallback
 
 
 def _summaries(rows: list[WorkspaceSummary]) -> list[WorkspaceSummaryRead]:
@@ -291,6 +323,10 @@ def update_current_user_preferences(
         changes["timezone"] = payload.timezone
     if payload.pulse_digest is not None and payload.pulse_digest != user.pulse_digest:
         changes["pulse_digest"] = payload.pulse_digest
+    for field in ("home_view", "week_start", "name_display", "font_size"):
+        value = getattr(payload, field)
+        if value is not None and value != getattr(user, field):
+            changes[field] = value
     if not changes:
         return _as_read(user)
     return _as_read(repos.users.update(subject, **changes))
