@@ -10,7 +10,13 @@
  * pages on request from the top, where older entries belong.
  */
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import {
   LuBox,
   LuCalendar,
@@ -32,7 +38,7 @@ import {
   LuUsers,
 } from 'react-icons/lu';
 import type { IconType } from 'react-icons';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { appendComments, listComments } from '../../api/discussion';
 import { appendActivity, listActivity } from '../../api/issues';
 import { useCursorPages, type CursorPage } from '../../hooks/useCursorPages';
@@ -422,6 +428,19 @@ export const IssueTimeline: React.FC<IssueTimelineProps> = ({
   useEffect(() => {
     onCommentAttachments?.(commentAttachmentIds(comments.rows));
   }, [comments.rows, onCommentAttachments]);
+
+  const { hash } = useLocation();
+  const scrolledTo = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!hash.startsWith('#comment-') || scrolledTo.current === hash) return;
+    const target = document.getElementById(hash.slice(1));
+    if (target === null) return;
+    scrolledTo.current = hash;
+    if (typeof target.scrollIntoView === 'function') {
+      target.scrollIntoView({ block: 'start' });
+    }
+  }, [hash, comments.rows]);
 
   const loading = activity.isLoading || comments.isLoading;
 

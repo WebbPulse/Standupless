@@ -543,6 +543,29 @@ class ProjectCreate(BaseModel):
         return list(self.team_ids or [])
 
 
+ProjectOpenIssuesAction = Literal["keep", "move", "cancel"]
+
+
+class ProjectOpenIssues(BaseModel):
+    """What a patch that completes or cancels a project does with the issues still open in it.
+
+    `keep` leaves them in the project, `move` moves them to the project named by
+    `project_id`, and `cancel` moves each to its team's first canceled status.
+    """
+
+    action: ProjectOpenIssuesAction
+    project_id: Optional[str] = Field(default=None, min_length=1)
+
+    @model_validator(mode="after")
+    def check_target(self) -> "ProjectOpenIssues":
+        """Hold `project_id` to the move, which needs it, and refuse it elsewhere."""
+        if self.action == "move" and self.project_id is None:
+            raise ValueError("project_id is required to move the open issues")
+        if self.action != "move" and self.project_id is not None:
+            raise ValueError("project_id is only taken when moving the open issues")
+        return self
+
+
 class ProjectUpdate(BaseModel):
     """The body a project patch takes.
 
@@ -552,6 +575,8 @@ class ProjectUpdate(BaseModel):
     nothing and must name one of the project's teams, or the patch is a 404.
     A null `update_interval_days` returns the project to the workspace's cadence,
     and a null `initiative_id` takes the project out of its initiative.
+    `open_issues` says what happens to the issues still open in a project the
+    patch leaves completed or canceled; without it they stay where they are.
     """
 
     team_id: Optional[str] = Field(default=None, min_length=1)
@@ -569,6 +594,7 @@ class ProjectUpdate(BaseModel):
     member_ids: Optional[list[str]] = Field(default=None, max_length=MEMBERS_MAX)
     update_interval_days: Optional[int] = None
     initiative_id: Optional[str] = Field(default=None, min_length=1)
+    open_issues: Optional[ProjectOpenIssues] = None
 
     @field_validator("update_interval_days")
     @classmethod
@@ -659,6 +685,10 @@ class ProjectRead(BaseModel):
     next_update_due_at: Optional[datetime] = None
     update_due_state: Optional[UpdateDueState] = None
     initiative_id: Optional[str] = None
+    open_issue_count: Optional[int] = Field(
+        default=None,
+        description="Issues still open in the project, answered by a patch that leaves it completed or canceled",
+    )
     created_by: str
     created_at: datetime
     updated_at: datetime

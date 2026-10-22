@@ -459,9 +459,34 @@ describe('ProjectDetail', () => {
     if (status === undefined) throw new Error('no status control');
     await user.click(status);
     await user.click(await screen.findByRole('option', { name: /Completed/ }));
+    expect(updateProject).not.toHaveBeenCalled();
+    await user.click(
+      await screen.findByRole('button', { name: 'Complete project' })
+    );
 
     await waitFor(() => {
-      expect(updateProject).toHaveBeenCalledWith({ status: 'completed' });
+      expect(updateProject).toHaveBeenCalledWith({
+        status: 'completed',
+        open_issues: { action: 'keep' },
+      });
+    });
+  });
+
+  it('writes a status that leaves the project open straight away', async () => {
+    const user = userEvent.setup();
+    updateProject.mockResolvedValue({ ...launch, status: 'paused' });
+    renderPage();
+
+    await screen.findByText('Getting it out');
+    const [status] = screen.getAllByRole('button', {
+      name: /^Status: /,
+    });
+    if (status === undefined) throw new Error('no status control');
+    await user.click(status);
+    await user.click(await screen.findByRole('option', { name: /Paused/ }));
+
+    await waitFor(() => {
+      expect(updateProject).toHaveBeenCalledWith({ status: 'paused' });
     });
   });
 

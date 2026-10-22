@@ -15,7 +15,7 @@ id or by a name that is unambiguous among the rows the caller can see.
 from __future__ import annotations
 
 from datetime import date
-from typing import Any, get_args
+from typing import Any, Optional, get_args
 
 from app.common.api.schemas.issues import BULK_MAX_ISSUES, IssueBulkUpdate
 from app.common.api.schemas.planning import (
@@ -28,6 +28,7 @@ from app.common.api.schemas.planning import (
     ProjectCreate,
     ProjectHealthField,
     ProjectIconField,
+    ProjectOpenIssuesAction,
     ProjectPriorityField,
     ProjectRead,
     ProjectUpdate,
@@ -88,6 +89,8 @@ PROJECT_HEALTHS: tuple[str, ...] = get_args(ProjectHealthField)
 PROJECT_PRIORITIES: tuple[str, ...] = get_args(ProjectPriorityField)
 
 PROJECT_ICONS: tuple[str, ...] = get_args(ProjectIconField)
+
+OPEN_ISSUE_ACTIONS: tuple[str, ...] = get_args(ProjectOpenIssuesAction)
 
 PROJECT_FIELDS: tuple[str, ...] = (
     "name",
@@ -212,6 +215,7 @@ def _project_json(project: ProjectRead) -> dict[str, Any]:
         "update_interval_inherited": project.update_interval_inherited,
         "next_update_due_at": project.next_update_due_at.isoformat() if project.next_update_due_at else None,
         "update_due_state": project.update_due_state,
+        **({} if project.open_issue_count is None else {"open_issue_count": project.open_issue_count}),
         "updated_at": project.updated_at.isoformat(),
     }
 
@@ -468,10 +472,33 @@ def _convert_issue_to_project(call: ToolCall) -> Any:
     }
 
 
+def _open_issues(call: ToolCall) -> Optional[dict[str, Any]]:
+    """The `open_issues` choice a tool call names, its move target resolved, or `None`."""
+    action = call.optional("open_issues")
+    target = call.optional("open_issues_project_id")
+    if action is None:
+        if target is not None:
+            raise ToolError("open_issues_project_id is only taken with open_issues set to move")
+        return None
+    if action not in OPEN_ISSUE_ACTIONS:
+        raise ToolError(f"open_issues must be one of: {', '.join(OPEN_ISSUE_ACTIONS)}")
+    if action != "move":
+        if target is not None:
+            raise ToolError("open_issues_project_id is only taken with open_issues set to move")
+        return {"action": action}
+    if target is None:
+        raise ToolError("open_issues_project_id is required to move the open issues")
+    return {"action": action, "project_id": _project_id(call, target)}
+
+
 def _update_project(call: ToolCall) -> Any:
     """Patch a project's fields or its teams, through the route's own path."""
     project_id = _project_id(call, call.require("project_id"))
-    payload = ProjectUpdate.model_validate(_project_payload(call, nullable_fields=True))
+    fields = _project_payload(call, nullable_fields=True)
+    choice = _open_issues(call)
+    if choice is not None:
+        fields["open_issues"] = choice
+    payload = ProjectUpdate.model_validate(fields)
     return _project_json(update_project(call.repositories, call.context, project_id, payload))
 
 
@@ -763,10 +790,24 @@ PLANNING_TOOLS: tuple[Tool, ...] = (
         description=(
             "Change a project's fields or its teams. Only the fields named are written; "
             "null clears the description, lead, dates, icon, colour, health and initiative, and returns the update "
-            "cadence to the workspace default."
+            "cadence to the workspace default. Completing or canceling a project answers open_issue_count, the "
+            "issues still open in it; open_issues keeps them, moves them to open_issues_project_id, or cancels "
+            "them, and moving or canceling also needs issues:write."
         ),
         scopes=("projects:write",),
-        schema=object_schema({"project_id": string(PROJECT_HELP), **PROJECT_PROPERTIES}, required=("project_id",)),
+        schema=object_schema(
+            {
+                "project_id": string(PROJECT_HELP),
+                **PROJECT_PROPERTIES,
+                "open_issues": enum(
+                    OPEN_ISSUE_ACTIONS,
+                    "When the status is completed or canceled, what to do with the issues still open: keep them, "
+                    "move them to open_issues_project_id, or cancel them; omitted keeps them",
+                ),
+                "open_issues_project_id": string(f"{PROJECT_HELP} the open issues move to, with open_issues move"),
+            },
+            required=("project_id",),
+        ),
         handler=_update_project,
     ),
     Tool(

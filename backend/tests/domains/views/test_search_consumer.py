@@ -16,16 +16,22 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from webbpulse.http import REQUEST_CONTEXT_HEADER
 
+from app.common.db.dynamo.comments import build_comment
+from app.common.db.dynamo.issues import Issue
 from app.common.db.dynamo.search_index import (
     MIN_TERM_LENGTH,
     STOPWORDS,
     TERM_CAP,
+    comment_doc,
+    comment_term,
+    comment_terms,
     issue_terms,
     legacy_terms,
     ranked_terms,
     tokenize,
 )
 from app.domains.views.consumers.search import build_router, handle_record
+from tests.domains.helpers import OWNER
 from tests.domains.views.conftest import TEAM, WORKSPACE
 
 ISSUE = "01JB0000000000000000ISSUE1"
@@ -413,3 +419,95 @@ def test_a_team_change_moves_every_posting_to_the_new_team(dynamo_tables: None, 
     assert postings(repositories, "widget") == []
     assert repositories.search_index.postings(WORKSPACE, other_team, "widget") == [ISSUE]
     assert repositories.search_index.postings(WORKSPACE, other_team, "repair") == [ISSUE]
+
+
+COMMENT = "01JB000000000000000000COMM1"
+
+
+def _comment_image(body: str, team_id: str = TEAM) -> "dict[str, Any]":
+    """One comment row as its stream image carries it."""
+    return _image(workspace_id=WORKSPACE, team_id=team_id, issue_id=ISSUE, comment_id=COMMENT, body=body)
+
+
+def test_a_new_comment_posts_its_terms_under_the_comment_prefix(dynamo_tables: None, repositories: Any) -> None:
+    """Comment terms are kept apart from issue terms, so an issue search never answers a comment."""
+    handle_record(repositories, _record("INSERT", new=_comment_image("Traced the widget fault")))
+
+    assert postings(repositories, comment_term("widget")) == [comment_doc(COMMENT, ISSUE)]
+    assert postings(repositories, "widget") == []
+
+
+def test_a_comment_edit_writes_only_the_difference(dynamo_tables: None, repositories: Any) -> None:
+    """An edited comment drops the words it lost and gains the ones it took."""
+    handle_record(repositories, _record("INSERT", new=_comment_image("Traced the widget fault")))
+
+    handle_record(
+        repositories,
+        _record("MODIFY", new=_comment_image("Traced the gadget fault"), old=_comment_image("Traced the widget fault")),
+    )
+
+    assert postings(repositories, comment_term("widget")) == []
+    assert postings(repositories, comment_term("gadget")) == [comment_doc(COMMENT, ISSUE)]
+    assert postings(repositories, comment_term("traced")) == [comment_doc(COMMENT, ISSUE)]
+
+
+def test_a_removed_comment_clears_its_postings(dynamo_tables: None, repositories: Any) -> None:
+    """A deleted comment can no longer be found."""
+    image = _comment_image("Traced the widget fault")
+    handle_record(repositories, _record("INSERT", new=image))
+
+    handle_record(repositories, _record("REMOVE", old=image))
+
+    assert postings(repositories, comment_term("widget")) == []
+    assert postings(repositories, comment_term("traced")) == []
+
+
+def _issue_row(repositories: Any, team_id: str) -> None:
+    """Put the issue the comments hang off in the table, in one team."""
+    repositories.issues.create(
+        Issue(
+            workspace_id=WORKSPACE,
+            issue_id=ISSUE,
+            team_id=team_id,
+            key="ABC-1",
+            number=1,
+            title="Repair the widget",
+            status_id="01JB00000000000000000STAT1",
+            created_by=OWNER,
+        )
+    )
+
+
+def test_a_comment_posts_under_its_issues_current_team(dynamo_tables: None, repositories: Any) -> None:
+    """A comment row keeps the team it was written in, so the issue says where it lives now."""
+    other_team = "01JB000000000000000000PRJ9"
+    _issue_row(repositories, other_team)
+
+    handle_record(repositories, _record("INSERT", new=_comment_image("Traced the gadget fault")))
+
+    assert postings(repositories, comment_term("gadget")) == []
+    assert repositories.search_index.postings(WORKSPACE, other_team, comment_term("gadget")) == [
+        comment_doc(COMMENT, ISSUE)
+    ]
+
+
+def test_an_issue_move_refiles_its_comment_postings(dynamo_tables: None, repositories: Any) -> None:
+    """A moved issue's comments are found in its new team and not its old one."""
+    other_team = "01JB000000000000000000PRJ9"
+    comment = repositories.comments.create(build_comment(WORKSPACE, ISSUE, TEAM, OWNER, "Traced the gadget fault"))
+    repositories.search_index.apply(
+        WORKSPACE,
+        TEAM,
+        comment_doc(comment.comment_id, ISSUE),
+        appeared=comment_terms({"body": comment.body}),
+        departed=set(),
+    )
+    before = _image(workspace_id=WORKSPACE, team_id=TEAM, issue_id=ISSUE, title="Repair the widget")
+    after = _image(workspace_id=WORKSPACE, team_id=other_team, issue_id=ISSUE, title="Repair the widget")
+
+    handle_record(repositories, _record("MODIFY", new=after, old=before))
+
+    assert postings(repositories, comment_term("gadget")) == []
+    assert repositories.search_index.postings(WORKSPACE, other_team, comment_term("gadget")) == [
+        comment_doc(comment.comment_id, ISSUE)
+    ]

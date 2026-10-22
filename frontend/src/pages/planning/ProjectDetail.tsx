@@ -64,6 +64,7 @@ import EmptyState from '../../components/ui/empty-state';
 import Menu, { MenuItem } from '../../components/ui/menu';
 import { SkeletonRows } from '../../components/ui/skeleton';
 import WorkspaceShell from '../../components/workspace/WorkspaceShell';
+import useCloseProjectPrompt from '../../hooks/useCloseProjectPrompt';
 import useCreateDocumentCommand from '../../hooks/useCreateDocumentCommand';
 import { useCreatePlannedIssue } from '../../hooks/useCreatePlannedIssue';
 import { useInitiatives } from '../../hooks/useInitiatives';
@@ -207,6 +208,8 @@ export const ProjectDetail: React.FC = () => {
         'Could not update the project. It has been undone.'
       ),
   });
+
+  const closePrompt = useCloseProjectPrompt({ workspaceId, project, update });
 
   const serverTeamIds = project?.team_ids;
   const teamIds = useMemo(() => serverTeamIds ?? [], [serverTeamIds]);
@@ -388,9 +391,7 @@ export const ProjectDetail: React.FC = () => {
         value={project.status}
         percent={percent}
         disabled={!canEdit}
-        onChange={(status) => {
-          void update({ status });
-        }}
+        onChange={closePrompt.changeStatus}
       />
       <HealthPicker
         variant="chip"
@@ -738,6 +739,8 @@ export const ProjectDetail: React.FC = () => {
           </div>
         </Dialog>
       )}
+
+      {closePrompt.dialog}
 
       {isConfirmingDelete && canDelete && (
         <Dialog

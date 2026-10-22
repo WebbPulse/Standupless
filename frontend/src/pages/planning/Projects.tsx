@@ -42,6 +42,7 @@ import { Popover } from '../../components/ui/popover';
 import { SkeletonRows } from '../../components/ui/skeleton';
 import SubTeamToggle from '../../components/workspace/SubTeamToggle';
 import WorkspaceShell from '../../components/workspace/WorkspaceShell';
+import useCloseProjectPrompt from '../../hooks/useCloseProjectPrompt';
 import { useListKeyboardNav } from '../../hooks/useListKeyboardNav';
 import { usePlanningTeamLists } from '../../hooks/usePlanningTeamLists';
 import { useShortcut } from '../../hooks/useShortcuts';
@@ -197,6 +198,7 @@ const ProjectRow: React.FC<ProjectRowProps> = ({
     }
   );
   const project = value ?? server;
+  const closePrompt = useCloseProjectPrompt({ workspaceId, project, update });
   const percent = progressPercent(project);
   const editable = canEditProject(workspaceRole, project, teams);
   const projectTeams = teams.filter((team) =>
@@ -257,9 +259,7 @@ const ProjectRow: React.FC<ProjectRowProps> = ({
           value={project.status}
           percent={percent}
           disabled={!editable}
-          onChange={(status) => {
-            void update({ status });
-          }}
+          onChange={closePrompt.changeStatus}
         />
       </div>
       <div className="relative z-10 hidden min-w-0 justify-center md:flex">
@@ -303,6 +303,7 @@ const ProjectRow: React.FC<ProjectRowProps> = ({
       {lead !== undefined && (
         <span className="sr-only">{`Lead ${personLabel(lead)}`}</span>
       )}
+      {closePrompt.dialog}
     </li>
   );
 };
