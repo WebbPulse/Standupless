@@ -568,34 +568,6 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
         page: 'teams',
       });
     }
-    built.push(
-      {
-        id: 'action-open-favorite',
-        label: 'Open favorite',
-        keywords: 'starred go',
-        hint: 'O then F',
-        icon: <LuStar className={ICON} />,
-        page: 'favorites',
-      },
-      {
-        id: 'action-open-project',
-        label: 'Open project',
-        keywords: 'go',
-        hint: 'O then P',
-        icon: <LuTarget className={ICON} />,
-        page: 'projects',
-      }
-    );
-    if (team !== undefined) {
-      built.push({
-        id: 'action-open-cycle',
-        label: 'Open cycle',
-        keywords: 'go sprint',
-        hint: 'O then C',
-        icon: <LuRefreshCcw className={ICON} />,
-        page: 'cycles',
-      });
-    }
     for (const option of THEMES) {
       if (option.theme === theme) continue;
       built.push({
@@ -633,8 +605,34 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
         hint: 'O then V',
         icon: <LuLayoutList className={ICON} />,
         page: 'views',
+      },
+      {
+        id: 'action-open-favorite',
+        label: 'Open favorite',
+        keywords: 'starred go',
+        hint: 'O then F',
+        icon: <LuStar className={ICON} />,
+        page: 'favorites',
+      },
+      {
+        id: 'action-open-project',
+        label: 'Open project',
+        keywords: 'go',
+        hint: 'O then P',
+        icon: <LuTarget className={ICON} />,
+        page: 'projects',
       }
     );
+    if (team !== undefined) {
+      built.push({
+        id: 'action-open-cycle',
+        label: 'Open cycle',
+        keywords: 'go sprint',
+        hint: 'O then C',
+        icon: <LuRefreshCcw className={ICON} />,
+        page: 'cycles',
+      });
+    }
     return built;
   }, [
     createIssue,
