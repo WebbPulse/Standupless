@@ -3,16 +3,18 @@
  * it. Triage is mostly a run of small changes across many issues, and opening
  * each one as a page loses the place in the list every time. The pane carries
  * the same pickers as the detail rail, applied optimistically, and links out
- * to the full page for the discussion and history it leaves out.
+ * to the full page for the discussion and history it leaves out. Cmd or
+ * Ctrl+Shift+P sets the peeked issue's parent from the keyboard.
  */
 
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useQueryAuth } from '@webbpulse/auth/react';
 import { usePolledQuery } from '@webbpulse/api-client/react';
 import { LuMaximize2, LuX } from 'react-icons/lu';
 import { Link } from 'react-router-dom';
 import { getIssue, updateIssue } from '../../api/issues';
 import { useAuth } from '../../hooks/useAuth';
+import { useShortcut } from '../../hooks/useShortcuts';
 import { useTeamOptions } from '../../hooks/useTeamOptions';
 import { useWorkspace } from '../../hooks/useWorkspace';
 import { canWriteIssues, isTeamAdmin } from '../../lib/capabilities';
@@ -33,6 +35,7 @@ import IssueBody from './IssueBody';
 import IssueFields, { PropertyRow, PropertySection } from './IssueFields';
 import { IssueMilestonePicker } from './PlanningPickers';
 import PlanningRowLink from './PlanningRowLink';
+import SetParentDialog, { SET_PARENT_KEYS } from './SetParentDialog';
 import { CyclePicker, ProjectPicker } from './PropertyPickers';
 import { useTeams } from '../../hooks/useTeams';
 import { estimateOptionsOf } from '../../lib/validation';
@@ -114,12 +117,45 @@ export const IssuePeek: React.FC<IssuePeekProps> = ({ issueId, onClose }) => {
     });
   };
 
+  const [parenting, setParenting] = useState(false);
+  const canParent = canEdit && issue !== null;
+  useShortcut({
+    keys: SET_PARENT_KEYS,
+    label: 'Set parent issue…',
+    scope: 'issue',
+    enabled: canParent,
+    handler: (event) => {
+      event?.preventDefault();
+      setParenting(true);
+    },
+  });
+  useShortcut({
+    keys: '',
+    label: 'Remove parent',
+    scope: 'issue',
+    enabled: canEdit && issue !== null && issue.parent_id !== null,
+    handler: () => {
+      onUpdate({ parent_id: null });
+    },
+  });
+
   return (
     <aside
       aria-label={issue === null ? 'Issue' : `Issue ${issue.key}`}
       className="flex h-full w-full flex-col border-l border-line bg-surface sm:w-[26rem]"
     >
       <Toaster />
+      {parenting && issue !== null && (
+        <SetParentDialog
+          issues={[issue]}
+          onPick={(parentId) => {
+            onUpdate({ parent_id: parentId });
+          }}
+          onClose={() => {
+            setParenting(false);
+          }}
+        />
+      )}
       <div className="flex h-11 shrink-0 items-center justify-between gap-2 border-b border-line px-3">
         <span className="flex min-w-0 items-center gap-1.5">
           <span className="truncate font-mono text-xs text-text-muted">

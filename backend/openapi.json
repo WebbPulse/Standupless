@@ -5714,7 +5714,7 @@
         "type": "object"
       },
       "IssueBulkPatch": {
-        "description": "The fields one bulk patch sets on every named issue.\n\nThe triage fields only: a title, body or date is per issue by nature, so a bulk\nwrite of one would be a mistake rather than a shortcut. Labels are an add and a\nremove rather than a replacement, so tagging a selection keeps each issue's\nother labels.\n\n`archived` archives the selection when true and restores it when false, after\nany field change in the same patch, so a selection is archived in one request\nrather than one per issue.",
+        "description": "The fields one bulk patch sets on every named issue.\n\nThe triage fields and the parent: a title, body or date is per issue by nature,\nso a bulk write of one would be a mistake rather than a shortcut. Labels are an\nadd and a remove rather than a replacement, so tagging a selection keeps each\nissue's other labels. `parent_id` nests every named issue under one parent, or\ndetaches them when null, under the single patch's same team and one level rules.\n\n`archived` archives the selection when true and restores it when false, after\nany field change in the same patch, so a selection is archived in one request\nrather than one per issue.",
         "properties": {
           "add_label_ids": {
             "items": {
@@ -5766,6 +5766,17 @@
               }
             ],
             "title": "Estimate"
+          },
+          "parent_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Id"
           },
           "priority": {
             "anyOf": [

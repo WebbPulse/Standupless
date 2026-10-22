@@ -1929,6 +1929,7 @@ export interface IssueChange {
   project_milestone_id?: string | null;
   cycle_id?: string | null;
   due_date?: string | null;
+  parent_id?: string | null;
   sort_order?: string;
 }
 
@@ -1987,6 +1988,7 @@ export const changeIsNoop = (
       (issue.project_milestone_id ?? null) &&
     next.cycle_id === issue.cycle_id &&
     (next.due_date ?? null) === (issue.due_date ?? null) &&
+    (next.parent_id ?? null) === (issue.parent_id ?? null) &&
     (next.sort_order ?? null) === (issue.sort_order ?? null) &&
     sameList([...next.label_ids].sort(), [...issue.label_ids].sort())
   );

@@ -2,7 +2,8 @@
  * An issue list or board, worked from the keyboard the way an issue tracker
  * is worked in practice: j and k move, x selects, Shift extends, Enter opens,
  * Space peeks, s, p, a, l, e, Shift+M, Shift+C, Shift+P and Shift+D change a
- * property on the selection or the focused issue, i assigns them to the
+ * property on the selection or the focused issue, Cmd or Ctrl+Shift+P sets
+ * or removes their parent issue, i assigns them to the
  * viewer or back off them, # archives or restores them, and Cmd or
  * Ctrl+Delete deletes them after a confirmation. On a board j and k stay in
  * the focused column, h and l or the side arrows cross to the next column
@@ -83,6 +84,7 @@ import { IssueViewEnvContext, type IssueViewEnv } from './IssueViewContext';
 import IssueRowMenu from './IssueRowMenu';
 import ListRows, { type IssueSection } from './ListRows';
 import PropertyCommand from './PropertyCommand';
+import SetParentDialog, { SET_PARENT_KEYS } from '../SetParentDialog';
 import {
   ARCHIVE_ISSUE_KEYS,
   DELETE_ISSUE_KEYS,
@@ -208,6 +210,7 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
   );
   const [anchor, setAnchor] = useState<string | null>(null);
   const [command, setCommand] = useState<OpenCommand | null>(null);
+  const [parenting, setParenting] = useState<string[] | null>(null);
   const [menu, setMenu] = useState<OpenMenu | null>(null);
   const [deleting, setDeleting] = useState<OrderedIssueRead[] | null>(null);
   const scrollOnFocus = useRef(false);
@@ -640,6 +643,15 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
       { assignee_id: mine ? null : me.user_id }
     );
   };
+  const openParent = (issues: readonly OrderedIssueRead[]): void => {
+    setParenting(issues.map((issue) => issue.id));
+  };
+  const removeParent = (issues: readonly OrderedIssueRead[]): void => {
+    update(
+      issues.map((issue) => issue.id),
+      { parent_id: null }
+    );
+  };
   const copyIds = (issues: readonly OrderedIssueRead[]): void => {
     copyText(
       issues.map((issue) => issue.key).join(', '),
@@ -678,6 +690,25 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
     enabled: canCommand && me !== undefined,
     handler: () => {
       assignToMe(targets, true);
+    },
+  });
+  useShortcut({
+    keys: SET_PARENT_KEYS,
+    label: 'Set parent issue…',
+    scope: 'issue',
+    enabled: canCommand,
+    handler: (event) => {
+      event?.preventDefault();
+      openParent(targets);
+    },
+  });
+  useShortcut({
+    keys: '',
+    label: 'Remove parent',
+    scope: 'issue',
+    enabled: canCommand && targets.some((issue) => issue.parent_id !== null),
+    handler: () => {
+      removeParent(targets);
     },
   });
   useShortcut({
@@ -888,6 +919,7 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
       .map((id) => byId.get(id))
       .filter((issue): issue is OrderedIssueRead => issue !== undefined);
   const commandIssues = command === null ? [] : resolve(command.ids);
+  const parentIssues = parenting === null ? [] : resolve(parenting);
   const menuIssues = menu === null ? [] : resolve(menu.ids);
   const menuSingle = menuIssues.length === 1 ? menuIssues[0] : undefined;
 
@@ -1011,6 +1043,20 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
           }}
         />
       )}
+      {parenting !== null && parentIssues.length > 0 && (
+        <SetParentDialog
+          issues={parentIssues}
+          onPick={(parentId) => {
+            update(
+              parentIssues.map((issue) => issue.id),
+              { parent_id: parentId }
+            );
+          }}
+          onClose={() => {
+            setParenting(null);
+          }}
+        />
+      )}
       {deleting !== null && remove !== undefined && (
         <ConfirmDeleteIssuesDialog
           issues={deleting}
@@ -1041,6 +1087,16 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
           onProperty={(property) => {
             openCommand(property, menuIssues);
           }}
+          onSetParent={() => {
+            openParent(menuIssues);
+          }}
+          onRemoveParent={
+            menuIssues.some((issue) => issue.parent_id !== null)
+              ? () => {
+                  removeParent(menuIssues);
+                }
+              : undefined
+          }
           onAssignToMe={
             me === undefined
               ? undefined

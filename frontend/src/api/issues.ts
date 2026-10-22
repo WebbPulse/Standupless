@@ -202,6 +202,8 @@ export interface IssueBulkPatch {
   project_milestone_id?: string | null;
   cycle_id?: string | null;
   estimate?: string | null;
+  /** The parent every named issue moves under, or null to detach them. */
+  parent_id?: string | null;
   /** True archives every named issue and false restores them. */
   archived?: boolean;
 }

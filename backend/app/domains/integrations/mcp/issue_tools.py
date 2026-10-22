@@ -94,7 +94,14 @@ LINK_TYPES: tuple[str, ...] = ("blocks", "blocked_by", "relates_to", "duplicate_
 STORED_LINK_TYPES: tuple[str, ...] = tuple(INVERSE_TYPES)
 """Every type a stored link row can carry, `duplicated_by` included, as a listing shows them."""
 
-BULK_CLEARABLE: tuple[str, ...] = ("assignee_id", "project_id", "project_milestone_id", "cycle_id", "estimate")
+BULK_CLEARABLE: tuple[str, ...] = (
+    "assignee_id",
+    "project_id",
+    "project_milestone_id",
+    "cycle_id",
+    "estimate",
+    "parent_id",
+)
 """The bulk patch fields an explicit null clears."""
 
 NULLABLE_FIELDS: tuple[str, ...] = (
@@ -948,6 +955,8 @@ def _bulk_update_issues(call: ToolCall) -> Any:
     if patch.get("assignee_id") is not None:
         assignee = str(patch["assignee_id"])
         patch["assignee_id"] = user_ref(call, assignee) if "@" in assignee else resolve_user(call, assignee)
+    if "parent_id" in patch:
+        patch["parent_id"] = issue_id_ref(call, patch["parent_id"])
     _bulk_names(call, patch, _selection_team(call, issue_ids))
     _bulk_milestone(call, patch, issue_ids)
     body: dict[str, Any] = {"issue_ids": issue_ids, "patch": patch}
@@ -1286,9 +1295,9 @@ ISSUE_TOOLS: tuple[Tool, ...] = (
         name="bulk_update_issues",
         description=(
             f"Apply one change to up to {BULK_MAX_ISSUES} issues at once: status, assignee, priority, labels added "
-            "or removed, project, milestone, cycle, estimate, or archived. All or nothing: one refused issue "
-            "changes none. Status, label, cycle, project and milestone accept names when the issues share a team. "
-            "Answers the written issues and the ids skipped."
+            "or removed, project, milestone, cycle, estimate, parent issue, or archived. All or nothing: one refused "
+            "issue changes none. Status, label, cycle, project and milestone accept names when the issues share a "
+            "team. Answers the written issues and the ids skipped."
         ),
         scopes=("issues:write",),
         schema=object_schema(
@@ -1309,6 +1318,9 @@ ISSUE_TOOLS: tuple[Tool, ...] = (
                 "project_milestone_id": nullable("A milestone of the project, by id or name, or null"),
                 "cycle_id": nullable("A cycle of the team, by id or name, or null to remove"),
                 "estimate": nullable("An estimate in the team's scale, or null"),
+                "parent_id": nullable(
+                    "A top level issue of the same team to nest the issues under, by id or key, or null to detach"
+                ),
                 "archived": {"type": "boolean", "description": "true archives the issues, false restores them"},
                 "only_if_estimate": string(
                     "Write only issues whose estimate is this now, 'none' for unestimated; the rest come back "

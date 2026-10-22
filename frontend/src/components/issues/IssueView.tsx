@@ -12,7 +12,7 @@
  * frame's own width through a container query rather than the window's, so
  * the same view fits a full page and a pane beside a list.
  *
- * Adding a link, a sub-issue or a relation opens a dialog from the issue
+ * Adding a link, a sub-issue, a relation or a parent opens a dialog from the issue
  * menu, the panel's "+" menu, the command palette or a shortcut. The caller's
  * subscription is read once here and shared by the bell in the bar, the
  * Subscribers section, the shortcut and the palette, so they never disagree. An archived
@@ -36,11 +36,13 @@ import {
   LuArchiveRestore,
   LuChevronRight,
   LuCopy,
+  LuCornerUpLeft,
   LuEllipsis,
   LuLink2,
   LuListTree,
   LuMaximize2,
   LuTrash2,
+  LuUnlink,
   LuUsers,
   LuX,
 } from 'react-icons/lu';
@@ -120,6 +122,7 @@ import MoveIssueDialog, {
   MOVE_ISSUE_KEYS,
   MOVE_ISSUE_LABEL,
 } from './MoveIssueDialog';
+import SetParentDialog, { SET_PARENT_KEYS } from './SetParentDialog';
 import SubIssues from './SubIssues';
 import { ARCHIVE_ISSUE_KEYS, DELETE_ISSUE_KEYS } from './view/propertyKeys';
 
@@ -360,6 +363,7 @@ export const IssueView: React.FC<IssueViewProps> = ({
   const [deleting, setDeleting] = useState(false);
   const [relation, setRelation] = useState<LinkType | 'any' | null>(null);
   const [moving, setMoving] = useState(false);
+  const [parenting, setParenting] = useState(false);
 
   const canonicalKey = data?.key;
   const redirectRef = useRef(issueRef);
@@ -437,6 +441,11 @@ export const IssueView: React.FC<IssueViewProps> = ({
 
   const ready = issue !== null && team !== undefined;
   const canAct = ready && canEdit;
+
+  const removeParent = (): void => {
+    if (issue === null || issue.parent_id === null) return;
+    onUpdate({ parent_id: null });
+  };
 
   const addSubIssue = (): void => {
     if (issue === null) return;
@@ -602,6 +611,21 @@ export const IssueView: React.FC<IssueViewProps> = ({
                 {`${MOVE_ISSUE_LABEL}…`}
                 <MenuShortcut keys={MOVE_ISSUE_KEYS} />
               </MenuItem>
+              <MenuItem
+                onSelect={() => {
+                  setParenting(true);
+                }}
+              >
+                <LuCornerUpLeft aria-hidden="true" className="h-3.5 w-3.5" />
+                Set parent issue…
+                <MenuShortcut keys={SET_PARENT_KEYS} />
+              </MenuItem>
+              {(issue?.parent_id ?? null) !== null && (
+                <MenuItem onSelect={removeParent}>
+                  <LuUnlink aria-hidden="true" className="h-3.5 w-3.5" />
+                  Remove parent
+                </MenuItem>
+              )}
               <MenuSeparator />
               {RELATION_COMMANDS.map((command) => (
                 <MenuItem
@@ -718,6 +742,20 @@ export const IssueView: React.FC<IssueViewProps> = ({
         label="Add sub-issue"
         enabled={canAct}
         onRun={addSubIssue}
+      />
+      <IssueCommand
+        keys={SET_PARENT_KEYS}
+        label="Set parent issue…"
+        enabled={canAct && issue !== null}
+        onRun={() => {
+          setParenting(true);
+        }}
+      />
+      <IssueCommand
+        keys=""
+        label="Remove parent"
+        enabled={canAct && (issue?.parent_id ?? null) !== null}
+        onRun={removeParent}
       />
       <IssueCommand
         keys={MOVE_ISSUE_KEYS}
@@ -888,6 +926,17 @@ export const IssueView: React.FC<IssueViewProps> = ({
               )}
             </div>
 
+            {parenting && (
+              <SetParentDialog
+                issues={[issue]}
+                onPick={(parentId) => {
+                  onUpdate({ parent_id: parentId });
+                }}
+                onClose={() => {
+                  setParenting(false);
+                }}
+              />
+            )}
             <MoveIssueDialog
               open={moving}
               workspaceId={workspaceId}
