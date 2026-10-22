@@ -32,6 +32,26 @@ PulseDigestField = Literal["off", "daily", "weekly"]
 PULSE_DIGESTS: tuple[str, ...] = ("off", "daily", "weekly")
 """How often a person's Pulse digest email comes, if at all."""
 
+HomeViewField = Literal["home", "inbox", "my_issues", "projects", "pulse", "views"]
+
+HOME_VIEWS: tuple[str, ...] = ("home", "inbox", "my_issues", "projects", "pulse", "views")
+"""The pages a person may land on when they open a workspace."""
+
+WeekStartField = Literal["monday", "sunday", "saturday"]
+
+WEEK_STARTS: tuple[str, ...] = ("monday", "sunday", "saturday")
+"""The days a person's week may start on, which date shortcuts and timelines count from."""
+
+NameDisplayField = Literal["username", "full_name"]
+
+NAME_DISPLAYS: tuple[str, ...] = ("username", "full_name")
+"""Whether teammates read to a person by their username or their full name."""
+
+FontSizeField = Literal["small", "default", "large"]
+
+FONT_SIZES: tuple[str, ...] = ("small", "default", "large")
+"""The interface text sizes a person may pick."""
+
 STALE_ACCOUNT_PURGE = timedelta(hours=12)
 """How long a started account purge may go quiet before the sweep starts it again."""
 
@@ -62,6 +82,10 @@ class User(BaseModel):
     `full_name` is their name as they write it. `previous_handles` keeps every handle
     they have given up, normalised, so a mention written under an old one still
     resolves to them after a rename.
+
+    `home_view`, `week_start`, `name_display` and `font_size` are the interface
+    preferences that follow the person to every device. They default to the values
+    the interface used before they existed, so an older row reads unchanged.
     """
 
     id: str = Field(default_factory=new_user_id)
@@ -75,6 +99,10 @@ class User(BaseModel):
     notification_preferences: dict[str, dict[str, bool]] = Field(default_factory=dict)
     timezone: Optional[str] = None
     pulse_digest: str = "off"
+    home_view: str = "home"
+    week_start: str = "monday"
+    name_display: str = "username"
+    font_size: str = "default"
     disabled: bool = False
     is_admin: bool = False
     created_at: datetime = Field(default_factory=utc_now)

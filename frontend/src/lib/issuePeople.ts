@@ -4,17 +4,25 @@
  * the same way, and so a component file exports only components.
  */
 
+import { prefersFullNames } from './preferences';
 import type { MemberRead, TeamMemberRead } from '../types/Api';
 
 /** Anyone an issue may be assigned to, from either membership list. */
 export type Assignable = Pick<
   MemberRead | TeamMemberRead,
-  'user_id' | 'email' | 'display_name' | 'avatar_url'
+  'user_id' | 'email' | 'display_name' | 'avatar_url' | 'full_name'
 >;
 
-/** How a person reads, preferring their name and falling back to their email. */
-export const personLabel = (person: Assignable | undefined): string =>
-  person === undefined ? 'Unknown' : (person.display_name ?? person.email);
+/**
+ * How a person reads: their full name when the viewer asked for full names and
+ * one is set, otherwise their username, falling back to their email.
+ */
+export const personLabel = (person: Assignable | undefined): string => {
+  if (person === undefined) return 'Unknown';
+  const fullName = person.full_name?.trim() ?? '';
+  if (prefersFullNames() && fullName !== '') return fullName;
+  return person.display_name ?? person.email;
+};
 
 /** A person's avatar image, or null when they show their initials. */
 export const personAvatar = (person: Assignable | undefined): string | null =>

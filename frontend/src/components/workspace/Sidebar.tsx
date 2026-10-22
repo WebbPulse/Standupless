@@ -86,6 +86,7 @@ import {
   viewsPath,
   workspacePath,
   accountSecuritySettingsPath,
+  preferencesSettingsPath,
   profileSettingsPath,
 } from '../../lib/paths';
 import {
@@ -660,6 +661,9 @@ export const Sidebar: React.FC<SidebarProps> = ({ workspace, onNavigate }) => {
           <MenuItem to={ALL_WORKSPACES_PATH}>All workspaces</MenuItem>
           <MenuItem to={profileSettingsPath(workspace.slug)}>
             Edit profile
+          </MenuItem>
+          <MenuItem to={preferencesSettingsPath(workspace.slug)}>
+            Preferences
           </MenuItem>
           <MenuItem to={accountSecuritySettingsPath(workspace.slug)}>
             Security &amp; access

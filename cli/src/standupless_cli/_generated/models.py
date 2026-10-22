@@ -2054,6 +2054,7 @@ class TeamMemberRead(TypedDict):
     avatar_url: NotRequired[str | None]
     display_name: str
     email: str
+    full_name: NotRequired[str]
     role: Literal["admin", "member"]
     user_id: str
 
@@ -2272,6 +2273,9 @@ class UrlAttachmentCreate(TypedDict):
 
 class UserPreferencesUpdate(TypedDict):
     email_notifications: NotRequired[bool | None]
+    font_size: NotRequired[Literal["small", "default", "large"] | None]
+    home_view: NotRequired[Literal["home", "inbox", "my_issues", "projects", "pulse", "views"] | None]
+    name_display: NotRequired[Literal["username", "full_name"] | None]
     notification_preferences: NotRequired[
         dict[
             Literal[
@@ -2296,6 +2300,7 @@ class UserPreferencesUpdate(TypedDict):
     ]
     pulse_digest: NotRequired[Literal["off", "daily", "weekly"] | None]
     timezone: NotRequired[str | None]
+    week_start: NotRequired[Literal["monday", "sunday", "saturday"] | None]
 
 
 class UserProfileUpdate(TypedDict):
@@ -2309,12 +2314,16 @@ class UserRead(TypedDict):
     email: str
     email_notifications: bool
     email_verified: bool
+    font_size: NotRequired[Literal["small", "default", "large"]]
     full_name: NotRequired[str]
+    home_view: NotRequired[Literal["home", "inbox", "my_issues", "projects", "pulse", "views"]]
     id: str
+    name_display: NotRequired[Literal["username", "full_name"]]
     notification_preferences: dict[str, NotificationChannels]
     pulse_digest: NotRequired[Literal["off", "daily", "weekly"]]
     timezone: NotRequired[str | None]
     two_factor: NotRequired[bool]
+    week_start: NotRequired[Literal["monday", "sunday", "saturday"]]
 
 
 class ValidationErrorDetail(TypedDict):

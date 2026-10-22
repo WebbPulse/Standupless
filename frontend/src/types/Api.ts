@@ -25,7 +25,28 @@ export interface UserRead {
   timezone?: string | null;
   /** How often the Pulse email digest goes out, or `off`. */
   pulse_digest?: PulseDigest;
+  /** The page a workspace opens on. */
+  home_view?: HomeView;
+  /** The day the person's week starts on. */
+  week_start?: WeekStart;
+  /** Whether teammates read by username or full name. */
+  name_display?: NameDisplay;
+  /** The interface text size. */
+  font_size?: FontSize;
 }
+
+/** The page a workspace opens on when the person enters it. */
+export type HomeView =
+  'home' | 'inbox' | 'my_issues' | 'projects' | 'pulse' | 'views';
+
+/** The day a person's week starts on. */
+export type WeekStart = 'monday' | 'sunday' | 'saturday';
+
+/** Whether people read by their username or their full name. */
+export type NameDisplay = 'username' | 'full_name';
+
+/** The interface text size a person picked. */
+export type FontSize = 'small' | 'default' | 'large';
 
 /** How often a person's Pulse email digest goes out. */
 export type PulseDigest = 'off' | 'daily' | 'weekly';
@@ -73,6 +94,10 @@ export interface UserPreferencesUpdate {
   >;
   timezone?: string;
   pulse_digest?: PulseDigest;
+  home_view?: HomeView;
+  week_start?: WeekStart;
+  name_display?: NameDisplay;
+  font_size?: FontSize;
 }
 
 /** A role held at the workspace level. */
@@ -516,6 +541,8 @@ export interface TeamMemberRead {
   added_at: string;
   /** The URL of the person's avatar image, or null when they use their initials. */
   avatar_url?: string | null;
+  /** The person's written name, or an empty string when none is set. */
+  full_name?: string;
 }
 
 /** The body the team members route answers with. */

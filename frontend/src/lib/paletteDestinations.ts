@@ -3,8 +3,8 @@
  * found by. They live apart from the palette so the list stays a plain table a
  * test can read whole, and so a settings page added later is one row here.
  *
- * The rows the palette already offers among its places, Edit profile, Security
- * & access, Manage teams and the MCP and CLI setup, are not repeated. A row
+ * The rows the palette already offers among its places, Edit profile,
+ * Preferences, Security & access, Manage teams and the MCP and CLI setup, are not repeated. A row
  * that is admin only on the settings nav is admin only here too, so the
  * palette never opens a page that would only say the caller may not see it.
  */

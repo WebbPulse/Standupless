@@ -59,6 +59,7 @@ import {
   LuRocket,
   LuSearch,
   LuSettings,
+  LuSlidersHorizontal,
   LuSquarePen,
   LuSun,
   LuTarget,
@@ -94,6 +95,7 @@ import {
   mcpSetupPath,
   myIssuesPath,
   newViewPath,
+  preferencesSettingsPath,
   projectsPath,
   profileSettingsPath,
   pulsePath,
@@ -657,6 +659,14 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
         keywords: 'account profile name username handle avatar',
         icon: <LuUserRound className={ICON} />,
         to: profileSettingsPath(slug),
+      },
+      {
+        id: 'nav-preferences',
+        label: 'Preferences',
+        keywords:
+          'account preferences theme dark light font text size home view default page week start first day full names usernames display',
+        icon: <LuSlidersHorizontal className={ICON} />,
+        to: preferencesSettingsPath(slug),
       },
       {
         id: 'nav-account-security',

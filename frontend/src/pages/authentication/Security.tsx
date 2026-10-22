@@ -1,12 +1,13 @@
 /**
- * The account page outside any workspace: the profile and avatar, the sign-in
- * email, live sessions, passkeys, two-factor authentication, connected sign-in
+ * The account page outside any workspace: the profile and avatar, the
+ * interface preferences, the sign-in email, live sessions, passkeys, two-factor authentication, connected sign-in
  * providers, and deleting the account. The same sections sit under each
  * workspace's settings, so a person with no workspace yet can still reach them.
  */
 
 import React from 'react';
 import EmailSection from '../../components/account/EmailSection';
+import PreferencesSection from '../../components/account/PreferencesSection';
 import ProfileSection from '../../components/account/ProfileSection';
 import SessionsSection from '../../components/account/SessionsSection';
 import AccountDeletionPanel from '../../components/auth/AccountDeletionPanel';
@@ -30,6 +31,7 @@ const Security: React.FC = () => (
       </div>
       <ProfileSection />
       <AvatarPanel />
+      <PreferencesSection />
       <EmailSection />
       <SessionsSection />
       <PasskeyPanel />

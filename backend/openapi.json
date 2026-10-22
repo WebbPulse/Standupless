@@ -14819,7 +14819,7 @@
         "type": "object"
       },
       "TeamMemberRead": {
-        "description": "One team member, joined with their user row for display.",
+        "description": "One team member, joined with their user row for display.\n\n`full_name` rides along with the handle so a reader who prefers full names\nsees them in the team's pickers too, the way the workspace member list does.",
         "properties": {
           "added_at": {
             "format": "date-time",
@@ -14843,6 +14843,11 @@
           },
           "email": {
             "title": "Email",
+            "type": "string"
+          },
+          "full_name": {
+            "default": "",
+            "title": "Full Name",
             "type": "string"
           },
           "role": {
@@ -16297,7 +16302,7 @@
         "type": "object"
       },
       "UserPreferencesUpdate": {
-        "description": "The preferences a person may change on their own account.\n\nEvery field is optional, so the global email switch, one kind's channels and\nthe timezone can each be changed without restating the others. `timezone` is\nthe IANA zone due date reminders are judged in, which the browser captures on\nsign in and the person can change. `pulse_digest` is how often the Pulse\ndigest email comes, `off` by default. Deliberately not a settings\ndomain of its own: a few values on the row the product already owns are cheaper\nthan a table and a second read on every notification.",
+        "description": "The preferences a person may change on their own account.\n\nEvery field is optional, so the global email switch, one kind's channels and\nthe timezone can each be changed without restating the others. `timezone` is\nthe IANA zone due date reminders are judged in, which the browser captures on\nsign in and the person can change. `pulse_digest` is how often the Pulse\ndigest email comes, `off` by default. `home_view`, `week_start`,\n`name_display` and `font_size` are the interface preferences the account\nPreferences page sets, kept on the row so they follow the person to every\ndevice. Deliberately not a settings\ndomain of its own: a few values on the row the product already owns are cheaper\nthan a table and a second read on every notification.",
         "properties": {
           "email_notifications": {
             "anyOf": [
@@ -16309,6 +16314,56 @@
               }
             ],
             "title": "Email Notifications"
+          },
+          "font_size": {
+            "anyOf": [
+              {
+                "enum": [
+                  "small",
+                  "default",
+                  "large"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Font Size"
+          },
+          "home_view": {
+            "anyOf": [
+              {
+                "enum": [
+                  "home",
+                  "inbox",
+                  "my_issues",
+                  "projects",
+                  "pulse",
+                  "views"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Home View"
+          },
+          "name_display": {
+            "anyOf": [
+              {
+                "enum": [
+                  "username",
+                  "full_name"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name Display"
           },
           "notification_preferences": {
             "anyOf": [
@@ -16370,6 +16425,22 @@
               }
             ],
             "title": "Timezone"
+          },
+          "week_start": {
+            "anyOf": [
+              {
+                "enum": [
+                  "monday",
+                  "sunday",
+                  "saturday"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Week Start"
           }
         },
         "title": "UserPreferencesUpdate",
@@ -16437,13 +16508,45 @@
             "title": "Email Verified",
             "type": "boolean"
           },
+          "font_size": {
+            "default": "default",
+            "enum": [
+              "small",
+              "default",
+              "large"
+            ],
+            "title": "Font Size",
+            "type": "string"
+          },
           "full_name": {
             "default": "",
             "title": "Full Name",
             "type": "string"
           },
+          "home_view": {
+            "default": "home",
+            "enum": [
+              "home",
+              "inbox",
+              "my_issues",
+              "projects",
+              "pulse",
+              "views"
+            ],
+            "title": "Home View",
+            "type": "string"
+          },
           "id": {
             "title": "Id",
+            "type": "string"
+          },
+          "name_display": {
+            "default": "username",
+            "enum": [
+              "username",
+              "full_name"
+            ],
+            "title": "Name Display",
             "type": "string"
           },
           "notification_preferences": {
@@ -16478,6 +16581,16 @@
             "default": false,
             "title": "Two Factor",
             "type": "boolean"
+          },
+          "week_start": {
+            "default": "monday",
+            "enum": [
+              "monday",
+              "sunday",
+              "saturday"
+            ],
+            "title": "Week Start",
+            "type": "string"
           }
         },
         "required": [

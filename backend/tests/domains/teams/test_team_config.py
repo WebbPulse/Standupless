@@ -57,6 +57,7 @@ def team(repositories: Any) -> str:
 def test_team_members_are_listed_with_their_user_rows(client: TestClient, team: str, repositories: Any) -> None:
     """The list joins the team membership with the user row for display."""
     make_user(repositories, GUEST, "guest@example.com", "Grace")
+    repositories.users.update(GUEST, full_name="Grace Hopper")
     add_team_member(repositories, WORKSPACE, team, GUEST, "member")
     sign_in(client, OWNER)
 
@@ -65,6 +66,7 @@ def test_team_members_are_listed_with_their_user_rows(client: TestClient, team: 
     assert len(members) == 1
     assert members[0]["user_id"] == GUEST
     assert members[0]["display_name"] == "Grace"
+    assert members[0]["full_name"] == "Grace Hopper"
     assert members[0]["role"] == "member"
 
 

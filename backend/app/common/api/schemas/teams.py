@@ -225,11 +225,16 @@ class TeamMemberUpdate(BaseModel):
 
 
 class TeamMemberRead(BaseModel):
-    """One team member, joined with their user row for display."""
+    """One team member, joined with their user row for display.
+
+    `full_name` rides along with the handle so a reader who prefers full names
+    sees them in the team's pickers too, the way the workspace member list does.
+    """
 
     user_id: str
     email: str
     display_name: str
+    full_name: str = ""
     avatar_url: Optional[str] = None
     role: TeamRoleField
     added_at: datetime
@@ -241,6 +246,7 @@ class TeamMemberRead(BaseModel):
             user_id=membership.user_id,
             email=user.email if user is not None else "",
             display_name=display_name(user),
+            full_name=user.full_name if user is not None else "",
             avatar_url=icon_url(user.icon_key) if user is not None else None,
             role=membership.role,  # pyright: ignore[reportArgumentType]
             added_at=membership.joined_at,
