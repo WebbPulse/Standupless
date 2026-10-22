@@ -17,10 +17,19 @@ into the project, then points the issue at the project and closes it.
 
 from __future__ import annotations
 
+from typing import cast
+
 from app.common.api.dependencies.authz import AuthzContext
 from app.common.api.dependencies.repositories import Repositories
-from app.common.api.schemas.issues import TITLE_MAX, IssueCreate
-from app.common.api.schemas.planning import DESCRIPTION_MAX_BYTES, NAME_MAX, ProjectCreate, ProjectRead
+from app.common.api.schemas.issues import TITLE_MAX, IssueCreate, PriorityField
+from app.common.api.schemas.planning import (
+    DESCRIPTION_MAX_BYTES,
+    NAME_MAX,
+    ProjectCreate,
+    ProjectPriorityField,
+    ProjectRead,
+    ProjectStatusField,
+)
 from app.common.db.dynamo.issues import Issue
 from app.common.db.dynamo.team_config import Status
 from app.common.issue_rules import require_team_member, unprocessable
@@ -30,7 +39,7 @@ from app.common.project_writes import create_project
 COPY_SUFFIX = " (copy)"
 """What a duplicate's title ends with, so the two issues can be told apart in a list."""
 
-PROJECT_STATUS_BY_CATEGORY: dict[str, str] = {"started": "in_progress", "unstarted": "planned"}
+PROJECT_STATUS_BY_CATEGORY: dict[str, ProjectStatusField] = {"started": "in_progress", "unstarted": "planned"}
 """The project status a converted issue's status category maps to; any other category starts in backlog."""
 
 CLOSING_CATEGORIES: tuple[str, ...] = ("completed", "cancelled")
@@ -53,7 +62,7 @@ def duplicate_issue(repositories: Repositories, context: AuthzContext, issue: Is
         team_id=issue.team_id,
         title=duplicate_title(issue.title),
         body=issue.body,
-        priority=issue.priority,
+        priority=cast(PriorityField, issue.priority),
         label_ids=list(issue.label_ids),
         estimate=issue.estimate,
         parent_id=issue.parent_id,
@@ -137,7 +146,7 @@ def convert_to_project(
         start_date=start_date,
         target_date=target_date,
         status=PROJECT_STATUS_BY_CATEGORY.get(category or "", "backlog"),
-        priority=issue.priority,
+        priority=cast(ProjectPriorityField, issue.priority),
     )
     children = repositories.issues.iter_children(context.workspace_id, issue.issue_id)
 
