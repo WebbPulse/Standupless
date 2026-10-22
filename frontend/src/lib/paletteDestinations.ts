@@ -157,14 +157,13 @@ export const settingsDestinations = (
   workspace: Pick<WorkspaceRead, 'slug' | 'role'>
 ): PaletteDestination[] => {
   const admin = canManageMembers(workspace.role);
-  return SETTINGS.filter((row) => admin || row.adminOnly !== true).map(
-    (row) => ({
-      id: row.id,
-      label: row.label,
-      keywords: row.keywords,
-      to: row.path(workspace.slug),
-    })
-  );
+  const rows = SETTINGS.filter((row) => admin || row.adminOnly !== true);
+  return rows.map((row) => ({
+    id: row.id,
+    label: row.label,
+    keywords: row.keywords,
+    to: row.path(workspace.slug),
+  }));
 };
 
 /** One section of a team's settings page. */
@@ -279,7 +278,10 @@ export const matchesTerm = (
   texts: readonly string[],
   term: string
 ): boolean => {
-  const words = term.toLowerCase().split(/\s+/).filter((word) => word !== '');
+  const words = term
+    .toLowerCase()
+    .split(/\s+/)
+    .filter((word) => word !== '');
   if (words.length === 0) return true;
   const haystack = texts.join(' ').toLowerCase();
   return words.every((word) => haystack.includes(word));
