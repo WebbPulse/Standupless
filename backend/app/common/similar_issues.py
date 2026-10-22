@@ -4,8 +4,10 @@ Held in `common` because the create dialog reaches it through the views image an
 the MCP `create_issue` tool through the integrations image, and neither may import
 the other's code. Matching is deterministic: the title is tokenized exactly as the
 search consumer indexes issues, every term's newest postings are counted, and an
-issue that shares enough terms with the title is a candidate. No model or
-embedding is involved.
+issue that shares enough terms with the title is a candidate. Words that say
+nothing about the work, such as "existing" or "issue", are left out of the match,
+a candidate's own title must share at least two terms, and issues in the new
+issue's team rank first. No model or embedding is involved.
 
 Cost is bounded per call: at most `MAX_TERMS` terms, one page of at most
 `POSTINGS_PER_TERM` postings per term per visible team, and one batch read of at
@@ -16,6 +18,7 @@ see are answered, so a private team's issues never surface for a non member.
 from __future__ import annotations
 
 import math
+import re
 from collections import Counter
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Iterable
@@ -40,6 +43,53 @@ DEFAULT_LIMIT = 5
 
 MAX_LIMIT = 10
 
+TITLE_OVERLAP = 2
+
+GENERIC_TERMS = frozenset(
+    {
+        "able",
+        "added",
+        "adding",
+        "allow",
+        "allows",
+        "already",
+        "around",
+        "bugs",
+        "case",
+        "cases",
+        "change",
+        "changes",
+        "current",
+        "existing",
+        "fail",
+        "fails",
+        "failing",
+        "handle",
+        "issue",
+        "issues",
+        "keep",
+        "make",
+        "makes",
+        "need",
+        "needs",
+        "show",
+        "shows",
+        "stop",
+        "support",
+        "thing",
+        "things",
+        "update",
+        "updates",
+        "using",
+        "work",
+        "works",
+        "wrong",
+    }
+)
+"""Words common to issue titles of every kind, which the index keeps but the duplicate match ignores."""
+
+_SPLIT = re.compile(r"[^a-z0-9]+")
+
 
 @dataclass(frozen=True)
 class SimilarIssue:
@@ -61,21 +111,33 @@ def required_matches(term_count: int) -> int:
     return min(term_count, max(2, math.ceil(term_count / 2)))
 
 
+def title_overlap(term_count: int) -> int:
+    """How many terms a candidate's own title must share, two unless the draft has fewer."""
+    return min(term_count, TITLE_OVERLAP)
+
+
 def title_terms(title: str) -> set[str]:
-    """The terms of a draft title the matcher reads, at most `MAX_TERMS`."""
-    return ranked_terms(title, cap=MAX_TERMS)
+    """The specific terms of a draft title the matcher reads, at most `MAX_TERMS`."""
+    words = [word for word in _SPLIT.split(title.lower()) if word not in GENERIC_TERMS]
+    return ranked_terms(" ".join(words), cap=MAX_TERMS)
 
 
-def _counted(repositories: "Repositories", workspace_id: str, teams: list[str], terms: set[str]) -> Counter[str]:
-    """Each posted issue id with how many of the terms it is posted under."""
+def _counted(
+    repositories: "Repositories", workspace_id: str, teams: list[str], terms: set[str]
+) -> tuple[Counter[str], dict[str, str]]:
+    """Each posted issue id with how many of the terms it is posted under, and the team it is posted in."""
     counts: Counter[str] = Counter()
+    team_of: dict[str, str] = {}
     for team_id in teams:
         for term in sorted(terms):
-            postings = repositories.search_index.iter_postings(
-                workspace_id, team_id, term, page_size=POSTINGS_PER_TERM, limit=POSTINGS_PER_TERM
+            postings = set(
+                repositories.search_index.iter_postings(
+                    workspace_id, team_id, term, page_size=POSTINGS_PER_TERM, limit=POSTINGS_PER_TERM
+                )
             )
-            counts.update(set(postings))
-    return counts
+            counts.update(postings)
+            team_of.update(dict.fromkeys(postings, team_id))
+    return counts, team_of
 
 
 def find_similar(
@@ -86,14 +148,16 @@ def find_similar(
     limit: int = DEFAULT_LIMIT,
     exclude_issue_id: str | None = None,
     exclude_issue_ids: Iterable[str] = (),
+    team_id: str | None = None,
 ) -> list[SimilarIssue]:
     """Open issues in the caller's visible teams whose title shares enough terms with `title`.
 
-    Ranked by how many terms the candidate's own title shares, then by how many
-    of its indexed terms match, then by recency. An empty or all short title
-    answers nothing rather than reading anything. `exclude_issue_id` and
-    `exclude_issue_ids` are never answered, so an issue is not its own duplicate
-    and a sub-issue is not a duplicate of its parent.
+    Ranked with issues in `team_id` first, then by how many terms the
+    candidate's own title shares, then by how many of its indexed terms match,
+    then by recency. An empty, all short or all generic title answers nothing
+    rather than reading anything. `exclude_issue_id` and `exclude_issue_ids` are
+    never answered, so an issue is not its own duplicate and a sub-issue is not
+    a duplicate of its parent.
     """
     terms = title_terms(title)
     if not terms:
@@ -107,10 +171,11 @@ def find_similar(
     if exclude_issue_id:
         excluded.add(exclude_issue_id)
     floor = required_matches(len(terms))
-    counts = _counted(repositories, workspace_id, teams, terms)
+    shared = title_overlap(len(terms))
+    counts, team_of = _counted(repositories, workspace_id, teams, terms)
     ranked = sorted(
         (issue_id for issue_id, count in counts.items() if count >= floor and issue_id not in excluded),
-        key=lambda issue_id: (counts[issue_id], issue_id),
+        key=lambda issue_id: (team_of.get(issue_id) == team_id, counts[issue_id], issue_id),
         reverse=True,
     )[:CANDIDATE_CAP]
     if not ranked:
@@ -124,7 +189,7 @@ def find_similar(
         if issue is None or issue.archived_at is not None or not context.can_see_team(issue.team_id):
             continue
         overlap = len(tokenize(issue.title) & terms)
-        if overlap == 0:
+        if overlap < shared:
             continue
         if issue.team_id not in statuses:
             statuses[issue.team_id] = {
@@ -136,5 +201,8 @@ def find_similar(
         similar = SimilarIssue(issue=current(repositories.teams, issue), status=status, score=counts[issue_id])
         found.append((overlap, similar))
 
-    found.sort(key=lambda pair: (pair[0], pair[1].score, pair[1].issue.updated_at), reverse=True)
+    found.sort(
+        key=lambda pair: (pair[1].issue.team_id == team_id, pair[0], pair[1].score, pair[1].issue.updated_at),
+        reverse=True,
+    )
     return [similar for _, similar in found[: max(1, min(limit, MAX_LIMIT))]]

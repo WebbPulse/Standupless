@@ -485,7 +485,7 @@ def _get_issue(call: ToolCall) -> Any:
 
 
 def _possible_duplicates(call: ToolCall, issue: Issue) -> list[dict[str, Any]]:
-    """Open issues in the caller's visible teams whose titles look like the new one's.
+    """Open issues in the caller's visible teams whose titles look like the new one's, its own team first.
 
     The same deterministic term match the create dialog shows, so an agent can
     notice a duplicate it just filed and relate or archive it. The issue's own
@@ -498,6 +498,7 @@ def _possible_duplicates(call: ToolCall, issue: Issue) -> list[dict[str, Any]]:
         issue.title,
         exclude_issue_id=issue.issue_id,
         exclude_issue_ids=[issue.parent_id] if issue.parent_id else [],
+        team_id=issue.team_id,
     )
     return [
         {
