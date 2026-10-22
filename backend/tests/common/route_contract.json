@@ -1320,6 +1320,18 @@
     "path": "/api/workspaces/{workspace_id}/teams/{team_id}/cycle-settings"
   },
   {
+    "auth": "team:read",
+    "domain": "teams",
+    "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/teams/{team_id}/display-defaults"
+  },
+  {
+    "auth": "team:admin",
+    "domain": "teams",
+    "method": "PATCH",
+    "path": "/api/workspaces/{workspace_id}/teams/{team_id}/display-defaults"
+  },
+  {
     "auth": "team:admin",
     "domain": "teams",
     "method": "DELETE",

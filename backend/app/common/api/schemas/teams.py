@@ -13,6 +13,14 @@ from typing import Literal, Optional, Union
 
 from pydantic import BaseModel, Field, StrictBool, field_validator, model_validator
 
+from app.common.api.schemas.views import (
+    VISIBLE_PROPERTIES,
+    CompletedWindowField,
+    GroupByField,
+    LayoutField,
+    SortField,
+    VisiblePropertyField,
+)
 from app.common.db.dynamo.memberships import Membership
 from app.common.db.dynamo.team_config import (
     MAX_SLA_HOURS,
@@ -31,14 +39,6 @@ from app.common.db.dynamo.team_config import (
 from app.common.db.dynamo.teams import Team, is_valid_key_prefix
 from app.common.db.dynamo.users import User
 from app.common.icons import icon_url
-from app.common.api.schemas.views import (
-    VISIBLE_PROPERTIES,
-    CompletedWindowField,
-    GroupByField,
-    LayoutField,
-    SortField,
-    VisiblePropertyField,
-)
 from app.common.status_appearance import StatusColor, StatusIcon, check_icon
 
 EstimateScaleField = Literal["off", "exponential", "fibonacci", "linear", "tshirt"]

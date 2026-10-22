@@ -332,7 +332,7 @@ export const MetaChips: React.FC<MetaChipsProps> = ({
   );
   const cycle = context.cycles.find((item) => item.cycle_id === issue.cycle_id);
   const milestone = shows('milestone')
-    ? milestoneOf(issue, { ...context, milestones })
+    ? milestoneOf(issue, milestones ? { ...context, milestones } : context)
     : undefined;
   const links = issue.relation_count ?? 0;
   const teamName = teamNameFor?.(issue.team_id);

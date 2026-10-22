@@ -657,7 +657,7 @@ describe('the team default display', () => {
           group_by: 'priority',
           sub_group_by: 'none',
           completed_window: 'past_week',
-        }),
+        }) as unknown,
       });
     });
   });

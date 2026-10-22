@@ -148,7 +148,7 @@ def _view_properties(*, clearable: bool) -> dict[str, Any]:
         "show_completed": _boolean("Show completed issues, all of them or none"),
         "completed_window": enum(
             COMPLETED_WINDOWS,
-            "Which completed and cancelled issues to show: all, past_week, past_month or none; wins over show_completed",
+            "Completed and cancelled issues to show: all, past_week, past_month or none; wins over show_completed",
         ),
         "show_archived": _boolean("Show archived issues"),
         "icon": {"type": ["string", "null"] if clearable else "string", "description": "Icon name for the view"},
