@@ -8607,6 +8607,37 @@
         "title": "ProjectListRead",
         "type": "object"
       },
+      "ProjectOpenIssues": {
+        "description": "What a patch that completes or cancels a project does with the issues still open in it.\n\n`keep` leaves them in the project, `move` moves them to the project named by\n`project_id`, and `cancel` moves each to its team's first canceled status.",
+        "properties": {
+          "action": {
+            "enum": [
+              "keep",
+              "move",
+              "cancel"
+            ],
+            "title": "Action",
+            "type": "string"
+          },
+          "project_id": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Id"
+          }
+        },
+        "required": [
+          "action"
+        ],
+        "title": "ProjectOpenIssues",
+        "type": "object"
+      },
       "ProjectRead": {
         "description": "One project as the API returns it, with its status stored rather than derived.\n\n`team_ids` holds only the teams the caller can see, so a guest learns nothing\nabout the rest of the workspace from a shared project. `team_id` is the first\nof them, kept for a single-team reader.",
         "properties": {
@@ -8738,6 +8769,18 @@
             ],
             "title": "Next Update Due At"
           },
+          "open_issue_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Issues still open in the project, answered by a patch that leaves it completed or canceled",
+            "title": "Open Issue Count"
+          },
           "points": {
             "$ref": "#/components/schemas/CountsRead"
           },
@@ -8866,7 +8909,7 @@
         "type": "object"
       },
       "ProjectUpdate": {
-        "description": "The body a project patch takes.\n\n`team_ids` replaces the teams the caller can see; teams the caller cannot see\nare kept as they are, so a guest's edit never drops a team it was never\nshown. `team_id` is the single-team spelling an older client sends; it moves\nnothing and must name one of the project's teams, or the patch is a 404.\nA null `update_interval_days` returns the project to the workspace's cadence,\nand a null `initiative_id` takes the project out of its initiative.",
+        "description": "The body a project patch takes.\n\n`team_ids` replaces the teams the caller can see; teams the caller cannot see\nare kept as they are, so a guest's edit never drops a team it was never\nshown. `team_id` is the single-team spelling an older client sends; it moves\nnothing and must name one of the project's teams, or the patch is a 404.\nA null `update_interval_days` returns the project to the workspace's cadence,\nand a null `initiative_id` takes the project out of its initiative.\n`open_issues` says what happens to the issues still open in a project the\npatch leaves completed or canceled; without it they stay where they are.",
         "properties": {
           "color": {
             "anyOf": [
@@ -8986,6 +9029,16 @@
               }
             ],
             "title": "Name"
+          },
+          "open_issues": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProjectOpenIssues"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "priority": {
             "anyOf": [

@@ -448,7 +448,12 @@ def _planning_unprefixed_routers(settings: "Any") -> "Sequence[APIRouter]":
     return [build_router()]
 
 
-_PLANNING_REPOSITORIES = ("planning", "releases", "documents", "idempotency")
+_PLANNING_REPOSITORIES = ("planning", "releases", "documents", "idempotency", "issues", "activity", "subscriptions")
+"""What the planning image writes.
+
+`issues`, `activity` and `subscriptions` are for completing or canceling a
+project, which can move or cancel its open issues through the issue patch path.
+"""
 
 _PLANNING_READ_REPOSITORIES = (
     "memberships",
@@ -456,7 +461,6 @@ _PLANNING_READ_REPOSITORIES = (
     "users",
     "teams",
     "team_config",
-    "issues",
     "api_keys",
 )
 

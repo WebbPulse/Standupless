@@ -13,13 +13,16 @@ from fastapi import HTTPException, status
 from webbpulse.dynamodb import ConditionFailed
 
 from app.common import pulse
-from app.common.api.dependencies.authz import AuthzContext
+from app.common.api.dependencies.authz import AuthzContext, require_scopes_present
 from app.common.api.dependencies.repositories import Repositories
 from app.common.api.pagination import decode_offset_cursor, encode_offset_cursor
-from app.common.api.schemas.planning import ProjectCreate, ProjectRead, ProjectUpdate
+from app.common.api.schemas.planning import ProjectCreate, ProjectOpenIssues, ProjectRead, ProjectUpdate
 from app.common.db.dynamo.base import utc_now
+from app.common.db.dynamo.issues import Issue
 from app.common.db.dynamo.planning import Project, new_planning_id, normalise_project_status, project_key
 from app.common.initiative_writes import require_initiative_access, require_initiative_target
+from app.common.issue_rules import COMPLETED_CATEGORIES, require_team_member
+from app.common.issue_writes import apply_patch, store_patch
 from app.common.planning_rules import (
     check_project_dates,
     load_readable_project,
@@ -34,6 +37,7 @@ from app.common.planning_rules import (
     visible_team_ids,
 )
 from app.common.project_cadence import workspace_interval
+from app.common.relation_effects import cancelled_status, categories_for
 from app.common.sub_teams import listed_teams
 
 NOT_NULLABLE = ("name", "status", "team_ids", "priority", "member_ids")
@@ -41,6 +45,9 @@ NOT_NULLABLE = ("name", "status", "team_ids", "priority", "member_ids")
 
 STATUS_VALUES = ("backlog", "planned", "in_progress", "paused", "completed", "canceled", "done")
 """What the list's status filter accepts, including the legacy `done`."""
+
+CLOSED_STATUSES = frozenset({"completed", "canceled"})
+"""The project statuses that close a project, after which its open issues are asked about."""
 
 
 def merged_team_ids(project: Project, visible: list[str], requested: list[str]) -> tuple[list[str], list[str]]:
@@ -160,6 +167,76 @@ def create_project(repositories: Repositories, context: AuthzContext, payload: P
     )
 
 
+def open_project_issues(
+    repositories: Repositories, context: AuthzContext, project_id: str, team_ids: list[str]
+) -> list[Issue]:
+    """The unarchived issues of the named teams in one project whose status is neither completed nor canceled.
+
+    Only the teams the caller can see are passed, so a count or a sweep never
+    reaches an issue in a team hidden from them.
+    """
+    categories = categories_for(repositories, context.workspace_id, team_ids)
+    issues: list[Issue] = []
+    for team_id in team_ids:
+        for issue in repositories.issues.iter_for_project(context.workspace_id, team_id, project_id):
+            if issue.archived_at is None and categories.get(issue.status_id) not in COMPLETED_CATEGORIES:
+                issues.append(issue)
+    return issues
+
+
+def plan_open_issues(
+    repositories: Repositories,
+    context: AuthzContext,
+    project_id: str,
+    issues: list[Issue],
+    choice: ProjectOpenIssues,
+) -> list[tuple[Issue, Issue]]:
+    """Each open issue beside what a move or a cancel leaves it as, validated and unsaved.
+
+    All or nothing, as a bulk issue patch is: the caller must be able to write
+    in every team holding an open issue, a move target must be another project
+    on each issue's team, and a cancel needs a canceled status in each team,
+    so a refusal leaves the project and every issue as they were. A narrowed
+    credential also needs `issues:write`, since the sweep writes issues.
+    """
+    if not issues:
+        return []
+    require_scopes_present(context, ("issues:write",))
+    teams = list(dict.fromkeys(issue.team_id for issue in issues))
+    for team_id in teams:
+        require_team_member(repositories, context, team_id)
+    attributes: dict[str, dict[str, Any]] = {}
+    if choice.action == "move":
+        if choice.project_id == project_id:
+            raise unprocessable("open_issues.project_id must name another project")
+        attributes = {team_id: {"project_id": choice.project_id} for team_id in teams}
+    else:
+        for team_id in teams:
+            target = cancelled_status(repositories, context.workspace_id, team_id)
+            if target is None:
+                raise unprocessable("A team with open issues in this project has no canceled status")
+            attributes[team_id] = {"status_id": target.status_id}
+    return [(issue, apply_patch(repositories, context, issue, attributes[issue.team_id])) for issue in issues]
+
+
+def store_open_issues(repositories: Repositories, context: AuthzContext, planned: list[tuple[Issue, Issue]]) -> int:
+    """Write each planned issue through the single patch path, answering how many were written.
+
+    An issue deleted or changed since it was read is skipped rather than failing
+    the rest, as the bulk issue patch does, and so stays counted as open.
+    """
+    written = 0
+    for issue, updated in planned:
+        try:
+            store_patch(repositories, context, issue, updated)
+        except HTTPException as exc:
+            if exc.status_code not in (status.HTTP_404_NOT_FOUND, status.HTTP_409_CONFLICT):
+                raise
+            continue
+        written += 1
+    return written
+
+
 def update_project(
     repositories: Repositories, context: AuthzContext, project_id: str, payload: ProjectUpdate
 ) -> ProjectRead:
@@ -171,11 +248,17 @@ def update_project(
     is read first and written whole, so the counters the consumer maintains ride
     along untouched. Only members newly added are checked against the workspace, so a patch that
     keeps someone who has since left does not fail on them.
+
+    A patch that completes or cancels the project answers `open_issue_count`, the
+    issues still open in it, read from the issues rather than the counters the
+    consumer has yet to move. `open_issues` then keeps, moves or cancels those
+    issues, and is refused on a patch that leaves the project open.
     """
     existing, teams = load_readable_project(repositories, context, project_id, payload.team_id)
     require_project_editor(repositories, context, teams)
 
-    fields: dict[str, Any] = payload.model_dump(exclude_unset=True, exclude={"team_id"})
+    choice = payload.open_issues
+    fields: dict[str, Any] = payload.model_dump(exclude_unset=True, exclude={"team_id", "open_issues"})
     for name in NOT_NULLABLE:
         if name in fields and fields[name] is None:
             raise unprocessable(f"{name} must not be null")
@@ -200,6 +283,17 @@ def update_project(
     updated = existing.model_copy(update={**fields, "updated_at": utc_now()})
     check_project_dates(updated.start_date, updated.target_date)
 
+    closed = normalise_project_status(updated.status) in CLOSED_STATUSES
+    if choice is not None and not closed:
+        raise unprocessable("open_issues applies only to a patch that leaves the project completed or canceled")
+    open_issues: list[Issue] = []
+    planned: list[tuple[Issue, Issue]] = []
+    if closed and ("status" in fields or choice is not None):
+        swept = list(dict.fromkeys([*teams, *visible_project_teams(updated, visible)]))
+        open_issues = open_project_issues(repositories, context, project_id, swept)
+        if choice is not None and choice.action != "keep":
+            planned = plan_open_issues(repositories, context, project_id, open_issues, choice)
+
     try:
         stored = repositories.planning.replace_project(updated)
     except ConditionFailed as exc:
@@ -213,11 +307,14 @@ def update_project(
             health=stored.health,
             previous_health=existing.health,
         )
-    return ProjectRead.from_row(
+    body = ProjectRead.from_row(
         stored,
         visible_project_teams(stored, visible),
         default_interval_days=workspace_interval(repositories.workspaces, context.workspace_id),
     )
+    if closed and ("status" in fields or choice is not None):
+        body.open_issue_count = len(open_issues) - store_open_issues(repositories, context, planned)
+    return body
 
 
 def delete_project(

@@ -60,8 +60,8 @@ locals {
       secrets     = false
       ses         = false
       memory      = 512
-      tables      = ["planning", "idempotency", "rate-limits"]
-      read_tables = ["memberships", "workspaces", "users", "teams", "team_config", "issues", "api-keys"]
+      tables      = ["planning", "idempotency", "issues", "activity", "subscriptions", "rate-limits"]
+      read_tables = ["memberships", "workspaces", "users", "teams", "team_config", "api-keys"]
     }
     planning-rollup-consumer = {
       secrets     = false
