@@ -2,7 +2,7 @@
  * The shortcut registry: that it stands down while a person types or a
  * dialog is open, that it matches two-key sequences and forgets a stale first
  * key, that modifiers are respected, and how it picks between two bindings of
- * the same keys.
+ * the same keys or the same keyless palette action.
  */
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -303,6 +303,30 @@ describe('choosing between bindings', () => {
     bind(registry, 'c');
 
     expect(registry.list()).toHaveLength(2);
+  });
+
+  it('lists keyless palette actions by label and never fires them from a key', () => {
+    const registry = createShortcutRegistry();
+    const run = vi.fn();
+    for (const label of ['Remove parent', 'Remove parent', 'Other action']) {
+      order += 1;
+      registry.register({
+        id: `keyless-${String(order)}`,
+        keys: '',
+        label,
+        scope: 'issue',
+        group: 'Issue',
+        run,
+        order,
+      });
+    }
+
+    expect(registry.list().map((shortcut) => shortcut.label)).toEqual([
+      'Remove parent',
+      'Other action',
+    ]);
+    press(registry, 'r');
+    expect(run).not.toHaveBeenCalled();
   });
 });
 

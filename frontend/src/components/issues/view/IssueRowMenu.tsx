@@ -1,6 +1,6 @@
 /**
  * The menu a right click opens on a row or a card: every property command,
- * the copy commands, and archive and delete, each with the key that does the
+ * setting or removing the parent issue, the copy commands, and archive and delete, each with the key that does the
  * same from the keyboard. It acts on the selection when the row clicked is
  * part of it, and on that one issue otherwise.
  */
@@ -13,6 +13,7 @@ import {
   LuCalendar,
   LuCircleDashed,
   LuCopy,
+  LuCornerUpLeft,
   LuEye,
   LuHexagon,
   LuLink2,
@@ -23,6 +24,7 @@ import {
   LuTag,
   LuTrash2,
   LuTriangle,
+  LuUnlink,
   LuUserRound,
   LuUserRoundCheck,
 } from 'react-icons/lu';
@@ -38,6 +40,7 @@ import {
   MenuSeparator,
   MenuShortcut,
 } from '../../ui/menu';
+import { SET_PARENT_KEYS } from '../SetParentDialog';
 import {
   ARCHIVE_ISSUE_KEYS,
   DELETE_ISSUE_KEYS,
@@ -75,6 +78,10 @@ export interface IssueRowMenuProps {
   /** Whether a milestone can be set, true only inside one project's list. */
   milestones: boolean;
   onProperty: (property: CommandProperty) => void;
+  /** Opens the parent picker on the issues. */
+  onSetParent?: (() => void) | undefined;
+  /** Detaches the issues from their parent, while any of them has one. */
+  onRemoveParent?: (() => void) | undefined;
   /** Assigns the issues to the signed in person, when they can take them. */
   onAssignToMe?: (() => void) | undefined;
   onCopyId: () => void;
@@ -100,6 +107,8 @@ export const IssueRowMenu: React.FC<IssueRowMenuProps> = ({
   estimates,
   milestones,
   onProperty,
+  onSetParent,
+  onRemoveParent,
   onAssignToMe,
   onCopyId,
   onCopyUrl,
@@ -164,6 +173,19 @@ export const IssueRowMenu: React.FC<IssueRowMenuProps> = ({
               <MenuShortcut keys={keys[item.property]} />
             </MenuItem>
           ))}
+          {onSetParent !== undefined && (
+            <MenuItem onSelect={onSetParent}>
+              <LuCornerUpLeft aria-hidden="true" className="h-3.5 w-3.5" />
+              Set parent issue…
+              <MenuShortcut keys={SET_PARENT_KEYS} />
+            </MenuItem>
+          )}
+          {onRemoveParent !== undefined && (
+            <MenuItem onSelect={onRemoveParent}>
+              <LuUnlink aria-hidden="true" className="h-3.5 w-3.5" />
+              Remove parent
+            </MenuItem>
+          )}
           {onAssignToMe !== undefined && (
             <MenuItem onSelect={onAssignToMe}>
               <LuUserRoundCheck aria-hidden="true" className="h-3.5 w-3.5" />

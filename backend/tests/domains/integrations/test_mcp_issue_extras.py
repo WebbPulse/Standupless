@@ -356,6 +356,24 @@ def test_bulk_update_issues_by_key_with_names_and_email(
     assert repositories.issues.get(WORKSPACE, issue.issue_id).label_ids == [kept.label_id, rows["label_id"]]
 
 
+def test_bulk_update_issues_nests_under_a_parent_by_key_and_detaches_with_null(
+    client: TestClient, repositories: Any, issue: Issue, second: Issue
+) -> None:
+    """A parent named by key nests the issues, and a null parent takes them back to the top level."""
+    seed_issue(repositories, WORKSPACE, TEAM, THIRD, "ABC", 3)
+    secret = mint_for(repositories, MEMBER, WRITE)
+
+    answer(tool(client, secret, "bulk_update_issues", {"issue_ids": ["ABC-1", "ABC-2"], "parent_id": "ABC-3"}))
+
+    for issue_id in (issue.issue_id, second.issue_id):
+        assert repositories.issues.get(WORKSPACE, issue_id).parent_id == THIRD
+
+    answer(tool(client, secret, "bulk_update_issues", {"issue_ids": ["ABC-1", "ABC-2"], "parent_id": None}))
+
+    for issue_id in (issue.issue_id, second.issue_id):
+        assert repositories.issues.get(WORKSPACE, issue_id).parent_id is None
+
+
 def test_bulk_update_issues_clears_with_null_and_archives(
     client: TestClient, repositories: Any, issue: Issue, second: Issue
 ) -> None:

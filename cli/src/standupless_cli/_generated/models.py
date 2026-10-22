@@ -820,6 +820,7 @@ class IssueBulkPatch(TypedDict):
     assignee_id: NotRequired[str | None]
     cycle_id: NotRequired[str | None]
     estimate: NotRequired[str | None]
+    parent_id: NotRequired[str | None]
     priority: NotRequired[Literal["none", "urgent", "high", "medium", "low"] | None]
     project_id: NotRequired[str | None]
     project_milestone_id: NotRequired[str | None]

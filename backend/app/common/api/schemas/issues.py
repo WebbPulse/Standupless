@@ -461,10 +461,11 @@ class IssueSyncListRead(IssueListRead):
 class IssueBulkPatch(BaseModel):
     """The fields one bulk patch sets on every named issue.
 
-    The triage fields only: a title, body or date is per issue by nature, so a bulk
-    write of one would be a mistake rather than a shortcut. Labels are an add and a
-    remove rather than a replacement, so tagging a selection keeps each issue's
-    other labels.
+    The triage fields and the parent: a title, body or date is per issue by nature,
+    so a bulk write of one would be a mistake rather than a shortcut. Labels are an
+    add and a remove rather than a replacement, so tagging a selection keeps each
+    issue's other labels. `parent_id` nests every named issue under one parent, or
+    detaches them when null, under the single patch's same team and one level rules.
 
     `archived` archives the selection when true and restores it when false, after
     any field change in the same patch, so a selection is archived in one request
@@ -480,6 +481,7 @@ class IssueBulkPatch(BaseModel):
     project_milestone_id: Optional[str] = None
     cycle_id: Optional[str] = None
     estimate: Optional[str] = None
+    parent_id: Optional[str] = None
     archived: Optional[StrictBool] = None
 
     @model_validator(mode="after")
