@@ -28,6 +28,9 @@ SLA_STATUSES: tuple[str, ...] = ("none", "on_track", "at_risk", "breached")
 FINISHED_CATEGORIES: frozenset[str] = frozenset({"completed", "cancelled"})
 """Status categories an SLA timer never runs in."""
 
+COMPLETED_CATEGORY = "completed"
+"""The status category whose arrival stamps an issue's `completed_at`."""
+
 AT_RISK_SHARE = 0.25
 """The share of an SLA window left at which the issue counts as at risk."""
 
@@ -81,11 +84,19 @@ def apply_sla(repositories: Repositories, previous: Issue | None, updated: Issue
     """Start, move, keep or drop `updated`'s SLA timer in place, given the row it replaces.
 
     `previous` is `None` for a new issue. Reads the team's rules and the status
-    only when a watched field moved, so an edit to the title costs nothing.
+    only when a watched field moved, so an edit to the title costs nothing. A
+    status or team move also restamps `completed_at` through `stamp_completion`.
     """
     if previous is not None and all(getattr(previous, name) == getattr(updated, name) for name in WATCHED_FIELDS):
         return
-    if updated.in_triage or updated.archived_at is not None or _category(repositories, updated) in FINISHED_CATEGORIES:
+    category: str | None = None
+    if previous is None or previous.status_id != updated.status_id or previous.team_id != updated.team_id:
+        category = _category(repositories, updated)
+        stamp_completion(updated, category, now)
+    if updated.in_triage or updated.archived_at is not None:
+        _clear(updated)
+        return
+    if (category if category is not None else _category(repositories, updated)) in FINISHED_CATEGORIES:
         _clear(updated)
         return
     hours = team_sla_settings(repositories, updated.workspace_id, updated.team_id).hours_for(updated.priority)
@@ -102,6 +113,20 @@ def apply_sla(repositories: Repositories, previous: Issue | None, updated: Issue
         return
     if priority_moved or team_moved:
         updated.sla_breaches_at = updated.sla_started_at + timedelta(hours=hours)
+
+
+def stamp_completion(issue: Issue, category: str, now: datetime | None = None) -> None:
+    """Keep `completed_at` in step with the status category an issue now sits in.
+
+    Set when the issue first lands in a completed status, kept while it stays
+    completed, so a move between two done columns or teams keeps the original
+    moment, and cleared when it reopens or is cancelled. Run from `apply_sla`
+    because every status write already passes through there.
+    """
+    if category != COMPLETED_CATEGORY:
+        issue.completed_at = None
+    elif issue.completed_at is None:
+        issue.completed_at = now or utc_now()
 
 
 def _clear(issue: Issue) -> None:

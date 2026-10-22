@@ -110,12 +110,20 @@ export interface IssueListFilters {
   assignee_id_not?: FilterValues;
   creator_id?: FilterValues;
   creator_id_not?: FilterValues;
-  subscriber_id?: string;
+  /** Issues any of these people follow; `me` is the caller. */
+  subscriber_id?: FilterValues;
+  subscriber_id_not?: FilterValues;
   label_id?: FilterValues;
   label_id_not?: FilterValues;
+  /** Issues carrying every one of these labels. */
+  label_id_all?: FilterValues;
   priority?: FilterValues<IssuePriority>;
   priority_not?: FilterValues<IssuePriority>;
+  /** Issues under any of these parents; `none` is a top level issue. */
   parent_id?: FilterValues;
+  parent_id_not?: FilterValues;
+  /** `true` for issues with at least one sub-issue, `false` for the rest. */
+  has_sub_issues?: 'true' | 'false';
   cycle_id?: FilterValues;
   cycle_id_not?: FilterValues;
   project_id?: FilterValues;
@@ -127,6 +135,18 @@ export interface IssueListFilters {
   estimate_not?: FilterValues;
   due_before?: string;
   due_after?: string;
+  /** Issues completed on or after this day. */
+  completed_after?: string;
+  /** Issues completed before this day. */
+  completed_before?: string;
+  /** Text the title or description must hold, ignoring case. */
+  content?: string;
+  /** Text neither the title nor the description may hold. */
+  content_not?: string;
+  /** How the conditions combine: every one (the default) or any one. */
+  match?: 'all' | 'any';
+  /** Groups of conditions as JSON text, each combined under its own `match`. */
+  groups?: string;
   /** Where issues stand against their SLA; `none` is no SLA. */
   sla_status?: FilterValues<SlaStatus>;
   /** `true` for issues an open blocker holds up, `false` for the rest. */

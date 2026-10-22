@@ -54,6 +54,7 @@ export type FilterField =
   | 'status'
   | 'assignee'
   | 'creator'
+  | 'subscriber'
   | 'priority'
   | 'label'
   | 'estimate'
@@ -61,8 +62,12 @@ export type FilterField =
   | 'project'
   | 'milestone'
   | 'cycle'
+  | 'parent'
+  | 'sub_issues'
+  | 'content'
   | 'created'
   | 'updated'
+  | 'completed'
   | 'due'
   | 'sla'
   | 'blocked'
@@ -71,15 +76,40 @@ export type FilterField =
 
 /**
  * Whether a filter keeps or excludes the issues matching its values, or, for
- * a date field, whether it keeps the days before or after its one value.
+ * a date field, whether it keeps the days before or after its one value. A
+ * label filter can also keep only the issues carrying `all` of its values.
  */
-export type FilterOp = 'is' | 'is_not' | 'before' | 'after';
+export type FilterOp = 'is' | 'is_not' | 'all' | 'before' | 'after';
+
+/** How a set of conditions combines: every one must hold, or any one. */
+export type FilterMatch = 'all' | 'any';
+
+/**
+ * A group of conditions combined on its own, standing as one condition of
+ * the whole filter. The bar edits one level of groups, and "match any"
+ * wraps the conditions in one more.
+ */
+export interface FilterGroup {
+  match: FilterMatch;
+  filters: FilterClause[];
+}
+
+/** The most groups a filter carries, the server's own bound. */
+export const MAX_FILTER_GROUPS = 10;
 
 /** The fields that hold one yes or no, sent as `true` or `false`. */
 export const BOOLEAN_FIELDS: ReadonlySet<FilterField> = new Set([
+  'sub_issues',
   'blocked',
   'blocking',
 ]);
+
+/** The fields that take free text matched against an issue's title and description. */
+export const TEXT_FIELDS: ReadonlySet<FilterField> = new Set(['content']);
+
+/** Whether a field takes free text rather than a set of values. */
+export const isTextField = (field: FilterField): boolean =>
+  TEXT_FIELDS.has(field);
 
 /** Cycle values the server resolves per team when the list runs. */
 export const RELATIVE_CYCLES = ['current', 'next', 'previous'] as const;
@@ -89,6 +119,7 @@ export const RELATIVE_CYCLES = ['current', 'next', 'previous'] as const;
  * not carry the links they read.
  */
 const SERVER_ONLY_FIELDS: ReadonlySet<FilterField> = new Set([
+  'subscriber',
   'blocking',
   'relation',
 ]);
@@ -97,6 +128,7 @@ const SERVER_ONLY_FIELDS: ReadonlySet<FilterField> = new Set([
 export const DATE_FIELDS: ReadonlySet<FilterField> = new Set([
   'created',
   'updated',
+  'completed',
   'due',
 ]);
 
@@ -114,6 +146,10 @@ export interface FilterClause {
 /** Everything a list or board is drawn from. */
 export interface ViewState {
   filters: FilterClause[];
+  /** How the top level filters and groups combine. */
+  match: FilterMatch;
+  /** Groups of filters, each combined on its own and standing as one filter. */
+  groups: FilterGroup[];
   /** Free text the list route matches, kept when a saved view carries it. */
   q: string;
   groupBy: GroupField;
@@ -256,6 +292,22 @@ export const fieldsFor = <T extends string>(
       (field !== 'team' || (context.teams ?? []).length > 1)
   );
 
+/**
+ * The fields a list with this context can be filtered by. Unlike grouping, a
+ * milestone filter also works across projects, since its choices are read
+ * from each project the list knows.
+ */
+export const filterFieldsFor = (
+  context: Pick<IssueContext, 'milestones' | 'teams' | 'projects'>
+): FilterField[] =>
+  FILTER_FIELDS.filter(
+    (field) =>
+      (field !== 'milestone' ||
+        context.milestones !== undefined ||
+        context.projects.length > 0) &&
+      (field !== 'team' || (context.teams ?? []).length > 1)
+  );
+
 /** How a grouping reads in the interface. */
 export const GROUP_LABELS: Record<GroupField, string> = {
   status: 'Status',
@@ -304,6 +356,7 @@ export const FILTER_FIELDS: FilterField[] = [
   'status',
   'assignee',
   'creator',
+  'subscriber',
   'priority',
   'label',
   'estimate',
@@ -311,8 +364,12 @@ export const FILTER_FIELDS: FilterField[] = [
   'project',
   'milestone',
   'cycle',
+  'parent',
+  'sub_issues',
+  'content',
   'created',
   'updated',
+  'completed',
   'due',
   'sla',
   'blocked',
@@ -325,6 +382,7 @@ export const FILTER_LABELS: Record<FilterField, string> = {
   status: 'Status',
   assignee: 'Assignee',
   creator: 'Creator',
+  subscriber: 'Subscriber',
   priority: 'Priority',
   label: 'Labels',
   estimate: 'Estimate',
@@ -332,8 +390,12 @@ export const FILTER_LABELS: Record<FilterField, string> = {
   project: 'Project',
   milestone: 'Milestone',
   cycle: 'Cycle',
+  parent: 'Parent issue',
+  sub_issues: 'Has sub-issues',
+  content: 'Content',
   created: 'Created',
   updated: 'Updated',
+  completed: 'Completed',
   due: 'Due date',
   sla: 'SLA',
   blocked: 'Blocked',
@@ -346,6 +408,7 @@ export const FILTER_LABELS: Record<FilterField, string> = {
  * takes no `_not` key for them.
  */
 export const KEEP_ONLY_FIELDS: ReadonlySet<FilterField> = new Set([
+  'sub_issues',
   'sla',
   'blocked',
   'blocking',
@@ -360,6 +423,7 @@ const FILTER_KEYS: Record<FilterField, string> = {
   status: 'status_id',
   assignee: 'assignee_id',
   creator: 'creator_id',
+  subscriber: 'subscriber_id',
   priority: 'priority',
   label: 'label_id',
   estimate: 'estimate',
@@ -367,8 +431,12 @@ const FILTER_KEYS: Record<FilterField, string> = {
   project: 'project_id',
   milestone: 'project_milestone_id',
   cycle: 'cycle_id',
+  parent: 'parent_id',
+  sub_issues: 'has_sub_issues',
+  content: 'content',
   created: 'created',
   updated: 'updated',
+  completed: 'completed',
   due: 'due',
   sla: 'sla_status',
   blocked: 'is_blocked',
@@ -376,10 +444,18 @@ const FILTER_KEYS: Record<FilterField, string> = {
   relation: 'has_relation',
 };
 
+/** The fields whose filter can keep only issues carrying every value. */
+export const ALL_OF_FIELDS: ReadonlySet<FilterField> = new Set(['label']);
+
 /** The query key a clause writes, its exclusion or day bound included. */
 const clauseKey = (field: FilterField, op: FilterOp): string => {
   if (isDateField(field)) {
     return `${FILTER_KEYS[field]}_${op === 'before' ? 'before' : 'after'}`;
+  }
+  if (op === 'all') {
+    return ALL_OF_FIELDS.has(field)
+      ? `${FILTER_KEYS[field]}_all`
+      : FILTER_KEYS[field];
   }
   if (op !== 'is_not' || KEEP_ONLY_FIELDS.has(field)) return FILTER_KEYS[field];
   return field === 'team' ? 'team_id_not' : `${FILTER_KEYS[field]}_not`;
@@ -440,6 +516,8 @@ export const DEFAULT_VISIBLE: ViewVisibleProperty[] = [
 /** The state a list opens in with nothing in the URL. */
 export const defaultViewState = (layout: ViewLayout = 'list'): ViewState => ({
   filters: [],
+  match: 'all',
+  groups: [],
   q: '',
   groupBy: 'status',
   subGroupBy: 'none',
@@ -470,18 +548,22 @@ const parseClause = (raw: string): FilterClause | null => {
   const colon = raw.indexOf(':');
   if (colon < 0) return null;
   const [field, op] = raw.slice(0, colon).split('.');
-  const values = raw
-    .slice(colon + 1)
-    .split(',')
-    .map((value) => value.trim())
-    .filter((value) => value !== '');
-  if (field === undefined || !isFilterField(field) || values.length === 0) {
-    return null;
-  }
+  if (field === undefined || !isFilterField(field)) return null;
+  const rest = raw.slice(colon + 1);
+  const values = isTextField(field)
+    ? [rest.trim()].filter((value) => value !== '')
+    : rest
+        .split(',')
+        .map((value) => value.trim())
+        .filter((value) => value !== '');
+  if (values.length === 0) return null;
   if (isDateField(field)) {
     const day = values[0] ?? '';
     if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return null;
     return { field, op: op === 'before' ? 'before' : 'after', values: [day] };
+  }
+  if (op === 'all' && ALL_OF_FIELDS.has(field)) {
+    return { field, op: 'all', values };
   }
   return {
     field,
@@ -493,6 +575,7 @@ const parseClause = (raw: string): FilterClause | null => {
 const CLAUSE_OPS: Record<FilterOp, string> = {
   is: 'is',
   is_not: 'not',
+  all: 'all',
   before: 'before',
   after: 'after',
 };
@@ -508,9 +591,42 @@ const sameList = (left: readonly string[], right: readonly string[]): boolean =>
 const sameFilters = (left: FilterClause[], right: FilterClause[]): boolean =>
   sameList(left.map(writeClause), right.map(writeClause));
 
+/**
+ * Writes one group as its `g` parameter: its match, then each clause, every
+ * part escaped so a value holding the separator stays whole.
+ */
+const writeGroup = (group: FilterGroup): string =>
+  [group.match, ...group.filters.map(writeClause)]
+    .map((part) => encodeURIComponent(part))
+    .join(';');
+
+/** Parses one `g` parameter, or null when it is malformed. */
+const parseGroup = (raw: string): FilterGroup | null => {
+  if (raw === '') return null;
+  const [head, ...parts] = raw.split(';').map((part) => {
+    try {
+      return decodeURIComponent(part);
+    } catch {
+      return '';
+    }
+  });
+  if (head !== 'all' && head !== 'any') return null;
+  return {
+    match: head,
+    filters: parts
+      .map(parseClause)
+      .filter((clause): clause is FilterClause => clause !== null),
+  };
+};
+
+const sameGroups = (left: FilterGroup[], right: FilterGroup[]): boolean =>
+  sameList(left.map(writeGroup), right.map(writeGroup));
+
 /** Whether two states draw the same list. */
 export const sameViewState = (left: ViewState, right: ViewState): boolean =>
   sameFilters(left.filters, right.filters) &&
+  left.match === right.match &&
+  sameGroups(left.groups, right.groups) &&
   left.q === right.q &&
   left.groupBy === right.groupBy &&
   left.subGroupBy === right.subGroupBy &&
@@ -538,6 +654,14 @@ export const parseViewState = (
         .map(parseClause)
         .filter((clause): clause is FilterClause => clause !== null)
     : base.filters;
+  const groups = params.has('g')
+    ? params
+        .getAll('g')
+        .map(parseGroup)
+        .filter((group): group is FilterGroup => group !== null)
+        .slice(0, MAX_FILTER_GROUPS)
+    : base.groups;
+  const matchParam = params.get('m');
   const layoutParam = params.get('layout');
   const layout: ViewLayout =
     layoutParam === 'board' || layoutParam === 'list'
@@ -556,6 +680,9 @@ export const parseViewState = (
   const subGroupBy = isGroupField(sub) ? sub : base.subGroupBy;
   return {
     filters,
+    match:
+      matchParam === 'any' || matchParam === 'all' ? matchParam : base.match,
+    groups,
     q: params.get('q') ?? base.q,
     groupBy,
     subGroupBy: subGroupBy === groupBy ? 'none' : subGroupBy,
@@ -592,6 +719,8 @@ export const writeViewState = (
     if (
       ![
         'f',
+        'm',
+        'g',
         'q',
         'group',
         'sub',
@@ -611,6 +740,11 @@ export const writeViewState = (
   if (!sameFilters(state.filters, base.filters)) {
     if (state.filters.length === 0) params.append('f', '');
     for (const clause of state.filters) params.append('f', writeClause(clause));
+  }
+  if (state.match !== base.match) params.set('m', state.match);
+  if (!sameGroups(state.groups, base.groups)) {
+    if (state.groups.length === 0) params.append('g', '');
+    for (const group of state.groups) params.append('g', writeGroup(group));
   }
   if (state.q !== base.q) params.set('q', state.q);
   if (state.layout !== base.layout) params.set('layout', state.layout);
@@ -715,6 +849,14 @@ const issueFilterValues = (issue: IssueRead, field: FilterField): string[] => {
       return [issue.assignee_id ?? NONE];
     case 'creator':
       return [issue.created_by];
+    case 'parent':
+      return [issue.parent_id ?? NONE];
+    case 'sub_issues':
+      return [String(issue.progress.total > 0)];
+    case 'completed':
+      return issue.completed_at === null || issue.completed_at === undefined
+        ? []
+        : [issue.completed_at.slice(0, 10)];
     case 'team':
       return [issue.team_id];
     case 'priority':
@@ -739,6 +881,8 @@ const issueFilterValues = (issue: IssueRead, field: FilterField): string[] => {
       return [liveSlaStatus(issue)];
     case 'blocked':
       return [String((issue.blocked_by_open_count ?? 0) > 0)];
+    case 'subscriber':
+    case 'content':
     case 'blocking':
     case 'relation':
       return [];
@@ -753,35 +897,73 @@ const decidedByServer = (clause: FilterClause): boolean =>
       (RELATIVE_CYCLES as readonly string[]).includes(value)
     ));
 
-/** Whether an issue passes every filter, for a list filtered on the client. */
+/** Whether an issue's title or description holds a piece of text, ignoring case. */
+const contentHolds = (issue: IssueRead, text: string): boolean =>
+  `${issue.title}\n${issue.body ?? ''}`
+    .toLowerCase()
+    .includes(text.trim().toLowerCase());
+
+/** Whether one clause holds for an issue, true for a clause only the server decides. */
+const clauseHolds = (issue: IssueRead, clause: FilterClause): boolean => {
+  if (decidedByServer(clause)) return true;
+  if (isTextField(clause.field)) {
+    const hit = contentHolds(issue, clause.values[0] ?? '');
+    return clause.op === 'is_not' ? !hit : hit;
+  }
+  const held = issueFilterValues(issue, clause.field);
+  if (clause.op === 'before' || clause.op === 'after') {
+    const bound = clause.values[0] ?? '';
+    const day = held[0];
+    if (day === undefined) return false;
+    return clause.op === 'before' ? day < bound : day > bound;
+  }
+  if (clause.op === 'all') {
+    return clause.values.every((value) => held.includes(value));
+  }
+  const hit = held.some((value) => clause.values.includes(value));
+  return clause.op === 'is' ? hit : !hit;
+};
+
+/** Whether a set of conditions holds under its match; an empty `any` set holds. */
+const combined = (results: boolean[], match: FilterMatch): boolean =>
+  match === 'any'
+    ? results.length === 0 || results.some(Boolean)
+    : results.every(Boolean);
+
+/**
+ * Whether an issue passes the filters, for a list filtered on the client. The
+ * top level clauses and each group combine under `match`, every clause by
+ * default, and each group combines its own clauses under its own match.
+ */
 export const matchesFilters = (
   issue: IssueRead,
-  filters: FilterClause[]
+  filters: FilterClause[],
+  match: FilterMatch = 'all',
+  groups: readonly FilterGroup[] = []
 ): boolean =>
-  filters.every((clause) => {
-    if (decidedByServer(clause)) return true;
-    const held = issueFilterValues(issue, clause.field);
-    if (clause.op === 'before' || clause.op === 'after') {
-      const bound = clause.values[0] ?? '';
-      const day = held[0];
-      if (day === undefined) return false;
-      return clause.op === 'before' ? day < bound : day > bound;
-    }
-    const hit = held.some((value) => clause.values.includes(value));
-    return clause.op === 'is' ? hit : !hit;
-  });
+  combined(
+    [
+      ...filters.map((clause) => clauseHolds(issue, clause)),
+      ...groups.map((group) =>
+        combined(
+          group.filters.map((clause) => clauseHolds(issue, clause)),
+          group.match
+        )
+      ),
+    ],
+    match
+  );
 
-/** The list query a state runs, on top of the fixed scope such as a team. */
-export const viewStateQuery = (
-  state: ViewState,
-  scope: IssueListFilters = {}
-): IssueListFilters => {
+/** The query keys a list of clauses writes, each key's values merged. */
+const clauseQuery = (
+  filters: readonly FilterClause[]
+): Record<string, string | string[]> => {
   const query: Record<string, string | string[]> = {};
-  for (const clause of state.filters) {
+  for (const clause of filters) {
     const key = clauseKey(clause.field, clause.op);
-    if (isDateField(clause.field)) {
-      const day = clause.values[0];
-      if (day !== undefined) query[key] = day;
+    if (isDateField(clause.field) || isTextField(clause.field)) {
+      const value = clause.values[0];
+      if (value !== undefined) query[key] = value;
       continue;
     }
     if (BOOLEAN_FIELDS.has(clause.field)) {
@@ -796,6 +978,62 @@ export const viewStateQuery = (
     ];
     query[key] = [...new Set(merged)];
   }
+  return query;
+};
+
+/** One stored condition group: its clauses' keys, its match when that is `any`, and any groups inside it. */
+export interface SavedFilterGroup {
+  [key: string]: string | string[] | SavedFilterGroup[];
+}
+
+/** The groups a state sends, each as the keys its clauses write; empty groups drop out. */
+export const groupQuery = (
+  groups: readonly FilterGroup[]
+): SavedFilterGroup[] =>
+  groups
+    .filter((group) => group.filters.length > 0)
+    .map((group) => ({
+      ...(group.match === 'any' ? { match: 'any' } : {}),
+      ...clauseQuery(group.filters),
+    }));
+
+/**
+ * The person's own conditions as the server takes them. Every list runs under
+ * a fixed scope, such as a team, a project or hiding completed issues, that
+ * must always hold, so "match any" never goes on the top of the filter, where
+ * it would let an issue in through the scope. The conditions are wrapped in
+ * one `any` group instead, the person's groups nested inside it.
+ */
+const wireConditions = (
+  state: Pick<ViewState, 'filters' | 'match' | 'groups'>
+): { flat: Record<string, string | string[]>; groups: SavedFilterGroup[] } => {
+  const groups = groupQuery(state.groups);
+  if (
+    state.match === 'all' ||
+    (state.filters.length === 0 && groups.length === 0)
+  ) {
+    return { flat: clauseQuery(state.filters), groups };
+  }
+  return {
+    flat: {},
+    groups: [
+      {
+        match: 'any',
+        ...clauseQuery(state.filters),
+        ...(groups.length > 0 ? { groups } : {}),
+      },
+    ],
+  };
+};
+
+/** The list query a state runs, on top of the fixed scope such as a team. */
+export const viewStateQuery = (
+  state: ViewState,
+  scope: IssueListFilters = {}
+): IssueListFilters => {
+  const { flat, groups } = wireConditions(state);
+  const query: Record<string, string | string[]> = { ...flat };
+  if (groups.length > 0) query['groups'] = JSON.stringify(groups);
   return {
     ...scope,
     ...(query as IssueListFilters),
@@ -809,29 +1047,102 @@ export const viewStateQuery = (
 const asList = (value: string | string[] | undefined): string[] =>
   value === undefined ? [] : Array.isArray(value) ? value : [value];
 
-/** Reads a saved view back into the state it was saved from. */
-export const viewToState = (view: SavedViewDisplayRead): ViewState => {
-  const filter = view.filter as Record<string, string | string[] | undefined>;
+/** The clauses a stored filter, or one of its groups, holds. */
+const filterClauses = (filter: Record<string, unknown>): FilterClause[] => {
+  const read = (key: string): string[] => {
+    const value = filter[key];
+    if (typeof value === 'string') return asList(value);
+    if (Array.isArray(value)) {
+      return value.filter((item): item is string => typeof item === 'string');
+    }
+    return [];
+  };
   const filters: FilterClause[] = [];
   for (const field of FILTER_FIELDS) {
     if (isDateField(field)) {
       for (const op of ['after', 'before'] as const) {
-        const day = asList(filter[clauseKey(field, op)])[0];
+        const day = read(clauseKey(field, op))[0];
         if (day !== undefined && day !== '') {
           filters.push({ field, op, values: [day.slice(0, 10)] });
         }
       }
       continue;
     }
-    const kept = asList(filter[clauseKey(field, 'is')]);
+    const kept = read(clauseKey(field, 'is'));
+    const all = ALL_OF_FIELDS.has(field) ? read(clauseKey(field, 'all')) : [];
     const dropped = KEEP_ONLY_FIELDS.has(field)
       ? []
-      : asList(filter[clauseKey(field, 'is_not')]);
+      : read(clauseKey(field, 'is_not'));
     if (kept.length > 0) filters.push({ field, op: 'is', values: kept });
+    if (all.length > 0) filters.push({ field, op: 'all', values: all });
     if (dropped.length > 0) {
       filters.push({ field, op: 'is_not', values: dropped });
     }
   }
+  return filters;
+};
+
+/** The groups a stored filter carries, as a list or its JSON text; anything else reads as none. */
+const parsedGroups = (value: unknown): Record<string, unknown>[] => {
+  let raw: unknown = value;
+  if (typeof raw === 'string') {
+    try {
+      raw = JSON.parse(raw);
+    } catch {
+      return [];
+    }
+  }
+  if (!Array.isArray(raw)) return [];
+  return raw.filter(
+    (item): item is Record<string, unknown> =>
+      typeof item === 'object' && item !== null && !Array.isArray(item)
+  );
+};
+
+/** The stored groups as the bar edits them, each one level of clauses under its own match. */
+const storedGroups = (value: unknown): FilterGroup[] =>
+  parsedGroups(value)
+    .slice(0, MAX_FILTER_GROUPS)
+    .map((item) => ({
+      match: item['match'] === 'any' ? 'any' : 'all',
+      filters: filterClauses(item),
+    }));
+
+/**
+ * A stored filter's own conditions as the bar edits them. A filter saved with
+ * "match any" holds its conditions in one `any` group, as `wireConditions`
+ * writes it, and reads back unwrapped. A filter whose top level says `any`,
+ * as an agent may write one, reads as it is.
+ */
+const storedConditions = (
+  filter: Record<string, unknown>
+): Pick<ViewState, 'filters' | 'match' | 'groups'> => {
+  const filters = filterClauses(filter);
+  const raw = parsedGroups(filter['groups']);
+  const only = raw.length === 1 ? raw[0] : undefined;
+  if (
+    filter['match'] !== 'any' &&
+    filters.length === 0 &&
+    only !== undefined &&
+    only['match'] === 'any'
+  ) {
+    return {
+      filters: filterClauses(only),
+      match: 'any',
+      groups: storedGroups(only['groups']),
+    };
+  }
+  return {
+    filters,
+    match: filter['match'] === 'any' ? 'any' : 'all',
+    groups: storedGroups(raw),
+  };
+};
+
+/** Reads a saved view back into the state it was saved from. */
+export const viewToState = (view: SavedViewDisplayRead): ViewState => {
+  const filter = view.filter as Record<string, unknown>;
+  const conditions = storedConditions(filter);
   const layout: ViewLayout =
     view.layout === 'board' || view.layout === 'list'
       ? view.layout
@@ -842,7 +1153,7 @@ export const viewToState = (view: SavedViewDisplayRead): ViewState => {
   const sub: GroupField = view.sub_group_by ?? 'none';
   const ordering = view.ordering ?? view.sort;
   return {
-    filters,
+    ...conditions,
     q: typeof filter['q'] === 'string' ? filter['q'] : '',
     groupBy,
     subGroupBy: sub === groupBy ? 'none' : sub,
@@ -859,14 +1170,13 @@ export const viewToState = (view: SavedViewDisplayRead): ViewState => {
 
 /**
  * The stored filter keys a view carries that the filter bar does not edit:
- * its team, a status category, a parent. They are the fixed scope the view
- * runs under, kept as they are when the view is updated.
+ * its team and a status category. They are the fixed scope the view runs
+ * under, kept as they are when the view is updated.
  */
 const SCOPE_KEYS = [
   'team_id',
   'status_category',
   'status_category_not',
-  'parent_id',
 ] as const;
 
 /** The fixed scope of a stored filter, as the list query it adds. */
@@ -894,10 +1204,13 @@ export const stateToViewFilter = (
       key !== 'limit' &&
       key !== 'include_archived' &&
       key !== 'archived_only' &&
-      key !== 'include_sub_teams'
+      key !== 'include_sub_teams' &&
+      key !== 'groups'
     )
       filter[key] = value;
   }
+  const { groups } = wireConditions(state);
+  if (groups.length > 0) filter['groups'] = groups;
   return filter;
 };
 

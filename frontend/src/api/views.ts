@@ -57,11 +57,28 @@ export type ViewVisibleProperty =
   | 'created_at'
   | 'updated_at';
 
+/** One stored group of conditions, combined under its own `match`, holding groups of its own at most one level down. */
+export interface SavedViewFilterGroup {
+  [key: string]: string | string[] | SavedViewFilterGroup[];
+}
+
 /**
- * The negation keys a stored filter may carry beside {@link ViewFilter}, each
- * excluding any issue matching one of its values.
+ * The keys a stored filter may carry beside {@link ViewFilter}: the negations,
+ * each excluding any issue matching one of its values, and the newer
+ * conditions and groups.
  */
 export interface ViewFilterNegations {
+  subscriber_id?: string | string[];
+  subscriber_id_not?: string | string[];
+  label_id_all?: string | string[];
+  parent_id_not?: string | string[];
+  has_sub_issues?: 'true' | 'false';
+  completed_after?: string;
+  completed_before?: string;
+  content?: string;
+  content_not?: string;
+  match?: 'all' | 'any';
+  groups?: SavedViewFilterGroup[];
   team_id_not?: string | string[];
   creator_id_not?: string | string[];
   status_id_not?: string | string[];
@@ -194,14 +211,21 @@ const SCALAR_FILTER_KEYS = new Set([
   'q',
   'is_blocked',
   'is_blocking',
+  'has_sub_issues',
+  'completed_after',
+  'completed_before',
+  'content',
+  'content_not',
+  'match',
 ]);
 
 /**
  * Expands a stored filter into the issue list query that runs it. Running a
  * view is the list route and nothing else, so this is the one place a view's
  * filter meets the list: repeatable keys pass through as arrays, which the
- * client sends as repeated keys, and a list left on a single valued key from
- * an older view keeps only its first value rather than failing the read.
+ * client sends as repeated keys, a list left on a single valued key from an
+ * older view keeps only its first value rather than failing the read, and the
+ * condition groups travel as the JSON text the list route takes.
  */
 export const viewFilterToQuery = (
   filter: SavedViewFilter,
@@ -210,19 +234,31 @@ export const viewFilterToQuery = (
   const query: Record<string, string | string[]> = {};
   for (const [key, value] of Object.entries(filter) as [
     string,
-    string | string[] | undefined,
+    string | string[] | SavedViewFilterGroup[] | undefined,
   ][]) {
     if (value === undefined) {
       continue;
     }
+    if (key === 'groups') {
+      if (Array.isArray(value) && value.length > 0) {
+        query[key] = JSON.stringify(value);
+      }
+      continue;
+    }
+    const entry =
+      typeof value === 'string'
+        ? value
+        : (value as unknown[]).filter(
+            (item): item is string => typeof item === 'string'
+          );
     if (SCALAR_FILTER_KEYS.has(key)) {
-      const first = Array.isArray(value) ? value[0] : value;
+      const first = Array.isArray(entry) ? entry[0] : entry;
       if (first !== undefined) {
         query[key] = first;
       }
       continue;
     }
-    query[key] = Array.isArray(value) ? [...value] : value;
+    query[key] = Array.isArray(entry) ? [...entry] : entry;
   }
   return sort === undefined ? query : { ...query, sort };
 };

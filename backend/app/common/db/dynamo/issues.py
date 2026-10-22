@@ -89,6 +89,7 @@ REPLACE_REMOVABLE_ATTRIBUTES: tuple[str, ...] = (
     "snoozed_until",
     "sla_started_at",
     "sla_breaches_at",
+    "completed_at",
     "external_ref",
     "import_batch_id",
 )
@@ -270,6 +271,7 @@ class Issue(BaseModel):
     snoozed_until: datetime | None = None
     sla_started_at: datetime | None = None
     sla_breaches_at: datetime | None = None
+    completed_at: datetime | None = None
     external_ref: str | None = None
     import_batch_id: str | None = None
 
@@ -347,6 +349,7 @@ def as_issue_item(issue: Issue) -> dict[str, Any]:
         "archived_at",
         "in_triage",
         "snoozed_until",
+        "completed_at",
         "external_ref",
         "import_batch_id",
         PULL_REQUEST_SUMMARY,

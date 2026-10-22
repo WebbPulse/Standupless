@@ -2,24 +2,34 @@
  * The filters over a list or board. The Filter button walks from a property
  * to its values, and each active filter is a chip reading "Status is any of
  * Todo, In Progress" whose verb flips between keeping and excluding and whose
- * values reopen the same list. Chips are ANDed together. Values are offered
- * by name, so a status or label shared by name across teams is one choice
- * that matches in every team. A date field takes one day instead, picked
- * from a few relative presets or a calendar, and its verb flips between
- * "before" and "after".
+ * values reopen the same list. Chips combine under the bar's match, every
+ * filter by default or any one of them, and a filter group boxes a few chips
+ * that combine under a match of their own and stand as one filter. Values
+ * are offered by name, so a status or label shared by name across teams is
+ * one choice that matches in every team. A date field takes one day instead,
+ * picked from a few relative presets or a calendar, and its verb flips
+ * between "before" and "after". Content takes free text matched against the
+ * title and description.
  */
 
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
+  LuBell,
   LuBox,
   LuCalendar,
+  LuCalendarCheck,
   LuCalendarClock,
   LuCalendarPlus,
   LuCircleDashed,
   LuClock,
+  LuCornerLeftUp,
+  LuFileText,
   LuIterationCw,
+  LuLayers,
   LuLink,
+  LuListTree,
   LuPenLine,
+  LuPlus,
   LuUsers,
   LuListFilter,
   LuMilestone,
@@ -30,20 +40,25 @@ import {
   LuX,
 } from 'react-icons/lu';
 import { NONE } from '../../../api/issues';
+import { listMilestones } from '../../../api/planning';
 import { useTriageTeamIds } from '../../../hooks/useTriageTeams';
 import { PRIORITIES, PRIORITY_LABELS } from '../../../lib/issueDisplay';
 import { personAvatar, personLabel } from '../../../lib/issuePeople';
 import {
-  FILTER_FIELDS,
+  ALL_OF_FIELDS,
   FILTER_LABELS,
   KEEP_ONLY_FIELDS,
+  MAX_FILTER_GROUPS,
   RELATIVE_CYCLES,
-  fieldsFor,
+  filterFieldsFor,
   isDateField,
+  isTextField,
   labelGroupKey,
   statusGroupKey,
   type FilterClause,
   type FilterField,
+  type FilterGroup,
+  type FilterMatch,
   type IssueContext,
 } from '../../../lib/issueView';
 import {
@@ -59,7 +74,7 @@ import {
   TRIAGE_STATUS_NAME,
 } from '../../../lib/triageStatus';
 import { cn } from '../../../lib/cn';
-import type { LinkType } from '../../../types/Api';
+import type { LinkType, MilestoneRead, ProjectRead } from '../../../types/Api';
 import { estimateChoices } from '../../../lib/validation';
 import Avatar from '../../ui/avatar';
 import Button from '../../ui/button';
@@ -80,6 +95,7 @@ const FIELD_ICONS: Record<FilterField, React.ReactNode> = {
   status: <LuCircleDashed className="h-3.5 w-3.5" />,
   assignee: <LuUserRound className="h-3.5 w-3.5" />,
   creator: <LuPenLine className="h-3.5 w-3.5" />,
+  subscriber: <LuBell className="h-3.5 w-3.5" />,
   priority: <LuSignal className="h-3.5 w-3.5" />,
   label: <LuTag className="h-3.5 w-3.5" />,
   estimate: <LuTriangle className="h-3.5 w-3.5" />,
@@ -87,8 +103,12 @@ const FIELD_ICONS: Record<FilterField, React.ReactNode> = {
   project: <LuBox className="h-3.5 w-3.5" />,
   milestone: <LuMilestone className="h-3.5 w-3.5" />,
   cycle: <LuIterationCw className="h-3.5 w-3.5" />,
+  parent: <LuCornerLeftUp className="h-3.5 w-3.5" />,
+  sub_issues: <LuListTree className="h-3.5 w-3.5" />,
+  content: <LuFileText className="h-3.5 w-3.5" />,
   created: <LuCalendarPlus className="h-3.5 w-3.5" />,
   updated: <LuCalendarClock className="h-3.5 w-3.5" />,
+  completed: <LuCalendarCheck className="h-3.5 w-3.5" />,
   due: <LuCalendar className="h-3.5 w-3.5" />,
   sla: <LuClock className="h-3.5 w-3.5" />,
   blocked: <BlockedGlyph className="h-3.5 w-3.5" />,
@@ -111,6 +131,63 @@ const RELATION_CHOICES: { value: LinkType; label: string }[] = [
   { value: 'relates_to', label: 'Related to' },
   { value: 'duplicate_of', label: 'Duplicate of' },
 ];
+
+/** How long a project's milestones read for a filter stay fresh. */
+const MILESTONE_READ_TTL_MS = 60000;
+
+/** The most projects a milestone filter outside a project reads the milestones of. */
+const MILESTONE_PROJECT_LIMIT = 50;
+
+const milestoneReads = new Map<
+  string,
+  { at: number; read: Promise<MilestoneRead[]> }
+>();
+
+/** One project's milestones, shared by every picker open within the freshness window. */
+const readMilestones = (project: ProjectRead): Promise<MilestoneRead[]> => {
+  const key = `${project.workspace_id}/${project.project_id}`;
+  const held = milestoneReads.get(key);
+  if (held !== undefined && Date.now() - held.at < MILESTONE_READ_TTL_MS) {
+    return held.read;
+  }
+  const read = listMilestones(project.workspace_id, project.project_id).catch(
+    () => {
+      milestoneReads.delete(key);
+      return [];
+    }
+  );
+  milestoneReads.set(key, { at: Date.now(), read });
+  return read;
+};
+
+/**
+ * The context a field's choices are drawn from. Outside a project's own list
+ * the context carries no milestones, so a milestone filter reads them from
+ * each project the list knows, and the other fields use the context as it is.
+ */
+const useChoiceContext = (
+  context: IssueContext,
+  field: FilterField
+): IssueContext => {
+  const wanted = field === 'milestone' && context.milestones === undefined;
+  const [loaded, setLoaded] = useState<MilestoneRead[]>([]);
+  useEffect(() => {
+    if (!wanted) return undefined;
+    let live = true;
+    void Promise.all(
+      context.projects.slice(0, MILESTONE_PROJECT_LIMIT).map(readMilestones)
+    ).then((lists) => {
+      if (live) setLoaded(lists.flat());
+    });
+    return () => {
+      live = false;
+    };
+  }, [wanted, context.projects]);
+  return useMemo(
+    () => (wanted ? { ...context, milestones: loaded } : context),
+    [wanted, context, loaded]
+  );
+};
 
 /** A day as `YYYY-MM-DD` in local time, the way a date input reads it. */
 const isoDay = (date: Date): string => {
@@ -292,7 +369,8 @@ const filterChoices = (
         ids: [priority],
       }));
     case 'assignee':
-    case 'creator': {
+    case 'creator':
+    case 'subscriber': {
       const me = context.people.find(
         (person) => person.user_id === context.currentUserId
       );
@@ -394,8 +472,32 @@ const filterChoices = (
       }));
     case 'created':
     case 'updated':
+    case 'completed':
     case 'due':
+    case 'content':
       return [];
+    case 'parent':
+      return [
+        {
+          option: {
+            value: NONE,
+            label: 'No parent (top level)',
+            icon: hollow,
+          },
+          ids: [NONE],
+        },
+        ...[...(context.parents?.entries() ?? [])].map(([id, parent]) => ({
+          option: {
+            value: id,
+            label: parent.title,
+            detail: parent.key,
+            icon: <LuCornerLeftUp className="h-3.5 w-3.5 text-text-muted" />,
+          },
+          ids: [id],
+        })),
+      ];
+    case 'sub_issues':
+      return yesNo(<LuListTree className="h-3.5 w-3.5" />);
     case 'project':
       return [
         {
@@ -417,14 +519,20 @@ const filterChoices = (
           option: { value: NONE, label: 'No milestone', icon: hollow },
           ids: [NONE],
         },
-        ...(context.milestones ?? []).map((milestone) => ({
-          option: {
-            value: milestone.milestone_id,
-            label: milestone.name,
-            icon: <LuMilestone className="h-3.5 w-3.5 text-text-muted" />,
-          },
-          ids: [milestone.milestone_id],
-        })),
+        ...(context.milestones ?? []).map((milestone) => {
+          const project = context.projects.find(
+            (item) => item.project_id === milestone.project_id
+          );
+          return {
+            option: {
+              value: milestone.milestone_id,
+              label: milestone.name,
+              ...(project === undefined ? {} : { group: project.name }),
+              icon: <LuMilestone className="h-3.5 w-3.5 text-text-muted" />,
+            },
+            ids: [milestone.milestone_id],
+          };
+        }),
       ];
     case 'cycle':
       return [
@@ -569,6 +677,54 @@ const DateList: React.FC<{
   );
 };
 
+/** The filters with a text field's clause set to `text`, or dropped when it is blank. */
+const setTextValue = (
+  filters: FilterClause[],
+  field: FilterField,
+  text: string
+): FilterClause[] => {
+  const value = text.trim();
+  const index = filters.findIndex((clause) => clause.field === field);
+  if (value === '') {
+    return index === -1 ? filters : filters.filter((_, at) => at !== index);
+  }
+  if (index === -1) return [...filters, { field, op: 'is', values: [value] }];
+  return filters.map((clause, at) =>
+    at === index ? { ...clause, values: [value] } : clause
+  );
+};
+
+/** A text field's input, applied on Enter so each keystroke does not reload the list. */
+const TextValue: React.FC<{
+  field: FilterField;
+  filters: FilterClause[];
+  onChange: (filters: FilterClause[]) => void;
+}> = ({ field, filters, onChange }) => {
+  const held = filters.find((clause) => clause.field === field)?.values[0];
+  const [text, setText] = useState(held ?? '');
+  return (
+    <form
+      className="flex flex-col gap-1.5 p-2"
+      onSubmit={(event) => {
+        event.preventDefault();
+        onChange(setTextValue(filters, field, text));
+      }}
+    >
+      <Input
+        aria-label={`${FILTER_LABELS[field]} contains`}
+        placeholder="Title or description contains..."
+        value={text}
+        onChange={(event) => {
+          setText(event.target.value);
+        }}
+      />
+      <span className="px-0.5 text-xs text-text-faint">
+        Press Enter to apply
+      </span>
+    </form>
+  );
+};
+
 /** The list of one field's values, toggling each on the filters. */
 const ValueList: React.FC<{
   field: FilterField;
@@ -577,6 +733,10 @@ const ValueList: React.FC<{
   onChange: (filters: FilterClause[]) => void;
 }> = ({ field, filters, context, onChange }) => {
   const triage = useTriageInList(context);
+  const choiceContext = useChoiceContext(context, field);
+  if (isTextField(field)) {
+    return <TextValue field={field} filters={filters} onChange={onChange} />;
+  }
   if (isDateField(field)) {
     return (
       <DateList
@@ -587,8 +747,11 @@ const ValueList: React.FC<{
       />
     );
   }
-  const choices = filterChoices(field, context, triage);
-  const clause = filters.find((item) => item.field === field);
+  const choices = filterChoices(field, choiceContext, triage);
+  const clause = filters.find(
+    (item) =>
+      item.field === field && item.op !== 'before' && item.op !== 'after'
+  );
   return (
     <Combobox
       label={FILTER_LABELS[field]}
@@ -606,6 +769,46 @@ const ValueList: React.FC<{
   );
 };
 
+/** The next verb a chip's switch moves to: is and is not, with includes all of between them for labels. */
+const nextOp = (clause: FilterClause): FilterClause['op'] => {
+  switch (clause.op) {
+    case 'before':
+      return 'after';
+    case 'after':
+      return 'before';
+    case 'is':
+      return ALL_OF_FIELDS.has(clause.field) && clause.values.length > 1
+        ? 'all'
+        : 'is_not';
+    case 'all':
+      return 'is_not';
+    case 'is_not':
+      return 'is';
+  }
+};
+
+/** How a chip's verb reads. */
+const verbOf = (clause: FilterClause): string => {
+  const many = clause.values.length > 1;
+  if (clause.op === 'before' || clause.op === 'after') return clause.op;
+  if (isTextField(clause.field)) {
+    return clause.op === 'is' ? 'contains' : 'does not contain';
+  }
+  if (clause.op === 'all') return 'includes all of';
+  if (clause.op === 'is') return many ? 'is any of' : 'is';
+  return many ? 'is none of' : 'is not';
+};
+
+/** The short verb a chip's switch names in its accessible label. */
+const verbName = (clause: FilterClause): string => {
+  if (clause.op === 'before' || clause.op === 'after') return clause.op;
+  if (isTextField(clause.field)) {
+    return clause.op === 'is' ? 'contains' : 'does not contain';
+  }
+  if (clause.op === 'all') return 'includes all of';
+  return clause.op === 'is' ? 'is' : 'is not';
+};
+
 /** One active filter as a chip. */
 const FilterChip: React.FC<{
   clause: FilterClause;
@@ -614,35 +817,24 @@ const FilterChip: React.FC<{
   onChange: (filters: FilterClause[]) => void;
 }> = ({ clause, filters, context, onChange }) => {
   const triage = useTriageInList(context);
+  const choiceContext = useChoiceContext(context, clause.field);
   const dated = clause.op === 'before' || clause.op === 'after';
-  const choices = dated ? [] : filterChoices(clause.field, context, triage);
+  const text = isTextField(clause.field);
+  const choices =
+    dated || text ? [] : filterChoices(clause.field, choiceContext, triage);
   const names = chosen(clause, choices).map((choice) => choice.option.label);
   const summary = dated
     ? dayLabel(clause.values[0] ?? '')
-    : names.length === 0
-      ? `${String(clause.values.length)} values`
-      : names.length <= 2
-        ? names.join(', ')
-        : `${String(names.length)} ${FILTER_LABELS[clause.field].toLowerCase()}`;
-  const many = clause.values.length > 1;
-  const verb =
-    clause.op === 'before' || clause.op === 'after'
-      ? clause.op
-      : clause.op === 'is'
-        ? many
-          ? 'is any of'
-          : 'is'
-        : many
-          ? 'is none of'
-          : 'is not';
-  const flipped: FilterClause['op'] =
-    clause.op === 'is'
-      ? 'is_not'
-      : clause.op === 'is_not'
-        ? 'is'
-        : clause.op === 'before'
-          ? 'after'
-          : 'before';
+    : text
+      ? `"${clause.values[0] ?? ''}"`
+      : names.length === 0
+        ? clause.values.length === 1
+          ? '1 value'
+          : `${String(clause.values.length)} values`
+        : names.length <= 2
+          ? names.join(', ')
+          : `${String(names.length)} ${FILTER_LABELS[clause.field].toLowerCase()}`;
+  const flipped = nextOp(clause);
   const flipTaken = filters.some(
     (item) =>
       item !== clause && item.field === clause.field && item.op === flipped
@@ -669,14 +861,14 @@ const FilterChip: React.FC<{
       ) : (
         <button
           type="button"
-          aria-label={`${FILTER_LABELS[clause.field]} ${dated ? clause.op : clause.op === 'is' ? 'is' : 'is not'}, switch`}
+          aria-label={`${FILTER_LABELS[clause.field]} ${verbName(clause)}, switch`}
           disabled={flipTaken}
           onClick={() => {
             replace({ ...clause, op: flipped });
           }}
           className={cn(segment, 'border-r border-line text-text-muted')}
         >
-          {verb}
+          {verbOf(clause)}
         </button>
       )}
       <Popover
@@ -723,6 +915,13 @@ const FilterChip: React.FC<{
   );
 };
 
+/** Every part of a filter at once: the flat filters, how they combine, and the groups. */
+export interface FilterLogic {
+  filters: FilterClause[];
+  match: FilterMatch;
+  groups: FilterGroup[];
+}
+
 /** Props for FilterBar. */
 export interface FilterBarProps {
   filters: FilterClause[];
@@ -730,7 +929,61 @@ export interface FilterBarProps {
   onChange: (filters: FilterClause[]) => void;
   /** The fields this surface filters on, every field when unset. */
   fields?: FilterField[];
+  /** How the filters and groups combine, every one of them by default. */
+  match?: FilterMatch;
+  /** The filter groups, each standing as one filter. */
+  groups?: FilterGroup[];
+  /** Sets the whole filter at once; a surface without it offers no groups or match switch. */
+  onLogicChange?: (logic: FilterLogic) => void;
 }
+
+const ADD_GROUP = '__add_group__';
+
+/** The field picker that walks from a field to its values, optionally offering a new group. */
+const FieldPicker: React.FC<{
+  offered: FilterField[];
+  filters: FilterClause[];
+  context: IssueContext;
+  onChange: (filters: FilterClause[]) => void;
+  field: FilterField | null;
+  onField: (field: FilterField) => void;
+  onAddGroup?: () => void;
+}> = ({ offered, filters, context, onChange, field, onField, onAddGroup }) =>
+  field === null ? (
+    <Combobox
+      label="Filter by"
+      placeholder="Filter by..."
+      options={[
+        ...offered.map((item) => ({
+          value: item,
+          label: FILTER_LABELS[item],
+          icon: FIELD_ICONS[item],
+        })),
+        ...(onAddGroup === undefined
+          ? []
+          : [
+              {
+                value: ADD_GROUP,
+                label: 'Add filter group',
+                icon: <LuLayers className="h-3.5 w-3.5" />,
+                group: 'Groups',
+              },
+            ]),
+      ]}
+      selected={[]}
+      onSelect={(value) => {
+        if (value === ADD_GROUP) onAddGroup?.();
+        else onField(value as FilterField);
+      }}
+    />
+  ) : (
+    <ValueList
+      field={field}
+      filters={filters}
+      context={context}
+      onChange={onChange}
+    />
+  );
 
 /** The Filter button that adds a filter, walking from a field to its values; F opens it. */
 export const FilterButton: React.FC<FilterBarProps> = ({
@@ -738,8 +991,11 @@ export const FilterButton: React.FC<FilterBarProps> = ({
   context,
   onChange,
   fields,
+  match = 'all',
+  groups = [],
+  onLogicChange,
 }) => {
-  const offered = fields ?? fieldsFor(FILTER_FIELDS, context);
+  const offered = fields ?? filterFieldsFor(context);
   const [field, setField] = useState<FilterField | null>(null);
   const [open, setOpen] = useState(false);
   useShortcut({
@@ -752,6 +1008,11 @@ export const FilterButton: React.FC<FilterBarProps> = ({
       setOpen(true);
     },
   });
+  const apply = (logic: FilterLogic): void => {
+    onLogicChange?.(logic);
+  };
+  const canGroup =
+    onLogicChange !== undefined && groups.length < MAX_FILTER_GROUPS;
   return (
     <Popover
       label="Add filter"
@@ -768,41 +1029,166 @@ export const FilterButton: React.FC<FilterBarProps> = ({
         </Button>
       )}
     >
-      {field === null ? (
-        <Combobox
-          label="Filter by"
-          placeholder="Filter by..."
-          options={offered.map((item) => ({
-            value: item,
-            label: FILTER_LABELS[item],
-            icon: FIELD_ICONS[item],
-          }))}
-          selected={[]}
-          onSelect={(value) => {
-            setField(value as FilterField);
-          }}
-        />
-      ) : (
-        <ValueList
-          field={field}
-          filters={filters}
-          context={context}
-          onChange={onChange}
-        />
-      )}
+      <FieldPicker
+        offered={offered}
+        filters={filters}
+        context={context}
+        onChange={onChange}
+        field={field}
+        onField={setField}
+        {...(canGroup
+          ? {
+              onAddGroup: () => {
+                apply({
+                  filters,
+                  match,
+                  groups: [...groups, { match: 'any', filters: [] }],
+                });
+                setOpen(false);
+                setField(null);
+              },
+            }
+          : {})}
+      />
     </Popover>
   );
 };
 
-/** The active filters as chips, with a way to clear them all. */
+/** The switch between every condition and any one of them. */
+const MatchSwitch: React.FC<{
+  match: FilterMatch;
+  label: string;
+  onChange: (match: FilterMatch) => void;
+}> = ({ match, label, onChange }) => (
+  <button
+    type="button"
+    aria-label={`${label} match ${match}, switch`}
+    onClick={() => {
+      onChange(match === 'all' ? 'any' : 'all');
+    }}
+    className="h-7 rounded-md border border-line px-2 text-xs text-text-muted hover:bg-raised hover:text-text focus-visible:outline-2 focus-visible:outline-accent"
+  >
+    {match === 'all' ? 'Match all' : 'Match any'}
+  </button>
+);
+
+/** One filter group as a box of chips with its own match and its own add button. */
+const GroupBox: React.FC<{
+  group: FilterGroup;
+  index: number;
+  offered: FilterField[];
+  context: IssueContext;
+  onChange: (group: FilterGroup | null) => void;
+}> = ({ group, index, offered, context, onChange }) => {
+  const [open, setOpen] = useState(false);
+  const [field, setField] = useState<FilterField | null>(null);
+  const name = `Filter group ${String(index + 1)}`;
+  const setFilters = (filters: FilterClause[]): void => {
+    onChange({ ...group, filters });
+  };
+  return (
+    <div
+      role="group"
+      aria-label={name}
+      className="flex flex-wrap items-center gap-1.5 rounded-md border border-dashed border-line p-1"
+    >
+      <LuLayers
+        aria-hidden="true"
+        className="ml-1 h-3.5 w-3.5 text-text-faint"
+      />
+      <MatchSwitch
+        match={group.match}
+        label={name}
+        onChange={(match) => {
+          onChange({ ...group, match });
+        }}
+      />
+      {group.filters.map((clause) => (
+        <FilterChip
+          key={`${clause.field}.${clause.op}`}
+          clause={clause}
+          filters={group.filters}
+          context={context}
+          onChange={setFilters}
+        />
+      ))}
+      <Popover
+        label={`Add filter to ${name.toLowerCase()}`}
+        contentClassName="w-72 p-0"
+        open={open}
+        onOpenChange={(next) => {
+          setOpen(next);
+          if (!next) setField(null);
+        }}
+        trigger={(props) => (
+          <button
+            type="button"
+            {...props}
+            aria-label={`Add filter to ${name.toLowerCase()}`}
+            className="flex h-7 items-center rounded-md px-1.5 text-text-muted hover:bg-raised hover:text-text focus-visible:outline-2 focus-visible:outline-accent"
+          >
+            <LuPlus aria-hidden="true" className="h-3.5 w-3.5" />
+          </button>
+        )}
+      >
+        <FieldPicker
+          offered={offered.filter((item) => item !== 'team')}
+          filters={group.filters}
+          context={context}
+          onChange={setFilters}
+          field={field}
+          onField={setField}
+        />
+      </Popover>
+      <button
+        type="button"
+        aria-label={`Remove ${name.toLowerCase()}`}
+        onClick={() => {
+          onChange(null);
+        }}
+        className="flex h-7 items-center rounded-md px-1.5 text-text-faint hover:bg-raised hover:text-text focus-visible:outline-2 focus-visible:outline-accent"
+      >
+        <LuX aria-hidden="true" className="h-3 w-3" />
+      </button>
+    </div>
+  );
+};
+
+/** The active filters as chips, with groups, the match switch and a way to clear them all. */
 export const FilterChips: React.FC<FilterBarProps> = ({
   filters,
   context,
   onChange,
+  fields,
+  match = 'all',
+  groups = [],
+  onLogicChange,
 }) => {
-  if (filters.length === 0) return null;
+  if (filters.length === 0 && groups.length === 0) return null;
+  const offered = fields ?? filterFieldsFor(context);
+  const apply = (logic: FilterLogic): void => {
+    onLogicChange?.(logic);
+  };
+  const setGroup = (index: number, next: FilterGroup | null): void => {
+    apply({
+      filters,
+      match,
+      groups: groups.flatMap((group, at) =>
+        at === index ? (next === null ? [] : [next]) : [group]
+      ),
+    });
+  };
   return (
     <div className="flex flex-wrap items-center gap-1.5">
+      {onLogicChange !== undefined && filters.length + groups.length > 1 ? (
+        <MatchSwitch
+          match={match}
+          label="Filters"
+          onChange={(next) => {
+            apply({ filters, match: next, groups });
+          }}
+        />
+      ) : null}
       {filters.map((clause) => (
         <FilterChip
           key={`${clause.field}.${clause.op}`}
@@ -812,10 +1198,25 @@ export const FilterChips: React.FC<FilterBarProps> = ({
           onChange={onChange}
         />
       ))}
+      {onLogicChange === undefined
+        ? null
+        : groups.map((group, index) => (
+            <GroupBox
+              key={String(index)}
+              group={group}
+              index={index}
+              offered={offered}
+              context={context}
+              onChange={(next) => {
+                setGroup(index, next);
+              }}
+            />
+          ))}
       <button
         type="button"
         onClick={() => {
-          onChange([]);
+          if (onLogicChange === undefined) onChange([]);
+          else onLogicChange({ filters: [], match: 'all', groups: [] });
         }}
         className="h-7 rounded-md px-2 text-xs text-text-muted hover:bg-raised hover:text-text focus-visible:outline-2 focus-visible:outline-accent"
       >

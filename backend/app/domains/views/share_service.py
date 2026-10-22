@@ -50,6 +50,7 @@ from app.domains.views.schemas.view import (
     FILTER_FIELDS,
     SortField,
     malformed_filter_keys,
+    normalize_filter,
     unknown_filter_keys,
 )
 
@@ -243,7 +244,7 @@ bounded whatever cursor arrives, at the cost of a shared listing covering only a
 team's newest thousand issues.
 """
 
-PERSONAL_FILTER_FIELDS: tuple[str, ...] = ("subscriber_id",)
+PERSONAL_FILTER_FIELDS: tuple[str, ...] = ("subscriber_id", "subscriber_id_not")
 """Filter keys a shared link refuses, because they need the viewer's own index.
 
 What a person follows is read from their subscriptions, which an anonymous reader
@@ -263,9 +264,11 @@ def snapshot_filter(team_id: str, value: Mapping[str, Any] | None) -> dict[str, 
     list and string is bounded, because the snapshot is stored on the token row
     and replayed on every anonymous read.
     """
-    raw = dict(value or {})
+    raw = normalize_filter(dict(value or {})) or {}
     bad = unknown_filter_keys(raw) + malformed_filter_keys(raw)
     bad += [key for key in PERSONAL_FILTER_FIELDS if raw.get(key) is not None]
+    if _groups_personal(raw.get("groups")):
+        bad.append("groups")
     if bad:
         raise invalid_filter(sorted(set(bad)))
     if raw.get("team_id") not in (None, team_id):
@@ -275,8 +278,10 @@ def snapshot_filter(team_id: str, value: Mapping[str, Any] | None) -> dict[str, 
     for key, entry in raw.items():
         if entry is None or key == "team_id":
             continue
-        values = [entry] if isinstance(entry, str) else list(entry)
-        if len(values) > MAX_FILTER_VALUES or any(len(item) > MAX_FILTER_VALUE_LENGTH for item in values):
+        if key == "groups":
+            if not _groups_bounded(entry):
+                raise invalid_filter([key])
+        elif not _values_bounded(entry):
             raise invalid_filter([key])
         snapshot[key] = entry
     snapshot["team_id"] = team_id
@@ -285,6 +290,33 @@ def snapshot_filter(team_id: str, value: Mapping[str, Any] | None) -> dict[str, 
     except UnknownStatusCategory as exc:
         raise invalid_filter(["status_category"]) from exc
     return snapshot
+
+
+def _values_bounded(entry: Any) -> bool:
+    """Whether one stored filter value stays within the snapshot's count and length bounds."""
+    values = [entry] if isinstance(entry, str) else list(entry)
+    return len(values) <= MAX_FILTER_VALUES and all(len(item) <= MAX_FILTER_VALUE_LENGTH for item in values)
+
+
+def _groups_personal(groups: Any) -> bool:
+    """Whether any condition group, at any depth, names a personal key a shared link refuses."""
+    if not isinstance(groups, list):
+        return False
+    return any(
+        isinstance(group, dict)
+        and (any(group.get(key) is not None for key in PERSONAL_FILTER_FIELDS) or _groups_personal(group.get("groups")))
+        for group in groups
+    )
+
+
+def _groups_bounded(entry: Any) -> bool:
+    """Whether every value in every condition group, nested ones included, stays within the snapshot's bounds."""
+    return all(
+        _groups_bounded(item) if key == "groups" else _values_bounded(item)
+        for group in entry
+        for key, item in group.items()
+        if item is not None
+    )
 
 
 def shared_issue_filter(value: Mapping[str, Any], *, created_by: str) -> IssueFilter:
