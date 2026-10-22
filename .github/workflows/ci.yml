@@ -237,6 +237,67 @@ jobs:
       - name: Audit production dependencies
         run: npm audit --omit=dev --audit-level=moderate
 
+  desktop-mac:
+    name: Desktop macOS package
+    needs: changes
+    if: needs.changes.outputs.desktop == 'true'
+    runs-on: macos-latest
+    permissions:
+      contents: read
+      id-token: write
+    defaults:
+      run:
+        working-directory: desktop
+        shell: bash
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ vars.CI_AWS_ROLE_ARN }}
+          aws-region: us-west-2
+
+      - name: Log in to CodeArtifact
+        env:
+          DOMAIN_OWNER: ${{ vars.CODEARTIFACT_DOMAIN_OWNER }}
+        run: |
+          aws codeartifact login --tool npm --domain webbpulse \
+            --domain-owner "$DOMAIN_OWNER" --repository npm \
+            --namespace @webbpulse --region us-west-2
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build the app
+        run: npm run build
+
+      - name: Package the macOS zip
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+          CSC_FOR_PULL_REQUEST: "true"
+        run: npx electron-builder --config electron-builder.config.cjs --mac zip --universal --publish never
+
+      - name: Verify the macOS app signs and launches
+        run: |
+          set -euo pipefail
+          ZIPS=( release/production/*-mac.zip )
+          if [ "${#ZIPS[@]}" -ne 1 ] || [ ! -f "${ZIPS[0]}" ]; then
+            echo "::error::expected one macOS zip, found ${#ZIPS[@]}"
+            exit 1
+          fi
+          scripts/verify-mac.sh "${ZIPS[0]}"
+
   mobile-ios:
     name: Mobile iOS (${{ matrix.environment }})
     needs: changes
@@ -527,6 +588,7 @@ jobs:
       - frontend
       - cli
       - desktop
+      - desktop-mac
       - mobile-ios
       - mobile-android
       - frontend-paths

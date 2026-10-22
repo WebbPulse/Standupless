@@ -5,6 +5,15 @@ per platform only when that platform's variables are all set, and
 `release-desktop.yml` passes none of them today, so every release is unsigned
 until the steps below are done.
 
+Without a Developer ID the macOS builds are ad-hoc signed (`identity: '-'`),
+never left unsigned. Apple Silicon kills a binary whose code signature does not
+match its pages, and flipping the Electron fuses rewrites the Electron Framework
+binary after the universal merge, so an unsigned build crashes on launch. That
+is what broke 0.1.1. The hardened runtime is on only with a real identity.
+`scripts/verify-mac.sh` runs `codesign --verify --deep --strict` on the packaged
+app and launches each slice, in `release-desktop.yml` and in the CI
+`desktop-mac` job.
+
 ## What unsigned costs
 
 - **macOS:** Gatekeeper blocks the first launch. Users right-click the app and
