@@ -1,7 +1,7 @@
 /**
  * The wording and rules the personal account settings share: the shape a
  * username takes, the sentences for a refused email change, and how a session's
- * device and sign-in methods read.
+ * device reads.
  */
 
 /** The shape a username takes, which is the shape the mention parser reads. */
@@ -26,23 +26,6 @@ const DEVICE_LABELS: Record<string, string> = {
   unknown: 'Unknown device',
 };
 
-/** How each sign-in method reads. */
-const METHOD_LABELS: Record<string, string> = {
-  pwd: 'Password',
-  otp: 'Authenticator code',
-  mfa: 'Two-factor',
-  passkey: 'Passkey',
-  hwk: 'Passkey',
-  oauth: 'Connected account',
-  fed: 'Connected account',
-  sso: 'Single sign-on',
-  email: 'Email link',
-};
-
 /** The device a session runs on, as a person reads it. */
 export const deviceLabel = (device: string): string =>
   DEVICE_LABELS[device] ?? 'Unknown device';
-
-/** How a session signed in, as a person reads it, or an empty string. */
-export const methodLabel = (amr: string[]): string =>
-  [...new Set(amr.map((method) => METHOD_LABELS[method] ?? method))].join(', ');
