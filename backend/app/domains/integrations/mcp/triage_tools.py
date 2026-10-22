@@ -13,7 +13,6 @@ from app.common import issue_triage
 from app.common.api.schemas.issues import TriageAccept, TriageDecline, TriageDuplicate, TriageSnooze
 from app.common.api.schemas.teams import TriageSettingsUpdate
 from app.common.db.dynamo.team_config import TriageSettings
-from app.common.issue_keys import current
 from app.domains.integrations.mcp.team_tools import TEAM_ARGUMENT, admin_team, boolean, given_arguments
 from app.domains.integrations.mcp.toolkit import (
     Tool,
@@ -42,7 +41,7 @@ def triage_settings_json(settings: TriageSettings) -> dict[str, Any]:
 def _answer(call: ToolCall, issue: Any) -> dict[str, Any]:
     """One worked issue under its current key, with its status name."""
     row = call.repositories.team_config.get_status(call.context.workspace_id, issue.team_id, issue.status_id)
-    return issue_json(current(call.repositories.teams, issue), status_name=row.name if row is not None else "")
+    return issue_json(call.repositories.teams, issue, status_name=row.name if row is not None else "")
 
 
 def _list_triage(call: ToolCall) -> Any:
@@ -59,7 +58,7 @@ def _list_triage(call: ToolCall) -> Any:
         cursor=call.optional("cursor"),
         limit=limit(call.optional("limit")),
     )
-    return {"issues": [summary_json(issue) for issue in rows], "next_cursor": next_cursor}
+    return {"issues": [summary_json(call.repositories.teams, issue) for issue in rows], "next_cursor": next_cursor}
 
 
 def _triage_summary(call: ToolCall) -> Any:

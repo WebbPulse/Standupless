@@ -87,7 +87,7 @@ export const ShortcutHelp: React.FC<ShortcutHelpProps> = ({
       );
     }
     for (const shortcut of registered) {
-      if (shortcut.keys === 'escape') continue;
+      if (shortcut.keys === 'escape' || shortcut.keys === '') continue;
       const rows = byGroup.get(shortcut.group) ?? [];
       const binding = {
         keys: displayKeys(shortcut.keys),

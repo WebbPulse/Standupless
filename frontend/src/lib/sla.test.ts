@@ -1,6 +1,7 @@
 /**
  * The SLA helpers: the live status matching the server's rule, the two unit
- * countdown, the badge label, and how hours read in the settings select.
+ * countdown, the badge label, a paused timer frozen where it stopped, and how
+ * hours read in the settings select.
  */
 
 import { describe, expect, it } from 'vitest';
@@ -8,6 +9,7 @@ import {
   formatSlaDuration,
   liveSlaStatus,
   slaHoursLabel,
+  slaEffectiveDeadline,
   slaLabel,
   slaStatusAt,
 } from './sla';
@@ -103,6 +105,44 @@ describe('slaLabel', () => {
     expect(
       slaLabel({ sla_started_at: null, sla_breaches_at: null }, now)
     ).toBeNull();
+  });
+});
+
+describe('a paused timer', () => {
+  const paused = {
+    sla_started_at: '2026-10-07T00:00:00Z',
+    sla_breaches_at: '2026-10-07T13:00:00Z',
+    sla_paused_at: '2026-10-07T01:00:00Z',
+    sla_status: 'on_track' as const,
+  };
+
+  it('reads as it stood when it paused, even past its deadline', () => {
+    const later = new Date('2026-10-08T00:00:00Z');
+    expect(liveSlaStatus(paused, later)).toBe('on_track');
+    expect(slaLabel(paused, later)).toBe('Paused, 12h left');
+    expect(liveSlaStatus({ ...paused, sla_paused_at: null }, later)).toBe(
+      'breached'
+    );
+  });
+
+  it('keeps a breach it paused after', () => {
+    const late = { ...paused, sla_paused_at: '2026-10-07T14:00:00Z' };
+    expect(liveSlaStatus(late, now)).toBe('at_risk');
+    expect(liveSlaStatus(late, new Date('2026-10-08T00:00:00Z'))).toBe(
+      'breached'
+    );
+    expect(slaLabel(late, new Date('2026-10-08T00:00:00Z'))).toBe(
+      'Breached, paused'
+    );
+  });
+
+  it('sorts by the deadline it would have if it resumed now', () => {
+    expect(slaEffectiveDeadline(paused, now)).toBe(
+      Date.parse('2026-10-07T13:00:00Z') + 11 * 60 * 60000
+    );
+    expect(slaEffectiveDeadline({ ...paused, sla_paused_at: null }, now)).toBe(
+      Date.parse('2026-10-07T13:00:00Z')
+    );
   });
 });
 

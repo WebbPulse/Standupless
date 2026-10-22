@@ -144,6 +144,13 @@ export const linkSearchKey = (issueId: string, term: string): QueryKey => [
   term,
 ];
 
+/** The parent picker's search of one team's top level issues for a term. */
+export const parentSearchKey = (teamId: string, term: string): QueryKey => [
+  'parent-search',
+  teamId,
+  term,
+];
+
 /** One issue's comment thread. */
 export const commentsKey = (issueId: string): QueryKey => ['comments', issueId];
 

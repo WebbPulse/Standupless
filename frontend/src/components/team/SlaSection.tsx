@@ -8,6 +8,10 @@
  * so a change only reaches SLAs that start after it, which the hint says.
  * SLAs need the Business plan, so on a lower plan the rules are read only, the
  * switch only turns off, and a note links to the plans.
+ *
+ * Below the hours sits the paused set: a checkbox per open status, such as On
+ * Staging, whose time does not count toward a breach. Ticking one saves the
+ * whole set at once, and issues already in that status pause or resume then.
  */
 
 import React, { useId } from 'react';
@@ -17,16 +21,26 @@ import {
   useMutationWithRefetch,
   type QueryKey,
 } from '@webbpulse/api-client/react';
-import { getSlaSettings, updateSlaSettings } from '../../api/teams';
-import type { SlaSettingsRead, SlaSettingsUpdate } from '../../types/Api';
+import {
+  getSlaSettings,
+  listStatuses,
+  updateSlaSettings,
+} from '../../api/teams';
+import type {
+  SlaSettingsRead,
+  SlaSettingsUpdate,
+  StatusCategory,
+} from '../../types/Api';
 import { cn } from '../../lib/cn';
 import { errorMessage } from '../../lib/errors';
 import { PRIORITY_LABELS } from '../../lib/issueDisplay';
 import { SLA_HOUR_CHOICES, SLA_PRIORITIES, slaHoursLabel } from '../../lib/sla';
 import { showToast } from '../../lib/toast';
 import { ErrorAlert } from '../ui/alert';
+import { Checkbox } from '../ui/checkbox';
 import { Select } from '../ui/select';
 import Spinner from '../ui/spinner';
+import StatusIcon from '../ui/StatusIcon';
 import PlanRequiredNote from './PlanRequiredNote';
 
 /** Props for SlaSection: which team, and whether the caller may edit. */
@@ -62,7 +76,15 @@ const DEFAULT_SLA: Omit<SlaSettingsRead, 'team_id' | 'updated_at'> = {
   high_hours: 72,
   medium_hours: null,
   low_hours: null,
+  paused_status_ids: [],
 };
+
+/** The status categories an SLA counts time in, so the ones it can pause. */
+const OPEN_CATEGORIES = new Set<StatusCategory>([
+  'backlog',
+  'unstarted',
+  'started',
+]);
 
 /** The select value that stands for no rule. */
 const OFF = 'off';
@@ -89,6 +111,7 @@ export const SlaSection: React.FC<SlaSectionProps> = ({
   const auth = useQueryAuth();
   const baseId = useId();
   const switchLabelId = `${baseId}-enabled`;
+  const pausedLabelId = `${baseId}-paused`;
   const queryKey: QueryKey = ['sla-settings', workspaceId, teamId];
 
   const { data, error, isLoading, refetch } = usePolledQuery(
@@ -105,8 +128,25 @@ export const SlaSection: React.FC<SlaSectionProps> = ({
     [queryKey]
   );
 
+  const { data: statuses } = usePolledQuery(
+    (context) => listStatuses(workspaceId, teamId, context),
+    {
+      intervalMs: POLL_MS,
+      queryKey: ['sla-statuses', workspaceId, teamId],
+      auth,
+    }
+  );
+
   const current = data ?? DEFAULT_SLA;
   const enabled = current.enabled;
+  const paused = current.paused_status_ids ?? [];
+  const pausable = (statuses ?? [])
+    .filter(
+      (status) =>
+        OPEN_CATEGORIES.has(status.category) &&
+        (!status.hidden || paused.includes(status.id))
+    )
+    .sort((a, b) => a.position - b.position);
   const switchLocked = !planIncluded && !enabled;
 
   const apply = async (
@@ -131,6 +171,18 @@ export const SlaSection: React.FC<SlaSectionProps> = ({
     const body: SlaSettingsUpdate = {};
     body[field] = hours;
     void apply(body, 'SLA saved.');
+  };
+
+  const onPause = (statusId: string, checked: boolean): void => {
+    const next = checked
+      ? [...paused.filter((id) => id !== statusId), statusId]
+      : paused.filter((id) => id !== statusId);
+    void apply(
+      { paused_status_ids: next },
+      checked
+        ? 'SLA timer pauses in that status.'
+        : 'SLA timer runs in that status.'
+    );
   };
 
   return (
@@ -243,6 +295,49 @@ export const SlaSection: React.FC<SlaSectionProps> = ({
               </li>
             );
           })}
+          <li className="space-y-2 px-3 py-2">
+            <div className="min-w-0">
+              <span
+                id={pausedLabelId}
+                className={cn(
+                  'block text-sm font-medium',
+                  enabled ? 'text-text' : 'text-text-muted'
+                )}
+              >
+                Pause the timer in
+              </span>
+              <p className="text-xs text-text-muted">
+                Time an issue spends in these statuses does not count toward a
+                breach. It resumes with the time it had left.
+              </p>
+            </div>
+            {pausable.length === 0 ? (
+              <p className="text-xs text-text-muted">No open statuses.</p>
+            ) : (
+              <div
+                role="group"
+                aria-labelledby={pausedLabelId}
+                className="flex flex-wrap gap-x-4 gap-y-1"
+              >
+                {pausable.map((status) => (
+                  <Checkbox
+                    key={status.id}
+                    checked={paused.includes(status.id)}
+                    disabled={!canEdit || saving || !planIncluded}
+                    onChange={(event) => {
+                      onPause(status.id, event.target.checked);
+                    }}
+                    label={
+                      <span className="inline-flex items-center gap-1.5">
+                        <StatusIcon status={status} statuses={statuses ?? []} />
+                        {status.name}
+                      </span>
+                    }
+                  />
+                ))}
+              </div>
+            )}
+          </li>
         </ul>
       )}
     </section>

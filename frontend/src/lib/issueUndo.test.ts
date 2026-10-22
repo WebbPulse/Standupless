@@ -136,13 +136,22 @@ describe('revertBetween', () => {
     });
   });
 
-  it('keeps a revert of dates or parent off the bulk route', () => {
+  it('keeps a revert of dates off the bulk route', () => {
     const revert = revertBetween(
       issue('a', { due_date: '2026-10-30', parent_id: 'p-1' }),
       issue('a')
     );
     expect(revert?.patch).toEqual({ due_date: '2026-10-30', parent_id: 'p-1' });
     expect(revert?.bulk).toBeNull();
+  });
+
+  it('sends a revert of the parent alone through the bulk route', () => {
+    const revert = revertBetween(
+      issue('a', { parent_id: 'p-1' }),
+      issue('a', { parent_id: 'p-2' })
+    );
+    expect(revert?.patch).toEqual({ parent_id: 'p-1' });
+    expect(revert?.bulk).toEqual({ parent_id: 'p-1' });
   });
 
   it('puts back the project and the milestone it cleared', () => {

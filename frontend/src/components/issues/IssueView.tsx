@@ -12,8 +12,10 @@
  * frame's own width through a container query rather than the window's, so
  * the same view fits a full page and a pane beside a list.
  *
- * Adding a link, a sub-issue or a relation opens a dialog from the issue
- * menu, the panel's "+" menu, the command palette or a shortcut. The caller's
+ * Adding a link, a sub-issue, a relation or a parent opens a dialog from the issue
+ * menu, the panel's "+" menu, the command palette or a shortcut. Duplicate
+ * issue files a copy and opens it, and Convert to project asks first, then
+ * opens the project the issue became. The caller's
  * subscription is read once here and shared by the bell in the bar, the
  * Subscribers section, the shortcut and the palette, so they never disagree. An archived
  * issue still opens here, under a banner that restores it. The supporting
@@ -36,11 +38,15 @@ import {
   LuArchiveRestore,
   LuChevronRight,
   LuCopy,
+  LuCopyPlus,
+  LuCornerUpLeft,
   LuEllipsis,
+  LuHexagon,
   LuLink2,
   LuListTree,
   LuMaximize2,
   LuTrash2,
+  LuUnlink,
   LuUsers,
   LuX,
 } from 'react-icons/lu';
@@ -76,6 +82,13 @@ import {
 } from '../../lib/copyIssue';
 import { errorMessage } from '../../lib/errors';
 import { timestampLabel } from '../../lib/issueDisplay';
+import {
+  CONVERT_TO_PROJECT_LABEL,
+  DUPLICATE_ISSUE_LABEL,
+  convertedPath,
+  duplicatePath,
+  runDuplicate,
+} from '../../lib/issueConversion';
 import { recordArchive, recordPatch } from '../../lib/issueUndo';
 import { embeddedAttachmentIds } from '../../lib/media';
 import { useOptimisticRecord } from '../../lib/optimistic';
@@ -120,6 +133,8 @@ import MoveIssueDialog, {
   MOVE_ISSUE_KEYS,
   MOVE_ISSUE_LABEL,
 } from './MoveIssueDialog';
+import ConvertToProjectDialog from './ConvertToProjectDialog';
+import SetParentDialog, { SET_PARENT_KEYS } from './SetParentDialog';
 import SubIssues from './SubIssues';
 import { ARCHIVE_ISSUE_KEYS, DELETE_ISSUE_KEYS } from './view/propertyKeys';
 
@@ -360,6 +375,8 @@ export const IssueView: React.FC<IssueViewProps> = ({
   const [deleting, setDeleting] = useState(false);
   const [relation, setRelation] = useState<LinkType | 'any' | null>(null);
   const [moving, setMoving] = useState(false);
+  const [parenting, setParenting] = useState(false);
+  const [converting, setConverting] = useState(false);
 
   const canonicalKey = data?.key;
   const redirectRef = useRef(issueRef);
@@ -437,6 +454,17 @@ export const IssueView: React.FC<IssueViewProps> = ({
 
   const ready = issue !== null && team !== undefined;
   const canAct = ready && canEdit;
+
+  const removeParent = (): void => {
+    if (issue === null || issue.parent_id === null) return;
+    onUpdate({ parent_id: null });
+  };
+
+  const duplicate = async (): Promise<void> => {
+    if (issue === null) return;
+    const copy = await runDuplicate(workspaceId, issue);
+    if (copy !== null) void navigate(duplicatePath(slug, copy));
+  };
 
   const addSubIssue = (): void => {
     if (issue === null) return;
@@ -602,6 +630,37 @@ export const IssueView: React.FC<IssueViewProps> = ({
                 {`${MOVE_ISSUE_LABEL}…`}
                 <MenuShortcut keys={MOVE_ISSUE_KEYS} />
               </MenuItem>
+              <MenuItem
+                onSelect={() => {
+                  setParenting(true);
+                }}
+              >
+                <LuCornerUpLeft aria-hidden="true" className="h-3.5 w-3.5" />
+                Set parent issue…
+                <MenuShortcut keys={SET_PARENT_KEYS} />
+              </MenuItem>
+              {(issue?.parent_id ?? null) !== null && (
+                <MenuItem onSelect={removeParent}>
+                  <LuUnlink aria-hidden="true" className="h-3.5 w-3.5" />
+                  Remove parent
+                </MenuItem>
+              )}
+              <MenuItem
+                onSelect={() => {
+                  void duplicate();
+                }}
+              >
+                <LuCopyPlus aria-hidden="true" className="h-3.5 w-3.5" />
+                {DUPLICATE_ISSUE_LABEL}
+              </MenuItem>
+              <MenuItem
+                onSelect={() => {
+                  setConverting(true);
+                }}
+              >
+                <LuHexagon aria-hidden="true" className="h-3.5 w-3.5" />
+                {`${CONVERT_TO_PROJECT_LABEL}…`}
+              </MenuItem>
               <MenuSeparator />
               {RELATION_COMMANDS.map((command) => (
                 <MenuItem
@@ -718,6 +777,36 @@ export const IssueView: React.FC<IssueViewProps> = ({
         label="Add sub-issue"
         enabled={canAct}
         onRun={addSubIssue}
+      />
+      <IssueCommand
+        keys={SET_PARENT_KEYS}
+        label="Set parent issue…"
+        enabled={canAct && issue !== null}
+        onRun={() => {
+          setParenting(true);
+        }}
+      />
+      <IssueCommand
+        keys=""
+        label="Remove parent"
+        enabled={canAct && (issue?.parent_id ?? null) !== null}
+        onRun={removeParent}
+      />
+      <IssueCommand
+        keys=""
+        label={DUPLICATE_ISSUE_LABEL}
+        enabled={canAct}
+        onRun={() => {
+          void duplicate();
+        }}
+      />
+      <IssueCommand
+        keys=""
+        label={`${CONVERT_TO_PROJECT_LABEL}…`}
+        enabled={canAct}
+        onRun={() => {
+          setConverting(true);
+        }}
       />
       <IssueCommand
         keys={MOVE_ISSUE_KEYS}
@@ -888,6 +977,29 @@ export const IssueView: React.FC<IssueViewProps> = ({
               )}
             </div>
 
+            {parenting && (
+              <SetParentDialog
+                issues={[issue]}
+                onPick={(parentId) => {
+                  onUpdate({ parent_id: parentId });
+                }}
+                onClose={() => {
+                  setParenting(false);
+                }}
+              />
+            )}
+            {converting && (
+              <ConvertToProjectDialog
+                workspaceId={workspaceId}
+                issue={issue}
+                onClose={() => {
+                  setConverting(false);
+                }}
+                onConverted={(result) => {
+                  void navigate(convertedPath(slug, result, team?.key_prefix));
+                }}
+              />
+            )}
             <MoveIssueDialog
               open={moving}
               workspaceId={workspaceId}

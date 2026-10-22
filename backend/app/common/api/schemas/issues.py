@@ -16,6 +16,7 @@ from typing import Any, Literal, Optional
 from pydantic import BaseModel, Field, StrictBool, field_validator, model_validator
 from webbpulse.http import cursor_page
 
+from app.common.api.schemas.planning import ProjectRead
 from app.common.change_source import ChangeSource
 from app.common.core.constants import ISSUE_BODY_MAX_BYTES
 from app.common.db.dynamo.activity import Activity
@@ -354,6 +355,7 @@ class IssueRead(BaseModel):
     snoozed_until: Optional[datetime] = None
     sla_started_at: Optional[datetime] = None
     sla_breaches_at: Optional[datetime] = None
+    sla_paused_at: Optional[datetime] = None
     sla_status: SlaStatusField = "none"
     completed_at: Optional[datetime] = None
     external_ref: Optional[str] = None
@@ -393,6 +395,7 @@ class IssueRead(BaseModel):
             snoozed_until=issue.snoozed_until,
             sla_started_at=issue.sla_started_at,
             sla_breaches_at=issue.sla_breaches_at,
+            sla_paused_at=issue.sla_paused_at,
             sla_status=sla_status(issue),
             completed_at=issue.completed_at,
             external_ref=issue.external_ref,
@@ -461,10 +464,11 @@ class IssueSyncListRead(IssueListRead):
 class IssueBulkPatch(BaseModel):
     """The fields one bulk patch sets on every named issue.
 
-    The triage fields only: a title, body or date is per issue by nature, so a bulk
-    write of one would be a mistake rather than a shortcut. Labels are an add and a
-    remove rather than a replacement, so tagging a selection keeps each issue's
-    other labels.
+    The triage fields and the parent: a title, body or date is per issue by nature,
+    so a bulk write of one would be a mistake rather than a shortcut. Labels are an
+    add and a remove rather than a replacement, so tagging a selection keeps each
+    issue's other labels. `parent_id` nests every named issue under one parent, or
+    detaches them when null, under the single patch's same team and one level rules.
 
     `archived` archives the selection when true and restores it when false, after
     any field change in the same patch, so a selection is archived in one request
@@ -480,6 +484,7 @@ class IssueBulkPatch(BaseModel):
     project_milestone_id: Optional[str] = None
     cycle_id: Optional[str] = None
     estimate: Optional[str] = None
+    parent_id: Optional[str] = None
     archived: Optional[StrictBool] = None
 
     @model_validator(mode="after")
@@ -529,6 +534,19 @@ class IssueBulkRead(BaseModel):
 
     issues: list[IssueRead] = Field(default_factory=list)
     skipped: list[str] = Field(default_factory=list)
+
+
+class IssueConversionRead(BaseModel):
+    """What converting an issue into a project answers with.
+
+    `project` is the new project, `issue` the original issue after it was closed
+    and pointed at the project, and `moved_issue_ids` the former sub-issues now in
+    the project, in creation order.
+    """
+
+    project: ProjectRead
+    issue: IssueRead
+    moved_issue_ids: list[str] = Field(default_factory=list)
 
 
 class LinkCreate(BaseModel):

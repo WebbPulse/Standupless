@@ -57,6 +57,9 @@ PROJECTS_READ = ("projects:read",)
 
 PROJECTS_WRITE = ("projects:write",)
 
+ISSUES_PROJECTS_WRITE = ("issues:write", "projects:write")
+"""Converting an issue into a project, which writes both an issue and a new project."""
+
 MILESTONES_READ = ("milestones:read",)
 
 MILESTONES_WRITE = ("milestones:write",)
@@ -226,6 +229,8 @@ ROUTE_SCOPES: Mapping[tuple[str, str], tuple[str, ...]] = {
     ("DELETE", "/{workspace_id}/issues/{issue_id}"): NO_KEY_ACCESS,
     ("GET", "/{workspace_id}/issues/{issue_id}/children"): ISSUES_READ,
     ("POST", "/{workspace_id}/issues/{issue_id}/move"): ISSUES_WRITE,
+    ("POST", "/{workspace_id}/issues/{issue_id}/duplicate"): ISSUES_WRITE,
+    ("POST", "/{workspace_id}/issues/{issue_id}/convert-to-project"): ISSUES_PROJECTS_WRITE,
     ("POST", "/{workspace_id}/issues/{issue_id}/archive"): ISSUES_WRITE,
     ("POST", "/{workspace_id}/issues/{issue_id}/unarchive"): ISSUES_WRITE,
     ("GET", "/{workspace_id}/issues/triage"): ISSUES_READ,

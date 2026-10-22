@@ -442,6 +442,21 @@ def test_a_running_and_an_archived_timer_are_not_breached(repositories: Any, wor
     assert (stopped.data["slaStartedAt"], stopped.data["slaBreached"]) == (None, False)
 
 
+def test_a_paused_timer_is_judged_at_its_pause(repositories: Any, workspace: str) -> None:
+    """A due time that passed while the timer stood still is not a breach, and the pause is carried."""
+    image = issue_image(
+        sla_started_at="2026-09-26T00:00:00+00:00",
+        sla_breaches_at="2026-09-27T00:00:00+00:00",
+        sla_paused_at="2026-09-26T12:00:00+00:00",
+    )
+
+    event = payloads.describe(repositories, payloads.ISSUE, "INSERT", image, {})
+
+    assert event is not None
+    assert event.data["slaPausedAt"] == "2026-09-26T12:00:00+00:00"
+    assert event.data["slaBreached"] is False
+
+
 def test_a_long_description_is_bounded(repositories: Any, workspace: str) -> None:
     """One body always fits the queue message and the log row that carry it."""
     event = payloads.describe(repositories, payloads.ISSUE, "INSERT", issue_image(body="x" * 50_000), {})

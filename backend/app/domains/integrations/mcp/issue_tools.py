@@ -31,6 +31,7 @@ from app.common.api.schemas.issues import (
 )
 from app.common.change_source import CHANGE_SOURCES
 from app.common.comment_writes import comment_page, create_comment
+from app.common.cycle_schedule import RELATIVE_CYCLES
 from app.common.db.dynamo.comments import Comment
 from app.common.db.dynamo.github import IssueLink
 from app.common.db.dynamo.issues import Issue
@@ -39,6 +40,7 @@ from app.common.filter_resolution import resolve_issue_filter
 from app.common.insights import insights_for
 from app.common.issue_activity import activity_page
 from app.common.issue_archive import archive_issue, unarchive_issue
+from app.common.issue_conversion import duplicate_issue
 from app.common.issue_filters import UnknownStatusCategory, build_issue_filter, subscribed_by_caller
 from app.common.issue_keys import current
 from app.common.issue_links import create_link, delete_link, list_links
@@ -94,7 +96,14 @@ LINK_TYPES: tuple[str, ...] = ("blocks", "blocked_by", "relates_to", "duplicate_
 STORED_LINK_TYPES: tuple[str, ...] = tuple(INVERSE_TYPES)
 """Every type a stored link row can carry, `duplicated_by` included, as a listing shows them."""
 
-BULK_CLEARABLE: tuple[str, ...] = ("assignee_id", "project_id", "project_milestone_id", "cycle_id", "estimate")
+BULK_CLEARABLE: tuple[str, ...] = (
+    "assignee_id",
+    "project_id",
+    "project_milestone_id",
+    "cycle_id",
+    "estimate",
+    "parent_id",
+)
 """The bulk patch fields an explicit null clears."""
 
 NULLABLE_FIELDS: tuple[str, ...] = (
@@ -122,7 +131,7 @@ def _status_name(call: ToolCall, issue: Issue) -> str:
 
 def _answer(call: ToolCall, issue: Issue) -> dict[str, Any]:
     """One written or read issue as the tools answer it, under its current key."""
-    return issue_json(current(call.repositories.teams, issue), status_name=_status_name(call, issue))
+    return issue_json(call.repositories.teams, issue, status_name=_status_name(call, issue))
 
 
 FILTER_ARGUMENTS: tuple[str, ...] = (
@@ -359,7 +368,7 @@ def _page(call: ToolCall, **overrides: Any) -> dict[str, Any]:
         reverse=_reverse(call),
         subscribed=subscribed,
     )
-    return {"issues": [summary_json(row) for row in rows], "next_cursor": next_cursor}
+    return {"issues": [summary_json(call.repositories.teams, row) for row in rows], "next_cursor": next_cursor}
 
 
 def _list_issues(call: ToolCall) -> Any:
@@ -430,6 +439,7 @@ def _search_issues(call: ToolCall) -> Any:
         if (
             query
             and query != issue.key.lower()
+            and query != current(call.repositories.teams, issue).key.lower()
             and query not in issue.title.lower()
             and query not in (issue.body or "").lower()
         ):
@@ -449,7 +459,7 @@ def _search_issues(call: ToolCall) -> Any:
         key=lambda row: (row.updated_at, row.issue_id),
         descending=True,
     )
-    return {"issues": [summary_json(issue) for issue in found], "next_cursor": next_cursor}
+    return {"issues": [summary_json(call.repositories.teams, issue) for issue in found], "next_cursor": next_cursor}
 
 
 PULL_REQUEST_LIMIT = 50
@@ -596,6 +606,12 @@ def _move_issue(call: ToolCall) -> Any:
     """Move an issue, and its sub-issues, to another team through the route's own path."""
     issue = issue_ref(call, call.require("issue_id"))
     return _answer(call, move_issue(call.repositories, call.context, issue, str(call.require("team_id"))))
+
+
+def _duplicate_issue(call: ToolCall) -> Any:
+    """Copy an issue into a new one in its team through the route's own path."""
+    issue = issue_ref(call, call.require("issue_id"))
+    return _answer(call, duplicate_issue(call.repositories, call.context, issue))
 
 
 def _unarchive_issue(call: ToolCall) -> Any:
@@ -917,7 +933,7 @@ def _bulk_names(call: ToolCall, patch: dict[str, Any], team_id: str | None) -> N
         if patch.get(name) and not overlap:
             labels = labels or call.repositories.team_config.list_labels(workspace_id, team_id)
             patch[name] = [_label_ref(labels, str(item)) for item in patch[name]]
-    if patch.get("cycle_id"):
+    if patch.get("cycle_id") and str(patch["cycle_id"]).strip().casefold() not in RELATIVE_CYCLES:
         cycles, _ = call.repositories.planning.list_cycles(workspace_id, team_id, limit=500)
         patch["cycle_id"] = _by_name(cycles, "cycle_id", str(patch["cycle_id"]))
     if patch.get("project_id"):
@@ -948,6 +964,8 @@ def _bulk_update_issues(call: ToolCall) -> Any:
     if patch.get("assignee_id") is not None:
         assignee = str(patch["assignee_id"])
         patch["assignee_id"] = user_ref(call, assignee) if "@" in assignee else resolve_user(call, assignee)
+    if "parent_id" in patch:
+        patch["parent_id"] = issue_id_ref(call, patch["parent_id"])
     _bulk_names(call, patch, _selection_team(call, issue_ids))
     _bulk_milestone(call, patch, issue_ids)
     body: dict[str, Any] = {"issue_ids": issue_ids, "patch": patch}
@@ -955,7 +973,7 @@ def _bulk_update_issues(call: ToolCall) -> Any:
         body["only_if_estimate"] = str(call.arguments["only_if_estimate"])
     payload = IssueBulkUpdate.model_validate(body)
     stored, skipped = bulk_update_issues(call.repositories, call.context, payload)
-    return {"issues": [summary_json(current(call.repositories.teams, row)) for row in stored], "skipped": skipped}
+    return {"issues": [summary_json(call.repositories.teams, row) for row in stored], "skipped": skipped}
 
 
 ISSUE_REF = "The issue's id, or its key such as ABC-123"
@@ -1076,7 +1094,7 @@ ISSUE_TOOLS: tuple[Tool, ...] = (
                 "start_date": string("Start date, YYYY-MM-DD"),
                 "due_date": string("Due date, YYYY-MM-DD"),
                 "parent_id": string("The parent issue's id or key, in the same team"),
-                "cycle_id": string("A cycle of the same team"),
+                "cycle_id": string("A cycle of the same team, or current, next or previous on its schedule"),
                 "project_id": string("A project the team is on"),
                 "project_milestone_id": string("A milestone of that project"),
                 "template_id": string("A template the team offers, by id or name, filling the fields not passed"),
@@ -1108,7 +1126,7 @@ ISSUE_TOOLS: tuple[Tool, ...] = (
                 "start_date": nullable("A new start date, YYYY-MM-DD, or null"),
                 "due_date": nullable("A new due date, YYYY-MM-DD, or null"),
                 "parent_id": nullable("A parent issue's id or key in the same team, or null to detach"),
-                "cycle_id": nullable("A cycle of the same team, or null"),
+                "cycle_id": nullable("A cycle of the same team, current, next or previous on its schedule, or null"),
                 "project_id": nullable("A project the team is on, or null; changing it clears the milestone"),
                 "project_milestone_id": nullable("A milestone of the issue's project, or null"),
             },
@@ -1152,6 +1170,17 @@ ISSUE_TOOLS: tuple[Tool, ...] = (
             required=("issue_id", "team_id"),
         ),
         handler=_move_issue,
+    ),
+    Tool(
+        name="duplicate_issue",
+        description=(
+            "Copy an issue into a new issue in the same team. The copy keeps the title with a (copy) suffix, "
+            "the body, labels, priority, estimate, parent, project and milestone, and starts in the team's "
+            "default status, unassigned, outside any cycle and with no dates or relations."
+        ),
+        scopes=("issues:write",),
+        schema=object_schema({"issue_id": string(ISSUE_REF)}, required=("issue_id",)),
+        handler=_duplicate_issue,
     ),
     Tool(
         name="unarchive_issue",
@@ -1286,9 +1315,9 @@ ISSUE_TOOLS: tuple[Tool, ...] = (
         name="bulk_update_issues",
         description=(
             f"Apply one change to up to {BULK_MAX_ISSUES} issues at once: status, assignee, priority, labels added "
-            "or removed, project, milestone, cycle, estimate, or archived. All or nothing: one refused issue "
-            "changes none. Status, label, cycle, project and milestone accept names when the issues share a team. "
-            "Answers the written issues and the ids skipped."
+            "or removed, project, milestone, cycle, estimate, parent issue, or archived. All or nothing: one refused "
+            "issue changes none. Status, label, cycle, project and milestone accept names when the issues share a "
+            "team. Answers the written issues and the ids skipped."
         ),
         scopes=("issues:write",),
         schema=object_schema(
@@ -1307,8 +1336,13 @@ ISSUE_TOOLS: tuple[Tool, ...] = (
                 "remove_label_ids": string_list("Labels to remove, by id or name"),
                 "project_id": nullable("A project the team is on, by id or name, or null to remove"),
                 "project_milestone_id": nullable("A milestone of the project, by id or name, or null"),
-                "cycle_id": nullable("A cycle of the team, by id or name, or null to remove"),
+                "cycle_id": nullable(
+                    "A cycle of each issue's team, by id or name, current, next or previous, or null to remove"
+                ),
                 "estimate": nullable("An estimate in the team's scale, or null"),
+                "parent_id": nullable(
+                    "A top level issue of the same team to nest the issues under, by id or key, or null to detach"
+                ),
                 "archived": {"type": "boolean", "description": "true archives the issues, false restores them"},
                 "only_if_estimate": string(
                     "Write only issues whose estimate is this now, 'none' for unestimated; the rest come back "

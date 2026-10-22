@@ -2,8 +2,10 @@
  * An issue list or board, worked from the keyboard the way an issue tracker
  * is worked in practice: j and k move, x selects, Shift extends, Enter opens,
  * Space peeks, s, p, a, l, e, Shift+M, Shift+C, Shift+P and Shift+D change a
- * property on the selection or the focused issue, i assigns them to the
- * viewer or back off them, # archives or restores them, and Cmd or
+ * property on the selection or the focused issue, Cmd or Ctrl+Shift+P sets
+ * or removes their parent issue, i assigns them to the
+ * viewer or back off them, the palette and the row menu duplicate one issue
+ * or convert it into a project, # archives or restores them, and Cmd or
  * Ctrl+Delete deletes them after a confirmation. On a board j and k stay in
  * the focused column, h and l or the side arrows cross to the next column
  * holding a card, and labels move to Shift+L. In a list that nests
@@ -19,6 +21,7 @@
 
 import React, {
   useCallback,
+  useContext,
   useEffect,
   useMemo,
   useRef,
@@ -42,6 +45,7 @@ import {
 import type { IssueContextState } from '../../../hooks/useIssueContext';
 import { usePeekIssue } from '../../../hooks/usePeekIssue';
 import { useShortcut } from '../../../hooks/useShortcuts';
+import { WorkspaceContext } from '../../../contexts/WorkspaceContextDefinition';
 import { errorMessage } from '../../../lib/errors';
 import {
   filterFieldsFor,
@@ -66,6 +70,13 @@ import {
 } from '../../../lib/copyIssue';
 import { allArchived } from '../../../lib/issueDisplay';
 import { boardStep } from '../../../lib/boardNav';
+import {
+  CONVERT_TO_PROJECT_LABEL,
+  DUPLICATE_ISSUE_LABEL,
+  convertedPath,
+  duplicatePath,
+  runDuplicate,
+} from '../../../lib/issueConversion';
 import { rememberTrail } from '../../../lib/issueTrail';
 import { foldedParentKey, treeRows } from '../../../lib/issueTree';
 import { issuePath } from '../../../lib/paths';
@@ -83,6 +94,8 @@ import { IssueViewEnvContext, type IssueViewEnv } from './IssueViewContext';
 import IssueRowMenu from './IssueRowMenu';
 import ListRows, { type IssueSection } from './ListRows';
 import PropertyCommand from './PropertyCommand';
+import ConvertToProjectDialog from '../ConvertToProjectDialog';
+import SetParentDialog, { SET_PARENT_KEYS } from '../SetParentDialog';
 import {
   ARCHIVE_ISSUE_KEYS,
   DELETE_ISSUE_KEYS,
@@ -184,6 +197,7 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
 }) => {
   const navigate = useNavigate();
   const location = useLocation();
+  const workspaceId = useContext(WorkspaceContext)?.workspace?.id ?? '';
   const { peekIssue, peekedKey } = usePeekIssue();
   const creator = useCreateIssue();
   const { context: listContext, forTeam, createLabel } = lists;
@@ -208,6 +222,8 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
   );
   const [anchor, setAnchor] = useState<string | null>(null);
   const [command, setCommand] = useState<OpenCommand | null>(null);
+  const [parenting, setParenting] = useState<string[] | null>(null);
+  const [converting, setConverting] = useState<string | null>(null);
   const [menu, setMenu] = useState<OpenMenu | null>(null);
   const [deleting, setDeleting] = useState<OrderedIssueRead[] | null>(null);
   const scrollOnFocus = useRef(false);
@@ -640,6 +656,23 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
       { assignee_id: mine ? null : me.user_id }
     );
   };
+  const openParent = (issues: readonly OrderedIssueRead[]): void => {
+    setParenting(issues.map((issue) => issue.id));
+  };
+  const removeParent = (issues: readonly OrderedIssueRead[]): void => {
+    update(
+      issues.map((issue) => issue.id),
+      { parent_id: null }
+    );
+  };
+  const duplicate = async (issue: OrderedIssueRead): Promise<void> => {
+    const copy = await runDuplicate(workspaceId, issue);
+    if (copy === null) return;
+    invalidateQueries(queryKey);
+    void navigate(duplicatePath(slug, copy));
+  };
+  const single = targets.length === 1 ? targets[0] : undefined;
+  const canConvert = canEdit && workspaceId !== '';
   const copyIds = (issues: readonly OrderedIssueRead[]): void => {
     copyText(
       issues.map((issue) => issue.key).join(', '),
@@ -678,6 +711,43 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
     enabled: canCommand && me !== undefined,
     handler: () => {
       assignToMe(targets, true);
+    },
+  });
+  useShortcut({
+    keys: SET_PARENT_KEYS,
+    label: 'Set parent issue…',
+    scope: 'issue',
+    enabled: canCommand,
+    handler: (event) => {
+      event?.preventDefault();
+      openParent(targets);
+    },
+  });
+  useShortcut({
+    keys: '',
+    label: 'Remove parent',
+    scope: 'issue',
+    enabled: canCommand && targets.some((issue) => issue.parent_id !== null),
+    handler: () => {
+      removeParent(targets);
+    },
+  });
+  useShortcut({
+    keys: '',
+    label: DUPLICATE_ISSUE_LABEL,
+    scope: 'issue',
+    enabled: canConvert && single !== undefined,
+    handler: () => {
+      if (single !== undefined) void duplicate(single);
+    },
+  });
+  useShortcut({
+    keys: '',
+    label: `${CONVERT_TO_PROJECT_LABEL}…`,
+    scope: 'issue',
+    enabled: canConvert && single !== undefined,
+    handler: () => {
+      if (single !== undefined) setConverting(single.id);
     },
   });
   useShortcut({
@@ -888,6 +958,8 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
       .map((id) => byId.get(id))
       .filter((issue): issue is OrderedIssueRead => issue !== undefined);
   const commandIssues = command === null ? [] : resolve(command.ids);
+  const parentIssues = parenting === null ? [] : resolve(parenting);
+  const [convertIssue] = converting === null ? [] : resolve([converting]);
   const menuIssues = menu === null ? [] : resolve(menu.ids);
   const menuSingle = menuIssues.length === 1 ? menuIssues[0] : undefined;
 
@@ -1011,6 +1083,33 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
           }}
         />
       )}
+      {parenting !== null && parentIssues.length > 0 && (
+        <SetParentDialog
+          issues={parentIssues}
+          onPick={(parentId) => {
+            update(
+              parentIssues.map((issue) => issue.id),
+              { parent_id: parentId }
+            );
+          }}
+          onClose={() => {
+            setParenting(null);
+          }}
+        />
+      )}
+      {convertIssue !== undefined && (
+        <ConvertToProjectDialog
+          workspaceId={workspaceId}
+          issue={convertIssue}
+          onClose={() => {
+            setConverting(null);
+          }}
+          onConverted={(result) => {
+            invalidateQueries(queryKey);
+            void navigate(convertedPath(slug, result));
+          }}
+        />
+      )}
       {deleting !== null && remove !== undefined && (
         <ConfirmDeleteIssuesDialog
           issues={deleting}
@@ -1041,12 +1140,36 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
           onProperty={(property) => {
             openCommand(property, menuIssues);
           }}
+          onSetParent={() => {
+            openParent(menuIssues);
+          }}
+          onRemoveParent={
+            menuIssues.some((issue) => issue.parent_id !== null)
+              ? () => {
+                  removeParent(menuIssues);
+                }
+              : undefined
+          }
           onAssignToMe={
             me === undefined
               ? undefined
               : () => {
                   assignToMe(menuIssues);
                 }
+          }
+          onDuplicate={
+            canConvert && menuSingle !== undefined
+              ? () => {
+                  void duplicate(menuSingle);
+                }
+              : undefined
+          }
+          onConvertToProject={
+            canConvert && menuSingle !== undefined
+              ? () => {
+                  setConverting(menuSingle.id);
+                }
+              : undefined
           }
           onCopyId={() => {
             copyIds(menuIssues);

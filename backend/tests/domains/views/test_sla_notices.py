@@ -153,3 +153,15 @@ def test_a_finished_issue_with_a_stale_timer_sends_nothing(
 
     assert (at_risk.sla_at_risk, breached.sla_breached) == (0, 0)
     assert _notices(repositories, workspace, MEMBER) == []
+
+
+def test_a_paused_timer_owes_no_notice(
+    issues_client: TestClient, repositories: Any, workspace: str, statuses: Any
+) -> None:
+    """A timer paused before its at risk mark is never warned about, even past its stored deadline."""
+    issue = _timed_issue(issues_client, repositories, workspace)
+    row = repositories.issues.get(workspace, issue["id"])
+    paused = row.model_copy(update={"sla_paused_at": START + timedelta(hours=1)})
+
+    assert sla_notice_for(paused, AT_RISK) is None
+    assert sla_notice_for(paused, BREACH + timedelta(hours=1)) is None

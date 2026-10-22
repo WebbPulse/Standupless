@@ -4,7 +4,8 @@ The properties held follow Linear: an open issue of a ruled priority gets a
 deadline when it is created, leaves triage or reopens; a priority change keeps
 the start and moves the deadline, or drops it for a priority with no rule;
 moving between open statuses keeps it; finishing the issue drops it. The list
-answers each issue's SLA status and filters on it.
+answers each issue's SLA status and filters on it. Time in a status the team
+pauses does not count, and leaving it resumes with the time that was left.
 """
 
 from __future__ import annotations
@@ -17,7 +18,7 @@ from fastapi.testclient import TestClient
 from app.common.db.dynamo.base import utc_now
 from app.common.db.dynamo.issues import Issue
 from app.common.db.dynamo.team_config import default_sla_settings, default_triage_settings
-from app.common.sla import at_risk_from, sla_breach_key, sla_status
+from app.common.sla import apply_sla, at_risk_from, sla_breach_key, sla_status
 from tests.domains.helpers import MEMBER, OWNER, add_team_member, sign_in
 from tests.domains.issues.conftest import TEAM, WORKSPACE, create_issue
 
@@ -299,3 +300,166 @@ def test_the_list_sorts_by_sla_breach(client: TestClient, workspace: str, reposi
         on_track["id"],
         unruled["id"],
     ]
+
+
+def _in(status_id: str, priority: str = "urgent") -> Issue:
+    """A bare issue of `TEAM` in one status, with no timer yet."""
+    return Issue(
+        workspace_id=WORKSPACE,
+        team_id=TEAM,
+        key="ABC-9",
+        number=9,
+        title="Paused",
+        status_id=status_id,
+        priority=priority,
+        created_by=OWNER,
+    )
+
+
+def _move(repositories: Any, issue: Issue, at: datetime, **changes: Any) -> Issue:
+    """`issue` with `changes` applied and its timer recomputed at `at`."""
+    moved = issue.model_copy(update=changes)
+    apply_sla(repositories, issue, moved, at)
+    return moved
+
+
+def test_a_paused_status_stops_the_clock_and_leaving_resumes_with_the_time_left(
+    workspace: str, repositories: Any, statuses: "dict[str, Any]"
+) -> None:
+    """Six hours used, two days paused, then the remaining eighteen hours run from the resume."""
+    todo, staging = statuses["unstarted"].status_id, statuses["started"].status_id
+    _enable(repositories, paused_status_ids=[staging])
+    issue = _in(todo)
+    apply_sla(repositories, None, issue, START)
+
+    paused = _move(repositories, issue, START + timedelta(hours=6), status_id=staging)
+    assert paused.sla_paused_at == START + timedelta(hours=6)
+    assert paused.sla_breaches_at == START + timedelta(hours=24)
+    assert sla_status(paused, START + timedelta(hours=48)) == "on_track"
+
+    resumed = _move(repositories, paused, START + timedelta(hours=48), status_id=todo)
+    assert resumed.sla_paused_at is None
+    assert resumed.sla_started_at == START + timedelta(hours=42)
+    assert resumed.sla_breaches_at == START + timedelta(hours=66)
+    assert sla_status(resumed, START + timedelta(hours=59)) == "on_track"
+    assert sla_status(resumed, START + timedelta(hours=60)) == "at_risk"
+    assert sla_status(resumed, START + timedelta(hours=66)) == "breached"
+
+
+def test_without_the_pause_the_same_moves_breach(workspace: str, repositories: Any, statuses: "dict[str, Any]") -> None:
+    """The control: a team that pauses nothing reads the same issue as breached two days in."""
+    todo, staging = statuses["unstarted"].status_id, statuses["started"].status_id
+    _enable(repositories)
+    issue = _in(todo)
+    apply_sla(repositories, None, issue, START)
+
+    staged = _move(repositories, issue, START + timedelta(hours=6), status_id=staging)
+
+    assert staged.sla_paused_at is None
+    assert sla_status(staged, START + timedelta(hours=48)) == "breached"
+
+
+def test_a_breach_the_pause_held_off(workspace: str, repositories: Any, statuses: "dict[str, Any]") -> None:
+    """An issue whose deadline passed while paused is not breached on leaving, only once its time runs out."""
+    todo, staging = statuses["unstarted"].status_id, statuses["started"].status_id
+    _enable(repositories, paused_status_ids=[staging])
+    issue = _in(todo)
+    apply_sla(repositories, None, issue, START)
+
+    paused = _move(repositories, issue, START + timedelta(hours=20), status_id=staging)
+    assert sla_status(paused, START + timedelta(hours=30)) == "at_risk"
+    resumed = _move(repositories, paused, START + timedelta(hours=100), status_id=todo)
+
+    assert sla_status(resumed, START + timedelta(hours=100)) == "at_risk"
+    assert sla_status(resumed, START + timedelta(hours=103, minutes=59)) == "at_risk"
+    assert sla_status(resumed, START + timedelta(hours=104)) == "breached"
+
+
+def test_moving_between_paused_statuses_keeps_the_first_pause(
+    workspace: str, repositories: Any, statuses: "dict[str, Any]"
+) -> None:
+    """The pause runs from when the issue first entered a paused status."""
+    backlog, staging = statuses["backlog"].status_id, statuses["started"].status_id
+    _enable(repositories, paused_status_ids=[backlog, staging])
+    issue = _in(statuses["unstarted"].status_id)
+    apply_sla(repositories, None, issue, START)
+
+    first = _move(repositories, issue, START + timedelta(hours=2), status_id=backlog)
+    second = _move(repositories, first, START + timedelta(hours=5), status_id=staging)
+
+    assert second.sla_paused_at == START + timedelta(hours=2)
+
+
+def test_an_issue_filed_into_a_paused_status_starts_paused(
+    workspace: str, repositories: Any, statuses: "dict[str, Any]"
+) -> None:
+    """The timer starts with its whole window and stands still until the issue moves on."""
+    staging = statuses["started"].status_id
+    _enable(repositories, paused_status_ids=[staging])
+    issue = _in(staging)
+
+    apply_sla(repositories, None, issue, START)
+    resumed = _move(repositories, issue, START + timedelta(hours=10), status_id=statuses["unstarted"].status_id)
+
+    assert issue.sla_paused_at == START
+    assert resumed.sla_breaches_at == START + timedelta(hours=34)
+
+
+def test_a_priority_change_while_paused_counts_from_the_shifted_start(
+    workspace: str, repositories: Any, statuses: "dict[str, Any]"
+) -> None:
+    """Paused time stays out of the window when the deadline moves to the new priority's hours."""
+    todo, staging = statuses["unstarted"].status_id, statuses["started"].status_id
+    _enable(repositories, paused_status_ids=[staging])
+    issue = _in(todo)
+    apply_sla(repositories, None, issue, START)
+    paused = _move(repositories, issue, START + timedelta(hours=4), status_id=staging)
+    resumed = _move(repositories, paused, START + timedelta(hours=14), status_id=todo)
+
+    raised = _move(repositories, resumed, START + timedelta(hours=15), priority="high")
+
+    assert raised.sla_breaches_at == START + timedelta(hours=82)
+
+
+def test_finishing_a_paused_issue_drops_the_pause(
+    workspace: str, repositories: Any, statuses: "dict[str, Any]"
+) -> None:
+    """A completed issue carries no timer and no pause."""
+    staging = statuses["started"].status_id
+    _enable(repositories, paused_status_ids=[staging])
+    issue = _in(staging)
+    apply_sla(repositories, None, issue, START)
+
+    done = _move(repositories, issue, START + timedelta(hours=1), status_id=statuses["completed"].status_id)
+
+    assert (done.sla_started_at, done.sla_breaches_at, done.sla_paused_at) == (None, None, None)
+
+
+def test_a_paused_timer_sorts_by_the_deadline_it_would_have_now() -> None:
+    """Paused an hour after a day-long start, it sorts after a timer breaching in two hours from now."""
+    now = utc_now()
+    paused = _timed(now - timedelta(hours=10), 24).model_copy(
+        update={"issue_id": "paused", "sla_paused_at": now - timedelta(hours=9)}
+    )
+    soon = _timed(now - timedelta(hours=22), 24).model_copy(update={"issue_id": "soon"})
+
+    assert [issue.issue_id for issue in sorted([paused, soon], key=sla_breach_key)] == ["soon", "paused"]
+
+
+def test_the_route_answers_the_pause(
+    client: TestClient, workspace: str, repositories: Any, statuses: "dict[str, Any]"
+) -> None:
+    """Moving into a paused status answers `sla_paused_at`, and moving out clears it and pushes the deadline."""
+    todo, staging = statuses["unstarted"].status_id, statuses["started"].status_id
+    _enable(repositories, paused_status_ids=[staging])
+    sign_in(client, OWNER)
+    issue = create_issue(client, WORKSPACE, priority="urgent", status_id=todo)
+
+    paused = _patch(client, issue["id"], status_id=staging)
+    resumed = _patch(client, issue["id"], status_id=todo)
+
+    assert paused["sla_paused_at"] is not None
+    assert paused["sla_breaches_at"] == issue["sla_breaches_at"]
+    breaches, first = _at(resumed["sla_breaches_at"]), _at(issue["sla_breaches_at"])
+    assert resumed["sla_paused_at"] is None
+    assert breaches is not None and first is not None and breaches >= first

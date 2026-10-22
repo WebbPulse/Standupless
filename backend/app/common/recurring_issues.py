@@ -30,6 +30,7 @@ from app.common.db.dynamo.issues import Issue
 from app.common.db.dynamo.team_config import DEFAULT_STANDUP_TIMEZONE, new_config_id
 from app.common.db.dynamo.team_recurring import RecurringIssue, recurring_key
 from app.common.db.dynamo.team_templates import IssueTemplate
+from app.common.issue_keys import display_key
 from app.common.issue_rules import not_found, require_team_member, require_team_reader, unprocessable
 from app.common.issue_templates import conflict, find_template, team_templates
 from app.common.issue_writes import create_issue
@@ -115,7 +116,7 @@ def list_recurring(
 ) -> tuple[list[RecurringIssue], dict[str, str], str]:
     """Every schedule of one team, the names of its templates and the team's default timezone."""
     require_team_reader(repositories, context, team_id)
-    rows = repositories.team_config.list_recurring(context.workspace_id, team_id)
+    rows = [shown(repositories, row) for row in repositories.team_config.list_recurring(context.workspace_id, team_id)]
     names = template_names(repositories, context, team_id)
     return rows, names, team_timezone(repositories, context.workspace_id, team_id)
 
@@ -135,8 +136,17 @@ def template_name(repositories: Repositories, context: AuthzContext, row: Recurr
     return template.name if template is not None else None
 
 
+def shown(repositories: Repositories, row: RecurringIssue) -> RecurringIssue:
+    """A schedule whose last issue key is under the team's current prefix, as readers see it."""
+    if not row.last_issue_key:
+        return row
+    key = display_key(repositories.teams, row.workspace_id, row.team_id, row.last_issue_key)
+    return row if key == row.last_issue_key else row.model_copy(update={"last_issue_key": key})
+
+
 def read(repositories: Repositories, context: AuthzContext, row: RecurringIssue) -> RecurringRead:
     """One schedule as the API returns it, with its template's name and next runs."""
+    row = shown(repositories, row)
     return RecurringRead.from_row(row, template_name(repositories, context, row), preview(row))
 
 

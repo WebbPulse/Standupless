@@ -5,8 +5,8 @@ Every body carries `action` (`create`, `update` or `remove`), `type`, `data`, `u
 that changed, keyed like `data`. An update that touched none of a type's public fields,
 such as a rollup counter the product maintains itself, describes nothing and is dropped.
 
-An Issue's `data` also carries its SLA timer as `slaStartedAt`, `slaBreachesAt` and
-`slaBreached`, all null when no SLA rule applies. They are read off the row when the
+An Issue's `data` also carries its SLA timer as `slaStartedAt`, `slaBreachesAt`,
+`slaPausedAt` and `slaBreached`, all null when no SLA rule applies. They are read off the row when the
 change is described, so they never make an update on their own.
 
 `data` is a deliberate subset of the row in camelCase. A webhook goes to somebody else's
@@ -221,19 +221,24 @@ def _moment(value: Any) -> datetime | None:
 
 
 def _issue_sla(image: Mapping[str, Any], now: datetime | None = None) -> dict[str, Any]:
-    """The issue's SLA timer as a receiver reads it: start, due time and breached flag.
+    """The issue's SLA timer as a receiver reads it: start, due time, pause and breached flag.
 
-    All three are null when no SLA rule applies to the issue, and an archived
-    issue's timer no longer runs, so it reads as not breached.
+    All four are null when no SLA rule applies to the issue, and an archived
+    issue's timer no longer runs, so it reads as not breached. A paused timer is
+    judged at the moment it paused.
     """
     breaches_at = _moment(image.get("sla_breaches_at"))
     if breaches_at is None:
-        return {"slaStartedAt": None, "slaBreachesAt": None, "slaBreached": None}
+        return {"slaStartedAt": None, "slaBreachesAt": None, "slaPausedAt": None, "slaBreached": None}
     archived = bool(image.get("archived_at"))
     moment = now or datetime.now(timezone.utc)
+    paused_at = _moment(image.get("sla_paused_at"))
+    if paused_at is not None and paused_at < moment:
+        moment = paused_at
     return {
         "slaStartedAt": image.get("sla_started_at") or None,
         "slaBreachesAt": image.get("sla_breaches_at"),
+        "slaPausedAt": image.get("sla_paused_at") or None,
         "slaBreached": not archived and moment >= breaches_at,
     }
 

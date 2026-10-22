@@ -2,7 +2,8 @@
 
 The unit tests pin the rules; these hold that the route resolves them against the
 real tables: the link index for `is_blocking` and `has_relation`, and each team's
-cycles for `current`, with an unknown cycle refused as a 400 naming it.
+cycles for `current`, with an unknown cycle refused as a 400 naming it. The same
+relative cycles name a cycle on create, update and bulk update.
 """
 
 from __future__ import annotations
@@ -10,6 +11,7 @@ from __future__ import annotations
 from datetime import date, timedelta
 from typing import Any
 
+import pytest
 from fastapi.testclient import TestClient
 
 from app.common.db.dynamo.planning import Cycle, cycle_key
@@ -106,3 +108,71 @@ def test_an_unknown_cycle_is_a_400_naming_the_value(client: TestClient, workspac
 
     assert response.status_code == 400
     assert "nope" in response.text
+
+
+def _schedule(repositories: Any, workspace: str) -> None:
+    """A previous, current and next cycle of the team around today."""
+    today = date.today()
+    _cycle(repositories, workspace, "PREV", today - timedelta(days=20), today - timedelta(days=8))
+    _cycle(repositories, workspace, "CURR", today - timedelta(days=7), today + timedelta(days=6))
+    _cycle(repositories, workspace, "NEXT", today + timedelta(days=7), today + timedelta(days=20))
+
+
+RELATIVE = [("current", "CURR"), ("next", "NEXT"), ("previous", "PREV")]
+
+
+@pytest.mark.parametrize(("alias", "expected"), RELATIVE)
+def test_create_resolves_a_relative_cycle(
+    client: TestClient, workspace: str, repositories: Any, alias: str, expected: str
+) -> None:
+    """A new issue filed into current, next or previous lands in that cycle of its team."""
+    _schedule(repositories, workspace)
+    sign_in(client, OWNER)
+
+    created = create_issue(client, workspace, title="Planned", cycle_id=alias)
+
+    assert created["cycle_id"] == expected
+
+
+@pytest.mark.parametrize(("alias", "expected"), RELATIVE)
+def test_update_resolves_a_relative_cycle(
+    client: TestClient, workspace: str, repositories: Any, alias: str, expected: str
+) -> None:
+    """A patch naming current, next or previous moves the issue into that cycle."""
+    _schedule(repositories, workspace)
+    sign_in(client, OWNER)
+    created = create_issue(client, workspace, title="Moved")
+
+    response = client.patch(f"/api/workspaces/{workspace}/issues/{created['id']}", json={"cycle_id": alias})
+
+    assert response.status_code == 200, response.text
+    assert response.json()["cycle_id"] == expected
+
+
+@pytest.mark.parametrize(("alias", "expected"), RELATIVE)
+def test_bulk_update_resolves_a_relative_cycle(
+    client: TestClient, workspace: str, repositories: Any, alias: str, expected: str
+) -> None:
+    """A bulk patch naming a relative cycle moves every issue into it."""
+    _schedule(repositories, workspace)
+    sign_in(client, OWNER)
+    ids = [create_issue(client, workspace, title=title)["id"] for title in ("One", "Two")]
+
+    response = client.patch(
+        f"/api/workspaces/{workspace}/issues", json={"issue_ids": ids, "patch": {"cycle_id": alias}}
+    )
+
+    assert response.status_code == 200, response.text
+    assert {row["cycle_id"] for row in response.json()["issues"]} == {expected}
+
+
+def test_a_relative_cycle_the_team_lacks_names_the_alias_and_team(client: TestClient, workspace: str) -> None:
+    """A team with no cycles refuses current with a 422 naming both."""
+    sign_in(client, OWNER)
+
+    response = client.post(
+        f"/api/workspaces/{workspace}/issues", json={"team_id": TEAM, "title": "Lost", "cycle_id": "current"}
+    )
+
+    assert response.status_code == 422
+    assert response.json()["message"] == "Team ABC has no current cycle"

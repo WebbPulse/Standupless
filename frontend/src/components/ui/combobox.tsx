@@ -55,6 +55,8 @@ export interface ComboboxProps {
   emptyMessage?: string;
   /** Content drawn under the list, such as a custom date field. */
   footer?: React.ReactNode;
+  /** Hears the filter text as it changes, for a list read from the server. */
+  onQueryChange?: (query: string) => void;
   className?: string;
 }
 
@@ -88,6 +90,7 @@ export const Combobox: React.FC<ComboboxProps> = ({
   placeholder = 'Search',
   emptyMessage = 'No results',
   footer,
+  onQueryChange,
   className = '',
 }) => {
   const [query, setQuery] = useState('');
@@ -228,6 +231,7 @@ export const Combobox: React.FC<ComboboxProps> = ({
         value={query}
         onChange={(event) => {
           setQuery(event.target.value);
+          onQueryChange?.(event.target.value);
           setActive(0);
         }}
         onKeyDown={onKeyDown}

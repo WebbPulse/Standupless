@@ -5714,7 +5714,7 @@
         "type": "object"
       },
       "IssueBulkPatch": {
-        "description": "The fields one bulk patch sets on every named issue.\n\nThe triage fields only: a title, body or date is per issue by nature, so a bulk\nwrite of one would be a mistake rather than a shortcut. Labels are an add and a\nremove rather than a replacement, so tagging a selection keeps each issue's\nother labels.\n\n`archived` archives the selection when true and restores it when false, after\nany field change in the same patch, so a selection is archived in one request\nrather than one per issue.",
+        "description": "The fields one bulk patch sets on every named issue.\n\nThe triage fields and the parent: a title, body or date is per issue by nature,\nso a bulk write of one would be a mistake rather than a shortcut. Labels are an\nadd and a remove rather than a replacement, so tagging a selection keeps each\nissue's other labels. `parent_id` nests every named issue under one parent, or\ndetaches them when null, under the single patch's same team and one level rules.\n\n`archived` archives the selection when true and restores it when false, after\nany field change in the same patch, so a selection is archived in one request\nrather than one per issue.",
         "properties": {
           "add_label_ids": {
             "items": {
@@ -5766,6 +5766,17 @@
               }
             ],
             "title": "Estimate"
+          },
+          "parent_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Id"
           },
           "priority": {
             "anyOf": [
@@ -5884,6 +5895,30 @@
           "patch"
         ],
         "title": "IssueBulkUpdate",
+        "type": "object"
+      },
+      "IssueConversionRead": {
+        "description": "What converting an issue into a project answers with.\n\n`project` is the new project, `issue` the original issue after it was closed\nand pointed at the project, and `moved_issue_ids` the former sub-issues now in\nthe project, in creation order.",
+        "properties": {
+          "issue": {
+            "$ref": "#/components/schemas/app__common__api__schemas__issues__IssueRead"
+          },
+          "moved_issue_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Moved Issue Ids",
+            "type": "array"
+          },
+          "project": {
+            "$ref": "#/components/schemas/ProjectRead"
+          }
+        },
+        "required": [
+          "project",
+          "issue"
+        ],
+        "title": "IssueConversionRead",
         "type": "object"
       },
       "IssueCreate": {
@@ -12756,6 +12791,13 @@
             ],
             "title": "Medium Hours"
           },
+          "paused_status_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Paused Status Ids",
+            "type": "array"
+          },
           "team_id": {
             "title": "Team Id",
             "type": "string"
@@ -12792,7 +12834,7 @@
         "type": "object"
       },
       "SlaSettingsUpdate": {
-        "description": "The body a team's SLA settings patch takes.\n\nEach `*_hours` is how long an issue of that priority may stay open before it\nbreaches, from one hour to ninety days; `null` removes that priority's rule.",
+        "description": "The body a team's SLA settings patch takes.\n\nEach `*_hours` is how long an issue of that priority may stay open before it\nbreaches, from one hour to ninety days; `null` removes that priority's rule.\n`paused_status_ids` replaces the set of open statuses whose time does not\ncount toward a breach; `null` or an empty list pauses in none.",
         "properties": {
           "enabled": {
             "anyOf": [
@@ -12843,6 +12885,21 @@
               }
             ],
             "title": "Medium Hours"
+          },
+          "paused_status_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 50,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Paused Status Ids"
           },
           "urgent_hours": {
             "anyOf": [
@@ -18204,6 +18261,18 @@
               }
             ],
             "title": "Sla Breaches At"
+          },
+          "sla_paused_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sla Paused At"
           },
           "sla_started_at": {
             "anyOf": [
@@ -30076,6 +30145,65 @@
         ]
       }
     },
+    "/api/workspaces/{workspace_id}/issues/{issue_id}/convert-to-project": {
+      "post": {
+        "description": "Turn an issue into a project on its team, moving its sub-issues into the project and closing it.\n\nThe project takes the issue's title, description, priority, assignee as lead\nand dates. The issue is pointed at the project, which is the link back, and\nmoved to the team's first completed status, or cancelled when the team has no\ncompleted one.",
+        "operationId": "convert_issue_to_project_api_workspaces__workspace_id__issues__issue_id__convert_to_project_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "issue_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Issue Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IssueConversionRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Convert Issue To Project",
+        "tags": [
+          "issues"
+        ]
+      }
+    },
     "/api/workspaces/{workspace_id}/issues/{issue_id}/documents": {
       "get": {
         "description": "The documents that mention one issue, for its page.",
@@ -30131,6 +30259,65 @@
         "summary": "List Backlinks",
         "tags": [
           "planning"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/issues/{issue_id}/duplicate": {
+      "post": {
+        "description": "Create a copy of an issue in its team, answering the new issue under its own key.\n\nThe copy carries the title with a copy suffix, the description, labels,\npriority, estimate, parent, project and milestone, and starts in the team's\ndefault status, unassigned and outside any cycle, as in Linear.",
+        "operationId": "duplicate_api_workspaces__workspace_id__issues__issue_id__duplicate_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "issue_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Issue Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/app__common__api__schemas__issues__IssueRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Duplicate",
+        "tags": [
+          "issues"
         ]
       }
     },

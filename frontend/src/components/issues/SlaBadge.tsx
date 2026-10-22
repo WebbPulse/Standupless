@@ -3,14 +3,21 @@
  * 2d 4h" in a quiet chip, the same text in amber once it is at risk, and
  * "Breached 3h ago" in red after the deadline. An issue with no SLA draws
  * nothing. The status is recomputed once a minute from the issue's own
- * timestamps, so a list left open does not keep showing a stale state.
+ * timestamps, so a list left open does not keep showing a stale state. While
+ * the issue sits in one of its team's paused statuses the badge shows the time
+ * it has left with a pause icon and stops ticking.
  */
 
 import React, { useEffect, useState } from 'react';
-import { LuClock, LuFlame } from 'react-icons/lu';
+import { LuClock, LuFlame, LuPause } from 'react-icons/lu';
 import { cn } from '../../lib/cn';
 import { fullTimestamp } from '../../lib/relativeTime';
-import { liveSlaStatus, slaLabel, type SlaFields } from '../../lib/sla';
+import {
+  liveSlaStatus,
+  slaLabel,
+  slaPaused,
+  type SlaFields,
+} from '../../lib/sla';
 import type { SlaStatus } from '../../types/Api';
 
 /** How often the badge recomputes its status and countdown, in ms. */
@@ -35,31 +42,34 @@ export const SlaBadge: React.FC<SlaBadgeProps> = ({ issue, className }) => {
     issue.sla_status !== 'none' &&
     issue.sla_breaches_at !== null &&
     issue.sla_breaches_at !== undefined;
+  const paused = slaPaused(issue);
 
   useEffect(() => {
-    if (!covered) return undefined;
+    if (!covered || paused) return undefined;
     const timer = setInterval(() => {
       setNow(new Date());
     }, TICK_MS);
     return () => {
       clearInterval(timer);
     };
-  }, [covered]);
+  }, [covered, paused]);
 
   const status = liveSlaStatus(issue, now);
   const label = slaLabel(issue, now);
   if (status === 'none' || label === null || !covered) return null;
   const deadline = fullTimestamp(issue.sla_breaches_at ?? '');
-  const title =
-    status === 'breached'
+  const title = paused
+    ? 'SLA paused while the issue is in this status'
+    : status === 'breached'
       ? `SLA breached ${deadline}`
       : `SLA breaches ${deadline}`;
-  const Icon = status === 'breached' ? LuFlame : LuClock;
+  const Icon = status === 'breached' ? LuFlame : paused ? LuPause : LuClock;
 
   return (
     <span
       title={title}
       data-sla-status={status}
+      data-sla-paused={paused ? 'true' : undefined}
       className={cn(
         'inline-flex h-5 shrink-0 items-center gap-1 rounded-full border px-1.5 text-2xs whitespace-nowrap',
         TONES[status],

@@ -81,7 +81,10 @@ const SCOPE_RANK: Record<ShortcutScope, number> = {
 
 /** What a component hands to {@link useShortcut}. */
 export interface ShortcutDefinition {
-  /** One key or a space separated sequence, such as `'c'` or `'g i'`. */
+  /**
+   * One key or a space separated sequence, such as `'c'` or `'g i'`, or an
+   * empty string for an action the palette offers with no key of its own.
+   */
   keys: string;
   /** What the shortcut does, as the help overlay and the palette show it. */
   label: string;
@@ -212,12 +215,16 @@ export const eventMatches = (
 
 /**
  * Picks the winning registration for each key sequence and scope, which is the
- * one registered last.
+ * one registered last. A registration with no keys is a palette action only,
+ * so it competes with others of its label rather than its keys.
  */
 const winners = (all: Iterable<RegisteredShortcut>): RegisteredShortcut[] => {
   const byKeys = new Map<string, RegisteredShortcut>();
   for (const shortcut of all) {
-    const slot = `${shortcut.scope}|${shortcut.keys}`;
+    const slot =
+      shortcut.keys === ''
+        ? `${shortcut.scope}|label|${shortcut.label}`
+        : `${shortcut.scope}|${shortcut.keys}`;
     const held = byKeys.get(slot);
     if (held === undefined || held.order < shortcut.order) {
       byKeys.set(slot, shortcut);

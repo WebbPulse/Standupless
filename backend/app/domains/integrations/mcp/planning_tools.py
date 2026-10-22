@@ -14,6 +14,7 @@ id or by a name that is unambiguous among the rows the caller can see.
 
 from __future__ import annotations
 
+from datetime import date
 from typing import Any, get_args
 
 from app.common.api.schemas.issues import BULK_MAX_ISSUES, IssueBulkUpdate
@@ -34,9 +35,11 @@ from app.common.api.schemas.planning import (
     ProjectUpdatePatch,
     ProjectUpdateRead,
 )
-from app.common.cycle_schedule import active_cycle
+from app.common.cycle_schedule import RELATIVE_CYCLES, relative_cycle
 from app.common.cycle_writes import create_cycle, delete_cycle, list_cycles, update_cycle
 from app.common.db.dynamo.issues import Issue
+from app.common.issue_conversion import convert_to_project
+from app.common.issue_keys import current
 from app.common.issue_writes import bulk_update_issues
 from app.common.milestone_writes import create_milestone, delete_milestone, update_milestone
 from app.common.planning_rules import (
@@ -86,9 +89,6 @@ PROJECT_PRIORITIES: tuple[str, ...] = get_args(ProjectPriorityField)
 
 PROJECT_ICONS: tuple[str, ...] = get_args(ProjectIconField)
 
-CURRENT_CYCLE = "current"
-"""The cycle reference that names a team's active cycle."""
-
 PROJECT_FIELDS: tuple[str, ...] = (
     "name",
     "description",
@@ -106,7 +106,7 @@ CLEARABLE_FIELDS: tuple[str, ...] = ("description", "start_date", "target_date",
 
 TEAM_HELP = "The team: id, key such as ENG, or name"
 
-CYCLE_HELP = "The cycle: id, name, or 'current' for the team's active cycle"
+CYCLE_HELP = "The cycle: id, name, or current, next or previous on the team's schedule"
 
 PROJECT_HELP = "The project: id or name"
 
@@ -126,7 +126,7 @@ def _project_id(call: ToolCall, value: Any) -> str:
 
 
 def _cycle_id(call: ToolCall, team_id: str, value: Any) -> str:
-    """A cycle id of one readable team from an id, a unique name, or `current`."""
+    """A cycle id of one readable team from an id, `current`, `next`, `previous`, or a unique name."""
     reference = str(value).strip()
     if not reference:
         raise ToolError("cycle_id is required")
@@ -135,12 +135,13 @@ def _cycle_id(call: ToolCall, team_id: str, value: Any) -> str:
     if call.repositories.planning.get_cycle(workspace_id, team_id, reference) is not None:
         return reference
     cycles = call.repositories.planning.list_for_roadmap(workspace_id, team_id)
-    if reference.casefold() == CURRENT_CYCLE:
-        active = active_cycle(cycles)
-        if active is None:
-            raise ToolError("This team has no active cycle")
-        return active.cycle_id
     folded = reference.casefold()
+    if folded in RELATIVE_CYCLES:
+        found = relative_cycle(cycles, folded, date.today())
+        if found is None:
+            team = call.repositories.teams.get(workspace_id, team_id)
+            raise ToolError(f"Team {team.key_prefix if team is not None else team_id} has no {folded} cycle")
+        return found.cycle_id
     named = [row for row in cycles if row.name.casefold() == folded]
     if len(named) > 1:
         raise ambiguous("cycle", reference)
@@ -350,7 +351,11 @@ def _add_issues_to_cycle(call: ToolCall) -> Any:
     team_id = _cycle_team(call, issues)
     cycle_id = _cycle_id(call, team_id, call.require("cycle_id"))
     stored, skipped = _bulk_cycle(call, issues, cycle_id)
-    return {"cycle_id": cycle_id, "issues": [summary_json(issue) for issue in stored], "skipped": skipped}
+    return {
+        "cycle_id": cycle_id,
+        "issues": [summary_json(call.repositories.teams, issue) for issue in stored],
+        "skipped": skipped,
+    }
 
 
 def _remove_issues_from_cycle(call: ToolCall) -> Any:
@@ -366,11 +371,11 @@ def _remove_issues_from_cycle(call: ToolCall) -> Any:
     for team in dict.fromkeys(issue.team_id for issue in issues):
         require_team_member(call.repositories, call.context, team)
     inside = [issue for issue in issues if issue.cycle_id == cycle_id]
-    unchanged = [issue.key for issue in issues if issue.cycle_id != cycle_id]
+    unchanged = [current(call.repositories.teams, issue).key for issue in issues if issue.cycle_id != cycle_id]
     stored, skipped = _bulk_cycle(call, inside, None) if inside else ([], [])
     return {
         "cycle_id": cycle_id,
-        "issues": [summary_json(issue) for issue in stored],
+        "issues": [summary_json(call.repositories.teams, issue) for issue in stored],
         "not_in_cycle": unchanged,
         "skipped": skipped,
     }
@@ -450,6 +455,17 @@ def _create_project(call: ToolCall) -> Any:
     """Create a project on one or more teams the caller may write in."""
     payload = ProjectCreate.model_validate(_project_payload(call, nullable_fields=False))
     return _project_json(create_project(call.repositories, call.context, payload))
+
+
+def _convert_issue_to_project(call: ToolCall) -> Any:
+    """Turn an issue into a project on its team through the route's own path."""
+    issue = issue_ref(call, call.require("issue_id"))
+    project, closed, moved = convert_to_project(call.repositories, call.context, issue)
+    return {
+        "project": _project_json(project),
+        "issue": summary_json(call.repositories.teams, closed),
+        "moved_issues": [summary_json(call.repositories.teams, child) for child in moved],
+    }
 
 
 def _update_project(call: ToolCall) -> Any:
@@ -728,6 +744,19 @@ PLANNING_TOOLS: tuple[Tool, ...] = (
         scopes=("projects:write",),
         schema=object_schema(PROJECT_PROPERTIES, required=("name", "team_ids")),
         handler=_create_project,
+    ),
+    Tool(
+        name="convert_issue_to_project",
+        description=(
+            "Turn an issue into a project on its team. The project takes the issue's title, body, priority, "
+            "assignee as lead and dates; the issue's sub-issues leave it and join the project; the issue is "
+            "put in the project and closed in the team's first completed status, or cancelled without one."
+        ),
+        scopes=("issues:write", "projects:write"),
+        schema=object_schema(
+            {"issue_id": string("The issue's id, or its key such as ABC-123")}, required=("issue_id",)
+        ),
+        handler=_convert_issue_to_project,
     ),
     Tool(
         name="update_project",

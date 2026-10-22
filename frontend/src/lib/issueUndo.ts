@@ -37,11 +37,7 @@ const PLAIN_FIELDS = [
 type PlainField = (typeof PLAIN_FIELDS)[number];
 
 /** The fields the bulk route cannot write, so a revert naming one goes issue by issue. */
-const SINGLE_ONLY: ReadonlySet<string> = new Set([
-  'start_date',
-  'due_date',
-  'parent_id',
-]);
+const SINGLE_ONLY: ReadonlySet<string> = new Set(['start_date', 'due_date']);
 
 /** The words a changed field reads as in a change's notice. */
 const FIELD_NAMES: Record<string, string> = {

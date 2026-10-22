@@ -204,3 +204,72 @@ def test_a_team_member_guest_may_bulk_edit_their_team(client: TestClient, worksp
 
     assert response.status_code == 200
     assert response.json()["issues"][0]["priority"] == "medium"
+
+
+def test_a_bulk_patch_nests_every_named_issue_under_one_parent(
+    client: TestClient, workspace: str, statuses: Any, repositories: Any
+) -> None:
+    """Each issue moves under the parent and records the change, and the parent records each child."""
+    sign_in(client, OWNER)
+    parent = create_issue(client, workspace, title="Parent")
+    first = create_issue(client, workspace)
+    second = create_issue(client, workspace)
+
+    response = _bulk(client, workspace, [first["id"], second["id"]], {"parent_id": parent["id"]})
+
+    assert response.status_code == 200, response.text
+    assert [row["parent_id"] for row in response.json()["issues"]] == [parent["id"], parent["id"]]
+    for issue in (first, second):
+        rows = repositories.activity.list_for_issue(workspace, issue["id"]).items
+        changed = [row for row in rows if row["kind"] == "field_changed"]
+        assert [(row["field"], row["to_value"]) for row in changed] == [("parent_id", parent["id"])]
+    parent_rows = repositories.activity.list_for_issue(workspace, parent["id"]).items
+    assert len([row for row in parent_rows if row["kind"] == "child_added"]) == 2
+
+
+def test_a_null_parent_detaches_every_named_issue(
+    client: TestClient, workspace: str, statuses: Any, repositories: Any
+) -> None:
+    """An explicit null takes each issue back to the top level and the old parent records it."""
+    sign_in(client, OWNER)
+    parent = create_issue(client, workspace, title="Parent")
+    first = create_issue(client, workspace, parent_id=parent["id"])
+    second = create_issue(client, workspace, parent_id=parent["id"])
+
+    response = _bulk(client, workspace, [first["id"], second["id"]], {"parent_id": None})
+
+    assert response.status_code == 200, response.text
+    assert [row["parent_id"] for row in response.json()["issues"]] == [None, None]
+    parent_rows = repositories.activity.list_for_issue(workspace, parent["id"]).items
+    assert len([row for row in parent_rows if row["kind"] == "child_removed"]) == 2
+
+
+def test_a_parent_one_issue_refuses_fails_the_whole_batch(
+    client: TestClient, workspace: str, statuses: Any, repositories: Any
+) -> None:
+    """Each parent rule a single patch holds refuses the whole batch with nothing written.
+
+    The parent among the issues, a sub-issue as the parent, an issue that has
+    children, and a parent in another team are each a 422.
+    """
+    sign_in(client, OWNER)
+    parent = create_issue(client, workspace, title="Parent")
+    child = create_issue(client, workspace, parent_id=parent["id"])
+    loose = create_issue(client, workspace)
+    other_parent = create_issue(client, workspace, team_id=OTHER_TEAM)
+    elsewhere = create_issue(client, workspace, team_id=OTHER_TEAM)
+
+    refusals = [
+        ([loose["id"], parent["id"]], parent["id"]),
+        ([loose["id"]], child["id"]),
+        ([loose["id"], parent["id"]], create_issue(client, workspace)["id"]),
+        ([loose["id"]], other_parent["id"]),
+        ([loose["id"], elsewhere["id"]], parent["id"]),
+    ]
+    for issue_ids, parent_id in refusals:
+        response = _bulk(client, workspace, issue_ids, {"parent_id": parent_id})
+        assert response.status_code == 422, (issue_ids, parent_id, response.text)
+
+    assert repositories.issues.get(workspace, loose["id"]).parent_id is None
+    assert repositories.issues.get(workspace, elsewhere["id"]).parent_id is None
+    assert repositories.issues.get(workspace, parent["id"]).parent_id is None
