@@ -20,30 +20,44 @@ codesign --verify --deep --strict --verbose=2 "$APP"
 codesign --display --verbose=2 "$APP" 2>&1 | grep -E '^(Identifier|Format|Signature|TeamIdentifier)=' || true
 lipo -info "$BIN"
 
+REPORTS="${HOME}/Library/Logs/DiagnosticReports"
+
+stop_app() {
+  pkill -9 -f "${APP}/Contents" 2>/dev/null || true
+}
+
 smoke() {
   local label="$1"
   shift
   local log="${WORK}/launch-${label}.log"
+  local marker="${WORK}/marker-${label}"
+  touch "$marker"
   echo "Launching the ${label} slice for ${SMOKE_SECONDS}s"
-  "$@" "$BIN" >"$log" 2>&1 &
+  "$@" "$BIN" </dev/null >"$log" 2>&1 &
   local pid=$!
-  local waited=0
-  while [ "$waited" -lt "$SMOKE_SECONDS" ]; do
-    if ! kill -0 "$pid" 2>/dev/null; then
-      local status=0
-      wait "$pid" || status=$?
-      cat "$log"
-      echo "::error::the ${label} slice exited after ${waited}s with status ${status}"
-      exit 1
-    fi
-    sleep 1
-    waited=$((waited + 1))
-  done
-  kill "$pid" 2>/dev/null || true
-  wait "$pid" 2>/dev/null || true
-  pkill -f "${APP}/Contents" 2>/dev/null || true
+  sleep "$SMOKE_SECONDS"
+  local alive=0
+  kill -0 "$pid" 2>/dev/null && alive=1
+  kill -9 "$pid" 2>/dev/null || true
+  stop_app
+  local crashes
+  crashes="$(find "$REPORTS" -maxdepth 1 -newer "$marker" -name "${NAME}*" 2>/dev/null || true)"
+  if [ "$alive" -ne 1 ] || [ -n "$crashes" ]; then
+    echo "--- launch output ---"
+    cat "$log"
+    while IFS= read -r report; do
+      [ -n "$report" ] || continue
+      echo "--- ${report} ---"
+      head -c 6000 "$report"
+      echo
+    done <<<"$crashes"
+    echo "::error::the ${label} slice did not stay up for ${SMOKE_SECONDS}s"
+    exit 1
+  fi
   echo "The ${label} slice stayed up for ${SMOKE_SECONDS}s."
 }
+
+trap 'stop_app; rm -rf "$WORK"' EXIT
 
 smoke "$(uname -m)" env
 if [ "$(uname -m)" = "arm64" ] && arch -x86_64 /usr/bin/true 2>/dev/null; then

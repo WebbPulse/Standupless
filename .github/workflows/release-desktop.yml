@@ -39,6 +39,7 @@ jobs:
     name: Build for ${{ matrix.name }}
     needs: check
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
     permissions:
       contents: read
       id-token: write
@@ -101,6 +102,7 @@ jobs:
         run: npx electron-builder --config electron-builder.config.cjs ${{ matrix.flag }} --publish never
 
       - name: Verify the macOS app signs and launches
+        timeout-minutes: 10
         if: matrix.name == 'macOS'
         run: |
           set -euo pipefail

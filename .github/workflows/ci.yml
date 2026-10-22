@@ -242,6 +242,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.desktop == 'true'
     runs-on: macos-latest
+    timeout-minutes: 15
     permissions:
       contents: read
       id-token: write
@@ -289,6 +290,7 @@ jobs:
         run: npx electron-builder --config electron-builder.config.cjs --mac zip --universal --publish never
 
       - name: Verify the macOS app signs and launches
+        timeout-minutes: 10
         run: |
           set -euo pipefail
           ZIPS=( release/production/*-mac.zip )
