@@ -204,7 +204,7 @@ def test_the_reminder_reads_as_a_reminder(
     _set(client, workspace, issue["id"], moment)
     run_issue_reminders(repositories, moment)
 
-    rows = client.get(f"/api/workspaces/{workspace}/inbox", params={"kind": "reminder"}).json()["items"]
+    rows = client.get(f"/api/workspaces/{workspace}/inbox", params={"kind": "reminder"}).json()["notifications"]
 
     assert [row["summary"] for row in rows] == ["Reminder"]
     assert rows[0]["unread"] is True
