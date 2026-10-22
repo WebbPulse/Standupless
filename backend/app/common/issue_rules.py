@@ -11,12 +11,14 @@ routes stay thin and every rule has one home.
 
 from __future__ import annotations
 
+from datetime import date
 from typing import Any, Iterable
 
 from fastapi import HTTPException, status
 
 from app.common.api.dependencies.authz import IMPLIED_TEAM_ROLE, TEAM_ROLES, AuthzContext
 from app.common.api.dependencies.repositories import Repositories
+from app.common.cycle_schedule import RELATIVE_CYCLES, relative_cycle
 from app.common.db.dynamo.api_keys import is_service_subject
 from app.common.db.dynamo.issues import Issue
 from app.common.db.dynamo.team_config import Status
@@ -237,6 +239,36 @@ def check_cycle(
     if repositories.planning.get_cycle(workspace_id, team_id, cycle_id) is None:
         raise unprocessable(f"No such cycle: {cycle_id}")
     return cycle_id
+
+
+TEAM_CYCLE_LIMIT = 500
+"""The most cycles one team's read takes when resolving a relative cycle."""
+
+
+def resolve_cycle(
+    repositories: Repositories,
+    workspace_id: str,
+    team_id: str,
+    cycle_id: str | None,
+    *,
+    today: date | None = None,
+) -> str | None:
+    """`check_cycle`, with `current`, `next` and `previous` resolved against the team's schedule.
+
+    A cycle whose id is the alias itself still wins, so the alias never hides a
+    stored row. A team with no such cycle is refused with a 422 naming the alias
+    and the team, rather than the bare "No such cycle".
+    """
+    alias = (cycle_id or "").strip().casefold()
+    if alias not in RELATIVE_CYCLES or repositories.planning.get_cycle(workspace_id, team_id, cycle_id or ""):
+        return check_cycle(repositories, workspace_id, team_id, cycle_id)
+    cycles, _ = repositories.planning.list_cycles(workspace_id, team_id, limit=TEAM_CYCLE_LIMIT)
+    found = relative_cycle(cycles, alias, today or date.today())
+    if found is None:
+        team = repositories.teams.get(workspace_id, team_id)
+        name = team.key_prefix if team is not None and team.key_prefix else team_id
+        raise unprocessable(f"Team {name} has no {alias} cycle")
+    return found.cycle_id
 
 
 def check_project(
