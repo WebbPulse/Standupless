@@ -263,7 +263,7 @@ def _entry_well_formed(key: str, entry: Any) -> bool:
 
 
 def _groups_well_formed(entry: Any, depth: int = 1) -> bool:
-    """Whether a stored `groups` value is a short list of well formed condition objects, nested no deeper than allowed."""
+    """Whether a stored `groups` value is a short list of well formed conditions, nested no deeper than allowed."""
     if not isinstance(entry, list) or len(entry) > MAX_FILTER_GROUPS:
         return False
     for group in entry:

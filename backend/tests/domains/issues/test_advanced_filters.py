@@ -116,12 +116,13 @@ def test_label_all_wants_every_label(client: TestClient, workspace: str, reposit
     assert _ids(_list(client, workspace, label_id_all=[bug, ui])) == {both["id"]}
 
 
-def test_parent_and_sub_issue_filters(client: TestClient, workspace: str, statuses: Any) -> None:
+def test_parent_and_sub_issue_filters(client: TestClient, workspace: str, repositories: Any, statuses: Any) -> None:
     """Top level only, has sub-issues and not under a parent each keep the right rows."""
     sign_in(client, OWNER)
     parent = create_issue(client, workspace, title="Parent")
     child = create_issue(client, workspace, title="Child", parent_id=parent["id"])
     loose = create_issue(client, workspace, title="Loose")
+    repositories.issues.set_progress(workspace, parent["id"], 1, 0)
 
     assert _ids(_list(client, workspace, parent_id="none")) == {parent["id"], loose["id"]}
     assert _ids(_list(client, workspace, has_sub_issues="true")) == {parent["id"]}

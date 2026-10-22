@@ -486,17 +486,15 @@ const filterChoices = (
           },
           ids: [NONE],
         },
-        ...[...(context.parents ?? new Map()).entries()].map(
-          ([id, parent]) => ({
-            option: {
-              value: id,
-              label: parent.title,
-              detail: parent.key,
-              icon: <LuCornerLeftUp className="h-3.5 w-3.5 text-text-muted" />,
-            },
-            ids: [id],
-          })
-        ),
+        ...[...(context.parents?.entries() ?? [])].map(([id, parent]) => ({
+          option: {
+            value: id,
+            label: parent.title,
+            detail: parent.key,
+            icon: <LuCornerLeftUp className="h-3.5 w-3.5 text-text-muted" />,
+          },
+          ids: [id],
+        })),
       ];
     case 'sub_issues':
       return yesNo(<LuListTree className="h-3.5 w-3.5" />);
