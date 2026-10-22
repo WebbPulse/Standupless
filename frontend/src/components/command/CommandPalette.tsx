@@ -14,6 +14,13 @@
  * as a project, come the same way from the `'page'` scope, listed under the
  * group each registered with.
  *
+ * Every settings page and the current team's settings sections are listed
+ * once a term is typed, matched on the words in {@link settingsDestinations}
+ * as well as their names, so "notifications" or "sla" lands on the page that
+ * holds them. Creating a project or an initiative opens the workspace's one
+ * dialog for each over the page in view, and a project or initiative page adds
+ * its own "Create document".
+ *
  * An exact issue key resolves without the index, the same way the search page
  * does, since the index does not hold keys and a key is the most common thing
  * anyone types here.
@@ -38,6 +45,7 @@ import {
   LuCircleDot,
   LuFileText,
   LuGitPullRequest,
+  LuGoal,
   LuInbox,
   LuKeyboard,
   LuLayers,
@@ -69,6 +77,7 @@ import { listTeamTemplates } from '../../api/templates';
 import { listViews, search } from '../../api/views';
 import ViewIcon from '../views/ViewIcon';
 import { useCreateIssue } from '../../hooks/useCreateIssue';
+import { useCreatePlanning } from '../../hooks/useCreatePlanning';
 import { useCreateTeam } from '../../hooks/useCreateTeam';
 import { useIssueSubject } from '../../hooks/useIssueSubject';
 import { displayKeys, useRegisteredShortcuts } from '../../hooks/useShortcuts';
@@ -80,6 +89,7 @@ import {
   cliSetupPath,
   documentPath,
   inboxPath,
+  initiativesPath,
   issuePath,
   mcpSetupPath,
   myIssuesPath,
@@ -103,6 +113,11 @@ import {
   viewsPath,
 } from '../../lib/paths';
 import { COPY_ISSUE_URL_KEYS } from '../../lib/copyIssue';
+import {
+  matchesTerm,
+  settingsDestinations,
+  teamSettingsDestinations,
+} from '../../lib/paletteDestinations';
 import {
   searchKey,
   templatesKey,
@@ -221,14 +236,15 @@ const THEMES: { theme: Theme; label: string; icon: React.ReactNode }[] = [
 const shortcutHint = (keys: string): string =>
   displayKeys(keys).join(keys.includes(' ') ? ' then ' : ' ');
 
-/** Matches a command against the typed term, on a plain substring. */
-const matches = (command: Command, term: string): boolean => {
-  if (term === '') return true;
-  const needle = term.toLowerCase();
-  return [command.label, command.hint ?? '', command.keywords ?? ''].some(
-    (text) => text.toLowerCase().includes(needle)
+/**
+ * Matches a command against the typed term: every word of the term must
+ * appear in its label, hint or keywords.
+ */
+const matches = (command: Command, term: string): boolean =>
+  matchesTerm(
+    [command.label, command.hint ?? '', command.keywords ?? ''],
+    term
   );
-};
 
 /**
  * The same page under another team: a team route keeps its tab, anything else
@@ -262,6 +278,7 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
   const auth = useQueryAuth();
   const createIssue = useCreateIssue();
   const createTeam = useCreateTeam();
+  const createPlanning = useCreatePlanning();
   const { theme, setTheme } = useTheme();
   const registered = useRegisteredShortcuts();
   const { canUndo, undo } = useUndo(workspace.id);
@@ -421,6 +438,24 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
         page: 'template',
       });
     }
+    if (createPlanning.canCreateProject) {
+      built.push({
+        id: 'action-create-project',
+        label: 'Create project',
+        keywords: 'new add',
+        icon: <LuTarget className={ICON} />,
+        run: createPlanning.openProject,
+      });
+    }
+    if (createPlanning.canCreateInitiative) {
+      built.push({
+        id: 'action-create-initiative',
+        label: 'Create initiative',
+        keywords: 'new add goal',
+        icon: <LuGoal className={ICON} />,
+        run: createPlanning.openInitiative,
+      });
+    }
     if (createTeam.canCreate) {
       built.push({
         id: 'action-create-team',
@@ -490,6 +525,7 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
   }, [
     createIssue,
     createTeam,
+    createPlanning,
     slug,
     teams,
     theme,
@@ -537,6 +573,15 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
         to: projectsPath(slug),
       },
     ];
+    if (workspace.role !== 'guest') {
+      built.push({
+        id: 'nav-initiatives',
+        label: 'Initiatives',
+        keywords: 'goals strategy portfolio',
+        icon: <LuGoal className={ICON} />,
+        to: initiativesPath(slug),
+      });
+    }
     if (team !== undefined) {
       built.push({
         id: 'nav-triage',
@@ -667,6 +712,33 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
         indent: nested,
       })),
     [teams, slug]
+  );
+
+  const settingsPages = useMemo<Command[]>(
+    () =>
+      settingsDestinations(workspace).map((row) => ({
+        id: `settings-page-${row.id}`,
+        label: row.label,
+        keywords: row.keywords,
+        icon: <LuSettings className={ICON} />,
+        to: row.to,
+      })),
+    [workspace]
+  );
+
+  const teamSections = useMemo<Command[]>(
+    () =>
+      team === undefined
+        ? []
+        : teamSettingsDestinations(slug, team.key_prefix).map((row) => ({
+            id: `team-section-${row.id}`,
+            label: row.label,
+            keywords: `${row.keywords} ${team.name}`,
+            hint: team.key_prefix,
+            icon: <LuSettings className={ICON} />,
+            to: row.to,
+          })),
+    [team, slug]
   );
 
   const groups = useMemo<CommandGroup[]>(() => {
@@ -843,6 +915,18 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
       if (settings.length > 0) {
         built.push({ heading: 'Team settings', commands: settings });
       }
+      const pages = settingsPages.filter((command) =>
+        matches(command, deferred)
+      );
+      if (pages.length > 0) {
+        built.push({ heading: 'Settings', commands: pages });
+      }
+      const sections = teamSections.filter((command) =>
+        matches(command, deferred)
+      );
+      if (team !== undefined && sections.length > 0) {
+        built.push({ heading: `${team.name} settings`, commands: sections });
+      }
     }
 
     return built;
@@ -868,6 +952,8 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
     actions,
     places,
     teamSettings,
+    settingsPages,
+    teamSections,
   ]);
 
   const flat = useMemo(

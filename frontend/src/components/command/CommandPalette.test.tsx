@@ -5,7 +5,9 @@
  * and the actions it offers: creating an issue or a team, switching team,
  * changing the theme, the focused issue's shortcuts, and a page's own actions
  * under their group heading. Creating an issue from a template opens a page
- * listing the current team's templates.
+ * listing the current team's templates. Once a term is typed it also offers
+ * the settings pages and the current team's settings sections, found by their
+ * synonyms, and the create project and create initiative dialogs.
  */
 
 import { render, screen, waitFor } from '@testing-library/react';
@@ -18,12 +20,17 @@ import type {
   SearchResultRead,
   TeamRead,
   TemplateListRead,
+  WorkspaceRole,
 } from '../../types/Api';
 import { useCommandPalette } from '../../hooks/useCommandPalette';
 import {
   CreateIssueContext,
   type CreateIssueState,
 } from '../../hooks/useCreateIssue';
+import {
+  CreatePlanningContext,
+  type CreatePlanningState,
+} from '../../hooks/useCreatePlanning';
 import {
   CreateTeamContext,
   type CreateTeamState,
@@ -110,6 +117,8 @@ interface HarnessProps {
   teams?: TeamRead[];
   createIssue?: CreateIssueState;
   createTeam?: CreateTeamState;
+  createPlanning?: CreatePlanningState;
+  role?: WorkspaceRole;
   issueAction?: () => void;
   pageAction?: () => void;
 }
@@ -146,6 +155,8 @@ const Harness: React.FC<HarnessProps> = ({
   teams = [engine],
   createIssue,
   createTeam,
+  createPlanning,
+  role = 'owner',
   issueAction,
   pageAction,
 }) => {
@@ -158,7 +169,7 @@ const Harness: React.FC<HarnessProps> = ({
       <CommandPalette
         open={open}
         onClose={closePalette}
-        workspace={{ id: 'ws-1', slug: 'mine', role: 'owner' }}
+        workspace={{ id: 'ws-1', slug: 'mine', role }}
         teams={teams}
       />
     </>
@@ -175,6 +186,13 @@ const Harness: React.FC<HarnessProps> = ({
       <CreateTeamContext.Provider value={createTeam}>
         {tree}
       </CreateTeamContext.Provider>
+    );
+  }
+  if (createPlanning !== undefined) {
+    tree = (
+      <CreatePlanningContext.Provider value={createPlanning}>
+        {tree}
+      </CreatePlanningContext.Provider>
     );
   }
   return (
@@ -198,6 +216,14 @@ const issueDialog = (): CreateIssueState => ({
   isOpen: false,
   canCreate: true,
   request: null,
+});
+
+/** Planning dialogs whose openers are spies, both allowed. */
+const planningDialogs = (): CreatePlanningState => ({
+  openProject: vi.fn(),
+  openInitiative: vi.fn(),
+  canCreateProject: true,
+  canCreateInitiative: true,
 });
 
 beforeEach(() => {
@@ -752,5 +778,161 @@ describe('the actions', () => {
     await waitFor(() => {
       expect(action).toHaveBeenCalled();
     });
+  });
+});
+
+describe('the settings commands', () => {
+  it('finds notification settings by the word notifications', async () => {
+    const user = renderPalette();
+
+    await user.keyboard('{Control>}k{/Control}');
+    await user.keyboard('notifications');
+    const group = await screen.findByRole('group', { name: 'Settings' });
+    const row = await screen.findByRole('option', {
+      name: /Notification settings/,
+    });
+    expect(group).toContainElement(row);
+    await user.click(row);
+
+    expect(navigate).toHaveBeenCalledWith('/w/mine/settings/notifications');
+  });
+
+  it('finds a settings page by a synonym its label lacks', async () => {
+    const user = renderPalette();
+
+    await user.keyboard('{Control>}k{/Control}');
+    await user.keyboard('invoices');
+    await user.click(
+      await screen.findByRole('option', { name: /Billing and plan/ })
+    );
+
+    expect(navigate).toHaveBeenCalledWith('/w/mine/settings/billing');
+  });
+
+  it('opens a section of the current team settings on its anchor', async () => {
+    const user = renderPalette();
+
+    await user.keyboard('{Control>}k{/Control}');
+    await user.keyboard('service level');
+    const group = await screen.findByRole('group', {
+      name: 'Engine settings',
+    });
+    const row = await screen.findByRole('option', { name: /SLA settings/ });
+    expect(group).toContainElement(row);
+    await user.click(row);
+
+    expect(navigate).toHaveBeenCalledWith(
+      '/w/mine/team/ENG/settings#team-settings-sla'
+    );
+  });
+
+  it('keeps the admin settings pages from a member', async () => {
+    const user = renderPalette({ role: 'member' });
+
+    await user.keyboard('{Control>}k{/Control}');
+    await user.keyboard('settings');
+    await screen.findByRole('option', { name: /Notification settings/ });
+
+    expect(
+      screen.queryByRole('option', { name: /Import issues/ })
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('option', { name: /Audit log/ })
+    ).not.toBeInTheDocument();
+  });
+
+  it('offers the admin settings pages to an owner', async () => {
+    const user = renderPalette();
+
+    await user.keyboard('{Control>}k{/Control}');
+    await user.keyboard('import');
+    await user.click(
+      await screen.findByRole('option', { name: /Import issues/ })
+    );
+
+    expect(navigate).toHaveBeenCalledWith('/w/mine/settings/import');
+  });
+
+  it('shows no settings rows before a term is typed', async () => {
+    const user = renderPalette();
+
+    await user.keyboard('{Control>}k{/Control}');
+    await screen.findByRole('option', { name: /My issues/ });
+
+    expect(
+      screen.queryByRole('option', { name: /Notification settings/ })
+    ).not.toBeInTheDocument();
+  });
+});
+
+describe('the planning commands', () => {
+  it('goes to Initiatives', async () => {
+    const user = renderPalette();
+
+    await user.keyboard('{Control>}k{/Control}');
+    await user.keyboard('goals');
+    await user.click(
+      await screen.findByRole('option', { name: /Initiatives/ })
+    );
+
+    expect(navigate).toHaveBeenCalledWith('/w/mine/initiatives');
+  });
+
+  it('leaves Initiatives out for a guest', async () => {
+    const user = renderPalette({ role: 'guest' });
+
+    await user.keyboard('{Control>}k{/Control}');
+    await screen.findByRole('option', { name: /My issues/ });
+
+    expect(
+      screen.queryByRole('option', { name: /Initiatives/ })
+    ).not.toBeInTheDocument();
+  });
+
+  it('opens the create project dialog', async () => {
+    const dialogs = planningDialogs();
+    const user = renderPalette({ createPlanning: dialogs });
+
+    await user.keyboard('{Control>}k{/Control}');
+    await user.keyboard('create project');
+    await user.keyboard('{Enter}');
+
+    await waitFor(() => {
+      expect(dialogs.openProject).toHaveBeenCalled();
+    });
+  });
+
+  it('opens the create initiative dialog', async () => {
+    const dialogs = planningDialogs();
+    const user = renderPalette({ createPlanning: dialogs });
+
+    await user.keyboard('{Control>}k{/Control}');
+    await user.click(
+      await screen.findByRole('option', { name: /Create initiative/ })
+    );
+
+    await waitFor(() => {
+      expect(dialogs.openInitiative).toHaveBeenCalled();
+    });
+  });
+
+  it('leaves out the create commands the caller may not use', async () => {
+    const user = renderPalette({
+      createPlanning: {
+        ...planningDialogs(),
+        canCreateProject: false,
+        canCreateInitiative: false,
+      },
+    });
+
+    await user.keyboard('{Control>}k{/Control}');
+    await screen.findByRole('option', { name: /My issues/ });
+
+    expect(
+      screen.queryByRole('option', { name: /Create project/ })
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('option', { name: /Create initiative/ })
+    ).not.toBeInTheDocument();
   });
 });

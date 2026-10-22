@@ -52,6 +52,7 @@ import { Popover } from '../../components/ui/popover';
 import { SkeletonRows } from '../../components/ui/skeleton';
 import WorkspaceShell from '../../components/workspace/WorkspaceShell';
 import { useAuth } from '../../hooks/useAuth';
+import useCreateDocumentCommand from '../../hooks/useCreateDocumentCommand';
 import { useInitiativeUpdates } from '../../hooks/useInitiativeUpdates';
 import { useTeam } from '../../hooks/useTeam';
 import { useWorkspace } from '../../hooks/useWorkspace';
@@ -279,6 +280,15 @@ export const InitiativeDetail: React.FC = () => {
     },
     [setParams]
   );
+
+  useCreateDocumentCommand({
+    workspaceId,
+    slug,
+    parentKind: 'initiative',
+    parentId: initiativeId,
+    group: 'Initiative',
+    enabled: isMember && initiative !== null,
+  });
 
   const crumbs = (
     <span className="hidden shrink-0 items-center gap-1 text-sm text-text-muted sm:inline-flex">

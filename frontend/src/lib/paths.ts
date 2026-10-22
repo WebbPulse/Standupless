@@ -92,6 +92,13 @@ export const teamStandupPath = (slug: string, keyPrefix: string): string =>
 export const teamSettingsPath = (slug: string, keyPrefix: string): string =>
   `${teamPath(slug, keyPrefix)}/settings`;
 
+/** One section of a team's settings, which the page scrolls to on load. */
+export const teamSettingsSectionPath = (
+  slug: string,
+  keyPrefix: string,
+  section: string
+): string => `${teamSettingsPath(slug, keyPrefix)}#team-settings-${section}`;
+
 /** Every project across the teams the caller can see. */
 export const projectsPath = (slug: string): string =>
   `${workspacePath(slug)}/projects`;
@@ -235,6 +242,22 @@ export const exportSettingsPath = (slug: string): string =>
 /** The admin only issue import page, where CSV files from other trackers are brought in. */
 export const importSettingsPath = (slug: string): string =>
   `${settingsPath(slug)}/import`;
+
+/** The workspace issue templates every team inherits. */
+export const templatesSettingsPath = (slug: string): string =>
+  `${settingsPath(slug)}/templates`;
+
+/** The workspace plan, seats and invoices. */
+export const billingSettingsPath = (slug: string): string =>
+  `${settingsPath(slug)}/billing`;
+
+/** The admin only workspace security policy: SSO, two-factor and domains. */
+export const workspaceSecuritySettingsPath = (slug: string): string =>
+  `${settingsPath(slug)}/security`;
+
+/** The admin only audit log of workspace events. */
+export const auditLogSettingsPath = (slug: string): string =>
+  `${settingsPath(slug)}/audit-log`;
 
 /** The caller's own profile: their name, handle and avatar. */
 export const profileSettingsPath = (slug: string): string =>
