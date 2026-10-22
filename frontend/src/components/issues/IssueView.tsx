@@ -76,6 +76,7 @@ import {
 } from '../../lib/copyIssue';
 import { errorMessage } from '../../lib/errors';
 import { timestampLabel } from '../../lib/issueDisplay';
+import { recordArchive, recordPatch } from '../../lib/issueUndo';
 import { embeddedAttachmentIds } from '../../lib/media';
 import { useOptimisticRecord } from '../../lib/optimistic';
 import { issuePath, teamPath } from '../../lib/paths';
@@ -422,7 +423,16 @@ export const IssueView: React.FC<IssueViewProps> = ({
   );
 
   const onUpdate = (patch: IssueUpdate): void => {
-    void update(patch);
+    const before = issue;
+    void update(patch).then((saved) => {
+      if (!saved || before === null) return;
+      recordPatch(workspaceId, before, patch, {
+        invalidate: [issueKey(workspaceId, issueRef)],
+        onReverted: ([written]) => {
+          if (written !== undefined) receive(written);
+        },
+      });
+    });
   };
 
   const ready = issue !== null && team !== undefined;
@@ -478,7 +488,12 @@ export const IssueView: React.FC<IssueViewProps> = ({
       return;
     }
     invalidateQueries([issueKey(workspaceId, issueRef), activityKey(issue.id)]);
-    showToast(restoring ? `${issue.key} restored` : `${issue.key} archived`);
+    recordArchive(workspaceId, [issue], restoring, {
+      invalidate: [issueKey(workspaceId, issueRef)],
+      onReverted: ([written]) => {
+        if (written !== undefined) receive(written);
+      },
+    });
   };
 
   const onMoved = (moved: IssueRead): void => {

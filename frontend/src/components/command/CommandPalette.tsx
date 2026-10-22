@@ -55,6 +55,7 @@ import {
   LuSun,
   LuTarget,
   LuTerminal,
+  LuUndo2,
   LuUserRound,
   LuUsers,
   LuUsersRound,
@@ -72,6 +73,7 @@ import { useCreateTeam } from '../../hooks/useCreateTeam';
 import { useIssueSubject } from '../../hooks/useIssueSubject';
 import { displayKeys, useRegisteredShortcuts } from '../../hooks/useShortcuts';
 import { useTheme } from '../../hooks/useTheme';
+import { UNDO_KEYS, UNDO_LABEL, useUndo } from '../../hooks/useUndo';
 import { cn } from '../../lib/cn';
 import {
   accountSecuritySettingsPath,
@@ -262,6 +264,7 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
   const createTeam = useCreateTeam();
   const { theme, setTheme } = useTheme();
   const registered = useRegisteredShortcuts();
+  const { canUndo, undo } = useUndo(workspace.id);
   const subject = useIssueSubject();
   const [term, setTerm] = useState('');
   const [page, setPage] = useState<Page>('root');
@@ -389,6 +392,16 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
 
   const actions = useMemo<Command[]>(() => {
     const built: Command[] = [];
+    if (canUndo) {
+      built.push({
+        id: 'action-undo',
+        label: UNDO_LABEL,
+        keywords: 'revert undo restore',
+        hint: shortcutHint(UNDO_KEYS),
+        icon: <LuUndo2 className={ICON} />,
+        run: undo,
+      });
+    }
     if (createIssue.canCreate) {
       built.push({
         id: 'action-create-issue',
@@ -474,7 +487,17 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
       }
     );
     return built;
-  }, [createIssue, createTeam, slug, teams, theme, setTheme, onShowShortcuts]);
+  }, [
+    createIssue,
+    createTeam,
+    slug,
+    teams,
+    theme,
+    setTheme,
+    onShowShortcuts,
+    canUndo,
+    undo,
+  ]);
 
   const places = useMemo<Command[]>(() => {
     const built: Command[] = [
