@@ -75,11 +75,9 @@ describe('RemindMeDialog', () => {
 
     expect(screen.getByText('Pick a time in the future.')).toBeTruthy();
     expect(
-      (
-        screen.getByRole('button', {
-          name: 'Set reminder',
-        }) as HTMLButtonElement
-      ).disabled
+      screen.getByRole<HTMLButtonElement>('button', {
+        name: 'Set reminder',
+      }).disabled
     ).toBe(true);
     expect(reminder.set).not.toHaveBeenCalled();
   });

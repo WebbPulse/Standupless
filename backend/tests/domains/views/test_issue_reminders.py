@@ -151,7 +151,7 @@ def test_an_issue_out_of_sight_cannot_be_reminded(
     "moment",
     [
         datetime(2020, 1, 1, tzinfo=timezone.utc).isoformat(),
-        (datetime.now(timezone.utc) + timedelta(days=400)).isoformat(),
+        "2099-01-01T09:00:00+00:00",
         "2099-01-01T09:00:00",
     ],
 )

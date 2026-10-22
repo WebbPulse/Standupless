@@ -611,8 +611,9 @@ def handle_record(repositories: Repositories, record: Mapping[str, Any]) -> None
     """Route one record to the handler for the table it came from.
 
     The digest flush schedule's synthetic record runs the flush, the issue
-    reminders that have come due on every tick, the project update reminder sweep every quarter hour, the standup digest sweep every five
-    minutes, and the issue due date and Pulse digest sweeps every hour, and nothing else. Each sweep
+    reminders that have come due on every tick, the project update reminder
+    sweep every quarter hour, the standup digest sweep every five minutes, and
+    the issue due date and Pulse digest sweeps every hour, and nothing else. Each sweep
     runs on the first tick of its window, so a late tick does not skip a pass. The sweeps
     are imported here rather than at the top because they build on this module's
     writers.
