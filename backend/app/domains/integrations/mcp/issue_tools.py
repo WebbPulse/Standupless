@@ -39,7 +39,7 @@ from app.common.filter_resolution import resolve_issue_filter
 from app.common.insights import insights_for
 from app.common.issue_activity import activity_page
 from app.common.issue_archive import archive_issue, unarchive_issue
-from app.common.issue_filters import UnknownStatusCategory, build_issue_filter
+from app.common.issue_filters import UnknownStatusCategory, build_issue_filter, subscribed_by_caller
 from app.common.issue_keys import current
 from app.common.issue_links import create_link, delete_link, list_links
 from app.common.issue_move import move_issue
@@ -143,11 +143,41 @@ FILTER_ARGUMENTS: tuple[str, ...] = (
     "estimate_not",
     "sla_status",
     "has_relation",
+    "team_id_in",
+    "team_id_not",
+    "creator_id",
+    "creator_id_not",
+    "subscriber_id",
+    "subscriber_id_not",
+    "label_id_all",
+    "priority_not",
+    "parent_id_not",
+    "project_id_not",
+    "project_milestone_id_not",
+    "cycle_id_not",
 )
 """The issue list filter arguments the tools take, by the HTTP list's query parameter names."""
 
-BOOLEAN_FILTER_ARGUMENTS: tuple[str, ...] = ("is_blocked", "is_blocking")
+BOOLEAN_FILTER_ARGUMENTS: tuple[str, ...] = ("is_blocked", "is_blocking", "has_sub_issues")
 """The filter arguments taken as booleans and passed through as sent, for the filter to check."""
+
+SCALAR_FILTER_ARGUMENTS: tuple[str, ...] = (
+    "due_before",
+    "due_after",
+    "created_after",
+    "created_before",
+    "updated_after",
+    "updated_before",
+    "completed_after",
+    "completed_before",
+    "content",
+    "content_not",
+    "match",
+)
+"""The filter arguments taken once as text, passed through for the filter to check."""
+
+PARENT_ARGUMENTS: tuple[str, ...] = ("parent_id", "parent_id_not")
+"""The filter arguments naming issues, where an issue key is resolved to its id."""
 
 
 def _filter_properties(*, with_assignee: bool = True) -> dict[str, Any]:
@@ -181,6 +211,45 @@ def _filter_properties(*, with_assignee: bool = True) -> dict[str, Any]:
         "has_relation": one_or_many(
             "Holding a link of any of these types: blocks, blocked_by, relates_to, duplicate_of"
         ),
+        "team_id_in": one_or_many("In any of these teams, among the teams the list already covers"),
+        "team_id_not": one_or_many("In none of these teams"),
+        "creator_id": one_or_many("Created by any of these people; 'me' is the caller"),
+        "creator_id_not": one_or_many("Created by none of these people"),
+        "subscriber_id": one_or_many("Subscribed to by any of these people; 'me' is the caller"),
+        "subscriber_id_not": one_or_many("Subscribed to by none of these people"),
+        "label_id_all": one_or_many("Carrying every one of these labels"),
+        "priority_not": one_or_many("None of these priorities"),
+        "parent_id_not": one_or_many("Not a child of any of these issues, by id or key; 'none' is sub-issues only"),
+        "has_sub_issues": {
+            "type": "boolean",
+            "description": "True for issues with at least one sub-issue, false for issues with none",
+        },
+        "project_id_not": one_or_many("In none of these projects"),
+        "project_milestone_id_not": one_or_many("In none of these project milestones"),
+        "cycle_id_not": one_or_many("In none of these cycles"),
+        "due_before": string("Due before this day, YYYY-MM-DD, exclusive"),
+        "due_after": string("Due after this day, YYYY-MM-DD, exclusive"),
+        "created_after": string("Created after this day, YYYY-MM-DD, exclusive"),
+        "created_before": string("Created before this day, YYYY-MM-DD, exclusive"),
+        "updated_after": string("Updated after this day, YYYY-MM-DD, exclusive"),
+        "updated_before": string("Updated before this day, YYYY-MM-DD, exclusive"),
+        "completed_after": string("Completed after this day, YYYY-MM-DD, exclusive; only completed issues match"),
+        "completed_before": string("Completed before this day, YYYY-MM-DD, exclusive; only completed issues match"),
+        "content": string("Title or description contains this text, case insensitive"),
+        "content_not": string("Neither title nor description contains this text"),
+        "match": enum(("all", "any"), "How the conditions combine: all of them (default) or any one"),
+        "groups": {
+            "type": "array",
+            "maxItems": 10,
+            "items": {"type": "object"},
+            "description": (
+                "Condition groups, each an object holding these same filter names plus its own match "
+                "(all or any), and each counting as one condition. A group may hold groups of its own, "
+                "two levels at most. Example: "
+                '[{"match": "any", "label_id": "BUG_LABEL_ID", "priority": "urgent"}] keeps issues '
+                "that carry the label or are urgent"
+            ),
+        },
     }
     if with_assignee:
         properties["assignee_id"] = one_or_many("Any of these assignees; 'me' is the caller, 'none' is unassigned")
@@ -208,10 +277,34 @@ def _parent_values(call: ToolCall, values: list[str] | None) -> list[str] | None
 
 
 def _filter_values(call: ToolCall) -> dict[str, Any]:
-    """The filter arguments as lists, parent keys resolved to ids."""
+    """The filter arguments as the shared filter takes them, parent keys resolved to ids, groups included."""
     values: dict[str, Any] = {name: filter_values(call.optional(name)) for name in FILTER_ARGUMENTS}
-    values["parent_id"] = _parent_values(call, values["parent_id"])
+    values.update({name: call.optional(name) for name in BOOLEAN_FILTER_ARGUMENTS})
+    values.update({name: call.optional(name) for name in SCALAR_FILTER_ARGUMENTS})
+    for name in PARENT_ARGUMENTS:
+        values[name] = _parent_values(call, values[name])
+    values["groups"] = _groups(call)
     return values
+
+
+def _groups(call: ToolCall, raw: Any = None, *, top: bool = True) -> list[dict[str, Any]] | None:
+    """The condition groups argument with each group's parent keys resolved to ids, nested groups included."""
+    if top:
+        raw = call.optional("groups")
+    if raw is None:
+        return None
+    if not isinstance(raw, list) or not all(isinstance(group, dict) for group in raw):
+        raise ToolError("groups must be a list of condition objects")
+    resolved: list[dict[str, Any]] = []
+    for group in raw:
+        entry = dict(group)
+        for name in PARENT_ARGUMENTS:
+            if entry.get(name) is not None:
+                entry[name] = _parent_values(call, filter_values(entry[name]))
+        if entry.get("groups") is not None:
+            entry["groups"] = _groups(call, entry["groups"], top=False)
+        resolved.append(entry)
+    return resolved
 
 
 def _build_filter(call: ToolCall, *, include_archived: bool = False, **overrides: Any) -> Any:
@@ -220,7 +313,6 @@ def _build_filter(call: ToolCall, *, include_archived: bool = False, **overrides
     Archived issues are left out unless the caller asks for them, the list's own default.
     """
     values = _filter_values(call)
-    values.update({name: call.optional(name) for name in BOOLEAN_FILTER_ARGUMENTS})
     values.update(overrides)
     values["include_archived"] = _include_archived(call, include_archived)
     try:
@@ -246,7 +338,13 @@ def _reverse(call: ToolCall) -> bool:
 
 
 def _page(call: ToolCall, **overrides: Any) -> dict[str, Any]:
-    """One page of the issue list, through the same fan-out the HTTP list runs."""
+    """One page of the issue list, through the same fan-out the HTTP list runs.
+
+    "Subscribed by me" reads the caller's own subscription index, as the HTTP list does.
+    """
+    subscribed = subscribed_by_caller(call.optional("subscriber_id"), call.optional("match"), call.context.user_id)
+    if subscribed:
+        overrides = {**overrides, "subscriber_id": None}
     wanted = _build_filter(call, **overrides)
     team_id = call.optional("team_id")
     rows, next_cursor = list_issues(
@@ -259,6 +357,7 @@ def _page(call: ToolCall, **overrides: Any) -> dict[str, Any]:
         limit=limit(call.optional("limit")),
         include_sub_teams=call.optional("include_sub_teams", False) is True,
         reverse=_reverse(call),
+        subscribed=subscribed,
     )
     return {"issues": [summary_json(row) for row in rows], "next_cursor": next_cursor}
 
@@ -272,7 +371,7 @@ def _list_issues(call: ToolCall) -> Any:
 def _get_insights(call: ToolCall) -> Any:
     """A breakdown of the issues a team, a filter or a saved view selects, as the insights route answers it."""
     filters = _filter_values(call)
-    filters.update({name: call.optional(name) for name in BOOLEAN_FILTER_ARGUMENTS})
+    subscriber_id = filters.pop("subscriber_id", None)
     filters["include_archived"] = _include_archived(call, False)
     team_id = call.optional("team_id")
     view_id = call.optional("view_id")
@@ -282,7 +381,7 @@ def _get_insights(call: ToolCall) -> Any:
         call.context,
         team_id=str(team_id) if team_id else None,
         view_id=str(view_id) if view_id else None,
-        subscriber_id=None,
+        subscriber_id=subscriber_id,
         group_by=str(call.optional("group_by", "status")),
         segment_by=str(segment_by) if segment_by else None,
         measure=str(call.optional("measure", "count")),
@@ -866,7 +965,8 @@ ISSUE_TOOLS: tuple[Tool, ...] = (
         name="list_issues",
         description=(
             "One page of issues this credential can see, with the issue list filters, a sort and a cursor. "
-            "Every filter takes one value or a list, ORed. Answers issue summaries and next_cursor."
+            "Every filter takes one value or a list, ORed, and filters are ANDed unless match is any; "
+            "groups nest conditions two levels deep with their own match. Answers issue summaries and next_cursor."
         ),
         scopes=("issues:read",),
         schema=object_schema(

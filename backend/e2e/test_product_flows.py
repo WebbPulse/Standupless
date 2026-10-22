@@ -439,6 +439,31 @@ class TestIssuesDomain:
         assert issue["id"] not in _ids(excluded.json(), "issue", "issues", "items")
 
     @WRITES
+    def test_the_advanced_filters_find_the_runs_own_issue(
+        self, api: Any, workspace: "dict[str, Any]", issue: "dict[str, Any]"
+    ) -> None:
+        """Content, top level only and a subscriber inside an any group all keep the run's issue.
+
+        The group reads the caller's subscriptions without the keyed fast path, so a
+        missing grant or index on the stage is a 500 here, and a content filter for
+        text the issue does not hold leaves it out.
+        """
+        path = f"/api/workspaces/{workspace['id']}/issues"
+        group = json.dumps([{"match": "any", "subscriber_id": "me", "priority": "urgent"}])
+        for params in (
+            {"content": str(issue["title"])},
+            {"parent_id": "none", "has_sub_issues": "false"},
+            {"groups": group},
+        ):
+            listed = api.get(path, params=params)
+            assert listed.status_code == 200, listed.text[:400]
+            assert issue["id"] in _ids(listed.json(), "issue", "issues", "items"), params
+
+        missing = api.get(path, params={"content": f"{issue['title']} absent"})
+        assert missing.status_code == 200, missing.text[:400]
+        assert issue["id"] not in _ids(missing.json(), "issue", "issues", "items")
+
+    @WRITES
     def test_a_delta_read_finds_a_new_issue_and_reports_its_deletion(
         self, api: Any, run_scope: RunScope, workspace: "dict[str, Any]", team: "dict[str, Any]"
     ) -> None:

@@ -13,7 +13,7 @@ from typing import Any
 from fastapi.testclient import TestClient
 
 from tests.domains.helpers import ADMIN, GUEST, MEMBER, OWNER, sign_in
-from tests.domains.views.conftest import OTHER_TEAM, TEAM
+from tests.domains.views.conftest import OTHER_TEAM, TEAM, seed_issue
 
 
 def create_view(client: TestClient, workspace: str, **payload: Any) -> "dict[str, Any]":
@@ -246,3 +246,76 @@ def test_the_my_issues_filter_keys_are_kept(client: TestClient, workspace: str) 
 
     assert view["filter"]["creator_id"] == "me"
     assert view["filter"]["subscriber_id"] == "me"
+
+
+def test_a_json_boolean_is_blocked_round_trips_and_runs_like_the_list(
+    client: TestClient, issues_client: TestClient, workspace: str
+) -> None:
+    """`is_blocked` sent as JSON true is stored as the text the list takes and selects the same rows."""
+    sign_in(issues_client, MEMBER)
+    blocker = seed_issue(issues_client, workspace, title="Blocker")
+    blocked = seed_issue(issues_client, workspace, title="Blocked")
+    seed_issue(issues_client, workspace, title="Free")
+    linked = issues_client.post(
+        f"/api/workspaces/{workspace}/issues/{blocker['id']}/links",
+        json={"type": "blocks", "target_issue_id": blocked["id"]},
+    )
+    assert linked.status_code == 201, linked.text
+
+    sign_in(client, MEMBER)
+    view = create_view(client, workspace, name="Blocked", team_id=TEAM, filter={"is_blocked": True})
+    patched = client.patch(
+        f"/api/workspaces/{workspace}/views/{view['view_id']}",
+        json={"filter": {"is_blocked": False}},
+    )
+    assert patched.status_code == 200, patched.text
+
+    assert view["filter"] == {"is_blocked": "true"}
+    assert patched.json()["filter"] == {"is_blocked": "false"}
+    base = f"/api/workspaces/{workspace}/issues"
+    by_view = issues_client.get(base, params={"team_id": TEAM, **view["filter"]}).json()["issues"]
+    by_list = issues_client.get(base, params={"team_id": TEAM, "is_blocked": "true"}).json()["issues"]
+    assert [row["id"] for row in by_view] == [row["id"] for row in by_list] == [blocked["id"]]
+
+
+def test_a_view_keeps_condition_groups_two_levels_deep(client: TestClient, workspace: str) -> None:
+    """Groups round trip with their booleans normalized, a third level and a search inside are refused."""
+    sign_in(client, MEMBER)
+    nested = [{"match": "any", "priority": "urgent", "groups": [{"is_blocked": True, "assignee_id": "me"}]}]
+
+    view = create_view(client, workspace, name="Grouped", filter={"groups": nested})
+    deep = client.post(
+        f"/api/workspaces/{workspace}/views",
+        json={"name": "Deep", "filter": {"groups": [{"groups": [{"groups": [{"priority": "low"}]}]}]}},
+    )
+    searched = client.post(
+        f"/api/workspaces/{workspace}/views",
+        json={"name": "Searched", "filter": {"groups": [{"q": "token"}]}},
+    )
+
+    assert view["filter"]["groups"] == [
+        {"match": "any", "priority": "urgent", "groups": [{"is_blocked": "true", "assignee_id": "me"}]}
+    ]
+    assert deep.status_code == 422
+    assert deep.json()["error_code"] == "INVALID_FILTER"
+    assert searched.status_code == 422
+    assert searched.json()["error_code"] == "INVALID_FILTER"
+
+
+def test_the_new_filter_keys_are_kept(client: TestClient, workspace: str) -> None:
+    """Content, completed dates, label all, sub-issues and subscriber exclusion all store as sent."""
+    sign_in(client, MEMBER)
+    wanted = {
+        "content": "token",
+        "content_not": "flaky",
+        "completed_after": "2026-01-01",
+        "completed_before": "2026-12-31",
+        "label_id_all": ["01JB0000000000000000000LB1", "01JB0000000000000000000LB2"],
+        "has_sub_issues": "true",
+        "subscriber_id_not": MEMBER,
+        "match": "any",
+    }
+
+    view = create_view(client, workspace, name="Everything", filter=wanted)
+
+    assert view["filter"] == wanted

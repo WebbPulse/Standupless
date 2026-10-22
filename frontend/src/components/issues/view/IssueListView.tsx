@@ -44,8 +44,7 @@ import { usePeekIssue } from '../../../hooks/usePeekIssue';
 import { useShortcut } from '../../../hooks/useShortcuts';
 import { errorMessage } from '../../../lib/errors';
 import {
-  FILTER_FIELDS,
-  fieldsFor,
+  filterFieldsFor,
   filterValuesFor,
   groupIssues,
   hiddenColumnKey,
@@ -822,7 +821,7 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
 
   const filterFor = useCallback(
     (field: FilterField): ((value: string) => void) | undefined => {
-      const allowed = filterFields ?? fieldsFor(FILTER_FIELDS, context);
+      const allowed = filterFields ?? filterFieldsFor(context);
       if (!allowed.includes(field)) return undefined;
       return (value: string) => {
         onStateChange({

@@ -788,6 +788,11 @@ export interface IssueRead {
    * a Linear or Jira key. Null for issues created in Standupless.
    */
   external_ref?: string | null;
+  /**
+   * When the issue last landed in a completed status, null while it is open
+   * or cancelled. Optional so a row read before it was stamped reads as none.
+   */
+  completed_at?: string | null;
   created_by: string;
   created_at: string;
   updated_at: string;

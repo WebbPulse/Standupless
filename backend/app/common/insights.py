@@ -28,7 +28,7 @@ from app.common.db.dynamo.issues import PRIORITY_ORDER, Issue, as_issue
 from app.common.db.dynamo.team_config import STATUS_CATEGORIES, status_order
 from app.common.estimates import estimate_points
 from app.common.filter_resolution import resolve_issue_filter
-from app.common.issue_filters import ME, IssueFilter, UnknownStatusCategory, build_issue_filter
+from app.common.issue_filters import IssueFilter, UnknownStatusCategory, build_issue_filter, subscribed_by_caller
 from app.common.issue_keyed_reads import keyed_rows
 from app.common.issue_keys import current_all
 from app.common.issue_rules import unprocessable
@@ -130,12 +130,10 @@ def resolve_scope(
         if team_id and view_team and team_id != view_team:
             raise unprocessable("team_id does not match the saved view's team")
         team_id = team_id or view_team
-        subscribed = subscribed or _scalar(stored.get("subscriber_id")) in (ME, context.user_id)
-        keys = {
-            key: value
-            for key, value in stored.items()
-            if key in FILTER_FIELDS and key not in ("team_id", "subscriber_id")
-        }
+        view_subscribed = subscribed_by_caller(stored.get("subscriber_id"), stored.get("match"), context.user_id)
+        subscribed = subscribed or view_subscribed
+        skipped = ("team_id", "subscriber_id") if view_subscribed else ("team_id",)
+        keys = {key: value for key, value in stored.items() if key in FILTER_FIELDS and key not in skipped}
         try:
             view_filter = build_issue_filter(user_id=context.user_id, **keys)
         except UnknownStatusCategory as exc:
@@ -431,7 +429,7 @@ def insights_for(
     *,
     team_id: Optional[str],
     view_id: Optional[str],
-    subscriber_id: Optional[str],
+    subscriber_id: Any,
     group_by: str,
     segment_by: Optional[str],
     measure: str,
@@ -449,9 +447,9 @@ def insights_for(
         raise unprocessable(f"segment_by must be one of: {', '.join(INSIGHT_DIMENSIONS)}")
     if measure not in INSIGHT_MEASURES:
         raise unprocessable(f"measure must be one of: {', '.join(INSIGHT_MEASURES)}")
-    subscribed = subscriber_id is not None
-    if subscribed and subscriber_id not in (ME, context.user_id):
-        raise unprocessable("subscriber_id only accepts me")
+    subscribed = subscribed_by_caller(subscriber_id, filters.get("match"), context.user_id)
+    if subscriber_id is not None and not subscribed:
+        filters = {**filters, "subscriber_id": subscriber_id}
     try:
         wanted = build_issue_filter(user_id=context.user_id, **filters)
     except UnknownStatusCategory as exc:

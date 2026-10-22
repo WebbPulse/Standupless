@@ -47,6 +47,7 @@ from app.common.api.schemas.views import (
     ViewUpdate,
     VisiblePropertyField,
     malformed_filter_keys,
+    normalize_filter,
     unknown_filter_keys,
 )
 from app.common.db.dynamo.issues import Issue
@@ -74,6 +75,7 @@ __all__ = [
     "IssueRead",
     "LayoutField",
     "malformed_filter_keys",
+    "normalize_filter",
     "NotificationKindField",
     "NotificationRead",
     "PriorityField",

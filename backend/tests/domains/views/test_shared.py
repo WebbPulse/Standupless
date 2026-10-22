@@ -449,3 +449,32 @@ def test_a_guest_creators_link_reads_only_while_they_stay_in_the_team(
 
     repositories.memberships.delete_team_membership(workspace, TEAM, MEMBER)
     assert client.get(f"/api/shared/{link['token']}").status_code == 404
+
+
+def test_a_filter_link_refuses_a_subscriber_inside_a_group(client: TestClient, workspace: str) -> None:
+    """A personal key nested in a group is as personal as one at the top, at any depth."""
+    sign_in(client, MEMBER)
+    for groups in (
+        [{"match": "any", "subscriber_id": MEMBER}],
+        [{"match": "any", "groups": [{"subscriber_id_not": MEMBER}]}],
+    ):
+        response = client.post(
+            f"/api/workspaces/{workspace}/share-links",
+            json={"target_type": "filter", "target_id": TEAM, "filter": {"groups": groups}},
+        )
+        assert response.status_code == 422, response.text
+        assert response.json()["error_code"] == "INVALID_FILTER"
+
+
+def test_a_filter_link_keeps_a_group(client: TestClient, workspace: str) -> None:
+    """A group with no personal key is a valid snapshot."""
+    sign_in(client, MEMBER)
+    response = client.post(
+        f"/api/workspaces/{workspace}/share-links",
+        json={
+            "target_type": "filter",
+            "target_id": TEAM,
+            "filter": {"groups": [{"match": "any", "priority": ["urgent", "high"], "is_blocked": True}]},
+        },
+    )
+    assert response.status_code == 201, response.text

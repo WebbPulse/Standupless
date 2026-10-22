@@ -28,6 +28,7 @@ import {
   shownIssues,
   sortIssues,
   stateToViewBody,
+  stateToViewFilter,
   toggleFilterValue,
   viewScope,
   viewStateQuery,
@@ -866,5 +867,177 @@ describe('the relation and relative cycle filters', () => {
     });
     expect(sharedChange(own, true)).toEqual({ shared: true });
     expect(sharedChange(everyone, true)).toEqual({});
+  });
+});
+
+describe('the advanced filters', () => {
+  const grouped: ViewState = {
+    ...base,
+    filters: [
+      { field: 'label', op: 'all', values: ['lb-bug', 'lb-ui'] },
+      { field: 'content', op: 'is', values: ['token, cache'] },
+    ],
+    groups: [
+      {
+        match: 'any',
+        filters: [
+          { field: 'subscriber', op: 'is', values: ['user-2'] },
+          { field: 'priority', op: 'is', values: ['urgent'] },
+        ],
+      },
+    ],
+  };
+
+  it('round trips groups, a label all and a content clause through the URL', () => {
+    const params = writeViewState(grouped, base);
+
+    expect(params.getAll('f')).toEqual([
+      'label.all:lb-bug,lb-ui',
+      'content.is:token, cache',
+    ]);
+    expect(params.getAll('g')).toHaveLength(1);
+    expect(sameViewState(parseViewState(params, base), grouped)).toBe(true);
+    expect(
+      parseViewState(new URLSearchParams('m=any&g=bogus'), base)
+    ).toMatchObject({ match: 'any', groups: [] });
+  });
+
+  it('sends a group as JSON and the newer fields under their server keys', () => {
+    expect(
+      viewStateQuery(
+        {
+          ...grouped,
+          filters: [
+            ...grouped.filters,
+            { field: 'parent', op: 'is', values: [NONE] },
+            { field: 'sub_issues', op: 'is', values: ['true'] },
+            { field: 'completed', op: 'after', values: ['2026-10-01'] },
+          ],
+        },
+        { team_id: 'team-1' }
+      )
+    ).toEqual({
+      team_id: 'team-1',
+      label_id_all: ['lb-bug', 'lb-ui'],
+      content: 'token, cache',
+      parent_id: [NONE],
+      has_sub_issues: 'true',
+      completed_after: '2026-10-01',
+      groups: JSON.stringify([
+        { match: 'any', subscriber_id: ['user-2'], priority: ['urgent'] },
+      ]),
+      sort: 'priority_desc',
+    });
+  });
+
+  it('wraps match any in one group so the scope still holds', () => {
+    const any: ViewState = { ...grouped, match: 'any' };
+    const query = viewStateQuery(any, { team_id: 'team-1' }) as Record<
+      string,
+      unknown
+    >;
+
+    expect(query).not.toHaveProperty('match');
+    expect(query).not.toHaveProperty('label_id_all');
+    expect(query['team_id']).toBe('team-1');
+    expect(JSON.parse(query['groups'] as string)).toEqual([
+      {
+        match: 'any',
+        label_id_all: ['lb-bug', 'lb-ui'],
+        content: 'token, cache',
+        groups: [
+          { match: 'any', priority: ['urgent'], subscriber_id: ['user-2'] },
+        ],
+      },
+    ]);
+    expect(viewStateQuery({ ...base, match: 'any' })).toEqual({
+      sort: 'priority_desc',
+    });
+  });
+
+  it('saves the wrapped form and reads it back unwrapped', () => {
+    const any: ViewState = { ...grouped, match: 'any' };
+    const filter = stateToViewFilter(any, { team_id: 'team-1' });
+
+    expect(filter).toEqual({
+      team_id: 'team-1',
+      groups: [
+        {
+          match: 'any',
+          label_id_all: ['lb-bug', 'lb-ui'],
+          content: 'token, cache',
+          groups: [
+            { match: 'any', priority: ['urgent'], subscriber_id: ['user-2'] },
+          ],
+        },
+      ],
+    });
+    const view = { filter } as unknown as SavedViewDisplayRead;
+    expect(sameViewState(viewToState(view), any)).toBe(true);
+    expect(
+      sameViewState(
+        viewToState({
+          filter: stateToViewFilter(grouped),
+        } as unknown as SavedViewDisplayRead),
+        grouped
+      )
+    ).toBe(true);
+  });
+
+  it('reads a top level match any and JSON text groups as they are', () => {
+    const state = viewToState({
+      filter: {
+        match: 'any',
+        priority: 'urgent',
+        groups: JSON.stringify([{ match: 'all', label_id: ['lb-bug'] }]),
+      },
+    } as unknown as SavedViewDisplayRead);
+
+    expect(state.match).toBe('any');
+    expect(state.filters).toEqual([
+      { field: 'priority', op: 'is', values: ['urgent'] },
+    ]);
+    expect(state.groups).toEqual([
+      {
+        match: 'all',
+        filters: [{ field: 'label', op: 'is', values: ['lb-bug'] }],
+      },
+    ]);
+  });
+
+  it('reads a view saved before groups existed with match all and no groups', () => {
+    const state = viewToState({
+      filter: { assignee_id: 'me' },
+    } as unknown as SavedViewDisplayRead);
+
+    expect(state).toMatchObject({ match: 'all', groups: [] });
+    expect(state.filters).toEqual([
+      { field: 'assignee', op: 'is', values: ['me'] },
+    ]);
+  });
+
+  it('combines groups on the client under each match', () => {
+    const urgent = issue({ priority: 'urgent' });
+    const low = issue({ id: 'iss-2', priority: 'low' });
+    const groups = [
+      {
+        match: 'any' as const,
+        filters: [
+          { field: 'priority' as const, op: 'is' as const, values: ['urgent'] },
+          { field: 'assignee' as const, op: 'is' as const, values: ['user-2'] },
+        ],
+      },
+    ];
+
+    expect(matchesFilters(urgent, [], 'all', groups)).toBe(true);
+    expect(matchesFilters(low, [], 'all', groups)).toBe(false);
+    expect(
+      matchesFilters(
+        low,
+        [{ field: 'priority', op: 'is', values: ['low'] }],
+        'any',
+        groups
+      )
+    ).toBe(true);
   });
 });
