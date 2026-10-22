@@ -3,7 +3,7 @@
  * `/w/:slug`. Each page renders its own {@link WorkspaceShell}, so anything
  * that must outlive a page change lives here instead: the shortcut registry,
  * the command palette, the peek pane, the one create issue dialog, the create
- * team dialog, the shortcut help overlay, the shared team list, the mention
+ * team dialog, the create project and initiative dialogs, the shortcut help overlay, the shared team list, the mention
  * directory and the one toast stack every page raises notices into.
  *
  * It also records the workspace as the one this browser last opened, which
@@ -35,6 +35,8 @@ import type {
 import { useAuth } from '../../hooks/useAuth';
 import { CreateTeamContext } from '../../hooks/useCreateTeam';
 import type { CreateTeamState } from '../../hooks/useCreateTeam';
+import { CreatePlanningContext } from '../../hooks/useCreatePlanning';
+import type { CreatePlanningState } from '../../hooks/useCreatePlanning';
 import { useTeam } from '../../hooks/useTeam';
 import { useWorkspace } from '../../hooks/useWorkspace';
 import { canCreateTeam, canWriteIssues } from '../../lib/capabilities';
@@ -60,6 +62,9 @@ import GlobalShortcuts from '../shortcuts/GlobalShortcuts';
 import ShortcutHelp from '../shortcuts/ShortcutHelp';
 import ShortcutProvider from '../shortcuts/ShortcutProvider';
 import CreateTeamDialog from '../team/CreateTeamDialog';
+import CreatePlanningHost, {
+  type PlanningDialog,
+} from '../planning/CreatePlanningHost';
 import DesktopInboxReporter from '../desktop/DesktopInboxReporter';
 import { Toaster } from '../ui/toast';
 import { PeekProvider } from './PeekPane';
@@ -181,6 +186,7 @@ const WorkspaceOverlays: React.FC = () => {
   const [creatingTeam, setCreatingTeam] = useState<{
     parentTeamId: string | null;
   } | null>(null);
+  const [planning, setPlanning] = useState<PlanningDialog>(null);
 
   const workspaceId = workspace?.id ?? '';
   const slug = workspace?.slug ?? '';
@@ -240,6 +246,25 @@ const WorkspaceOverlays: React.FC = () => {
     [mayCreateTeam]
   );
 
+  const mayCreateProject = writable.length > 0;
+  const mayCreateInitiative = role !== undefined && role !== 'guest';
+  const createPlanning = useMemo<CreatePlanningState>(
+    () => ({
+      openProject: () => {
+        if (mayCreateProject) setPlanning('project');
+      },
+      openInitiative: () => {
+        if (mayCreateInitiative) setPlanning('initiative');
+      },
+      canCreateProject: mayCreateProject,
+      canCreateInitiative: mayCreateInitiative,
+    }),
+    [mayCreateProject, mayCreateInitiative]
+  );
+  const closePlanning = useCallback(() => {
+    setPlanning(null);
+  }, []);
+
   const refreshLists = useCallback(
     (issue: IssueRead) => {
       invalidateQueries(issuesKey(workspaceId, issue.team_id, emptyFilters));
@@ -292,64 +317,76 @@ const WorkspaceOverlays: React.FC = () => {
       <CommandPaletteContext.Provider value={palette}>
         <CreateIssueContext.Provider value={createIssue}>
           <CreateTeamContext.Provider value={createTeam}>
-            <MentionDirectoryProvider workspaceId={workspaceId}>
-              <PeekProvider>
-                <Toaster />
-                <Outlet />
+            <CreatePlanningContext.Provider value={createPlanning}>
+              <MentionDirectoryProvider workspaceId={workspaceId}>
+                <PeekProvider>
+                  <Toaster />
+                  <Outlet />
 
-                {workspace !== null && (
-                  <>
-                    <DesktopInboxReporter
-                      workspaceId={workspace.id}
-                      slug={workspace.slug}
-                    />
-                    <GlobalShortcuts
-                      workspace={workspace}
-                      teams={teams}
-                      onShowHelp={showHelp}
-                    />
-                    <CommandPalette
-                      open={palette.open}
-                      onClose={palette.closePalette}
-                      workspace={workspace}
-                      teams={teams}
-                      onShowShortcuts={showHelp}
-                    />
-                  </>
-                )}
+                  {workspace !== null && (
+                    <>
+                      <DesktopInboxReporter
+                        workspaceId={workspace.id}
+                        slug={workspace.slug}
+                      />
+                      <GlobalShortcuts
+                        workspace={workspace}
+                        teams={teams}
+                        onShowHelp={showHelp}
+                      />
+                      <CommandPalette
+                        open={palette.open}
+                        onClose={palette.closePalette}
+                        workspace={workspace}
+                        teams={teams}
+                        onShowShortcuts={showHelp}
+                      />
+                    </>
+                  )}
 
-                <ShortcutHelp
-                  open={helpOpen}
-                  onClose={() => {
-                    setHelpOpen(false);
-                  }}
-                />
-
-                {request !== null && requestTeam !== undefined && (
-                  <CreateIssueHost
-                    workspaceId={workspaceId}
-                    team={requestTeam}
-                    onClose={closeCreateIssue}
-                    onCreated={onIssueCreated}
-                    onCreatedMore={onIssueCreatedMore}
-                    currentUserId={user?.id}
-                    preset={presetOf(request)}
-                  />
-                )}
-
-                {creatingTeam !== null && workspaceId !== '' && (
-                  <CreateTeamDialog
-                    workspaceId={workspaceId}
-                    teams={teams}
-                    initialParentTeamId={creatingTeam.parentTeamId}
+                  <ShortcutHelp
+                    open={helpOpen}
                     onClose={() => {
-                      setCreatingTeam(null);
+                      setHelpOpen(false);
                     }}
-                    onCreated={onTeamCreated}
                   />
-                )}
-              </PeekProvider>
-            </MentionDirectoryProvider>
+
+                  {request !== null && requestTeam !== undefined && (
+                    <CreateIssueHost
+                      workspaceId={workspaceId}
+                      team={requestTeam}
+                      onClose={closeCreateIssue}
+                      onCreated={onIssueCreated}
+                      onCreatedMore={onIssueCreatedMore}
+                      currentUserId={user?.id}
+                      preset={presetOf(request)}
+                    />
+                  )}
+
+                  {creatingTeam !== null && workspaceId !== '' && (
+                    <CreateTeamDialog
+                      workspaceId={workspaceId}
+                      teams={teams}
+                      initialParentTeamId={creatingTeam.parentTeamId}
+                      onClose={() => {
+                        setCreatingTeam(null);
+                      }}
+                      onCreated={onTeamCreated}
+                    />
+                  )}
+
+                  <CreatePlanningHost
+                    open={planning}
+                    workspaceId={workspaceId}
+                    slug={slug}
+                    writableTeams={writable}
+                    routePrefix={routePrefix}
+                    currentUserId={user?.id}
+                    onClose={closePlanning}
+                  />
+                </PeekProvider>
+              </MentionDirectoryProvider>
+            </CreatePlanningContext.Provider>
           </CreateTeamContext.Provider>
         </CreateIssueContext.Provider>
       </CommandPaletteContext.Provider>

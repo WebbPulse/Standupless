@@ -64,6 +64,7 @@ import EmptyState from '../../components/ui/empty-state';
 import Menu, { MenuItem } from '../../components/ui/menu';
 import { SkeletonRows } from '../../components/ui/skeleton';
 import WorkspaceShell from '../../components/workspace/WorkspaceShell';
+import useCreateDocumentCommand from '../../hooks/useCreateDocumentCommand';
 import { useCreatePlannedIssue } from '../../hooks/useCreatePlannedIssue';
 import { useInitiatives } from '../../hooks/useInitiatives';
 import { usePlanningIssues } from '../../hooks/usePlanningIssues';
@@ -289,6 +290,14 @@ export const ProjectDetail: React.FC = () => {
       event?.preventDefault();
       writeUpdate();
     },
+  });
+  useCreateDocumentCommand({
+    workspaceId,
+    slug,
+    parentKind: 'project',
+    parentId: projectId,
+    group: 'Project',
+    enabled: mayPost,
   });
 
   const openMilestoneIssues = (milestoneId: string): void => {
