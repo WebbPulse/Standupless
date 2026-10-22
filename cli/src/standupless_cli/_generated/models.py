@@ -1195,6 +1195,7 @@ class ProjectOpenIssues(TypedDict):
 
 class ProjectRead(TypedDict):
     color: NotRequired[str | None]
+    completed_at: NotRequired[str | None]
     counts: CountsRead
     created_at: str
     created_by: str
@@ -1287,6 +1288,14 @@ class ProjectUpdateRead(TypedDict):
     update_id: str
     updated_at: str
     workspace_id: str
+
+
+class ProjectsDisplay(TypedDict):
+    closed: NotRequired[Literal["all", "week", "month", "quarter", "none"]]
+    group: NotRequired[Literal["status", "health", "priority", "initiative", "lead", "team", "none"]]
+    layout: NotRequired[Literal["list", "board", "timeline"]]
+    order: NotRequired[Literal["target", "start", "name", "priority", "progress", "created", "updated"]]
+    zoom: NotRequired[Literal["week", "month", "quarter", "year"]]
 
 
 class PullRequestSummaryEntryRead(TypedDict):
@@ -2369,6 +2378,7 @@ class UserPreferencesUpdate(TypedDict):
         ]
         | None
     ]
+    projects_display: NotRequired[ProjectsDisplay | None]
     pulse_digest: NotRequired[Literal["off", "daily", "weekly"] | None]
     timezone: NotRequired[str | None]
     week_start: NotRequired[Literal["monday", "sunday", "saturday"] | None]
@@ -2391,6 +2401,7 @@ class UserRead(TypedDict):
     id: str
     name_display: NotRequired[Literal["username", "full_name"]]
     notification_preferences: dict[str, NotificationChannels]
+    projects_display: NotRequired[ProjectsDisplay]
     pulse_digest: NotRequired[Literal["off", "daily", "weekly"]]
     timezone: NotRequired[str | None]
     two_factor: NotRequired[bool]

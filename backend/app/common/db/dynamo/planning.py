@@ -476,6 +476,8 @@ class Project(BaseModel):
     `update_interval_days` is the project's own update cadence; None follows the
     workspace default and 0 turns reminders off. `status_counts` is the rollup's
     count of open and closed issues per status id, beside the category buckets.
+    `completed_at` is when the project last became completed or canceled, and
+    None while it is open or on a row closed before the field existed.
     """
 
     workspace_id: str
@@ -501,6 +503,7 @@ class Project(BaseModel):
     last_update_at: datetime | None = None
     update_interval_days: int | None = None
     initiative_id: str | None = None
+    completed_at: datetime | None = None
     created_by: str
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
