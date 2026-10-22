@@ -73,8 +73,14 @@ beforeEach(() => {
   getSlaSettings.mockReset();
   updateSlaSettings.mockReset();
   getSlaSettings.mockResolvedValue(settings());
-  updateSlaSettings.mockImplementation((body) =>
-    Promise.resolve(settings({ ...body, updated_at: '2026-10-07T00:00:00Z' }))
+  updateSlaSettings.mockImplementation(({ paused_status_ids, ...body }) =>
+    Promise.resolve(
+      settings({
+        ...body,
+        paused_status_ids: paused_status_ids ?? [],
+        updated_at: '2026-10-07T00:00:00Z',
+      })
+    )
   );
 });
 

@@ -80,7 +80,7 @@ const DEFAULT_SLA: Omit<SlaSettingsRead, 'team_id' | 'updated_at'> = {
 };
 
 /** The status categories an SLA counts time in, so the ones it can pause. */
-const OPEN_CATEGORIES: ReadonlySet<StatusCategory> = new Set<StatusCategory>([
+const OPEN_CATEGORIES = new Set<StatusCategory>([
   'backlog',
   'unstarted',
   'started',
