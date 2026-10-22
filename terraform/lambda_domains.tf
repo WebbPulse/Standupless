@@ -463,6 +463,10 @@ locals {
           stream_arn      = module.dynamodb.stream_arns["issues"]
           filter_patterns = [jsonencode({ eventName = ["INSERT", "MODIFY", "REMOVE"] })]
         })
+        comments = merge(local.lambda_domain_stream_defaults, {
+          stream_arn      = module.dynamodb.stream_arns["comments"]
+          filter_patterns = [jsonencode({ eventName = ["INSERT", "MODIFY", "REMOVE"] })]
+        })
         } : name == "planning-rollup-consumer" && local.planning_rollup_stream_enabled ? {
         issues = merge(local.lambda_domain_stream_defaults, {
           stream_arn      = module.dynamodb.stream_arns["issues"]
@@ -503,7 +507,7 @@ variable "views_notify_stream_enabled" {
 }
 
 variable "views_search_stream_enabled" {
-  description = "Whether the issues table stream is wired to the views search consumer, which maintains the search_index term projection. Held apart from views_notify_stream_enabled so the search projection can be backfilled and switched on independently of notifications, since turning it on mid-life leaves issues written before it indexed only once they are next edited."
+  description = "Whether the issues and comments table streams are wired to the views search consumer, which maintains the search_index term projection. Held apart from views_notify_stream_enabled so the search projection can be backfilled and switched on independently of notifications, since turning it on mid-life leaves issues written before it indexed only once they are next edited."
   type        = bool
   default     = false
 }

@@ -52,6 +52,7 @@ from app.common.api.schemas.views import (
 )
 from app.common.db.dynamo.issues import Issue
 from app.common.db.dynamo.team_config import Status
+from app.common.issue_rules import TRIAGE_STATUS_CATEGORY, TRIAGE_STATUS_NAME
 
 __all__ = [
     "BOARD_DEFAULT_COLUMN_LIMIT",
@@ -86,8 +87,13 @@ __all__ = [
     "SEARCH_MAX_LIMIT",
     "SEARCH_QUERY_MAX",
     "SEARCH_QUERY_MIN",
+    "SEARCH_TYPES",
+    "SearchCommentRead",
+    "SearchInitiativeRead",
+    "SearchProjectRead",
     "SearchRead",
     "SearchResultRead",
+    "SearchTypeField",
     "SimilarIssueRead",
     "SimilarListRead",
     "SortField",
@@ -118,6 +124,11 @@ SEARCH_MAX_LIMIT = 50
 SEARCH_QUERY_MIN = 2
 
 SEARCH_QUERY_MAX = 128
+
+SearchTypeField = Literal["issues", "projects", "initiatives", "documents", "comments"]
+
+SEARCH_TYPES: tuple[SearchTypeField, ...] = ("issues", "projects", "initiatives", "documents", "comments")
+"""Every kind of result search answers, which is also what an absent `type` filter asks for."""
 
 
 class ProgressRead(BaseModel):
@@ -204,41 +215,109 @@ BoardColumnRead = cursor_page(IssueRead, "issues", model_name="BoardColumnRead")
 
 
 class SearchResultRead(BaseModel):
-    """One search hit: enough of an issue to render a row, plus its score."""
+    """One search hit: enough of an issue to render a row with its status, plus its score.
+
+    The status fields name the issue's status as its team configures it, or the
+    triage status's name and category while it waits there, so a row renders its icon
+    without a read of every team's workflow.
+    """
 
     issue_id: str
     key: str
     title: str
     team_id: str
     status_id: str
+    status_name: Optional[str] = None
+    status_category: Optional[str] = None
+    status_color: Optional[str] = None
+    status_icon: Optional[str] = None
     assignee_id: Optional[str] = None
+    priority: Optional[str] = None
     updated_at: datetime
     score: int
 
     @classmethod
-    def from_row(cls, issue: Issue, score: int) -> "SearchResultRead":
-        """Build one hit from the issue it points at and its matched term count."""
+    def from_row(cls, issue: Issue, score: int, status: Optional[Status] = None) -> "SearchResultRead":
+        """Build one hit from the issue it points at, its status and its matched term count."""
+        if issue.in_triage:
+            name, category = TRIAGE_STATUS_NAME, TRIAGE_STATUS_CATEGORY
+            color = icon = None
+        else:
+            name = status.name if status else None
+            category = status.category if status else None
+            color = status.color if status else None
+            icon = status.icon if status else None
         return cls(
             issue_id=issue.issue_id,
             key=issue.key,
             title=issue.title,
             team_id=issue.team_id,
             status_id=issue.status_id,
+            status_name=name,
+            status_category=category,
+            status_color=color,
+            status_icon=icon,
             assignee_id=issue.assignee_id,
+            priority=issue.priority,
             updated_at=issue.updated_at,
             score=score,
         )
 
 
-class SearchRead(BaseModel):
-    """Every search hit, ranked. No cursor, per the contract.
+class SearchProjectRead(BaseModel):
+    """One project whose name or description holds every term, with the teams the caller sees on it."""
 
-    `documents` holds the project and initiative documents whose title and body
-    match every term, for a caller allowed to read projects.
+    project_id: str
+    name: str
+    status: str
+    health: Optional[str] = None
+    icon: Optional[str] = None
+    color: Optional[str] = None
+    lead_id: Optional[str] = None
+    team_ids: list[str] = Field(default_factory=list)
+    target_date: Optional[str] = None
+    updated_at: datetime
+
+
+class SearchInitiativeRead(BaseModel):
+    """One initiative whose name or description holds every term."""
+
+    initiative_id: str
+    name: str
+    status: str
+    health: Optional[str] = None
+    owner_id: Optional[str] = None
+    target_date: Optional[str] = None
+    updated_at: datetime
+
+
+class SearchCommentRead(BaseModel):
+    """One comment whose body holds every term, with its issue and an excerpt around the first match."""
+
+    comment_id: str
+    issue_id: str
+    issue_key: str
+    issue_title: str
+    team_id: str
+    author_id: str
+    snippet: str
+    created_at: datetime
+
+
+class SearchRead(BaseModel):
+    """Every search hit, grouped by kind and ranked within each. No cursor, per the contract.
+
+    `documents`, `projects` and `initiatives` are answered for a caller allowed to
+    read projects, and only for a workspace-wide search, except that a search
+    narrowed to one team still answers the projects that team is on. `comments`
+    link to the comment rather than only its issue.
     """
 
     results: list[SearchResultRead] = Field(default_factory=list)
     documents: list[DocumentSummaryRead] = Field(default_factory=list)
+    projects: list[SearchProjectRead] = Field(default_factory=list)
+    initiatives: list[SearchInitiativeRead] = Field(default_factory=list)
+    comments: list[SearchCommentRead] = Field(default_factory=list)
 
 
 class SimilarIssueRead(BaseModel):

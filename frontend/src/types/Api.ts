@@ -1412,23 +1412,79 @@ export interface SavedViewUpdate {
   group_by?: ViewGroupBy | null;
 }
 
-/** One search hit. `score` is the matched term count, not a relevance score. */
+/**
+ * One search hit. `score` is the matched term count, not a relevance score.
+ * The status fields style its glyph, and an issue waiting in triage reads as
+ * the Triage status.
+ */
 export interface SearchResultRead {
   issue_id: string;
   key: string;
   title: string;
   team_id: string;
   status_id: string;
+  status_name?: string | null;
+  status_category?: StatusCategory | null;
+  status_color?: string | null;
+  status_icon?: string | null;
   assignee_id: string | null;
+  priority?: string | null;
   updated_at: string;
   score: number;
 }
+
+/** One project whose name or description holds every searched term. */
+export interface SearchProjectRead {
+  project_id: string;
+  name: string;
+  status: ProjectStatus;
+  health: ProjectHealth | null;
+  icon: string | null;
+  color: string | null;
+  lead_id: string | null;
+  team_ids: string[];
+  target_date: string | null;
+  updated_at: string;
+}
+
+/** One initiative whose name or description holds every searched term. */
+export interface SearchInitiativeRead {
+  initiative_id: string;
+  name: string;
+  status: InitiativeStatus;
+  health: ProjectHealth | null;
+  owner_id: string | null;
+  target_date: string | null;
+  updated_at: string;
+}
+
+/** One comment holding every searched term, with an excerpt around the match. */
+export interface SearchCommentRead {
+  comment_id: string;
+  issue_id: string;
+  issue_key: string;
+  issue_title: string;
+  team_id: string;
+  author_id: string;
+  snippet: string;
+  created_at: string;
+}
+
+/** The kinds of record a search can be narrowed to. */
+export type SearchType =
+  'issues' | 'projects' | 'initiatives' | 'documents' | 'comments';
 
 /** The body the search route answers with. It is capped rather than paged. */
 export interface SearchListRead {
   results: SearchResultRead[];
   /** Documents whose title or body matches, for a workspace wide search. */
   documents?: DocumentSummaryRead[];
+  /** Projects on a visible team, or on the one team a search is narrowed to. */
+  projects?: SearchProjectRead[];
+  /** Initiatives, for a workspace wide search by a member. */
+  initiatives?: SearchInitiativeRead[];
+  /** Comments on issues in a visible team, newest first. */
+  comments?: SearchCommentRead[];
 }
 
 /**
