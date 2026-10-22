@@ -274,3 +274,12 @@ export const offscreenSide = (
   if (barLeft > viewRight) return 'after';
   return null;
 };
+
+/** Steps a zoom one notch in or out, held at the ends of the scale. */
+export const stepZoom = (zoom: TimelineZoom, step: number): TimelineZoom => {
+  const index = TIMELINE_ZOOMS.indexOf(zoom) + step;
+  return (
+    TIMELINE_ZOOMS[Math.min(TIMELINE_ZOOMS.length - 1, Math.max(0, index))] ??
+    zoom
+  );
+};

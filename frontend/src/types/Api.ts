@@ -33,6 +33,25 @@ export interface UserRead {
   name_display?: NameDisplay;
   /** The interface text size. */
   font_size?: FontSize;
+  /** How the projects page is laid out, grouped, ordered and windowed. */
+  projects_display?: ProjectsDisplayPreference;
+}
+
+/** The projects page arrangement an account saves, every field filled. */
+export interface ProjectsDisplayPreference {
+  layout: 'list' | 'board' | 'timeline';
+  group:
+    'status' | 'health' | 'priority' | 'initiative' | 'lead' | 'team' | 'none';
+  order:
+    | 'target'
+    | 'start'
+    | 'name'
+    | 'priority'
+    | 'progress'
+    | 'created'
+    | 'updated';
+  closed: 'all' | 'week' | 'month' | 'quarter' | 'none';
+  zoom: 'week' | 'month' | 'quarter' | 'year';
 }
 
 /** The page a workspace opens on when the person enters it. */
@@ -98,6 +117,8 @@ export interface UserPreferencesUpdate {
   week_start?: WeekStart;
   name_display?: NameDisplay;
   font_size?: FontSize;
+  /** Replaces the saved projects page arrangement whole. */
+  projects_display?: ProjectsDisplayPreference;
 }
 
 /** A role held at the workspace level. */
@@ -2029,6 +2050,8 @@ export interface ProjectRead {
   initiative_id?: string | null;
   /** Issues still open in the project, answered by a patch that leaves it completed or canceled. */
   open_issue_count?: number | null;
+  /** When the project last became completed or canceled, null while it is open. */
+  completed_at?: string | null;
   created_by: string;
   created_at: string;
   updated_at: string;

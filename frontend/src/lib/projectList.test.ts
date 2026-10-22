@@ -1,16 +1,25 @@
 /**
- * The projects list's ordering and grouping. Covers that dates run soonest
- * first with undated rows last, that ties fall back to the name, that lead
- * groups put "No lead" last, and that a project on two teams shows under both.
+ * The projects list's ordering, grouping and display. Covers that dates run
+ * soonest first with undated rows last, that ties fall back to the name, that
+ * priority runs urgent first, that lead groups put "No lead" last, that a
+ * project on two teams shows under both, that health, priority and initiative
+ * groups run in their own order, that the board keeps empty columns and moves
+ * a card by the column's value, that the completed window keeps recent closes
+ * only, and that the display reads the URL before the saved choice.
  */
 
 import { describe, expect, it } from 'vitest';
 import type { ProjectRead, TeamRead } from '../types/Api';
 import {
+  DEFAULT_PROJECTS_DISPLAY,
+  groupPatch,
   groupProjects,
+  inGroup,
   parseGrouping,
   parseOrdering,
+  resolveDisplay,
   sortProjects,
+  withinClosedWindow,
 } from './projectList';
 
 const base: ProjectRead = {
@@ -83,6 +92,21 @@ describe('sortProjects', () => {
     expect(names(sortProjects(rows, 'updated'))[0]).toBe('Done');
   });
 
+  it('runs priority urgent first and no priority last', () => {
+    expect(
+      names(
+        sortProjects(
+          [
+            project({ project_id: 'a', name: 'None', priority: 'none' }),
+            project({ project_id: 'b', name: 'Low', priority: 'low' }),
+            project({ project_id: 'c', name: 'Urgent', priority: 'urgent' }),
+          ],
+          'priority'
+        )
+      )
+    ).toEqual(['Urgent', 'Low', 'None']);
+  });
+
   it('orders by name', () => {
     expect(names(sortProjects(rows, 'name'))).toEqual([
       'Done',
@@ -135,6 +159,158 @@ describe('groupProjects', () => {
       []
     );
     expect(groups.map((group) => group.key)).toEqual(['status:completed']);
+  });
+});
+
+describe('health, priority and initiative groups', () => {
+  it('runs health from on track to no updates', () => {
+    const groups = groupProjects(
+      [
+        project({ project_id: 'a', health: null }),
+        project({ project_id: 'b', health: 'off_track' }),
+        project({ project_id: 'c', health: 'on_track' }),
+      ],
+      'health',
+      [],
+      []
+    );
+    expect(groups.map((group) => group.label)).toEqual([
+      'On track',
+      'Off track',
+      'No updates',
+    ]);
+  });
+
+  it('runs priority from urgent to none', () => {
+    const groups = groupProjects(
+      [
+        project({ project_id: 'a', priority: 'none' }),
+        project({ project_id: 'b', priority: 'high' }),
+      ],
+      'priority',
+      [],
+      []
+    );
+    expect(groups.map((group) => group.key)).toEqual([
+      'priority:high',
+      'priority:none',
+    ]);
+  });
+
+  it('names initiatives and puts projects outside one last', () => {
+    const groups = groupProjects(
+      [
+        project({ project_id: 'a', initiative_id: null }),
+        project({ project_id: 'b', initiative_id: 'i2' }),
+        project({ project_id: 'c', initiative_id: 'i1' }),
+      ],
+      'initiative',
+      [],
+      [],
+      {
+        initiatives: [
+          { initiative_id: 'i1', name: 'Scale' },
+          { initiative_id: 'i2', name: 'Growth' },
+        ],
+      }
+    );
+    expect(groups.map((group) => group.label)).toEqual([
+      'Growth',
+      'Scale',
+      'No initiative',
+    ]);
+  });
+
+  it('keeps empty columns for the board', () => {
+    const groups = groupProjects(
+      [project({ health: 'at_risk' })],
+      'health',
+      [],
+      [],
+      { keepEmpty: true }
+    );
+    expect(groups.map((group) => group.key)).toEqual([
+      'health:on_track',
+      'health:at_risk',
+      'health:off_track',
+      'health:none',
+    ]);
+  });
+});
+
+describe('board moves', () => {
+  const [onTrack, , , noUpdates] = groupProjects([], 'health', [], [], {
+    keepEmpty: true,
+  });
+
+  it('moves a card by the column value', () => {
+    if (onTrack === undefined || noUpdates === undefined)
+      throw new Error('no health columns');
+    expect(groupPatch(onTrack)).toEqual({ health: 'on_track' });
+    expect(groupPatch(noUpdates)).toEqual({ health: null });
+    expect(inGroup(project({ health: null }), noUpdates)).toBe(true);
+    expect(inGroup(project({ health: null }), onTrack)).toBe(false);
+  });
+
+  it('takes no drop on a team column', () => {
+    const [engine] = groupProjects([], 'team', [], [team('t1', 'Engine')], {
+      keepEmpty: true,
+    });
+    if (engine === undefined) throw new Error('no team column');
+    expect(groupPatch(engine)).toBeNull();
+  });
+});
+
+describe('completed window', () => {
+  const now = new Date('2026-10-21T00:00:00Z');
+
+  it('keeps open projects whatever the window', () => {
+    expect(withinClosedWindow(project({}), 'none', now)).toBe(true);
+  });
+
+  it('keeps a recent close and drops an old one', () => {
+    const recent = project({
+      status: 'completed',
+      completed_at: '2026-10-18T00:00:00Z',
+    });
+    const old = project({
+      status: 'canceled',
+      completed_at: '2026-08-01T00:00:00Z',
+    });
+    expect(withinClosedWindow(recent, 'week', now)).toBe(true);
+    expect(withinClosedWindow(old, 'month', now)).toBe(false);
+    expect(withinClosedWindow(old, 'all', now)).toBe(true);
+    expect(withinClosedWindow(recent, 'none', now)).toBe(false);
+  });
+
+  it('falls back to the last update before closes were recorded', () => {
+    const closed = project({
+      status: 'completed',
+      updated_at: '2026-10-20T00:00:00Z',
+    });
+    expect(withinClosedWindow(closed, 'week', now)).toBe(true);
+  });
+});
+
+describe('resolveDisplay', () => {
+  it('reads the URL first, then the saved choice, then the default', () => {
+    const url: Record<string, string> = { layout: 'board', group: 'bogus' };
+    const display = resolveDisplay((field) => url[field] ?? null, {
+      ...DEFAULT_PROJECTS_DISPLAY,
+      layout: 'timeline',
+      group: 'health',
+    });
+    expect(display).toEqual({
+      ...DEFAULT_PROJECTS_DISPLAY,
+      layout: 'board',
+      group: 'health',
+    });
+  });
+
+  it('falls back to the default with nothing saved', () => {
+    expect(resolveDisplay(() => null, undefined)).toEqual(
+      DEFAULT_PROJECTS_DISPLAY
+    );
   });
 });
 
