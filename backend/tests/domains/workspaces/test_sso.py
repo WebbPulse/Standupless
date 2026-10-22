@@ -23,7 +23,12 @@ from webbpulse.audit import AuditQuery
 
 from app.common.composition.domains import DOMAINS
 from app.common.composition.wiring import build_domain_app
+from app.common.db.dynamo.base import utc_now
+from app.common.db.dynamo.memberships import SsoDomainTaken, sso_domain_key
 from app.common.db.dynamo.users import User
+from app.common.team_purge import Deadline
+from app.domains.workspaces.consumers import purge as workspaces_purge
+from app.domains.workspaces.consumers import sso_recheck
 from tests.domains.helpers import ADMIN, MEMBER, OUTSIDER, OWNER, add_member, make_workspace, sign_in
 
 WORKSPACE = "01JB00000000000000000000WS"
@@ -225,6 +230,178 @@ def test_a_domain_another_workspace_verified_cannot_be_verified_again(
     assert response.json()["error_code"] == "SSO_DOMAIN_TAKEN"
 
 
+def _rival(client: TestClient, repositories: Any) -> str:
+    """A second Business workspace, signed in as its owner, with acme.com listed; answers its base path."""
+    make_workspace(repositories, OTHER_WORKSPACE, "rival", OUTSIDER)
+    repositories.workspaces.set_billing(OTHER_WORKSPACE, plan="business")
+    sign_in(client, OUTSIDER)
+    other = f"/api/workspaces/{OTHER_WORKSPACE}/sso"
+    assert client.post(f"{other}/domains", json={"domain": "acme.com"}).status_code == 201
+    return other
+
+
+def test_two_verifications_racing_for_one_domain_leave_one_holder(
+    client: TestClient, workspace: str, repositories: Any, dns: dict[str, bool]
+) -> None:
+    dns["acme.com"] = True
+    sign_in(client, ADMIN)
+    client.post(f"{BASE}/domains", json={"domain": "acme.com"})
+    other = _rival(client, repositories)
+    first = repositories.memberships.get_sso_domain(WORKSPACE, "acme.com")
+    second = repositories.memberships.get_sso_domain(OTHER_WORKSPACE, "acme.com")
+    repositories.memberships.mark_sso_domain_verified(first, verified_by=ADMIN)
+    with pytest.raises(SsoDomainTaken):
+        repositories.memberships.mark_sso_domain_verified(second, verified_by=OUTSIDER)
+    assert repositories.memberships.workspaces_verifying_sso_domain("acme.com") == [WORKSPACE]
+    assert repositories.memberships.get_sso_domain_claim("acme.com").holder_workspace_id == WORKSPACE
+    assert client.get(other).json()["domains"][0]["verified"] is False
+
+
+def test_the_loser_of_a_race_past_the_dns_check_gets_taken(
+    client: TestClient, workspace: str, repositories: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    sign_in(client, ADMIN)
+    client.post(f"{BASE}/domains", json={"domain": "acme.com"})
+    other = _rival(client, repositories)
+
+    def winner_verifies_meanwhile(domain: str, token: str) -> bool:
+        """Stand in for DNS while the first workspace's verification lands mid request."""
+        row = repositories.memberships.get_sso_domain(WORKSPACE, domain)
+        if not row.verified:
+            repositories.memberships.mark_sso_domain_verified(row, verified_by=ADMIN)
+        return True
+
+    monkeypatch.setattr("app.common.sso.domain_is_verified", winner_verifies_meanwhile)
+    response = client.post(f"{other}/domains/acme.com/verify")
+    assert response.status_code == 409
+    assert response.json()["error_code"] == "SSO_DOMAIN_TAKEN"
+    assert repositories.memberships.workspaces_verifying_sso_domain("acme.com") == [WORKSPACE]
+
+
+def test_removing_a_verified_domain_frees_it_for_another_workspace(
+    client: TestClient, connected: str, repositories: Any
+) -> None:
+    sign_in(client, ADMIN)
+    assert client.delete(f"{BASE}/domains/acme.com").status_code == 204
+    assert repositories.memberships.get_sso_domain_claim("acme.com") is None
+    other = _rival(client, repositories)
+    assert client.post(f"{other}/domains/acme.com/verify").status_code == 200
+    assert repositories.memberships.workspaces_verifying_sso_domain("acme.com") == [OTHER_WORKSPACE]
+
+
+def test_a_claim_left_by_a_vanished_holder_is_taken_over(client: TestClient, connected: str, repositories: Any) -> None:
+    repositories.memberships._repository.delete({"workspace_id": WORKSPACE, "member_key": sso_domain_key("acme.com")})
+    other = _rival(client, repositories)
+    assert client.post(f"{other}/domains/acme.com/verify").status_code == 200
+    assert repositories.memberships.get_sso_domain_claim("acme.com").holder_workspace_id == OTHER_WORKSPACE
+
+
+def test_verifying_again_keeps_the_claim(client: TestClient, connected: str, repositories: Any) -> None:
+    sign_in(client, ADMIN)
+    claimed = repositories.memberships.get_sso_domain_claim("acme.com")
+    assert client.post(f"{BASE}/domains/acme.com/verify").status_code == 200
+    assert repositories.memberships.get_sso_domain_claim("acme.com") == claimed
+
+
+def _recheck(repositories: Any, after: datetime.timedelta) -> sso_recheck.RecheckSummary:
+    """Run the recheck as if `after` had passed since now."""
+    return sso_recheck.recheck(repositories, Deadline(30), now=utc_now() + after)
+
+
+def test_a_domain_whose_record_stays_is_checked_again_a_day_later(
+    connected: str, repositories: Any, dns: dict[str, bool]
+) -> None:
+    assert _recheck(repositories, datetime.timedelta(hours=1)).checked == 0
+    summary = _recheck(repositories, datetime.timedelta(days=1))
+    assert summary.checked == 1
+    claim = repositories.memberships.get_sso_domain_claim("acme.com")
+    assert claim.missed_at is None
+    assert claim.next_check_at > utc_now() + datetime.timedelta(hours=23)
+
+
+def test_a_first_miss_keeps_the_domain_and_retries_within_the_hour(
+    connected: str, repositories: Any, dns: dict[str, bool]
+) -> None:
+    dns["acme.com"] = False
+    summary = _recheck(repositories, datetime.timedelta(days=1))
+    assert (summary.missed, summary.lapsed) == (1, 0)
+    claim = repositories.memberships.get_sso_domain_claim("acme.com")
+    assert claim.missed_at is not None
+    assert claim.next_check_at < utc_now() + datetime.timedelta(hours=2)
+    assert repositories.memberships.get_sso_domain(WORKSPACE, "acme.com").verified is True
+    assert repositories.memberships.workspaces_verifying_sso_domain("acme.com") == [WORKSPACE]
+
+
+def test_a_record_back_after_one_miss_clears_it(connected: str, repositories: Any, dns: dict[str, bool]) -> None:
+    dns["acme.com"] = False
+    _recheck(repositories, datetime.timedelta(days=1))
+    dns["acme.com"] = True
+    assert _recheck(repositories, datetime.timedelta(hours=2)).checked == 1
+    assert repositories.memberships.get_sso_domain_claim("acme.com").missed_at is None
+
+
+def test_a_second_miss_lapses_the_domain(
+    client: TestClient, connected: str, repositories: Any, dns: dict[str, bool]
+) -> None:
+    dns["acme.com"] = False
+    _recheck(repositories, datetime.timedelta(days=1))
+    assert _recheck(repositories, datetime.timedelta(hours=2)).lapsed == 1
+    assert repositories.memberships.get_sso_domain_claim("acme.com") is None
+    assert repositories.memberships.workspaces_verifying_sso_domain("acme.com") == []
+    rows = repositories.audit.list_events(connected, AuditQuery(action="sso.domain_lapsed")).events
+    assert [row.target.id for row in rows] == ["acme.com"]
+    sign_in(client, ADMIN)
+    shown = client.get(BASE).json()["domains"][0]
+    assert shown["verified"] is False
+    assert shown["lapsed"] is True
+    assert shown["lapsed_at"] is not None
+    dns["acme.com"] = True
+    again = client.post(f"{BASE}/domains/acme.com/verify").json()
+    assert (again["verified"], again["lapsed"], again["lapsed_at"]) == (True, False, None)
+    assert repositories.memberships.workspaces_verifying_sso_domain("acme.com") == [WORKSPACE]
+
+
+def test_a_lapsed_domain_can_be_proved_by_another_workspace(
+    client: TestClient, connected: str, repositories: Any, dns: dict[str, bool]
+) -> None:
+    dns["acme.com"] = False
+    _recheck(repositories, datetime.timedelta(days=1))
+    _recheck(repositories, datetime.timedelta(hours=2))
+    other = _rival(client, repositories)
+    dns["acme.com"] = True
+    assert client.post(f"{other}/domains/acme.com/verify").status_code == 200
+    assert repositories.memberships.workspaces_verifying_sso_domain("acme.com") == [OTHER_WORKSPACE]
+
+
+def test_a_dns_failure_changes_nothing(connected: str, repositories: Any, monkeypatch: pytest.MonkeyPatch) -> None:
+    from webbpulse.identity import DomainVerificationUnavailable
+
+    def unavailable(domain: str, token: str) -> bool:
+        """Stand in for a resolver that cannot answer."""
+        raise DomainVerificationUnavailable("no answer")
+
+    before = repositories.memberships.get_sso_domain_claim("acme.com")
+    monkeypatch.setattr("app.common.sso.domain_is_verified", unavailable)
+    assert _recheck(repositories, datetime.timedelta(days=1)).unavailable == 1
+    assert repositories.memberships.get_sso_domain_claim("acme.com") == before
+
+
+def test_the_recheck_drops_a_claim_whose_holder_lost_the_domain(connected: str, repositories: Any) -> None:
+    repositories.memberships._repository.delete({"workspace_id": WORKSPACE, "member_key": sso_domain_key("acme.com")})
+    assert _recheck(repositories, datetime.timedelta(days=1)).stale == 1
+    assert repositories.memberships.get_sso_domain_claim("acme.com") is None
+
+
+def test_the_hourly_sweep_runs_the_recheck(
+    connected: str, repositories: Any, dns: dict[str, bool], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    later = utc_now() + datetime.timedelta(days=1)
+    monkeypatch.setattr(workspaces_purge, "utc_now", lambda: later)
+    dns["acme.com"] = False
+    workspaces_purge.sweep(repositories, Deadline(30))
+    assert repositories.memberships.get_sso_domain_claim("acme.com").missed_at is not None
+
+
 def test_the_oidc_connection_never_answers_its_secret(client: TestClient, connected: str, repositories: Any) -> None:
     sign_in(client, ADMIN)
     body = client.get(BASE).json()
@@ -419,11 +596,20 @@ def test_the_workspace_list_flags_the_sso_reason(client: TestClient, required: s
     assert listed[required]["auth_policy_blocked"] is False
 
 
-def test_a_delegated_credential_is_not_held_to_the_requirement(repositories: Any, required: str) -> None:
-    from app.common.api.dependencies.authz import blocked_by_auth_policy
+def test_a_delegated_credential_is_held_to_the_requirement_only_when_issued_before(
+    repositories: Any, required: str
+) -> None:
+    from app.common.api.dependencies.authz import ISSUED_AT_CLAIM, auth_policy_refusal, blocked_by_auth_policy
 
+    fresh, stale = int(time.time()) + 60, int(time.time()) - 3600
+    issued_since = {"sub": MEMBER, "actor": "api_key", ISSUED_AT_CLAIM: fresh}
+    issued_before = {"sub": MEMBER, "actor": "api_key", ISSUED_AT_CLAIM: stale}
     assert blocked_by_auth_policy(repositories, required, {"sub": MEMBER}, role="member") is True
-    assert blocked_by_auth_policy(repositories, required, {"sub": MEMBER, "actor": "api_key"}, role="member") is False
+    assert blocked_by_auth_policy(repositories, required, issued_since, role="member") is False
+    refusal = auth_policy_refusal(repositories, required, issued_before, role="member")
+    assert refusal is not None and refusal.detail()["error_code"] == "SSO_REQUIRED"
+    owners = {"sub": OWNER, "actor": "api_key", ISSUED_AT_CLAIM: stale}
+    assert blocked_by_auth_policy(repositories, required, owners, role="owner") is False
 
 
 def test_the_connection_and_last_domain_stay_while_required(client: TestClient, required: str) -> None:

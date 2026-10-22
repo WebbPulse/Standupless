@@ -26,6 +26,13 @@ row takes `user_id = sso_domain#<domain>` only once its TXT record is verified, 
 "which workspace signs in acme.com" is one query on the user index that never
 meets a domain still pending, and no user id can take that form either.
 
+The partition `sso_domain_claims` holds one `sso_domain#<domain>` row per verified
+domain, naming the one workspace that holds it. Verifying writes the claim and the
+domain row in one transaction, conditional on the claim being free, so two
+workspaces verifying one domain at once cannot both win. The claim also carries
+when its TXT record is next rechecked, so the daily recheck is one query on that
+partition. No workspace id can take that form, because workspace ids are ULIDs.
+
 `scim_user#<scim_id>` is one person a workspace's directory provisioned over SCIM,
 and `scim_name#<user_name>` reserves that person's lowercased `userName`, so two
 provisioning calls racing on one name cannot both land. `scim_group#<team_id>`
@@ -44,7 +51,7 @@ replaced the workspaces table's `owner_user_id-index`.
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any, Literal, Mapping
 
 from boto3.dynamodb.conditions import Attr, Key
@@ -115,6 +122,23 @@ class AuthPolicy(BaseModel):
     require_sso: bool = False
     updated_at: datetime | None = None
     updated_by: str | None = None
+    enforced_since: datetime | None = None
+
+    def tightened_from(self, previous: "AuthPolicy") -> bool:
+        """Whether this policy asks more of a sign-in than `previous` did."""
+        return (
+            (self.require_two_factor and not previous.require_two_factor)
+            or (self.require_sso and not previous.require_sso)
+            or not set(previous.allowed_methods).issubset(self.allowed_methods)
+        )
+
+    def delegated_cutoff(self) -> datetime | None:
+        """When this policy last tightened, before which delegated credentials are held to it.
+
+        A row written before the field existed falls back to its last update, the
+        earliest moment the stored requirements are known to have held.
+        """
+        return self.enforced_since or self.updated_at
 
 
 SSO_CONNECTION_KEY = "sso#connection"
@@ -125,6 +149,15 @@ SSO_DOMAIN_LIMIT = 20
 """The abuse ceiling on single sign-on domains per workspace, far above any real company's."""
 
 SsoProtocolName = Literal["oidc", "saml"]
+
+SSO_CLAIMS_PARTITION = "sso_domain_claims"
+"""The partition holding every verified domain's claim, one row per domain."""
+
+SSO_RECHECK_INTERVAL = timedelta(days=1)
+"""How long a verified domain goes between TXT rechecks."""
+
+SSO_RECHECK_RETRY = timedelta(hours=1)
+"""How soon a domain whose record went missing is checked again before it lapses."""
 
 
 def sso_domain_key(domain: str) -> str:
@@ -146,11 +179,35 @@ class SsoDomain(BaseModel):
     added_at: datetime = Field(default_factory=utc_now)
     verified_at: datetime | None = None
     verified_by: str | None = None
+    lapsed_at: datetime | None = None
 
     @property
     def verified(self) -> bool:
         """Whether the domain's TXT record was found."""
         return self.verified_at is not None
+
+    @property
+    def lapsed(self) -> bool:
+        """Whether the domain was verified once and lost it when its record went missing."""
+        return self.verified_at is None and self.lapsed_at is not None
+
+
+class SsoDomainClaim(BaseModel):
+    """The one workspace holding a verified domain, and when its record is next rechecked.
+
+    `missed_at` is when a recheck last found the record missing; a second miss on
+    the next check lapses the domain, so one bad DNS answer never does.
+    """
+
+    domain: str
+    holder_workspace_id: str
+    claimed_at: datetime = Field(default_factory=utc_now)
+    next_check_at: datetime
+    missed_at: datetime | None = None
+
+
+class SsoDomainTaken(Exception):
+    """Another workspace holds this domain's claim."""
 
 
 class SsoConnectionRow(BaseModel):
@@ -624,21 +681,28 @@ class MembershipRepository:
         `allowed_methods` of `None` allows every sign-in method. `require_sso` of
         `None` keeps the stored value, so the two-factor and methods route never
         turns single sign-on off by saving its own fields.
+
+        `enforced_since` moves to now whenever the policy asks more than it did, so
+        API keys and MCP grants issued before that moment are held to it; loosening
+        or resaving keeps the earlier moment.
         """
+        previous = self.get_auth_policy(workspace_id)
         if require_sso is None:
-            require_sso = self.get_auth_policy(workspace_id).require_sso
+            require_sso = previous.require_sso
         methods: list[SignInMethod] = (
             list(SIGN_IN_METHODS)
             if allowed_methods is None
             else [method for method in SIGN_IN_METHODS if method in allowed_methods]
         )
+        moment = utc_now()
         policy = AuthPolicy(
             require_two_factor=require_two_factor,
             allowed_methods=methods,
             require_sso=require_sso,
-            updated_at=utc_now(),
+            updated_at=moment,
             updated_by=updated_by,
         )
+        policy.enforced_since = moment if policy.tightened_from(previous) else previous.delegated_cutoff()
         self._repository.put(as_item(policy, workspace_id=workspace_id, member_key=AUTH_POLICY_KEY))
         return policy
 
@@ -745,25 +809,148 @@ class MembershipRepository:
             return self.get_sso_domain(workspace_id, domain) or row
         return row
 
+    def _claim_key(self, domain: str) -> dict[str, str]:
+        """The key of one domain's claim."""
+        return {"workspace_id": SSO_CLAIMS_PARTITION, "member_key": sso_domain_key(domain)}
+
+    def get_sso_domain_claim(self, domain: str) -> SsoDomainClaim | None:
+        """The claim on one domain, read strongly consistently, or `None` when it is free."""
+        if not domain:
+            return None
+        item = self._repository.get(self._claim_key(domain), consistent=True)
+        return None if item is None else SsoDomainClaim.model_validate(dict(item))
+
+    def list_sso_domain_claims(self, *, limit: int = 10000) -> list[SsoDomainClaim]:
+        """Every verified domain's claim, for the recheck."""
+        items = self._repository.iter_query(
+            Key("workspace_id").eq(SSO_CLAIMS_PARTITION) & Key("member_key").begins_with(SSO_DOMAIN_PREFIX),
+            max_items=limit,
+        )
+        return [SsoDomainClaim.model_validate(dict(item)) for item in items]
+
+    def sso_domain_claim_is_stale(self, claim: SsoDomainClaim) -> bool:
+        """Whether a claim's holder no longer has the domain verified, so it may be taken over."""
+        item = self._repository.get(
+            {"workspace_id": claim.holder_workspace_id, "member_key": sso_domain_key(claim.domain)},
+            consistent=True,
+        )
+        return item is None or SsoDomain.model_validate(dict(item)).verified_at is None
+
     def mark_sso_domain_verified(self, row: SsoDomain, *, verified_by: str) -> SsoDomain:
-        """Record a found TXT record, which puts the domain in the user index."""
+        """Claim the domain and record its found TXT record, in one transaction.
+
+        The claim is written only when it is free, already this workspace's, or held
+        by a workspace that no longer has the domain verified, such as one that
+        removed it or was purged. The domain row is written only while it still
+        exists with the same token. Raises `SsoDomainTaken` when another workspace
+        holds the claim, which is how the loser of two simultaneous verifications
+        finds out.
+        """
         key = sso_domain_key(row.domain)
-        verified = row.model_copy(update={"verified_at": utc_now(), "verified_by": verified_by})
-        self._repository.put(as_item(verified, member_key=key, user_id=key))
+        now = utc_now()
+        verified = row.model_copy(update={"verified_at": now, "verified_by": verified_by, "lapsed_at": None})
+        claim = SsoDomainClaim(
+            domain=row.domain,
+            holder_workspace_id=row.workspace_id,
+            claimed_at=now,
+            next_check_at=now + SSO_RECHECK_INTERVAL,
+        )
+        current = self.get_sso_domain_claim(row.domain)
+        allowed = Attr("member_key").not_exists() | Attr("holder_workspace_id").eq(row.workspace_id)
+        if current is not None and current.holder_workspace_id != row.workspace_id:
+            if not self.sso_domain_claim_is_stale(current):
+                raise SsoDomainTaken(row.domain)
+            allowed = Attr("holder_workspace_id").eq(current.holder_workspace_id)
+        try:
+            self._repository.transact_write(
+                [
+                    self._repository.put_action(
+                        as_item(claim, workspace_id=SSO_CLAIMS_PARTITION, member_key=key),
+                        condition=allowed,
+                    ),
+                    self._repository.put_action(
+                        as_item(verified, member_key=key, user_id=key),
+                        condition=Attr("member_key").exists() & Attr("token").eq(row.token),
+                    ),
+                ]
+            )
+        except TransactionCanceled as exc:
+            holder = self.get_sso_domain_claim(row.domain)
+            if holder is not None and holder.holder_workspace_id != row.workspace_id:
+                raise SsoDomainTaken(row.domain) from exc
+            raise
         return verified
 
+    def record_sso_domain_check(self, claim: SsoDomainClaim, *, found: bool) -> SsoDomainClaim:
+        """Record a recheck that found the record, or a first miss, on a claim still held.
+
+        Raises `ConditionFailed` when the claim moved or went since it was read.
+        """
+        now = utc_now()
+        update = (
+            {"next_check_at": now + SSO_RECHECK_INTERVAL, "missed_at": None}
+            if found
+            else {"next_check_at": now + SSO_RECHECK_RETRY, "missed_at": now}
+        )
+        checked = claim.model_copy(update=update)
+        self._repository.put(
+            as_item(checked, workspace_id=SSO_CLAIMS_PARTITION, member_key=sso_domain_key(claim.domain)),
+            condition=Attr("holder_workspace_id").eq(claim.holder_workspace_id),
+        )
+        return checked
+
+    def lapse_sso_domain(self, claim: SsoDomainClaim) -> bool:
+        """Mark the holder's domain unverified and free its claim, in one transaction.
+
+        Takes the domain out of the user index, so no sign-in finds the workspace by
+        it, and records `lapsed_at` so the settings page can say why. Answers whether
+        it lapsed; `False` means the claim or the domain row changed since it was read.
+        """
+        key = sso_domain_key(claim.domain)
+        try:
+            self._repository.transact_write(
+                [
+                    self._repository.delete_action(
+                        self._claim_key(claim.domain),
+                        condition=Attr("holder_workspace_id").eq(claim.holder_workspace_id),
+                    ),
+                    self._repository.update_action(
+                        {"workspace_id": claim.holder_workspace_id, "member_key": key},
+                        update_expression="SET lapsed_at = :now REMOVE verified_at, verified_by, user_id",
+                        expression_values={":now": utc_now().isoformat()},
+                        condition=Attr("member_key").exists() & Attr("verified_at").exists(),
+                    ),
+                ]
+            )
+        except TransactionCanceled:
+            return False
+        return True
+
+    def release_sso_domain_claim(self, workspace_id: str, domain: str) -> None:
+        """Free a domain's claim when this workspace holds it. Idempotent."""
+        if not workspace_id or not domain:
+            return
+        try:
+            self._repository.delete(
+                self._claim_key(domain),
+                condition=Attr("holder_workspace_id").eq(workspace_id),
+            )
+        except ConditionFailed:
+            return
+
     def remove_sso_domain(self, workspace_id: str, domain: str) -> None:
-        """Stop using one domain for single sign-on. Idempotent."""
+        """Stop using one domain for single sign-on, freeing its claim when this workspace holds it. Idempotent."""
         if not workspace_id or not domain:
             return
         self._repository.delete({"workspace_id": workspace_id, "member_key": sso_domain_key(domain)})
+        self.release_sso_domain_claim(workspace_id, domain)
 
     def workspaces_verifying_sso_domain(self, domain: str, *, limit: int = 10) -> list[str]:
         """The ids of every workspace that verified this domain for single sign-on.
 
         Spans tenants on purpose, as `workspaces_approving_domain` does: it is how a
         sign-in page finds the connection for an address, and it answers ids alone.
-        Verification refuses a domain another workspace holds, so this is one id or none.
+        Verification claims the domain atomically, so this is one id or none.
         """
         if not domain:
             return []

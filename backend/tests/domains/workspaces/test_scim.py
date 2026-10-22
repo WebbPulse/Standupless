@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import base64
 import time
+from datetime import datetime, timedelta, timezone
 from typing import Any, Iterator
 
 import pytest
@@ -223,6 +224,20 @@ def test_a_user_needs_a_verified_domain(client: TestClient, token: str) -> None:
     response = _create_user(client, token, "alice@other.com")
     assert response.status_code == 400
     assert "verified" in response.json()["detail"]
+
+
+def test_a_token_minted_before_the_policy_tightened_still_provisions(
+    client: TestClient, token: str, repositories: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    later = datetime.now(timezone.utc) + timedelta(minutes=5)
+    with monkeypatch.context() as patch:
+        patch.setattr("app.common.db.dynamo.memberships.utc_now", lambda: later)
+        repositories.memberships.set_auth_policy(
+            WORKSPACE, require_two_factor=True, require_sso=True, allowed_methods=["google"], updated_by=OWNER
+        )
+    assert client.get(f"{SCIM}/Users", headers=_bearer(token)).status_code == 200
+    _person(repositories, OUTSIDER, "carol@acme.com")
+    assert _create_user(client, token, "carol@acme.com").status_code == 201
 
 
 def test_a_user_with_an_account_becomes_a_member(client: TestClient, token: str, repositories: Any) -> None:

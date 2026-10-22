@@ -13147,6 +13147,25 @@
             "title": "Domain",
             "type": "string"
           },
+          "lapsed": {
+            "default": false,
+            "description": "Whether the domain was verified and lost it because its TXT record went missing.",
+            "title": "Lapsed",
+            "type": "boolean"
+          },
+          "lapsed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "When the recheck found the record gone.",
+            "title": "Lapsed At"
+          },
           "record_name": {
             "description": "Where the TXT record goes: the domain's apex.",
             "title": "Record Name",
@@ -33924,7 +33943,7 @@
     },
     "/api/workspaces/{workspace_id}/sso/domains/{domain}/verify": {
       "post": {
-        "description": "Look the domain's TXT record up now, and mark the domain verified when it is there.",
+        "description": "Look the domain's TXT record up now, and claim the domain for this workspace when it is there.\n\nThe claim is a conditional write, so of two workspaces verifying one domain at\nonce only one wins and the other is answered `SSO_DOMAIN_TAKEN`. A domain whose\nverification lapsed is verified again the same way.",
         "operationId": "verify_sso_domain_api_workspaces__workspace_id__sso_domains__domain__verify_post",
         "parameters": [
           {

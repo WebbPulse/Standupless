@@ -231,6 +231,26 @@ describe('the single sign-on section', () => {
     ).toBeInTheDocument();
   });
 
+  it('shows a lapsed domain and lets it be verified again', async () => {
+    getSsoSettings.mockResolvedValue(
+      settings({
+        domains: [
+          domain({
+            verified: false,
+            lapsed: true,
+            lapsed_at: '2026-10-20T01:00:00Z',
+          }),
+        ],
+      })
+    );
+    renderSection();
+
+    expect(await screen.findByText('Verification lapsed')).toBeInTheDocument();
+    expect(screen.getByText(/This TXT record is gone/)).toBeInTheDocument();
+    expect(screen.getByText('standupless-sso=abc123')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Verify' })).toBeInTheDocument();
+  });
+
   it('saves an OIDC connection and keeps a blank secret', async () => {
     getSsoSettings.mockResolvedValue(settings({ connection: connection() }));
     saveSsoConnection.mockResolvedValue(settings({ connection: connection() }));
