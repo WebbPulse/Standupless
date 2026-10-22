@@ -222,8 +222,16 @@ def shareable_view(view: SavedView) -> str:
     bound that survives their membership changing: the same link would widen when
     they joined a team and narrow when they left. A view scoped to one team
     is bounded by that team, which is a fact about the workspace rather than
-    about the creator.
+    about the creator. A project view lists no issues, so it has nothing to share.
     """
+    if view.lists_projects:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={
+                "error_code": "VALIDATION_ERROR",
+                "message": "Only a view of issues can be shared",
+            },
+        )
     if not view.team_id:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,

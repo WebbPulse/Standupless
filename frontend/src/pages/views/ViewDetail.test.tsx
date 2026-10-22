@@ -2,7 +2,9 @@
  * A saved view's page. Covers opening the view as its stored layout and
  * filters, the save bar that appears once something changed on top of it,
  * saving over the view with its fixed scope kept, saving as a new one,
- * discarding, starring and editing the view's details.
+ * discarding, starring and editing the view's details. A view of projects
+ * opens as the projects page narrowed and arranged as stored, and saves a
+ * changed arrangement back over itself.
  */
 
 import { render, screen, waitFor, within } from '@testing-library/react';
@@ -21,6 +23,8 @@ import {
 import type {
   IssueListRead,
   LabelRead,
+  ProjectListRead,
+  ProjectRead,
   StatusRead,
   TeamMemberRead,
   TeamRead,
@@ -51,6 +55,7 @@ const updateView =
   vi.fn<(id: string, body: Record<string, unknown>) => Promise<unknown>>();
 const setViewFavorite =
   vi.fn<(id: string, favorite: boolean) => Promise<unknown>>();
+const listProjects = vi.fn<() => Promise<ProjectListRead>>();
 const starred: { kind: string; target_id: string; title: string }[] = [];
 const addFavorite =
   vi.fn<(ref: { kind: string; target_id: string }) => Promise<unknown>>();
@@ -102,7 +107,9 @@ vi.mock('../../api/teams', () => ({
 }));
 
 vi.mock('../../api/planning', () => ({
-  listProjects: () => Promise.resolve({ projects: [], next_cursor: null }),
+  listProjects: () => listProjects(),
+  updateProject: vi.fn(),
+  createProject: vi.fn(),
   listCycles: () => Promise.resolve({ cycles: [], next_cursor: null }),
 }));
 
@@ -293,6 +300,7 @@ beforeEach(() => {
     setViewFavorite,
     addFavorite,
     openCreate,
+    listProjects,
   ]) {
     spy.mockReset();
   }
@@ -304,6 +312,7 @@ beforeEach(() => {
   listLabels.mockResolvedValue([]);
   listTeamMembers.mockResolvedValue([]);
   listIssues.mockResolvedValue({ issues, next_cursor: null });
+  listProjects.mockResolvedValue({ projects: [], next_cursor: null });
   getView.mockResolvedValue(view);
   updateView.mockResolvedValue({ ...view, updated_at: '2026-09-18T00:00:00Z' });
   updateIssue.mockImplementation((id, body) =>
@@ -463,5 +472,120 @@ describe('a saved view', () => {
     expect(
       await screen.findByText('Could not load the view.')
     ).toBeInTheDocument();
+  });
+});
+
+/** A project as the planning route answers it. */
+const project = (fields: Partial<ProjectRead>): ProjectRead => ({
+  project_id: 'prj-1',
+  workspace_id: 'ws-1',
+  team_id: 'team-1',
+  team_ids: ['team-1'],
+  lead_id: null,
+  start_date: null,
+  name: 'Launch',
+  description: null,
+  target_date: '2026-10-01',
+  status: 'in_progress',
+  icon: null,
+  color: null,
+  health: null,
+  priority: 'none',
+  member_ids: [],
+  counts: { todo: 0, in_progress: 0, done: 0, cancelled: 0, total: 0 },
+  created_by: 'user-1',
+  created_at: '2026-09-18T00:00:00Z',
+  updated_at: '2026-09-18T00:00:00Z',
+  ...fields,
+});
+
+/** A view of the planned projects, listed without grouping. */
+const projectView: SavedViewDisplayRead = {
+  ...view,
+  view_id: 'view-2',
+  name: 'Planned work',
+  kind: 'list',
+  layout: 'list',
+  entity: 'projects',
+  filter: { status: ['planned'] } as SavedViewDisplayRead['filter'],
+  projects_display: {
+    layout: 'list',
+    group: 'none',
+    order: 'name',
+    closed: 'all',
+    zoom: 'month',
+  },
+};
+
+describe('a saved view of projects', () => {
+  beforeEach(() => {
+    getView.mockResolvedValue(projectView);
+    updateView.mockResolvedValue({
+      ...projectView,
+      updated_at: '2026-09-18T00:00:00Z',
+    });
+    listProjects.mockResolvedValue({
+      projects: [
+        project({}),
+        project({ project_id: 'prj-2', name: 'Rebrand', status: 'planned' }),
+      ],
+      next_cursor: null,
+    });
+  });
+
+  it('opens as the projects page narrowed to its stored filter', async () => {
+    renderPage('/w/mine/views/view-2');
+
+    expect(
+      await screen.findByRole('link', { name: 'Rebrand' })
+    ).toBeInTheDocument();
+    expect(screen.getByText('Planned work')).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Launch' })).toBeNull();
+    expect(screen.queryByRole('region', { name: 'Planned' })).toBeNull();
+    expect(
+      screen.queryByRole('region', { name: 'Unsaved view changes' })
+    ).toBeNull();
+  });
+
+  it('saves a changed arrangement over the view', async () => {
+    const user = userEvent.setup();
+    renderPage('/w/mine/views/view-2');
+
+    await screen.findByRole('link', { name: 'Rebrand' });
+    await user.click(screen.getByRole('button', { name: 'Display' }));
+    await user.click(screen.getByRole('radio', { name: 'Board' }));
+    const bar = await screen.findByRole('region', {
+      name: 'Unsaved view changes',
+    });
+    await user.click(within(bar).getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => {
+      expect(updateView).toHaveBeenCalledWith('view-2', {
+        filter: { status: ['planned'] },
+        projects_display: expect.objectContaining({
+          layout: 'board',
+          group: 'none',
+          order: 'name',
+        }),
+      });
+    });
+  });
+
+  it('puts the view back as saved with Discard', async () => {
+    const user = userEvent.setup();
+    renderPage('/w/mine/views/view-2?status=');
+
+    expect(
+      await screen.findByRole('link', { name: 'Launch' })
+    ).toBeInTheDocument();
+    const bar = screen.getByRole('region', { name: 'Unsaved view changes' });
+    await user.click(within(bar).getByRole('button', { name: 'Discard' }));
+
+    await waitFor(() => {
+      expect(screen.queryByRole('link', { name: 'Launch' })).toBeNull();
+    });
+    expect(
+      screen.queryByRole('region', { name: 'Unsaved view changes' })
+    ).toBeNull();
   });
 });

@@ -16,6 +16,7 @@ from typing import Any, Callable, Mapping, Optional, get_args
 
 from app.common import audit, issue_triage, label_merge, team_members, team_workflow, team_writes
 from app.common.api.dependencies.authz import Capability, check_capability
+from app.common.api.schemas.projects_display import stored_projects_display
 from app.common.api.schemas.teams import (
     ArchiveSettingsUpdate,
     AutoCloseSettingsUpdate,
@@ -33,6 +34,7 @@ from app.common.api.schemas.teams import (
 )
 from app.common.api.schemas.views import (
     COMPLETED_WINDOWS,
+    VIEW_ENTITIES,
     VISIBLE_PROPERTIES,
     GroupByField,
     LayoutField,
@@ -851,19 +853,24 @@ def _list_users(call: ToolCall) -> Any:
 def _list_views(call: ToolCall) -> Any:
     """Saved views this credential may read, in name order, with their stored filters.
 
-    A view's filter uses the issue list's own keys, so it can be passed to
-    `list_issues` as is.
+    An issue view's filter uses the issue list's own keys, so it can be passed to
+    `list_issues` as is. A project view carries the projects page's filter and its
+    `projects_display` arrangement instead.
     """
     scope = str(call.optional("scope", "all"))
     if scope not in VIEW_SCOPES:
         raise ToolError(f"scope must be one of: {', '.join(VIEW_SCOPES)}")
+    entity = call.optional("entity")
+    if entity is not None and entity not in VIEW_ENTITIES:
+        raise ToolError(f"entity must be one of: {', '.join(VIEW_ENTITIES)}")
     team_id = call.optional("team_id")
-    rows = readable_views(call.repositories, call.context, scope, str(team_id) if team_id else None)
+    rows = readable_views(call.repositories, call.context, scope, str(team_id) if team_id else None, entity)
     return {
         "views": [
             {
                 "view_id": row.view_id,
                 "name": row.name,
+                "entity": "projects" if row.lists_projects else "issues",
                 "team_id": row.team_id,
                 "owner_id": row.owner_id,
                 "layout": row.layout or row.kind,
@@ -874,6 +881,9 @@ def _list_views(call: ToolCall) -> Any:
                 "show_completed": row.show_completed is not False,
                 "completed_window": completed_window_of(row.completed_window, row.show_completed),
                 "show_archived": row.show_archived is True,
+                "projects_display": (
+                    stored_projects_display(row.projects_display).model_dump() if row.lists_projects else None
+                ),
             }
             for row in rows
         ]
@@ -1353,13 +1363,14 @@ TEAM_TOOLS: tuple[Tool, ...] = (
         description=(
             "Saved views this credential can read: 'mine' the caller's own, 'team' shared team views, "
             "'workspace' views shared with the whole workspace, 'all' every one (the default). Each carries "
-            "its issue list filter and sort."
+            "its issue list filter and sort, or for a project view its projects filter and projects_display."
         ),
         scopes=("views:read",),
         schema=object_schema(
             {
                 "scope": enum(VIEW_SCOPES, "Which views, defaulting to all"),
                 "team_id": string("Narrow to one team"),
+                "entity": enum(VIEW_ENTITIES, "Only issue views or only project views"),
             }
         ),
         handler=_list_views,

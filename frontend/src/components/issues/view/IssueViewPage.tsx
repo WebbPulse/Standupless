@@ -89,7 +89,10 @@ import IssueListView from './IssueListView';
 import { LOOKUP_POLL_MS } from '../../../lib/polling';
 
 /** Clears every cached views list, so each surface listing views re-reads. */
-const refreshViewLists = (workspaceId: string, teamId?: string): void => {
+export const refreshViewLists = (
+  workspaceId: string,
+  teamId?: string
+): void => {
   invalidateQueries([
     viewsKey(workspaceId, 'mine', ''),
     viewsKey(workspaceId, 'team', ''),

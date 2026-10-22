@@ -3,7 +3,9 @@
  * view's icon, name, owner, where it is filed and how many issues it selects,
  * with rename, duplicate, favorite and delete one menu away. New view opens
  * the composer, which is the issue list itself, so there is no form to fill
- * before seeing what a view would show.
+ * before seeing what a view would show. Views of issues and views of
+ * projects sit under their own tabs; New view on the projects tab opens the
+ * projects page, which saves its arrangement as a view.
  */
 
 import React, { useMemo, useState } from 'react';
@@ -24,9 +26,12 @@ import {
   createView,
   deleteView,
   listViews,
+  listsProjects,
   setViewFavorite,
   updateView,
+  type SavedViewDisplayCreate,
   type SavedViewDisplayRead,
+  type ViewEntity,
 } from '../../api/views';
 import { SaveViewDialog } from '../../components/issues/view/IssueViewPage';
 import type { ViewDetails } from '../../components/issues/view/IssueViewPage';
@@ -45,9 +50,10 @@ import { useTeam } from '../../hooks/useTeam';
 import { useAuth } from '../../hooks/useAuth';
 import { useWorkspace } from '../../hooks/useWorkspace';
 import { useWorkspaceMembers } from '../../hooks/useWorkspaceMembers';
+import { cn } from '../../lib/cn';
 import { errorMessage } from '../../lib/errors';
 import { sharedChange, viewVisibility } from '../../lib/issueView';
-import { newViewPath, viewPath } from '../../lib/paths';
+import { newViewPath, projectsPath, viewPath } from '../../lib/paths';
 import {
   favoritesKey,
   viewCountKey,
@@ -68,6 +74,54 @@ const SCOPES: { value: ViewListScope; label: string }[] = [
   { value: 'team', label: 'Team views' },
   { value: 'workspace', label: 'Workspace views' },
 ];
+
+/** What a view can list, with its tab wording. */
+const ENTITIES: { value: ViewEntity; label: string }[] = [
+  { value: 'issues', label: 'Issues' },
+  { value: 'projects', label: 'Projects' },
+];
+
+/** The body that copies a view, its filter and whichever display it keeps. */
+const copyOf = (view: SavedViewDisplayRead): SavedViewDisplayCreate => {
+  const look = {
+    icon: view.icon ?? null,
+    color: view.color ?? null,
+    description: view.description ?? null,
+  };
+  if (listsProjects(view)) {
+    return {
+      name: `${view.name} copy`,
+      kind: view.kind,
+      entity: 'projects',
+      filter: view.filter,
+      ...(view.projects_display == null
+        ? {}
+        : { projects_display: view.projects_display }),
+      ...look,
+    };
+  }
+  return {
+    name: `${view.name} copy`,
+    kind: view.kind,
+    filter: view.filter,
+    sort: view.sort,
+    group_by: view.group_by,
+    sub_group_by: view.sub_group_by,
+    ordering: view.ordering,
+    ...(view.ordering_reversed === true ? { ordering_reversed: true } : {}),
+    visible_properties: view.visible_properties,
+    layout: view.layout,
+    show_sub_issues: view.show_sub_issues,
+    show_completed: view.show_completed,
+    ...(view.completed_window === undefined
+      ? {}
+      : { completed_window: view.completed_window }),
+    ...(view.show_archived === undefined
+      ? {}
+      : { show_archived: view.show_archived }),
+    ...look,
+  };
+};
 
 /** Clears every cached views list, so the sidebar and this page re-read. */
 const refreshViewLists = (
@@ -131,6 +185,7 @@ export const Views: React.FC = () => {
   const auth = useQueryAuth();
   const navigate = useNavigate();
   const [scope, setScope] = useState<ViewListScope>('all');
+  const [entity, setEntity] = useState<ViewEntity>('issues');
   const [pending, setPending] = useState<Pending>(null);
   const [deleting, setDeleting] = useState(false);
   const workspaceId = workspace?.id ?? '';
@@ -145,6 +200,16 @@ export const Views: React.FC = () => {
       queryKey: viewsKey(workspaceId, scope, ''),
       auth,
     }
+  );
+
+  const listed = useMemo(
+    () =>
+      data === null
+        ? null
+        : data.filter(
+            (view) => listsProjects(view) === (entity === 'projects')
+          ),
+    [data, entity]
   );
 
   const memberNames = useMemo(
@@ -169,29 +234,7 @@ export const Views: React.FC = () => {
 
   const duplicate = async (view: SavedViewDisplayRead): Promise<void> => {
     try {
-      const copy = await createView(workspaceId, {
-        name: `${view.name} copy`,
-        kind: view.kind,
-        filter: view.filter,
-        sort: view.sort,
-        group_by: view.group_by,
-        sub_group_by: view.sub_group_by,
-        ordering: view.ordering,
-        ...(view.ordering_reversed === true ? { ordering_reversed: true } : {}),
-        visible_properties: view.visible_properties,
-        layout: view.layout,
-        show_sub_issues: view.show_sub_issues,
-        show_completed: view.show_completed,
-        ...(view.completed_window === undefined
-          ? {}
-          : { completed_window: view.completed_window }),
-        ...(view.show_archived === undefined
-          ? {}
-          : { show_archived: view.show_archived }),
-        icon: view.icon ?? null,
-        color: view.color ?? null,
-        description: view.description ?? null,
-      });
+      const copy = await createView(workspaceId, copyOf(view));
       refreshViewLists(workspaceId, copy);
       showToast(`Duplicated as ${copy.name}.`);
     } catch (failure) {
@@ -250,7 +293,9 @@ export const Views: React.FC = () => {
           variant="primary"
           className="gap-1.5"
           onClick={() => {
-            void navigate(newViewPath(slug));
+            void navigate(
+              entity === 'projects' ? projectsPath(slug) : newViewPath(slug)
+            );
           }}
         >
           <LuPlus aria-hidden="true" className="h-3.5 w-3.5" />
@@ -258,7 +303,33 @@ export const Views: React.FC = () => {
         </Button>
       }
       toolbar={
-        <Select
+        <div className="flex flex-wrap items-center gap-2">
+          <div
+            role="tablist"
+            aria-label="What the views list"
+            className="flex items-center gap-1"
+          >
+            {ENTITIES.map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                role="tab"
+                aria-selected={entity === option.value}
+                onClick={() => {
+                  setEntity(option.value);
+                }}
+                className={cn(
+                  'rounded-md px-2 py-1 text-sm transition-colors duration-100 focus-visible:ring-1 focus-visible:ring-accent focus-visible:outline-none',
+                  entity === option.value
+                    ? 'bg-raised text-text'
+                    : 'text-text-muted hover:text-text'
+                )}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+          <Select
           aria-label="Which views"
           value={scope}
           className="h-7 w-auto text-xs"
@@ -271,7 +342,8 @@ export const Views: React.FC = () => {
               {option.label}
             </option>
           ))}
-        </Select>
+          </Select>
+        </div>
       }
       flush
     >
@@ -281,17 +353,21 @@ export const Views: React.FC = () => {
         </div>
       )}
       <div className="min-h-0 flex-1 overflow-y-auto">
-        {isLoading || data === null ? (
+        {isLoading || listed === null ? (
           <SkeletonRows />
-        ) : data.length === 0 ? (
+        ) : listed.length === 0 ? (
           <EmptyState
             icon={<LuLayers />}
-            message="No saved views yet. Compose one with New view, or save any issue list as a view."
+            message={
+              entity === 'projects'
+                ? 'No saved views of projects yet. Arrange the projects page and save it as a view.'
+                : 'No saved views yet. Compose one with New view, or save any issue list as a view.'
+            }
             className="py-16"
           />
         ) : (
           <ul aria-label="Saved views">
-            {data.map((view) => {
+            {listed.map((view) => {
               const owner = memberNames.get(view.owner_id);
               return (
                 <li
@@ -343,7 +419,11 @@ export const Views: React.FC = () => {
                       </>
                     )}
                   </span>
-                  <ViewCount workspaceId={workspaceId} view={view} />
+                  {listsProjects(view) ? (
+                    <span className="w-16 shrink-0" />
+                  ) : (
+                    <ViewCount workspaceId={workspaceId} view={view} />
+                  )}
                   <Menu
                     label={`Actions for ${view.name}`}
                     align="end"

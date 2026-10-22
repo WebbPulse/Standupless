@@ -26,6 +26,8 @@ import type {
   IssueListRead,
   NotificationListRead,
   NotificationRead,
+  ProjectsDisplayPreference,
+  ProjectStatus,
   SavedViewCreate,
   SavedViewRead,
   SavedViewUpdate,
@@ -101,8 +103,27 @@ export interface ViewFilterNegations {
   estimate_not?: string | string[];
 }
 
+/**
+ * The keys a view of projects stores: the team narrowed to, the project
+ * statuses, the lead (a user id or `none`), and whether a parent team rolls up
+ * its sub-teams' projects, which an absent key reads as doing.
+ */
+export interface ProjectViewFilter {
+  team_id?: string;
+  status?: ProjectStatus | ProjectStatus[];
+  lead_id?: string | string[];
+  sub_teams?: 'true' | 'false';
+}
+
 /** A stored filter with the negation keys, every key the issue list takes. */
 export type SavedViewFilter = ViewFilter & ViewFilterNegations;
+
+/** What a saved view lists. A view saved before projects could be saved reads as issues. */
+export type ViewEntity = 'issues' | 'projects';
+
+/** True when the view lists projects rather than issues. */
+export const listsProjects = (view: { entity?: ViewEntity }): boolean =>
+  view.entity === 'projects';
 
 /**
  * A saved view's display settings. `sub_group_by` needs a distinct `group_by`,
@@ -142,6 +163,10 @@ export interface SavedViewDisplayRead extends SavedViewRead, SavedViewDisplay {
   description?: string | null;
   /** Whether the caller starred this view; a star is theirs alone. */
   favorite?: boolean;
+  /** What the view lists; an older server leaves it out, which reads as issues. */
+  entity?: ViewEntity;
+  /** A view of projects' arrangement, null on a view of issues. */
+  projects_display?: ProjectsDisplayPreference | null;
 }
 
 /** The fixed palette a view's icon may take. */
@@ -192,6 +217,10 @@ export interface SavedViewDisplayCreate extends Omit<
   description?: string | null;
   /** True with no team to share the view with the whole workspace. */
   shared?: boolean;
+  /** What the view lists, issues when left out. */
+  entity?: ViewEntity;
+  /** A view of projects' arrangement, refused on a view of issues. */
+  projects_display?: ProjectsDisplayPreference;
 }
 
 /** The editable fields on a saved view, including its display settings. */
@@ -215,6 +244,8 @@ export interface SavedViewDisplayUpdate extends Omit<
   description?: string | null;
   /** Moves a view without a team between its owner and the whole workspace. */
   shared?: boolean;
+  /** A view of projects' new arrangement, merged onto the stored one. */
+  projects_display?: Partial<ProjectsDisplayPreference>;
 }
 
 const SCALAR_FILTER_KEYS = new Set([
@@ -401,6 +432,7 @@ export const listBoardColumn = async (
 export interface ViewListQuery {
   scope?: ViewListScope;
   team_id?: string;
+  entity?: ViewEntity;
 }
 
 /**

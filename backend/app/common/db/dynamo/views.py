@@ -90,13 +90,17 @@ class SavedView(BaseModel):
     The display fields default to empty so rows saved before they existed read
     back unchanged, and `layout` falls back to `kind` at the API rather than being
     backfilled. The two display switches read an absent value as shown, which is
-    what every view saved before they existed displayed.
+    what every view saved before they existed displayed. `entity` says whether the
+    view lists issues or projects, an absent value reading as issues because every
+    view saved before project views existed was one; a project view keeps its
+    arrangement in `projects_display` and leaves the issue display fields empty.
     """
 
     workspace_id: str
     view_key: str
     view_id: str = Field(default_factory=new_view_id)
     name: str
+    entity: str | None = None
     kind: str = "list"
     team_id: str | None = None
     filter: dict[str, Any] = Field(default_factory=dict)
@@ -111,12 +115,18 @@ class SavedView(BaseModel):
     show_completed: bool | None = None
     completed_window: str | None = None
     show_archived: bool | None = None
+    projects_display: dict[str, str] | None = None
     icon: str | None = None
     color: str | None = None
     description: str | None = None
     owner_id: str
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
+
+    @property
+    def lists_projects(self) -> bool:
+        """Whether this view lists projects rather than issues."""
+        return self.entity == "projects"
 
     @property
     def scope(self) -> str:
