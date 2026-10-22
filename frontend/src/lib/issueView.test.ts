@@ -16,6 +16,7 @@ import {
   filterValuesFor,
   GROUP_FIELDS,
   groupIssues,
+  manualMoveKeys,
   matchesFilters,
   moveChange,
   narrowFilters,
@@ -718,6 +719,71 @@ describe('moving and ordering', () => {
     expect(key > 'a0' && key < 'a2').toBe(true);
     expect(orderKeyAt(column, 0, 'x') < 'a0').toBe(true);
     expect(orderKeyAt(column, 3, 'x') > 'a4').toBe(true);
+  });
+
+  it('moves a placed issue a step past its neighbour with one key', () => {
+    const rows = [
+      issue({ id: 'a', sort_order: 'a0' }),
+      issue({ id: 'b', sort_order: 'a2' }),
+      issue({ id: 'c', sort_order: 'a4' }),
+    ];
+
+    const up = manualMoveKeys(rows, 'c', -1);
+    expect(up).toHaveLength(1);
+    expect(up?.[0]?.id).toBe('c');
+    const key = up?.[0]?.sort_order ?? '';
+    expect(key > 'a0' && key < 'a2').toBe(true);
+
+    const down = manualMoveKeys(rows, 'a', 1)?.[0]?.sort_order ?? '';
+    expect(down > 'a2' && down < 'a4').toBe(true);
+  });
+
+  it('refuses a move past either end', () => {
+    const rows = [
+      issue({ id: 'a', sort_order: 'a0' }),
+      issue({ id: 'b', sort_order: 'a2' }),
+    ];
+
+    expect(manualMoveKeys(rows, 'a', -1)).toBeNull();
+    expect(manualMoveKeys(rows, 'b', 1)).toBeNull();
+    expect(manualMoveKeys(rows, 'x', 1)).toBeNull();
+  });
+
+  it('places the unplaced rows it passes so the move lands', () => {
+    const rows = [
+      issue({ id: 'a', sort_order: 'a0' }),
+      issue({ id: 'b', sort_order: null }),
+      issue({ id: 'c', sort_order: null }),
+    ];
+
+    const placements = manualMoveKeys(rows, 'c', -1) ?? [];
+    expect(placements.map((each) => each.id)).toEqual(['c', 'b']);
+    const [first = '', second = ''] = placements.map(
+      (each) => each.sort_order
+    );
+    expect(first > 'a0').toBe(true);
+    expect(second > first).toBe(true);
+    const sorted = sortIssues(
+      rows.map((row) => {
+        const placed = placements.find((each) => each.id === row.id);
+        return placed === undefined
+          ? row
+          : { ...row, sort_order: placed.sort_order };
+      }),
+      'manual'
+    );
+    expect(sorted.map((row) => row.id)).toEqual(['a', 'c', 'b']);
+  });
+
+  it('writes falling keys when the manual order is reversed', () => {
+    const rows = [
+      issue({ id: 'c', sort_order: 'a4' }),
+      issue({ id: 'b', sort_order: 'a2' }),
+      issue({ id: 'a', sort_order: 'a0' }),
+    ];
+
+    const key = manualMoveKeys(rows, 'a', -1, true)?.[0]?.sort_order ?? '';
+    expect(key > 'a2' && key < 'a4').toBe(true);
   });
 });
 

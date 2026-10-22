@@ -1,6 +1,7 @@
 /**
  * The shortcuts that work anywhere in a workspace: `C` to create an issue,
- * `G` then a letter to go somewhere, `/` to search, Ctrl+Z to undo the last
+ * `G` then a letter to go somewhere, `O` then a letter to open a favorite,
+ * project, cycle, team or view from a picker, `/` to search, Ctrl+Z to undo the last
  * issue change and `?` for the list of every shortcut. Registered through the
  * same registry as any page's own shortcuts, so the help overlay and the
  * command palette list them without a second source of truth.
@@ -8,6 +9,10 @@
 
 import type React from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
+import {
+  usePaletteControls,
+  type PalettePicker,
+} from '../../hooks/useCommandPalette';
 import { useCreateIssue } from '../../hooks/useCreateIssue';
 import { useShortcut } from '../../hooks/useShortcuts';
 import { UNDO_KEYS, UNDO_LABEL, useUndo } from '../../hooks/useUndo';
@@ -36,6 +41,9 @@ export interface GlobalShortcutsProps {
 
 /** The heading the navigation shortcuts are listed under. */
 const NAVIGATION = 'Navigation';
+
+/** The heading the open picker shortcuts are listed under. */
+const OPEN = 'Open';
 
 /**
  * Focuses the search field on the page when there is one, otherwise opens the
@@ -72,6 +80,12 @@ export const GlobalShortcuts: React.FC<GlobalShortcutsProps> = ({
   const go = (to: string) => () => {
     void navigate(to);
   };
+
+  const palette = usePaletteControls();
+  const pick = (picker: PalettePicker) => () => {
+    palette?.openPicker(picker);
+  };
+  const canPick = palette !== null;
 
   useShortcut({
     keys: 'c',
@@ -141,6 +155,41 @@ export const GlobalShortcuts: React.FC<GlobalShortcutsProps> = ({
     label: 'Go to views',
     group: NAVIGATION,
     handler: go(viewsPath(slug)),
+  });
+  useShortcut({
+    keys: 'o f',
+    label: 'Open favorite',
+    group: OPEN,
+    handler: pick('favorites'),
+    enabled: canPick,
+  });
+  useShortcut({
+    keys: 'o p',
+    label: 'Open project',
+    group: OPEN,
+    handler: pick('projects'),
+    enabled: canPick,
+  });
+  useShortcut({
+    keys: 'o c',
+    label: 'Open cycle',
+    group: OPEN,
+    handler: pick('cycles'),
+    enabled: canPick && team !== undefined,
+  });
+  useShortcut({
+    keys: 'o t',
+    label: 'Open team',
+    group: OPEN,
+    handler: pick('teams'),
+    enabled: canPick && teams.length > 0,
+  });
+  useShortcut({
+    keys: 'o v',
+    label: 'Open view',
+    group: OPEN,
+    handler: pick('views'),
+    enabled: canPick,
   });
   useShortcut({
     keys: '/',

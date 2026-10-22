@@ -29,6 +29,10 @@ export const modKeyLabel = (apple: boolean = isApplePlatform()): string =>
 export const shiftKeyLabel = (apple: boolean = isApplePlatform()): string =>
   apple ? '⇧' : 'Shift';
 
+/** The label for the Alt key: the option symbol on Apple, else the word. */
+export const altKeyLabel = (apple: boolean = isApplePlatform()): string =>
+  apple ? '⌥' : 'Alt';
+
 /** The hint for the modifier plus Enter submit, compact on Apple. */
 export const submitKeysLabel = (apple: boolean = isApplePlatform()): string =>
   apple ? '⌘↵' : 'Ctrl ↵';

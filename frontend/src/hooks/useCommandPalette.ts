@@ -17,12 +17,27 @@ import {
   useState,
 } from 'react';
 
+/**
+ * A picker inside the palette that a shortcut can open it straight onto, such
+ * as `O` then `P` landing on the project list.
+ */
+export type PalettePicker =
+  | 'favorites'
+  | 'projects'
+  | 'cycles'
+  | 'teams'
+  | 'views';
+
 /** What {@link useCommandPalette} hands back to the shell. */
 export interface CommandPaletteState {
   /** Whether the palette is showing. */
   open: boolean;
+  /** The picker the palette opened on, or null for the top level. */
+  picker: PalettePicker | null;
   /** Opens the palette, for a button or a menu item that also offers it. */
   openPalette: () => void;
+  /** Opens the palette on one of its pickers. */
+  openPicker: (picker: PalettePicker) => void;
   /** Closes the palette. Pass this straight to the palette's `onClose`. */
   closePalette: () => void;
 }
@@ -79,8 +94,15 @@ export const isPaletteShortcut = (event: KeyboardEvent): boolean =>
  */
 export const useCommandPalette = (): CommandPaletteState => {
   const [open, setOpen] = useState(false);
+  const [picker, setPicker] = useState<PalettePicker | null>(null);
 
   const openPalette = useCallback(() => {
+    setPicker(null);
+    setOpen(true);
+  }, []);
+
+  const openPicker = useCallback((next: PalettePicker) => {
+    setPicker(next);
     setOpen(true);
   }, []);
 
@@ -93,6 +115,7 @@ export const useCommandPalette = (): CommandPaletteState => {
       if (!isPaletteShortcut(event)) return;
       if (!open && isTypingTarget(event.target)) return;
       event.preventDefault();
+      setPicker(null);
       setOpen((wasOpen) => !wasOpen);
     };
     document.addEventListener('keydown', onKey);
@@ -101,7 +124,7 @@ export const useCommandPalette = (): CommandPaletteState => {
     };
   }, [open]);
 
-  return { open, openPalette, closePalette };
+  return { open, picker, openPalette, openPicker, closePalette };
 };
 
 export default useCommandPalette;

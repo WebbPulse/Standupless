@@ -2202,6 +2202,70 @@ export const orderKeyAt = (
   }
 };
 
+/** One issue's new manual position, as a keyboard reorder writes it. */
+export interface ManualPlacement {
+  id: string;
+  sort_order: string;
+}
+
+/**
+ * The manual positions that move one issue a step up or down past its
+ * neighbour, given the rows it sits among in display order. Two placed issues
+ * swap with one new key. When either has never been placed, every unplaced row
+ * up to the pair is placed too, in its shown order, since unplaced rows always
+ * sort last and a key for the moving issue alone would not land it beside its
+ * neighbour. `reverse` is a manual order read backwards, where keys fall down
+ * the list. Null when the issue is at that end of the rows or no key fits.
+ */
+export const manualMoveKeys = (
+  rows: readonly OrderedIssueRead[],
+  movingId: string,
+  step: 1 | -1,
+  reverse = false
+): ManualPlacement[] | null => {
+  const from = rows.findIndex((issue) => issue.id === movingId);
+  const to = from + step;
+  if (from < 0 || to < 0 || to >= rows.length) return null;
+  const moving = rows[from];
+  const neighbour = rows[to];
+  if (moving === undefined || neighbour === undefined) return null;
+  const moved = [...rows];
+  moved[from] = neighbour;
+  moved[to] = moving;
+  const keyOf = (issue: OrderedIssueRead | undefined): string | null =>
+    issue?.sort_order ?? null;
+  try {
+    if (keyOf(moving) !== null && keyOf(neighbour) !== null) {
+      const above = keyOf(moved[to - 1]);
+      const below = keyOf(moved[to + 1]);
+      return [
+        {
+          id: movingId,
+          sort_order: reverse
+            ? orderBetween(below, above)
+            : orderBetween(above, below),
+        },
+      ];
+    }
+    const firstLoose = rows.findIndex((issue) => keyOf(issue) === null);
+    const start = Math.min(from, to, firstLoose);
+    const end = Math.max(from, to);
+    let bound = keyOf(moved[start - 1]);
+    const placements: ManualPlacement[] = [];
+    for (let at = start; at <= end; at += 1) {
+      const issue = moved[at];
+      if (issue === undefined) continue;
+      bound = reverse
+        ? orderBetween(null, bound)
+        : orderBetween(bound, undefined);
+      placements.push({ id: issue.id, sort_order: bound });
+    }
+    return placements;
+  } catch {
+    return null;
+  }
+};
+
 /**
  * Whether a view's visibility can be changed by the caller, and where it starts.
  * Only a view without a team moves, a guest cannot publish one, and only its
