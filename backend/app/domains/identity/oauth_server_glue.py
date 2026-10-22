@@ -3,7 +3,8 @@
 The package owns every endpoint, the PKCE checks, the code exchange and the token
 minting. Three things it cannot know are supplied here: where the three tables live,
 which workspaces a consenting user may bind a token to, and which scopes that
-workspace's membership actually allows.
+workspace's membership actually allows. A fourth, the refresh guard, holds a standing
+grant to the workspace's authentication policy when the policy tightened after it.
 
 The tenant resolver reads the membership model directly rather than through the
 request's repository bundle, because the package calls it as a plain callable with no
@@ -25,7 +26,7 @@ from typing import TYPE_CHECKING, Any
 from app.common.db.dynamo.api_keys import API_KEY_SCOPES
 
 if TYPE_CHECKING:  # pragma: no cover
-    from webbpulse.identity import AuthorizationSubject, OAuthServerStores, TenantChoice
+    from webbpulse.identity import AuthorizationSubject, ConsentRecord, OAuthServerStores, TenantChoice
 
     from app.common.core.config import Settings
 
@@ -57,7 +58,6 @@ def build_oauth_server_stores(settings: "Settings") -> "OAuthServerStores":
         AUTHORIZATION_CODES_TABLE,
         OAUTH_CLIENTS_TABLE,
         OAUTH_CONSENTS_TABLE,
-        ConsentRecord,
         DynamoAuthorizationCodeStore,
         DynamoConsentStore,
         DynamoOAuthClientStore,
@@ -191,3 +191,27 @@ def resolve_tenants(
         workspace = workspaces.get(membership.workspace_id)
         choices.append(TenantChoice(id=membership.workspace_id, name=workspace.name if workspace is not None else ""))
     return choices
+
+
+def refresh_allowed(consent: ConsentRecord) -> bool:
+    """Whether the workspace's authentication policy still lets this grant refresh.
+
+    A grant last authorized before the policy tightened came from a session the policy
+    may not admit now, so it is held to the policy as a sign-in with nothing to show,
+    exactly as an access token issued before it is on every workspace route. An owner
+    keeps the single sign-on way past. Authorizing again from a session the policy
+    admits moves the grant past the change. A grant with no workspace, or a user no
+    longer a member, is left to the checks that already refuse it.
+    """
+    from app.common.api.dependencies.authz import delegated_policy_refusal, epoch_of
+    from app.common.db.dynamo.memberships import MembershipRepository
+
+    if not consent.tenant_id:
+        return True
+    repository = MembershipRepository()
+    membership = repository.get(consent.tenant_id, consent.user_id)
+    if membership is None:
+        return True
+    policy = repository.get_auth_policy(consent.tenant_id)
+    issued_at = epoch_of(consent.updated_at or consent.granted_at)
+    return delegated_policy_refusal(policy, issued_at, workspace_id=consent.tenant_id, role=membership.role) is None
