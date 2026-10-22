@@ -94,7 +94,8 @@ const TRIGGER_CLASS: Record<PickerVariant, string> = {
   icon: 'h-6 w-6 justify-center rounded-sm text-text-muted enabled:hover:bg-raised',
 };
 
-interface PickerButtonProps {
+/** Props for PickerButton: the trigger, the field and the value it shows. */
+export interface PickerButtonProps {
   trigger: PopoverTriggerProps;
   field: string;
   icon?: React.ReactNode;
@@ -112,7 +113,7 @@ interface PickerButtonProps {
  * "Status: In progress", so a screen reader user hears both without the
  * visible row label being read twice.
  */
-const PickerButton: React.FC<PickerButtonProps> = ({
+export const PickerButton: React.FC<PickerButtonProps> = ({
   trigger,
   field,
   icon,

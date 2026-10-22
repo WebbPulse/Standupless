@@ -18,8 +18,8 @@ export interface DialogProps {
   /** A sentence under the title, when the title alone is not enough. */
   description?: string;
   children: React.ReactNode;
-  /** The panel width. */
-  size?: 'sm' | 'md' | 'lg';
+  /** The panel width; `xl` is the expanded size of a long form. */
+  size?: 'sm' | 'md' | 'lg' | 'xl';
   /** Hides the title visually while keeping it as the dialog's name. */
   hideTitle?: boolean;
 }
@@ -28,6 +28,7 @@ const SIZES: Record<NonNullable<DialogProps['size']>, string> = {
   sm: 'max-w-sm',
   md: 'max-w-lg',
   lg: 'max-w-2xl',
+  xl: 'max-w-5xl',
 };
 
 const FOCUSABLE =
