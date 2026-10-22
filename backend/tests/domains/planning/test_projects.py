@@ -714,7 +714,7 @@ def test_a_project_with_no_open_issues_closes_with_a_zero_count(client: TestClie
 
 
 def test_closing_a_project_stamps_when_and_reopening_clears_it(client: TestClient, workspace: str) -> None:
-    """The projects list windows closed rows by `completed_at`, set on close, kept across closed states and cleared on reopen."""
+    """Closed rows carry `completed_at`: set on close, kept across closed states, cleared on reopen."""
     sign_in(client, MEMBER)
     project = seed_project(client, workspace)
     path = _path(workspace, project["project_id"])

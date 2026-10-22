@@ -95,6 +95,7 @@ const BoardCard: React.FC<BoardCardProps> = ({
         <Link
           to={projectPath(slug, project.project_id)}
           draggable={false}
+          data-hover="parent"
           className="min-w-0 flex-1 truncate text-sm font-medium text-text after:absolute after:inset-0 after:rounded-md focus-visible:outline-none focus-visible:after:outline-2 focus-visible:after:outline-accent"
         >
           {project.name}

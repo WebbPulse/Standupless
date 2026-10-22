@@ -240,7 +240,7 @@ def store_open_issues(repositories: Repositories, context: AuthzContext, planned
 
 
 def closed_since(existing: Project, closed: bool, now: datetime) -> Optional[datetime]:
-    """When a patched project closed: now on the patch that closes it, the old time while it stays closed, None once open.
+    """When a patched project closed: now on closing, kept while closed, None once open.
 
     A project that moves between completed and canceled keeps the time it first
     closed, and one closed before the field existed takes the time of the patch
