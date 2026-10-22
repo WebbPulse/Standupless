@@ -1574,6 +1574,7 @@ export type NotificationKind =
   | 'initiative_update_due'
   | 'due_soon'
   | 'overdue'
+  | 'reminder'
   | 'standup_digest'
   | 'sla_at_risk'
   | 'sla_breached'
@@ -1657,6 +1658,29 @@ export interface InboxUnreadWrite {
 export interface InboxSnoozeWrite {
   notification_ids: string[];
   until: string;
+}
+
+/** What setting a reminder takes: the timezone aware moment it comes due. */
+export interface IssueReminderWrite {
+  remind_at: string;
+}
+
+/**
+ * One pending reminder the caller set on an issue. It is the caller's own, so
+ * nobody else sees it, and at `remind_at` it becomes a `reminder` inbox row.
+ */
+export interface IssueReminderRead {
+  issue_id: string;
+  issue_key: string;
+  issue_title: string;
+  team_id: string;
+  remind_at: string;
+  created_at: string;
+}
+
+/** The caller's pending reminders, soonest first. */
+export interface IssueReminderListRead {
+  reminders: IssueReminderRead[];
 }
 
 /** How many rows a mark-read call changed. */

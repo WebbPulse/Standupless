@@ -52,6 +52,7 @@ _HEADLINES: Mapping[str, str] = {
     "overdue": "This issue assigned to you is overdue.",
     "sla_at_risk": "This issue assigned to you is close to breaching its SLA.",
     "sla_breached": "This issue assigned to you has breached its SLA.",
+    "reminder": "You asked to be reminded about this issue.",
 }
 
 DUE_KINDS: frozenset[str] = frozenset({"due_soon", "overdue", "sla_at_risk", "sla_breached"})
@@ -65,6 +66,10 @@ _ASSIGNEE_REASON = (
     "You are receiving this because this issue is assigned to you. "
     "Turn these off in your {product} notification settings."
 )
+_REMINDER_REASON = (
+    "You are receiving this because you set a reminder on this issue. "
+    "Turn these off in your {product} notification settings."
+)
 _PROJECT_REASON = (
     "You are receiving this because you lead or are a member of this project. "
     "Turn these off in your {product} notification settings."
@@ -72,6 +77,13 @@ _PROJECT_REASON = (
 _DIGEST_REASON = (
     "You are receiving this because you follow activity in {product}. Turn these off in your notification settings."
 )
+
+
+def _issue_reason(kind: str) -> str:
+    """The footer line saying why one issue notification reached its reader."""
+    if kind == "reminder":
+        return _REMINDER_REASON
+    return _ASSIGNEE_REASON if kind in DUE_KINDS else _ISSUE_REASON
 
 
 def issue_url(workspace_slug: str, issue_key: str) -> str:
@@ -154,7 +166,7 @@ def render_notification(
         subject=subject,
         preheader=headline,
         blocks=blocks,
-        footer_note=(_ASSIGNEE_REASON if kind in DUE_KINDS else _ISSUE_REASON).format(product=settings.PROJECT_NAME),
+        footer_note=_issue_reason(kind).format(product=settings.PROJECT_NAME),
         footer_links=_settings_link(workspace_slug),
         tags={"purpose": "notification", "kind": kind},
         accent=accent,

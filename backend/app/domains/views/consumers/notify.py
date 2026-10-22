@@ -610,9 +610,10 @@ def handle_planning_record(repositories: Repositories, record: Mapping[str, Any]
 def handle_record(repositories: Repositories, record: Mapping[str, Any]) -> None:
     """Route one record to the handler for the table it came from.
 
-    The digest flush schedule's synthetic record runs the flush, the project
-    update reminder sweep every quarter hour, the standup digest sweep every five
-    minutes, and the issue due date and Pulse digest sweeps every hour, and nothing else. Each sweep
+    The digest flush schedule's synthetic record runs the flush, the issue
+    reminders that have come due on every tick, the project update reminder
+    sweep every quarter hour, the standup digest sweep every five minutes, and
+    the issue due date and Pulse digest sweeps every hour, and nothing else. Each sweep
     runs on the first tick of its window, so a late tick does not skip a pass. The sweeps
     are imported here rather than at the top because they build on this module's
     writers.
@@ -624,10 +625,11 @@ def handle_record(repositories: Repositories, record: Mapping[str, Any]) -> None
     repositories = _GRANT.narrow(repositories)
     if is_digest_flush(record):
         flush_due(repositories)
-        from app.domains.views.consumers import due_reminders, pulse_digest, standups
+        from app.domains.views.consumers import due_reminders, issue_reminders, pulse_digest, standups
         from app.domains.views.consumers.project_reminders import run_reminders, sweep_due
 
         now = datetime.now(timezone.utc)
+        issue_reminders.run_issue_reminders(repositories, now)
         if sweep_due(repositories, now):
             run_reminders(repositories, now)
         if standups.sweep_due(repositories, now):

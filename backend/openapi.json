@@ -6936,6 +6936,76 @@
         "title": "IssueReleaseRead",
         "type": "object"
       },
+      "IssueReminderListRead": {
+        "description": "The caller's pending reminders, soonest first.",
+        "properties": {
+          "reminders": {
+            "items": {
+              "$ref": "#/components/schemas/IssueReminderRead"
+            },
+            "title": "Reminders",
+            "type": "array"
+          }
+        },
+        "title": "IssueReminderListRead",
+        "type": "object"
+      },
+      "IssueReminderRead": {
+        "description": "One pending reminder of the caller's, with the issue it is about as it reads now.",
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "issue_id": {
+            "title": "Issue Id",
+            "type": "string"
+          },
+          "issue_key": {
+            "title": "Issue Key",
+            "type": "string"
+          },
+          "issue_title": {
+            "title": "Issue Title",
+            "type": "string"
+          },
+          "remind_at": {
+            "format": "date-time",
+            "title": "Remind At",
+            "type": "string"
+          },
+          "team_id": {
+            "title": "Team Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "issue_id",
+          "issue_key",
+          "issue_title",
+          "team_id",
+          "remind_at",
+          "created_at"
+        ],
+        "title": "IssueReminderRead",
+        "type": "object"
+      },
+      "IssueReminderWrite": {
+        "description": "The body setting a reminder takes: the moment the caller wants to hear about the issue again.\n\n`remind_at` must carry a timezone, so the moment is the one the caller picked\non their own clock rather than one the server guessed.",
+        "properties": {
+          "remind_at": {
+            "format": "date-time",
+            "title": "Remind At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "remind_at"
+        ],
+        "title": "IssueReminderWrite",
+        "type": "object"
+      },
       "IssueSyncListRead": {
         "description": "The issue list route's body: a page, plus the cursor a polling client resumes from.\n\n`synced_at` is the cursor to send back as `updated_since`. A delta read answers\nthe changed issues that match under `issues`, the ids to drop from the cached\nlist under `removed_ids`, and `resync_required` when the client must read the\nlist in full instead. A full read carries `synced_at` alone, so every existing\ncaller reads the same body it always did.",
         "properties": {
@@ -16745,7 +16815,8 @@
                     "standup_digest",
                     "sla_at_risk",
                     "sla_breached",
-                    "review_requested"
+                    "review_requested",
+                    "reminder"
                   ]
                 },
                 "type": "object"
@@ -26638,7 +26709,7 @@
               "items": {
                 "type": "string"
               },
-              "maxItems": 19,
+              "maxItems": 20,
               "title": "Kind",
               "type": "array"
             }
@@ -26808,6 +26879,191 @@
           }
         ],
         "summary": "Mark Read",
+        "tags": [
+          "views"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/inbox/reminders": {
+      "get": {
+        "description": "The caller's pending issue reminders, soonest first, or the one on `issue_id`.\n\nA reminder on an issue that is gone or no longer visible is left out.",
+        "operationId": "list_issue_reminders_api_workspaces__workspace_id__inbox_reminders_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "issue_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Issue Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IssueReminderListRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "List Issue Reminders",
+        "tags": [
+          "views"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/inbox/reminders/{issue_id}": {
+      "delete": {
+        "description": "Cancel the caller's pending reminder on one issue, or 404 when none is pending.",
+        "operationId": "cancel_issue_reminder_api_workspaces__workspace_id__inbox_reminders__issue_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "issue_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Issue Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Cancel Issue Reminder",
+        "tags": [
+          "views"
+        ]
+      },
+      "put": {
+        "description": "Remind the caller about one issue at `remind_at`, replacing any reminder already set on it.\n\nThe moment must carry a timezone and be between a minute and 365 days out. An\nissue the caller cannot see is a 404.",
+        "operationId": "set_issue_reminder_api_workspaces__workspace_id__inbox_reminders__issue_id__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "issue_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Issue Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IssueReminderWrite"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IssueReminderRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Set Issue Reminder",
         "tags": [
           "views"
         ]

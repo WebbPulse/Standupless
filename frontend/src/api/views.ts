@@ -21,6 +21,8 @@ import type {
   InboxReadWrite,
   InboxSnoozeWrite,
   InboxUnreadWrite,
+  IssueReminderListRead,
+  IssueReminderRead,
   IssueListRead,
   NotificationListRead,
   NotificationRead,
@@ -323,6 +325,14 @@ export const inboxUnreadPath = (workspaceId: string): string =>
 /** The route rows are snoozed on. */
 export const inboxSnoozePath = (workspaceId: string): string =>
   `${inboxPath(workspaceId)}/snooze`;
+
+/** The route the caller's issue reminders are listed on. */
+export const remindersPath = (workspaceId: string): string =>
+  `${inboxPath(workspaceId)}/reminders`;
+
+/** The route the caller's reminder on one issue is set and cancelled through. */
+export const reminderPath = (workspaceId: string, issueId: string): string =>
+  `${remindersPath(workspaceId)}/${encodeURIComponent(issueId)}`;
 
 /** The route one notification is deleted through. */
 export const notificationPath = (
@@ -648,6 +658,48 @@ export const snoozeNotifications = async (
     body
   );
   return response.data?.updated ?? 0;
+};
+
+/**
+ * Lists the caller's pending issue reminders, soonest first, optionally on one
+ * issue alone. A reminder on an issue the caller can no longer see is left out.
+ */
+export const listReminders = async (
+  workspaceId: string,
+  issueId?: string,
+  signal?: AbortSignal
+): Promise<IssueReminderRead[]> => {
+  const response = await apiClient.get<IssueReminderListRead>(
+    remindersPath(workspaceId),
+    listOptions({ issue_id: issueId }, signal)
+  );
+  const reminders = response.data?.reminders;
+  return Array.isArray(reminders) ? reminders : [];
+};
+
+/**
+ * Reminds the caller about one issue at a moment, replacing any reminder they
+ * already set on it. The moment carries its offset, so presets are the
+ * caller's own clock.
+ */
+export const setReminder = async (
+  workspaceId: string,
+  issueId: string,
+  remindAt: string
+): Promise<IssueReminderRead> => {
+  const response = await apiClient.put<IssueReminderRead>(
+    reminderPath(workspaceId, issueId),
+    { remind_at: remindAt }
+  );
+  return response.data;
+};
+
+/** Cancels the caller's pending reminder on one issue. */
+export const cancelReminder = async (
+  workspaceId: string,
+  issueId: string
+): Promise<void> => {
+  await apiClient.delete<void>(reminderPath(workspaceId, issueId));
 };
 
 /** Deletes one notification. */

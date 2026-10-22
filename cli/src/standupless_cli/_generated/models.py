@@ -930,6 +930,19 @@ class IssueMove(TypedDict):
     team_id: str
 
 
+class IssueReminderRead(TypedDict):
+    created_at: str
+    issue_id: str
+    issue_key: str
+    issue_title: str
+    remind_at: str
+    team_id: str
+
+
+class IssueReminderWrite(TypedDict):
+    remind_at: str
+
+
 class IssueSyncRead(TypedDict):
     issue_id: str
     number: int
@@ -2373,6 +2386,7 @@ class UserPreferencesUpdate(TypedDict):
                 "sla_at_risk",
                 "sla_breached",
                 "review_requested",
+                "reminder",
             ],
             NotificationChannelsUpdate,
         ]
@@ -3149,6 +3163,10 @@ class IssueReleaseRead(TypedDict):
     name: str
     release_id: str
     team_id: str
+
+
+class IssueReminderListRead(TypedDict):
+    reminders: NotRequired[list[IssueReminderRead]]
 
 
 class IssueSyncListRead(TypedDict):

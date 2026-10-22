@@ -105,6 +105,7 @@ NotificationKindField = Literal[
     "standup_digest",
     "sla_at_risk",
     "sla_breached",
+    "reminder",
 ]
 
 FILTER_FIELDS: frozenset[str] = frozenset(
@@ -625,3 +626,38 @@ class InboxReadResult(BaseModel):
     """How many notifications a mark-read actually moved."""
 
     updated: int = 0
+
+
+class IssueReminderWrite(BaseModel):
+    """The body setting a reminder takes: the moment the caller wants to hear about the issue again.
+
+    `remind_at` must carry a timezone, so the moment is the one the caller picked
+    on their own clock rather than one the server guessed.
+    """
+
+    remind_at: datetime
+
+    @field_validator("remind_at")
+    @classmethod
+    def _aware(cls, value: datetime) -> datetime:
+        """Refuse a naive moment rather than guessing its zone."""
+        if value.tzinfo is None:
+            raise ValueError("remind_at must include a timezone")
+        return value
+
+
+class IssueReminderRead(BaseModel):
+    """One pending reminder of the caller's, with the issue it is about as it reads now."""
+
+    issue_id: str
+    issue_key: str
+    issue_title: str
+    team_id: str
+    remind_at: datetime
+    created_at: datetime
+
+
+class IssueReminderListRead(BaseModel):
+    """The caller's pending reminders, soonest first."""
+
+    reminders: list[IssueReminderRead] = Field(default_factory=list)

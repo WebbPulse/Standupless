@@ -238,6 +238,12 @@ export const inboxKey = (
   filter: InboxFilter
 ): QueryKey => ['inbox', workspaceId, filter];
 
+/** The caller's pending reminder on one issue. */
+export const issueReminderKey = (
+  workspaceId: string,
+  issueId: string
+): QueryKey => ['issue-reminder', workspaceId, issueId];
+
 /** The unread badge count, polled by the shell on every page. */
 export const inboxCountKey = (workspaceId: string): QueryKey => [
   'inbox-count',
