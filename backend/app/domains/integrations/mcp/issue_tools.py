@@ -1295,8 +1295,8 @@ ISSUE_TOOLS: tuple[Tool, ...] = (
         name="bulk_update_issues",
         description=(
             f"Apply one change to up to {BULK_MAX_ISSUES} issues at once: status, assignee, priority, labels added "
-            "or removed, project, milestone, cycle, estimate, parent issue, or archived. All or nothing: one refused issue "
-            "changes none. Status, label, cycle, project and milestone accept names when the issues share a team. "
+            "or removed, project, milestone, cycle, estimate, parent issue, or archived. All or nothing: one refused "
+            "issue changes none. Status, label, cycle, project and milestone accept names when the issues share a team. "
             "Answers the written issues and the ids skipped."
         ),
         scopes=("issues:write",),
