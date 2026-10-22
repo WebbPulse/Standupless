@@ -220,8 +220,12 @@ def write_notification(
     comment_excerpt: str = "",
     headline_key: str | None = None,
     source: str | None = None,
+    new_value: str | None = None,
 ) -> bool:
     """Write one inbox row, unless the recipient is the actor or cannot see it.
+
+    `new_value` is what the subject became, such as the status name a change moved
+    to, so the row can say "moved to Done" without a read at render time.
 
     The recipient's preferences for this kind decide the rest. With the inbox off
     the row is still written but already read, so it never raises the badge and
@@ -258,6 +262,7 @@ def write_notification(
         issue_title=issue.title,
         team_id=issue.team_id,
         comment_id=comment_id,
+        new_value=new_value,
         actor_id=actor_id,
         actor_name=actor_display,
         source=source,
@@ -333,10 +338,12 @@ def handle_issue_record(repositories: Repositories, record: Mapping[str, Any]) -
     new_status = _text(new_image, "status_id")
     old_status = _text(old_image, "status_id")
     if old_image and new_status and new_status != old_status:
+        status = repositories.team_config.get_status(workspace_id, issue.team_id, new_status)
+        moved_to = {"new_value": status.name} if status is not None and status.name else {}
         if new_assignee:
-            plan(new_assignee, STATUS_CHANGED, f"{issue_id}#status#{new_status}")
+            plan(new_assignee, STATUS_CHANGED, f"{issue_id}#status#{new_status}", **moved_to)
         for recipient_id in sorted(set(repositories.subscriptions.user_ids(workspace_id, issue_id))):
-            plan(recipient_id, STATUS_CHANGED, f"{issue_id}#status#{new_status}")
+            plan(recipient_id, STATUS_CHANGED, f"{issue_id}#status#{new_status}", **moved_to)
 
     written = 0
     for recipient_id in cap_recipients(list(planned), workspace_id=workspace_id, source=f"issue#{issue_id}"):

@@ -7982,7 +7982,7 @@
         "type": "object"
       },
       "NotificationRead": {
-        "description": "One inbox row as the API returns it.\n\nA `project_update` notification names its project and update and leaves the\nissue fields empty. A `standup_digest` carries the team key in `issue_key`,\nthe team name in `issue_title` and the digest date in `standup_date`. A\n`review_requested` notification carries the pull request's `owner/repo#number`\nin `issue_key`, its title in `issue_title` and its GitHub address in `url`.\nAn `initiative_update_due` reminder names its initiative, carries an empty\n`team_id` and says in `due_state` whether the update is due or overdue.",
+        "description": "One inbox row as the API returns it.\n\nA `project_update` notification names its project and update and leaves the\nissue fields empty. A `standup_digest` carries the team key in `issue_key`,\nthe team name in `issue_title` and the digest date in `standup_date`. A\n`review_requested` notification carries the pull request's `owner/repo#number`\nin `issue_key`, its title in `issue_title` and its GitHub address in `url`.\nAn `initiative_update_due` reminder names its initiative, carries an empty\n`team_id` and says in `due_state` whether the update is due or overdue.\n`summary` is the line the row reads, naming who acted and, for a status change,\nthe status it moved to, which `new_value` also carries on its own.",
         "properties": {
           "actor_id": {
             "title": "Actor Id",
@@ -8065,6 +8065,17 @@
             "title": "Kind",
             "type": "string"
           },
+          "new_value": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "New Value"
+          },
           "notification_id": {
             "title": "Notification Id",
             "type": "string"
@@ -8143,6 +8154,11 @@
               }
             ],
             "title": "Standup Date"
+          },
+          "summary": {
+            "default": "",
+            "title": "Summary",
+            "type": "string"
           },
           "team_id": {
             "title": "Team Id",
@@ -25616,7 +25632,7 @@
     },
     "/api/workspaces/{workspace_id}/inbox": {
       "get": {
-        "description": "The caller's own notifications, newest first.\n\nA notification whose issue or comment has since been deleted still renders,\ncarrying the title it was written with, rather than 404ing a whole list for one\nstale row.\n\nSnoozed notifications stay out of both lists until their time comes; `snoozed=true`\nlists only them, and is refused beside `unread=true` since nothing is both.",
+        "description": "The caller's own notifications, newest first.\n\nA notification whose issue or comment has since been deleted still renders,\ncarrying the title it was written with, rather than 404ing a whole list for one\nstale row.\n\nSnoozed notifications stay out of both lists until their time comes; `snoozed=true`\nlists only them, and is refused beside `unread=true` since nothing is both.\n`include_snoozed=true` keeps snoozed rows in either list, and each repeated\n`kind` keeps only that notification kind.",
         "operationId": "list_inbox_api_workspaces__workspace_id__inbox_get",
         "parameters": [
           {
@@ -25647,6 +25663,30 @@
               "default": false,
               "title": "Snoozed",
               "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "include_snoozed",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Include Snoozed",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "kind",
+            "required": false,
+            "schema": {
+              "default": [],
+              "items": {
+                "type": "string"
+              },
+              "maxItems": 19,
+              "title": "Kind",
+              "type": "array"
             }
           },
           {

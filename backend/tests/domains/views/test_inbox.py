@@ -28,6 +28,8 @@ def put_notification(
     unread: bool = True,
     kind: str = "assigned",
     minutes: int = 0,
+    new_value: str | None = None,
+    actor_name: str = "Olive Owner",
 ) -> Notification:
     """Write one inbox row straight in, so a route test needs no consumer run."""
     created_at = BASE + timedelta(minutes=minutes)
@@ -41,8 +43,9 @@ def put_notification(
         issue_title="An issue",
         team_id=TEAM,
         comment_id=None,
+        new_value=new_value,
         actor_id=OWNER,
-        actor_name="Olive Owner",
+        actor_name=actor_name,
         recipient_id=recipient_id,
         created_at=created_at,
         unread_at=created_at.isoformat() if unread else None,
@@ -456,3 +459,96 @@ def test_a_non_member_cannot_mark_unread_or_snooze(client: TestClient, workspace
         ).status_code
         == 404
     )
+
+
+def _snooze(client: TestClient, workspace: str, notification_id: str) -> None:
+    """Snooze one of the signed in member's rows for three hours."""
+    until = (datetime.now(timezone.utc) + timedelta(hours=3)).isoformat()
+    response = client.post(
+        f"/api/workspaces/{workspace}/inbox/snooze", json={"notification_ids": [notification_id], "until": until}
+    )
+    assert response.status_code == 200
+
+
+def test_the_inbox_filters_by_kind(client: TestClient, workspace: str, repositories: Any) -> None:
+    """Each repeated `kind` is ORed, and every other kind stays out of the page."""
+    put_notification(repositories, MEMBER, "01N0000000000000000000A000", kind="assigned", minutes=0)
+    put_notification(repositories, MEMBER, "01N0000000000000000000B000", kind="commented", minutes=1)
+    put_notification(repositories, MEMBER, "01N0000000000000000000C000", kind="status_changed", minutes=2)
+
+    sign_in(client, MEMBER)
+    url = f"/api/workspaces/{workspace}/inbox"
+
+    assert _ids(client.get(url, params={"kind": ["assigned", "status_changed"]})) == [
+        "01N0000000000000000000C000",
+        "01N0000000000000000000A000",
+    ]
+    assert _ids(client.get(url, params={"kind": "commented", "unread": True})) == ["01N0000000000000000000B000"]
+
+
+def test_an_unknown_kind_is_rejected(client: TestClient, workspace: str) -> None:
+    """A misspelt kind would silently empty the list, so it is a 422 instead."""
+    sign_in(client, MEMBER)
+
+    response = client.get(f"/api/workspaces/{workspace}/inbox", params={"kind": "nonsense"})
+
+    assert response.status_code == 422
+
+
+def test_include_snoozed_keeps_snoozed_rows_in_both_lists(
+    client: TestClient, workspace: str, repositories: Any
+) -> None:
+    """The display option to show snoozed rows keeps them beside the rest, newest first."""
+    put_notification(repositories, MEMBER, "01N0000000000000000000A000", minutes=0)
+    put_notification(repositories, MEMBER, "01N0000000000000000000B000", minutes=1)
+    put_notification(repositories, MEMBER, "01N0000000000000000000C000", minutes=2, unread=False)
+
+    sign_in(client, MEMBER)
+    _snooze(client, workspace, "01N0000000000000000000B000")
+    url = f"/api/workspaces/{workspace}/inbox"
+
+    assert _ids(client.get(url)) == ["01N0000000000000000000C000", "01N0000000000000000000A000"]
+    assert _ids(client.get(url, params={"include_snoozed": True})) == [
+        "01N0000000000000000000C000",
+        "01N0000000000000000000B000",
+        "01N0000000000000000000A000",
+    ]
+    assert _ids(client.get(url, params={"include_snoozed": True, "unread": True})) == [
+        "01N0000000000000000000B000",
+        "01N0000000000000000000A000",
+    ]
+
+
+def test_a_cursor_does_not_cross_a_kind_filter(client: TestClient, workspace: str, repositories: Any) -> None:
+    """A cursor minted under one kind filter starts another filter from its first page."""
+    for index in range(3):
+        put_notification(repositories, MEMBER, f"01N0000000000000000000A00{index}", kind="assigned", minutes=index)
+
+    sign_in(client, MEMBER)
+    url = f"/api/workspaces/{workspace}/inbox"
+    cursor = client.get(url, params={"kind": "assigned", "limit": 1}).json()["next_cursor"]
+
+    assert cursor
+    assert _ids(client.get(url, params={"kind": "assigned", "limit": 1, "cursor": cursor})) == [
+        "01N0000000000000000000A001"
+    ]
+    assert _ids(client.get(url, params={"limit": 1, "cursor": cursor})) == ["01N0000000000000000000A002"]
+
+
+def test_a_row_says_who_changed_what(client: TestClient, workspace: str, repositories: Any) -> None:
+    """The summary names the actor and the new value, and falls back when either is missing."""
+    put_notification(repositories, MEMBER, "01N0000000000000000000A000", kind="status_changed", new_value="Done")
+    put_notification(repositories, MEMBER, "01N0000000000000000000B000", kind="status_changed", minutes=1)
+    put_notification(repositories, MEMBER, "01N0000000000000000000C000", kind="assigned", minutes=2)
+    put_notification(repositories, MEMBER, "01N0000000000000000000D000", kind="commented", minutes=3, actor_name="")
+
+    sign_in(client, MEMBER)
+    rows = client.get(f"/api/workspaces/{workspace}/inbox").json()["notifications"]
+    by_id = {row["notification_id"]: row for row in rows}
+
+    assert by_id["01N0000000000000000000A000"]["summary"] == "Olive Owner moved to Done"
+    assert by_id["01N0000000000000000000A000"]["new_value"] == "Done"
+    assert by_id["01N0000000000000000000B000"]["summary"] == "Olive Owner changed the status"
+    assert by_id["01N0000000000000000000B000"]["new_value"] is None
+    assert by_id["01N0000000000000000000C000"]["summary"] == "Olive Owner assigned you"
+    assert by_id["01N0000000000000000000D000"]["summary"] == "New comment"

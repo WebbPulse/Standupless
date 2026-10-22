@@ -18,6 +18,7 @@ from webbpulse.http import cursor_page
 from app.common.change_source import ChangeSource
 from app.common.db.dynamo.inbox import Notification
 from app.common.db.dynamo.views import SavedView
+from app.common.inbox_summary import notification_summary
 
 SortField = Literal[
     "updated_desc",
@@ -385,6 +386,8 @@ class NotificationRead(BaseModel):
     in `issue_key`, its title in `issue_title` and its GitHub address in `url`.
     An `initiative_update_due` reminder names its initiative, carries an empty
     `team_id` and says in `due_state` whether the update is due or overdue.
+    `summary` is the line the row reads, naming who acted and, for a status change,
+    the status it moved to, which `new_value` also carries on its own.
     """
 
     notification_id: str
@@ -403,6 +406,8 @@ class NotificationRead(BaseModel):
     due_state: Optional[DueStateField] = None
     standup_date: Optional[str] = None
     url: Optional[str] = None
+    new_value: Optional[str] = None
+    summary: str = ""
     actor_id: str
     actor_name: str
     source: Optional[ChangeSource] = None
@@ -431,6 +436,8 @@ class NotificationRead(BaseModel):
             due_state=_due_state(notification.due_state),
             standup_date=notification.standup_date,
             url=notification.url,
+            new_value=notification.new_value,
+            summary=notification_summary(notification),
             actor_id=notification.actor_id,
             actor_name=notification.actor_name,
             source=notification.source,  # pyright: ignore[reportArgumentType]

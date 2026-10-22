@@ -24,7 +24,7 @@ from webbpulse.http import CursorPage
 from app.common.api.dependencies.authz import AuthzContext, Capability, require
 from app.common.api.dependencies.repositories import Repositories, get_repositories
 from app.common.inbox import delete_notification as delete_row
-from app.common.inbox import list_notifications
+from app.common.inbox import INBOX_KINDS, list_notifications
 from app.common.inbox import mark_read as mark_rows_read
 from app.common.inbox import mark_unread as mark_rows_unread
 from app.common.inbox import snooze as snooze_rows
@@ -42,12 +42,16 @@ from app.domains.views.schemas.view import (
 
 router = APIRouter()
 
+INBOX_MAX_KINDS = len(INBOX_KINDS)
+
 
 @router.get("/{workspace_id}/inbox", response_model=InboxListRead)
 def list_inbox(
     workspace_id: str = Path(..., min_length=1),
     unread: bool = Query(default=False),
     snoozed: bool = Query(default=False),
+    include_snoozed: bool = Query(default=False),
+    kind: list[str] = Query(default=[], max_length=INBOX_MAX_KINDS),
     cursor: Optional[str] = Query(default=None),
     limit: int = Query(default=INBOX_DEFAULT_LIMIT, ge=1, le=INBOX_MAX_LIMIT),
     context: AuthzContext = Depends(require(Capability.WORKSPACE_READ)),
@@ -61,9 +65,18 @@ def list_inbox(
 
     Snoozed notifications stay out of both lists until their time comes; `snoozed=true`
     lists only them, and is refused beside `unread=true` since nothing is both.
+    `include_snoozed=true` keeps snoozed rows in either list, and each repeated
+    `kind` keeps only that notification kind.
     """
     items, next_cursor = list_notifications(
-        repositories, context, unread=unread, snoozed=snoozed, cursor=cursor, limit=limit
+        repositories,
+        context,
+        unread=unread,
+        snoozed=snoozed,
+        include_snoozed=include_snoozed,
+        kinds=kind,
+        cursor=cursor,
+        limit=limit,
     )
     return InboxListRead(items=items, next_cursor=next_cursor)
 

@@ -6,14 +6,20 @@
  * their own rows and the page never has to decide whose inbox it is showing.
  * The selection lives in the URL, so a link lands on the same row.
  *
+ * Notifications about one issue, project or initiative fold into one row that
+ * reads the newest change, who made it and how many there are, and opening
+ * the row marks every one of them read. Filter narrows the list to chosen
+ * notification types, and Display decides whether read and snoozed rows stay.
+ *
  * Triage runs from the keyboard the way Linear's does: U toggles read and
  * unread, H snoozes until a chosen moment, Backspace removes, and Shift R
  * marks everything read. A snoozed row leaves the list and the badge and comes
- * back unread on its own when its time comes; the Snoozed tab lists what is
- * still waiting, and H on a snoozed row offers to unsnooze it now.
+ * back unread on its own when its time comes; Show snoozed lists what is still
+ * waiting, and H on a snoozed row offers to unsnooze it now.
  *
- * Opening a row in the Unread tab marks it read without pulling it out from
- * under the reader: the open row holds its place until the selection moves.
+ * Opening a row while read rows are hidden marks it read without pulling it
+ * out from under the reader: the open row holds its place until the selection
+ * moves.
  *
  * A project update row names its project rather than an issue, and its pane
  * offers the project's Updates tab, since there is no issue to peek.
@@ -81,8 +87,23 @@ import {
   teamSettingsPath,
   teamStandupPath,
 } from '../../lib/paths';
-import { inboxCountKey, inboxKey, type InboxFilter } from '../../lib/queryKeys';
+import { inboxCountKey, inboxKey } from '../../lib/queryKeys';
 import type { InboxKind, NotificationRead } from '../../types/Api';
+import {
+  DEFAULT_VIEW,
+  batches,
+  groupIds,
+  groupNotifications,
+  groupSnoozedUntil,
+  parseView,
+  snoozedIds,
+  unreadIds,
+  viewQuery,
+  viewSlice,
+  type InboxGroup,
+  type InboxView,
+} from './groups';
+import { InboxDisplayMenu, InboxFilterMenu } from './InboxViewMenus';
 import { keepPinned, type PinnedRow } from './pinned';
 import { SNOOZE_PRESETS, snoozeLabel } from './snooze';
 
@@ -94,20 +115,6 @@ const PAGE_SIZE = 50;
 
 /** The URL parameter holding the selected notification. */
 const SELECTED_PARAM = 'n';
-
-/** The inbox slices, in the order the tabs show them. */
-const FILTERS: { id: InboxFilter; label: string }[] = [
-  { id: 'all', label: 'All' },
-  { id: 'unread', label: 'Unread' },
-  { id: 'snoozed', label: 'Snoozed' },
-];
-
-/** What an empty list says, per slice. */
-const EMPTY_MESSAGES: Record<InboxFilter, string> = {
-  all: 'Nothing here yet.',
-  unread: 'Nothing unread.',
-  snoozed: 'Nothing snoozed.',
-};
 
 /** How each kind of notification reads in the interface. */
 const KIND_LABELS: Record<InboxKind, string> = {
@@ -570,9 +577,19 @@ const InitiativeUpdatePane: React.FC<InitiativeUpdatePaneProps> = ({
   );
 };
 
+/** The line a row reads: the server's summary, or a label built here for an older row. */
+const rowSummary = (row: NotificationRead): string => {
+  if (row.summary) return row.summary;
+  const label =
+    isInitiativeRow(row) && row.due_state === 'overdue'
+      ? 'Initiative update overdue'
+      : kindLabel(row.kind);
+  return row.actor_name === '' ? label : `${label} by ${row.actor_name}`;
+};
+
 /** Props for InboxRow. */
 interface InboxRowProps {
-  row: NotificationRead;
+  group: InboxGroup;
   selected: boolean;
   onSelect: () => void;
   onToggleRead: () => void;
@@ -580,9 +597,9 @@ interface InboxRowProps {
   onRemove: () => void;
 }
 
-/** One notification: who did what to which issue or project, and its row actions. */
+/** One subject's notifications as one row: its newest change, who made it, and how many there are. */
 const InboxRow: React.FC<InboxRowProps> = ({
-  row,
+  group,
   selected,
   onSelect,
   onToggleRead,
@@ -593,7 +610,10 @@ const InboxRow: React.FC<InboxRowProps> = ({
   useEffect(() => {
     if (selected) ref.current?.scrollIntoView?.({ block: 'nearest' });
   }, [selected]);
+  const row = group.latest;
   const actor = row.actor_name === '' ? 'Someone' : row.actor_name;
+  const count = group.rows.length;
+  const snoozedUntil = groupSnoozedUntil(group);
   return (
     <li
       ref={ref}
@@ -610,7 +630,7 @@ const InboxRow: React.FC<InboxRowProps> = ({
         aria-hidden="true"
         className={cn(
           'mt-2 h-1.5 w-1.5 shrink-0 rounded-full',
-          row.unread ? 'bg-accent' : 'bg-transparent'
+          group.unread ? 'bg-accent' : 'bg-transparent'
         )}
       />
       <Avatar name={actor} size="xs" className="mt-0.5 shrink-0" />
@@ -624,13 +644,21 @@ const InboxRow: React.FC<InboxRowProps> = ({
           <span
             className={cn(
               'min-w-0 flex-1 truncate text-sm',
-              row.unread ? 'font-medium text-text' : 'text-text-muted'
+              group.unread ? 'font-medium text-text' : 'text-text-muted'
             )}
           >
             {isProjectRow(row) || isInitiativeRow(row) || isStandupRow(row)
               ? subjectName(row)
               : row.issue_title}
           </span>
+          {count > 1 && (
+            <span
+              aria-label={`${count} notifications`}
+              className="shrink-0 rounded-sm bg-surface px-1 text-2xs tabular-nums text-text-muted"
+            >
+              {count}
+            </span>
+          )}
           <Tooltip text={fullTimestamp(row.created_at)} side="top">
             <time
               dateTime={row.created_at}
@@ -673,22 +701,16 @@ const InboxRow: React.FC<InboxRowProps> = ({
             </span>
           )}
           <span className="min-w-0 truncate">
-            {row.snoozed_until
-              ? snoozeLabel(row.snoozed_until)
-              : [
-                  isInitiativeRow(row) && row.due_state === 'overdue'
-                    ? 'Initiative update overdue'
-                    : kindLabel(row.kind),
-                  row.actor_name === '' ? null : `by ${row.actor_name}`,
-                  viaLabel(row.source),
-                ]
+            {snoozedUntil
+              ? snoozeLabel(snoozedUntil)
+              : [rowSummary(row), viaLabel(row.source)]
                   .filter((part) => part !== null)
                   .join(' ')}
           </span>
         </span>
       </button>
       <span className="relative flex shrink-0 items-center gap-0.5 opacity-100 sm:pointer-fine:absolute sm:pointer-fine:right-2 sm:pointer-fine:bottom-1.5 sm:pointer-fine:rounded-sm sm:pointer-fine:bg-raised sm:pointer-fine:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100">
-        {row.unread ? (
+        {group.unread ? (
           <IconButton
             label={`Mark ${subjectName(row)} read`}
             size="sm"
@@ -734,31 +756,66 @@ interface UnreadOverride {
   was: boolean;
 }
 
-/** Lists the caller's notifications beside the selected one's issue. */
+/** Where the inbox keeps the viewer's filter and display choices between visits. */
+const VIEW_STORAGE_KEY = 'standupless.inbox.view';
+
+/** The stored view, or the default when storage is empty or out of reach. */
+const loadView = (): InboxView => {
+  try {
+    return parseView(globalThis.localStorage.getItem(VIEW_STORAGE_KEY));
+  } catch {
+    return DEFAULT_VIEW;
+  }
+};
+
+/** Remembers a view for the next visit, quietly when storage is out of reach. */
+const storeView = (view: InboxView): void => {
+  try {
+    globalThis.localStorage.setItem(VIEW_STORAGE_KEY, JSON.stringify(view));
+  } catch {
+    return;
+  }
+};
+
+/** What an empty list says, given the view that emptied it. */
+const emptyMessage = (view: InboxView): string =>
+  view.categories.length > 0
+    ? 'Nothing matches this filter.'
+    : view.showRead
+      ? 'Nothing here yet.'
+      : 'Nothing unread.';
+
+/** Lists the caller's notifications, one row per subject, beside the selected one's issue. */
 export const Inbox: React.FC = () => {
   const { workspace } = useWorkspace();
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
-  const [filter, setFilter] = useState<InboxFilter>('all');
+  const [view, setView] = useState<InboxView>(loadView);
   const [unreadOverrides, setUnreadOverrides] = useState<
     Record<string, UnreadOverride>
   >({});
-  const [snoozing, setSnoozing] = useState<NotificationRead | null>(null);
+  const [snoozing, setSnoozing] = useState<InboxGroup | null>(null);
   const [pinned, setPinned] = useState<PinnedRow | null>(null);
 
   const workspaceId = workspace?.id ?? '';
   const slug = workspace?.slug ?? '';
   const enabled = workspaceId !== '';
-  const queryKey = inboxKey(workspaceId, filter);
+  const queryKey = inboxKey(workspaceId, viewSlice(view));
+  const query = useMemo(() => viewQuery(view), [view]);
   const selectedId = params.get(SELECTED_PARAM);
+
+  const changeView = useCallback((next: InboxView) => {
+    setView(next);
+    storeView(next);
+    setPinned(null);
+  }, []);
 
   const read = useCallback(
     (cursor: string | undefined, signal?: AbortSignal) =>
       listInbox(
         workspaceId,
         {
-          ...(filter === 'unread' ? { unread: true } : {}),
-          ...(filter === 'snoozed' ? { snoozed: true } : {}),
+          ...query,
           ...(cursor === undefined ? {} : { cursor }),
           limit: PAGE_SIZE,
         },
@@ -767,7 +824,7 @@ export const Inbox: React.FC = () => {
         rows: page.notifications,
         nextCursor: page.next_cursor,
       })),
-    [workspaceId, filter]
+    [workspaceId, query]
   );
 
   const merge = useCallback(
@@ -785,15 +842,17 @@ export const Inbox: React.FC = () => {
     loadMore,
   } = useCursorPages(read, merge, { queryKey, enabled, intervalMs: POLL_MS });
 
-  const rows = useMemo(
+  const groups = useMemo(
     () =>
       keepPinned(
-        fetched.map((row) => {
-          const held = unreadOverrides[row.notification_id];
-          return held === undefined || held.was !== row.unread
-            ? row
-            : { ...row, unread: held.unread };
-        }),
+        groupNotifications(
+          fetched.map((row) => {
+            const held = unreadOverrides[row.notification_id];
+            return held === undefined || held.was !== row.unread
+              ? row
+              : { ...row, unread: held.unread };
+          })
+        ),
         pinned,
         selectedId
       ),
@@ -801,55 +860,56 @@ export const Inbox: React.FC = () => {
   );
 
   const setUnread = useCallback(
-    (notificationId: string, unread: boolean) => {
-      const row = fetched.find((one) => one.notification_id === notificationId);
-      if (row === undefined) return;
-      setUnreadOverrides((held) => ({
-        ...held,
-        [notificationId]: { unread, was: row.unread },
-      }));
+    (notificationIds: string[], unread: boolean) => {
+      const wanted = new Set(notificationIds);
+      setUnreadOverrides((held) => {
+        const next = { ...held };
+        for (const row of fetched) {
+          if (wanted.has(row.notification_id))
+            next[row.notification_id] = { unread, was: row.unread };
+        }
+        return next;
+      });
     },
     [fetched]
   );
 
   const refetchKeys = [queryKey, inboxCountKey(workspaceId)];
 
-  const { mutate: readOne, error: readError } = useMutationWithRefetch(
-    (notificationId: string) => {
-      setUnread(notificationId, false);
-      return markRead(workspaceId, { notification_ids: [notificationId] });
+  const { mutate: readMany, error: readError } = useMutationWithRefetch(
+    (notificationIds: string[]) => {
+      setUnread(notificationIds, false);
+      return Promise.all(
+        batches(notificationIds).map((batch) =>
+          markRead(workspaceId, { notification_ids: batch })
+        )
+      );
     },
     refetchKeys
   );
 
-  const { mutate: unreadOne, error: unreadError } = useMutationWithRefetch(
-    (notificationId: string) => {
-      setUnread(notificationId, true);
-      return markUnread(workspaceId, { notification_ids: [notificationId] });
+  const { mutate: unreadMany, error: unreadError } = useMutationWithRefetch(
+    (notificationIds: string[]) => {
+      setUnread(notificationIds, true);
+      return markUnread(workspaceId, { notification_ids: notificationIds });
     },
     refetchKeys
   );
-
-  const everyKey = [
-    inboxKey(workspaceId, 'all'),
-    inboxKey(workspaceId, 'unread'),
-    inboxKey(workspaceId, 'snoozed'),
-    inboxCountKey(workspaceId),
-  ];
 
   const { mutate: snooze, error: snoozeError } = useMutationWithRefetch(
-    ({ notificationId, until }: { notificationId: string; until: string }) =>
-      snoozeNotifications(workspaceId, {
-        notification_ids: [notificationId],
-        until,
-      }),
-    everyKey
+    ({ notificationIds, until }: { notificationIds: string[]; until: string }) =>
+      Promise.all(
+        batches(notificationIds).map((batch) =>
+          snoozeNotifications(workspaceId, { notification_ids: batch, until })
+        )
+      ),
+    refetchKeys
   );
 
   const { mutate: unsnooze, error: unsnoozeError } = useMutationWithRefetch(
-    (notificationId: string) =>
-      markUnread(workspaceId, { notification_ids: [notificationId] }),
-    everyKey
+    (notificationIds: string[]) =>
+      markUnread(workspaceId, { notification_ids: notificationIds }),
+    refetchKeys
   );
 
   const {
@@ -859,75 +919,90 @@ export const Inbox: React.FC = () => {
   } = useMutationWithRefetch(() => markAllRead(workspaceId), refetchKeys);
 
   const { mutate: remove, error: removeError } = useMutationWithRefetch(
-    (notificationId: string) => deleteNotification(workspaceId, notificationId),
+    (notificationIds: string[]) =>
+      Promise.all(
+        notificationIds.map((notificationId) =>
+          deleteNotification(workspaceId, notificationId)
+        )
+      ),
     refetchKeys
   );
 
   const selected = useMemo(
-    () => rows.find((row) => row.notification_id === selectedId) ?? null,
-    [rows, selectedId]
+    () =>
+      selectedId === null
+        ? null
+        : (groups.find((group) =>
+            group.rows.some((row) => row.notification_id === selectedId)
+          ) ?? null),
+    [groups, selectedId]
   );
-  const selectedIndex = selected === null ? -1 : rows.indexOf(selected);
+  const selectedIndex = selected === null ? -1 : groups.indexOf(selected);
 
   const select = useCallback(
-    (row: NotificationRead | null) => {
+    (group: InboxGroup | null) => {
       const next = new URLSearchParams(params);
-      if (row === null) {
+      if (group === null) {
         next.delete(SELECTED_PARAM);
         setPinned(null);
       } else {
-        next.set(SELECTED_PARAM, row.notification_id);
+        next.set(SELECTED_PARAM, group.latest.notification_id);
         setPinned({
-          row: { ...row, unread: false },
-          index: Math.max(0, rows.indexOf(row)),
+          group: {
+            ...group,
+            unread: false,
+            latest: { ...group.latest, unread: false },
+            rows: group.rows.map((row) => ({ ...row, unread: false })),
+          },
+          index: Math.max(0, groups.indexOf(group)),
         });
-        if (row.unread)
-          void readOne(row.notification_id).catch(() => undefined);
+        const ids = unreadIds(group);
+        if (ids.length > 0) void readMany(ids).catch(() => undefined);
       }
       setParams(next, { replace: true });
     },
-    [params, setParams, readOne, rows]
+    [params, setParams, readMany, groups]
   );
 
   const step = (delta: number): void => {
-    if (rows.length === 0) return;
+    if (groups.length === 0) return;
     const from =
-      selectedIndex === -1 ? (delta > 0 ? -1 : rows.length) : selectedIndex;
-    const to = Math.min(rows.length - 1, Math.max(0, from + delta));
-    const row = rows[to];
-    if (row !== undefined && row !== selected) select(row);
+      selectedIndex === -1 ? (delta > 0 ? -1 : groups.length) : selectedIndex;
+    const to = Math.min(groups.length - 1, Math.max(0, from + delta));
+    const group = groups[to];
+    if (group !== undefined && group !== selected) select(group);
   };
 
-  const stepPast = (row: NotificationRead): void => {
-    if (row !== selected) return;
+  const stepPast = (group: InboxGroup): void => {
+    if (group !== selected) return;
     const neighbour =
-      rows[selectedIndex + 1] ?? rows[selectedIndex - 1] ?? null;
+      groups[selectedIndex + 1] ?? groups[selectedIndex - 1] ?? null;
     select(neighbour);
   };
 
-  const removeRow = (row: NotificationRead): void => {
-    stepPast(row);
-    void remove(row.notification_id).catch(() => undefined);
+  const removeGroup = (group: InboxGroup): void => {
+    stepPast(group);
+    void remove(groupIds(group)).catch(() => undefined);
   };
 
-  const toggleRead = (row: NotificationRead): void => {
-    if (row.unread) void readOne(row.notification_id).catch(() => undefined);
-    else void unreadOne(row.notification_id).catch(() => undefined);
+  const toggleRead = (group: InboxGroup): void => {
+    if (group.unread) void readMany(unreadIds(group)).catch(() => undefined);
+    else
+      void unreadMany([group.latest.notification_id]).catch(() => undefined);
   };
 
-  const snoozeRow = (row: NotificationRead, until: Date): void => {
+  const snoozeGroup = (group: InboxGroup, until: Date): void => {
     setSnoozing(null);
-    stepPast(row);
+    if (!view.showSnoozed) stepPast(group);
     void snooze({
-      notificationId: row.notification_id,
+      notificationIds: groupIds(group),
       until: until.toISOString(),
     }).catch(() => undefined);
   };
 
-  const unsnoozeRow = (row: NotificationRead): void => {
+  const unsnoozeGroup = (group: InboxGroup): void => {
     setSnoozing(null);
-    if (filter === 'snoozed') stepPast(row);
-    void unsnooze(row.notification_id).catch(() => undefined);
+    void unsnooze(snoozedIds(group)).catch(() => undefined);
   };
 
   const readEverything = (): void => {
@@ -942,7 +1017,8 @@ export const Inbox: React.FC = () => {
     void readAll().catch(() => undefined);
   };
 
-  const hasRows = rows.length > 0;
+  const hasRows = groups.length > 0;
+  const current = selected?.latest ?? null;
   useShortcut({
     keys: 'j',
     label: 'Next notification',
@@ -983,11 +1059,11 @@ export const Inbox: React.FC = () => {
     keys: 'enter',
     label: 'Open notification',
     group: 'Inbox',
-    enabled: selected !== null,
+    enabled: current !== null,
     handler: () => {
-      if (selected === null) return;
-      if (isReviewRow(selected) && selected.url) openPullRequest(selected);
-      else void navigate(rowPath(slug, selected));
+      if (current === null) return;
+      if (isReviewRow(current) && current.url) openPullRequest(current);
+      else void navigate(rowPath(slug, current));
     },
   });
   useShortcut({
@@ -1005,7 +1081,7 @@ export const Inbox: React.FC = () => {
     group: 'Inbox',
     enabled: selected !== null,
     handler: () => {
-      if (selected !== null) removeRow(selected);
+      if (selected !== null) removeGroup(selected);
     },
   });
 
@@ -1059,41 +1135,22 @@ export const Inbox: React.FC = () => {
       : m3ErrorMessage(removeError, 'Could not remove that row.'),
   ].filter((message): message is string => message !== null);
 
+  const closePane = (): void => {
+    select(null);
+  };
+
   return (
     <WorkspaceShell
       title="Inbox"
       flush
       actions={
-        <>
-          <div
-            role="group"
-            aria-label="Show"
-            className="mr-2 flex items-center gap-0.5 rounded-md border border-line p-0.5"
-          >
-            {FILTERS.map((option) => (
-              <button
-                key={option.id}
-                type="button"
-                aria-pressed={filter === option.id}
-                onClick={() => {
-                  setFilter(option.id);
-                  setPinned(null);
-                }}
-                className={cn(
-                  'rounded-sm px-2 py-0.5 text-xs transition-colors pointer-coarse:px-3 pointer-coarse:py-2.5 duration-100 focus-visible:outline-2 focus-visible:outline-accent',
-                  filter === option.id
-                    ? 'bg-raised text-text'
-                    : 'text-text-muted hover:text-text'
-                )}
-              >
-                {option.label}
-              </button>
-            ))}
-          </div>
+        <div className="flex items-center gap-1.5">
+          <InboxFilterMenu view={view} onChange={changeView} />
+          <InboxDisplayMenu view={view} onChange={changeView} />
           <Button
             variant="secondary"
             size="sm"
-            disabled={isReadingAll || rows.length === 0}
+            disabled={isReadingAll || groups.length === 0}
             onClick={readEverything}
           >
             <LuCheckCheck className="h-3.5 w-3.5" aria-hidden="true" />
@@ -1101,7 +1158,7 @@ export const Inbox: React.FC = () => {
               {isReadingAll ? 'Marking' : 'Mark all read'}
             </span>
           </Button>
-        </>
+        </div>
       }
     >
       <div className="flex min-h-0 flex-1">
@@ -1123,28 +1180,28 @@ export const Inbox: React.FC = () => {
             <div className="p-6">
               <Spinner label="Loading inbox" />
             </div>
-          ) : rows.length === 0 ? (
+          ) : groups.length === 0 ? (
             <div className="p-6 lg:hidden">
-              <EmptyState icon={<LuInbox />} message={EMPTY_MESSAGES[filter]} />
+              <EmptyState icon={<LuInbox />} message={emptyMessage(view)} />
             </div>
           ) : (
             <ul>
-              {rows.map((row) => (
+              {groups.map((group) => (
                 <InboxRow
-                  key={row.notification_id}
-                  row={row}
-                  selected={row === selected}
+                  key={group.key}
+                  group={group}
+                  selected={group === selected}
                   onSelect={() => {
-                    select(row);
+                    select(group);
                   }}
                   onToggleRead={() => {
-                    toggleRead(row);
+                    toggleRead(group);
                   }}
                   onSnooze={() => {
-                    setSnoozing(row);
+                    setSnoozing(group);
                   }}
                   onRemove={() => {
-                    removeRow(row);
+                    removeGroup(group);
                   }}
                 />
               ))}
@@ -1169,76 +1226,62 @@ export const Inbox: React.FC = () => {
             selected === null ? 'hidden lg:flex' : 'flex'
           )}
         >
-          {selected === null ? (
+          {current === null ? (
             <div className="flex flex-1 flex-col items-center justify-center gap-2 text-sm text-text-faint">
               <LuInbox aria-hidden="true" className="h-8 w-8" />
               <p>
-                {rows.length === 0
+                {groups.length === 0
                   ? 'You are all caught up.'
                   : 'Select a notification to see its issue.'}
               </p>
             </div>
-          ) : isReviewRow(selected) ? (
+          ) : isReviewRow(current) ? (
             <ReviewRequestPane
-              key={selected.notification_id}
-              row={selected}
+              key={current.notification_id}
+              row={current}
               slug={slug}
-              onClose={() => {
-                select(null);
-              }}
+              onClose={closePane}
             />
-          ) : isJobRow(selected) ? (
+          ) : isJobRow(current) ? (
             <JobNoticePane
-              key={selected.notification_id}
-              row={selected}
+              key={current.notification_id}
+              row={current}
               slug={slug}
-              onClose={() => {
-                select(null);
-              }}
+              onClose={closePane}
             />
-          ) : isChannelRow(selected) ? (
+          ) : isChannelRow(current) ? (
             <ChannelNoticePane
-              key={selected.notification_id}
-              row={selected}
+              key={current.notification_id}
+              row={current}
               slug={slug}
-              onClose={() => {
-                select(null);
-              }}
+              onClose={closePane}
             />
-          ) : isStandupRow(selected) ? (
+          ) : isStandupRow(current) ? (
             <StandupPane
-              key={selected.notification_id}
-              row={selected}
+              key={current.notification_id}
+              row={current}
               slug={slug}
-              onClose={() => {
-                select(null);
-              }}
+              onClose={closePane}
             />
-          ) : isInitiativeRow(selected) ? (
+          ) : isInitiativeRow(current) ? (
             <InitiativeUpdatePane
-              key={selected.notification_id}
-              row={selected}
+              key={current.notification_id}
+              row={current}
               slug={slug}
-              onClose={() => {
-                select(null);
-              }}
+              onClose={closePane}
             />
-          ) : isProjectRow(selected) ? (
+          ) : isProjectRow(current) ? (
             <ProjectUpdatePane
-              key={selected.notification_id}
-              row={selected}
+              key={current.notification_id}
+              row={current}
               slug={slug}
-              onClose={() => {
-                select(null);
-              }}
+              onClose={closePane}
             />
           ) : (
             <IssuePane
-              key={selected.issue_id}
-              issueId={selected.issue_id}
-              onClose={() => {
-                select(null);
-              }}
+              key={current.issue_id}
+              issueId={current.issue_id}
+              onClose={closePane}
             />
           )}
         </div>
@@ -1249,18 +1292,18 @@ export const Inbox: React.FC = () => {
           setSnoozing(null);
         }}
         title="Snooze notification"
-        description={`${snoozing === null ? 'It' : subjectName(snoozing)} comes back unread at the time you pick.`}
+        description={`${snoozing === null ? 'It' : subjectName(snoozing.latest)} comes back unread at the time you pick.`}
         size="sm"
       >
         <ul className="flex flex-col gap-1">
-          {snoozing?.snoozed_until ? (
+          {snoozing !== null && snoozedIds(snoozing).length > 0 ? (
             <li>
               <Button
                 variant="ghost"
                 size="sm"
                 className="w-full justify-start"
                 onClick={() => {
-                  unsnoozeRow(snoozing);
+                  unsnoozeGroup(snoozing);
                 }}
               >
                 <LuBellRing className="h-3.5 w-3.5" aria-hidden="true" />
@@ -1276,7 +1319,7 @@ export const Inbox: React.FC = () => {
                 className="w-full justify-start"
                 onClick={() => {
                   if (snoozing !== null)
-                    snoozeRow(snoozing, preset.until(new Date()));
+                    snoozeGroup(snoozing, preset.until(new Date()));
                 }}
               >
                 <LuClock className="h-3.5 w-3.5" aria-hidden="true" />

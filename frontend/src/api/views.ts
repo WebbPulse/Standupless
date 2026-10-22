@@ -506,6 +506,8 @@ export const listInbox = async (
   query: {
     unread?: boolean;
     snoozed?: boolean;
+    include_snoozed?: boolean;
+    kind?: string[];
     cursor?: string;
     limit?: number;
   } = {},
@@ -513,7 +515,7 @@ export const listInbox = async (
 ): Promise<NotificationListRead> => {
   const response = await apiClient.get<NotificationListRead>(
     inboxPath(workspaceId),
-    listOptions({ ...query }, signal)
+    signal === undefined ? { query } : { query, signal }
   );
   const body = response.data;
   return {
