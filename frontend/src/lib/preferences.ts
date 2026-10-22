@@ -12,13 +12,7 @@
 
 import { useSyncExternalStore } from 'react';
 import { workspacePath } from './paths';
-import type {
-  FontSize,
-  HomeView,
-  NameDisplay,
-  UserRead,
-  WeekStart,
-} from '../types/Api';
+import type { FontSize, HomeView, NameDisplay, WeekStart } from '../types/Api';
 
 /** The preferences the interface reads outside any component. */
 export interface InterfacePreferences {
@@ -80,12 +74,17 @@ export const paintFontSize = (size: FontSize): void => {
   }
 };
 
+/** The preference fields a profile may carry, any of them missing. */
+export interface StoredPreferences {
+  home_view?: HomeView | undefined;
+  week_start?: WeekStart | undefined;
+  name_display?: NameDisplay | undefined;
+  font_size?: FontSize | undefined;
+}
+
 /** The preferences a profile carries, with the defaults for any it leaves out. */
 export const preferencesOf = (
-  user: Pick<
-    UserRead,
-    'home_view' | 'week_start' | 'name_display' | 'font_size'
-  > | null
+  user: StoredPreferences | null
 ): InterfacePreferences => ({
   homeView: user?.home_view ?? DEFAULT_PREFERENCES.homeView,
   weekStart: user?.week_start ?? DEFAULT_PREFERENCES.weekStart,

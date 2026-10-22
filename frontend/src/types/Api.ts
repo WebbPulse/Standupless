@@ -37,12 +37,7 @@ export interface UserRead {
 
 /** The page a workspace opens on when the person enters it. */
 export type HomeView =
-  | 'home'
-  | 'inbox'
-  | 'my_issues'
-  | 'projects'
-  | 'pulse'
-  | 'views';
+  'home' | 'inbox' | 'my_issues' | 'projects' | 'pulse' | 'views';
 
 /** The day a person's week starts on. */
 export type WeekStart = 'monday' | 'sunday' | 'saturday';
