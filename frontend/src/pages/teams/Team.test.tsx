@@ -274,14 +274,16 @@ const renderPage = (path = '/w/mine/team/ENG', extra?: ReactNode) =>
  * Waits for the page to show the team's name. The sidebar reads the same
  * cached team list, so the name is looked for outside the sidebar.
  */
-const findTeamName = async (name: string): Promise<HTMLElement> => {
-  const shown = await screen.findAllByText(name);
-  const onPage = shown.find(
-    (element) => element.closest('[data-testid="sidebar-frame"]') === null
-  );
-  expect(onPage).toBeDefined();
-  return onPage as HTMLElement;
-};
+const findTeamName = (name: string): Promise<HTMLElement> =>
+  waitFor(() => {
+    const onPage = screen
+      .getAllByText(name)
+      .find(
+        (element) => element.closest('[data-testid="sidebar-frame"]') === null
+      );
+    expect(onPage).toBeDefined();
+    return onPage as HTMLElement;
+  });
 
 /** Presses a key on the document, as the shortcut layer hears it. */
 const press = (key: string, init: KeyboardEventInit = {}) => {
