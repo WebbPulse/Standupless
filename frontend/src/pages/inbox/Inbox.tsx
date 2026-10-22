@@ -897,7 +897,13 @@ export const Inbox: React.FC = () => {
   );
 
   const { mutate: snooze, error: snoozeError } = useMutationWithRefetch(
-    ({ notificationIds, until }: { notificationIds: string[]; until: string }) =>
+    ({
+      notificationIds,
+      until,
+    }: {
+      notificationIds: string[];
+      until: string;
+    }) =>
       Promise.all(
         batches(notificationIds).map((batch) =>
           snoozeNotifications(workspaceId, { notification_ids: batch, until })
@@ -987,8 +993,7 @@ export const Inbox: React.FC = () => {
 
   const toggleRead = (group: InboxGroup): void => {
     if (group.unread) void readMany(unreadIds(group)).catch(() => undefined);
-    else
-      void unreadMany([group.latest.notification_id]).catch(() => undefined);
+    else void unreadMany([group.latest.notification_id]).catch(() => undefined);
   };
 
   const snoozeGroup = (group: InboxGroup, until: Date): void => {

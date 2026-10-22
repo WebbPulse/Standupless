@@ -59,9 +59,9 @@ describe('groupKey', () => {
   });
 
   it('groups project updates by project', () => {
-    expect(
-      groupKey(row({ kind: 'project_update', project_id: 'p-1' }))
-    ).toBe('project:p-1');
+    expect(groupKey(row({ kind: 'project_update', project_id: 'p-1' }))).toBe(
+      'project:p-1'
+    );
   });
 
   it('keeps a review request on its own row', () => {

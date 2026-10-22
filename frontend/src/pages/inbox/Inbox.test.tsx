@@ -509,7 +509,9 @@ describe('inbox', () => {
     expect(screen.getAllByText('Cache the token')).toHaveLength(1);
     expect(screen.getByLabelText('2 notifications')).toBeInTheDocument();
     expect(screen.getByText('Ada commented')).toBeInTheDocument();
-    expect(screen.queryByText(/Mentioned you by Grace/)).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(/Mentioned you by Grace/)
+    ).not.toBeInTheDocument();
   });
 
   it('opens a folded row and marks every notification in it read', async () => {
