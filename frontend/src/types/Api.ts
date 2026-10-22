@@ -825,6 +825,11 @@ export interface IssueRead {
    * or cancelled. Optional so a row read before it was stamped reads as none.
    */
   completed_at?: string | null;
+  /**
+   * How many relations the issue carries, every kind counted. Optional so a
+   * row read before it was counted reads as none.
+   */
+  relation_count?: number;
   created_by: string;
   created_at: string;
   updated_at: string;

@@ -86,7 +86,9 @@ const asList = <T extends string>(value: T | T[] | undefined): T[] =>
 /**
  * The filters a panel sends for a list state: the list's own query without its
  * sort, plus the display options the list applies on the client, so hidden
- * closed issues and hidden sub-issues are left out of the bars as well.
+ * closed issues and hidden sub-issues are left out of the bars as well. A
+ * completed window of a past week or month keeps closed issues in, since the
+ * list route has no filter that keeps open issues and recent closed ones together.
  */
 export const insightsFilters = (
   state: ViewState,
@@ -94,7 +96,7 @@ export const insightsFilters = (
 ): Omit<IssueListFilters, 'sort'> => {
   const { sort: _sort, ...query } = viewStateQuery(state, scope);
   const closed: Pick<IssueListFilters, 'status_category_not'> =
-    state.showCompleted
+    state.completed !== 'none'
       ? {}
       : {
           status_category_not: [

@@ -26,6 +26,7 @@ def arguments(foreign: dict[str, str], home_issue: str) -> dict[str, dict[str, A
         "update_team_archive_settings": {"team_id": team, "period_months": 1},
         "update_team_sla_settings": {"team_id": team, "enabled": True},
         "update_team_auto_close_settings": {"team_id": team, "period_months": 1},
+        "update_team_display_defaults": {"team_id": team, "list_display": {"group_by": "status"}},
         "list_team_members": {"team_id": team},
         "add_team_member": {"team_id": team, "user": "me", "role": "admin"},
         "update_team_member_role": {"team_id": team, "user": "me", "role": "member"},

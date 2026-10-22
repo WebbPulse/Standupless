@@ -205,12 +205,63 @@ describe('view options', () => {
     const hidden: ViewState = {
       ...base,
       showSubIssues: false,
-      showCompleted: false,
+      completed: 'none',
     };
     const params = writeViewState(hidden, base);
 
     expect(params.toString()).toBe('subs=0&done=0');
     expect(sameViewState(parseViewState(params, base), hidden)).toBe(true);
+  });
+
+  it('carries a bounded completed window through the address', () => {
+    const recent: ViewState = { ...base, completed: 'past_month' };
+    const params = writeViewState(recent, base);
+
+    expect(params.toString()).toBe('done=month');
+    expect(parseViewState(params, base).completed).toBe('past_month');
+    expect(
+      parseViewState(new URLSearchParams('done=week'), base).completed
+    ).toBe('past_week');
+    expect(
+      parseViewState(new URLSearchParams('done=1'), {
+        ...base,
+        completed: 'none',
+      }).completed
+    ).toBe('all');
+    expect(
+      parseViewState(new URLSearchParams('done=junk'), base).completed
+    ).toBe(base.completed);
+  });
+
+  it('keeps closed issues inside the window by when they closed', () => {
+    const now = Date.parse('2026-10-21T12:00:00Z');
+    const rows = [
+      issue({ id: 'open' }),
+      issue({
+        id: 'recent',
+        status_id: 'st-done',
+        completed_at: '2026-10-18T00:00:00Z',
+      }),
+      issue({
+        id: 'weeks',
+        status_id: 'st-done',
+        completed_at: '2026-10-01T00:00:00Z',
+      }),
+      issue({
+        id: 'old',
+        status_id: 'st-done',
+        completed_at: '2026-08-01T00:00:00Z',
+      }),
+    ];
+    const ids = (completed: ViewState['completed']) =>
+      shownIssues(rows, { showSubIssues: true, completed }, context, now).map(
+        (row) => row.id
+      );
+
+    expect(ids('all')).toEqual(['open', 'recent', 'weeks', 'old']);
+    expect(ids('past_week')).toEqual(['open', 'recent']);
+    expect(ids('past_month')).toEqual(['open', 'recent', 'weeks']);
+    expect(ids('none')).toEqual(['open']);
   });
 
   it('leaves out sub-issues and closed issues when hidden', () => {
@@ -219,19 +270,19 @@ describe('view options', () => {
       issue({ id: 'child', parent_id: 'open' }),
       issue({ id: 'closed', status_id: 'st-done' }),
     ];
-    const ids = (state: Pick<ViewState, 'showSubIssues' | 'showCompleted'>) =>
+    const ids = (state: Pick<ViewState, 'showSubIssues' | 'completed'>) =>
       shownIssues(rows, state, context).map((row) => row.id);
 
-    expect(ids({ showSubIssues: true, showCompleted: true })).toEqual([
+    expect(ids({ showSubIssues: true, completed: 'all' })).toEqual([
       'open',
       'child',
       'closed',
     ]);
-    expect(ids({ showSubIssues: false, showCompleted: true })).toEqual([
+    expect(ids({ showSubIssues: false, completed: 'all' })).toEqual([
       'open',
       'closed',
     ]);
-    expect(ids({ showSubIssues: true, showCompleted: false })).toEqual([
+    expect(ids({ showSubIssues: true, completed: 'none' })).toEqual([
       'open',
       'child',
     ]);
@@ -317,13 +368,14 @@ describe('saved views', () => {
     const state: ViewState = {
       ...defaultViewState(),
       showSubIssues: false,
-      showCompleted: false,
+      completed: 'none',
     };
     const body = stateToViewBody(state, 'Open work');
 
     expect(body).toMatchObject({
       show_sub_issues: false,
       show_completed: false,
+      completed_window: 'none',
     });
     const view = {
       view_id: 'v-2',
@@ -333,7 +385,7 @@ describe('saved views', () => {
 
     const restored = viewToState(view);
     expect(restored.showSubIssues).toBe(false);
-    expect(restored.showCompleted).toBe(false);
+    expect(restored.completed).toBe('none');
     expect(sameViewState(restored, state)).toBe(true);
   });
 
@@ -350,7 +402,7 @@ describe('saved views', () => {
 
     const restored = viewToState(view);
     expect(restored.showSubIssues).toBe(true);
-    expect(restored.showCompleted).toBe(true);
+    expect(restored.completed).toBe('all');
     expect(restored.showArchived).toBe(false);
   });
 

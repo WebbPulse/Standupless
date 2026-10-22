@@ -14,6 +14,10 @@ archive sweep in the same scan as the finished statuses it reads issues from.
 The auto-close period and target status are one row at `team#<pid>#autoclose`,
 found by the same hourly run with a scan of its own.
 
+A team's default display options for its issue list and board are one row at
+`team#<pid>#display`, read when a member opens either page without display
+options of their own.
+
 A team's SLA rules are one row at `team#<pid>#sla`, read when an issue's
 priority, status or triage state moves.
 
@@ -167,6 +171,15 @@ STALE_CATEGORIES: tuple[str, ...] = ("backlog",)
 def auto_close_settings_key(team_id: str) -> str:
     """The sort key of one team's auto-close settings row."""
     return f"team#{team_id}#autoclose"
+
+
+DISPLAY_DEFAULTS = "display_defaults"
+"""The `kind` a team's default display options row carries."""
+
+
+def display_defaults_key(team_id: str) -> str:
+    """The sort key of one team's default display options row."""
+    return f"team#{team_id}#display"
 
 
 TRIAGE_SETTINGS = "triage_settings"
@@ -486,6 +499,48 @@ class AutoCloseSettings(BaseModel):
 def default_auto_close_settings(workspace_id: str, team_id: str) -> AutoCloseSettings:
     """The auto-close setting a team that never chose one reads as: off."""
     return AutoCloseSettings(workspace_id=workspace_id, config_key=auto_close_settings_key(team_id), team_id=team_id)
+
+
+class DisplayOptions(BaseModel):
+    """The display options one team page opens with, each `None` where the page keeps its built-in default.
+
+    The same fields a saved view carries, so a member reads the team default the
+    way they read a view: layout, grouping, ordering, the row properties and the
+    switches for sub-issues, completed issues, empty groups and archived issues.
+    """
+
+    layout: str | None = None
+    group_by: str | None = None
+    sub_group_by: str | None = None
+    ordering: str | None = None
+    ordering_reversed: bool | None = None
+    visible_properties: list[str] | None = None
+    show_sub_issues: bool | None = None
+    completed_window: str | None = None
+    show_empty_groups: bool | None = None
+    show_archived: bool | None = None
+
+
+class TeamDisplayDefaults(BaseModel):
+    """What a team's issue list and board show to a member who has not changed them, one row per team.
+
+    Each page keeps its own options because a team may want its list ungrouped
+    and its board by status. `None` for a page means its built-in default.
+    """
+
+    workspace_id: str
+    config_key: str
+    team_id: str
+    kind: str = DISPLAY_DEFAULTS
+    list_display: DisplayOptions | None = None
+    board_display: DisplayOptions | None = None
+    updated_by: str | None = None
+    updated_at: datetime | None = None
+
+
+def default_team_display_defaults(workspace_id: str, team_id: str) -> TeamDisplayDefaults:
+    """The display defaults a team that never saved them reads as: every page on its built-in default."""
+    return TeamDisplayDefaults(workspace_id=workspace_id, config_key=display_defaults_key(team_id), team_id=team_id)
 
 
 class TriageSettings(BaseModel):
@@ -1247,6 +1302,19 @@ class TeamConfigRepository(StandupRows, TemplateRows, RecurringRows):
         self._repository.put(as_item(stored))
         return stored
 
+    def get_display_defaults(self, workspace_id: str, team_id: str) -> TeamDisplayDefaults | None:
+        """One team's stored display defaults, or `None` when it never saved any."""
+        if not workspace_id or not team_id:
+            return None
+        item = self._repository.get({"workspace_id": workspace_id, "config_key": display_defaults_key(team_id)})
+        return TeamDisplayDefaults.model_validate(dict(item)) if item is not None else None
+
+    def put_display_defaults(self, defaults: TeamDisplayDefaults) -> TeamDisplayDefaults:
+        """Store one team's display defaults whole, stamped with the time of the write."""
+        stored = defaults.model_copy(update={"updated_at": utc_now()})
+        self._repository.put(as_item(stored))
+        return stored
+
     def iter_auto_close_settings(self, *, page_size: int = 200) -> list[AutoCloseSettings]:
         """Every team's auto-close setting with a period, across every workspace.
 
@@ -1366,6 +1434,9 @@ class TeamConfigRepository(StandupRows, TemplateRows, RecurringRows):
             removed += 1
         if self.get_auto_close_settings(workspace_id, team_id) is not None:
             self._repository.delete({"workspace_id": workspace_id, "config_key": auto_close_settings_key(team_id)})
+            removed += 1
+        if self.get_display_defaults(workspace_id, team_id) is not None:
+            self._repository.delete({"workspace_id": workspace_id, "config_key": display_defaults_key(team_id)})
             removed += 1
         if self.get_parent_id(workspace_id, team_id) is not None:
             self._repository.delete({"workspace_id": workspace_id, "config_key": parent_key(team_id)})

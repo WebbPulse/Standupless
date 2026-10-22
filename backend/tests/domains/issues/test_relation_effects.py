@@ -382,3 +382,50 @@ def test_a_link_carries_its_target_status_across_teams(client: TestClient, works
     assert listed[0]["target_status"]["id"] == elsewhere["status_id"]
     assert listed[0]["target_status"]["category"]
     assert created["target_status"]["id"] == elsewhere["status_id"]
+
+
+def test_a_link_counts_on_both_sides_and_clears_on_removal(client: TestClient, workspace: str) -> None:
+    """Each side of a link holds one more link, and removing it takes the count back."""
+    sign_in(client, OWNER)
+    source = create_issue(client, workspace, title="Source")
+    target = create_issue(client, workspace, title="Target")
+    link = _link(client, workspace, source, target, "relates_to")
+
+    assert _issue(client, workspace, source)["relation_count"] == 1
+    assert _issue(client, workspace, target)["relation_count"] == 1
+
+    _unlink(client, workspace, source, link)
+
+    assert _issue(client, workspace, source)["relation_count"] == 0
+    assert _issue(client, workspace, target)["relation_count"] == 0
+
+
+def test_deleting_an_issue_recounts_the_issues_it_linked(client: TestClient, workspace: str) -> None:
+    """The far side of every link of a deleted issue loses that link from its count."""
+    sign_in(client, OWNER)
+    doomed = create_issue(client, workspace, title="Doomed")
+    survivor = create_issue(client, workspace, title="Survivor")
+    _link(client, workspace, doomed, survivor, "blocks")
+
+    response = client.delete(f"/api/workspaces/{workspace}/issues/{doomed['id']}")
+    assert response.status_code == 204, response.text
+
+    assert _issue(client, workspace, survivor)["relation_count"] == 0
+
+
+def test_the_relation_backfill_counts_old_links_and_reruns_clean(
+    client: TestClient, workspace: str, repositories: Any
+) -> None:
+    """Issues linked before the count gain it, and a rerun writes nothing."""
+    from scripts.recount_relation_counts import run
+
+    sign_in(client, OWNER)
+    source = create_issue(client, workspace, title="Source")
+    target = create_issue(client, workspace, title="Target")
+    _link(client, workspace, source, target, "relates_to")
+    repositories.issues.set_relation_count(workspace, source["id"], 0)
+    repositories.issues.set_relation_count(workspace, target["id"], 0)
+
+    assert run(repositories, [workspace]) == (1, 2, 2)
+    assert _issue(client, workspace, source)["relation_count"] == 1
+    assert run(repositories, [workspace]) == (1, 2, 0)

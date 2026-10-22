@@ -9,7 +9,7 @@ these run.
 
 from __future__ import annotations
 
-from typing import Callable
+from typing import Any, Callable
 
 from fastapi import HTTPException, status
 from webbpulse.dynamodb import ConditionFailed, TransactionCanceled
@@ -22,6 +22,7 @@ from app.common.api.schemas.teams import (
     CycleSettingsUpdate,
     SlaSettingsUpdate,
     TeamCreate,
+    TeamDisplayDefaultsUpdate,
     TeamUpdate,
 )
 from app.common.db.dynamo.base import utc_now
@@ -34,11 +35,13 @@ from app.common.db.dynamo.team_config import (
     CycleSettings,
     SlaSettings,
     Status,
+    TeamDisplayDefaults,
     cycle_settings_key,
     default_archive_settings,
     default_auto_close_settings,
     default_cycle_settings,
     default_sla_settings,
+    default_team_display_defaults,
 )
 from app.common.db.dynamo.teams import Team, new_team_id
 from app.common.plan_features import Feature, enforce_feature
@@ -424,6 +427,29 @@ def update_auto_close_settings(
             raise unprocessable("status_id must be a cancelled status of this team")
     current = auto_close_settings(repositories, workspace_id, team_id)
     return repositories.team_config.put_auto_close_settings(current.model_copy(update=changes))
+
+
+def display_defaults(repositories: Repositories, workspace_id: str, team_id: str) -> TeamDisplayDefaults:
+    """What a team's issue list and board open with, every page on its built-in default when none was saved."""
+    stored = repositories.team_config.get_display_defaults(workspace_id, team_id)
+    return stored or default_team_display_defaults(workspace_id, team_id)
+
+
+def update_display_defaults(
+    repositories: Repositories, workspace_id: str, team_id: str, actor_id: str, payload: TeamDisplayDefaultsUpdate
+) -> TeamDisplayDefaults:
+    """Set or clear the display options a team's members see until they change them.
+
+    Only the pages the payload named move: options replace that page's saved
+    default whole and null clears it, so the page opens on its built-in default.
+    """
+    current = display_defaults(repositories, workspace_id, team_id)
+    changes: dict[str, Any] = {"updated_by": actor_id}
+    for name in ("list_display", "board_display"):
+        if name in payload.model_fields_set:
+            options = getattr(payload, name)
+            changes[name] = options.as_row() if options is not None else None
+    return repositories.team_config.put_display_defaults(current.model_copy(update=changes))
 
 
 def archive_settings(repositories: Repositories, workspace_id: str, team_id: str) -> ArchiveSettings:

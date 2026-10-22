@@ -15,6 +15,9 @@ this domain.
 The blocking marker is `blocking_count` on the blocker's row for the same reason:
 how many `blocks` links an issue holds while its own status is open, the same
 rule the `is_blocking` filter reads, and zero once the issue is finished.
+
+The links property on list and board rows reads `relation_count`, every link the
+issue holds in either direction, kept on the row for the same reason.
 """
 
 from __future__ import annotations
@@ -118,6 +121,22 @@ def recount_blocking(repositories: Repositories, workspace_id: str, issue_id: st
     return count
 
 
+def recount_relations(repositories: Repositories, workspace_id: str, issue_id: str) -> int | None:
+    """Write how many links one issue holds in either direction, answering the count.
+
+    Recounted from the stored links like `recount_blocked`, so a repeated write
+    lands on the same number. Nothing is written when the count already holds or
+    the issue is gone.
+    """
+    issue = repositories.issues.get(workspace_id, issue_id)
+    if issue is None:
+        return None
+    count = len(repositories.relations.list_for_issue(workspace_id, issue_id, limit=1000))
+    if issue.relation_count != count:
+        repositories.issues.set_relation_count(workspace_id, issue_id, count)
+    return count
+
+
 def recount_blocked_by(repositories: Repositories, workspace_id: str, blocker_id: str) -> list[str]:
     """Recount every issue one issue blocks, answering their ids.
 
@@ -140,7 +159,8 @@ def delete_relations(repositories: Repositories, workspace_id: str, issue_id: st
 
     The far sides are read before the rows go, because afterwards nothing names
     them: an issue that lost its only open blocker must lose its blocked marker,
-    and a blocker that lost its only blocked issue must lose its blocking marker.
+    a blocker that lost its only blocked issue must lose its blocking marker, and
+    every linked issue holds one link fewer.
     """
     relations = repositories.relations.list_for_issue(workspace_id, issue_id, limit=1000)
     blocked = [relation.target_issue_id for relation in relations if relation.relation_type == "blocks"]
@@ -150,6 +170,8 @@ def delete_relations(repositories: Repositories, workspace_id: str, issue_id: st
         recount_blocked(repositories, workspace_id, blocked_id)
     for blocker_id in dict.fromkeys(blockers):
         recount_blocking(repositories, workspace_id, blocker_id)
+    for linked_id in dict.fromkeys(relation.target_issue_id for relation in relations):
+        recount_relations(repositories, workspace_id, linked_id)
 
 
 def cancelled_status(repositories: Repositories, workspace_id: str, team_id: str) -> Status | None:

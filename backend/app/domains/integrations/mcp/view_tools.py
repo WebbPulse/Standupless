@@ -15,6 +15,7 @@ from fastapi import HTTPException
 
 from app.common.api.dependencies.authz import Capability, check_capability
 from app.common.api.schemas.views import (
+    COMPLETED_WINDOWS,
     VISIBLE_PROPERTIES,
     GroupByField,
     InboxReadRequest,
@@ -78,6 +79,7 @@ VIEW_FIELDS: tuple[str, ...] = (
     "layout",
     "show_sub_issues",
     "show_completed",
+    "completed_window",
     "show_archived",
     "icon",
     "color",
@@ -143,7 +145,11 @@ def _view_properties(*, clearable: bool) -> dict[str, Any]:
         "ordering_reversed": _boolean("Reverse the sort direction, keeping issues without the value last"),
         "visible_properties": properties_list,
         "show_sub_issues": _boolean("Show sub-issues"),
-        "show_completed": _boolean("Show completed issues"),
+        "show_completed": _boolean("Show completed issues, all of them or none"),
+        "completed_window": enum(
+            COMPLETED_WINDOWS,
+            "Completed and cancelled issues to show: all, past_week, past_month or none; wins over show_completed",
+        ),
         "show_archived": _boolean("Show archived issues"),
         "icon": {"type": ["string", "null"] if clearable else "string", "description": "Icon name for the view"},
         "color": {

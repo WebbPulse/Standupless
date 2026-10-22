@@ -365,6 +365,42 @@ def test_auto_close_settings_set_clear_and_validate(client: TestClient, reposito
     assert (cleared["enabled"], cleared["period_months"], cleared["status_id"]) == (False, None, cancelled.status_id)
 
 
+def test_display_defaults_set_clear_and_validate(client: TestClient, repositories: Any, workspace: str) -> None:
+    """A team admin sets each page's display default, get_team reads it back, and a member may not change it."""
+    admin = mint_for(repositories, ADMIN, ("teams:write", "teams:read"))
+    member = mint_for(repositories, MEMBER, ("teams:write",))
+
+    saved = answer(
+        tool(
+            client,
+            admin,
+            "update_team_display_defaults",
+            {
+                "team_id": "ABC",
+                "list_display": {"group_by": "assignee", "visible_properties": ["id", "milestone", "links"]},
+                "board_display": {"layout": "board", "completed_window": "past_week"},
+            },
+        )
+    )
+    team = answer(tool(client, admin, "get_team", {"team_id": TEAM}))
+    invalid = refusal(
+        tool(
+            client, admin, "update_team_display_defaults", {"team_id": "ABC", "list_display": {"sub_group_by": "label"}}
+        )
+    )
+    refused = refusal(tool(client, member, "update_team_display_defaults", {"team_id": "ABC", "list_display": None}))
+    cleared = answer(tool(client, admin, "update_team_display_defaults", {"team_id": "ABC", "list_display": None}))
+
+    assert saved["list_display"]["group_by"] == "assignee"
+    assert saved["list_display"]["visible_properties"] == ["id", "milestone", "links"]
+    assert saved["board_display"]["completed_window"] == "past_week"
+    assert team["display_defaults"]["list_display"]["group_by"] == "assignee"
+    assert "sub_group_by" in invalid
+    assert FORBIDDEN in refused
+    assert cleared["list_display"] is None
+    assert cleared["board_display"]["completed_window"] == "past_week"
+
+
 def test_list_team_members_by_key(client: TestClient, repositories: Any, workspace: str) -> None:
     """A guest reads the members of its own team and nothing of another."""
     secret = mint_for(repositories, GUEST, ("members:read",))

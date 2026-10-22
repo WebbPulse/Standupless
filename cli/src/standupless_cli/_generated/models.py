@@ -511,6 +511,64 @@ class DiscordInstallUrlRead(TypedDict):
     url: str
 
 
+class DisplayOptionsBody(TypedDict):
+    completed_window: NotRequired[Literal["all", "past_week", "past_month", "none"] | None]
+    group_by: NotRequired[
+        Literal["status", "assignee", "priority", "label", "milestone", "project", "cycle", "parent", "team", "sla"]
+        | Literal["none"]
+        | None
+    ]
+    layout: NotRequired[Literal["list", "board"] | None]
+    ordering: NotRequired[
+        Literal[
+            "updated_desc",
+            "created_desc",
+            "key_asc",
+            "priority_desc",
+            "due_asc",
+            "sla_asc",
+            "manual",
+            "status_asc",
+            "start_asc",
+            "estimate_desc",
+        ]
+        | None
+    ]
+    ordering_reversed: NotRequired[bool | None]
+    show_archived: NotRequired[bool | None]
+    show_empty_groups: NotRequired[bool | None]
+    show_sub_issues: NotRequired[bool | None]
+    sub_group_by: NotRequired[
+        Literal["status", "assignee", "priority", "label", "milestone", "project", "cycle", "parent", "team", "sla"]
+        | Literal["none"]
+        | None
+    ]
+    visible_properties: NotRequired[
+        list[
+            Literal[
+                "id",
+                "status",
+                "priority",
+                "assignee",
+                "labels",
+                "estimate",
+                "start_date",
+                "due_date",
+                "project",
+                "cycle",
+                "parent",
+                "sub_issues",
+                "pull_requests",
+                "milestone",
+                "links",
+                "created_at",
+                "updated_at",
+            ]
+        ]
+        | None
+    ]
+
+
 class DocumentCreate(TypedDict):
     body: NotRequired[str]
     title: str
@@ -2049,6 +2107,19 @@ class TeamCreate(TypedDict):
     private: NotRequired[bool]
 
 
+class TeamDisplayDefaultsRead(TypedDict):
+    board_display: NotRequired[DisplayOptionsBody | None]
+    list_display: NotRequired[DisplayOptionsBody | None]
+    team_id: str
+    updated_at: NotRequired[str | None]
+    updated_by: NotRequired[str | None]
+
+
+class TeamDisplayDefaultsUpdate(TypedDict):
+    board_display: NotRequired[DisplayOptionsBody | None]
+    list_display: NotRequired[DisplayOptionsBody | None]
+
+
 class TeamMemberRead(TypedDict):
     added_at: str
     avatar_url: NotRequired[str | None]
@@ -2358,6 +2429,7 @@ class ViewCreate(TypedDict):
     color: NotRequired[
         Literal["gray", "red", "orange", "yellow", "green", "teal", "blue", "indigo", "purple", "pink"] | None
     ]
+    completed_window: NotRequired[Literal["all", "past_week", "past_month", "none"] | None]
     description: NotRequired[str | None]
     filter: NotRequired[dict[str, Any]]
     group_by: NotRequired[
@@ -2423,6 +2495,8 @@ class ViewCreate(TypedDict):
                 "parent",
                 "sub_issues",
                 "pull_requests",
+                "milestone",
+                "links",
                 "created_at",
                 "updated_at",
             ]
@@ -2433,6 +2507,7 @@ class ViewCreate(TypedDict):
 
 class ViewRead(TypedDict):
     color: NotRequired[str | None]
+    completed_window: NotRequired[Literal["all", "past_week", "past_month", "none"]]
     created_at: str
     description: NotRequired[str | None]
     favorite: NotRequired[bool]
@@ -2462,6 +2537,7 @@ class ViewUpdate(TypedDict):
     color: NotRequired[
         Literal["gray", "red", "orange", "yellow", "green", "teal", "blue", "indigo", "purple", "pink"] | None
     ]
+    completed_window: NotRequired[Literal["all", "past_week", "past_month", "none"] | None]
     description: NotRequired[str | None]
     filter: NotRequired[dict[str, Any] | None]
     group_by: NotRequired[
@@ -2526,6 +2602,8 @@ class ViewUpdate(TypedDict):
                 "parent",
                 "sub_issues",
                 "pull_requests",
+                "milestone",
+                "links",
                 "created_at",
                 "updated_at",
             ]
@@ -2724,6 +2802,7 @@ class AppCommonApiSchemasIssuesIssueRead(TypedDict):
     project_id: NotRequired[str | None]
     project_milestone_id: NotRequired[str | None]
     pull_request_summary: NotRequired[PullRequestSummaryRead | None]
+    relation_count: NotRequired[int]
     sla_breaches_at: NotRequired[str | None]
     sla_paused_at: NotRequired[str | None]
     sla_started_at: NotRequired[str | None]

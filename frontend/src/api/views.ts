@@ -41,6 +41,9 @@ import type {
 /** How a saved view is displayed. `kind` stays fixed; this may change. */
 export type ViewLayout = 'list' | 'board';
 
+/** How far back a view reaches for issues in a completed or canceled status. */
+export type CompletedWindow = 'all' | 'past_week' | 'past_month' | 'none';
+
 /** The issue properties a view may show, in the vocabulary the server checks. */
 export type ViewVisibleProperty =
   | 'id'
@@ -56,6 +59,8 @@ export type ViewVisibleProperty =
   | 'parent'
   | 'sub_issues'
   | 'pull_requests'
+  | 'milestone'
+  | 'links'
   | 'created_at'
   | 'updated_at';
 
@@ -113,6 +118,12 @@ export interface SavedViewDisplay {
   layout: ViewLayout;
   show_sub_issues: boolean;
   show_completed: boolean;
+  /**
+   * How far back the view reaches for closed issues. It wins over
+   * `show_completed`, which stays in step with it; an older server leaves it
+   * out and the switch decides.
+   */
+  completed_window?: CompletedWindow;
   show_archived?: boolean;
 }
 
@@ -172,6 +183,7 @@ export interface SavedViewDisplayCreate extends Omit<
   layout?: ViewLayout | null;
   show_sub_issues?: boolean;
   show_completed?: boolean;
+  completed_window?: CompletedWindow;
   show_archived?: boolean;
   icon?: string | null;
   color?: ViewColor | null;
@@ -194,6 +206,7 @@ export interface SavedViewDisplayUpdate extends Omit<
   layout?: ViewLayout | null;
   show_sub_issues?: boolean;
   show_completed?: boolean;
+  completed_window?: CompletedWindow;
   show_archived?: boolean;
   icon?: string | null;
   color?: ViewColor | null;

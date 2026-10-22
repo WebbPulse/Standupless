@@ -21,6 +21,7 @@ from app.common.api.schemas.views import (
     DISPLAY_SWITCHES,
     ViewCreate,
     ViewUpdate,
+    completed_window_of,
     malformed_filter_keys,
     unknown_filter_keys,
 )
@@ -153,6 +154,7 @@ def create_saved_view(repositories: Repositories, context: AuthzContext, payload
     elif payload.shared and context.is_guest:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=FORBIDDEN)
 
+    window = completed_window_of(payload.completed_window, payload.show_completed)
     view_id = new_view_id()
     view = SavedView(
         workspace_id=context.workspace_id,
@@ -170,7 +172,8 @@ def create_saved_view(repositories: Repositories, context: AuthzContext, payload
         visible_properties=list(payload.visible_properties) if payload.visible_properties is not None else None,
         layout=payload.layout or payload.kind,
         show_sub_issues=payload.show_sub_issues,
-        show_completed=payload.show_completed,
+        show_completed=window != "none",
+        completed_window=window,
         show_archived=payload.show_archived,
         icon=payload.icon,
         color=payload.color,
@@ -202,7 +205,13 @@ def update_saved_view(
     shared = changes.pop("shared", None)
     for name in DISPLAY_SWITCHES:
         if name in changes and changes[name] is None:
+            if name == "completed_window":
+                raise unprocessable("completed_window must be all, past_week, past_month or none")
             raise unprocessable(f"{name} must be true or false")
+    if "completed_window" in changes:
+        changes["show_completed"] = changes["completed_window"] != "none"
+    elif "show_completed" in changes:
+        changes["completed_window"] = "all" if changes["show_completed"] else "none"
     if shared is not None:
         view = rescope_view(repositories, context, view, shared)
     if not changes:

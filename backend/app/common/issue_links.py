@@ -32,6 +32,7 @@ from app.common.relation_effects import (
     issue_reference,
     recount_blocked,
     recount_blocking,
+    recount_relations,
 )
 
 
@@ -126,6 +127,8 @@ def create_link(repositories: Repositories, context: AuthzContext, issue_id: str
     blocker = blocking_side(relation)
     if blocker is not None:
         recount_blocking(repositories, context.workspace_id, blocker)
+    recount_relations(repositories, context.workspace_id, issue_id)
+    recount_relations(repositories, context.workspace_id, payload.target_issue_id)
     statuses = link_statuses(repositories, context.workspace_id, [target])
     return LinkRead.from_row(relation, current(repositories.teams, target), target_status(statuses, target))
 
@@ -168,4 +171,6 @@ def delete_link(repositories: Repositories, context: AuthzContext, issue_id: str
     blocker = blocking_side(removed)
     if blocker is not None:
         recount_blocking(repositories, context.workspace_id, blocker)
+    recount_relations(repositories, context.workspace_id, issue_id)
+    recount_relations(repositories, context.workspace_id, removed.target_issue_id)
     return removed

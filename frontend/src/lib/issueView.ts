@@ -12,6 +12,7 @@ import { NONE, orderBetween, type IssueListFilters } from '../api/issues';
 import type { IssueListSort, OrderedIssueRead } from '../api/issues';
 import { viewFilterToQuery } from '../api/views';
 import type {
+  CompletedWindow,
   SavedViewDisplayCreate,
   SavedViewDisplayRead,
   SavedViewFilter,
@@ -48,6 +49,8 @@ import {
 
 /** A property an issue list can be grouped by, or `none`. */
 export type GroupField = ViewGroupBy | 'none';
+
+export type { CompletedWindow };
 
 /** The properties a list can be filtered on. */
 export type FilterField =
@@ -143,6 +146,40 @@ export interface FilterClause {
   values: string[];
 }
 
+/** Every completed window, in the order the display menu offers them. */
+export const COMPLETED_WINDOWS: CompletedWindow[] = [
+  'all',
+  'past_week',
+  'past_month',
+  'none',
+];
+
+/** How a completed window reads in the interface. */
+export const COMPLETED_WINDOW_LABELS: Record<CompletedWindow, string> = {
+  all: 'All',
+  past_week: 'Past week',
+  past_month: 'Past month',
+  none: 'None',
+};
+
+/** The days each bounded completed window reaches back. */
+const WINDOW_DAYS: Partial<Record<CompletedWindow, number>> = {
+  past_week: 7,
+  past_month: 30,
+};
+
+/** How a completed window sits in the URL's `done` parameter. */
+const DONE_PARAMS: Record<CompletedWindow, string> = {
+  all: '1',
+  past_week: 'week',
+  past_month: 'month',
+  none: '0',
+};
+
+/** Reads the URL's `done` parameter back into a completed window. */
+const parseDone = (value: string): CompletedWindow | undefined =>
+  COMPLETED_WINDOWS.find((window) => DONE_PARAMS[window] === value);
+
 /** Everything a list or board is drawn from. */
 export interface ViewState {
   filters: FilterClause[];
@@ -162,8 +199,11 @@ export interface ViewState {
   showEmpty: boolean;
   /** False to leave out issues that sit under a parent. */
   showSubIssues: boolean;
-  /** False to leave out issues in a completed or canceled status. */
-  showCompleted: boolean;
+  /**
+   * Which issues in a completed or canceled status show: all of them, those
+   * closed in the past week or month, or none.
+   */
+  completed: CompletedWindow;
   /** True to list archived issues, which every list and board leaves out by default. */
   showArchived: boolean;
 }
@@ -470,7 +510,9 @@ export const DISPLAY_PROPERTIES: ViewVisibleProperty[] = [
   'labels',
   'pull_requests',
   'project',
+  'milestone',
   'cycle',
+  'links',
   'estimate',
   'start_date',
   'due_date',
@@ -494,6 +536,8 @@ export const PROPERTY_LABELS: Record<ViewVisibleProperty, string> = {
   parent: 'Parent',
   sub_issues: 'Sub-issues',
   pull_requests: 'Pull requests',
+  milestone: 'Milestone',
+  links: 'Links',
   created_at: 'Created',
   updated_at: 'Updated',
 };
@@ -527,7 +571,7 @@ export const defaultViewState = (layout: ViewLayout = 'list'): ViewState => ({
   layout,
   showEmpty: layout === 'board',
   showSubIssues: true,
-  showCompleted: true,
+  completed: 'all',
   showArchived: false,
 });
 
@@ -636,7 +680,7 @@ export const sameViewState = (left: ViewState, right: ViewState): boolean =>
   left.layout === right.layout &&
   left.showEmpty === right.showEmpty &&
   left.showSubIssues === right.showSubIssues &&
-  left.showCompleted === right.showCompleted &&
+  left.completed === right.completed &&
   left.showArchived === right.showArchived;
 
 /**
@@ -700,7 +744,7 @@ export const parseViewState = (
           : layout === 'board'
         : empty === '1',
     showSubIssues: subs === null ? base.showSubIssues : subs === '1',
-    showCompleted: done === null ? base.showCompleted : done === '1',
+    completed: (done === null ? undefined : parseDone(done)) ?? base.completed,
     showArchived: archived === null ? base.showArchived : archived === '1',
   };
 };
@@ -764,8 +808,8 @@ export const writeViewState = (
   if (state.showSubIssues !== base.showSubIssues) {
     params.set('subs', state.showSubIssues ? '1' : '0');
   }
-  if (state.showCompleted !== base.showCompleted) {
-    params.set('done', state.showCompleted ? '1' : '0');
+  if (state.completed !== base.completed) {
+    params.set('done', DONE_PARAMS[state.completed]);
   }
   if (state.showArchived !== base.showArchived) {
     params.set('archived', state.showArchived ? '1' : '0');
@@ -1163,7 +1207,8 @@ export const viewToState = (view: SavedViewDisplayRead): ViewState => {
     layout,
     showEmpty: layout === 'board',
     showSubIssues: view.show_sub_issues !== false,
-    showCompleted: view.show_completed !== false,
+    completed:
+      view.completed_window ?? (view.show_completed === false ? 'none' : 'all'),
     showArchived: view.show_archived === true,
   };
 };
@@ -1228,6 +1273,7 @@ export const stateToViewDisplay = (
   | 'layout'
   | 'show_sub_issues'
   | 'show_completed'
+  | 'completed_window'
   | 'show_archived'
 > => ({
   sort: state.ordering,
@@ -1241,7 +1287,8 @@ export const stateToViewDisplay = (
   visible_properties: state.visible,
   layout: state.layout,
   show_sub_issues: state.showSubIssues,
-  show_completed: state.showCompleted,
+  show_completed: state.completed !== 'none',
+  completed_window: state.completed,
   show_archived: state.showArchived,
 });
 
@@ -1321,20 +1368,44 @@ export interface IssueGroup {
 }
 
 /**
- * The issues a state shows out of what the query returned: sub-issues and
- * closed issues drop out when the display options hide them.
+ * Whether a closed issue falls inside a completed window. A bounded window
+ * measures from when the issue was completed, or from its last change when it
+ * was canceled or closed before that was stamped.
+ */
+const insideWindow = (
+  issue: OrderedIssueRead,
+  window: CompletedWindow,
+  now: number
+): boolean => {
+  if (window === 'all') return true;
+  const days = WINDOW_DAYS[window];
+  if (days === undefined) return false;
+  const closed = Date.parse(issue.completed_at ?? issue.updated_at);
+  if (Number.isNaN(closed)) return true;
+  return now - closed <= days * 24 * 60 * 60 * 1000;
+};
+
+/**
+ * The issues a state shows out of what the query returned: sub-issues drop
+ * out when the display options hide them, and closed issues outside the
+ * completed window do too.
  */
 export const shownIssues = <T extends OrderedIssueRead>(
   issues: T[],
-  state: Pick<ViewState, 'showSubIssues' | 'showCompleted'>,
-  context: IssueContext
+  state: Pick<ViewState, 'showSubIssues' | 'completed'>,
+  context: IssueContext,
+  now: number = Date.now()
 ): T[] => {
-  if (state.showSubIssues && state.showCompleted) return issues;
+  if (state.showSubIssues && state.completed === 'all') return issues;
   return issues.filter((issue) => {
     if (!state.showSubIssues && issue.parent_id !== null) return false;
-    if (!state.showCompleted) {
+    if (state.completed !== 'all') {
       const category = statusOf(issue, context)?.category;
-      if (category === 'completed' || category === 'cancelled') return false;
+      if (
+        (category === 'completed' || category === 'cancelled') &&
+        !insideWindow(issue, state.completed, now)
+      )
+        return false;
     }
     return true;
   });

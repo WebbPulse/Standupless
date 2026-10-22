@@ -90,6 +90,15 @@ vi.mock('../../api/teams', () => ({
   listLabels: () => listLabels(),
   listTeamMembers: () => listTeamMembers(),
   createLabel: vi.fn(),
+  getDisplayDefaults: () =>
+    Promise.resolve({
+      team_id: 'team-1',
+      list_display: null,
+      board_display: null,
+      updated_by: null,
+      updated_at: null,
+    }),
+  updateDisplayDefaults: vi.fn(),
 }));
 
 vi.mock('../../api/planning', () => ({

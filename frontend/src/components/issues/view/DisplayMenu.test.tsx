@@ -1,7 +1,9 @@
 /**
  * The display menu's grouping choices and ordering direction: the planning
  * groupings are offered, team only where the list spans teams, and the
- * direction button flips the ordering except under manual ordering.
+ * direction button flips the ordering except under manual ordering. Also the
+ * completed issues window, the milestone and links properties, and the team
+ * default actions an admin sees in the footer.
  */
 
 import { render, screen, within } from '@testing-library/react';
@@ -101,5 +103,60 @@ describe('DisplayMenu', () => {
     expect(
       screen.getByRole('button', { name: 'Reverse ordering' })
     ).toBeDisabled();
+  });
+
+  it('picks how far back completed issues show', async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn<(state: ViewState) => void>();
+    render(
+      <DisplayMenu state={defaultViewState('list')} onChange={onChange} />
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Display' }));
+    const completed = screen.getByLabelText('Completed issues');
+    expect(optionsOf(completed)).toEqual([
+      'All',
+      'Past week',
+      'Past month',
+      'None',
+    ]);
+    await user.selectOptions(completed, 'past_month');
+
+    expect(onChange).toHaveBeenLastCalledWith(
+      expect.objectContaining({ completed: 'past_month' })
+    );
+    expect(
+      screen.getByRole('button', { name: 'Milestone', pressed: false })
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'Links', pressed: false })
+    ).toBeInTheDocument();
+  });
+
+  it('offers the team default actions an admin is given', async () => {
+    const user = userEvent.setup();
+    const onSave = vi.fn();
+    const onClear = vi.fn();
+    render(
+      <DisplayMenu
+        state={defaultViewState('list')}
+        onChange={vi.fn<(state: ViewState) => void>()}
+        teamDefault={{ onSave, onClear }}
+      />
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Display' }));
+    await user.click(
+      screen.getByRole('button', { name: 'Save as team default' })
+    );
+    await user.click(
+      screen.getByRole('button', { name: 'Clear team default' })
+    );
+
+    expect(onSave).toHaveBeenCalledTimes(1);
+    expect(onClear).toHaveBeenCalledTimes(1);
+    expect(
+      screen.queryByRole('button', { name: 'Reset to default' })
+    ).not.toBeInTheDocument();
   });
 });
