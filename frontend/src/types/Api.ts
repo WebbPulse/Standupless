@@ -2258,9 +2258,16 @@ export interface HealthBreakdownRead {
   none: number;
 }
 
+/** An initiative named by id and name, as a breadcrumb draws it. */
+export interface InitiativeRef {
+  initiative_id: string;
+  name: string;
+}
+
 /**
- * A workspace level initiative grouping projects across teams. The rollup
- * fields count only the projects the caller can see.
+ * A workspace level initiative grouping projects across teams. It may sit
+ * under a parent as a sub-initiative, and the rollup fields take in every
+ * sub-initiative below it, counting only the projects the caller can see.
  */
 export interface InitiativeRead {
   initiative_id: string;
@@ -2271,7 +2278,17 @@ export interface InitiativeRead {
   status: InitiativeStatus;
   health: ProjectHealth | null;
   target_date: string | null;
+  /** The initiative this one sits under, or null at the top level. */
+  parent_initiative_id?: string | null;
+  /** The chain of parents, root first. */
+  ancestors?: InitiativeRef[];
+  /** The initiatives directly below this one. */
+  sub_initiative_ids?: string[];
+  /** The visible projects held directly. */
   project_ids: string[];
+  /** The visible projects of this initiative and every sub-initiative below it. */
+  rollup_project_ids?: string[];
+  /** How many projects the rollup covers. */
   project_count: number;
   counts: RollupCounts;
   points: RollupCounts;
@@ -2290,6 +2307,26 @@ export interface InitiativeRead {
   created_by: string;
   created_at: string;
   updated_at: string;
+}
+
+/** One day of an initiative's progress graph, in the series' measure. */
+export interface InitiativeProgressPoint {
+  date: string;
+  scope: number;
+  started: number;
+  completed: number;
+}
+
+/**
+ * An initiative's scope, started and completed work per day across its
+ * subtree. `days` runs through today and `end_date` is where the axis ends.
+ */
+export interface InitiativeProgressRead {
+  initiative_id: string;
+  measure: 'points' | 'issues';
+  start_date: string;
+  end_date: string;
+  days: InitiativeProgressPoint[];
 }
 
 /** One page of the workspace's initiatives, by target date. */
@@ -2314,9 +2351,10 @@ export interface InitiativeCreate {
   health?: ProjectHealth | null;
   target_date?: string | null;
   update_interval_days?: ProjectUpdateInterval | null;
+  parent_initiative_id?: string | null;
 }
 
-/** The editable fields on an initiative. A null clears an owner or a date. */
+/** The editable fields on an initiative. A null clears an owner, a date or the parent. */
 export interface InitiativeUpdate {
   name?: string;
   description?: string | null;
@@ -2325,6 +2363,7 @@ export interface InitiativeUpdate {
   health?: ProjectHealth | null;
   target_date?: string | null;
   update_interval_days?: ProjectUpdateInterval | null;
+  parent_initiative_id?: string | null;
 }
 
 /** One written update on an initiative. */

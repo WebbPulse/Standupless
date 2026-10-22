@@ -204,6 +204,7 @@ EXPECTED_TOOLS = frozenset(
         "set_release_pipeline",
         "list_initiatives",
         "get_initiative",
+        "get_initiative_progress",
         "create_initiative",
         "update_initiative",
         "delete_initiative",

@@ -713,36 +713,30 @@ class InitiativeCreate(TypedDict):
     health: NotRequired[Literal["on_track", "at_risk", "off_track"] | None]
     name: str
     owner_id: NotRequired[str | None]
+    parent_initiative_id: NotRequired[str | None]
     status: NotRequired[Literal["planned", "active", "completed"]]
     target_date: NotRequired[str | None]
     update_interval_days: NotRequired[int | None]
 
 
-class InitiativeRead(TypedDict):
-    counts: NotRequired[CountsRead]
-    created_at: str
-    created_by: str
-    description: NotRequired[str | None]
-    health: NotRequired[Literal["on_track", "at_risk", "off_track"] | None]
+class InitiativeProgressPointRead(TypedDict):
+    completed: float
+    date: str
+    scope: float
+    started: float
+
+
+class InitiativeProgressRead(TypedDict):
+    days: NotRequired[list[InitiativeProgressPointRead]]
+    end_date: str
     initiative_id: str
-    last_update_at: NotRequired[str | None]
     measure: NotRequired[Literal["points", "issues"]]
+    start_date: str
+
+
+class InitiativeRefRead(TypedDict):
+    initiative_id: str
     name: str
-    next_update_due_at: NotRequired[str | None]
-    owner_id: NotRequired[str | None]
-    points: NotRequired[CountsRead]
-    progress: NotRequired[CountsRead]
-    project_count: NotRequired[int]
-    project_health: NotRequired[HealthBreakdownRead]
-    project_ids: NotRequired[list[str]]
-    status: Literal["planned", "active", "completed"]
-    status_counts: NotRequired[dict[str, int]]
-    target_date: NotRequired[str | None]
-    update_due_state: NotRequired[Literal["upcoming", "due", "overdue"] | None]
-    update_interval_days: NotRequired[int]
-    update_interval_inherited: NotRequired[bool]
-    updated_at: str
-    workspace_id: str
 
 
 class InitiativeUpdate(TypedDict):
@@ -750,6 +744,7 @@ class InitiativeUpdate(TypedDict):
     health: NotRequired[Literal["on_track", "at_risk", "off_track"] | None]
     name: NotRequired[str | None]
     owner_id: NotRequired[str | None]
+    parent_initiative_id: NotRequired[str | None]
     status: NotRequired[Literal["planned", "active", "completed"] | None]
     target_date: NotRequired[str | None]
     update_interval_days: NotRequired[int | None]
@@ -3060,9 +3055,35 @@ class IncludedReleaseRead(TypedDict):
     sha: NotRequired[str | None]
 
 
-class InitiativeListRead(TypedDict):
-    initiatives: list[InitiativeRead]
-    next_cursor: NotRequired[str | None]
+class InitiativeRead(TypedDict):
+    ancestors: NotRequired[list[InitiativeRefRead]]
+    counts: NotRequired[CountsRead]
+    created_at: str
+    created_by: str
+    description: NotRequired[str | None]
+    health: NotRequired[Literal["on_track", "at_risk", "off_track"] | None]
+    initiative_id: str
+    last_update_at: NotRequired[str | None]
+    measure: NotRequired[Literal["points", "issues"]]
+    name: str
+    next_update_due_at: NotRequired[str | None]
+    owner_id: NotRequired[str | None]
+    parent_initiative_id: NotRequired[str | None]
+    points: NotRequired[CountsRead]
+    progress: NotRequired[CountsRead]
+    project_count: NotRequired[int]
+    project_health: NotRequired[HealthBreakdownRead]
+    project_ids: NotRequired[list[str]]
+    rollup_project_ids: NotRequired[list[str]]
+    status: Literal["planned", "active", "completed"]
+    status_counts: NotRequired[dict[str, int]]
+    sub_initiative_ids: NotRequired[list[str]]
+    target_date: NotRequired[str | None]
+    update_due_state: NotRequired[Literal["upcoming", "due", "overdue"] | None]
+    update_interval_days: NotRequired[int]
+    update_interval_inherited: NotRequired[bool]
+    updated_at: str
+    workspace_id: str
 
 
 class InitiativeUpdateListRead(TypedDict):
@@ -3444,6 +3465,11 @@ class HomeRead(TypedDict):
     shipped: HomeShippedRead
     team_ids: list[str]
     today: str
+
+
+class InitiativeListRead(TypedDict):
+    initiatives: list[InitiativeRead]
+    next_cursor: NotRequired[str | None]
 
 
 class IssueImportListRead(TypedDict):

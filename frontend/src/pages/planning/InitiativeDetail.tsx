@@ -1,7 +1,10 @@
 /**
  * One initiative: its name, goal and properties, a rollup of how its projects
  * are progressing and tracking, the projects themselves with a way to add and
- * remove them, and the written updates its owner posts on a cadence.
+ * remove them, and the written updates its owner posts on a cadence. An
+ * initiative may sit under a parent and hold sub-initiatives of its own: the
+ * breadcrumbs walk up the chain, and the projects, rollup and progress graph
+ * take in every sub-initiative below it.
  */
 
 import React, { useCallback, useMemo, useState } from 'react';
@@ -11,6 +14,7 @@ import {
   LuCalendarCheck,
   LuChevronRight,
   LuEllipsis,
+  LuGoal,
   LuPlus,
   LuTrash2,
   LuX,
@@ -25,10 +29,13 @@ import {
   addInitiativeProject,
   deleteInitiative,
   getInitiative,
+  getInitiativeProgress,
   removeInitiativeProject,
   updateInitiative,
 } from '../../api/initiatives';
 import { DatePicker } from '../../components/issues/PropertyPickers';
+import BurnUpChart from '../../components/planning/BurnUpChart';
+import CreateInitiativeDialog from '../../components/planning/CreateInitiativeDialog';
 import DocumentsSection from '../../components/planning/DocumentsSection';
 import EditableText from '../../components/planning/EditableText';
 import ProgressRing from '../../components/planning/ProgressRing';
@@ -37,6 +44,7 @@ import ProjectIcon from '../../components/planning/ProjectIcon';
 import {
   CadencePicker,
   HealthPicker,
+  InitiativePicker,
   InitiativeStatusPicker,
   LeadPicker,
 } from '../../components/planning/ProjectPickers';
@@ -54,23 +62,29 @@ import WorkspaceShell from '../../components/workspace/WorkspaceShell';
 import { useAuth } from '../../hooks/useAuth';
 import useCreateDocumentCommand from '../../hooks/useCreateDocumentCommand';
 import { useInitiativeUpdates } from '../../hooks/useInitiativeUpdates';
+import { useInitiatives } from '../../hooks/useInitiatives';
 import { useTeam } from '../../hooks/useTeam';
 import { useWorkspace } from '../../hooks/useWorkspace';
 import { useWorkspaceMembers } from '../../hooks/useWorkspaceMembers';
 import { useWorkspaceProjects } from '../../hooks/useWorkspaceProjects';
 import { cn } from '../../lib/cn';
 import { errorMessage } from '../../lib/errors';
+import { descendantIds, parentCandidates } from '../../lib/initiativeTree';
 import { useOptimisticRecord } from '../../lib/optimistic';
-import { initiativesPath, projectPath } from '../../lib/paths';
+import { initiativePath, initiativesPath, projectPath } from '../../lib/paths';
 import {
   PROJECT_STATUS_LABELS,
   progressMeasureOf,
   progressOf,
   progressPercent,
 } from '../../lib/planningDisplay';
-import { canEditProject } from '../../lib/planningModel';
+import { canEditProject, daysBetween } from '../../lib/planningModel';
 import { shortDateLabel } from '../../lib/propertyOptions';
-import { initiativeDetailKey, initiativesKey } from '../../lib/queryKeys';
+import {
+  initiativeDetailKey,
+  initiativeProgressKey,
+  initiativesKey,
+} from '../../lib/queryKeys';
 import { showToast } from '../../lib/toast';
 import FavoriteButton from '../../components/ui/FavoriteButton';
 import FollowButton from '../../components/planning/FollowButton';
@@ -114,13 +128,68 @@ const HEALTH_MIX: {
   { key: 'none', label: 'No update', tone: 'bg-line', health: null },
 ];
 
+/** Props for ProgressGraph: the initiative whose subtree it charts. */
+interface ProgressGraphProps {
+  workspaceId: string;
+  initiative: InitiativeRead;
+}
+
+/**
+ * Scope, started and completed work per day across every project in the
+ * initiative's subtree, drawn through to the target date when one is ahead.
+ */
+const ProgressGraph: React.FC<ProgressGraphProps> = ({
+  workspaceId,
+  initiative,
+}) => {
+  const auth = useQueryAuth();
+  const initiativeId = initiative.initiative_id;
+  const read = useCallback(
+    ({ signal }: { signal?: AbortSignal }) =>
+      getInitiativeProgress(workspaceId, initiativeId, signal),
+    [workspaceId, initiativeId]
+  );
+  const { data, error, isLoading } = usePolledQuery(read, {
+    intervalMs: POLL_MS * 2,
+    enabled: workspaceId !== '' && initiativeId !== '',
+    queryKey: initiativeProgressKey(workspaceId, initiativeId),
+    auth,
+  });
+  const days = useMemo(
+    () => (data !== null ? daysBetween(data.start_date, data.end_date) : []),
+    [data]
+  );
+  return (
+    <section className="space-y-2" data-testid="initiative-progress-graph">
+      <h2 className="text-xs font-medium text-text-muted">Progress graph</h2>
+      {error !== null && data === null ? (
+        <p className="text-xs text-text-muted">
+          {errorMessage(error, 'Could not load the progress graph.')}
+        </p>
+      ) : (
+        <BurnUpChart
+          points={data?.days ?? []}
+          days={days}
+          unit={data?.measure ?? 'issues'}
+          emptyMessage="No issues in these projects yet, so there is nothing to chart."
+          isLoading={isLoading && data === null}
+        />
+      )}
+    </section>
+  );
+};
+
 /** Props for RollupPanel: the initiative whose projects it sums up. */
 interface RollupPanelProps {
+  workspaceId: string;
   initiative: InitiativeRead;
 }
 
 /** The side panel summing the initiative's projects' progress and health. */
-const RollupPanel: React.FC<RollupPanelProps> = ({ initiative }) => {
+const RollupPanel: React.FC<RollupPanelProps> = ({
+  workspaceId,
+  initiative,
+}) => {
   const percent = progressPercent(initiative);
   const progress = progressOf(initiative);
   const measure = progressMeasureOf(initiative);
@@ -146,7 +215,13 @@ const RollupPanel: React.FC<RollupPanelProps> = ({ initiative }) => {
           <dt>To do</dt>
           <dd className="text-right">{String(progress.todo)}</dd>
         </dl>
+        {(initiative.sub_initiative_ids?.length ?? 0) > 0 && (
+          <p className="text-2xs text-text-faint">
+            Includes the projects of every sub-initiative.
+          </p>
+        )}
       </section>
+      <ProgressGraph workspaceId={workspaceId} initiative={initiative} />
       <section className="space-y-2">
         <h2 className="text-xs font-medium text-text-muted">Project health</h2>
         {healthTotal > 0 && (
@@ -200,6 +275,8 @@ export const InitiativeDetail: React.FC = () => {
   const [isConfirmingDelete, setIsConfirmingDelete] = useState(false);
   const [deleteError, setDeleteError] = useState<unknown>(null);
   const [membershipError, setMembershipError] = useState<unknown>(null);
+  const [nestingError, setNestingError] = useState<unknown>(null);
+  const [isCreatingChild, setIsCreatingChild] = useState(false);
 
   const detailKey = initiativeDetailKey(workspaceId, initiativeId);
   const listKey = initiativesKey(workspaceId, '');
@@ -246,9 +323,63 @@ export const InitiativeDetail: React.FC = () => {
     initiative !== null
   );
 
+  const { initiatives: allInitiatives } = useInitiatives(workspaceId, isMember);
+  const initiativeNames = useMemo(
+    () => new Map(allInitiatives.map((row) => [row.initiative_id, row.name])),
+    [allInitiatives]
+  );
+  const below = useMemo(
+    () => descendantIds(allInitiatives, initiativeId),
+    [allInitiatives, initiativeId]
+  );
+  const subInitiatives = useMemo(
+    () =>
+      allInitiatives.filter(
+        (row) => (row.parent_initiative_id ?? null) === initiativeId
+      ),
+    [allInitiatives, initiativeId]
+  );
+  const adoptable: ComboboxOption[] = useMemo(() => {
+    const self = allInitiatives.find(
+      (row) => row.initiative_id === initiativeId
+    );
+    if (self === undefined) return [];
+    return allInitiatives
+      .filter(
+        (row) =>
+          (row.parent_initiative_id ?? null) !== initiativeId &&
+          parentCandidates(allInitiatives, row).some(
+            (candidate) => candidate.initiative_id === initiativeId
+          )
+      )
+      .map((row): ComboboxOption => {
+        const parentId = row.parent_initiative_id ?? null;
+        return {
+          value: row.initiative_id,
+          label: row.name,
+          icon: <LuGoal className="h-3.5 w-3.5" />,
+          ...(parentId === null
+            ? {}
+            : {
+                detail: `in ${initiativeNames.get(parentId) ?? 'another initiative'}`,
+              }),
+        };
+      });
+  }, [allInitiatives, initiativeId, initiativeNames]);
+
   const members = useMemo(
     () => projects.filter((project) => project.initiative_id === initiativeId),
     [projects, initiativeId]
+  );
+  const rolledUp = useMemo(
+    () =>
+      projects.filter(
+        (project) =>
+          project.initiative_id !== null &&
+          project.initiative_id !== undefined &&
+          below.has(project.initiative_id)
+      ),
+    [projects, below]
   );
   const candidates: ComboboxOption[] = useMemo(
     () =>
@@ -290,18 +421,33 @@ export const InitiativeDetail: React.FC = () => {
     enabled: isMember && initiative !== null,
   });
 
+  const ancestors = initiative?.ancestors ?? [];
   const crumbs = (
-    <span className="hidden shrink-0 items-center gap-1 text-sm text-text-muted sm:inline-flex">
+    <span className="hidden min-w-0 shrink items-center gap-1 text-sm text-text-muted sm:inline-flex">
       <Link
         to={initiativesPath(slug)}
-        className="rounded-xs hover:text-text focus-visible:ring-1 focus-visible:ring-accent focus-visible:outline-none"
+        className="shrink-0 rounded-xs hover:text-text focus-visible:ring-1 focus-visible:ring-accent focus-visible:outline-none"
       >
         Initiatives
       </Link>
       <LuChevronRight
-        className="h-3.5 w-3.5 text-text-faint"
+        className="h-3.5 w-3.5 shrink-0 text-text-faint"
         aria-hidden="true"
       />
+      {ancestors.map((ancestor) => (
+        <React.Fragment key={ancestor.initiative_id}>
+          <Link
+            to={initiativePath(slug, ancestor.initiative_id)}
+            className="max-w-40 truncate rounded-xs hover:text-text focus-visible:ring-1 focus-visible:ring-accent focus-visible:outline-none"
+          >
+            {ancestor.name}
+          </Link>
+          <LuChevronRight
+            className="h-3.5 w-3.5 shrink-0 text-text-faint"
+            aria-hidden="true"
+          />
+        </React.Fragment>
+      ))}
     </span>
   );
 
@@ -362,6 +508,27 @@ export const InitiativeDetail: React.FC = () => {
     );
   };
 
+  const refreshNesting = (): void => {
+    invalidateQueries(detailKey);
+    invalidateQueries(listKey);
+    invalidateQueries(initiativeProgressKey(workspaceId, initiativeId));
+  };
+
+  const setChildParent = (childId: string, parentId: string | null): void => {
+    setNestingError(null);
+    updateInitiative(workspaceId, childId, {
+      parent_initiative_id: parentId,
+    }).then(
+      () => {
+        refreshNesting();
+        invalidateQueries(initiativeDetailKey(workspaceId, childId));
+      },
+      (failure: unknown) => {
+        setNestingError(failure);
+      }
+    );
+  };
+
   const remove = (): void => {
     setDeleteError(null);
     deleteInitiative(workspaceId, initiativeId).then(
@@ -384,6 +551,19 @@ export const InitiativeDetail: React.FC = () => {
       aria-label="Properties"
       className="flex flex-wrap items-center gap-1.5"
     >
+      <InitiativePicker
+        variant="chip"
+        field="Parent"
+        value={initiative.parent_initiative_id ?? null}
+        valueName={ancestors[ancestors.length - 1]?.name ?? null}
+        initiatives={parentCandidates(allInitiatives, initiative)}
+        disabled={!canEdit}
+        onChange={(parentId) => {
+          void update({ parent_initiative_id: parentId }).then(() => {
+            invalidateQueries(initiativeProgressKey(workspaceId, initiativeId));
+          });
+        }}
+      />
       <InitiativeStatusPicker
         variant="chip"
         value={initiative.status}
@@ -555,6 +735,117 @@ export const InitiativeDetail: React.FC = () => {
                   }}
                 />
               </div>
+              <section aria-labelledby="initiative-sub-initiatives">
+                <div className="mb-2 flex items-center justify-between">
+                  <h2
+                    id="initiative-sub-initiatives"
+                    className="text-sm font-medium text-text"
+                  >
+                    Sub-initiatives
+                  </h2>
+                  {canEdit && (
+                    <div className="flex items-center gap-1">
+                      {adoptable.length > 0 && (
+                        <Popover
+                          label="Add sub-initiative"
+                          align="end"
+                          contentClassName="w-64"
+                          trigger={(trigger) => (
+                            <Button variant="ghost" size="sm" {...trigger}>
+                              <LuPlus aria-hidden="true" />
+                              Add existing
+                            </Button>
+                          )}
+                        >
+                          {(close) => (
+                            <Combobox
+                              label="Add sub-initiative"
+                              placeholder="Add sub-initiative..."
+                              options={adoptable}
+                              selected={[]}
+                              onSelect={(childId) => {
+                                close();
+                                setChildParent(childId, initiativeId);
+                              }}
+                            />
+                          )}
+                        </Popover>
+                      )}
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => {
+                          setIsCreatingChild(true);
+                        }}
+                      >
+                        <LuPlus aria-hidden="true" />
+                        New sub-initiative
+                      </Button>
+                    </div>
+                  )}
+                </div>
+                {nestingError !== null && (
+                  <ErrorAlert
+                    message={errorMessage(
+                      nestingError,
+                      'Could not change the sub-initiatives.'
+                    )}
+                  />
+                )}
+                {subInitiatives.length === 0 ? (
+                  <p className="text-xs text-text-muted">
+                    No sub-initiatives yet.
+                  </p>
+                ) : (
+                  <ul className="divide-y divide-line rounded-md border border-line">
+                    {subInitiatives.map((child) => {
+                      const percent = progressPercent(child);
+                      const nested = child.sub_initiative_ids?.length ?? 0;
+                      return (
+                        <li
+                          key={child.initiative_id}
+                          className="flex h-10 items-center gap-2.5 px-3 text-sm"
+                        >
+                          <LuGoal
+                            aria-hidden="true"
+                            className="h-3.5 w-3.5 shrink-0 text-text-muted"
+                          />
+                          <Link
+                            to={initiativePath(slug, child.initiative_id)}
+                            className="min-w-0 flex-1 truncate font-medium text-text hover:underline focus-visible:ring-1 focus-visible:ring-accent focus-visible:outline-none"
+                          >
+                            {child.name}
+                          </Link>
+                          {nested > 0 && (
+                            <span className="hidden text-xs text-text-faint tabular-nums sm:inline">
+                              {`${String(nested)} sub-${nested === 1 ? 'initiative' : 'initiatives'}`}
+                            </span>
+                          )}
+                          <ProjectHealthGlyph health={child.health} />
+                          <span className="hidden w-16 text-xs text-text-muted tabular-nums sm:block">
+                            {`${String(child.project_count)} ${child.project_count === 1 ? 'project' : 'projects'}`}
+                          </span>
+                          <span className="flex w-12 items-center justify-end gap-1 text-xs text-text-muted tabular-nums">
+                            <ProgressRing percent={percent} />
+                            {`${String(percent)}%`}
+                          </span>
+                          {canEdit && (
+                            <IconButton
+                              label={`Remove ${child.name} from this initiative`}
+                              size="sm"
+                              onClick={() => {
+                                setChildParent(child.initiative_id, null);
+                              }}
+                            >
+                              <LuX className="h-3.5 w-3.5" />
+                            </IconButton>
+                          )}
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+              </section>
               <section aria-labelledby="initiative-projects">
                 <div className="mb-2 flex items-center justify-between">
                   <h2
@@ -598,7 +889,7 @@ export const InitiativeDetail: React.FC = () => {
                     )}
                   />
                 )}
-                {members.length === 0 ? (
+                {members.length === 0 && rolledUp.length === 0 ? (
                   <p className="text-xs text-text-muted">
                     {isLoadingProjects
                       ? 'Loading projects...'
@@ -652,6 +943,52 @@ export const InitiativeDetail: React.FC = () => {
                         </li>
                       );
                     })}
+                    {rolledUp.map((project) => {
+                      const percent = progressPercent(project);
+                      const via =
+                        project.initiative_id === null ||
+                        project.initiative_id === undefined
+                          ? ''
+                          : (initiativeNames.get(project.initiative_id) ?? '');
+                      return (
+                        <li
+                          key={project.project_id}
+                          className="flex h-10 items-center gap-2.5 px-3 text-sm"
+                        >
+                          <ProjectIcon
+                            icon={project.icon}
+                            color={project.color}
+                          />
+                          <Link
+                            to={projectPath(slug, project.project_id)}
+                            className="min-w-0 truncate font-medium text-text hover:underline focus-visible:ring-1 focus-visible:ring-accent focus-visible:outline-none"
+                          >
+                            {project.name}
+                          </Link>
+                          <span className="min-w-0 flex-1 truncate text-xs text-text-faint">
+                            {via === '' ? '' : `via ${via}`}
+                          </span>
+                          <ProjectHealthGlyph health={project.health} />
+                          <ProjectStatusGlyph
+                            status={project.status}
+                            percent={percent}
+                            name={PROJECT_STATUS_LABELS[project.status]}
+                          />
+                          <span className="hidden w-16 text-xs text-text-muted tabular-nums sm:block">
+                            {project.target_date === null
+                              ? 'No date'
+                              : shortDateLabel(project.target_date)}
+                          </span>
+                          <span className="flex w-12 items-center justify-end gap-1 text-xs text-text-muted tabular-nums">
+                            <ProgressRing percent={percent} />
+                            {`${String(percent)}%`}
+                          </span>
+                          {canEdit && (
+                            <span aria-hidden="true" className="w-6" />
+                          )}
+                        </li>
+                      );
+                    })}
                   </ul>
                 )}
               </section>
@@ -664,9 +1001,29 @@ export const InitiativeDetail: React.FC = () => {
                 people={people}
               />
             </div>
-            <RollupPanel initiative={initiative} />
+            <RollupPanel workspaceId={workspaceId} initiative={initiative} />
           </div>
         </div>
+      )}
+
+      {isCreatingChild && (
+        <CreateInitiativeDialog
+          workspaceId={workspaceId}
+          people={people}
+          initialOwnerId={userId ?? null}
+          parent={{
+            initiative_id: initiative.initiative_id,
+            name: initiative.name,
+          }}
+          onClose={() => {
+            setIsCreatingChild(false);
+          }}
+          onCreated={(child) => {
+            setIsCreatingChild(false);
+            refreshNesting();
+            showToast(`Created ${child.name}`);
+          }}
+        />
       )}
 
       {isConfirmingDelete && canDelete && (
@@ -674,7 +1031,11 @@ export const InitiativeDetail: React.FC = () => {
           open
           size="sm"
           title={`Delete ${initiative.name}`}
-          description="Its projects stay where they are and stop being part of an initiative."
+          description={
+            (initiative.sub_initiative_ids?.length ?? 0) > 0
+              ? 'Its projects stay where they are and stop being part of an initiative. Its sub-initiatives move up to its own parent.'
+              : 'Its projects stay where they are and stop being part of an initiative.'
+          }
           onClose={() => {
             setIsConfirmingDelete(false);
           }}

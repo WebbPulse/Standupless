@@ -9,6 +9,7 @@ import type {
   InitiativeCreate,
   InitiativeListQuery,
   InitiativeListRead,
+  InitiativeProgressRead,
   InitiativeRead,
   InitiativeUpdate,
   InitiativeUpdateListRead,
@@ -28,6 +29,12 @@ export const initiativePath = (
   workspaceId: string,
   initiativeId: string
 ): string => `${initiativesPath(workspaceId)}/${initiativeId}`;
+
+/** The route one initiative's progress graph is read from. */
+export const initiativeProgressPath = (
+  workspaceId: string,
+  initiativeId: string
+): string => `${initiativePath(workspaceId, initiativeId)}/progress`;
 
 /** The route one project is added to or removed from an initiative through. */
 export const initiativeProjectPath = (
@@ -100,7 +107,21 @@ export const getInitiative = async (
   return response.data;
 };
 
-/** Edits an initiative. A null clears the owner or the target date. */
+/** Reads an initiative's scope and completion per day across its sub-initiatives. */
+export const getInitiativeProgress = async (
+  workspaceId: string,
+  initiativeId: string,
+  signal?: AbortSignal
+): Promise<InitiativeProgressRead> => {
+  const response = await apiClient.get<InitiativeProgressRead>(
+    initiativeProgressPath(workspaceId, initiativeId),
+    listOptions({}, signal)
+  );
+  const body = response.data;
+  return { ...body, days: Array.isArray(body?.days) ? body.days : [] };
+};
+
+/** Edits an initiative. A null clears the owner, the target date or the parent. */
 export const updateInitiative = async (
   workspaceId: string,
   initiativeId: string,

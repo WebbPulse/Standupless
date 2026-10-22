@@ -2,11 +2,12 @@
  * Every initiative in the workspace, grouped by status. An initiative groups
  * projects across teams, so each row shows its health, owner, how many
  * projects it holds, its target date and how far those projects have come.
+ * Sub-initiatives sit indented under their parent, and a parent folds away.
  */
 
 import React, { useMemo, useState } from 'react';
 import { invalidateQueries } from '@webbpulse/api-client/react';
-import { LuGoal, LuPlus } from 'react-icons/lu';
+import { LuChevronDown, LuChevronRight, LuGoal, LuPlus } from 'react-icons/lu';
 import { Link, useNavigate } from 'react-router-dom';
 import CreateInitiativeDialog from '../../components/planning/CreateInitiativeDialog';
 import ProgressRing from '../../components/planning/ProgressRing';
@@ -25,6 +26,10 @@ import { useWorkspaceMembers } from '../../hooks/useWorkspaceMembers';
 import { cn } from '../../lib/cn';
 import { errorMessage } from '../../lib/errors';
 import {
+  initiativeTreeRows,
+  type InitiativeTreeRow,
+} from '../../lib/initiativeTree';
+import {
   personAvatar,
   personLabel,
   type Assignable,
@@ -37,25 +42,32 @@ import {
   progressPercent,
 } from '../../lib/planningDisplay';
 import { shortDateLabel } from '../../lib/propertyOptions';
-import type { InitiativeRead } from '../../types/Api';
 
 /** The grid every header and row lines up on. */
 const GRID =
   'grid grid-cols-[minmax(0,1fr)_3.5rem] items-center gap-3 md:grid-cols-[minmax(0,1fr)_4rem_3.5rem_5.5rem_6rem_4.5rem]';
 
-/** Props for InitiativeRow: the initiative and the people its owner is among. */
+/** How far each level of sub-initiative is indented, in rem. */
+const INDENT_REM = 1.25;
+
+/** Props for InitiativeRow: its place in the tree and the people its owner is among. */
 interface InitiativeRowProps {
-  initiative: InitiativeRead;
+  row: InitiativeTreeRow;
   slug: string;
   people: Assignable[];
+  collapsed: boolean;
+  onToggle: (initiativeId: string) => void;
 }
 
-/** One initiative as a row linking to its page. */
+/** One initiative as a row linking to its page, indented under its parent. */
 const InitiativeRow: React.FC<InitiativeRowProps> = ({
-  initiative,
+  row,
   slug,
   people,
+  collapsed,
+  onToggle,
 }) => {
+  const { initiative, depth, childCount, parentName } = row;
   const percent = progressPercent(initiative);
   const owner = people.find((person) => person.user_id === initiative.owner_id);
   const projects = initiative.project_count;
@@ -72,7 +84,31 @@ const InitiativeRow: React.FC<InitiativeRowProps> = ({
         data-hover="parent"
         className="absolute inset-0 focus-visible:ring-1 focus-visible:ring-accent focus-visible:outline-none focus-visible:ring-inset"
       />
-      <div className="pointer-events-none flex min-w-0 items-center gap-2.5">
+      <div
+        className="pointer-events-none flex min-w-0 items-center gap-2.5"
+        style={{ paddingLeft: `${String(depth * INDENT_REM)}rem` }}
+      >
+        {childCount > 0 ? (
+          <button
+            type="button"
+            aria-label={`${collapsed ? 'Expand' : 'Collapse'} ${initiative.name}`}
+            aria-expanded={!collapsed}
+            onClick={() => {
+              onToggle(initiative.initiative_id);
+            }}
+            className="pointer-events-auto relative z-10 -mx-1 flex h-5 w-5 shrink-0 items-center justify-center rounded text-text-muted hover:bg-raised hover:text-text focus-visible:ring-1 focus-visible:ring-accent focus-visible:outline-none"
+          >
+            {collapsed ? (
+              <LuChevronRight aria-hidden="true" className="h-3.5 w-3.5" />
+            ) : (
+              <LuChevronDown aria-hidden="true" className="h-3.5 w-3.5" />
+            )}
+          </button>
+        ) : (
+          depth > 0 && (
+            <span aria-hidden="true" className="-mx-1 w-5 shrink-0" />
+          )
+        )}
         <LuGoal
           aria-hidden="true"
           className="h-3.5 w-3.5 shrink-0 text-text-muted"
@@ -80,6 +116,16 @@ const InitiativeRow: React.FC<InitiativeRowProps> = ({
         <span className="truncate font-medium text-text">
           {initiative.name}
         </span>
+        {collapsed && childCount > 0 && (
+          <span className="shrink-0 text-xs text-text-faint tabular-nums">
+            {`${String(childCount)} sub-${childCount === 1 ? 'initiative' : 'initiatives'}`}
+          </span>
+        )}
+        {parentName !== null && (
+          <span className="hidden shrink-0 truncate text-xs text-text-faint sm:inline">
+            {`in ${parentName}`}
+          </span>
+        )}
         {initiative.description !== null && initiative.description !== '' && (
           <span className="hidden min-w-0 truncate text-xs text-text-faint xl:block">
             {initiative.description.split('\n')[0]}
@@ -143,20 +189,36 @@ export const Initiatives: React.FC = () => {
   );
   const members = useWorkspaceMembers(workspaceId, isMember);
   const [isCreating, setIsCreating] = useState(false);
+  const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(
+    () => new Set()
+  );
+
+  const toggle = (initiativeId: string): void => {
+    setCollapsed((current) => {
+      const next = new Set(current);
+      if (next.has(initiativeId)) next.delete(initiativeId);
+      else next.add(initiativeId);
+      return next;
+    });
+  };
 
   const groups = useMemo(
     () =>
-      INITIATIVE_STATUSES.map((status) => ({
-        status,
-        rows: initiatives
+      INITIATIVE_STATUSES.map((status) => {
+        const rows = initiatives
           .filter((initiative) => initiative.status === status)
           .sort((left, right) =>
             (left.target_date ?? '9999').localeCompare(
               right.target_date ?? '9999'
             )
-          ),
-      })).filter((group) => group.rows.length > 0),
-    [initiatives]
+          );
+        return {
+          status,
+          count: rows.length,
+          rows: initiativeTreeRows(rows, initiatives, collapsed),
+        };
+      }).filter((group) => group.count > 0),
+    [initiatives, collapsed]
   );
 
   return (
@@ -226,16 +288,18 @@ export const Initiatives: React.FC = () => {
                 />
                 <span>{INITIATIVE_STATUS_LABELS[group.status]}</span>
                 <span className="text-xs font-normal text-text-faint tabular-nums">
-                  {String(group.rows.length)}
+                  {String(group.count)}
                 </span>
               </div>
               <ul>
-                {group.rows.map((initiative) => (
+                {group.rows.map((row) => (
                   <InitiativeRow
-                    key={initiative.initiative_id}
-                    initiative={initiative}
+                    key={row.initiative.initiative_id}
+                    row={row}
                     slug={slug}
                     people={members}
+                    collapsed={collapsed.has(row.initiative.initiative_id)}
+                    onToggle={toggle}
                   />
                 ))}
               </ul>
