@@ -152,9 +152,7 @@ def test_a_retired_stored_preference_reads_as_the_default(client: TestClient, re
     assert body["font_size"] == "default"
 
 
-def test_the_projects_display_is_kept_whole_and_refuses_unknown_choices(
-    client: TestClient, repositories: Any
-) -> None:
+def test_the_projects_display_is_kept_whole_and_refuses_unknown_choices(client: TestClient, repositories: Any) -> None:
     """The projects list arrangement replaces as a whole, follows the account and refuses a choice it lacks."""
     make_user(repositories, OWNER, "owner@example.com", display_name="Owner")
     sign_in(client, OWNER)
