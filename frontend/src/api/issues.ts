@@ -15,6 +15,7 @@ import {
 import type {
   ActivityListRead,
   ActivityRead,
+  IssueConversionRead,
   IssueCreate,
   IssueExportRead,
   IssueListQuery,
@@ -466,6 +467,36 @@ export const moveIssue = async (
   const response = await apiClient.post<IssueRead>(
     `${issuePath(workspaceId, issueId)}/move`,
     body
+  );
+  return response.data;
+};
+
+/**
+ * Copies an issue into its own team under a new key. The copy keeps the
+ * title with a copy suffix, the description, labels, priority, estimate,
+ * parent, project and milestone, and starts unassigned in the default status.
+ */
+export const duplicateIssue = async (
+  workspaceId: string,
+  issueId: string
+): Promise<IssueRead> => {
+  const response = await apiClient.post<IssueRead>(
+    `${issuePath(workspaceId, issueId)}/duplicate`
+  );
+  return response.data;
+};
+
+/**
+ * Turns an issue into a project on its team: the project takes its title,
+ * description, priority, assignee and dates, its sub-issues move into the
+ * project, and the issue is linked to the project and closed.
+ */
+export const convertIssueToProject = async (
+  workspaceId: string,
+  issueId: string
+): Promise<IssueConversionRead> => {
+  const response = await apiClient.post<IssueConversionRead>(
+    `${issuePath(workspaceId, issueId)}/convert-to-project`
   );
   return response.data;
 };

@@ -37,6 +37,8 @@ from app.common.api.schemas.planning import (
 from app.common.cycle_schedule import active_cycle
 from app.common.cycle_writes import create_cycle, delete_cycle, list_cycles, update_cycle
 from app.common.db.dynamo.issues import Issue
+from app.common.issue_conversion import convert_to_project
+from app.common.issue_keys import current
 from app.common.issue_writes import bulk_update_issues
 from app.common.milestone_writes import create_milestone, delete_milestone, update_milestone
 from app.common.planning_rules import (
@@ -452,6 +454,17 @@ def _create_project(call: ToolCall) -> Any:
     return _project_json(create_project(call.repositories, call.context, payload))
 
 
+def _convert_issue_to_project(call: ToolCall) -> Any:
+    """Turn an issue into a project on its team through the route's own path."""
+    issue = issue_ref(call, call.require("issue_id"))
+    project, closed, moved = convert_to_project(call.repositories, call.context, issue)
+    return {
+        "project": _project_json(project),
+        "issue": summary_json(current(call.repositories.teams, closed)),
+        "moved_issues": [summary_json(current(call.repositories.teams, child)) for child in moved],
+    }
+
+
 def _update_project(call: ToolCall) -> Any:
     """Patch a project's fields or its teams, through the route's own path."""
     project_id = _project_id(call, call.require("project_id"))
@@ -728,6 +741,19 @@ PLANNING_TOOLS: tuple[Tool, ...] = (
         scopes=("projects:write",),
         schema=object_schema(PROJECT_PROPERTIES, required=("name", "team_ids")),
         handler=_create_project,
+    ),
+    Tool(
+        name="convert_issue_to_project",
+        description=(
+            "Turn an issue into a project on its team. The project takes the issue's title, body, priority, "
+            "assignee as lead and dates; the issue's sub-issues leave it and join the project; the issue is "
+            "put in the project and closed in the team's first completed status, or cancelled without one."
+        ),
+        scopes=("issues:write", "projects:write"),
+        schema=object_schema(
+            {"issue_id": string("The issue's id, or its key such as ABC-123")}, required=("issue_id",)
+        ),
+        handler=_convert_issue_to_project,
     ),
     Tool(
         name="update_project",

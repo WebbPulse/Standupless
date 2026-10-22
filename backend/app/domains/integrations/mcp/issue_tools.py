@@ -39,6 +39,7 @@ from app.common.filter_resolution import resolve_issue_filter
 from app.common.insights import insights_for
 from app.common.issue_activity import activity_page
 from app.common.issue_archive import archive_issue, unarchive_issue
+from app.common.issue_conversion import duplicate_issue
 from app.common.issue_filters import UnknownStatusCategory, build_issue_filter, subscribed_by_caller
 from app.common.issue_keys import current
 from app.common.issue_links import create_link, delete_link, list_links
@@ -605,6 +606,12 @@ def _move_issue(call: ToolCall) -> Any:
     return _answer(call, move_issue(call.repositories, call.context, issue, str(call.require("team_id"))))
 
 
+def _duplicate_issue(call: ToolCall) -> Any:
+    """Copy an issue into a new one in its team through the route's own path."""
+    issue = issue_ref(call, call.require("issue_id"))
+    return _answer(call, duplicate_issue(call.repositories, call.context, issue))
+
+
 def _unarchive_issue(call: ToolCall) -> Any:
     """Restore an archived issue through the route's own path, idempotently."""
     issue = issue_ref(call, call.require("issue_id"))
@@ -1161,6 +1168,17 @@ ISSUE_TOOLS: tuple[Tool, ...] = (
             required=("issue_id", "team_id"),
         ),
         handler=_move_issue,
+    ),
+    Tool(
+        name="duplicate_issue",
+        description=(
+            "Copy an issue into a new issue in the same team. The copy keeps the title with a (copy) suffix, "
+            "the body, labels, priority, estimate, parent, project and milestone, and starts in the team's "
+            "default status, unassigned, outside any cycle and with no dates or relations."
+        ),
+        scopes=("issues:write",),
+        schema=object_schema({"issue_id": string(ISSUE_REF)}, required=("issue_id",)),
+        handler=_duplicate_issue,
     ),
     Tool(
         name="unarchive_issue",

@@ -200,6 +200,8 @@ def test_the_contract_fixes_the_tool_set() -> None:
         "merge_labels",
         "merge_workspace_labels",
         "move_issue",
+        "duplicate_issue",
+        "convert_issue_to_project",
         "override_team_label",
         "override_team_status",
         "remove_issues_from_cycle",

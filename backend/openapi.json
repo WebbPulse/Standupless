@@ -5897,6 +5897,30 @@
         "title": "IssueBulkUpdate",
         "type": "object"
       },
+      "IssueConversionRead": {
+        "description": "What converting an issue into a project answers with.\n\n`project` is the new project, `issue` the original issue after it was closed\nand pointed at the project, and `moved_issue_ids` the former sub-issues now in\nthe project, in creation order.",
+        "properties": {
+          "issue": {
+            "$ref": "#/components/schemas/app__common__api__schemas__issues__IssueRead"
+          },
+          "moved_issue_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Moved Issue Ids",
+            "type": "array"
+          },
+          "project": {
+            "$ref": "#/components/schemas/ProjectRead"
+          }
+        },
+        "required": [
+          "project",
+          "issue"
+        ],
+        "title": "IssueConversionRead",
+        "type": "object"
+      },
       "IssueCreate": {
         "description": "The body `POST /api/workspaces/{workspace_id}/issues` takes.\n\n`team_id` is a field rather than a path segment because issues are workspace\nscoped, which is what lets a link and a \"my issues\" read cross teams.\n`template_id` fills every field the body leaves out from a template the team\noffers, so `title` may be left out only when a template is named.",
         "properties": {
@@ -30087,6 +30111,65 @@
         ]
       }
     },
+    "/api/workspaces/{workspace_id}/issues/{issue_id}/convert-to-project": {
+      "post": {
+        "description": "Turn an issue into a project on its team, moving its sub-issues into the project and closing it.\n\nThe project takes the issue's title, description, priority, assignee as lead\nand dates. The issue is pointed at the project, which is the link back, and\nmoved to the team's first completed status, or cancelled when the team has no\ncompleted one.",
+        "operationId": "convert_issue_to_project_api_workspaces__workspace_id__issues__issue_id__convert_to_project_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "issue_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Issue Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IssueConversionRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Convert Issue To Project",
+        "tags": [
+          "issues"
+        ]
+      }
+    },
     "/api/workspaces/{workspace_id}/issues/{issue_id}/documents": {
       "get": {
         "description": "The documents that mention one issue, for its page.",
@@ -30142,6 +30225,65 @@
         "summary": "List Backlinks",
         "tags": [
           "planning"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/issues/{issue_id}/duplicate": {
+      "post": {
+        "description": "Create a copy of an issue in its team, answering the new issue under its own key.\n\nThe copy carries the title with a copy suffix, the description, labels,\npriority, estimate, parent, project and milestone, and starts in the team's\ndefault status, unassigned and outside any cycle, as in Linear.",
+        "operationId": "duplicate_api_workspaces__workspace_id__issues__issue_id__duplicate_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "issue_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Issue Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/app__common__api__schemas__issues__IssueRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Duplicate",
+        "tags": [
+          "issues"
         ]
       }
     },

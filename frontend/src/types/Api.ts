@@ -984,6 +984,16 @@ export interface IssueMove {
   team_id: string;
 }
 
+/**
+ * What converting an issue into a project answers: the new project, the
+ * issue as it was closed into it, and the sub-issues moved into the project.
+ */
+export interface IssueConversionRead {
+  project: ProjectRead;
+  issue: IssueRead;
+  moved_issue_ids: string[];
+}
+
 /** The editable fields on an issue. Moving team is its own route. */
 export interface IssueUpdate {
   title?: string;

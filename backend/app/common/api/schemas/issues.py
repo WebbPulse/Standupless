@@ -16,6 +16,7 @@ from typing import Any, Literal, Optional
 from pydantic import BaseModel, Field, StrictBool, field_validator, model_validator
 from webbpulse.http import cursor_page
 
+from app.common.api.schemas.planning import ProjectRead
 from app.common.change_source import ChangeSource
 from app.common.core.constants import ISSUE_BODY_MAX_BYTES
 from app.common.db.dynamo.activity import Activity
@@ -531,6 +532,19 @@ class IssueBulkRead(BaseModel):
 
     issues: list[IssueRead] = Field(default_factory=list)
     skipped: list[str] = Field(default_factory=list)
+
+
+class IssueConversionRead(BaseModel):
+    """What converting an issue into a project answers with.
+
+    `project` is the new project, `issue` the original issue after it was closed
+    and pointed at the project, and `moved_issue_ids` the former sub-issues now in
+    the project, in creation order.
+    """
+
+    project: ProjectRead
+    issue: IssueRead
+    moved_issue_ids: list[str] = Field(default_factory=list)
 
 
 class LinkCreate(BaseModel):
