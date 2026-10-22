@@ -972,12 +972,16 @@ describe('the advanced filters', () => {
         },
       ],
     });
-    const view = { filter } as unknown as SavedViewDisplayRead;
+    const view = {
+      filter,
+      group_by: 'status',
+    } as unknown as SavedViewDisplayRead;
     expect(sameViewState(viewToState(view), any)).toBe(true);
     expect(
       sameViewState(
         viewToState({
           filter: stateToViewFilter(grouped),
+          group_by: 'status',
         } as unknown as SavedViewDisplayRead),
         grouped
       )
