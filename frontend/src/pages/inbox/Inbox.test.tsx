@@ -470,14 +470,15 @@ describe('inbox', () => {
     await user.click(screen.getByRole('button', { name: 'Display' }));
     await user.click(screen.getByRole('checkbox', { name: 'Show read' }));
     first.unmount();
-    listInbox.mockClear();
     renderPage();
 
-    await waitFor(() => {
-      expect(listInbox).toHaveBeenCalledWith(
-        expect.objectContaining({ unread: true })
-      );
-    });
+    await user.click(await screen.findByRole('button', { name: 'Display' }));
+    expect(
+      screen.getByRole('checkbox', { name: 'Show read' })
+    ).not.toBeChecked();
+    expect(
+      screen.getByRole('checkbox', { name: 'Show snoozed' })
+    ).not.toBeChecked();
   });
 
   it('folds notifications about one issue into one row with a count', async () => {
