@@ -10,6 +10,7 @@ would name them, and every destructive tool says so in its annotations.
 
 from __future__ import annotations
 
+from datetime import date, timedelta
 from typing import Any
 
 import pytest
@@ -17,7 +18,7 @@ from fastapi.testclient import TestClient
 
 from app.common import team_writes
 from app.common.db.dynamo.issues import Issue
-from app.common.db.dynamo.planning import ProjectUpdateRow, project_update_key
+from app.common.db.dynamo.planning import Cycle, ProjectUpdateRow, cycle_key, project_update_key
 from app.common.team_refs import team_not_found_message
 from app.domains.integrations.mcp.toolkit import NOT_VISIBLE
 from app.domains.integrations.mcp.tools import TOOLS_BY_NAME
@@ -560,3 +561,93 @@ def test_update_project_sets_the_update_cadence(
     assert (inherited["update_interval_days"], inherited["update_interval_inherited"]) == (7, True)
     assert "update_interval_days" in refused
     assert repositories.planning.get_project(WORKSPACE, project_id).update_interval_days is None
+
+
+def _schedule(repositories: Any) -> dict[str, str]:
+    """A previous, current and next cycle of the home team around today, by alias."""
+    today = date.today()
+    windows = {
+        "previous": (today - timedelta(days=20), today - timedelta(days=8)),
+        "current": (today - timedelta(days=7), today + timedelta(days=6)),
+        "next": (today + timedelta(days=7), today + timedelta(days=20)),
+    }
+    ids: dict[str, str] = {}
+    for alias, (start, end) in windows.items():
+        cycle = Cycle(
+            workspace_id=WORKSPACE,
+            planning_key="",
+            team_id=TEAM,
+            name=f"{alias.title()} sprint",
+            start_date=start.isoformat(),
+            end_date=end.isoformat(),
+            created_by=OWNER,
+        )
+        cycle.planning_key = cycle_key(TEAM, cycle.cycle_id)
+        repositories.planning.create_cycle(cycle)
+        ids[alias] = cycle.cycle_id
+    return ids
+
+
+@pytest.mark.parametrize("alias", ["current", "next", "previous"])
+def test_create_and_update_issue_resolve_a_relative_cycle(
+    client: TestClient, repositories: Any, issue: Issue, alias: str
+) -> None:
+    """create_issue and update_issue take current, next and previous as add_issues_to_cycle does."""
+    cycles = _schedule(repositories)
+    secret = mint_for(repositories, MEMBER, ISSUES)
+
+    created = answer(tool(client, secret, "create_issue", {"team_id": "ABC", "title": "Planned", "cycle_id": alias}))
+    updated = answer(tool(client, secret, "update_issue", {"issue_id": "ABC-1", "cycle_id": alias}))
+
+    assert created["cycle_id"] == cycles[alias]
+    assert updated["cycle_id"] == cycles[alias]
+    assert repositories.issues.get(WORKSPACE, issue.issue_id).cycle_id == cycles[alias]
+
+
+@pytest.mark.parametrize("alias", ["current", "next", "previous"])
+def test_bulk_update_and_add_issues_resolve_a_relative_cycle(
+    client: TestClient, repositories: Any, issue: Issue, alias: str
+) -> None:
+    """bulk_update_issues and add_issues_to_cycle place issues in the same relative cycle."""
+    cycles = _schedule(repositories)
+    seed_issue(repositories, WORKSPACE, TEAM, SECOND_ISSUE, "ABC", 2)
+    secret = mint_for(repositories, MEMBER, ISSUES)
+
+    bulk = answer(tool(client, secret, "bulk_update_issues", {"issue_ids": ["ABC-1"], "cycle_id": alias}))
+    added = answer(tool(client, secret, "add_issues_to_cycle", {"cycle_id": alias, "issue_ids": ["ABC-2"]}))
+
+    assert [row["cycle_id"] for row in bulk["issues"]] == [cycles[alias]]
+    assert added["cycle_id"] == cycles[alias]
+    assert repositories.issues.get(WORKSPACE, SECOND_ISSUE).cycle_id == cycles[alias]
+
+
+def test_a_relative_cycle_the_team_lacks_is_refused_by_name(
+    client: TestClient, repositories: Any, issue: Issue
+) -> None:
+    """A team with no cycles refuses current, naming the alias and the team."""
+    secret = mint_for(repositories, MEMBER, ISSUES)
+
+    created = refusal(tool(client, secret, "create_issue", {"team_id": "ABC", "title": "x", "cycle_id": "current"}))
+    added = refusal(tool(client, secret, "add_issues_to_cycle", {"cycle_id": "next", "issue_ids": ["ABC-1"]}))
+
+    assert "Team ABC has no current cycle" in created
+    assert "Team ABC has no next cycle" in added
+
+
+def test_cycle_tools_answer_the_renamed_key(
+    client: TestClient, repositories: Any, issue: Issue, planning: dict[str, str]
+) -> None:
+    """After a team key change, the cycle tools take the old key and answer the new one."""
+    seed_issue(repositories, WORKSPACE, TEAM, SECOND_ISSUE, "ABC", 2)
+    admin = mint_for(repositories, ADMIN, ("teams:write",))
+    answer(tool(client, admin, "update_team", {"team_id": "ABC", "key_prefix": "ALP"}))
+    secret = mint_for(repositories, MEMBER, ISSUES)
+
+    added = answer(tool(client, secret, "add_issues_to_cycle", {"cycle_id": "current", "issue_ids": ["ABC-1"]}))
+    removed = answer(
+        tool(client, secret, "remove_issues_from_cycle", {"cycle_id": "current", "issue_ids": ["ALP-1", "ABC-2"]})
+    )
+
+    assert [row["issue_key"] for row in added["issues"]] == ["ALP-1"]
+    assert [row["issue_key"] for row in removed["issues"]] == ["ALP-1"]
+    assert removed["not_in_cycle"] == ["ALP-2"]

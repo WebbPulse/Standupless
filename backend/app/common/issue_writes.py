@@ -40,7 +40,6 @@ from app.common.issue_rules import (
     TRIAGE_STATUS_ID,
     changed_fields,
     check_assignee,
-    check_cycle,
     check_estimate,
     check_labels,
     check_parent,
@@ -53,6 +52,7 @@ from app.common.issue_rules import (
     not_found,
     require_team_member,
     require_triage_on,
+    resolve_cycle,
     status_categories,
     subscribe_touched,
     unprocessable,
@@ -408,7 +408,7 @@ def create_issue(repositories: Repositories, context: AuthzContext, payload: Iss
     issue_id = new_issue_id()
     parent_id = check_parent(repositories, context.workspace_id, payload.team_id, issue_id, payload.parent_id)
 
-    cycle_id = check_cycle(repositories, context.workspace_id, payload.team_id, payload.cycle_id)
+    cycle_id = resolve_cycle(repositories, context.workspace_id, payload.team_id, payload.cycle_id)
     project_id = check_project(repositories, context.workspace_id, payload.team_id, payload.project_id)
     project_milestone_id = check_project_milestone(
         repositories, context.workspace_id, project_id, payload.project_milestone_id
@@ -554,7 +554,7 @@ def apply_patch(repositories: Repositories, context: AuthzContext, issue: Issue,
             repositories, context.workspace_id, issue.team_id, issue.issue_id, attributes["parent_id"]
         )
     if "cycle_id" in attributes:
-        updated.cycle_id = check_cycle(repositories, context.workspace_id, issue.team_id, attributes["cycle_id"])
+        updated.cycle_id = resolve_cycle(repositories, context.workspace_id, issue.team_id, attributes["cycle_id"])
     if "project_id" in attributes:
         updated.project_id = check_project(repositories, context.workspace_id, issue.team_id, attributes["project_id"])
     if "project_milestone_id" in attributes:

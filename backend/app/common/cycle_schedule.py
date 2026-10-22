@@ -32,6 +32,9 @@ SYSTEM_ACTOR = "system"
 MAX_CYCLES_PER_RUN = 20
 """The most cycles one run creates for one team, a bound on a runaway loop."""
 
+RELATIVE_CYCLES: tuple[str, ...] = ("current", "next", "previous")
+"""Cycle references resolved against a team's schedule on the day they are read."""
+
 
 @dataclass
 class ScheduleResult:
@@ -61,6 +64,19 @@ def active_cycle(cycles: Iterable[Cycle], today: date | None = None) -> Cycle | 
     now = (today or date.today()).isoformat()
     live = [c for c in cycles if not c.cancelled and c.start_date <= now <= c.end_date]
     return min(live, key=lambda c: (c.start_date, c.cycle_id)) if live else None
+
+
+def relative_cycle(cycles: list[Cycle], which: str, today: date) -> Cycle | None:
+    """The current, next or previous live cycle of one team on one day."""
+    if which == "current":
+        return active_cycle(cycles, today)
+    now = today.isoformat()
+    live = [cycle for cycle in cycles if not cycle.cancelled]
+    if which == "next":
+        ahead = [cycle for cycle in live if cycle.start_date > now]
+        return min(ahead, key=lambda cycle: (cycle.start_date, cycle.cycle_id)) if ahead else None
+    behind = [cycle for cycle in live if cycle.end_date < now]
+    return max(behind, key=lambda cycle: (cycle.end_date, cycle.cycle_id)) if behind else None
 
 
 def plan_cycles(

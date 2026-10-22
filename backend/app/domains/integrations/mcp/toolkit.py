@@ -18,7 +18,8 @@ from pydantic import ValidationError
 from app.common.api.dependencies.authz import AuthzContext
 from app.common.api.dependencies.repositories import Repositories
 from app.common.db.dynamo.issues import Issue
-from app.common.db.dynamo.teams import Team
+from app.common.db.dynamo.teams import Team, TeamRepository
+from app.common.issue_keys import current
 from app.common.issue_move import find_issue_by_number
 from app.common.issue_rules import TRIAGE_STATUS_NAME, load_visible_issue, shown_status_id
 from app.common.issue_rules import not_found as issue_not_found
@@ -365,14 +366,15 @@ def issue_id_ref(call: ToolCall, value: Any) -> Optional[str]:
     return reference
 
 
-def issue_json(issue: Issue, *, status_name: str = "") -> dict[str, Any]:
-    """One issue as a tool answers it.
+def issue_json(teams: TeamRepository, issue: Issue, *, status_name: str = "") -> dict[str, Any]:
+    """One issue as a tool answers it, under its team's current key.
 
     Ids are included here, unlike in the public share shapes, because the caller is
     inside the workspace and needs them to make the next call. What bounds this
     credential is its scopes and its membership, not the ids it can see. An issue
     waiting in triage reports the synthetic triage status, as every client shows it.
     """
+    issue = current(teams, issue)
     return {
         "issue_id": issue.issue_id,
         "issue_key": issue.key,
@@ -403,8 +405,9 @@ def issue_json(issue: Issue, *, status_name: str = "") -> dict[str, Any]:
     }
 
 
-def summary_json(issue: Issue) -> dict[str, Any]:
-    """One issue as a listing renders it, under the synthetic triage status while it waits in triage."""
+def summary_json(teams: TeamRepository, issue: Issue) -> dict[str, Any]:
+    """One issue as a listing renders it, under its team's current key and the synthetic triage status in triage."""
+    issue = current(teams, issue)
     return {
         "issue_id": issue.issue_id,
         "issue_key": issue.key,

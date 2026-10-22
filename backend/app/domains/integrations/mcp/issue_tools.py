@@ -31,6 +31,7 @@ from app.common.api.schemas.issues import (
 )
 from app.common.change_source import CHANGE_SOURCES
 from app.common.comment_writes import comment_page, create_comment
+from app.common.cycle_schedule import RELATIVE_CYCLES
 from app.common.db.dynamo.comments import Comment
 from app.common.db.dynamo.github import IssueLink
 from app.common.db.dynamo.issues import Issue
@@ -130,7 +131,7 @@ def _status_name(call: ToolCall, issue: Issue) -> str:
 
 def _answer(call: ToolCall, issue: Issue) -> dict[str, Any]:
     """One written or read issue as the tools answer it, under its current key."""
-    return issue_json(current(call.repositories.teams, issue), status_name=_status_name(call, issue))
+    return issue_json(call.repositories.teams, issue, status_name=_status_name(call, issue))
 
 
 FILTER_ARGUMENTS: tuple[str, ...] = (
@@ -367,7 +368,7 @@ def _page(call: ToolCall, **overrides: Any) -> dict[str, Any]:
         reverse=_reverse(call),
         subscribed=subscribed,
     )
-    return {"issues": [summary_json(row) for row in rows], "next_cursor": next_cursor}
+    return {"issues": [summary_json(call.repositories.teams, row) for row in rows], "next_cursor": next_cursor}
 
 
 def _list_issues(call: ToolCall) -> Any:
@@ -438,6 +439,7 @@ def _search_issues(call: ToolCall) -> Any:
         if (
             query
             and query != issue.key.lower()
+            and query != current(call.repositories.teams, issue).key.lower()
             and query not in issue.title.lower()
             and query not in (issue.body or "").lower()
         ):
@@ -457,7 +459,7 @@ def _search_issues(call: ToolCall) -> Any:
         key=lambda row: (row.updated_at, row.issue_id),
         descending=True,
     )
-    return {"issues": [summary_json(issue) for issue in found], "next_cursor": next_cursor}
+    return {"issues": [summary_json(call.repositories.teams, issue) for issue in found], "next_cursor": next_cursor}
 
 
 PULL_REQUEST_LIMIT = 50
@@ -931,7 +933,7 @@ def _bulk_names(call: ToolCall, patch: dict[str, Any], team_id: str | None) -> N
         if patch.get(name) and not overlap:
             labels = labels or call.repositories.team_config.list_labels(workspace_id, team_id)
             patch[name] = [_label_ref(labels, str(item)) for item in patch[name]]
-    if patch.get("cycle_id"):
+    if patch.get("cycle_id") and str(patch["cycle_id"]).strip().casefold() not in RELATIVE_CYCLES:
         cycles, _ = call.repositories.planning.list_cycles(workspace_id, team_id, limit=500)
         patch["cycle_id"] = _by_name(cycles, "cycle_id", str(patch["cycle_id"]))
     if patch.get("project_id"):
@@ -971,7 +973,7 @@ def _bulk_update_issues(call: ToolCall) -> Any:
         body["only_if_estimate"] = str(call.arguments["only_if_estimate"])
     payload = IssueBulkUpdate.model_validate(body)
     stored, skipped = bulk_update_issues(call.repositories, call.context, payload)
-    return {"issues": [summary_json(current(call.repositories.teams, row)) for row in stored], "skipped": skipped}
+    return {"issues": [summary_json(call.repositories.teams, row) for row in stored], "skipped": skipped}
 
 
 ISSUE_REF = "The issue's id, or its key such as ABC-123"
@@ -1092,7 +1094,7 @@ ISSUE_TOOLS: tuple[Tool, ...] = (
                 "start_date": string("Start date, YYYY-MM-DD"),
                 "due_date": string("Due date, YYYY-MM-DD"),
                 "parent_id": string("The parent issue's id or key, in the same team"),
-                "cycle_id": string("A cycle of the same team"),
+                "cycle_id": string("A cycle of the same team, or current, next or previous on its schedule"),
                 "project_id": string("A project the team is on"),
                 "project_milestone_id": string("A milestone of that project"),
                 "template_id": string("A template the team offers, by id or name, filling the fields not passed"),
@@ -1124,7 +1126,7 @@ ISSUE_TOOLS: tuple[Tool, ...] = (
                 "start_date": nullable("A new start date, YYYY-MM-DD, or null"),
                 "due_date": nullable("A new due date, YYYY-MM-DD, or null"),
                 "parent_id": nullable("A parent issue's id or key in the same team, or null to detach"),
-                "cycle_id": nullable("A cycle of the same team, or null"),
+                "cycle_id": nullable("A cycle of the same team, current, next or previous on its schedule, or null"),
                 "project_id": nullable("A project the team is on, or null; changing it clears the milestone"),
                 "project_milestone_id": nullable("A milestone of the issue's project, or null"),
             },
@@ -1334,7 +1336,9 @@ ISSUE_TOOLS: tuple[Tool, ...] = (
                 "remove_label_ids": string_list("Labels to remove, by id or name"),
                 "project_id": nullable("A project the team is on, by id or name, or null to remove"),
                 "project_milestone_id": nullable("A milestone of the project, by id or name, or null"),
-                "cycle_id": nullable("A cycle of the team, by id or name, or null to remove"),
+                "cycle_id": nullable(
+                    "A cycle of each issue's team, by id or name, current, next or previous, or null to remove"
+                ),
                 "estimate": nullable("An estimate in the team's scale, or null"),
                 "parent_id": nullable(
                     "A top level issue of the same team to nest the issues under, by id or key, or null to detach"

@@ -17,9 +17,9 @@ from typing import TYPE_CHECKING, Iterable, Mapping, Optional
 
 from fastapi import HTTPException, status
 
-from app.common.cycle_schedule import active_cycle
+from app.common.cycle_schedule import RELATIVE_CYCLES, relative_cycle
 from app.common.db.dynamo.planning import Cycle
-from app.common.issue_filters import RELATIVE_CYCLES, FilterValues, IssueFilter
+from app.common.issue_filters import FilterValues, IssueFilter
 
 if TYPE_CHECKING:
     from app.common.api.dependencies.repositories import Repositories
@@ -48,19 +48,6 @@ def unknown_cycle(value: str) -> HTTPException:
             "value": value,
         },
     )
-
-
-def relative_cycle(cycles: list[Cycle], which: str, today: date) -> Optional[Cycle]:
-    """The current, next or previous live cycle of one team on one day."""
-    if which == "current":
-        return active_cycle(cycles, today)
-    now = today.isoformat()
-    live = [cycle for cycle in cycles if not cycle.cancelled]
-    if which == "next":
-        ahead = [cycle for cycle in live if cycle.start_date > now]
-        return min(ahead, key=lambda cycle: (cycle.start_date, cycle.cycle_id)) if ahead else None
-    behind = [cycle for cycle in live if cycle.end_date < now]
-    return max(behind, key=lambda cycle: (cycle.end_date, cycle.cycle_id)) if behind else None
 
 
 def _resolve_cycles(values: FilterValues, by_team: dict[str, list[Cycle]], today: date) -> FilterValues:

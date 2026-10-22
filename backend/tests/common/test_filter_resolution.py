@@ -12,8 +12,9 @@ from datetime import date
 import pytest
 from fastapi import HTTPException
 
+from app.common.cycle_schedule import relative_cycle
 from app.common.db.dynamo.planning import Cycle, cycle_key
-from app.common.filter_resolution import NO_CYCLE_MATCH, _resolve_cycles, relative_cycle
+from app.common.filter_resolution import NO_CYCLE_MATCH, _resolve_cycles
 
 TODAY = date(2026, 3, 10)
 

@@ -36,9 +36,6 @@ CATEGORY_ALIASES: dict[str, str] = {"canceled": "cancelled"}
 CLOSED_CATEGORIES: frozenset[str] = frozenset({"completed", "cancelled"})
 """The categories a blocker stops counting in, the rule the blocked marker keeps too."""
 
-RELATIVE_CYCLES: tuple[str, ...] = ("current", "next", "previous")
-"""Cycle filter values resolved per team when the query runs, so a view follows the schedule."""
-
 BOOLEAN_VALUES: dict[str, bool] = {"true": True, "false": False}
 """The spellings a boolean filter takes, since a saved view stores every value as text."""
 
