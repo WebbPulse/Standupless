@@ -62,13 +62,13 @@ def test_setting_a_reminder_lists_it_on_the_issue(
     moment = _soon()
 
     sign_in(client, MEMBER)
-    response = _set(client, workspace, issue["issue_id"], moment)
-    listed = client.get(f"/api/workspaces/{workspace}/inbox/reminders", params={"issue_id": issue["issue_id"]})
+    response = _set(client, workspace, issue["id"], moment)
+    listed = client.get(f"/api/workspaces/{workspace}/inbox/reminders", params={"issue_id": issue["id"]})
 
     assert response.status_code == 200, response.text
     assert response.json()["issue_key"] == issue["key"]
     reminders = listed.json()["reminders"]
-    assert [row["issue_id"] for row in reminders] == [issue["issue_id"]]
+    assert [row["issue_id"] for row in reminders] == [issue["id"]]
     assert datetime.fromisoformat(reminders[0]["remind_at"]) == moment
     assert reminders[0]["issue_title"] == "Follow up"
 
@@ -81,8 +81,8 @@ def test_setting_again_replaces_the_reminder(
     first, second = _soon(30), _soon(90)
 
     sign_in(client, MEMBER)
-    _set(client, workspace, issue["issue_id"], first)
-    _set(client, workspace, issue["issue_id"], second)
+    _set(client, workspace, issue["id"], first)
+    _set(client, workspace, issue["id"], second)
 
     reminders = client.get(f"/api/workspaces/{workspace}/inbox/reminders").json()["reminders"]
     assert [datetime.fromisoformat(row["remind_at"]) for row in reminders] == [second]
@@ -95,22 +95,22 @@ def test_reminders_list_soonest_first(client: TestClient, issues_client: TestCli
     early = _issue(issues_client, workspace)
 
     sign_in(client, MEMBER)
-    _set(client, workspace, late["issue_id"], _soon(120))
-    _set(client, workspace, early["issue_id"], _soon(10))
+    _set(client, workspace, late["id"], _soon(120))
+    _set(client, workspace, early["id"], _soon(10))
 
     reminders = client.get(f"/api/workspaces/{workspace}/inbox/reminders").json()["reminders"]
-    assert [row["issue_id"] for row in reminders] == [early["issue_id"], late["issue_id"]]
+    assert [row["issue_id"] for row in reminders] == [early["id"], late["id"]]
 
 
 def test_a_reminder_is_the_callers_own(client: TestClient, issues_client: TestClient, workspace: str) -> None:
     """Another member sees none of it and cannot cancel it."""
     issue = _issue(issues_client, workspace)
     sign_in(client, MEMBER)
-    _set(client, workspace, issue["issue_id"], _soon())
+    _set(client, workspace, issue["id"], _soon())
 
     sign_in(client, OWNER)
     listed = client.get(f"/api/workspaces/{workspace}/inbox/reminders")
-    cancelled = client.delete(f"/api/workspaces/{workspace}/inbox/reminders/{issue['issue_id']}")
+    cancelled = client.delete(f"/api/workspaces/{workspace}/inbox/reminders/{issue['id']}")
 
     assert listed.json()["reminders"] == []
     assert cancelled.status_code == 404
@@ -123,10 +123,10 @@ def test_cancelling_removes_the_reminder_and_its_delivery(
     issue = _issue(issues_client, workspace)
     moment = _soon()
     sign_in(client, MEMBER)
-    _set(client, workspace, issue["issue_id"], moment)
+    _set(client, workspace, issue["id"], moment)
 
-    cancelled = client.delete(f"/api/workspaces/{workspace}/inbox/reminders/{issue['issue_id']}")
-    again = client.delete(f"/api/workspaces/{workspace}/inbox/reminders/{issue['issue_id']}")
+    cancelled = client.delete(f"/api/workspaces/{workspace}/inbox/reminders/{issue['id']}")
+    again = client.delete(f"/api/workspaces/{workspace}/inbox/reminders/{issue['id']}")
     run_issue_reminders(repositories, moment + timedelta(minutes=1))
 
     assert cancelled.status_code == 204
@@ -142,7 +142,7 @@ def test_an_issue_out_of_sight_cannot_be_reminded(
     issue = _issue(issues_client, workspace, team_id=OTHER_TEAM)
 
     sign_in(client, GUEST)
-    response = _set(client, workspace, issue["issue_id"], _soon())
+    response = _set(client, workspace, issue["id"], _soon())
 
     assert response.status_code == 404
 
@@ -162,9 +162,7 @@ def test_the_moment_must_be_aware_and_in_range(
     issue = _issue(issues_client, workspace)
 
     sign_in(client, MEMBER)
-    response = client.put(
-        f"/api/workspaces/{workspace}/inbox/reminders/{issue['issue_id']}", json={"remind_at": moment}
-    )
+    response = client.put(f"/api/workspaces/{workspace}/inbox/reminders/{issue['id']}", json={"remind_at": moment})
 
     assert response.status_code == 422
 
@@ -180,7 +178,7 @@ def test_a_due_reminder_lands_in_the_inbox_once(
     issue = _issue(issues_client, workspace)
     moment = _soon()
     sign_in(client, MEMBER)
-    _set(client, workspace, issue["issue_id"], moment)
+    _set(client, workspace, issue["id"], moment)
 
     early = run_issue_reminders(repositories, moment - timedelta(minutes=1))
     on_time = run_issue_reminders(repositories, moment)
@@ -189,7 +187,7 @@ def test_a_due_reminder_lands_in_the_inbox_once(
 
     rows = _reminder_rows(repositories, workspace, MEMBER)
     assert (early, on_time, later) == (0, 1, 0)
-    assert [row["issue_id"] for row in rows] == [issue["issue_id"]]
+    assert [row["issue_id"] for row in rows] == [issue["id"]]
     assert rows[0]["actor_id"] == ""
     assert client.get(f"/api/workspaces/{workspace}/inbox/reminders").json()["reminders"] == []
     assert len(recorder.sent) == 1
@@ -203,7 +201,7 @@ def test_the_reminder_reads_as_a_reminder(
     issue = _issue(issues_client, workspace)
     moment = _soon()
     sign_in(client, MEMBER)
-    _set(client, workspace, issue["issue_id"], moment)
+    _set(client, workspace, issue["id"], moment)
     run_issue_reminders(repositories, moment)
 
     rows = client.get(f"/api/workspaces/{workspace}/inbox", params={"kind": "reminder"}).json()["items"]
@@ -224,7 +222,7 @@ def test_the_reminder_preference_decides_the_channels(
     issue = _issue(issues_client, workspace)
     moment = _soon()
     sign_in(client, MEMBER)
-    _set(client, workspace, issue["issue_id"], moment)
+    _set(client, workspace, issue["id"], moment)
 
     run_issue_reminders(repositories, moment)
     flush_digests(repositories)
@@ -240,14 +238,14 @@ def test_a_reminder_on_a_deleted_issue_is_dropped(
     issue = _issue(issues_client, workspace)
     moment = _soon()
     sign_in(client, MEMBER)
-    _set(client, workspace, issue["issue_id"], moment)
+    _set(client, workspace, issue["id"], moment)
     sign_in(issues_client, OWNER)
-    assert issues_client.delete(f"/api/workspaces/{workspace}/issues/{issue['issue_id']}").status_code == 204
+    assert issues_client.delete(f"/api/workspaces/{workspace}/issues/{issue['id']}").status_code == 204
 
     run_issue_reminders(repositories, moment)
 
     assert _reminder_rows(repositories, workspace, MEMBER) == []
-    assert repositories.inbox.reminders.get(workspace, MEMBER, issue["issue_id"]) is None
+    assert repositories.inbox.reminders.get(workspace, MEMBER, issue["id"]) is None
     assert repositories.inbox.reminders.due(moment + timedelta(days=1), limit=10) == []
 
 
@@ -258,7 +256,7 @@ def test_a_member_who_lost_sight_of_the_issue_hears_nothing(
     issue = _issue(issues_client, workspace)
     moment = _soon()
     sign_in(client, GUEST)
-    _set(client, workspace, issue["issue_id"], moment)
+    _set(client, workspace, issue["id"], moment)
     repositories.memberships.delete_team_membership(workspace, TEAM, GUEST)
 
     run_issue_reminders(repositories, moment)
@@ -273,8 +271,8 @@ def test_moving_a_reminder_drops_the_old_moment(
     issue = _issue(issues_client, workspace)
     first, second = _soon(30), _soon(90)
     sign_in(client, MEMBER)
-    _set(client, workspace, issue["issue_id"], first)
-    _set(client, workspace, issue["issue_id"], second)
+    _set(client, workspace, issue["id"], first)
+    _set(client, workspace, issue["id"], second)
 
     assert run_issue_reminders(repositories, first) == 0
     assert run_issue_reminders(repositories, second) == 1
@@ -287,9 +285,9 @@ def test_the_schedule_record_delivers_due_reminders(
     issue = _issue(issues_client, workspace)
     moment = _soon(2)
     sign_in(client, MEMBER)
-    _set(client, workspace, issue["issue_id"], moment)
-    pending = repositories.inbox.reminders.get(workspace, MEMBER, issue["issue_id"])
-    repositories.inbox.reminders.set(workspace, MEMBER, issue["issue_id"], pending.remind_at - timedelta(minutes=10))
+    _set(client, workspace, issue["id"], moment)
+    pending = repositories.inbox.reminders.get(workspace, MEMBER, issue["id"])
+    repositories.inbox.reminders.set(workspace, MEMBER, issue["id"], pending.remind_at - timedelta(minutes=10))
 
     handle_record(repositories, {"eventSource": NOTIFY_DIGEST_SOURCE, "eventName": "FLUSH", "eventID": "x"})
 
@@ -303,7 +301,7 @@ def test_purging_an_inbox_clears_its_reminders(
     issue = _issue(issues_client, workspace)
     moment = _soon()
     sign_in(client, MEMBER)
-    _set(client, workspace, issue["issue_id"], moment)
+    _set(client, workspace, issue["id"], moment)
 
     repositories.inbox.delete_all(workspace, MEMBER)
 
@@ -316,6 +314,6 @@ def test_a_non_member_cannot_set_a_reminder(client: TestClient, issues_client: T
     issue = _issue(issues_client, workspace)
 
     sign_in(client, OUTSIDER)
-    response = _set(client, workspace, issue["issue_id"], _soon())
+    response = _set(client, workspace, issue["id"], _soon())
 
     assert response.status_code in (403, 404)
