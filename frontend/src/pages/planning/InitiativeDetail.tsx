@@ -352,16 +352,19 @@ export const InitiativeDetail: React.FC = () => {
             (candidate) => candidate.initiative_id === initiativeId
           )
       )
-      .map((row) => ({
-        value: row.initiative_id,
-        label: row.name,
-        icon: <LuGoal className="h-3.5 w-3.5" />,
-        detail:
-          row.parent_initiative_id === null ||
-          row.parent_initiative_id === undefined
-            ? undefined
-            : `in ${initiativeNames.get(row.parent_initiative_id) ?? 'another initiative'}`,
-      }));
+      .map((row): ComboboxOption => {
+        const parentId = row.parent_initiative_id ?? null;
+        return {
+          value: row.initiative_id,
+          label: row.name,
+          icon: <LuGoal className="h-3.5 w-3.5" />,
+          ...(parentId === null
+            ? {}
+            : {
+                detail: `in ${initiativeNames.get(parentId) ?? 'another initiative'}`,
+              }),
+        };
+      });
   }, [allInitiatives, initiativeId, initiativeNames]);
 
   const members = useMemo(

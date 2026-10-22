@@ -50,6 +50,7 @@ from app.common.db.dynamo.planning import (
     initiative_update_prefix,
     new_planning_id,
 )
+from app.common.initiative_tree import InitiativeTree
 from app.common.planning_rules import (
     forbidden,
     load_readable_project,
@@ -60,7 +61,6 @@ from app.common.planning_rules import (
     visible_project_teams,
     visible_team_ids,
 )
-from app.common.initiative_tree import InitiativeTree
 from app.common.project_cadence import workspace_interval
 
 NOT_NULLABLE = ("name", "status")
