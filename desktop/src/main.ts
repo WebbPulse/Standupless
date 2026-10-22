@@ -18,6 +18,7 @@ import {
   ipcMain,
   type WebContents,
 } from 'electron';
+import { appImagePath, registerAppImageHandler } from './appImageProtocol';
 import { resolveEnvironment, type Environment } from './environment';
 import {
   completeBrowserSignIn,
@@ -317,6 +318,8 @@ if (!app.requestSingleInstanceLock()) {
     app.setAsDefaultProtocolClient(env.scheme, process.execPath, [
       join(process.cwd(), process.argv[1]),
     ]);
+  } else if (appImagePath() !== null) {
+    void registerAppImageHandler(env, app.getName());
   } else {
     app.setAsDefaultProtocolClient(env.scheme);
   }
