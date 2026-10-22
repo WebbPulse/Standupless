@@ -23,8 +23,8 @@ from webbpulse.http import CursorPage
 
 from app.common.api.dependencies.authz import AuthzContext, Capability, require
 from app.common.api.dependencies.repositories import Repositories, get_repositories
-from app.common.inbox import delete_notification as delete_row
 from app.common.inbox import INBOX_KINDS, list_notifications
+from app.common.inbox import delete_notification as delete_row
 from app.common.inbox import mark_read as mark_rows_read
 from app.common.inbox import mark_unread as mark_rows_unread
 from app.common.inbox import snooze as snooze_rows
