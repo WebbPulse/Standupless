@@ -362,8 +362,8 @@ describe('attachments', () => {
       clipboardData: { files: [file], types: ['Files'] },
     });
 
-    expect(description).toHaveValue(
-      expect.stringMatching(/^Look\n!\[shot\.png\]\(pending-upload:[\w-]+\)\n$/)
+    expect((description as HTMLTextAreaElement).value).toMatch(
+      /^Look\n!\[shot\.png\]\(pending-upload:[\w-]+\)\n$/
     );
     expect(screen.getByRole('list', { name: 'Attachments' })).toHaveTextContent(
       'shot.png'
@@ -393,8 +393,8 @@ describe('attachments', () => {
     fireEvent.paste(description, {
       clipboardData: { files: [file], types: ['Files'] },
     });
-    expect(description).toHaveValue(
-      expect.stringMatching(/^\[spec\.pdf\]\(pending-upload:/)
+    expect((description as HTMLTextAreaElement).value).toMatch(
+      /^\[spec\.pdf\]\(pending-upload:/
     );
     fireEvent.click(screen.getByRole('button', { name: 'Remove spec.pdf' }));
 
