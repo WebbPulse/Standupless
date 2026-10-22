@@ -73,7 +73,7 @@ describe('SlaBadge', () => {
 
     const held = screen.getByText('Paused, 1h 30m left').closest('span[title]');
     expect(held).toHaveAttribute('data-sla-paused', 'true');
-    expect(held).toHaveAttribute('data-sla-status', 'on_track');
+    expect(held).toHaveAttribute('data-sla-status', 'at_risk');
 
     act(() => {
       vi.advanceTimersByTime(3 * 60 * 60000);

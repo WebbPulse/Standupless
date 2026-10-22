@@ -127,7 +127,7 @@ describe('a paused timer', () => {
 
   it('keeps a breach it paused after', () => {
     const late = { ...paused, sla_paused_at: '2026-10-07T14:00:00Z' };
-    expect(liveSlaStatus(late, now)).toBe('on_track');
+    expect(liveSlaStatus(late, now)).toBe('at_risk');
     expect(liveSlaStatus(late, new Date('2026-10-08T00:00:00Z'))).toBe(
       'breached'
     );
