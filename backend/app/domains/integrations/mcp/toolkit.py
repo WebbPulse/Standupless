@@ -398,6 +398,7 @@ def issue_json(issue: Issue, *, status_name: str = "") -> dict[str, Any]:
         "snoozed_until": issue.snoozed_until.isoformat() if issue.snoozed_until else None,
         "sla_started_at": issue.sla_started_at.isoformat() if issue.sla_started_at else None,
         "sla_breaches_at": issue.sla_breaches_at.isoformat() if issue.sla_breaches_at else None,
+        "sla_paused_at": issue.sla_paused_at.isoformat() if issue.sla_paused_at else None,
         "sla_status": sla_status(issue),
         "external_ref": issue.external_ref,
     }

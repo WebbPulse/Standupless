@@ -16,6 +16,7 @@ from pydantic import BaseModel, Field, StrictBool, field_validator, model_valida
 from app.common.db.dynamo.memberships import Membership
 from app.common.db.dynamo.team_config import (
     MAX_SLA_HOURS,
+    MAX_SLA_PAUSED_STATUSES,
     MAX_UPCOMING_CYCLES,
     ArchiveSettings,
     AutoCloseSettings,
@@ -562,6 +563,8 @@ class SlaSettingsUpdate(BaseModel):
 
     Each `*_hours` is how long an issue of that priority may stay open before it
     breaches, from one hour to ninety days; `null` removes that priority's rule.
+    `paused_status_ids` replaces the set of open statuses whose time does not
+    count toward a breach; `null` or an empty list pauses in none.
     """
 
     enabled: Optional[StrictBool] = None
@@ -569,6 +572,7 @@ class SlaSettingsUpdate(BaseModel):
     high_hours: SlaHoursField = Field(default=None, ge=1, le=MAX_SLA_HOURS)
     medium_hours: SlaHoursField = Field(default=None, ge=1, le=MAX_SLA_HOURS)
     low_hours: SlaHoursField = Field(default=None, ge=1, le=MAX_SLA_HOURS)
+    paused_status_ids: Optional[list[str]] = Field(default=None, max_length=MAX_SLA_PAUSED_STATUSES)
 
 
 class SlaSettingsRead(BaseModel):
@@ -580,6 +584,7 @@ class SlaSettingsRead(BaseModel):
     high_hours: Optional[int] = None
     medium_hours: Optional[int] = None
     low_hours: Optional[int] = None
+    paused_status_ids: list[str] = Field(default_factory=list)
     updated_at: Optional[datetime] = None
 
     @classmethod
@@ -592,6 +597,7 @@ class SlaSettingsRead(BaseModel):
             high_hours=settings.high_hours,
             medium_hours=settings.medium_hours,
             low_hours=settings.low_hours,
+            paused_status_ids=list(settings.paused_status_ids),
             updated_at=settings.updated_at,
         )
 

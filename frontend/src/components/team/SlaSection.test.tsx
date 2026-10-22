@@ -2,7 +2,9 @@
  * The SLA section. Covers a team that never saved reading as off with a day
  * for urgent and three days for high, that flipping the switch and picking an
  * hours choice each save at once and confirm, that a stored value off the
- * list still shows, and that a reader sees the rules without changing them.
+ * list still shows, that a reader sees the rules without changing them, and
+ * that ticking an open status adds it to the paused set while finished
+ * statuses are not offered.
  */
 
 import { act, render, screen, waitFor } from '@testing-library/react';
@@ -10,12 +12,24 @@ import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { clearToasts, currentToasts } from '../../lib/toast';
-import type { SlaSettingsRead, SlaSettingsUpdate } from '../../types/Api';
+import type {
+  SlaSettingsRead,
+  SlaSettingsUpdate,
+  StatusRead,
+} from '../../types/Api';
 import SlaSection from './SlaSection';
 
 const getSlaSettings = vi.fn<() => Promise<SlaSettingsRead>>();
 const updateSlaSettings =
   vi.fn<(body: SlaSettingsUpdate) => Promise<SlaSettingsRead>>();
+
+const STATUSES: StatusRead[] = [
+  { id: 'st-backlog', name: 'Backlog', category: 'backlog', position: 0 },
+  { id: 'st-progress', name: 'In Progress', category: 'started', position: 1 },
+  { id: 'st-staging', name: 'On Staging', category: 'started', position: 2 },
+  { id: 'st-done', name: 'Done', category: 'completed', position: 3 },
+  { id: 'st-canceled', name: 'Canceled', category: 'cancelled', position: 4 },
+];
 
 vi.mock('../../api/teams', async () => {
   const actual =
@@ -23,6 +37,7 @@ vi.mock('../../api/teams', async () => {
   return {
     ...actual,
     getSlaSettings: () => getSlaSettings(),
+    listStatuses: () => Promise.resolve(STATUSES),
     updateSlaSettings: (_w: string, _t: string, body: SlaSettingsUpdate) =>
       updateSlaSettings(body),
   };
@@ -46,6 +61,7 @@ const settings = (over: Partial<SlaSettingsRead> = {}): SlaSettingsRead => ({
   high_hours: 72,
   medium_hours: null,
   low_hours: null,
+  paused_status_ids: [],
   updated_at: null,
   ...over,
 });
@@ -133,6 +149,58 @@ describe('the SLA section', () => {
     });
   });
 
+  it('pauses in a ticked open status and offers no finished ones', async () => {
+    renderSection();
+
+    const staging = await screen.findByRole('checkbox', { name: 'On Staging' });
+    expect(staging).not.toBeChecked();
+    expect(screen.getByRole('checkbox', { name: 'Backlog' })).toBeEnabled();
+    expect(
+      screen.queryByRole('checkbox', { name: 'Done' })
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('checkbox', { name: 'Canceled' })
+    ).not.toBeInTheDocument();
+
+    getSlaSettings.mockResolvedValue(
+      settings({ paused_status_ids: ['st-staging'] })
+    );
+    await userEvent.click(staging);
+
+    await waitFor(() => {
+      expect(updateSlaSettings).toHaveBeenCalledWith({
+        paused_status_ids: ['st-staging'],
+      });
+    });
+    await waitFor(() => {
+      expect(
+        screen.getByRole('checkbox', { name: 'On Staging' })
+      ).toBeChecked();
+    });
+    expect(currentToasts().map((toast) => toast.message)).toContain(
+      'SLA timer pauses in that status.'
+    );
+  });
+
+  it('unticks a paused status and keeps the rest of the set', async () => {
+    getSlaSettings.mockResolvedValue(
+      settings({ paused_status_ids: ['st-backlog', 'st-staging'] })
+    );
+    renderSection();
+
+    const staging = await screen.findByRole('checkbox', { name: 'On Staging' });
+    await waitFor(() => {
+      expect(staging).toBeChecked();
+    });
+    await userEvent.click(staging);
+
+    await waitFor(() => {
+      expect(updateSlaSettings).toHaveBeenCalledWith({
+        paused_status_ids: ['st-backlog'],
+      });
+    });
+  });
+
   it('keeps a stored value that is off the list', async () => {
     getSlaSettings.mockResolvedValue(settings({ low_hours: 30 }));
     renderSection();
@@ -156,6 +224,9 @@ describe('the SLA section', () => {
     });
     expect(screen.getByLabelText('Urgent')).toBeDisabled();
     expect(screen.getByRole('switch', { name: 'Use SLAs' })).toBeDisabled();
+    expect(
+      await screen.findByRole('checkbox', { name: 'On Staging' })
+    ).toBeDisabled();
   });
 
   it('on a plan without SLAs locks the rules and links to the plans', async () => {

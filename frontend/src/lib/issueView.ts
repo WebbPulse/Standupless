@@ -36,7 +36,7 @@ import { pickableLabels, replacedSiblings } from './labelGroups';
 import { completionPercent, progressPercent } from './planningDisplay';
 import { personLabel, type Assignable } from './issuePeople';
 import { STATUS_CATEGORY_ORDER } from './propertyOptions';
-import { liveSlaStatus, SLA_STATUS_LABELS } from './sla';
+import { liveSlaStatus, SLA_STATUS_LABELS, slaEffectiveDeadline } from './sla';
 import { statusLook, TRIAGE_LOOK, type StatusLook } from './statusAppearance';
 import {
   shownStatusId,
@@ -1739,13 +1739,13 @@ export const groupIssues = (
 };
 
 /**
- * When an issue's running SLA breaches, in milliseconds, or null when it has
- * no running timer, so the SLA ordering can put those last.
+ * When an issue's SLA breaches, in milliseconds, or null when it has no
+ * timer, so the SLA ordering can put those last. A paused timer sorts by the
+ * deadline it would have if it resumed now.
  */
 const slaDeadline = (issue: OrderedIssueRead): number | null => {
   if (issue.sla_status === 'none' || !issue.sla_breaches_at) return null;
-  const deadline = Date.parse(issue.sla_breaches_at);
-  return Number.isNaN(deadline) ? null : deadline;
+  return slaEffectiveDeadline(issue);
 };
 
 const PRIORITY_RANK: Record<IssuePriority, number> = {

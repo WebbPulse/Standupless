@@ -5,7 +5,9 @@
  *
  * The rule mirrors the server: breached once the deadline has passed, at risk
  * once the time left is at most a quarter of the whole window or a day,
- * whichever is shorter, and on track before that.
+ * whichever is shorter, and on track before that. A timer paused because the
+ * issue sits in one of its team's paused statuses reads as it stood when it
+ * paused, so it neither turns at risk nor breaches until it resumes.
  */
 
 import type { IssuePriority, IssueRead, SlaStatus } from '../types/Api';
@@ -23,7 +25,7 @@ export const AT_RISK_SHARE = 0.25;
 /** The SLA fields an issue carries. */
 export type SlaFields = Pick<
   IssueRead,
-  'sla_started_at' | 'sla_breaches_at' | 'sla_status'
+  'sla_started_at' | 'sla_breaches_at' | 'sla_status' | 'sla_paused_at'
 >;
 
 /** The SLA statuses in filter menu order, `none` last. */
@@ -69,6 +71,29 @@ export const slaStatusAt = (
   return left <= riskWindow ? 'at_risk' : 'on_track';
 };
 
+/** Whether an issue's SLA timer is paused. */
+export const slaPaused = (issue: SlaFields): boolean =>
+  parseTime(issue.sla_paused_at) !== null;
+
+/** The moment an issue's SLA is read at: `now`, or when its timer paused. */
+export const slaMoment = (issue: SlaFields, now: Date = new Date()): Date => {
+  const paused = parseTime(issue.sla_paused_at);
+  return paused !== null && paused < now.getTime() ? new Date(paused) : now;
+};
+
+/**
+ * When an issue would breach if its timer resumed at `now`, in milliseconds,
+ * or null when it has no deadline. A running timer answers its own deadline.
+ */
+export const slaEffectiveDeadline = (
+  issue: SlaFields,
+  now: Date = new Date()
+): number | null => {
+  const deadline = parseTime(issue.sla_breaches_at);
+  if (deadline === null) return null;
+  return deadline + (now.getTime() - slaMoment(issue, now).getTime());
+};
+
 /**
  * An issue's live SLA status. The server's `none` wins, since it knows when an
  * issue has left its SLA, such as on completion; otherwise the status is
@@ -80,7 +105,11 @@ export const liveSlaStatus = (
 ): SlaStatus =>
   issue.sla_status === 'none'
     ? 'none'
-    : slaStatusAt(issue.sla_started_at, issue.sla_breaches_at, now);
+    : slaStatusAt(
+        issue.sla_started_at,
+        issue.sla_breaches_at,
+        slaMoment(issue, now)
+      );
 
 /**
  * A span as its two largest units, such as "2d 4h", "5h 12m", "3d" or "45m".
@@ -107,7 +136,9 @@ export const formatSlaDuration = (ms: number): string => {
 
 /**
  * How an SLA reads on its badge at `now`: "Breaches in 2d 4h" before the
- * deadline and "Breached 3h ago" after it, or null when there is no SLA.
+ * deadline and "Breached 3h ago" after it, or null when there is no SLA. A
+ * paused timer reads "Paused, 2d 4h left", or "Breached, paused" when it
+ * paused after its deadline.
  */
 export const slaLabel = (
   issue: SlaFields,
@@ -116,7 +147,12 @@ export const slaLabel = (
   const status = liveSlaStatus(issue, now);
   const deadline = parseTime(issue.sla_breaches_at);
   if (status === 'none' || deadline === null) return null;
-  const left = deadline - now.getTime();
+  const left = deadline - slaMoment(issue, now).getTime();
+  if (slaPaused(issue)) {
+    return status === 'breached'
+      ? 'Breached, paused'
+      : `Paused, ${formatSlaDuration(left)} left`;
+  }
   return status === 'breached'
     ? `Breached ${formatSlaDuration(left)} ago`
     : `Breaches in ${formatSlaDuration(left)}`;

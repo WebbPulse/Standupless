@@ -32,6 +32,7 @@ from app.common.api.schemas.teams import (
 from app.common.db.dynamo.memberships import Membership
 from app.common.db.dynamo.team_config import (
     MAX_SLA_HOURS,
+    MAX_SLA_PAUSED_STATUSES,
     MAX_UPCOMING_CYCLES,
     SLA_PRIORITIES,
     TEAM_SCOPE,
@@ -215,7 +216,34 @@ SLA_HOUR_FIELDS: tuple[str, ...] = tuple(f"{priority}_hours" for priority in SLA
 
 def _sla_settings_json(settings: SlaSettings) -> dict[str, Any]:
     """A team's SLA rules as the tools answer them."""
-    return {"enabled": settings.enabled, **{name: getattr(settings, name) for name in SLA_HOUR_FIELDS}}
+    return {
+        "enabled": settings.enabled,
+        **{name: getattr(settings, name) for name in SLA_HOUR_FIELDS},
+        "paused_status_ids": list(settings.paused_status_ids),
+    }
+
+
+def _paused_status_arguments(call: ToolCall, team_id: str) -> dict[str, Any]:
+    """`paused_status_ids` as the caller sent it, each status name resolved to its id within the team."""
+    if "paused_status_ids" not in call.arguments:
+        return {}
+    raw = call.arguments["paused_status_ids"]
+    if raw is None:
+        return {"paused_status_ids": None}
+    if not isinstance(raw, list):
+        raise ToolError("paused_status_ids must be a list of status ids or names")
+    statuses = call.repositories.team_config.list_statuses(call.context.workspace_id, team_id)
+    resolved: list[str] = []
+    for item in raw:
+        reference = str(item).strip()
+        if any(row.status_id == reference for row in statuses):
+            resolved.append(reference)
+            continue
+        named = [row for row in statuses if row.name.casefold() == reference.casefold()]
+        if len(named) != 1:
+            raise ToolError(f"No single status of this team is named {reference}")
+        resolved.append(named[0].status_id)
+    return {"paused_status_ids": resolved}
 
 
 def _member_json(membership: Membership, user: Optional[User]) -> dict[str, Any]:
@@ -516,9 +544,11 @@ def _update_archive_settings(call: ToolCall) -> Any:
 
 
 def _update_sla_settings(call: ToolCall) -> Any:
-    """Turn a team's SLAs on or off and change the hours each priority gets."""
+    """Turn a team's SLAs on or off, change the hours each priority gets, and pick the paused statuses."""
     team = admin_team(call)
-    payload = SlaSettingsUpdate.model_validate(given_arguments(call, ("enabled", *SLA_HOUR_FIELDS)))
+    payload = SlaSettingsUpdate.model_validate(
+        {**given_arguments(call, ("enabled", *SLA_HOUR_FIELDS)), **_paused_status_arguments(call, team.team_id)}
+    )
     saved = team_writes.update_sla_settings(call.repositories, call.context.workspace_id, team.team_id, payload)
     return {"team_id": team.team_id, **_sla_settings_json(saved)}
 
@@ -951,8 +981,9 @@ TEAM_TOOLS: tuple[Tool, ...] = (
     Tool(
         name="update_team_sla_settings",
         description=(
-            "Turn a team's SLAs on or off and set how many hours an open issue of each priority may go "
-            "before it breaches; null removes a priority's rule. Needs team admin."
+            "Turn a team's SLAs on or off, set how many hours an open issue of each priority may go "
+            "before it breaches (null removes a priority's rule), and pick the open statuses that pause the "
+            "timer, such as On Staging. Needs team admin."
         ),
         scopes=("teams:write",),
         schema=object_schema(
@@ -967,6 +998,15 @@ TEAM_TOOLS: tuple[Tool, ...] = (
                         "description": f"Hours for {name.removesuffix('_hours')} priority issues, null for no SLA",
                     }
                     for name in SLA_HOUR_FIELDS
+                },
+                "paused_status_ids": {
+                    "type": ["array", "null"],
+                    "items": {"type": "string"},
+                    "maxItems": MAX_SLA_PAUSED_STATUSES,
+                    "description": (
+                        "The whole set of open statuses, by id or name, whose time does not count toward a "
+                        "breach; the timer resumes with the time it had left. [] or null pauses in none"
+                    ),
                 },
             },
             required=("team_id",),

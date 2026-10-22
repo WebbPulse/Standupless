@@ -24,6 +24,7 @@ from app.common.api.schemas.teams import (
     TeamCreate,
     TeamUpdate,
 )
+from app.common.db.dynamo.base import utc_now
 from app.common.db.dynamo.memberships import Membership, team_member_key
 from app.common.db.dynamo.team_config import (
     STATUS_CATEGORIES,
@@ -43,6 +44,7 @@ from app.common.db.dynamo.teams import Team, new_team_id
 from app.common.plan_features import Feature, enforce_feature
 from app.common.plan_limits import LimitedResource
 from app.common.planning_rules import unprocessable
+from app.common.sla import FINISHED_CATEGORIES, retime_column
 from app.common.sub_teams import check_parent, sub_team_ids
 
 NOT_FOUND = {"error_code": "NOT_FOUND", "message": "Resource not found"}
@@ -448,22 +450,46 @@ def sla_settings(repositories: Repositories, workspace_id: str, team_id: str) ->
 def update_sla_settings(
     repositories: Repositories, workspace_id: str, team_id: str, payload: SlaSettingsUpdate
 ) -> SlaSettings:
-    """Turn a team's SLAs on or off and change the hours each priority gets.
+    """Turn a team's SLAs on or off, change the hours each priority gets, and pick the paused statuses.
 
     A priority's hours sent as `null` removes its rule. Issues already carrying a
     deadline keep it; new rules apply as issues are created or move. Turning SLAs
     on or setting a rule's hours needs a plan that includes SLAs; turning them off
-    or removing a rule never does, so a downgrade never traps a team.
+    or removing a rule never does, so a downgrade never traps a team. Paused
+    statuses must be open statuses of the team, and issues already sitting in a
+    status added to or taken out of the set are paused or resumed on the spot.
     """
     current = sla_settings(repositories, workspace_id, team_id)
     changes = payload.model_dump(exclude_unset=True)
     if changes.get("enabled") is None:
         changes.pop("enabled", None)
+    if "paused_status_ids" in changes:
+        changes["paused_status_ids"] = _paused_statuses(
+            repositories, workspace_id, team_id, changes["paused_status_ids"] or []
+        )
     if (changes.get("enabled") is True and not current.enabled) or any(
         value is not None for key, value in changes.items() if key.endswith("_hours")
     ):
         enforce_feature(repositories, workspace_id, Feature.ISSUE_SLAS)
-    return repositories.team_config.put_sla_settings(current.model_copy(update=changes))
+    saved = repositories.team_config.put_sla_settings(current.model_copy(update=changes))
+    before, after = set(current.paused_status_ids), set(saved.paused_status_ids)
+    now = utc_now()
+    for status_id in sorted(before ^ after):
+        retime_column(repositories, workspace_id, team_id, status_id, status_id in after, now)
+    return saved
+
+
+def _paused_statuses(repositories: Repositories, workspace_id: str, team_id: str, status_ids: list[str]) -> list[str]:
+    """The paused status set a patch names, deduplicated in order, refusing any id that is not an open team status."""
+    open_ids = {
+        row.status_id
+        for row in repositories.team_config.list_statuses(workspace_id, team_id)
+        if row.category not in FINISHED_CATEGORIES
+    }
+    chosen = list(dict.fromkeys(status_ids))
+    if any(status_id not in open_ids for status_id in chosen):
+        raise unprocessable("paused_status_ids must be open statuses of this team")
+    return chosen
 
 
 def delete_team(repositories: Repositories, workspace_id: str, team_id: str) -> bool:
