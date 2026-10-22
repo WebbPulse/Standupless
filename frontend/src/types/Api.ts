@@ -1995,9 +1995,20 @@ export interface ProjectRead {
   update_due_state?: ProjectUpdateDueState | null;
   /** The initiative the project belongs to, or null outside any. */
   initiative_id?: string | null;
+  /** Issues still open in the project, answered by a patch that leaves it completed or canceled. */
+  open_issue_count?: number | null;
   created_by: string;
   created_at: string;
   updated_at: string;
+}
+
+/** What a project close does with the issues still open in it. */
+export type ProjectOpenIssuesAction = 'keep' | 'move' | 'cancel';
+
+/** The open issue choice on a close; `project_id` names the move target and only a move. */
+export interface ProjectOpenIssues {
+  action: ProjectOpenIssuesAction;
+  project_id?: string;
 }
 
 /** Days between project updates: off, weekly, every two weeks or monthly. */
@@ -2056,6 +2067,8 @@ export interface ProjectUpdate {
   update_interval_days?: ProjectUpdateInterval | null;
   /** Moves the project into an initiative; a null takes it out of one. */
   initiative_id?: string | null;
+  /** What to do with the open issues, taken only by a patch that completes or cancels the project. */
+  open_issues?: ProjectOpenIssues;
 }
 
 /**

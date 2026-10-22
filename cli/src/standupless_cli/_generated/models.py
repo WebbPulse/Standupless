@@ -1130,6 +1130,11 @@ class ProjectCreate(TypedDict):
     update_interval_days: NotRequired[int | None]
 
 
+class ProjectOpenIssues(TypedDict):
+    action: Literal["keep", "move", "cancel"]
+    project_id: NotRequired[str | None]
+
+
 class ProjectRead(TypedDict):
     color: NotRequired[str | None]
     counts: CountsRead
@@ -1145,6 +1150,7 @@ class ProjectRead(TypedDict):
     member_ids: NotRequired[list[str]]
     name: str
     next_update_due_at: NotRequired[str | None]
+    open_issue_count: NotRequired[int | None]
     points: NotRequired[CountsRead]
     priority: NotRequired[Literal["none", "urgent", "high", "medium", "low"]]
     progress: NotRequired[CountsRead]
@@ -1191,6 +1197,7 @@ class ProjectUpdate(TypedDict):
     lead_id: NotRequired[str | None]
     member_ids: NotRequired[list[str] | None]
     name: NotRequired[str | None]
+    open_issues: NotRequired[ProjectOpenIssues | None]
     priority: NotRequired[Literal["none", "urgent", "high", "medium", "low"] | None]
     start_date: NotRequired[str | None]
     status: NotRequired[Literal["backlog", "planned", "in_progress", "paused", "completed", "canceled"] | None]

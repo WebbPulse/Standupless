@@ -15,7 +15,7 @@ from typing import Any
 from fastapi.testclient import TestClient
 
 from tests.domains.helpers import ADMIN, GUEST, MEMBER, OUTSIDER, OWNER, sign_in
-from tests.domains.planning.conftest import OTHER_TEAM, TEAM, WORKSPACE, seed_project
+from tests.domains.planning.conftest import OTHER_TEAM, TEAM, WORKSPACE, seed_issue, seed_project
 
 NOPE = "01JB0000000000000000NOPE01"
 
@@ -536,3 +536,178 @@ def test_only_the_offered_cadences_are_accepted(client: TestClient, workspace: s
         client.post(_path(workspace), json={"name": "X", "team_ids": [TEAM], "update_interval_days": 1}).status_code
         == 422
     )
+
+
+def _status_ids(repositories: Any, team_id: str = TEAM) -> "dict[str, str]":
+    """The seeded statuses of one team, keyed by category."""
+    return {row.category: row.status_id for row in repositories.team_config.list_statuses(WORKSPACE, team_id)}
+
+
+def _closing(
+    client: TestClient, issues_client: TestClient, repositories: Any, workspace: str
+) -> "tuple[dict[str, Any], list[str], list[str]]":
+    """A project with two open issues and two closed ones, and the ids of each pair."""
+    sign_in(client, MEMBER)
+    sign_in(issues_client, MEMBER)
+    project = seed_project(client, workspace)
+    statuses = _status_ids(repositories)
+    open_ids = [
+        seed_issue(issues_client, workspace, project_id=project["project_id"], status_id=statuses[category])["id"]
+        for category in ("unstarted", "started")
+    ]
+    closed_ids = [
+        seed_issue(issues_client, workspace, project_id=project["project_id"], status_id=statuses[category])["id"]
+        for category in ("completed", "cancelled")
+    ]
+    return project, open_ids, closed_ids
+
+
+def test_completing_a_project_answers_how_many_issues_are_still_open(
+    client: TestClient, issues_client: TestClient, repositories: Any, workspace: str
+) -> None:
+    """Without a choice the patch succeeds, leaves the issues alone and counts the open ones."""
+    project, open_ids, _ = _closing(client, issues_client, repositories, workspace)
+
+    response = client.patch(_path(workspace, project["project_id"]), json={"status": "completed"})
+
+    assert response.status_code == 200, response.text
+    assert response.json()["status"] == "completed"
+    assert response.json()["open_issue_count"] == 2
+    for issue_id in open_ids:
+        assert repositories.issues.get(WORKSPACE, issue_id).project_id == project["project_id"]
+
+
+def test_a_patch_that_leaves_the_project_open_has_no_open_issue_count(
+    client: TestClient, issues_client: TestClient, repositories: Any, workspace: str
+) -> None:
+    """The count answers only the question a close asks."""
+    project, _, _ = _closing(client, issues_client, repositories, workspace)
+
+    response = client.patch(_path(workspace, project["project_id"]), json={"status": "paused"})
+
+    assert response.status_code == 200
+    assert response.json()["open_issue_count"] is None
+
+
+def test_keeping_open_issues_leaves_them_in_the_project(
+    client: TestClient, issues_client: TestClient, repositories: Any, workspace: str
+) -> None:
+    """Keep is the default made explicit."""
+    project, open_ids, _ = _closing(client, issues_client, repositories, workspace)
+    statuses = _status_ids(repositories)
+
+    response = client.patch(
+        _path(workspace, project["project_id"]), json={"status": "canceled", "open_issues": {"action": "keep"}}
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["open_issue_count"] == 2
+    for issue_id in open_ids:
+        row = repositories.issues.get(WORKSPACE, issue_id)
+        assert row.project_id == project["project_id"]
+        assert row.status_id in (statuses["unstarted"], statuses["started"])
+
+
+def test_moving_open_issues_sends_them_to_another_project(
+    client: TestClient, issues_client: TestClient, repositories: Any, workspace: str
+) -> None:
+    """Only the open issues move, and none are left open behind."""
+    project, open_ids, closed_ids = _closing(client, issues_client, repositories, workspace)
+    target = seed_project(client, workspace, name="Next")
+
+    response = client.patch(
+        _path(workspace, project["project_id"]),
+        json={"status": "completed", "open_issues": {"action": "move", "project_id": target["project_id"]}},
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["open_issue_count"] == 0
+    for issue_id in open_ids:
+        assert repositories.issues.get(WORKSPACE, issue_id).project_id == target["project_id"]
+    for issue_id in closed_ids:
+        assert repositories.issues.get(WORKSPACE, issue_id).project_id == project["project_id"]
+
+
+def test_a_move_needs_another_project_on_the_issue_team(
+    client: TestClient, issues_client: TestClient, repositories: Any, workspace: str
+) -> None:
+    """The same project, a missing target or one off the team is refused and nothing changes."""
+    project, open_ids, _ = _closing(client, issues_client, repositories, workspace)
+    elsewhere = seed_project(client, workspace, team_id=OTHER_TEAM, name="Elsewhere")
+    path = _path(workspace, project["project_id"])
+
+    same = client.patch(
+        path, json={"status": "completed", "open_issues": {"action": "move", "project_id": project["project_id"]}}
+    )
+    missing = client.patch(path, json={"status": "completed", "open_issues": {"action": "move"}})
+    off_team = client.patch(
+        path, json={"status": "completed", "open_issues": {"action": "move", "project_id": elsewhere["project_id"]}}
+    )
+
+    assert same.status_code == 422
+    assert missing.status_code == 422
+    assert off_team.status_code == 422
+    assert client.get(path).json()["status"] == "backlog"
+    for issue_id in open_ids:
+        assert repositories.issues.get(WORKSPACE, issue_id).project_id == project["project_id"]
+
+
+def test_canceling_open_issues_gives_them_the_team_canceled_status(
+    client: TestClient, issues_client: TestClient, repositories: Any, workspace: str
+) -> None:
+    """Each open issue lands on its team's canceled status and stays in the project."""
+    project, open_ids, closed_ids = _closing(client, issues_client, repositories, workspace)
+    statuses = _status_ids(repositories)
+
+    response = client.patch(
+        _path(workspace, project["project_id"]), json={"status": "canceled", "open_issues": {"action": "cancel"}}
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["open_issue_count"] == 0
+    for issue_id in open_ids:
+        row = repositories.issues.get(WORKSPACE, issue_id)
+        assert row.status_id == statuses["cancelled"]
+        assert row.project_id == project["project_id"]
+    assert repositories.issues.get(WORKSPACE, closed_ids[0]).status_id == statuses["completed"]
+
+
+def test_a_choice_on_a_patch_that_leaves_the_project_open_is_refused(
+    client: TestClient, issues_client: TestClient, repositories: Any, workspace: str
+) -> None:
+    """Open issues are only asked about when the project closes."""
+    project, _, _ = _closing(client, issues_client, repositories, workspace)
+
+    response = client.patch(
+        _path(workspace, project["project_id"]), json={"status": "paused", "open_issues": {"action": "cancel"}}
+    )
+
+    assert response.status_code == 422
+
+
+def test_a_choice_names_a_target_only_for_a_move(client: TestClient, workspace: str) -> None:
+    """Keep and cancel take no project, and an unknown action is refused."""
+    sign_in(client, MEMBER)
+    project = seed_project(client, workspace)
+    path = _path(workspace, project["project_id"])
+
+    stray = client.patch(
+        path, json={"status": "completed", "open_issues": {"action": "keep", "project_id": project["project_id"]}}
+    )
+    unknown = client.patch(path, json={"status": "completed", "open_issues": {"action": "archive"}})
+
+    assert stray.status_code == 422
+    assert unknown.status_code == 422
+
+
+def test_a_project_with_no_open_issues_closes_with_a_zero_count(client: TestClient, workspace: str) -> None:
+    """A choice with nothing to act on is a no-op rather than a refusal."""
+    sign_in(client, MEMBER)
+    project = seed_project(client, workspace)
+
+    response = client.patch(
+        _path(workspace, project["project_id"]), json={"status": "completed", "open_issues": {"action": "cancel"}}
+    )
+
+    assert response.status_code == 200
+    assert response.json()["open_issue_count"] == 0

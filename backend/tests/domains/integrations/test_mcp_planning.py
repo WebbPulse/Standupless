@@ -651,3 +651,125 @@ def test_cycle_tools_answer_the_renamed_key(
     assert [row["issue_key"] for row in added["issues"]] == ["ALP-1"]
     assert [row["issue_key"] for row in removed["issues"]] == ["ALP-1"]
     assert removed["not_in_cycle"] == ["ALP-2"]
+
+
+def _open_issue(repositories: Any, project_id: str) -> str:
+    """One unstarted issue of TEAM in a project, returning its id."""
+    statuses = {row.category: row.status_id for row in repositories.team_config.list_statuses(WORKSPACE, TEAM)}
+    issue = repositories.issues.create(
+        Issue(
+            workspace_id=WORKSPACE,
+            issue_id=SECOND_ISSUE,
+            team_id=TEAM,
+            key="ABC-7",
+            number=7,
+            title="Still open",
+            status_id=statuses["unstarted"],
+            project_id=project_id,
+            created_by=OWNER,
+        )
+    )
+    return issue.issue_id
+
+
+def test_update_project_counts_the_open_issues_a_close_leaves(
+    client: TestClient, repositories: Any, planning: dict[str, str]
+) -> None:
+    """Without a choice the close succeeds and answers the open count."""
+    secret = mint_for(repositories, MEMBER, PROJECTS)
+    issue_id = _open_issue(repositories, planning["project_id"])
+
+    arguments = {"project_id": planning["project_id"], "status": "completed"}
+    closed = answer(tool(client, secret, "update_project", arguments))
+
+    assert closed["status"] == "completed"
+    assert closed["open_issue_count"] == 1
+    assert repositories.issues.get(WORKSPACE, issue_id).project_id == planning["project_id"]
+
+
+def test_update_project_moves_the_open_issues_by_project_name(
+    client: TestClient, repositories: Any, planning: dict[str, str]
+) -> None:
+    """A move target is resolved by name as any project reference is."""
+    secret = mint_for(repositories, MEMBER, PROJECTS + ISSUES)
+    target = seed_planning(repositories, WORKSPACE, TEAM, "Next")
+    issue_id = _open_issue(repositories, planning["project_id"])
+
+    moved = answer(
+        tool(
+            client,
+            secret,
+            "update_project",
+            {
+                "project_id": planning["project_id"],
+                "status": "completed",
+                "open_issues": "move",
+                "open_issues_project_id": "Next project",
+            },
+        )
+    )
+
+    assert moved["open_issue_count"] == 0
+    assert repositories.issues.get(WORKSPACE, issue_id).project_id == target["project_id"]
+
+
+def test_update_project_cancels_the_open_issues(
+    client: TestClient, repositories: Any, planning: dict[str, str]
+) -> None:
+    """Each open issue takes its team's canceled status."""
+    secret = mint_for(repositories, MEMBER, PROJECTS + ISSUES)
+    issue_id = _open_issue(repositories, planning["project_id"])
+    cancelled = {row.category: row.status_id for row in repositories.team_config.list_statuses(WORKSPACE, TEAM)}
+
+    closed = answer(
+        tool(
+            client,
+            secret,
+            "update_project",
+            {"project_id": planning["project_id"], "status": "canceled", "open_issues": "cancel"},
+        )
+    )
+
+    assert closed["open_issue_count"] == 0
+    assert repositories.issues.get(WORKSPACE, issue_id).status_id == cancelled["cancelled"]
+
+
+def test_update_project_needs_issue_write_to_sweep_open_issues(
+    client: TestClient, repositories: Any, planning: dict[str, str]
+) -> None:
+    """A key scoped to projects alone may close the project but not rewrite its issues."""
+    secret = mint_for(repositories, MEMBER, PROJECTS)
+    issue_id = _open_issue(repositories, planning["project_id"])
+
+    refusal(
+        tool(
+            client,
+            secret,
+            "update_project",
+            {"project_id": planning["project_id"], "status": "canceled", "open_issues": "cancel"},
+        )
+    )
+
+    assert repositories.planning.get_project(WORKSPACE, planning["project_id"]).status != "canceled"
+    assert repositories.issues.get(WORKSPACE, issue_id).project_id == planning["project_id"]
+
+
+@pytest.mark.parametrize(
+    "arguments",
+    [
+        {"open_issues": "archive"},
+        {"open_issues": "move"},
+        {"open_issues": "keep", "open_issues_project_id": "Home project"},
+        {"open_issues_project_id": "Home project"},
+    ],
+)
+def test_update_project_refuses_a_malformed_open_issues_choice(
+    client: TestClient, repositories: Any, planning: dict[str, str], arguments: dict[str, str]
+) -> None:
+    """An unknown action, a move with no target or a stray target is refused by name."""
+    secret = mint_for(repositories, MEMBER, PROJECTS + ISSUES)
+
+    closing = {"project_id": planning["project_id"], "status": "completed", **arguments}
+    text = refusal(tool(client, secret, "update_project", closing))
+
+    assert "open_issues" in text
