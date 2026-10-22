@@ -27,7 +27,11 @@ import {
 import { estimateOptionsOf } from '../../lib/validation';
 import type { MilestoneRead, TeamRead } from '../../types/Api';
 import DisplayMenu from '../issues/view/DisplayMenu';
-import { FilterButton, FilterChips } from '../issues/view/FilterBar';
+import {
+  FilterButton,
+  FilterChips,
+  type FilterLogic,
+} from '../issues/view/FilterBar';
 import IssueListView from '../issues/view/IssueListView';
 
 /** The settings a project's issues open with. */
@@ -102,6 +106,9 @@ export const ProjectIssuesView: React.FC<ProjectIssuesViewProps> = ({
   const setFilters = (filters: ViewState['filters']): void => {
     setState({ ...state, filters });
   };
+  const setLogic = (logic: FilterLogic): void => {
+    setState({ ...state, ...logic });
+  };
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -109,8 +116,11 @@ export const ProjectIssuesView: React.FC<ProjectIssuesViewProps> = ({
         <div className="flex flex-wrap items-center gap-2">
           <FilterButton
             filters={state.filters}
+            match={state.match}
+            groups={state.groups}
             context={lists.context}
             onChange={setFilters}
+            onLogicChange={setLogic}
           />
           <span className="flex-1" />
           <DisplayMenu
@@ -119,20 +129,35 @@ export const ProjectIssuesView: React.FC<ProjectIssuesViewProps> = ({
             groupFields={fieldsFor(GROUP_FIELDS, lists.context)}
             onReset={
               sameViewState(
-                { ...state, filters: base.filters, q: base.q },
+                {
+                  ...state,
+                  filters: base.filters,
+                  match: base.match,
+                  groups: base.groups,
+                  q: base.q,
+                },
                 base
               )
                 ? undefined
                 : () => {
-                    setState({ ...base, filters: state.filters, q: state.q });
+                    setState({
+                      ...base,
+                      filters: state.filters,
+                      match: state.match,
+                      groups: state.groups,
+                      q: state.q,
+                    });
                   }
             }
           />
         </div>
         <FilterChips
           filters={state.filters}
+          match={state.match}
+          groups={state.groups}
           context={lists.context}
           onChange={setFilters}
+          onLogicChange={setLogic}
         />
       </div>
       <IssueListView

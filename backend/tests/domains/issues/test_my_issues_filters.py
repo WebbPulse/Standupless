@@ -2,8 +2,8 @@
 
 Each reads a keyed index rather than fanning out across teams, so the properties
 worth holding are the ones an index read could lose: a row from a team the caller
-cannot see stays hidden, a row from another workspace never appears, and nobody can
-ask for someone else's subscriptions.
+cannot see stays hidden and a row from another workspace never appears. Naming
+another member's subscriptions skips the keyed read and matches after the fan-out.
 """
 
 from __future__ import annotations
@@ -84,14 +84,17 @@ def test_subscriber_filter_combines_with_other_filters(client: TestClient, works
     assert _ids(listed) == {urgent["id"]}
 
 
-def test_subscriber_id_only_accepts_the_caller(client: TestClient, workspace: str, statuses: Any) -> None:
-    """Whom someone else follows is theirs, so naming another user is refused."""
+def test_subscriber_id_names_any_member(client: TestClient, workspace: str, statuses: Any) -> None:
+    """Another member's subscriptions are a filter like any other, matched after the read."""
+    sign_in(client, OWNER)
+    followed = create_issue(client, workspace, title="Followed")
+    create_issue(client, workspace, title="Not followed")
+    sign_in(client, MEMBER)
+    assert client.put(f"/api/workspaces/{workspace}/issues/{followed['id']}/subscribers/me").status_code == 200
+
     sign_in(client, OWNER)
 
-    response = client.get(f"/api/workspaces/{workspace}/issues", params={"subscriber_id": MEMBER})
-
-    assert response.status_code == 422
-    assert _list(client, workspace, subscriber_id=OWNER)["issues"] == []
+    assert _ids(_list(client, workspace, subscriber_id=MEMBER)) == {followed["id"]}
 
 
 def test_a_guest_sees_no_keyed_row_from_a_team_they_are_outside(

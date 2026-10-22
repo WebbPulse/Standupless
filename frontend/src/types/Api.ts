@@ -788,6 +788,11 @@ export interface IssueRead {
    * a Linear or Jira key. Null for issues created in Standupless.
    */
   external_ref?: string | null;
+  /**
+   * When the issue last landed in a completed status, null while it is open
+   * or cancelled. Optional so a row read before it was stamped reads as none.
+   */
+  completed_at?: string | null;
   created_by: string;
   created_at: string;
   updated_at: string;
@@ -1497,6 +1502,10 @@ export interface NotificationRead {
   source?: ChangeSource | null;
   /** The pull request a `review_requested` row points at; null on every other row. */
   url?: string | null;
+  /** The status name a `status_changed` row moved to; absent on older rows. */
+  new_value?: string | null;
+  /** The line the row reads, such as "Olive moved to Done"; absent on older clients' fixtures. */
+  summary?: string;
   created_at: string;
   expires_at: string;
 }

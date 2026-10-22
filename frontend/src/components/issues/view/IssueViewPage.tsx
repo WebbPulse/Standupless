@@ -43,8 +43,8 @@ import { cn } from '../../../lib/cn';
 import { errorMessage } from '../../../lib/errors';
 import { insightsFilters, narrowTo } from '../../../lib/insights';
 import {
-  FILTER_FIELDS,
   fieldsFor,
+  filterFieldsFor,
   GROUP_FIELDS,
   parseViewState,
   sameViewState,
@@ -450,7 +450,7 @@ export const IssueViewPage: React.FC<IssueViewPageProps> = ({
     () =>
       hideFilterFields === undefined
         ? undefined
-        : fieldsFor(FILTER_FIELDS, filterContext).filter(
+        : filterFieldsFor(filterContext).filter(
             (field) => !hideFilterFields.includes(field)
           ),
     [hideFilterFields, filterContext]
@@ -667,10 +667,15 @@ export const IssueViewPage: React.FC<IssueViewPageProps> = ({
         {tabs}
         <FilterButton
           filters={state.filters}
+          match={state.match}
+          groups={state.groups}
           context={filterContext}
           {...(filterFields === undefined ? {} : { fields: filterFields })}
           onChange={(filters) => {
             setState({ ...state, filters });
+          }}
+          onLogicChange={(logic) => {
+            setState({ ...state, ...logic });
           }}
         />
         <span className="flex-1" />
@@ -694,19 +699,40 @@ export const IssueViewPage: React.FC<IssueViewPageProps> = ({
           archive={archive}
           groupFields={fieldsFor(GROUP_FIELDS, filterContext)}
           onReset={
-            sameViewState({ ...state, filters: base.filters, q: base.q }, base)
+            sameViewState(
+              {
+                ...state,
+                filters: base.filters,
+                match: base.match,
+                groups: base.groups,
+                q: base.q,
+              },
+              base
+            )
               ? undefined
               : () => {
-                  setState({ ...base, filters: state.filters, q: state.q });
+                  setState({
+                    ...base,
+                    filters: state.filters,
+                    match: state.match,
+                    groups: state.groups,
+                    q: state.q,
+                  });
                 }
           }
         />
       </div>
       <FilterChips
         filters={state.filters}
+        match={state.match}
+        groups={state.groups}
         context={filterContext}
+        {...(filterFields === undefined ? {} : { fields: filterFields })}
         onChange={(filters) => {
           setState({ ...state, filters });
+        }}
+        onLogicChange={(logic) => {
+          setState({ ...state, ...logic });
         }}
       />
       {saveBar}

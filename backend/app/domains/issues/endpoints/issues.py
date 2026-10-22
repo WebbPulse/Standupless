@@ -41,7 +41,7 @@ from app.common.db.dynamo.issues import (
 from app.common.issue_archive import archive_issue as archive_issue_row
 from app.common.issue_archive import unarchive_issue as unarchive_issue_row
 from app.common.issue_changes import list_issue_changes, sync_cursor
-from app.common.issue_filters import ME, UnknownStatusCategory, build_issue_filter
+from app.common.issue_filters import UnknownStatusCategory, build_issue_filter, subscribed_by_caller
 from app.common.issue_keys import current
 from app.common.issue_move import find_issue_by_number
 from app.common.issue_move import move_issue as move_issue_row
@@ -79,10 +79,14 @@ def list_issues(
     assignee_id_not: Values = None,
     creator_id: Values = None,
     creator_id_not: Values = None,
-    subscriber_id: Annotated[Optional[str], Query()] = None,
+    subscriber_id: Values = None,
+    subscriber_id_not: Values = None,
     label_id: Values = None,
     label_id_not: Values = None,
+    label_id_all: Values = None,
     parent_id: Values = None,
+    parent_id_not: Values = None,
+    has_sub_issues: Annotated[Optional[bool], Query()] = None,
     priority: Values = None,
     priority_not: Values = None,
     cycle_id: Values = None,
@@ -102,10 +106,16 @@ def list_issues(
     created_before: Annotated[Optional[str], Query()] = None,
     updated_after: Annotated[Optional[str], Query()] = None,
     updated_before: Annotated[Optional[str], Query()] = None,
+    completed_after: Annotated[Optional[str], Query()] = None,
+    completed_before: Annotated[Optional[str], Query()] = None,
+    content: Annotated[Optional[str], Query(max_length=200)] = None,
+    content_not: Annotated[Optional[str], Query(max_length=200)] = None,
     q: Annotated[Optional[str], Query()] = None,
     is_blocked: Annotated[Optional[bool], Query()] = None,
     is_blocking: Annotated[Optional[bool], Query()] = None,
     has_relation: Values = None,
+    match: Annotated[Optional[str], Query()] = None,
+    groups: Annotated[Optional[str], Query(max_length=8000)] = None,
     include_archived: Annotated[bool, Query()] = False,
     archived_only: Annotated[bool, Query()] = False,
     include_triage: Annotated[bool, Query()] = False,
@@ -126,8 +136,17 @@ def list_issues(
 
     The exception is a filter on one person: `subscriber_id=me`, one `creator_id`
     or one `assignee_id` reads that person's own index instead of every team, which
-    is what the My issues tabs ask for. `subscriber_id` takes only the caller,
-    because what someone else follows is theirs to know.
+    is what the My issues tabs ask for. Any other `subscriber_id` is matched after
+    the read, against the subscriptions of each person it names.
+
+    `match=any` keeps an issue meeting any one condition rather than all of them.
+    `groups` is a JSON array of condition objects, each holding these same filter
+    names plus its own `match`, and each counting as one condition, which is how
+    "status is Todo and (label is Bug or priority is Urgent)" is said. A group may
+    hold groups of its own, two levels at most, so a client can wrap its own
+    conditions in one group under the list's fixed scope. `content`
+    matches title and description text, `label_id_all` wants every label named,
+    and `completed_after` and `completed_before` bound the day an issue was done.
 
     Archived issues are left out unless `include_archived` is set, and
     `archived_only` lists nothing but them, the archive view. That read goes
@@ -153,9 +172,7 @@ def list_issues(
     `If-None-Match` gets a 304 with no body instead. A full read carries none,
     because its cursor moves with the clock.
     """
-    subscribed = subscriber_id is not None
-    if subscribed and subscriber_id not in (ME, context.user_id):
-        raise unprocessable("subscriber_id only accepts me")
+    subscribed = subscribed_by_caller(subscriber_id, match, context.user_id)
     try:
         wanted = build_issue_filter(
             user_id=context.user_id,
@@ -169,9 +186,14 @@ def list_issues(
             creator_id_not=creator_id_not,
             label_id=label_id,
             label_id_not=label_id_not,
+            label_id_all=label_id_all,
             priority=priority,
             priority_not=priority_not,
             parent_id=parent_id,
+            parent_id_not=parent_id_not,
+            has_sub_issues=has_sub_issues,
+            subscriber_id=None if subscribed else subscriber_id,
+            subscriber_id_not=subscriber_id_not,
             cycle_id=cycle_id,
             cycle_id_not=cycle_id_not,
             project_id=project_id,
@@ -189,6 +211,10 @@ def list_issues(
             created_before=created_before,
             updated_after=updated_after,
             updated_before=updated_before,
+            completed_after=completed_after,
+            completed_before=completed_before,
+            content=content,
+            content_not=content_not,
             q=q,
             include_archived=include_archived,
             archived_only=archived_only,
@@ -197,6 +223,8 @@ def list_issues(
             has_relation=has_relation,
             include_triage=include_triage,
             triage_only=triage_only,
+            match=match,
+            groups=groups,
         )
     except UnknownStatusCategory as exc:
         raise unprocessable(str(exc)) from exc

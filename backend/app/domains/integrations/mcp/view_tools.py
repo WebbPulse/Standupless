@@ -28,7 +28,14 @@ from app.common.api.schemas.views import (
     ViewUpdate,
 )
 from app.common.db.dynamo.views import SavedView
-from app.common.inbox import delete_notification, list_notifications, mark_read, mark_unread, snooze
+from app.common.inbox import (
+    INBOX_KINDS,
+    delete_notification,
+    list_notifications,
+    mark_read,
+    mark_unread,
+    snooze,
+)
 from app.common.saved_views import (
     create_saved_view,
     delete_saved_view,
@@ -118,9 +125,14 @@ def _view_properties(*, clearable: bool) -> dict[str, Any]:
             "type": "object",
             "description": (
                 "The issue filter, keyed as list_issues takes it (team_id, team_id_in, status_id, "
-                "status_category, assignee_id, creator_id, label_id, priority, cycle_id, project_id, estimate, "
-                "due_before, due_after, created_after, created_before, updated_after, updated_before, q and "
-                "their _not forms). Values are ids or lists of ids; assignee_id may be 'me'."
+                "status_category, assignee_id, creator_id, subscriber_id, label_id, label_id_all, priority, "
+                "parent_id, cycle_id, project_id, project_milestone_id, estimate, sla_status, has_relation, "
+                "due_before, due_after, created_after, created_before, updated_after, updated_before, "
+                "completed_after, completed_before, content, q and their _not forms, plus is_blocked, "
+                "is_blocking and has_sub_issues as true or false). Values are ids or lists of ids; assignee_id, "
+                "creator_id and subscriber_id may be 'me'. match is all (default) or any, and groups is a list "
+                "of condition objects with these same keys and their own match, each counting as one condition, "
+                "and a group may hold groups of its own, two levels at most."
             ),
         },
         "sort": enum(SORTS, "Sort order"),
@@ -243,6 +255,8 @@ def _list_notifications(call: ToolCall) -> Any:
         call.context,
         unread=_flag(call, "unread"),
         snoozed=_flag(call, "snoozed"),
+        include_snoozed=_flag(call, "include_snoozed"),
+        kinds=filter_values(call.optional("kinds")) or [],
         cursor=call.optional("cursor"),
         limit=limit(call.optional("limit")),
     )
@@ -344,13 +358,17 @@ VIEW_TOOLS: tuple[Tool, ...] = (
         name="list_notifications",
         description=(
             "The caller's inbox, newest first, with the unread count. unread=true lists only unread, "
-            "snoozed=true only snoozed ones (not both). Snoozed notifications are hidden until they return."
+            "snoozed=true only snoozed ones (not both). Snoozed notifications are hidden until they return "
+            "unless include_snoozed=true. kinds keeps only those kinds. Each row's summary says who changed "
+            "what, such as 'Olive moved to Done', and new_value holds the status a change moved to."
         ),
         scopes=("notifications:read",),
         schema=object_schema(
             {
                 "unread": _boolean("Only unread notifications"),
                 "snoozed": _boolean("Only snoozed notifications"),
+                "include_snoozed": _boolean("Keep snoozed notifications in the list"),
+                "kinds": one_or_many("One notification kind or a list, ORed: " + ", ".join(INBOX_KINDS)),
                 **page_properties(),
             }
         ),

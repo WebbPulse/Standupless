@@ -18,6 +18,7 @@ from webbpulse.http import cursor_page
 from app.common.change_source import ChangeSource
 from app.common.db.dynamo.inbox import Notification
 from app.common.db.dynamo.views import SavedView
+from app.common.inbox_summary import notification_summary
 
 SortField = Literal[
     "updated_desc",
@@ -125,6 +126,16 @@ FILTER_FIELDS: frozenset[str] = frozenset(
         "is_blocked",
         "is_blocking",
         "has_relation",
+        "subscriber_id_not",
+        "label_id_all",
+        "parent_id_not",
+        "has_sub_issues",
+        "content",
+        "content_not",
+        "completed_after",
+        "completed_before",
+        "match",
+        "groups",
     }
 )
 """Every key a saved view's filter may carry, which is the issue list's own set.
@@ -153,7 +164,6 @@ INBOX_READ_MAX_IDS = 100
 SCALAR_FILTER_FIELDS: frozenset[str] = frozenset(
     {
         "team_id",
-        "subscriber_id",
         "due_before",
         "due_after",
         "created_after",
@@ -163,12 +173,57 @@ SCALAR_FILTER_FIELDS: frozenset[str] = frozenset(
         "q",
         "is_blocked",
         "is_blocking",
+        "has_sub_issues",
+        "content",
+        "content_not",
+        "completed_after",
+        "completed_before",
+        "match",
     }
 )
 """The filter keys the issue list takes once, so a stored list for one would not run."""
 
-BOOLEAN_FILTER_FIELDS: frozenset[str] = frozenset({"is_blocked", "is_blocking"})
+BOOLEAN_FILTER_FIELDS: frozenset[str] = frozenset({"is_blocked", "is_blocking", "has_sub_issues"})
 """The scalar filter keys that hold `true` or `false`, stored as text like every other value."""
+
+MATCH_VALUES: tuple[str, ...] = ("all", "any")
+"""How a filter or one of its groups combines its conditions."""
+
+GROUP_FORBIDDEN_FIELDS: frozenset[str] = frozenset({"team_id", "q"})
+"""Filter keys a condition group may not carry: the scope and the search box belong to the whole filter."""
+
+MAX_FILTER_GROUPS = 10
+"""The most condition groups one stored filter, or one group, carries."""
+
+MAX_GROUP_DEPTH = 2
+"""How deep stored groups nest, the issue list's own bound."""
+
+
+def normalize_filter(value: Optional[dict[str, Any]]) -> Optional[dict[str, Any]]:
+    """A filter with each boolean key's JSON `true` or `false` stored as the text the list takes.
+
+    A saved view stores every value as text because it is run by expanding it into
+    query parameters, but an agent naturally sends a JSON boolean, so both spellings
+    are accepted and stored the same way, groups included.
+    """
+    if value is None:
+        return None
+    normalized = {key: _normalized_entry(str(key), entry) for key, entry in value.items()}
+    groups = normalized.get("groups")
+    if isinstance(groups, list):
+        normalized["groups"] = [normalize_filter(group) if isinstance(group, dict) else group for group in groups]
+    return normalized
+
+
+def _normalized_entry(key: str, entry: Any) -> Any:
+    """One filter value with a boolean key's bool, or its upper cased text, turned into `true` or `false`."""
+    if key not in BOOLEAN_FILTER_FIELDS:
+        return entry
+    if isinstance(entry, bool):
+        return "true" if entry else "false"
+    if isinstance(entry, str) and entry.strip().lower() in ("true", "false"):
+        return entry.strip().lower()
+    return entry
 
 
 def malformed_filter_keys(value: Mapping[str, Any] | None) -> list[str]:
@@ -176,22 +231,54 @@ def malformed_filter_keys(value: Mapping[str, Any] | None) -> list[str]:
 
     A repeatable key holds a string or a list of strings, a scalar key a string
     and a boolean key `true` or `false`, because the view is run by expanding each
-    value into query parameters. Checked beside the unknown keys and answered the same way, as `INVALID_FILTER`.
+    value into query parameters. `match` is `all` or `any`, and `groups` a list of
+    condition objects held to the same rules, each without a scope or a search and
+    nesting two levels at most; a bad key inside a group is named `groups`. Checked beside
+    the unknown keys and answered the same way, as `INVALID_FILTER`.
     """
     if not value:
         return []
     bad: list[str] = []
     for key, entry in value.items():
-        if str(key) in BOOLEAN_FILTER_FIELDS and entry is not None and entry not in ("true", "false"):
+        if str(key) == "groups":
+            if entry is not None and not _groups_well_formed(entry):
+                bad.append("groups")
+            continue
+        if not _entry_well_formed(str(key), entry):
             bad.append(str(key))
-            continue
-        if entry is None or isinstance(entry, str):
-            continue
-        repeatable = str(key) not in SCALAR_FILTER_FIELDS
-        if repeatable and isinstance(entry, list) and all(isinstance(item, str) for item in entry):
-            continue
-        bad.append(str(key))
     return sorted(bad)
+
+
+def _entry_well_formed(key: str, entry: Any) -> bool:
+    """Whether one filter value has the shape its key takes."""
+    if entry is None:
+        return True
+    if key in BOOLEAN_FILTER_FIELDS:
+        return entry in ("true", "false")
+    if key == "match":
+        return entry in MATCH_VALUES
+    if isinstance(entry, str):
+        return True
+    repeatable = key not in SCALAR_FILTER_FIELDS
+    return repeatable and isinstance(entry, list) and all(isinstance(item, str) for item in entry)
+
+
+def _groups_well_formed(entry: Any, depth: int = 1) -> bool:
+    """Whether a stored `groups` value is a short list of well formed conditions, nested no deeper than allowed."""
+    if not isinstance(entry, list) or len(entry) > MAX_FILTER_GROUPS:
+        return False
+    for group in entry:
+        if not isinstance(group, dict):
+            return False
+        for key, item in group.items():
+            name = str(key)
+            if name == "groups":
+                if item is not None and (depth >= MAX_GROUP_DEPTH or not _groups_well_formed(item, depth + 1)):
+                    return False
+                continue
+            if name not in FILTER_FIELDS or name in GROUP_FORBIDDEN_FIELDS or not _entry_well_formed(name, item):
+                return False
+    return True
 
 
 def unknown_filter_keys(value: Mapping[str, Any] | None) -> list[str]:
@@ -251,6 +338,12 @@ class ViewCreate(BaseModel):
         """Drop repeats, keeping the order the caller chose to show them in."""
         return _unique(value)
 
+    @field_validator("filter")
+    @classmethod
+    def normalize_booleans(cls, value: dict[str, Any]) -> dict[str, Any]:
+        """Store a boolean filter sent as JSON `true` or `false` as the text the list takes."""
+        return normalize_filter(value) or {}
+
 
 class ViewUpdate(BaseModel):
     """The body a saved view patch takes, every field optional.
@@ -284,6 +377,12 @@ class ViewUpdate(BaseModel):
     def check_visible_properties(cls, value: Optional[list[str]]) -> Optional[list[str]]:
         """Drop repeats, keeping the order the caller chose to show them in."""
         return _unique(value)
+
+    @field_validator("filter")
+    @classmethod
+    def normalize_booleans(cls, value: Optional[dict[str, Any]]) -> Optional[dict[str, Any]]:
+        """Store a boolean filter sent as JSON `true` or `false` as the text the list takes."""
+        return normalize_filter(value)
 
 
 DISPLAY_SWITCHES: tuple[str, ...] = ("ordering_reversed", "show_sub_issues", "show_completed", "show_archived")
@@ -385,6 +484,8 @@ class NotificationRead(BaseModel):
     in `issue_key`, its title in `issue_title` and its GitHub address in `url`.
     An `initiative_update_due` reminder names its initiative, carries an empty
     `team_id` and says in `due_state` whether the update is due or overdue.
+    `summary` is the line the row reads, naming who acted and, for a status change,
+    the status it moved to, which `new_value` also carries on its own.
     """
 
     notification_id: str
@@ -403,6 +504,8 @@ class NotificationRead(BaseModel):
     due_state: Optional[DueStateField] = None
     standup_date: Optional[str] = None
     url: Optional[str] = None
+    new_value: Optional[str] = None
+    summary: str = ""
     actor_id: str
     actor_name: str
     source: Optional[ChangeSource] = None
@@ -431,6 +534,8 @@ class NotificationRead(BaseModel):
             due_state=_due_state(notification.due_state),
             standup_date=notification.standup_date,
             url=notification.url,
+            new_value=notification.new_value,
+            summary=notification_summary(notification),
             actor_id=notification.actor_id,
             actor_name=notification.actor_name,
             source=notification.source,  # pyright: ignore[reportArgumentType]

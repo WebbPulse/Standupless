@@ -39,7 +39,8 @@ def keyed_rows(
     """The candidate rows when a person index can answer the read, else `None`.
 
     The narrowest index wins; the remaining filters still run afterwards, so a
-    request carrying two of them gets the intersection. Rows in teams the caller
+    request carrying two of them gets the intersection. A filter matching `any`
+    of its conditions cannot narrow by one person, so it fans out instead. Rows in teams the caller
     may not read are dropped here, before anything is sorted or counted.
     """
     workspace_id = context.workspace_id
@@ -47,6 +48,8 @@ def keyed_rows(
     if subscribed:
         ids = repositories.subscriptions.issue_ids_for_user(workspace_id, context.user_id, max_items=KEYED_READ_CAP)
         rows = list(repositories.issues.get_many(workspace_id, ids).values())
+    elif wanted.match != "all":
+        return None
     elif (creator := single(wanted.creator_ids)) is not None:
         ids = repositories.issues.issue_ids_created_by(workspace_id, creator, max_items=KEYED_READ_CAP)
         rows = list(repositories.issues.get_many(workspace_id, ids).values())

@@ -26,6 +26,7 @@ import DisplayMenu from '../../components/issues/view/DisplayMenu';
 import {
   FilterButton,
   FilterChips,
+  type FilterLogic,
 } from '../../components/issues/view/FilterBar';
 import IssueListView from '../../components/issues/view/IssueListView';
 import CycleProgressPanel from '../../components/planning/CycleProgressPanel';
@@ -343,6 +344,9 @@ export const CycleDetail: React.FC = () => {
   const setFilters = (filters: ViewState['filters']): void => {
     setState({ ...state, filters });
   };
+  const setLogic = (logic: FilterLogic): void => {
+    setState({ ...state, ...logic });
+  };
   const collection = useIssueCollection(
     workspaceId,
     `cycle:${teamId}:${cycleIds.join(',')}`,
@@ -566,8 +570,11 @@ export const CycleDetail: React.FC = () => {
             <div className="flex flex-wrap items-center gap-2">
               <FilterButton
                 filters={state.filters}
+                match={state.match}
+                groups={state.groups}
                 context={lists.context}
                 onChange={setFilters}
+                onLogicChange={setLogic}
               />
               <span className="flex-1" />
               <DisplayMenu
@@ -576,7 +583,13 @@ export const CycleDetail: React.FC = () => {
                 groupFields={fieldsFor(GROUP_FIELDS, lists.context)}
                 onReset={
                   sameViewState(
-                    { ...state, filters: base.filters, q: base.q },
+                    {
+                      ...state,
+                      filters: base.filters,
+                      match: base.match,
+                      groups: base.groups,
+                      q: base.q,
+                    },
                     base
                   )
                     ? undefined
@@ -584,6 +597,8 @@ export const CycleDetail: React.FC = () => {
                         setState({
                           ...base,
                           filters: state.filters,
+                          match: state.match,
+                          groups: state.groups,
                           q: state.q,
                         });
                       }
@@ -592,8 +607,11 @@ export const CycleDetail: React.FC = () => {
             </div>
             <FilterChips
               filters={state.filters}
+              match={state.match}
+              groups={state.groups}
               context={lists.context}
               onChange={setFilters}
+              onLogicChange={setLogic}
             />
           </div>
           <IssueListView

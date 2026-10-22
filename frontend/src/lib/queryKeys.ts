@@ -220,8 +220,8 @@ export const searchKey = (
   teamId: string
 ): QueryKey => ['search', workspaceId, term, teamId];
 
-/** Which slice of the inbox a list reads: everything, only unread, or only snoozed. */
-export type InboxFilter = 'all' | 'unread' | 'snoozed';
+/** Which slice of the inbox a list reads, serialised from its filter and display options. */
+export type InboxFilter = string;
 
 /** The caller's inbox, which varies on which slice it reads. */
 export const inboxKey = (

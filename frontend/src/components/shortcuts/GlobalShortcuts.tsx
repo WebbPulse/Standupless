@@ -1,15 +1,16 @@
 /**
  * The shortcuts that work anywhere in a workspace: `C` to create an issue,
- * `G` then a letter to go somewhere, `/` to search and `?` for the list of
- * every shortcut. Registered through the same registry as any page's own
- * shortcuts, so the help overlay and the command palette list them without a
- * second source of truth.
+ * `G` then a letter to go somewhere, `/` to search, Ctrl+Z to undo the last
+ * issue change and `?` for the list of every shortcut. Registered through the
+ * same registry as any page's own shortcuts, so the help overlay and the
+ * command palette list them without a second source of truth.
  */
 
 import type React from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useCreateIssue } from '../../hooks/useCreateIssue';
 import { useShortcut } from '../../hooks/useShortcuts';
+import { UNDO_KEYS, UNDO_LABEL, useUndo } from '../../hooks/useUndo';
 import { currentOrFirstTeam, settingsLanding } from '../../lib/workspaceNav';
 import {
   inboxPath,
@@ -61,6 +62,7 @@ export const GlobalShortcuts: React.FC<GlobalShortcutsProps> = ({
   const navigate = useNavigate();
   const location = useLocation();
   const createIssue = useCreateIssue();
+  const undo = useUndo(workspace.id);
   const slug = workspace.slug;
   const team = currentOrFirstTeam(
     teams,
@@ -146,6 +148,12 @@ export const GlobalShortcuts: React.FC<GlobalShortcutsProps> = ({
     handler: () => {
       focusSearch(go(searchPath(slug)));
     },
+  });
+  useShortcut({
+    keys: UNDO_KEYS,
+    label: UNDO_LABEL,
+    handler: undo.undo,
+    enabled: undo.canUndo,
   });
   useShortcut({
     keys: '?',

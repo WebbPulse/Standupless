@@ -19,7 +19,7 @@ from app.common.team_refs import team_not_found_message
 from app.domains.integrations.mcp.toolkit import NOT_VISIBLE
 from app.domains.integrations.mcp.tools import TOOLS_BY_NAME
 from tests.domains.helpers import ADMIN, GUEST, MEMBER, OWNER, add_team_member
-from tests.domains.integrations.conftest import OTHER_WORKSPACE, TEAM, WORKSPACE
+from tests.domains.integrations.conftest import OTHER_WORKSPACE, TEAM, WORKSPACE, seed_issue
 from tests.domains.integrations.mcp_isolation.views import FOREIGN_NOTIFICATION, seed
 from tests.domains.integrations.test_mcp import tool
 from tests.domains.integrations.test_mcp_tools import answer, mint_for, refusal
@@ -290,3 +290,79 @@ def test_mark_tools_leave_another_workspaces_notification_alone(
     stored = repositories.inbox.get(OTHER_WORKSPACE, OWNER, FOREIGN_NOTIFICATION)
     assert (read["updated"], snoozed["updated"]) == (0, 0)
     assert stored.unread is True and not stored.snoozed()
+
+
+def test_a_view_takes_is_blocked_as_a_json_boolean_and_selects_the_list_rows(
+    client: TestClient, repositories: Any, workspace: str
+) -> None:
+    """create_view and update_view store `is_blocked` as text, and the stored filter selects what list_issues does."""
+    blocker = seed_issue(repositories, WORKSPACE, TEAM, "01JB0000000000000000000IS1", "ABC", 1)
+    blocked = seed_issue(repositories, WORKSPACE, TEAM, "01JB0000000000000000000IS2", "ABC", 2)
+    seed_issue(repositories, WORKSPACE, TEAM, "01JB0000000000000000000IS3", "ABC", 3)
+    secret = mint_for(repositories, MEMBER, (*VIEWS, "issues:read", "issues:write"))
+    answer(
+        tool(
+            client,
+            secret,
+            "create_issue_relation",
+            {"issue_id": blocker.issue_id, "type": "blocks", "target_issue_id": blocked.issue_id},
+        )
+    )
+
+    created = answer(
+        tool(client, secret, "create_view", {"name": "Blocked", "team_id": TEAM, "filter": {"is_blocked": True}})
+    )
+    listed = answer(tool(client, secret, "list_issues", {"team_id": TEAM, "is_blocked": True}))
+    from_view = answer(tool(client, secret, "list_issues", {"team_id": TEAM, **created["filter"]}))
+    updated = answer(
+        tool(client, secret, "update_view", {"view_id": created["view_id"], "filter": {"is_blocked": False}})
+    )
+    unblocked = answer(tool(client, secret, "list_issues", {"team_id": TEAM, **updated["filter"]}))
+
+    assert created["filter"] == {"is_blocked": "true"}
+    assert updated["filter"] == {"is_blocked": "false"}
+    assert [row["issue_id"] for row in listed["issues"]] == [blocked.issue_id]
+    assert [row["issue_id"] for row in from_view["issues"]] == [blocked.issue_id]
+    assert blocked.issue_id not in {row["issue_id"] for row in unblocked["issues"]}
+    assert len(unblocked["issues"]) == 2
+
+
+def test_list_issues_takes_match_and_nested_groups(client: TestClient, repositories: Any, workspace: str) -> None:
+    """Match any keeps a row meeting one condition, and a nested group counts as one condition."""
+    urgent = seed_issue(repositories, WORKSPACE, TEAM, "01JB0000000000000000000IS1", "ABC", 1)
+    low = seed_issue(repositories, WORKSPACE, TEAM, "01JB0000000000000000000IS2", "ABC", 2)
+    seed_issue(repositories, WORKSPACE, TEAM, "01JB0000000000000000000IS3", "ABC", 3)
+    repositories.issues.replace(urgent.model_copy(update={"priority": "urgent"}))
+    repositories.issues.replace(low.model_copy(update={"priority": "low", "assignee_id": MEMBER}))
+    secret = mint_for(repositories, MEMBER, ("issues:read",))
+
+    either = answer(
+        tool(
+            client, secret, "list_issues", {"team_id": TEAM, "match": "any", "priority": "urgent", "assignee_id": "me"}
+        )
+    )
+    grouped = answer(
+        tool(
+            client,
+            secret,
+            "list_issues",
+            {
+                "team_id": TEAM,
+                "groups": [
+                    {"match": "any", "priority": "urgent", "groups": [{"priority": "low", "assignee_id": "me"}]}
+                ],
+            },
+        )
+    )
+    deep = refusal(
+        tool(
+            client,
+            secret,
+            "list_issues",
+            {"team_id": TEAM, "groups": [{"groups": [{"groups": [{"priority": "low"}]}]}]},
+        )
+    )
+
+    assert {row["issue_id"] for row in either["issues"]} == {urgent.issue_id, low.issue_id}
+    assert {row["issue_id"] for row in grouped["issues"]} == {urgent.issue_id, low.issue_id}
+    assert "levels deep" in deep

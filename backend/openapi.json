@@ -7982,7 +7982,7 @@
         "type": "object"
       },
       "NotificationRead": {
-        "description": "One inbox row as the API returns it.\n\nA `project_update` notification names its project and update and leaves the\nissue fields empty. A `standup_digest` carries the team key in `issue_key`,\nthe team name in `issue_title` and the digest date in `standup_date`. A\n`review_requested` notification carries the pull request's `owner/repo#number`\nin `issue_key`, its title in `issue_title` and its GitHub address in `url`.\nAn `initiative_update_due` reminder names its initiative, carries an empty\n`team_id` and says in `due_state` whether the update is due or overdue.",
+        "description": "One inbox row as the API returns it.\n\nA `project_update` notification names its project and update and leaves the\nissue fields empty. A `standup_digest` carries the team key in `issue_key`,\nthe team name in `issue_title` and the digest date in `standup_date`. A\n`review_requested` notification carries the pull request's `owner/repo#number`\nin `issue_key`, its title in `issue_title` and its GitHub address in `url`.\nAn `initiative_update_due` reminder names its initiative, carries an empty\n`team_id` and says in `due_state` whether the update is due or overdue.\n`summary` is the line the row reads, naming who acted and, for a status change,\nthe status it moved to, which `new_value` also carries on its own.",
         "properties": {
           "actor_id": {
             "title": "Actor Id",
@@ -8065,6 +8065,17 @@
             "title": "Kind",
             "type": "string"
           },
+          "new_value": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "New Value"
+          },
           "notification_id": {
             "title": "Notification Id",
             "type": "string"
@@ -8143,6 +8154,11 @@
               }
             ],
             "title": "Standup Date"
+          },
+          "summary": {
+            "default": "",
+            "title": "Summary",
+            "type": "string"
           },
           "team_id": {
             "title": "Team Id",
@@ -18031,6 +18047,18 @@
             ],
             "title": "Body"
           },
+          "completed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          },
           "created_at": {
             "format": "date-time",
             "title": "Created At",
@@ -25616,7 +25644,7 @@
     },
     "/api/workspaces/{workspace_id}/inbox": {
       "get": {
-        "description": "The caller's own notifications, newest first.\n\nA notification whose issue or comment has since been deleted still renders,\ncarrying the title it was written with, rather than 404ing a whole list for one\nstale row.\n\nSnoozed notifications stay out of both lists until their time comes; `snoozed=true`\nlists only them, and is refused beside `unread=true` since nothing is both.",
+        "description": "The caller's own notifications, newest first.\n\nA notification whose issue or comment has since been deleted still renders,\ncarrying the title it was written with, rather than 404ing a whole list for one\nstale row.\n\nSnoozed notifications stay out of both lists until their time comes; `snoozed=true`\nlists only them, and is refused beside `unread=true` since nothing is both.\n`include_snoozed=true` keeps snoozed rows in either list, and each repeated\n`kind` keeps only that notification kind.",
         "operationId": "list_inbox_api_workspaces__workspace_id__inbox_get",
         "parameters": [
           {
@@ -25647,6 +25675,30 @@
               "default": false,
               "title": "Snoozed",
               "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "include_snoozed",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Include Snoozed",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "kind",
+            "required": false,
+            "schema": {
+              "default": [],
+              "items": {
+                "type": "string"
+              },
+              "maxItems": 19,
+              "title": "Kind",
+              "type": "array"
             }
           },
           {
@@ -27185,7 +27237,7 @@
     },
     "/api/workspaces/{workspace_id}/issues": {
       "get": {
-        "description": "One page of the issues the caller may see, filtered and sorted.\n\nEvery id filter repeats, ORing its values, and `none` matches the unset field\nwhere the field can be unset. Filters are applied after the key read rather\nthan through an index, so adding one costs no GSI. The cursor is a position in\nthe filtered, sorted set and is bound to the filter, so a cursor carried to a\ndifferent filter starts over rather than skipping rows.\n\nThe exception is a filter on one person: `subscriber_id=me`, one `creator_id`\nor one `assignee_id` reads that person's own index instead of every team, which\nis what the My issues tabs ask for. `subscriber_id` takes only the caller,\nbecause what someone else follows is theirs to know.\n\nArchived issues are left out unless `include_archived` is set, and\n`archived_only` lists nothing but them, the archive view. That read goes\nstraight to each status's archived partition of the status index rather than\nreading every issue of the team and dropping the live ones. Issues awaiting\ntriage are left out the same way unless `include_triage` is set, and\n`triage_only` lists nothing but them.\n\n`include_sub_teams` with a `team_id` rolls that team's sub-teams the caller\nmay see into the list, so a parent team's views show its sub-teams' issues.\n`reverse` turns the sort around, issues lacking the sorted value still last.\n\nEvery body carries `synced_at`. Sent back as `updated_since` with the same\nfilter, it turns the read into a delta: only the issues changed since, every\none in the list's sort order and unpaged, plus `removed_ids` for issues that\nleft the filter, were archived or were deleted. `resync_required` asks for a\nfull read instead, when the cursor is older than deletions are remembered or\nthe delta is too large to carry. A delta costs one key-bounded query per team\non the change feed index, so a poll that finds nothing reads almost nothing.\n\nA delta answer carries a weak `ETag` over its body. Two polls that find the\nsame thing answer the same body, so a poll that sends the tag back in\n`If-None-Match` gets a 304 with no body instead. A full read carries none,\nbecause its cursor moves with the clock.",
+        "description": "One page of the issues the caller may see, filtered and sorted.\n\nEvery id filter repeats, ORing its values, and `none` matches the unset field\nwhere the field can be unset. Filters are applied after the key read rather\nthan through an index, so adding one costs no GSI. The cursor is a position in\nthe filtered, sorted set and is bound to the filter, so a cursor carried to a\ndifferent filter starts over rather than skipping rows.\n\nThe exception is a filter on one person: `subscriber_id=me`, one `creator_id`\nor one `assignee_id` reads that person's own index instead of every team, which\nis what the My issues tabs ask for. Any other `subscriber_id` is matched after\nthe read, against the subscriptions of each person it names.\n\n`match=any` keeps an issue meeting any one condition rather than all of them.\n`groups` is a JSON array of condition objects, each holding these same filter\nnames plus its own `match`, and each counting as one condition, which is how\n\"status is Todo and (label is Bug or priority is Urgent)\" is said. A group may\nhold groups of its own, two levels at most, so a client can wrap its own\nconditions in one group under the list's fixed scope. `content`\nmatches title and description text, `label_id_all` wants every label named,\nand `completed_after` and `completed_before` bound the day an issue was done.\n\nArchived issues are left out unless `include_archived` is set, and\n`archived_only` lists nothing but them, the archive view. That read goes\nstraight to each status's archived partition of the status index rather than\nreading every issue of the team and dropping the live ones. Issues awaiting\ntriage are left out the same way unless `include_triage` is set, and\n`triage_only` lists nothing but them.\n\n`include_sub_teams` with a `team_id` rolls that team's sub-teams the caller\nmay see into the list, so a parent team's views show its sub-teams' issues.\n`reverse` turns the sort around, issues lacking the sorted value still last.\n\nEvery body carries `synced_at`. Sent back as `updated_since` with the same\nfilter, it turns the read into a delta: only the issues changed since, every\none in the list's sort order and unpaged, plus `removed_ids` for issues that\nleft the filter, were archived or were deleted. `resync_required` asks for a\nfull read instead, when the cursor is older than deletions are remembered or\nthe delta is too large to carry. A delta costs one key-bounded query per team\non the change feed index, so a poll that finds nothing reads almost nothing.\n\nA delta answer carries a weak `ETag` over its body. Two polls that find the\nsame thing answer the same body, so a poll that sends the tag back in\n`If-None-Match` gets a 304 with no body instead. A full read carries none,\nbecause its cursor moves with the clock.",
         "operationId": "list_issues_api_workspaces__workspace_id__issues_get",
         "parameters": [
           {
@@ -27383,13 +27435,35 @@
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
                 },
                 {
                   "type": "null"
                 }
               ],
               "title": "Subscriber Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "subscriber_id_not",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Subscriber Id Not"
             }
           },
           {
@@ -27432,6 +27506,25 @@
           },
           {
             "in": "query",
+            "name": "label_id_all",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Label Id All"
+            }
+          },
+          {
+            "in": "query",
             "name": "parent_id",
             "required": false,
             "schema": {
@@ -27447,6 +27540,41 @@
                 }
               ],
               "title": "Parent Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "parent_id_not",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Parent Id Not"
+            }
+          },
+          {
+            "in": "query",
+            "name": "has_sub_issues",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Has Sub Issues"
             }
           },
           {
@@ -27794,6 +27922,72 @@
           },
           {
             "in": "query",
+            "name": "completed_after",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Completed After"
+            }
+          },
+          {
+            "in": "query",
+            "name": "completed_before",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Completed Before"
+            }
+          },
+          {
+            "in": "query",
+            "name": "content",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 200,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Content"
+            }
+          },
+          {
+            "in": "query",
+            "name": "content_not",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 200,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Content Not"
+            }
+          },
+          {
+            "in": "query",
             "name": "q",
             "required": false,
             "schema": {
@@ -27857,6 +28051,39 @@
                 }
               ],
               "title": "Has Relation"
+            }
+          },
+          {
+            "in": "query",
+            "name": "match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Match"
+            }
+          },
+          {
+            "in": "query",
+            "name": "groups",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 8000,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Groups"
             }
           },
           {
@@ -28378,6 +28605,44 @@
           },
           {
             "in": "query",
+            "name": "subscriber_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Subscriber Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "subscriber_id_not",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Subscriber Id Not"
+            }
+          },
+          {
+            "in": "query",
             "name": "label_id",
             "required": false,
             "schema": {
@@ -28416,6 +28681,25 @@
           },
           {
             "in": "query",
+            "name": "label_id_all",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Label Id All"
+            }
+          },
+          {
+            "in": "query",
             "name": "parent_id",
             "required": false,
             "schema": {
@@ -28431,6 +28715,41 @@
                 }
               ],
               "title": "Parent Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "parent_id_not",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Parent Id Not"
+            }
+          },
+          {
+            "in": "query",
+            "name": "has_sub_issues",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Has Sub Issues"
             }
           },
           {
@@ -28778,6 +29097,72 @@
           },
           {
             "in": "query",
+            "name": "completed_after",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Completed After"
+            }
+          },
+          {
+            "in": "query",
+            "name": "completed_before",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Completed Before"
+            }
+          },
+          {
+            "in": "query",
+            "name": "content",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 200,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Content"
+            }
+          },
+          {
+            "in": "query",
+            "name": "content_not",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 200,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Content Not"
+            }
+          },
+          {
+            "in": "query",
             "name": "q",
             "required": false,
             "schema": {
@@ -28841,6 +29226,39 @@
                 }
               ],
               "title": "Has Relation"
+            }
+          },
+          {
+            "in": "query",
+            "name": "match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Match"
+            }
+          },
+          {
+            "in": "query",
+            "name": "groups",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 8000,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Groups"
             }
           },
           {
@@ -40536,13 +40954,35 @@
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
                 },
                 {
                   "type": "null"
                 }
               ],
               "title": "Subscriber Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "subscriber_id_not",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Subscriber Id Not"
             }
           },
           {
@@ -40585,6 +41025,25 @@
           },
           {
             "in": "query",
+            "name": "label_id_all",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Label Id All"
+            }
+          },
+          {
+            "in": "query",
             "name": "parent_id",
             "required": false,
             "schema": {
@@ -40600,6 +41059,41 @@
                 }
               ],
               "title": "Parent Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "parent_id_not",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Parent Id Not"
+            }
+          },
+          {
+            "in": "query",
+            "name": "has_sub_issues",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Has Sub Issues"
             }
           },
           {
@@ -40947,6 +41441,72 @@
           },
           {
             "in": "query",
+            "name": "completed_after",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Completed After"
+            }
+          },
+          {
+            "in": "query",
+            "name": "completed_before",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Completed Before"
+            }
+          },
+          {
+            "in": "query",
+            "name": "content",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 200,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Content"
+            }
+          },
+          {
+            "in": "query",
+            "name": "content_not",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 200,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Content Not"
+            }
+          },
+          {
+            "in": "query",
             "name": "q",
             "required": false,
             "schema": {
@@ -41010,6 +41570,39 @@
                 }
               ],
               "title": "Has Relation"
+            }
+          },
+          {
+            "in": "query",
+            "name": "match",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Match"
+            }
+          },
+          {
+            "in": "query",
+            "name": "groups",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 8000,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Groups"
             }
           },
           {

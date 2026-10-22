@@ -178,6 +178,8 @@ class Notification(BaseModel):
     `issue_title` and its GitHub address in `url`. An initiative update reminder
     is about a workspace level subject, so it carries an empty `team_id`, the
     initiative fields, and `due_state` saying whether the update is due or overdue.
+    A status change carries the status it moved to in `new_value`, by name as it
+    read when the row was written; rows written before that field existed have none.
     """
 
     ws_user: str
@@ -197,6 +199,7 @@ class Notification(BaseModel):
     due_state: str | None = None
     standup_date: str | None = None
     url: str | None = None
+    new_value: str | None = None
     actor_id: str
     actor_name: str
     source: str | None = None
@@ -276,6 +279,8 @@ class InboxRepository:
         *,
         unread_only: bool = False,
         snoozed_only: bool = False,
+        include_snoozed: bool = False,
+        kinds: Iterable[str] = (),
         limit: int = 50,
         start_key: Mapping[str, Any] | None = None,
         now: datetime | None = None,
@@ -286,21 +291,38 @@ class InboxRepository:
         old inbox does not make the unread filter read a large partition; bounding
         its range key at now leaves out what is still snoozed. The full list filters
         snoozed rows out and `snoozed_only` keeps only them, which is the Snoozed
-        view. A filtered page can come back short while still carrying a cursor.
+        view. `include_snoozed` keeps rows still snoozed beside the rest, which with
+        `unread_only` reads the partition for every row carrying `unread_at` rather
+        than the index, so the order stays newest first. `kinds` keeps only those
+        kinds. A filtered page can come back short while still carrying a cursor.
         """
         moment = now or utc_now()
         partition = inbox_partition(workspace_id, user_id)
-        if unread_only:
+        of_kind = Attr("kind").is_in(list(kinds)) if kinds else None
+        if unread_only and not include_snoozed:
             return self._repository.query(
                 Key("ws_user").eq(partition) & Key("unread_at").lte(instant(moment)),
                 index_name=UNREAD_INDEX,
+                filter_expression=of_kind,
                 limit=limit,
                 start_key=dict(start_key) if start_key else None,
                 ascending=False,
             )
+        if unread_only:
+            state: Any = Attr("unread_at").exists()
+        elif snoozed_only:
+            state = _asleep(moment)
+        elif include_snoozed:
+            state = None
+        else:
+            state = _awake(moment)
+        conditions = [condition for condition in (state, of_kind) if condition is not None]
+        filter_expression = None
+        for condition in conditions:
+            filter_expression = condition if filter_expression is None else filter_expression & condition
         return self._repository.query(
             Key("ws_user").eq(partition),
-            filter_expression=_asleep(moment) if snoozed_only else _awake(moment),
+            filter_expression=filter_expression,
             limit=limit,
             start_key=dict(start_key) if start_key else None,
             ascending=False,

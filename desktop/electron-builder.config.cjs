@@ -9,7 +9,10 @@
  * release-desktop.yml builds with `--publish never` and uploads the files.
  *
  * Signing is off unless its credentials are in the environment. With none set
- * the builds are unsigned, and SIGNING.md lists what turns each platform on.
+ * Windows and Linux builds are unsigned and macOS builds are ad-hoc signed,
+ * because Apple Silicon kills any binary whose code signature does not match
+ * its pages, and flipping the Electron fuses rewrites the framework binary.
+ * SIGNING.md lists what turns full signing on for each platform.
  *
  * @type {import('electron-builder').Configuration}
  */
@@ -74,8 +77,8 @@ module.exports = {
       { target: 'zip', arch: ['universal'] },
     ],
     icon: 'resources/icon.png',
-    hardenedRuntime: true,
-    identity: macSigning ? undefined : null,
+    hardenedRuntime: macSigning,
+    identity: macSigning ? undefined : '-',
     notarize: macNotarize,
   },
   dmg: {
