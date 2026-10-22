@@ -585,6 +585,12 @@ class TestViewsDomain:
         inbox = api.get(f"/api/workspaces/{workspace['id']}/inbox")
         assert inbox.status_code == 200, inbox.text[:400]
 
+        filtered = api.get(
+            f"/api/workspaces/{workspace['id']}/inbox",
+            params={"kind": ["assigned", "status_changed"], "include_snoozed": True, "unread": True},
+        )
+        assert filtered.status_code == 200, filtered.text[:400]
+
         count = api.get(f"/api/workspaces/{workspace['id']}/inbox/count")
         assert count.status_code == 200, count.text[:400]
 
@@ -1968,6 +1974,14 @@ class TestIssueImport:
             if isinstance(row, dict) and row.get("kind") == "import_ready" and row.get("issue_key") == import_id
         ]
         assert notices, inbox.text[:400]
+        assert notices[0].get("summary") == "Import finished", notices[0]
+
+        only_imports = api.get(f"/api/workspaces/{workspace['id']}/inbox", params={"kind": "import_ready"})
+        assert only_imports.status_code == 200, only_imports.text[:400]
+        kinds = {
+            row.get("kind") for row in _items(only_imports.json(), "notifications", "items") if isinstance(row, dict)
+        }
+        assert kinds <= {"import_ready"}, sorted(str(kind) for kind in kinds)
 
 
 LINEAR_FAKE_PORT = 8765

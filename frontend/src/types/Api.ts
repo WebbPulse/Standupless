@@ -1497,6 +1497,10 @@ export interface NotificationRead {
   source?: ChangeSource | null;
   /** The pull request a `review_requested` row points at; null on every other row. */
   url?: string | null;
+  /** The status name a `status_changed` row moved to; absent on older rows. */
+  new_value?: string | null;
+  /** The line the row reads, such as "Olive moved to Done"; absent on older clients' fixtures. */
+  summary?: string;
   created_at: string;
   expires_at: string;
 }

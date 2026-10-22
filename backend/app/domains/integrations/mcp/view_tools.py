@@ -28,7 +28,14 @@ from app.common.api.schemas.views import (
     ViewUpdate,
 )
 from app.common.db.dynamo.views import SavedView
-from app.common.inbox import delete_notification, list_notifications, mark_read, mark_unread, snooze
+from app.common.inbox import (
+    INBOX_KINDS,
+    delete_notification,
+    list_notifications,
+    mark_read,
+    mark_unread,
+    snooze,
+)
 from app.common.saved_views import (
     create_saved_view,
     delete_saved_view,
@@ -243,6 +250,8 @@ def _list_notifications(call: ToolCall) -> Any:
         call.context,
         unread=_flag(call, "unread"),
         snoozed=_flag(call, "snoozed"),
+        include_snoozed=_flag(call, "include_snoozed"),
+        kinds=filter_values(call.optional("kinds")) or [],
         cursor=call.optional("cursor"),
         limit=limit(call.optional("limit")),
     )
@@ -344,13 +353,17 @@ VIEW_TOOLS: tuple[Tool, ...] = (
         name="list_notifications",
         description=(
             "The caller's inbox, newest first, with the unread count. unread=true lists only unread, "
-            "snoozed=true only snoozed ones (not both). Snoozed notifications are hidden until they return."
+            "snoozed=true only snoozed ones (not both). Snoozed notifications are hidden until they return "
+            "unless include_snoozed=true. kinds keeps only those kinds. Each row's summary says who changed "
+            "what, such as 'Olive moved to Done', and new_value holds the status a change moved to."
         ),
         scopes=("notifications:read",),
         schema=object_schema(
             {
                 "unread": _boolean("Only unread notifications"),
                 "snoozed": _boolean("Only snoozed notifications"),
+                "include_snoozed": _boolean("Keep snoozed notifications in the list"),
+                "kinds": one_or_many("One notification kind or a list, ORed: " + ", ".join(INBOX_KINDS)),
                 **page_properties(),
             }
         ),

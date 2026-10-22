@@ -12,7 +12,7 @@ every unread read bounds the index at now, so a snoozed row returns by itself.
 from __future__ import annotations
 
 from datetime import timedelta
-from typing import Optional
+from typing import Optional, Sequence, get_args
 
 from webbpulse.dynamodb import encode_start_key
 
@@ -21,20 +21,42 @@ from app.common.api.dependencies.repositories import Repositories
 from app.common.api.pagination import resume_key
 from app.common.api.schemas.views import InboxReadRequest, InboxSnoozeRequest, InboxUnreadRequest, NotificationRead
 from app.common.db.dynamo.base import utc_now
-from app.common.db.dynamo.inbox import SNOOZE_MAX, Notification
+from app.common.db.dynamo.inbox import SNOOZE_MAX, Notification, NotificationKind
 from app.common.issue_keys import display_key
 from app.common.issue_rules import not_found, unprocessable
 
 SNOOZE_MIN = timedelta(minutes=1)
+INBOX_KINDS: tuple[str, ...] = (
+    *get_args(NotificationKind),
+    "channel_disabled",
+    "export_ready",
+    "export_failed",
+    "import_ready",
+    "import_failed",
+)
+"""Every kind an inbox row can carry: the member facing ones plus the workspace notices."""
 
 
-def cursor_scope(workspace_id: str, user_id: str, unread: bool, snoozed: bool = False) -> str:
+def cursor_scope(
+    workspace_id: str,
+    user_id: str,
+    unread: bool,
+    snoozed: bool = False,
+    *,
+    include_snoozed: bool = False,
+    kinds: Sequence[str] = (),
+) -> str:
     """The scope an inbox cursor is stamped with.
 
-    Carries the caller and which list the page came from, so a cursor minted on one
-    member's unread page is refused on another member's full page.
+    Carries the caller, which list the page came from and its filters, so a cursor
+    minted on one member's unread page is refused on another member's full page,
+    and one minted under a kind filter is refused once the filter changes.
     """
     mode = "unread" if unread else "snoozed" if snoozed else "all"
+    if include_snoozed and not snoozed:
+        mode = f"{mode}+snoozed"
+    if kinds:
+        mode = f"{mode}:{','.join(sorted(set(kinds)))}"
     return f"inbox:{workspace_id}:{user_id}:{mode}"
 
 
@@ -46,21 +68,29 @@ def list_notifications(
     snoozed: bool,
     cursor: Optional[str],
     limit: int,
+    include_snoozed: bool = False,
+    kinds: Sequence[str] = (),
 ) -> tuple[list[NotificationRead], Optional[str]]:
     """One page of the caller's own notifications, newest first, with the next cursor.
 
-    Snoozed notifications stay out of both lists until their time comes, and
-    `snoozed` lists only them, so it cannot be combined with `unread`.
+    Snoozed notifications stay out of both lists until their time comes unless
+    `include_snoozed` keeps them in, and `snoozed` lists only them, so it cannot be
+    combined with `unread`. `kinds` keeps only those notification kinds.
     """
     if unread and snoozed:
         raise unprocessable("unread and snoozed cannot be combined")
+    unknown = sorted(set(kinds) - set(INBOX_KINDS))
+    if unknown:
+        raise unprocessable(f"Unknown notification kind: {', '.join(unknown)}")
     workspace_id = context.workspace_id
-    scope = cursor_scope(workspace_id, context.user_id, unread, snoozed)
+    scope = cursor_scope(workspace_id, context.user_id, unread, snoozed, include_snoozed=include_snoozed, kinds=kinds)
     page = repositories.inbox.list(
         workspace_id,
         context.user_id,
         unread_only=unread,
         snoozed_only=snoozed,
+        include_snoozed=include_snoozed,
+        kinds=tuple(dict.fromkeys(kinds)),
         limit=limit,
         start_key=resume_key(cursor, scope),
     )

@@ -1050,6 +1050,7 @@ class NotificationRead(TypedDict):
     issue_key: str
     issue_title: str
     kind: str
+    new_value: NotRequired[str | None]
     notification_id: str
     project_id: NotRequired[str | None]
     project_name: NotRequired[str | None]
@@ -1057,6 +1058,7 @@ class NotificationRead(TypedDict):
     snoozed_until: NotRequired[str | None]
     source: NotRequired[Literal["web", "mcp", "cli", "api", "github", "system"] | None]
     standup_date: NotRequired[str | None]
+    summary: NotRequired[str]
     team_id: str
     unread: bool
     url: NotRequired[str | None]

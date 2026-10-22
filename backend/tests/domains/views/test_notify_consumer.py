@@ -208,6 +208,60 @@ def test_a_status_change_notifies_the_assignee(
     assert [row["kind"] for row in inbox_of(repositories, workspace, MEMBER)] == ["status_changed"]
 
 
+def test_a_status_change_names_the_status_it_moved_to(
+    client: TestClient, issues_client: TestClient, workspace: str, repositories: Any, statuses: Any
+) -> None:
+    """The row keeps the new status by name, so the inbox can say "moved to Done"."""
+    sign_in(issues_client, OWNER)
+    issue = seed_issue(issues_client, workspace, title="Moved", assignee_id=MEMBER)
+    done = statuses["completed"]
+
+    handle_record(
+        repositories,
+        _record(
+            ISSUES_ARN,
+            "MODIFY",
+            new=_image(
+                workspace_id=workspace,
+                issue_id=issue["id"],
+                assignee_id=MEMBER,
+                status_id=done.status_id,
+                updated_by=OWNER,
+            ),
+            old=_image(workspace_id=workspace, issue_id=issue["id"], assignee_id=MEMBER, status_id="S1"),
+        ),
+    )
+
+    rows = inbox_of(repositories, workspace, MEMBER)
+    assert [row["new_value"] for row in rows] == [done.name]
+
+    sign_in(client, MEMBER)
+    listed = client.get(f"/api/workspaces/{workspace}/inbox").json()["notifications"]
+    assert listed[0]["summary"].endswith(f" moved to {done.name}")
+
+
+def test_a_status_change_to_an_unknown_status_still_notifies(
+    issues_client: TestClient, workspace: str, repositories: Any, statuses: Any
+) -> None:
+    """A status the team config cannot name leaves `new_value` empty rather than dropping the row."""
+    sign_in(issues_client, OWNER)
+    issue = seed_issue(issues_client, workspace, title="Moved", assignee_id=MEMBER)
+
+    handle_record(
+        repositories,
+        _record(
+            ISSUES_ARN,
+            "MODIFY",
+            new=_image(
+                workspace_id=workspace, issue_id=issue["id"], assignee_id=MEMBER, status_id="S2", updated_by=OWNER
+            ),
+            old=_image(workspace_id=workspace, issue_id=issue["id"], assignee_id=MEMBER, status_id="S1"),
+        ),
+    )
+
+    assert [row.get("new_value") for row in inbox_of(repositories, workspace, MEMBER)] == [None]
+
+
 def test_a_replayed_record_writes_one_row(
     issues_client: TestClient, workspace: str, repositories: Any, statuses: Any
 ) -> None:

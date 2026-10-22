@@ -4,8 +4,10 @@
  * marking every row reach the shapes the contract fixes, and that opening a row
  * selects it, marks it read and shows its issue beside the list. Also covers
  * the keyboard: U toggles read and unread, H snoozes to a preset, Backspace
- * removes and Shift R marks everything read, and the Snoozed view with its
- * unsnooze. Opening a row in the Unread tab keeps it open once it is read.
+ * removes and Shift R marks everything read, and Show snoozed with its
+ * unsnooze. Opening a row while read rows are hidden keeps it open once it is
+ * read. Notifications about one issue fold into one row that opens and marks
+ * them all, and the Filter and Display menus shape the list query.
  */
 
 import { act, render, screen, waitFor } from '@testing-library/react';
@@ -225,12 +227,13 @@ describe('inbox', () => {
     expect(query).not.toHaveProperty('recipient_id');
   });
 
-  it('filters to unread when asked', async () => {
+  it('filters to unread when read rows are hidden', async () => {
     const user = userEvent.setup();
     renderPage();
 
     await screen.findByText('Cache the token');
-    await user.click(screen.getByRole('button', { name: 'Unread' }));
+    await user.click(screen.getByRole('button', { name: 'Display' }));
+    await user.click(screen.getByRole('checkbox', { name: 'Show read' }));
 
     await waitFor(() => {
       expect(listInbox).toHaveBeenCalledWith(
@@ -402,22 +405,158 @@ describe('inbox', () => {
       await screen.findByText('Could not load your inbox.')
     ).toBeInTheDocument();
   });
-  it('lists only snoozed rows in the Snoozed view', async () => {
+  it('keeps snoozed rows in the list when Show snoozed is on', async () => {
     const user = userEvent.setup();
     renderPage();
 
     await screen.findByText('Cache the token');
-    await user.click(screen.getByRole('button', { name: 'Snoozed' }));
+    expect(listInbox).not.toHaveBeenCalledWith(
+      expect.objectContaining({ include_snoozed: true })
+    );
+    await user.click(screen.getByRole('button', { name: 'Display' }));
+    await user.click(screen.getByRole('checkbox', { name: 'Show snoozed' }));
 
     await waitFor(() => {
       expect(listInbox).toHaveBeenCalledWith(
-        expect.objectContaining({ snoozed: true })
+        expect.objectContaining({ include_snoozed: true })
       );
     });
-    expect(screen.getByRole('button', { name: 'Snoozed' })).toHaveAttribute(
-      'aria-pressed',
-      'true'
+    expect(
+      screen.getByRole('checkbox', { name: 'Show snoozed' })
+    ).toBeChecked();
+  });
+
+  it('asks for only the chosen notification types', async () => {
+    const user = userEvent.setup();
+    renderPage();
+
+    await screen.findByText('Cache the token');
+    await user.click(screen.getByRole('button', { name: /^Filter/ }));
+    await user.click(screen.getByRole('checkbox', { name: 'Status changes' }));
+    await user.click(screen.getByRole('checkbox', { name: 'Comments' }));
+
+    await waitFor(() => {
+      expect(listInbox).toHaveBeenCalledWith(
+        expect.objectContaining({ kind: ['commented', 'status_changed'] })
+      );
+    });
+  });
+
+  it('says so when a filter matches nothing', async () => {
+    const user = userEvent.setup();
+    listInbox.mockImplementation((query) =>
+      Promise.resolve(
+        (query as { kind?: string[] }).kind === undefined
+          ? { notifications: [notification()], next_cursor: null }
+          : { notifications: [], next_cursor: null }
+      )
     );
+    renderPage();
+
+    await screen.findByText('Cache the token');
+    await user.click(screen.getByRole('button', { name: /^Filter/ }));
+    await user.click(screen.getByRole('checkbox', { name: 'Reviews' }));
+
+    expect(
+      await screen.findAllByText('Nothing matches this filter.')
+    ).not.toHaveLength(0);
+  });
+
+  it('remembers the view for the next visit', async () => {
+    const user = userEvent.setup();
+    const first = renderPage();
+
+    await screen.findByText('Cache the token');
+    await user.click(screen.getByRole('button', { name: 'Display' }));
+    await user.click(screen.getByRole('checkbox', { name: 'Show read' }));
+    first.unmount();
+    renderPage();
+
+    await user.click(await screen.findByRole('button', { name: 'Display' }));
+    expect(
+      screen.getByRole('checkbox', { name: 'Show read' })
+    ).not.toBeChecked();
+    expect(
+      screen.getByRole('checkbox', { name: 'Show snoozed' })
+    ).not.toBeChecked();
+  });
+
+  it('folds notifications about one issue into one row with a count', async () => {
+    listInbox.mockResolvedValue({
+      notifications: [
+        notification({
+          notification_id: 'n-2',
+          kind: 'status_changed',
+          new_value: 'Done',
+          summary: 'Grace moved to Done',
+          created_at: '2026-09-18T00:00:00Z',
+        }),
+        notification(),
+        notification({
+          notification_id: 'n-3',
+          issue_id: 'iss-2',
+          issue_key: 'ENG-2',
+          issue_title: 'Rotate the keys',
+          summary: 'Ada commented',
+          actor_name: 'Ada',
+          kind: 'commented',
+        }),
+      ],
+      next_cursor: null,
+    });
+    renderPage();
+
+    expect(await screen.findByText('Grace moved to Done')).toBeInTheDocument();
+    expect(screen.getAllByText('Cache the token')).toHaveLength(1);
+    expect(screen.getByLabelText('2 notifications')).toBeInTheDocument();
+    expect(screen.getByText('Ada commented')).toBeInTheDocument();
+    expect(
+      screen.queryByText(/Mentioned you by Grace/)
+    ).not.toBeInTheDocument();
+  });
+
+  it('opens a folded row and marks every notification in it read', async () => {
+    const user = userEvent.setup();
+    listInbox.mockResolvedValue({
+      notifications: [
+        notification({ notification_id: 'n-2', kind: 'commented' }),
+        notification(),
+      ],
+      next_cursor: null,
+    });
+    renderPage();
+
+    await user.click(
+      await screen.findByRole('button', { name: /Cache the token/ })
+    );
+
+    expect(await screen.findByLabelText('Peek iss-1')).toBeInTheDocument();
+    expect(screen.getByLabelText('location')).toHaveTextContent(
+      '/w/mine/inbox?n=n-2'
+    );
+    await waitFor(() => {
+      expect(markRead).toHaveBeenCalledWith({
+        notification_ids: ['n-2', 'n-1'],
+      });
+    });
+  });
+
+  it('reads the server summary when there is one', async () => {
+    listInbox.mockResolvedValue({
+      notifications: [
+        notification({
+          kind: 'assigned',
+          summary: 'Grace assigned you',
+          source: 'mcp',
+        }),
+      ],
+      next_cursor: null,
+    });
+    renderPage();
+
+    expect(
+      await screen.findByText('Grace assigned you via MCP')
+    ).toBeInTheDocument();
   });
 
   it('marks the selected row read with u', async () => {
@@ -497,7 +636,7 @@ describe('inbox', () => {
     expect(await screen.findByText(/Snoozed until/)).toBeInTheDocument();
   });
 
-  it('keeps a row open in the Unread tab after opening marks it read', async () => {
+  it('keeps a row open while read rows are hidden after opening marks it read', async () => {
     const user = userEvent.setup();
     listInbox.mockImplementation((query) =>
       Promise.resolve(
@@ -510,7 +649,9 @@ describe('inbox', () => {
     renderPage();
 
     await screen.findByText('Cache the token');
-    await user.click(screen.getByRole('button', { name: 'Unread' }));
+    await user.click(screen.getByRole('button', { name: 'Display' }));
+    await user.click(screen.getByRole('checkbox', { name: 'Show read' }));
+    await user.keyboard('{Escape}');
     await user.click(
       await screen.findByRole('button', { name: /Cache the token/ })
     );
