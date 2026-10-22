@@ -329,10 +329,7 @@ export const SlaSection: React.FC<SlaSectionProps> = ({
                     }}
                     label={
                       <span className="inline-flex items-center gap-1.5">
-                        <StatusIcon
-                          status={status}
-                          statuses={statuses ?? []}
-                        />
+                        <StatusIcon status={status} statuses={statuses ?? []} />
                         {status.name}
                       </span>
                     }
