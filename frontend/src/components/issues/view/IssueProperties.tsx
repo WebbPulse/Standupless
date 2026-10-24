@@ -17,7 +17,6 @@ import {
   LuCalendarClock,
   LuIterationCw,
   LuLink,
-  LuListTree,
   LuMilestone,
   LuCircleDashed,
   LuTriangle,
@@ -54,6 +53,7 @@ import {
   StatusPicker,
 } from '../PropertyPickers';
 import { useIssueViewEnv } from './IssueViewContext';
+import { SubIssueProgressChip } from './SubIssueCues';
 
 /** Props shared by every property cell: the issue it shows. */
 export interface IssueCellProps {
@@ -307,6 +307,8 @@ export interface MetaChipsProps {
   issue: OrderedIssueRead;
   /** True on a board card, where the chips wrap under the title. */
   card?: boolean;
+  /** False where the row draws the sub-issue chip beside its title instead. */
+  withProgress?: boolean;
 }
 
 /**
@@ -318,6 +320,7 @@ export interface MetaChipsProps {
 export const MetaChips: React.FC<MetaChipsProps> = ({
   issue,
   card = false,
+  withProgress = true,
 }) => {
   const { slug, state, context, teamNameFor, filterFor, milestones } =
     useIssueViewEnv();
@@ -340,14 +343,8 @@ export const MetaChips: React.FC<MetaChipsProps> = ({
 
   return (
     <>
-      {shows('sub_issues') && issue.progress.total > 0 && (
-        <Chip
-          label="Sub-issues done"
-          icon={<LuListTree aria-hidden="true" className="h-3 w-3" />}
-          className={hide}
-        >
-          {issue.progress.completed}/{issue.progress.total}
-        </Chip>
+      {withProgress && shows('sub_issues') && issue.progress.total > 0 && (
+        <SubIssueProgressChip progress={issue.progress} className={hide} />
       )}
       {shows('labels') &&
         labels.slice(0, LABELS_SHOWN).map((label) =>

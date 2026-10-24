@@ -47,6 +47,7 @@ from app.common.issue_filters import UnknownStatusCategory, build_issue_filter, 
 from app.common.issue_keys import current
 from app.common.issue_move import find_issue_by_number
 from app.common.issue_move import move_issue as move_issue_row
+from app.common.issue_parents import parents_of
 from app.common.issue_rules import (
     load_visible_issue,
     not_found,
@@ -160,6 +161,8 @@ def list_issues(
     `include_sub_teams` with a `team_id` rolls that team's sub-teams the caller
     may see into the list, so a parent team's views show its sub-teams' issues.
     `reverse` turns the sort around, issues lacking the sorted value still last.
+    Each sub-issue carries its parent's `parent_key` and `parent_title`, so a row
+    listed apart from its parent can still name it.
 
     Every body carries `synced_at`. Sent back as `updated_since` with the same
     filter, it turns the read into a delta: only the issues changed since, every
@@ -243,8 +246,9 @@ def list_issues(
             include_sub_teams=include_sub_teams,
             reverse=reverse,
         )
+        changed_parents = parents_of(repositories.issues, repositories.teams, context.workspace_id, changes.issues)
         delta = IssueSyncListRead(
-            items=[IssueRead.from_row(issue) for issue in changes.issues],
+            items=[IssueRead.from_row(issue, changed_parents.get(issue.parent_id or "")) for issue in changes.issues],
             next_cursor=None,
             synced_at=changes.synced_at,
             removed_ids=changes.removed_ids,
@@ -265,8 +269,11 @@ def list_issues(
         include_sub_teams=include_sub_teams,
         reverse=reverse,
     )
+    parents = parents_of(repositories.issues, repositories.teams, context.workspace_id, rows)
     return IssueSyncListRead(
-        items=[IssueRead.from_row(issue) for issue in rows], next_cursor=next_cursor, synced_at=synced_at
+        items=[IssueRead.from_row(issue, parents.get(issue.parent_id or "")) for issue in rows],
+        next_cursor=next_cursor,
+        synced_at=synced_at,
     )
 
 

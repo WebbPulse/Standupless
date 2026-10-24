@@ -31,6 +31,7 @@ import {
   type IssueGroup,
   type ViewState,
 } from '../../../lib/issueView';
+import { parentRefOf } from '../../../lib/issueTree';
 import { issuePath } from '../../../lib/paths';
 import { showToast } from '../../../lib/toast';
 import { IconButton } from '../../ui/button';
@@ -45,6 +46,7 @@ import {
 } from './IssueProperties';
 import { useIssueViewEnv } from './IssueViewContext';
 import { ArchivedMarker, GroupGlyph } from './ListRows';
+import { CardParentRef } from './SubIssueCues';
 import { isNoOpDrop } from '../../../lib/boardDrop';
 import { useIssuePrefetch } from '../../../hooks/useIssuePrefetch';
 
@@ -120,6 +122,7 @@ const BoardCard: React.FC<BoardCardProps> = ({
   const isSelected = env.selected.has(issue.id);
   const isPeeked = env.peekedKey === issue.key;
   const prefetch = useIssuePrefetch(issue.key, isFocused);
+  const parent = env.parentOf?.(issue) ?? parentRefOf(issue);
   const titleTip = useTruncationTooltip<HTMLAnchorElement>({ chain: prefetch });
   return (
     <li
@@ -157,6 +160,9 @@ const BoardCard: React.FC<BoardCardProps> = ({
         {!shows('id') && <span className="flex-1" />}
         {shows('assignee') && <AssigneeCell issue={issue} />}
       </div>
+      {parent !== undefined && (
+        <CardParentRef slug={env.slug} parent={parent} />
+      )}
       <div className="flex items-start gap-1.5">
         {shows('status') && env.state.groupBy !== 'status' && (
           <StatusCell issue={issue} className="-ml-1" />

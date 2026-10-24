@@ -2,7 +2,9 @@
  * That the list nests a sub-issue under its parent when sub-issues show,
  * folds it away from the parent's chevron, and that the side arrows fold,
  * unfold and step between a parent and its sub-issues while j and k walk the
- * rows in tree order.
+ * rows in tree order. Also that a nested row draws its connector, a parent
+ * carries its done/total chip, and a sub-issue shown apart from its parent
+ * names that parent on its row and its board card.
  */
 
 import { act, fireEvent, render, screen } from '@testing-library/react';
@@ -87,10 +89,14 @@ const lists: IssueContextState = {
 let registry: ShortcutRegistry;
 let update: ReturnType<typeof vi.fn<IssueCollection['update']>>;
 
-/** Mounts the list over the three issues. */
-const renderView = (state: Partial<ViewState> = {}) => {
+/** Mounts the list over the given issues, the three above by default. */
+const renderView = (
+  state: Partial<ViewState> = {},
+  shown: OrderedIssueRead[] = issues,
+  layout: ViewState['layout'] = 'list'
+) => {
   const collection: IssueCollection = {
-    issues,
+    issues: shown,
     isLoading: false,
     error: null,
     truncated: false,
@@ -102,7 +108,7 @@ const renderView = (state: Partial<ViewState> = {}) => {
       <ShortcutRegistryContext.Provider value={registry}>
         <IssueListView
           slug="mine"
-          state={{ ...defaultViewState('list'), ...state }}
+          state={{ ...defaultViewState(layout), ...state }}
           onStateChange={() => undefined}
           collection={collection}
           lists={lists}
@@ -198,5 +204,49 @@ describe('IssueListView sub-issue tree', () => {
 
     press('j');
     expect(focusedIssue()).toBe('iss-2');
+  });
+
+  it('draws an elbow into a nested row and none on a top-level one', () => {
+    renderView();
+
+    const child = document.querySelector('[data-row-id="iss-2"]');
+    const parent = document.querySelector('[data-row-id="iss-1"]');
+    expect(child?.querySelector('[data-guide="elbow"]')).not.toBeNull();
+    expect(parent?.querySelector('[data-guide="elbow"]')).toBeNull();
+    expect(parent?.querySelector('[data-guide="stub"]')).not.toBeNull();
+  });
+
+  it('shows a done over total chip on a parent row only', () => {
+    renderView();
+
+    const chips = document.querySelectorAll('[data-chip="sub-issues"]');
+    expect(chips).toHaveLength(1);
+    expect(
+      chips[0]?.closest('[data-row-id]')?.getAttribute('data-row-id')
+    ).toBe('iss-1');
+    expect(chips[0]?.textContent).toContain('0/1');
+  });
+
+  it('names the parent of a sub-issue listed apart from it', () => {
+    const apart = {
+      ...make('iss-5', 5, 'Lone step', 'low', 'iss-9'),
+      parent_key: 'ENG-9',
+      parent_title: 'Faraway parent',
+    };
+    renderView({}, [apart]);
+
+    const link = screen.getByRole('link', {
+      name: 'Parent issue ENG-9 Faraway parent',
+    });
+    expect(link.getAttribute('href')).toBe('/w/mine/issues/ENG-9');
+  });
+
+  it('names a loaded parent and its progress on a board card', () => {
+    renderView({}, issues, 'board');
+
+    const link = screen.getByRole('link', {
+      name: /^Parent issue ENG-1 Parent work/,
+    });
+    expect(link.textContent).toContain('0/1');
   });
 });
