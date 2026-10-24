@@ -57,6 +57,23 @@ answers 409 `NOT_CONFIGURED`, and the settings page offers only the webhook form
   is verified and it belongs to a member of the bound workspace. From then on
   commands run as that member, with their role and teams, and the link is checked
   again every time, so a member who leaves or changes their email is unlinked.
+- **Direct messages.** A member links themselves on Account > Notifications.
+  `GET /api/workspaces/{id}/discord/me/link-url` mints a consent link that asks
+  for `identify` only, signed for that member; the callback links whichever
+  Discord account consents, as long as the member still has a confirmed email
+  here, and sends the browser back to settings with `?discord_dm=<outcome>`. It
+  uses the same redirect and client secret as the command link, so nothing in
+  the portal or the secret changes. Any finished link, from a command or from
+  settings, also stores the Discord user and server as a chat route in the
+  `inbox` table. Personal notifications on the `chat` channel are held for two
+  minutes, then one `chat.digest` job per member goes on the dispatch queue and
+  the bot opens the member's DM channel (`POST /users/@me/channels`) and posts
+  one embed that mentions nobody. Closed DMs, no shared server or an unknown user
+  (`50007`, `50033`, `10013`, or a 403 or 404) mark the route broken and settings
+  ask the member to link again; a rate limit, an outage or a refused bot token
+  raises so the queue retries and the dead-letter queue takes the rest. A route
+  made in another server, or after the App was removed, never delivers. Unlink
+  (`DELETE /api/workspaces/{id}/discord/me`) forgets both the route and the link.
 - **Uninstall.** Discord sends no event when the bot is removed from a server, so
   the installation is forgotten the first time a call as the bot finds the server
   gone, and its channels turn off with an inbox notice to team admins. Disconnect

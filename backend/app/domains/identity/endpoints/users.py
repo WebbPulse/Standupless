@@ -71,7 +71,7 @@ HANDLE_RULE = "Use 1 to 39 letters, digits, hyphens or underscores, starting wit
 class NotificationChannels(BaseModel):
     """Where one kind of notification is delivered: the inbox, email and chat direct messages.
 
-    `chat` covers every chat account the person linked, Slack today, and only
+    `chat` covers every chat account the person linked, Slack or Discord, and only
     reaches them once one is linked.
     """
 

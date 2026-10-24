@@ -57,7 +57,9 @@ secret. Without them the public Slack routes answer 404, the install link answer
   user, which lands in the App's Messages tab. A refusal no retry fixes (the user
   left, the App was removed, the team changed) marks the route broken and the
   settings page asks the member to link again; a rate limit retries through the
-  queue. The standup digest and GitHub review requests stay out of chat.
+  queue. The standup digest and GitHub review requests stay out of chat. The
+  same batch also goes to a linked Discord account, as `docs/discord-app.md`
+  describes.
 - **Unfurls.** Links to issues on this environment's host get a card, except
   issues in private teams, since everyone in the Slack channel would see it.
 - **Uninstall.** `app_uninstalled`, or `tokens_revoked` for the bot token, forgets
