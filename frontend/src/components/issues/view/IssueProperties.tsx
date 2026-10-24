@@ -457,15 +457,8 @@ export const MetaChips: React.FC<MetaChipsProps> = ({
   card = false,
   withProgress = true,
 }) => {
-  const {
-    slug,
-    state,
-    context,
-    teamNameFor,
-    filterFor,
-    milestones,
-    canEdit,
-  } = useIssueViewEnv();
+  const { slug, state, context, teamNameFor, filterFor, milestones, canEdit } =
+    useIssueViewEnv();
   const filterLabel = filterFor?.('label');
   const filterEstimate = filterFor?.('estimate');
   const keyPrefix = issue.key.split('-')[0] ?? '';
