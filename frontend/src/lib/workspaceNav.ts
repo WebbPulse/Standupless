@@ -5,7 +5,7 @@
  */
 
 import { canManageMembers } from './capabilities';
-import { apiKeysPath, settingsPath } from './paths';
+import { apiKeysPath, settingsPath, teamViewsPath, viewsPath } from './paths';
 import type { TeamRead, WorkspaceRead } from '../types/Api';
 
 /**
@@ -20,6 +20,25 @@ export const settingsLanding = (
     ? settingsPath(workspace.slug)
     : apiKeysPath(workspace.slug);
 
+/** The team the route is inside, or undefined off every team route. */
+export const routeTeam = (
+  teams: readonly TeamRead[],
+  prefix: string | null
+): TeamRead | undefined =>
+  prefix === null
+    ? undefined
+    : teams.find((team) => team.key_prefix === prefix);
+
+/**
+ * Where G then V lands: the views of the team the route is inside, or the
+ * workspace views page anywhere else.
+ */
+export const viewsLanding = (
+  slug: string,
+  team: TeamRead | undefined
+): string =>
+  team === undefined ? viewsPath(slug) : teamViewsPath(slug, team.key_prefix);
+
 /**
  * The team a team-scoped command acts on: the one the route is inside, or
  * the first team the caller can see.
@@ -28,6 +47,4 @@ export const currentOrFirstTeam = (
   teams: readonly TeamRead[],
   prefix: string | null
 ): TeamRead | undefined =>
-  (prefix === null
-    ? undefined
-    : teams.find((team) => team.key_prefix === prefix)) ?? teams[0];
+  routeTeam(teams, prefix) ?? teams[0];
