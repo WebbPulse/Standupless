@@ -103,8 +103,9 @@ uninstall webhook has not landed yet, has it cleared so a reinstall binds.
 
 No organization permissions and no account permissions. The App never reads
 members, never reads code content beyond what an event carries, and never writes
-anything but its own comment, its own check run, and the issues and issue
-comments of a repository a team syncs with.
+anything but its own comment, its own check run, the issues and issue
+comments of a repository a team syncs with, and the comments of a thread a
+person synced to a pull request or issue.
 
 ### Subscribed events
 
@@ -344,6 +345,44 @@ a team's label sync uses.
   gone; turning the set off deletes nothing.
 - The setting lives on the installation's `labelset#settings` row, removed on
   disconnect, and every change is audited as `github.label_set_updated`.
+
+### Synced comment threads
+
+One comment thread can be synced to a pull request linked to the issue, or to
+the GitHub issue a GitHub to Standupless link imported it from. A GitHub issue
+synced both ways is refused, because every comment on it already crosses. No
+new permission or event is needed: pull request comments are issue comments,
+written with Issues and Pull requests write and delivered as `issue_comment`.
+
+- Syncing marks the root comment with `github_thread` (repository, number,
+  visibility, who synced it, when). The App then posts an opening comment that
+  quotes the root and links the issue, and each reply written afterwards,
+  naming its author. Earlier replies are not replayed. An edit in Standupless
+  edits the App's copy.
+- A comment written on that pull request or issue after the sync lands in the
+  thread as a reply, showing the GitHub login or the member who linked that
+  account. With several threads synced to one place, a comment that links or
+  quotes one thread's comment goes there, and anything else goes to the most
+  recently synced thread. Edits and deletes of those comments follow. Only an
+  owner, member or collaborator of the repository, or someone who linked a
+  member account, writes into a thread.
+- The opening comment starts with `<!-- standupless:thread:<root_id> -->`. Its
+  own delivery is how the thread learns the opening comment's URL, which the
+  events consumer writes because the dispatch job may not write comments.
+- Echoes are stopped by the same guards as the issue sync: the App's own
+  deliveries are dropped, the backlink and thread markers are skipped, a
+  comment from GitHub is never posted back, and each pairing row
+  (`thrcmt#<issue>#<comment>`, with a `thrgh#<github_id>` pointer) records
+  which side wrote it first and is claimed before the post or the reply.
+- Unsyncing removes the mark and the pairing rows. Every comment stays where
+  it is on both sides.
+- A public repository can be synced, and the composer warns that the thread
+  will be published there.
+- REST: `GET .../issues/{issue_id}/github-sync/thread-targets`, and `PUT` or
+  `DELETE .../issues/{issue_id}/github-sync/threads/{comment_id}` with
+  `{repository_id, number}`. MCP: `add_comment` with `sync_to_github` and
+  `github_target`, `sync_comment_thread`, `unsync_comment_thread` and
+  `list_github_thread_targets`.
 
 ## After creating it
 
