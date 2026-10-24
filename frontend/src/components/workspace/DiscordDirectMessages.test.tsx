@@ -50,9 +50,7 @@ describe('DiscordDirectMessages', () => {
         navigate={navigate}
       />
     );
-    await userEvent.click(
-      screen.getByRole('button', { name: 'Link Discord' })
-    );
+    await userEvent.click(screen.getByRole('button', { name: 'Link Discord' }));
     await waitFor(() => {
       expect(navigate).toHaveBeenCalledWith(
         'https://discord.com/oauth2/authorize?scope=identify'
