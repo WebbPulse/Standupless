@@ -1,7 +1,8 @@
 /**
  * The list's own keys beyond movement and the pickers: that I assigns the
  * issue in focus to the signed in person, or unassigns it when it is theirs, that Cmd or Ctrl+B flips the list to
- * a board, and that Cmd or Ctrl+. copies the focused issue's ID.
+ * a board, that Cmd or Ctrl+. copies the focused issue's ID, and that Cmd or
+ * Ctrl+Shift+. copies its git branch name.
  */
 
 import { act, render, screen } from '@testing-library/react';
@@ -192,5 +193,22 @@ describe('IssueListView keys', () => {
     expect(writeText).toHaveBeenCalledWith(
       `${globalThis.location.origin}/w/mine/issues/ENG-1`
     );
+  });
+
+  it('copies the focused issue git branch name on Cmd or Ctrl+Shift+.', () => {
+    renderView();
+
+    press('j');
+    press('>', { ctrlKey: true, shiftKey: true, code: 'Period' });
+
+    expect(writeText).toHaveBeenCalledWith('eng-1-cache-the-token');
+  });
+
+  it('does not copy a branch name with no issue in focus', () => {
+    renderView();
+
+    press('>', { ctrlKey: true, shiftKey: true, code: 'Period' });
+
+    expect(writeText).not.toHaveBeenCalled();
   });
 });

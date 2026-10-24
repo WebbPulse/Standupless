@@ -23,7 +23,7 @@ from webbpulse.storage import UPLOAD_CONTENT_TYPES, disposition_for
 from app.common.change_source import ChangeSource
 from app.common.core.constants import ISSUE_BODY_MAX_BYTES
 from app.common.db.dynamo.attachments import Attachment
-from app.common.db.dynamo.comments import Comment, GithubThread
+from app.common.db.dynamo.comments import Comment, GithubThread, ThreadResolution
 
 TargetKindField = Literal["issue", "comment"]
 
@@ -356,7 +356,8 @@ class CommentRead(BaseModel):
     """One comment as the API returns it.
 
     `github_thread` is set on a root comment whose thread is synced to a GitHub
-    pull request or issue.
+    pull request or issue, and `resolution` on a root whose thread is resolved,
+    which a reader collapses to one line.
     """
 
     comment_id: str
@@ -375,6 +376,7 @@ class CommentRead(BaseModel):
     created_at: datetime
     edited_at: Optional[datetime] = None
     github_thread: Optional[GithubThread] = None
+    resolution: Optional[ThreadResolution] = None
 
     @classmethod
     def from_row(
@@ -409,6 +411,7 @@ class CommentRead(BaseModel):
             created_at=comment.created_at,
             edited_at=comment.edited_at,
             github_thread=comment.github_thread,
+            resolution=comment.resolution,
         )
 
 
