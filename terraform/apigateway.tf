@@ -254,7 +254,7 @@ locals {
 module "api" {
   source = "terraform.webbpulse.com/WebbPulse/platform-modules/aws//modules/http-api"
 
-  version = "~> 2.44"
+  version = "~> 2.45"
 
   name        = "${local.prefix}-api"
   description = "Standupless ${var.environment} API (Lambda proxy)"

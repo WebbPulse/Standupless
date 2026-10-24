@@ -1,5 +1,8 @@
 """Project update routes: the feed, posting, editing and deleting, under one project.
 
+The project's activity feed, its recorded property and milestone changes, is read
+here too, since the overview interleaves it with the updates.
+
 An update is reached through its project, so a caller who can read the project
 reads its feed and a writer on one of its visible teams posts to it. Editing and
 deleting are its author's, or an admin's. The rules and the health mirroring
@@ -19,12 +22,15 @@ from app.common.api.dependencies.authz import AuthzContext, Capability, require
 from app.common.api.dependencies.repositories import Repositories, get_repositories
 from app.common.api.schemas.planning import (
     MAX_LIMIT,
+    PROJECT_ACTIVITY_DEFAULT_LIMIT,
     UPDATES_DEFAULT_LIMIT,
+    ProjectActivityListRead,
     ProjectUpdateCreate,
     ProjectUpdateListRead,
     ProjectUpdatePatch,
     ProjectUpdateRead,
 )
+from app.common.project_activity import activity_page
 from app.common.project_updates import (
     create_project_update,
     delete_project_update,
@@ -47,6 +53,20 @@ def list_updates(
     """One page of a project's updates, newest first."""
     rows, next_cursor = list_project_updates(repositories, context, project_id, cursor=cursor, limit=limit)
     return ProjectUpdateListRead(items=rows, next_cursor=next_cursor)
+
+
+@router.get("/{workspace_id}/projects/{project_id}/activity", response_model=ProjectActivityListRead)
+def list_activity(
+    context: Annotated[AuthzContext, Depends(require(Capability.WORKSPACE_READ))],
+    repositories: Annotated[Repositories, Depends(get_repositories)],
+    workspace_id: Annotated[str, Path()],
+    project_id: Annotated[str, Path()],
+    cursor: Annotated[Optional[str], Query()] = None,
+    limit: Annotated[int, Query(ge=1, le=MAX_LIMIT)] = PROJECT_ACTIVITY_DEFAULT_LIMIT,
+) -> Any:
+    """One page of a project's property and milestone changes, newest first."""
+    rows, next_cursor = activity_page(repositories, context, project_id, cursor=cursor, limit=limit)
+    return ProjectActivityListRead(items=rows, next_cursor=next_cursor)
 
 
 @router.post(
