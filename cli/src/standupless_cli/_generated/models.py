@@ -3239,6 +3239,7 @@ class AppCommonApiSchemasIssuesIssueRead(TypedDict):
     blocked_by_open_count: NotRequired[int]
     blocking_count: NotRequired[int]
     body: NotRequired[str | None]
+    cancelled_at: NotRequired[str | None]
     completed_at: NotRequired[str | None]
     created_at: str
     created_by: str
@@ -3267,6 +3268,7 @@ class AppCommonApiSchemasIssuesIssueRead(TypedDict):
     snoozed_until: NotRequired[str | None]
     sort_order: NotRequired[str | None]
     start_date: NotRequired[str | None]
+    started_at: NotRequired[str | None]
     status_id: str
     team_id: str
     title: str

@@ -10,6 +10,7 @@ transport maps to tool errors.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from typing import Any, Callable, Collection, Mapping, Optional
 
 from boto3.dynamodb.conditions import Attr
@@ -108,6 +109,9 @@ TRIAGE_RANK: tuple[int, int] = (-1, 0)
 ASCENDING_SORTS: frozenset[str] = frozenset({"key_asc", "due_asc", "sla_asc", "manual", "status_asc", "start_asc"})
 """The sorts that climb; every other one reads highest or newest first."""
 
+NEVER: datetime = datetime.min.replace(tzinfo=UTC)
+"""The moment an unset timestamp sorts at, below every real one."""
+
 
 def status_ranks(repositories: Repositories, workspace_id: str, teams: list[str]) -> StatusRanks:
     """Every listed team's statuses mapped to their board place: category first, then position.
@@ -168,6 +172,8 @@ def sort_key(sort: str, ranks: Optional[StatusRanks] = None, customers: Optional
             estimate_points(issue.estimate),
             issue.issue_id,
         )
+    if sort == "completed_desc":
+        return lambda issue: (issue.completed_at is not None, issue.completed_at or NEVER, issue.issue_id)
     return lambda issue: (issue.updated_at, issue.issue_id)
 
 
@@ -204,6 +210,8 @@ def unset_value(sort: str, customers: Optional[CustomerIndex] = None) -> Optiona
         return lambda issue: issue.start_date is None
     if sort == "estimate_desc":
         return lambda issue: is_unestimated(issue.estimate)
+    if sort == "completed_desc":
+        return lambda issue: issue.completed_at is None
     return None
 
 

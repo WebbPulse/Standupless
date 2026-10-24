@@ -14,17 +14,23 @@
  * admins have set one, and over the built-in display otherwise. A team admin
  * keeps or clears that default from the display menu; the archive always
  * opens over the built-in list.
+ *
+ * The list and the board open on one of three presets named in the URL's
+ * `scope`: every issue, the active ones or the backlog. The filters and
+ * display options apply on top of the preset, and each preset reopens in the
+ * display the viewer last left it in.
  */
 
 import React, { useCallback, useMemo } from 'react';
 import { useQueryAuth } from '@webbpulse/auth/react';
 import { usePolledQuery } from '@webbpulse/api-client/react';
-import { useParams } from 'react-router-dom';
+import { useParams, useSearchParams } from 'react-router-dom';
 import {
   getDisplayDefaults,
   updateDisplayDefaults,
   type TeamDisplayDefaultsUpdate,
 } from '../../../api/teams';
+import { useScopeDisplayMemory } from '../../../hooks/useScopeDisplayMemory';
 import { useSubTeamRollUp } from '../../../hooks/useSubTeamRollUp';
 import { useTeam } from '../../../hooks/useTeam';
 import { useWorkspace } from '../../../hooks/useWorkspace';
@@ -34,11 +40,18 @@ import type { ViewLayout } from '../../../api/views';
 import { defaultViewState, type ViewState } from '../../../lib/issueView';
 import { LOOKUP_POLL_MS } from '../../../lib/polling';
 import { stateToTeamDisplay, teamDefaultState } from '../../../lib/teamDisplay';
+import {
+  parseTeamIssueScope,
+  scopeDisplayKey,
+  teamScopeEmptyMessage,
+  teamScopeFilters,
+} from '../../../lib/teamIssueScope';
 import { ErrorAlert } from '../../ui/alert';
 import EmptyState from '../../ui/empty-state';
 import FavoriteButton from '../../ui/FavoriteButton';
 import Spinner from '../../ui/spinner';
 import SubTeamToggle from '../../workspace/SubTeamToggle';
+import TeamIssueScopeTabs from '../../workspace/TeamIssueScopeTabs';
 import TeamTabs from '../../workspace/TeamTabs';
 import TeamTitle from '../../workspace/TeamTitle';
 import WorkspaceShell from '../../workspace/WorkspaceShell';
@@ -76,16 +89,18 @@ export const TeamIssuesPage: React.FC<TeamIssuesPageProps> = ({
     () => (team === null ? [] : rollUp ? [team, ...subTeams] : [team]),
     [team, subTeams, rollUp]
   );
+  const [params] = useSearchParams();
+  const preset = archive ? 'all' : parseTeamIssueScope(params);
   const scope = useMemo(
     () =>
       team === null
         ? {}
         : {
             team_id: team.id,
-            ...(archive ? { archived_only: true } : {}),
+            ...(archive ? { archived_only: true } : teamScopeFilters(preset)),
             ...(rollUp ? { include_sub_teams: true } : {}),
           },
-    [team, archive, rollUp]
+    [team, archive, rollUp, preset]
   );
   const auth = useQueryAuth();
   const teamId = team?.id ?? '';
@@ -125,6 +140,12 @@ export const TeamIssuesPage: React.FC<TeamIssuesPageProps> = ({
           }
         : undefined,
     [admin, stored, writeDefault]
+  );
+  const defaultsReady = !(defaults.isLoading && defaults.data === null);
+  useScopeDisplayMemory(
+    team === null || archive || !defaultsReady
+      ? undefined
+      : scopeDisplayKey(team.id, layout, preset)
   );
 
   if (notFound || (!isLoading && team === null)) {
@@ -177,7 +198,7 @@ export const TeamIssuesPage: React.FC<TeamIssuesPageProps> = ({
     );
   }
 
-  if (defaults.isLoading && defaults.data === null) {
+  if (!defaultsReady) {
     return (
       <WorkspaceShell>
         <Spinner label="Loading team" />
@@ -192,13 +213,16 @@ export const TeamIssuesPage: React.FC<TeamIssuesPageProps> = ({
       slug={slug}
       title={<TeamTitle name={team.name} keyPrefix={team.key_prefix} />}
       titleAccessory={
-        <FavoriteButton
-          workspaceId={workspaceId}
-          kind="team"
-          targetId={team.id}
-          title={team.name}
-          preview={{ team_key_prefix: team.key_prefix }}
-        />
+        <>
+          <FavoriteButton
+            workspaceId={workspaceId}
+            kind="team"
+            targetId={team.id}
+            title={team.name}
+            preview={{ team_key_prefix: team.key_prefix }}
+          />
+          <TeamIssueScopeTabs current={preset} />
+        </>
       }
       tabs={
         <>
@@ -213,14 +237,19 @@ export const TeamIssuesPage: React.FC<TeamIssuesPageProps> = ({
           )}
         </>
       }
-      scopeKey={rollUp ? `team:${team.id}:sub-teams` : `team:${team.id}`}
+      scopeKey={[
+        'team',
+        team.id,
+        ...(rollUp ? ['sub-teams'] : []),
+        ...(preset === 'all' ? [] : [preset]),
+      ].join(':')}
       scope={scope}
       teams={teams}
       base={base}
       teamDefault={teamDefault}
       canEdit={canWriteIssues(workspace?.role, team.role)}
       homeTeam={team}
-      emptyMessage={`No issues in ${team.name} match.`}
+      emptyMessage={teamScopeEmptyMessage(preset, team.name)}
     />
   );
 };

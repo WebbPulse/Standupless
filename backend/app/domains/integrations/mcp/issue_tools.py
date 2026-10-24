@@ -50,7 +50,17 @@ from app.common.issue_move import move_issue
 from app.common.issue_parents import parents_of
 from app.common.issue_rules import TRIAGE_STATUS_ID, TRIAGE_STATUS_NAME, require_team_reader, visible_team_ids
 from app.common.issue_subscribers import list_subscribers, subscribe, unsubscribe
-from app.common.issue_writes import bulk_update_issues, create_issue, list_issues, update_issue, walk_page
+from app.common.issue_writes import (
+    bulk_update_issues,
+    create_issue,
+    descending,
+    list_issues,
+    sort_key,
+    status_ranks,
+    unset_value,
+    update_issue,
+    walk_page,
+)
 from app.common.similar_issues import find_similar
 from app.common.thread_resolution import resolve_thread, unresolve_thread
 from app.domains.integrations import pr_status, thread_sync
@@ -93,7 +103,8 @@ SORT_HELP = (
     "and issues without a running SLA last; status_asc follows the board's status order, "
     "start_asc the earliest start date and estimate_desc the largest estimate; "
     "customer_requests_desc puts the most customer requests first and customer_revenue_desc "
-    "the highest summed revenue of the customers asking"
+    "the highest summed revenue of the customers asking; completed_desc puts the latest completed_at "
+    "first and issues not completed last"
 )
 
 REVERSE_HELP = "Turn the sort around, issues without the sorted value still last, default false"
@@ -421,7 +432,7 @@ def _list_my_issues(call: ToolCall) -> Any:
 
 
 def _search_issues(call: ToolCall) -> Any:
-    """Issues whose key is a text or whose title or body contains it, newest first, in visible teams only.
+    """Issues whose key is a text or whose title or body contains it, in the sort's order, in visible teams only.
 
     A key matches whole and in any case, as Linear's search finds `ABC-12`; the
     rest is a substring over title and body, unlike `list_issues`, whose `query` is the
@@ -434,6 +445,8 @@ def _search_issues(call: ToolCall) -> Any:
     """
     query = str(call.optional("query", "") or "").strip().lower()
     team_id = call.optional("team_id")
+    sort = _sort(call)
+    reverse = _reverse(call)
     wanted = _build_filter(call, include_archived=True, include_triage=True)
 
     if team_id:
@@ -442,8 +455,8 @@ def _search_issues(call: ToolCall) -> Any:
     else:
         teams = visible_team_ids(call.repositories, call.context)
 
-    require_customer_list_reader(call.context, wanted.needs_customers, None)
-    wanted = resolve_issue_filter(call.repositories, call.context.workspace_id, teams, wanted)
+    require_customer_list_reader(call.context, wanted.needs_customers, sort)
+    wanted = resolve_issue_filter(call.repositories, call.context.workspace_id, teams, wanted, sort=sort)
     categories: dict[str, str] = {}
     if wanted.needs_categories:
         for candidate in teams:
@@ -463,7 +476,9 @@ def _search_issues(call: ToolCall) -> Any:
         return wanted.matches(issue, categories)
 
     workspace_id = call.context.workspace_id
-    scope = digest_scope(f"search:{workspace_id}:{','.join(teams)}:{query}:{wanted.fingerprint()}")
+    direction = "reverse" if reverse else "forward"
+    scope = digest_scope(f"search:{workspace_id}:{','.join(teams)}:{query}:{sort}:{direction}:{wanted.fingerprint()}")
+    ranks = status_ranks(call.repositories, workspace_id, teams) if sort == "status_asc" else None
     found, next_cursor = walk_page(
         call.repositories,
         workspace_id,
@@ -472,8 +487,9 @@ def _search_issues(call: ToolCall) -> Any:
         scope=scope,
         limit=limit(call.optional("limit")),
         keep=keep,
-        key=lambda row: (row.updated_at, row.issue_id),
-        descending=True,
+        key=sort_key(sort, ranks, wanted.customer_index),
+        descending=descending(sort) != reverse,
+        last=unset_value(sort, wanted.customer_index) if reverse else None,
     )
     return {"issues": [summary_json(call.repositories.teams, issue) for issue in found], "next_cursor": next_cursor}
 
@@ -1068,7 +1084,8 @@ ISSUE_TOOLS: tuple[Tool, ...] = (
         description=(
             "One page of issues this credential can see, with the issue list filters, a sort and a cursor. "
             "Every filter takes one value or a list, ORed, and filters are ANDed unless match is any; "
-            "groups nest conditions two levels deep with their own match. Answers issue summaries and next_cursor."
+            "groups nest conditions two levels deep with their own match. Answers issue summaries, each with "
+            "started_at, completed_at and cancelled_at as ISO 8601 UTC or null, and next_cursor."
         ),
         scopes=("issues:read",),
         schema=object_schema(
@@ -1132,7 +1149,8 @@ ISSUE_TOOLS: tuple[Tool, ...] = (
         description=(
             "Search issues whose key is a text, such as ABC-123, or whose title or body contains it, "
             "with the issue list filters. "
-            "Answers summaries, newest first, and a next_cursor while more issues remain to search."
+            "Answers summaries in the sort's order, most recently updated first by default, "
+            "and a next_cursor while more issues remain to search."
         ),
         scopes=("issues:read",),
         schema=object_schema(
@@ -1140,6 +1158,8 @@ ISSUE_TOOLS: tuple[Tool, ...] = (
                 "query": string("An issue key such as ABC-123, or text to match against the title and body"),
                 **_filter_properties(),
                 "include_archived": {"type": "boolean", "description": "Include archived issues, default true"},
+                "sort": enum(SORTS, SORT_HELP),
+                "reverse": {"type": "boolean", "description": REVERSE_HELP},
                 **page_properties(),
             }
         ),

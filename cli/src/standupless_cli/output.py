@@ -112,6 +112,9 @@ def issue_detail(
         ("Project", project or ""),
         ("Estimate", issue.get("estimate") or ""),
         ("Due", issue.get("due_date") or ""),
+        ("Started", issue.get("started_at") or ""),
+        ("Completed", issue.get("completed_at") or ""),
+        ("Cancelled", issue.get("cancelled_at") or ""),
         ("Updated", issue.get("updated_at") or ""),
     ]
     grid = Table.grid(padding=(0, 2))

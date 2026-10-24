@@ -154,3 +154,29 @@ def test_search_finds_an_issue_by_its_key(client: TestClient, workspace: str, re
 
     assert [row["issue_id"] for row in exact["issues"]] == [wanted]
     assert [row["issue_id"] for row in lowered["issues"]] == [wanted]
+
+
+def test_summaries_carry_the_lifecycle_moments_and_sort_by_completion(
+    client: TestClient, workspace: str, repositories: Any
+) -> None:
+    """Both listing tools answer started_at and completed_at, and completed_desc puts the latest completion first."""
+    secret = mint(repositories, MEMBER, ("issues:write", "issues:read"))
+    statuses = {row.category: row for row in repositories.team_config.list_statuses(workspace, TEAM)}
+    open_issue = _create(client, secret, status_id=statuses["started"].status_id)
+    earlier = _create(client, secret, status_id=statuses["completed"].status_id)
+    later = _create(client, secret, status_id=statuses["completed"].status_id)
+
+    searched = json.loads(_search(client, secret, sort="completed_desc")["content"][0]["text"])
+    listed = json.loads(
+        tool(
+            client, secret, "list_issues", {"sort": "completed_desc", "status_category": ["started", "completed"]}
+        ).json()["result"]["content"][0]["text"]
+    )
+
+    for found in (searched, listed):
+        assert [row["issue_id"] for row in found["issues"]] == [later, earlier, open_issue]
+        rows = {row["issue_id"]: row for row in found["issues"]}
+        assert rows[open_issue]["started_at"] is not None
+        assert rows[open_issue]["completed_at"] is None
+        assert rows[later]["completed_at"] is not None
+        assert rows[later]["cancelled_at"] is None

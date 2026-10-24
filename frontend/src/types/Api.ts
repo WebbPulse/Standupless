@@ -879,10 +879,20 @@ export interface IssueRead {
    */
   external_ref?: string | null;
   /**
+   * When the issue first landed in a started status, kept after it moves on.
+   * Optional so a row read before it was stamped reads as none.
+   */
+  started_at?: string | null;
+  /**
    * When the issue last landed in a completed status, null while it is open
    * or cancelled. Optional so a row read before it was stamped reads as none.
    */
   completed_at?: string | null;
+  /**
+   * When the issue landed in a cancelled status, null while it is anywhere
+   * else. Optional so a row read before it was stamped reads as none.
+   */
+  cancelled_at?: string | null;
   /**
    * How many relations the issue carries, every kind counted. Optional so a
    * row read before it was counted reads as none.
