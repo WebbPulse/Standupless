@@ -1,8 +1,10 @@
-# Issue import from CSV
+# Issue import from a file
 
-A workspace owner or admin can import issues into one team from a CSV file.
-Presets map exports from Jira and Linear without any setup, and the generic
-preset maps any file that uses common column names. A dry run shows what every
+A workspace owner or admin can import issues into one team from a CSV file or a
+Trello board's JSON export. Presets map exports from Jira, Linear, Asana,
+Shortcut and Pivotal Tracker without any setup, the `trello` preset reads a
+board export, and the generic preset maps any file that uses common column
+names. A dry run shows what every
 row would become before anything is written. The import itself runs as an async
 job a page at a time. Parsing and mapping are deterministic, with no model calls.
 
@@ -11,7 +13,17 @@ job a page at a time. Parsing and mapping are deterministic, with no model calls
 | Surface | How |
 | --- | --- |
 | API | `POST /api/workspaces/{workspace_id}/imports/preview`, `POST /api/workspaces/{workspace_id}/imports`, `GET /api/workspaces/{workspace_id}/imports`, `GET /api/workspaces/{workspace_id}/imports/{import_id}` |
-| UI | Workspace settings, Import tab |
+| MCP | `preview_issue_import`, `import_issues_from_file`, `get_workspace_import`, `cancel_workspace_import` |
+| UI | Workspace settings, Import tab, Import assistant |
+
+The Import assistant lists one row per source. Linear and GitHub open their API
+imports. Asana, Shortcut and Jira open the file import with that tool's preset
+chosen, until their API imports exist. "CSV or file" opens the file import with
+every preset, Trello included.
+
+The MCP tools take `team_id` (an id, key or name), `preset`, `file` (the file's
+text, the same as the `csv` field below), `file_name` and `mapping`, and answer
+what the routes answer.
 
 Every route needs the workspace admin capability. Anyone else gets 403. The
 caller must also be able to write in the target team, so a private team the
@@ -29,15 +41,19 @@ Both `POST` routes take the same body:
 }
 ```
 
-- `preset` is `generic`, `jira` or `linear`.
+- `preset` is `generic`, `jira`, `linear`, `asana`, `shortcut`, `pivotal` or
+  `trello`.
 - `csv` is the whole file as text, header row first, at most 4 MB and 5000 data
-  rows.
+  rows. With `trello` it is the board's JSON export instead, which is turned
+  into rows first (see below). The UI drops the board's `actions` history
+  before it uploads, since the import never reads it.
 - `mapping` is optional. It overrides the preset's mapping per field. A value is
   a header name from the file, and `null` unmaps the field.
 
 A file that cannot be imported answers 422 from either route. That covers an
 empty file, no header row, too many rows, a mapping that names a missing column
-or an unknown field, and no column mapped to the title.
+or an unknown field, no column mapped to the title, and with `trello` a file
+that is not a board export.
 
 ### Dry run
 
@@ -95,6 +111,29 @@ import id.
 | `source_key` | ID, Key, Issue Key, Identifier | Issue key | ID |
 | `created_at` | Created, Created At | Created | Created |
 | `parent` | Parent, Parent Key, Parent Issue, Parent ID | Parent, Parent id | Parent issue |
+| `completed` | Completed At, Completed | | |
+
+| Field | Asana | Shortcut | Pivotal Tracker |
+| --- | --- | --- | --- |
+| `title` | Name | name | Title |
+| `description` | Notes | description | Description |
+| `status` | Section/Column | state | Current State |
+| `priority` | | priority | Priority |
+| `assignee` | Assignee Email, Assignee | owners | Owned By |
+| `labels` | Tags | labels | Labels |
+| `estimate` | Story Points, Points, Estimate | estimate | Estimate |
+| `due_date` | Due Date | due_date | Deadline |
+| `source_key` | Task ID | id | Id |
+| `created_at` | Created At | created_at | Created at |
+| `parent` | Parent task | parent_story_id | |
+| `completed` | Completed At | completed_at, is_completed | Accepted at |
+
+`completed` marks a row finished: any value but an empty cell or an explicit
+`false`, `no` or `0` puts the issue in the team's first completed status, unless
+its status already maps to a completed or cancelled one. Asana has no status
+column of its own, so its section is read as the status. Asana custom fields
+export as their own columns, so a points field named `Story Points` maps by
+itself.
 
 Headers match without case. A preset falls back to the generic names for any
 field its own names miss. A field mapped to a header that appears more than
@@ -105,20 +144,24 @@ once, such as Jira's repeated `Labels` columns, reads every column of that name.
 - **Keys.** Every imported issue gets a new key in the target team. The source
   key is kept in the issue's `external_ref`.
 - **Status.** Matched to a team status by name, without case. Failing that, a
-  common workflow name such as `To Do`, `In Review`, `Resolved` or `Won't Do`
+  common workflow name such as `To Do`, `In Review`, `Resolved`, `Won't Do`,
+  or Pivotal's `unscheduled`, `delivered` and `accepted`,
   maps to the first team status of its category. Anything else lands in the
   team's default status with a warning.
 - **Priority.** Jira words (`Highest` to `Lowest`, `Blocker`, `Critical`),
-  Linear's numbers 0 to 4, and `P0` to `P4` map to the five priorities. An
+  Linear's numbers 0 to 4, `P0` to `P4`, and Pivotal's `p1 - High` shapes map
+  to the five priorities. An
   unknown word is `none` with a warning.
 - **Assignee.** Matched to a workspace member by email, then by display name
-  when exactly one member has it. A member who cannot be assigned in the team,
+  when exactly one member has it. A cell that lists several people, such as
+  Shortcut's owners, uses the first email in it. A member who cannot be assigned in the team,
   or no match, leaves the issue unassigned with a warning.
 - **Labels.** Split on commas. A name the team lacks is created on the team.
 - **Estimate.** Must be on the team's estimate scale, or it is dropped with a
   warning. `3.0` reads as `3`.
-- **Dates.** ISO 8601, Jira's `12/Oct/26 3:45 PM`, US `MM/DD/YYYY` and
-  JavaScript date strings are read, in UTC. A created date in the future is
+- **Dates.** ISO 8601, Jira's `12/Oct/26 3:45 PM`, US `MM/DD/YYYY`,
+  Shortcut's `2026/10/12 14:05:00`, Pivotal's `Oct 12, 2026` and JavaScript
+  date strings are read, in UTC. A created date in the future is
   capped at the import time.
 - **Description.** Cut to the issue body limit with a warning when longer.
 - **Parent.** Names another row of the same file by its source key, by a
@@ -128,6 +171,29 @@ once, such as Jira's repeated `Labels` columns, reads every column of that name.
   sub-issue in the file, a loop, or a row naming itself is left without a
   parent. A parent that is missing from the file, ambiguous or skipped is a
   warning on the child, which still imports at the top level.
+
+## Trello boards
+
+A Trello board exports from the board menu as JSON. With the `trello` preset
+that JSON is turned into rows before the dry run, and the converted CSV is what
+the job stores as `source.csv`, so from there it takes the same mapping,
+preview and paging as any file.
+
+- Each open card on an open list is a row. Archived cards and cards on archived
+  lists are left out. Rows follow the board's list order, then card order.
+- The card's list name is its status, mapped by name and then by category as
+  above, so a list called `Doing` lands in a started status.
+- Labels are the card's label names, or the colour of an unnamed label.
+- The assignee is the card's first member, by email where the export carries
+  it, else by full name.
+- A due date marked complete marks the card completed.
+- Each checklist item becomes a sub-issue of its card, in the card's list,
+  completed when ticked and assigned to the item's member.
+- The created date is read from the card id, which starts with a timestamp.
+
+The converted columns are `Card ID`, `Name`, `Description`, `List`, `Members`,
+`Labels`, `Due`, `Created`, `Parent` and `Completed`, which the preview shows as
+the file's headers and the mapping can override.
 
 ## Paging, retries and the bulk guard
 
@@ -155,7 +221,8 @@ issue.
 ## Storage and infrastructure
 
 The job and its source file live in the attachments bucket under
-`imports/{workspace_id}/{import_id}/`, as `job.json` and `source.csv`. A
+`imports/{workspace_id}/{import_id}/`, as `job.json` and `source.csv` (for a
+Trello board, the CSV it was converted to). A
 lifecycle rule on `imports/` deletes both after 7 days. The API queues pages on
 the issue import SQS queue, and the `integrations-import-consumer` function
 runs them. The queue and consumer exist when the `issue_import_enabled`

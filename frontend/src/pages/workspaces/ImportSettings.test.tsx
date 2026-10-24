@@ -1,5 +1,8 @@
 /**
- * The issue import page. For a CSV an admin picks a source, a team and a file,
+ * The issue import page. It opens on the import assistant, one row per
+ * provider; Asana, Shortcut and Jira open the file flow with their preset
+ * chosen and a note that their API import is coming, and the page links to
+ * the export below. For a CSV an admin picks a source, a team and a file,
  * dry runs it and sees the row problems, remaps a column, which runs the dry
  * run again with the change, and starts the import with the same body. For
  * Linear they paste a key, load its teams, map each and start, and the key is
@@ -219,14 +222,22 @@ const renderPage = () =>
     </MemoryRouter>
   );
 
-/** Switches the page from the Linear source to a CSV file. */
-const chooseCsv = async (user: ReturnType<typeof userEvent.setup>) => {
-  await user.click(screen.getByRole('radio', { name: /CSV file/ }));
+/** Opens one row of the import assistant by the provider it names. */
+const chooseProvider = async (
+  user: ReturnType<typeof userEvent.setup>,
+  name: RegExp
+) => {
+  await user.click(screen.getByRole('button', { name }));
 };
 
-/** Switches the page from the Linear source to GitHub Issues. */
+/** Opens the Jira row, which lands on the file flow with the Jira preset. */
+const chooseCsv = async (user: ReturnType<typeof userEvent.setup>) => {
+  await chooseProvider(user, /^Jira/);
+};
+
+/** Opens the GitHub row of the import assistant. */
 const chooseGitHub = async (user: ReturnType<typeof userEvent.setup>) => {
-  await user.click(screen.getByRole('radio', { name: /GitHub Issues/ }));
+  await chooseProvider(user, /^GitHub/);
 };
 
 /** Picks the CSV source and fixture file, then dry runs it. */
@@ -289,6 +300,97 @@ beforeEach(() => {
 });
 
 describe('the issue import page', () => {
+  it('opens on the import assistant with a row per provider', () => {
+    renderPage();
+
+    const assistant = screen.getByRole('list', { name: 'Import assistant' });
+    const rows = within(assistant).getAllByRole('button');
+    expect(rows.map((row) => row.textContent)).toEqual([
+      expect.stringMatching(/^Asana/),
+      expect.stringMatching(/^Shortcut/),
+      expect.stringMatching(/^GitHub/),
+      expect.stringMatching(/^Jira/),
+      expect.stringMatching(/^Linear/),
+      expect.stringMatching(/^CSV or file/),
+    ]);
+    expect(screen.queryByLabelText('Linear API key')).not.toBeInTheDocument();
+    expect(
+      screen.getByRole('link', { name: 'export settings' })
+    ).toHaveAttribute('href', '/w/engineering/settings/export');
+  });
+
+  it.each([
+    [/^Asana/, 'asana', 'Asana'],
+    [/^Shortcut/, 'shortcut', 'Shortcut'],
+    [/^Jira/, 'jira', 'Jira'],
+  ])(
+    'opens the file flow with the preset chosen for %s',
+    async (row, preset, title) => {
+      const user = userEvent.setup();
+      renderPage();
+
+      await chooseProvider(user, row);
+
+      expect(screen.getByLabelText('Source')).toHaveValue(preset);
+      expect(
+        screen.getByText(/Connect via API \(coming soon\)/)
+      ).toHaveTextContent(`export from ${title} as CSV`);
+      expect(screen.getByLabelText('CSV file')).toHaveAttribute(
+        'accept',
+        '.csv,text/csv'
+      );
+    }
+  );
+
+  it('opens any file on the generic preset and goes back to the list', async () => {
+    const user = userEvent.setup();
+    renderPage();
+
+    await chooseProvider(user, /^CSV or file/);
+
+    expect(screen.getByLabelText('Source')).toHaveValue('generic');
+    expect(screen.queryByText(/coming soon/)).not.toBeInTheDocument();
+
+    await user.click(
+      screen.getByRole('button', { name: 'All import sources' })
+    );
+    expect(
+      screen.getByRole('list', { name: 'Import assistant' })
+    ).toBeInTheDocument();
+  });
+
+  it('sends a Trello board without its activity log', async () => {
+    const user = userEvent.setup();
+    renderPage();
+    await chooseProvider(user, /^CSV or file/);
+    await user.selectOptions(screen.getByLabelText('Source'), 'trello');
+
+    const input = screen.getByLabelText('Board JSON');
+    expect(input).toHaveAttribute('accept', '.json,application/json');
+    const board = { name: 'Launch', cards: [], actions: [{ id: 'a1' }] };
+    await user.upload(
+      input,
+      new File([JSON.stringify(board)], 'board.json', {
+        type: 'application/json',
+      })
+    );
+    const check = screen.getByRole('button', { name: 'Check file' });
+    await waitFor(() => {
+      expect(check).toBeEnabled();
+    });
+    await user.click(check);
+
+    await waitFor(() => {
+      expect(previewIssueImport).toHaveBeenCalledWith(
+        expect.objectContaining({
+          preset: 'trello',
+          csv: JSON.stringify({ name: 'Launch', cards: [] }),
+          file_name: 'board.json',
+        })
+      );
+    });
+  });
+
   it('lists a finished import with what it created', async () => {
     renderPage();
 
@@ -370,10 +472,12 @@ describe('the issue import page', () => {
   });
 
   it('refuses a second start while one is importing', async () => {
+    const user = userEvent.setup();
     listIssueImports.mockResolvedValue([
       job({ status: 'running', processed_rows: 100, total_rows: 400 }),
     ]);
     renderPage();
+    await chooseCsv(user);
 
     expect(
       await screen.findByRole('button', { name: 'Import in progress' })
@@ -384,6 +488,7 @@ describe('the issue import page', () => {
   it('imports Linear teams into the team with the same key and clears the key', async () => {
     const user = userEvent.setup();
     renderPage();
+    await chooseProvider(user, /^Linear/);
 
     const key = screen.getByLabelText('Linear API key');
     await user.type(key, 'lin_api_example');

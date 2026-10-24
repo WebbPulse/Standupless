@@ -1,0 +1,84 @@
+{
+  "id": "66f1a0000000000000000001",
+  "name": "Launch board",
+  "closed": false,
+  "lists": [
+    {"id": "66f1a0000000000000000010", "name": "Doing", "closed": false, "pos": 2048},
+    {"id": "66f1a0000000000000000011", "name": "To Do", "closed": false, "pos": 1024},
+    {"id": "66f1a0000000000000000012", "name": "Old ideas", "closed": true, "pos": 4096}
+  ],
+  "labels": [
+    {"id": "66f1a0000000000000000020", "name": "Marketing", "color": "green"},
+    {"id": "66f1a0000000000000000021", "name": "", "color": "red"}
+  ],
+  "members": [
+    {"id": "66f1a0000000000000000030", "fullName": "Mel Member", "username": "melmember"}
+  ],
+  "cards": [
+    {
+      "id": "66f1b0000000000000000040",
+      "name": "Plan the launch",
+      "desc": "Pick a date.",
+      "idList": "66f1a0000000000000000010",
+      "closed": false,
+      "pos": 1,
+      "idMembers": ["66f1a0000000000000000030"],
+      "idLabels": ["66f1a0000000000000000020", "66f1a0000000000000000021"],
+      "labels": [
+        {"id": "66f1a0000000000000000020", "name": "Marketing", "color": "green"},
+        {"id": "66f1a0000000000000000021", "name": "", "color": "red"}
+      ],
+      "due": "2026-10-15T12:00:00.000Z",
+      "dueComplete": false,
+      "idChecklists": ["66f1b0000000000000000050"]
+    },
+    {
+      "id": "66f1b0000000000000000041",
+      "name": "Order the banners",
+      "desc": "",
+      "idList": "66f1a0000000000000000011",
+      "closed": false,
+      "pos": 1,
+      "idMembers": [],
+      "idLabels": [],
+      "labels": [],
+      "due": null,
+      "dueComplete": true,
+      "idChecklists": []
+    },
+    {
+      "id": "66f1b0000000000000000042",
+      "name": "An archived card",
+      "desc": "",
+      "idList": "66f1a0000000000000000011",
+      "closed": true,
+      "pos": 2,
+      "idMembers": [],
+      "idLabels": [],
+      "labels": []
+    },
+    {
+      "id": "66f1b0000000000000000043",
+      "name": "A card on a closed list",
+      "desc": "",
+      "idList": "66f1a0000000000000000012",
+      "closed": false,
+      "pos": 1,
+      "idMembers": [],
+      "idLabels": [],
+      "labels": []
+    }
+  ],
+  "checklists": [
+    {
+      "id": "66f1b0000000000000000050",
+      "idCard": "66f1b0000000000000000040",
+      "name": "Steps",
+      "pos": 1,
+      "checkItems": [
+        {"id": "66f1b0000000000000000060", "name": "Pick the date", "state": "complete", "pos": 1, "idMember": null},
+        {"id": "66f1b0000000000000000061", "name": "Book the venue", "state": "incomplete", "pos": 2, "idMember": "66f1a0000000000000000030"}
+      ]
+    }
+  ]
+}
