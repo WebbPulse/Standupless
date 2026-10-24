@@ -19,10 +19,11 @@ export const IssueDetail: React.FC = () => {
   return (
     <IssueView
       issueRef={key ?? ''}
-      frame={({ title, titleAccessory, actions, content }) => (
+      frame={({ title, label, titleAccessory, actions, content }) => (
         <WorkspaceShell
           flush
           title={title}
+          tabTitle={label}
           titleAccessory={titleAccessory}
           actions={actions}
         >

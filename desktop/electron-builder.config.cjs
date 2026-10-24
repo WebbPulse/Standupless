@@ -48,7 +48,13 @@ module.exports = {
     output: staging ? 'release/staging' : 'release/production',
     buildResources: 'resources',
   },
-  files: ['dist/**/*.js', 'resources/icon.png', 'package.json', 'LICENSE'],
+  files: [
+    'dist/**/*.js',
+    'resources/icon.png',
+    'resources/tabs.html',
+    'package.json',
+    'LICENSE',
+  ],
   extraMetadata: {
     standupless: { environment: staging ? 'staging' : 'production' },
   },

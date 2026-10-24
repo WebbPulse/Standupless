@@ -19,6 +19,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { LuMenu, LuX } from 'react-icons/lu';
 import { useLocation } from 'react-router-dom';
+import { useDesktopTabTitle } from '../../hooks/useDesktopTabTitle';
 import { useWorkspace } from '../../hooks/useWorkspace';
 import { cn } from '../../lib/cn';
 import { errorMessage } from '../../lib/errors';
@@ -35,6 +36,11 @@ export interface WorkspaceShellProps {
   children: ReactNode;
   /** The page title. Falls back to the workspace name. */
   title?: ReactNode;
+  /**
+   * The page as plain text, for the desktop app's tab. Falls back to the title
+   * when that is text, and to the workspace name when there is no title.
+   */
+  tabTitle?: string;
   /** A control right after the title, such as the favorite star. */
   titleAccessory?: ReactNode;
   /** Buttons on the right of the title. */
@@ -75,6 +81,7 @@ const Body: React.FC<{ flush: boolean; children: ReactNode }> = ({
 export const WorkspaceShell: React.FC<WorkspaceShellProps> = ({
   children,
   title,
+  tabTitle,
   titleAccessory,
   actions,
   toolbar,
@@ -82,6 +89,10 @@ export const WorkspaceShell: React.FC<WorkspaceShellProps> = ({
   flush = false,
 }) => {
   const { workspace, isLoading, notFound, error } = useWorkspace();
+  const textTitle = typeof title === 'string' ? title : undefined;
+  useDesktopTabTitle(
+    tabTitle ?? textTitle ?? (title === undefined ? workspace?.name : undefined)
+  );
   const location = useLocation();
   const [openedAt, setOpenedAt] = useState<string | null>(null);
   const drawerOpen = openedAt === location.pathname;

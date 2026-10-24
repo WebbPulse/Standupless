@@ -1,7 +1,8 @@
 /**
  * Connects the page to the desktop app when it runs inside one, and renders
  * nothing either way. It marks the document so the desktop stylesheet can
- * leave room for the macOS traffic lights, keeps the native window chrome on
+ * leave room for the macOS traffic lights, which a build with tabs keeps in
+ * its own tab strip instead, keeps the native window chrome on
  * the person's theme, and routes deep links client side so the open page and
  * its state survive. In a browser it does nothing at all.
  */
@@ -21,6 +22,7 @@ const DesktopShellBridge = (): null => {
     if (bridge === null) return;
     const root = document.documentElement;
     root.setAttribute('data-desktop-shell', bridge.platform);
+    if (bridge.tabs === true) root.setAttribute('data-desktop-tabs', '');
     const syncTheme = (): void => {
       bridge.setTheme(readTheme());
     };
@@ -35,6 +37,7 @@ const DesktopShellBridge = (): null => {
       unsubscribeTheme();
       unsubscribeNavigate();
       root.removeAttribute('data-desktop-shell');
+      root.removeAttribute('data-desktop-tabs');
     };
   }, [navigate]);
 

@@ -1,8 +1,8 @@
-html[data-desktop-shell='darwin'] body {
+html[data-desktop-shell='darwin']:not([data-desktop-tabs]) body {
   padding-top: 28px;
 }
 
-html[data-desktop-shell='darwin'] body::before {
+html[data-desktop-shell='darwin']:not([data-desktop-tabs]) body::before {
   content: '';
   position: fixed;
   inset: 0 0 auto 0;
@@ -13,6 +13,6 @@ html[data-desktop-shell='darwin'] body::before {
   background: var(--color-bg, transparent);
 }
 
-html[data-desktop-shell='darwin'] [data-app-shell] {
+html[data-desktop-shell='darwin']:not([data-desktop-tabs]) [data-app-shell] {
   height: calc(100dvh - 28px);
 }
