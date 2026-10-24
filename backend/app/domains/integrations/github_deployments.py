@@ -106,6 +106,24 @@ def merged_pull_for_commit(
     return None
 
 
+COMPARE_STATUSES = ("ahead", "behind", "diverged", "identical")
+
+
+def compare_status(
+    token: str, repository_id: int | str, base_sha: str, head_sha: str, *, client: httpx.Client | None = None
+) -> str | None:
+    """How `head_sha` stands to `base_sha`: ahead, behind, diverged or identical, or `None` when GitHub says neither.
+
+    One page of one commit is asked for, since only the status is read.
+    """
+    if not (_is_sha(base_sha) and _is_sha(head_sha)):
+        raise ValueError("a compare needs two commit shas")
+    path = f"{repository_path(repository_id)}/compare/{base_sha}...{head_sha}?per_page=1"
+    body = _object(_request("GET", path, token=token, client=client), "compare")
+    status = body.get("status")
+    return status if status in COMPARE_STATUSES else None
+
+
 def pull_request(
     token: str, repository_id: int | str, number: int, *, client: httpx.Client | None = None
 ) -> PullRef | None:

@@ -11,7 +11,9 @@ even past a deployment too slow for one page, ends a repository at a page with
 no successful deployment, and retries only the deployments it is given. Driven
 through the
 github-events consumer, under that function's own grant, a deployment records its
-release, moves its issues, publishes, and is listed.
+release, moves its issues, publishes, and is listed. Consecutive staging deploys
+release only their own issues, an end-to-end job reporting the default branch
+against staging moves nothing, and an issue lists one release per stage.
 """
 
 from __future__ import annotations
@@ -57,6 +59,8 @@ class FakeGitHub:
     published: list[dict[str, Any]] = field(default_factory=list)
     tags: list[TagRef] = field(default_factory=list)
     tag_reads: int = 0
+    ranges: dict[tuple[str, str], list[str]] = field(default_factory=dict)
+    statuses: dict[tuple[str, str], str] = field(default_factory=dict)
 
 
 @pytest.fixture
@@ -69,6 +73,8 @@ def github(monkeypatch: pytest.MonkeyPatch) -> FakeGitHub:
     def compare(token: str, repository_id: Any, base: str, head: str) -> list[tuple[str, str]]:
         """Every known commit after the base, in order."""
         state.compares.append((base, head))
+        if (base, head) in state.ranges:
+            return [(sha, state.messages[sha]) for sha in state.ranges[(base, head)]]
         shas = list(state.messages)
         start = shas.index(base) + 1 if base in shas else 0
         return [(sha, state.messages[sha]) for sha in shas[start : shas.index(head) + 1]]
@@ -96,6 +102,11 @@ def github(monkeypatch: pytest.MonkeyPatch) -> FakeGitHub:
     monkeypatch.setattr(github_deployments, "merged_pull_for_commit", lambda token, repo, sha: state.merges.get(sha))
     monkeypatch.setattr(github_deployments, "pull_request", lambda token, repo, number: state.pulls.get(number))
     monkeypatch.setattr(github_deployments, "previous_successful_sha", lambda *args, **kwargs: state.previous)
+    monkeypatch.setattr(
+        github_deployments,
+        "compare_status",
+        lambda token, repo, base, head: state.statuses.get((base, head), "ahead"),
+    )
 
     def tags(token: str, repository_id: Any) -> list[TagRef]:
         """The stood-in tags, counting the reads."""
@@ -1108,3 +1119,131 @@ def test_a_staging_deploy_of_a_promoted_commit_includes_nothing(
     for row in _releases(repositories):
         assert row.included_in is None
         assert row.included_release_ids == []
+
+
+FOURTH = "4" * 40
+
+SECOND_PROMOTION = PullRef(number=231, title="Promote staging to main", head_ref="promote/2026-10-07-c", url=None)
+
+
+def _at_stage(repositories: Any, issue: Any, stage_id: str) -> list[Any]:
+    """The releases of the home team that carry an issue and reached a stage."""
+    pairs = repositories.releases.list_for_issue(WORKSPACE, issue.issue_id)
+    rows = repositories.releases.get_many(WORKSPACE, pairs)
+    return [row for row in rows if any(entry.stage_id == stage_id for entry in row.stages)]
+
+
+def test_consecutive_staging_deploys_release_only_their_own_issues_around_an_end_to_end_job(
+    repositories: Any, installed: str, github: FakeGitHub
+) -> None:
+    """Two staging deploys each release only their own issues, and each promotion carries what it ships.
+
+    Between them an end-to-end job reports a staging deployment of the promoted
+    commit, which moves nothing, so the second staging deploy reads only its own range.
+    """
+    _pin(repositories)
+    _staging_then_production(repositories)
+    first = seed_issue(repositories, WORKSPACE, TEAM, "01JB0000000000000000000IS1", "ABC", 1)
+    second = seed_issue(repositories, WORKSPACE, TEAM, "01JB0000000000000000000IS3", "ABC", 2)
+    github.messages = {
+        FIRST: "ABC-1: Fix login (#228)",
+        THIRD: "Merge pull request #230 from acme/promote/2026-10-07-b",
+        SECOND: "ABC-2: Add export (#229)",
+        FOURTH: "Merge pull request #231 from acme/promote/2026-10-07-c",
+    }
+    github.merges = {
+        FIRST: PullRef(number=228, title="ABC-1: Fix login", head_ref="abc-1-fix-login", url=None),
+        SECOND: PullRef(number=229, title="ABC-2: Add export", head_ref="abc-2-add-export", url=None),
+        THIRD: PROMOTION,
+        FOURTH: SECOND_PROMOTION,
+    }
+    github.ranges = {
+        (BEFORE, THIRD): [FIRST, THIRD],
+        (FIRST, SECOND): [SECOND],
+        (THIRD, FOURTH): [SECOND, FOURTH],
+    }
+    github.statuses = {(FIRST, SECOND): "ahead", (FIRST, THIRD): "ahead"}
+
+    handle_deployment_status(repositories, WORKSPACE, _delivery(FIRST, "staging", ref="staging"))
+    github.previous = BEFORE
+    handle_deployment_status(repositories, WORKSPACE, _delivery(THIRD, "production", ref="main"))
+    handle_deployment_status(repositories, WORKSPACE, _delivery(THIRD, "staging", ref="main"))
+    handle_deployment_status(repositories, WORKSPACE, _delivery(SECOND, "staging", ref="staging"))
+    handle_deployment_status(repositories, WORKSPACE, _delivery(FOURTH, "production", ref="main"))
+
+    assert repositories.releases.get_head(WORKSPACE, TEAM, REPOSITORY_ID, "staging") == SECOND
+    assert (THIRD, SECOND) not in github.compares
+    rows = {row.sha: row for row in _releases(repositories)}
+    assert rows[FIRST].issue_ids == [first.issue_id]
+    assert rows[SECOND].issue_ids == [second.issue_id]
+    assert [entry.stage_id for entry in rows[THIRD].stages] == ["production"]
+    assert rows[THIRD].issue_ids == [first.issue_id]
+    assert rows[FOURTH].name == "2026-10-07-c"
+    assert rows[FOURTH].issue_ids == [second.issue_id]
+    assert rows[FOURTH].included_release_ids == [rows[SECOND].release_id]
+    for issue in (first, second):
+        assert len(_at_stage(repositories, issue, "staging")) == 1
+
+
+def test_a_diverged_deployment_from_another_ref_keeps_the_stage_head(
+    repositories: Any, installed: str, github: FakeGitHub
+) -> None:
+    """A commit from another branch that the stage's head does not lead to records nothing, as does a step back."""
+    _pin(repositories)
+    _staging_then_production(repositories)
+    seed_issue(repositories, WORKSPACE, TEAM, "01JB0000000000000000000IS1", "ABC", 1)
+    github.messages = {FIRST: "ABC-1: Fix login (#228)", SECOND: "Bump", THIRD: "Older"}
+    github.statuses = {(FIRST, SECOND): "diverged", (FIRST, THIRD): "behind"}
+
+    handle_deployment_status(repositories, WORKSPACE, _delivery(FIRST, "staging", ref="staging"))
+    handle_deployment_status(repositories, WORKSPACE, _delivery(SECOND, "staging", ref="main"))
+    handle_deployment_status(repositories, WORKSPACE, _delivery(THIRD, "staging", ref="staging"))
+
+    assert repositories.releases.get_head(WORKSPACE, TEAM, REPOSITORY_ID, "staging") == FIRST
+    assert repositories.releases.get_head_ref(WORKSPACE, TEAM, REPOSITORY_ID, "staging") == "staging"
+    assert [row.sha for row in _releases(repositories)] == [FIRST]
+    assert github.compares == []
+
+
+def test_a_head_stored_without_its_ref_recovers_on_a_diverged_deploy(
+    repositories: Any, installed: str, github: FakeGitHub
+) -> None:
+    """A head an earlier deployment misplaced, stored with no ref, takes the next diverged deploy.
+
+    An issue that deploy names again, which another staging release already
+    carried, is not released at staging a second time.
+    """
+    _pin(repositories)
+    _staging_then_production(repositories)
+    first = seed_issue(repositories, WORKSPACE, TEAM, "01JB0000000000000000000IS1", "ABC", 1)
+    second = seed_issue(repositories, WORKSPACE, TEAM, "01JB0000000000000000000IS3", "ABC", 2)
+    github.messages = {FIRST: "ABC-1: Fix login (#228)", THIRD: "Promote", SECOND: "ABC-1 ABC-2: Add export (#229)"}
+    github.merges = {SECOND: PullRef(number=229, title="Add export", head_ref="abc-2-add-export", url=None)}
+    github.statuses = {(THIRD, SECOND): "diverged"}
+    github.ranges = {(THIRD, SECOND): [SECOND]}
+
+    handle_deployment_status(repositories, WORKSPACE, _delivery(FIRST, "staging", ref="staging"))
+    repositories.releases.set_head(WORKSPACE, TEAM, REPOSITORY_ID, "staging", THIRD)
+    handle_deployment_status(repositories, WORKSPACE, _delivery(SECOND, "staging", ref="staging"))
+
+    rows = {row.sha: row for row in _releases(repositories)}
+    assert rows[SECOND].issue_ids == [second.issue_id]
+    assert [row.release_id for row in _at_stage(repositories, first, "staging")] == [rows[FIRST].release_id]
+    assert repositories.releases.get_head(WORKSPACE, TEAM, REPOSITORY_ID, "staging") == SECOND
+    assert repositories.releases.get_head_ref(WORKSPACE, TEAM, REPOSITORY_ID, "staging") == "staging"
+
+
+def test_a_backfill_starts_each_range_at_the_same_ref(repositories: Any, installed: str, github: FakeGitHub) -> None:
+    """A backfilled deployment's range starts at the next older one from its own ref, past another ref's."""
+    _pin(repositories)
+    _staging_then_production(repositories)
+    github.messages = {FIRST: "ABC-1", THIRD: "Promote", SECOND: "ABC-2"}
+    github.deployments = [
+        DeploymentRef(deployment_id=30, sha=SECOND, created_at=_at(7), ref="staging"),
+        DeploymentRef(deployment_id=20, sha=THIRD, created_at=_at(5), ref="main"),
+        DeploymentRef(deployment_id=10, sha=FIRST, created_at=_at(3), ref="staging"),
+    ]
+
+    backfill(repositories, WORKSPACE, TEAM, ReleaseBackfill(environment="staging", limit=2))
+
+    assert github.compares[0] == (FIRST, SECOND)
