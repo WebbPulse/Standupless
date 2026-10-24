@@ -9602,6 +9602,22 @@
       "ProjectRead": {
         "description": "One project as the API returns it, with its status stored rather than derived.\n\n`team_ids` holds only the teams the caller can see, so a guest learns nothing\nabout the rest of the workspace from a shared project. `team_id` is the first\nof them, kept for a single-team reader.",
         "properties": {
+          "blocked_by_project_ids": {
+            "description": "The visible projects that block this one, oldest link first",
+            "items": {
+              "type": "string"
+            },
+            "title": "Blocked By Project Ids",
+            "type": "array"
+          },
+          "blocking_project_ids": {
+            "description": "The visible projects this one blocks, oldest link first",
+            "items": {
+              "type": "string"
+            },
+            "title": "Blocking Project Ids",
+            "type": "array"
+          },
           "color": {
             "anyOf": [
               {
@@ -9895,6 +9911,105 @@
           "updated_at"
         ],
         "title": "ProjectRead",
+        "type": "object"
+      },
+      "ProjectRelationCreate": {
+        "description": "A dependency to add between the path project and another one.",
+        "properties": {
+          "target_project_id": {
+            "description": "The other project",
+            "minLength": 1,
+            "title": "Target Project Id",
+            "type": "string"
+          },
+          "type": {
+            "description": "`blocks` when the path project blocks the target",
+            "enum": [
+              "blocks",
+              "blocked_by"
+            ],
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "target_project_id"
+        ],
+        "title": "ProjectRelationCreate",
+        "type": "object"
+      },
+      "ProjectRelationListRead": {
+        "properties": {
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          },
+          "relations": {
+            "items": {
+              "$ref": "#/components/schemas/ProjectRelationRead"
+            },
+            "title": "Relations",
+            "type": "array"
+          }
+        },
+        "required": [
+          "relations"
+        ],
+        "title": "ProjectRelationListRead",
+        "type": "object"
+      },
+      "ProjectRelationRead": {
+        "description": "One dependency read from the path project's side.",
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "created_by": {
+            "title": "Created By",
+            "type": "string"
+          },
+          "project_id": {
+            "description": "The path project",
+            "title": "Project Id",
+            "type": "string"
+          },
+          "relation_id": {
+            "title": "Relation Id",
+            "type": "string"
+          },
+          "target_project_id": {
+            "description": "The project at the other end",
+            "title": "Target Project Id",
+            "type": "string"
+          },
+          "type": {
+            "enum": [
+              "blocks",
+              "blocked_by"
+            ],
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "relation_id",
+          "type",
+          "project_id",
+          "target_project_id",
+          "created_by",
+          "created_at"
+        ],
+        "title": "ProjectRelationRead",
         "type": "object"
       },
       "ProjectTemplateFields": {
@@ -35316,6 +35431,190 @@
           }
         ],
         "summary": "Update Milestone",
+        "tags": [
+          "planning"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/projects/{project_id}/relations": {
+      "get": {
+        "description": "Every dependency of one project, read from its side, whose other end the caller may see.\n\nA project holds few dependencies, so the list is answered whole and never pages.",
+        "operationId": "list_project_relations_api_workspaces__workspace_id__projects__project_id__relations_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectRelationListRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "List Project Relations",
+        "tags": [
+          "planning"
+        ]
+      },
+      "post": {
+        "description": "Make the project block, or be blocked by, another project.\n\nA pair already linked the same way answers the stored link with a 200, and a\nlink back to the project itself or one that closes a loop is a 422.",
+        "operationId": "create_project_relation_api_workspaces__workspace_id__projects__project_id__relations_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProjectRelationCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectRelationRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Create Project Relation",
+        "tags": [
+          "planning"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/projects/{project_id}/relations/{relation_id}": {
+      "delete": {
+        "description": "Remove one dependency of the project, from either side.",
+        "operationId": "delete_project_relation_api_workspaces__workspace_id__projects__project_id__relations__relation_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "relation_id",
+            "required": true,
+            "schema": {
+              "title": "Relation Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Delete Project Relation",
         "tags": [
           "planning"
         ]

@@ -1,8 +1,9 @@
 /**
  * Every project in the workspace, laid out as a dense list, a board or a
- * timeline. The list shows icon and name, health, priority, status, lead,
- * target date, teams and progress, and edits health, priority, status and
- * lead from the row without opening it. The board puts projects in columns by
+ * timeline. The list shows icon and name with its blocked and blocking flags,
+ * health, priority, status, lead, start and target dates, teams and progress,
+ * and edits health, priority, status, lead and both dates from the row
+ * without opening it. The board puts projects in columns by
  * the grouping and moves them between columns by dragging; the timeline draws
  * them as bars from start to target date. Rows group by status, health,
  * priority, initiative, lead or team, order by date, name, priority or
@@ -42,13 +43,17 @@ import {
 } from '../../components/issues/view/IssueViewPage';
 import CreateProjectDialog from '../../components/planning/CreateProjectDialog';
 import ProgressRing from '../../components/planning/ProgressRing';
-import { PriorityPicker } from '../../components/issues/PropertyPickers';
+import {
+  DatePicker,
+  PriorityPicker,
+} from '../../components/issues/PropertyPickers';
 import {
   HealthPicker,
   LeadPicker,
   ProjectStatusPicker,
   TeamKey,
 } from '../../components/planning/ProjectPickers';
+import ProjectDependencyMarkers from '../../components/planning/ProjectDependencyMarkers';
 import ProjectGroupGlyph from '../../components/planning/ProjectGroupGlyph';
 import UpdateDueBadge from '../../components/planning/UpdateDueBadge';
 import ProjectIcon from '../../components/planning/ProjectIcon';
@@ -112,7 +117,6 @@ import {
   sameProjectFilter,
   toProjectViewFilter,
 } from '../../lib/projectView';
-import { shortDateLabel } from '../../lib/propertyOptions';
 import { viewKey } from '../../lib/queryKeys';
 import { showErrorToast, showToast } from '../../lib/toast';
 import type {
@@ -127,7 +131,7 @@ import type { TimelineZoom } from '../../lib/timeline';
 
 /** The grid every header and row lines up on. */
 const GRID =
-  'grid grid-cols-[minmax(0,1fr)_3.5rem] items-center gap-3 md:grid-cols-[minmax(0,1fr)_7rem_2rem_8.5rem_2rem_6rem_6rem_4.5rem]';
+  'grid grid-cols-[minmax(0,1fr)_3.5rem] items-center gap-3 md:grid-cols-[minmax(0,1fr)_7rem_2rem_8.5rem_2rem_6rem_6rem_6rem_4.5rem]';
 
 /** The statuses a closed project holds, hidden as board columns with completed projects. */
 const CLOSED_STATUSES: ReadonlySet<ProjectStatus> = new Set([
@@ -209,6 +213,8 @@ interface ProjectRowProps {
   workspaceId: string;
   teams: TeamRead[];
   people: Assignable[];
+  /** Every loaded project by id, so the dependency flags can name their projects. */
+  byId: ReadonlyMap<string, ProjectRead>;
   workspaceRole: WorkspaceRole | undefined;
   isActive: boolean;
   rowRef: (node: HTMLElement | null) => void;
@@ -218,8 +224,8 @@ interface ProjectRowProps {
 
 /**
  * One project as a table row. The whole row opens the project; the health,
- * priority, status and lead cells sit above that link and edit in place,
- * optimistically.
+ * priority, status, lead and date cells sit above that link and edit in
+ * place, optimistically.
  */
 const ProjectRow: React.FC<ProjectRowProps> = ({
   project: server,
@@ -227,6 +233,7 @@ const ProjectRow: React.FC<ProjectRowProps> = ({
   workspaceId,
   teams,
   people,
+  byId,
   workspaceRole,
   isActive,
   rowRef,
@@ -275,6 +282,7 @@ const ProjectRow: React.FC<ProjectRowProps> = ({
       <div className="pointer-events-none flex min-w-0 items-center gap-2.5">
         <ProjectIcon icon={project.icon} color={project.color} />
         <span className="truncate font-medium text-text">{project.name}</span>
+        <ProjectDependencyMarkers project={project} byId={byId} />
         <UpdateDueBadge project={project} className="shrink-0" />
         {project.description !== null && project.description !== '' && (
           <span className="hidden min-w-0 truncate text-xs text-text-faint xl:block">
@@ -322,16 +330,36 @@ const ProjectRow: React.FC<ProjectRowProps> = ({
           }}
         />
       </div>
-      <span
-        className={cn(
-          'hidden text-xs whitespace-nowrap tabular-nums md:block',
-          project.target_date === null ? 'text-text-faint' : 'text-text-muted'
-        )}
-      >
-        {project.target_date === null
-          ? 'No date'
-          : shortDateLabel(project.target_date)}
-      </span>
+      <div className="relative z-10 hidden min-w-0 tabular-nums md:block">
+        <DatePicker
+          variant="rail"
+          field="Start date"
+          icon={null}
+          emptyLabel="No date"
+          value={project.start_date}
+          disabled={!editable}
+          {...(project.target_date === null
+            ? {}
+            : { max: project.target_date })}
+          onChange={(start) => {
+            void update({ start_date: start });
+          }}
+        />
+      </div>
+      <div className="relative z-10 hidden min-w-0 tabular-nums md:block">
+        <DatePicker
+          variant="rail"
+          field="Target date"
+          icon={null}
+          emptyLabel="No date"
+          value={project.target_date}
+          disabled={!editable}
+          {...(project.start_date === null ? {} : { min: project.start_date })}
+          onChange={(target) => {
+            void update({ target_date: target });
+          }}
+        />
+      </div>
       <span className="pointer-events-none hidden min-w-0 items-center gap-1 md:flex">
         {projectTeams.slice(0, 3).map((team) => (
           <TeamKey key={team.id} keyPrefix={team.key_prefix} />
@@ -450,6 +478,10 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading }) => {
     rollUp
   );
   const teamIds = useMemo(() => teams.map((team) => team.id), [teams]);
+  const projectsById = useMemo(
+    () => new Map(projects.map((project) => [project.project_id, project])),
+    [projects]
+  );
   const { people } = usePlanningTeamLists(workspaceId, teamIds, {
     statuses: false,
     labels: false,
@@ -954,7 +986,8 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading }) => {
             </span>
             <span className="hidden px-2 md:block">Status</span>
             <span className="hidden text-center md:block">Lead</span>
-            <span className="hidden md:block">Target</span>
+            <span className="hidden px-2 md:block">Start</span>
+            <span className="hidden px-2 md:block">Target</span>
             <span className="hidden md:block">Teams</span>
             <span className="text-right">
               <span className="hidden md:inline">Progress</span>
@@ -1031,6 +1064,7 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading }) => {
                             workspaceId={workspaceId}
                             teams={teams}
                             people={people}
+                            byId={projectsById}
                             workspaceRole={workspace?.role}
                             isActive={position === activeIndex}
                             rowRef={registerItem(position)}

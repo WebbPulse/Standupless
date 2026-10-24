@@ -706,6 +706,13 @@ def foreign_arguments(name: str, foreign: dict[str, str], home_issue: str) -> di
         "create_project": {"name": "Should not land", "team_ids": [team]},
         "update_project": {"project_id": foreign["project_id"], "name": "Should not land"},
         "list_project_milestones": {"project_id": foreign["project_id"]},
+        "list_project_relations": {"project_id": foreign["project_id"]},
+        "create_project_relation": {
+            "project_id": foreign["project_id"],
+            "type": "blocks",
+            "target_project_id": foreign["project_id"],
+        },
+        "delete_project_relation": {"project_id": foreign["project_id"], "target_project_id": foreign["project_id"]},
         "list_project_updates": {"project_id": foreign["project_id"]},
         "create_project_update": {
             "project_id": foreign["project_id"],

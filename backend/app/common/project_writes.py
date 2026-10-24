@@ -38,6 +38,7 @@ from app.common.planning_rules import (
     visible_team_ids,
 )
 from app.common.project_cadence import workspace_interval
+from app.common.project_relations import dependency_map, fill_one, with_dependencies
 from app.common.project_templates import add_template_rows, fill_project, find_project_template
 from app.common.relation_effects import cancelled_status, categories_for
 from app.common.sub_teams import listed_teams
@@ -100,10 +101,12 @@ def list_projects(
     visible = set(visible_team_ids(repositories, context))
     default_days = workspace_interval(repositories.workspaces, context.workspace_id)
     bodies: list[ProjectRead] = []
+    readable: set[str] = set()
     for row in repositories.planning.list_projects(context.workspace_id):
         teams = visible_project_teams(row, visible)
         if not teams:
             continue
+        readable.add(row.project_id)
         if wanted_teams is not None and wanted_teams.isdisjoint(teams):
             continue
         if wanted_status is not None and row.status != wanted_status:
@@ -115,7 +118,8 @@ def list_projects(
     narrowed = f"{team_id}:subs" if include_sub_teams and team_id is not None else team_id or "all"
     scope = f"projects:{context.workspace_id}:{narrowed}:{wanted_status or 'all'}:{initiative_id or 'all'}"
     offset = decode_offset_cursor(cursor, scope)
-    window = bodies[offset : offset + limit]
+    dependencies = dependency_map(repositories.planning.list_project_relations(context.workspace_id), readable)
+    window = [with_dependencies(body, dependencies) for body in bodies[offset : offset + limit]]
     next_offset = offset + len(window)
     next_cursor = encode_offset_cursor(next_offset, scope) if next_offset < len(bodies) else None
     return window, next_cursor
@@ -342,6 +346,7 @@ def update_project(
         visible_project_teams(stored, visible),
         default_interval_days=workspace_interval(repositories.workspaces, context.workspace_id),
     )
+    fill_one(repositories, context, body)
     if closed and ("status" in fields or choice is not None):
         body.open_issue_count = len(open_issues) - store_open_issues(repositories, context, planned)
     return body
@@ -350,7 +355,9 @@ def update_project(
 def delete_project(
     repositories: Repositories, context: AuthzContext, project_id: str, team_id: Optional[str] = None
 ) -> None:
-    """Delete a project with its milestones, updates and documents, leaving every issue that pointed at it in place.
+    """Delete a project with its milestones, updates, documents and dependencies.
+
+    Every issue that pointed at it stays in place.
 
     Takes an administrator of every one of the project's teams, because the
     delete detaches issues in each of them.
@@ -359,5 +366,6 @@ def delete_project(
     require_project_admin(repositories, context, project)
     repositories.planning.delete_project_milestones(context.workspace_id, project_id)
     repositories.planning.delete_project_updates(context.workspace_id, project_id)
+    repositories.planning.delete_project_relations_for(context.workspace_id, project_id)
     repositories.documents.delete_for_parent(context.workspace_id, "project", project_id)
     repositories.planning.delete(context.workspace_id, project_key(project_id))

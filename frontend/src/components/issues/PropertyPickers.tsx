@@ -135,7 +135,7 @@ export const PickerButton: React.FC<PickerButtonProps> = ({
       className
     )}
   >
-    {icon !== undefined && (
+    {icon !== undefined && icon !== null && (
       <span
         aria-hidden="true"
         className="flex w-4 shrink-0 items-center justify-center text-text-muted"
@@ -854,7 +854,10 @@ export interface DatePickerProps extends PickerBaseProps {
   min?: string;
   /** The latest day allowed, such as the due date for a start date. */
   max?: string;
+  /** The trigger's glyph, or null for a bare date in a dense table cell. */
   icon?: React.ReactNode;
+  /** What an unset trigger reads, in place of the field's own phrase. */
+  emptyLabel?: string;
 }
 
 /**
@@ -868,6 +871,7 @@ export const DatePicker: React.FC<DatePickerProps> = ({
   min,
   max,
   icon = <LuCalendar className="h-3.5 w-3.5" />,
+  emptyLabel,
   ...base
 }) => {
   const variant = base.variant ?? 'rail';
@@ -898,7 +902,8 @@ export const DatePicker: React.FC<DatePickerProps> = ({
       icon={icon}
       text={
         value === null
-          ? emptyText(variant, field, `No ${field.toLowerCase()}`)
+          ? (emptyLabel ??
+            emptyText(variant, field, `No ${field.toLowerCase()}`))
           : shortDateLabel(value, today)
       }
       empty={value === null}

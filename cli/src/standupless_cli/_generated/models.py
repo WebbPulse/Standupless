@@ -1272,6 +1272,20 @@ class ProjectOpenIssues(TypedDict):
     project_id: NotRequired[str | None]
 
 
+class ProjectRelationCreate(TypedDict):
+    target_project_id: str
+    type: Literal["blocks", "blocked_by"]
+
+
+class ProjectRelationRead(TypedDict):
+    created_at: str
+    created_by: str
+    project_id: str
+    relation_id: str
+    target_project_id: str
+    type: Literal["blocks", "blocked_by"]
+
+
 class ProjectTemplateFields(TypedDict):
     color: NotRequired[str | None]
     description: NotRequired[str | None]
@@ -3337,6 +3351,8 @@ class MilestoneListRead(TypedDict):
 
 
 class ProjectRead(TypedDict):
+    blocked_by_project_ids: NotRequired[list[str]]
+    blocking_project_ids: NotRequired[list[str]]
     color: NotRequired[str | None]
     completed_at: NotRequired[str | None]
     counts: CountsRead
@@ -3369,6 +3385,11 @@ class ProjectRead(TypedDict):
     update_interval_inherited: NotRequired[bool]
     updated_at: str
     workspace_id: str
+
+
+class ProjectRelationListRead(TypedDict):
+    next_cursor: NotRequired[str | None]
+    relations: list[ProjectRelationRead]
 
 
 class ProjectUpdateListRead(TypedDict):

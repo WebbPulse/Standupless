@@ -31,6 +31,8 @@ from app.common.api.schemas.planning import (
     ProjectOpenIssuesAction,
     ProjectPriorityField,
     ProjectRead,
+    ProjectRelationCreate,
+    ProjectRelationRead,
     ProjectUpdate,
     ProjectUpdateCreate,
     ProjectUpdatePatch,
@@ -51,6 +53,7 @@ from app.common.planning_rules import (
     require_team_reader,
 )
 from app.common.project_cadence import INTERVAL_OPTIONS, workspace_interval
+from app.common.project_relations import create_relation, delete_relation, fill_one, list_relations
 from app.common.project_updates import (
     create_project_update,
     delete_project_update,
@@ -216,6 +219,8 @@ def _project_json(project: ProjectRead) -> dict[str, Any]:
         "update_interval_inherited": project.update_interval_inherited,
         "next_update_due_at": project.next_update_due_at.isoformat() if project.next_update_due_at else None,
         "update_due_state": project.update_due_state,
+        "blocked_by_project_ids": project.blocked_by_project_ids,
+        "blocking_project_ids": project.blocking_project_ids,
         **({} if project.open_issue_count is None else {"open_issue_count": project.open_issue_count}),
         **(
             {}
@@ -414,7 +419,10 @@ def _get_project(call: ToolCall) -> Any:
     project_id = _project_id(call, call.require("project_id"))
     project, visible = load_readable_project(call.repositories, call.context, project_id)
     default_days = workspace_interval(call.repositories.workspaces, call.context.workspace_id)
-    body = _project_json(ProjectRead.from_row(project, visible, default_interval_days=default_days))
+    read = fill_one(
+        call.repositories, call.context, ProjectRead.from_row(project, visible, default_interval_days=default_days)
+    )
+    body = _project_json(read)
     milestones = call.repositories.planning.list_milestones(call.context.workspace_id, project.project_id)
     body["milestones"] = [_milestone_json(MilestoneRead.from_row(row)) for row in milestones]
     return body
@@ -517,6 +525,54 @@ def _delete_project(call: ToolCall) -> Any:
     project_id = _project_id(call, call.require("project_id"))
     delete_project(call.repositories, call.context, project_id)
     return {"deleted": True, "project_id": project_id}
+
+
+def _project_relation_json(relation: ProjectRelationRead) -> dict[str, Any]:
+    """One project dependency as the tools answer it, read from the named project's side."""
+    return {
+        "relation_id": relation.relation_id,
+        "project_id": relation.project_id,
+        "type": relation.type,
+        "target_project_id": relation.target_project_id,
+        "created_at": relation.created_at.isoformat(),
+    }
+
+
+def _list_project_relations(call: ToolCall) -> Any:
+    """Every dependency of a visible project whose other end is visible too."""
+    project_id = _project_id(call, call.require("project_id"))
+    rows = list_relations(call.repositories, call.context, project_id)
+    return {"relations": [_project_relation_json(row) for row in rows]}
+
+
+def _create_project_relation(call: ToolCall) -> Any:
+    """Make one project block, or be blocked by, another, idempotently on the same pair."""
+    project_id = _project_id(call, call.require("project_id"))
+    target_id = _project_id(call, call.require("target_project_id"))
+    payload = ProjectRelationCreate.model_validate({"type": call.require("type"), "target_project_id": target_id})
+    relation, _ = create_relation(call.repositories, call.context, project_id, payload)
+    return _project_relation_json(relation)
+
+
+def _delete_project_relation(call: ToolCall) -> Any:
+    """Remove a dependency of a project, named by its id or by the project at its other end."""
+    project_id = _project_id(call, call.require("project_id"))
+    relation_id = call.optional("relation_id")
+    if not relation_id:
+        target = call.optional("target_project_id")
+        if target is None:
+            raise ToolError("Name the dependency by relation_id or by target_project_id")
+        target_id = _project_id(call, target)
+        matches = [
+            row.relation_id
+            for row in list_relations(call.repositories, call.context, project_id)
+            if row.target_project_id == target_id
+        ]
+        if not matches:
+            raise ToolError("Those projects are not linked")
+        relation_id = matches[0]
+    other = delete_relation(call.repositories, call.context, project_id, str(relation_id))
+    return {"deleted": True, "relation_id": str(relation_id), "project_id": project_id, "target_project_id": other}
 
 
 def _list_project_milestones(call: ToolCall) -> Any:
@@ -837,6 +893,48 @@ PLANNING_TOOLS: tuple[Tool, ...] = (
         scopes=("projects:write",),
         schema=object_schema({"project_id": string(PROJECT_HELP)}, required=("project_id",)),
         handler=_delete_project,
+        destructive=True,
+    ),
+    Tool(
+        name="list_project_relations",
+        description=(
+            "Every dependency of a project, read from its side: blocks when it holds the other project up, "
+            "blocked_by when it waits on it."
+        ),
+        scopes=("projects:read",),
+        schema=object_schema({"project_id": string(PROJECT_HELP)}, required=("project_id",)),
+        handler=_list_project_relations,
+    ),
+    Tool(
+        name="create_project_relation",
+        description=(
+            "Make a project block, or be blocked by, another project. Linking a pair already linked the same way "
+            "answers the stored link; a link to itself or one that closes a loop is refused."
+        ),
+        scopes=("projects:write",),
+        schema=object_schema(
+            {
+                "project_id": string(PROJECT_HELP),
+                "type": enum(("blocks", "blocked_by"), "blocks when project_id holds the target up"),
+                "target_project_id": string(f"{PROJECT_HELP} at the other end"),
+            },
+            required=("project_id", "type", "target_project_id"),
+        ),
+        handler=_create_project_relation,
+    ),
+    Tool(
+        name="delete_project_relation",
+        description="Remove a dependency between two projects, named by its relation_id or by the other project.",
+        scopes=("projects:write",),
+        schema=object_schema(
+            {
+                "project_id": string(PROJECT_HELP),
+                "relation_id": string("The dependency, from list_project_relations"),
+                "target_project_id": string(f"{PROJECT_HELP} at the other end, instead of relation_id"),
+            },
+            required=("project_id",),
+        ),
+        handler=_delete_project_relation,
         destructive=True,
     ),
     Tool(

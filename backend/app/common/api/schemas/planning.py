@@ -707,6 +707,12 @@ class ProjectRead(BaseModel):
         default=None,
         description="Template issues left out, answered by a create from a project template, empty when none were",
     )
+    blocked_by_project_ids: list[str] = Field(
+        default_factory=list, description="The visible projects that block this one, oldest link first"
+    )
+    blocking_project_ids: list[str] = Field(
+        default_factory=list, description="The visible projects this one blocks, oldest link first"
+    )
     created_by: str
     created_at: datetime
     updated_at: datetime
@@ -764,6 +770,33 @@ class ProjectRead(BaseModel):
 
 ProjectListRead = cursor_page(ProjectRead, "projects", model_name="ProjectListRead")
 """The body the project list route answers with, items under `projects`."""
+
+ProjectRelationType = Literal["blocks", "blocked_by"]
+"""How a dependency reads from the project named in the path."""
+
+PROJECT_RELATION_TYPES: tuple[str, ...] = ("blocks", "blocked_by")
+
+
+class ProjectRelationCreate(BaseModel):
+    """A dependency to add between the path project and another one."""
+
+    type: ProjectRelationType = Field(description="`blocks` when the path project blocks the target")
+    target_project_id: str = Field(min_length=1, description="The other project")
+
+
+class ProjectRelationRead(BaseModel):
+    """One dependency read from the path project's side."""
+
+    relation_id: str
+    type: ProjectRelationType
+    project_id: str = Field(description="The path project")
+    target_project_id: str = Field(description="The project at the other end")
+    created_by: str
+    created_at: datetime
+
+
+ProjectRelationListRead = cursor_page(ProjectRelationRead, "relations", model_name="ProjectRelationListRead")
+"""The body the project relation list answers with, whole and never paged."""
 
 
 def _check_update_body(value: Optional[str]) -> Optional[str]:

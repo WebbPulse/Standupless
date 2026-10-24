@@ -30,6 +30,9 @@ import ProjectDetail from './ProjectDetail';
 const getProject = vi.fn<() => Promise<ProjectRead | null>>();
 const updateProject = vi.fn<(body: unknown) => Promise<ProjectRead>>();
 const deleteProject = vi.fn<(id: string) => Promise<void>>();
+const listProjects =
+  vi.fn<() => Promise<{ projects: ProjectRead[]; next_cursor: null }>>();
+const createProjectRelation = vi.fn<(body: unknown) => Promise<unknown>>();
 const listIssues = vi.fn<(query: unknown) => Promise<unknown>>();
 const listTeams = vi.fn<() => Promise<TeamRead[]>>();
 const listMilestones = vi.fn<() => Promise<MilestoneRead[]>>();
@@ -86,7 +89,11 @@ vi.mock('../../api/planning', () => ({
   updateProject: (_w: string, _id: string, body: unknown) =>
     updateProject(body),
   deleteProject: (_w: string, id: string) => deleteProject(id),
-  listProjects: () => Promise.resolve({ projects: [], next_cursor: null }),
+  listProjects: () => listProjects(),
+  createProjectRelation: (_w: string, _p: string, body: unknown) =>
+    createProjectRelation(body),
+  listProjectRelations: () => Promise.resolve([]),
+  deleteProjectRelation: () => Promise.resolve(),
   listCycles: () => Promise.resolve({ cycles: [], next_cursor: null }),
   listMilestones: () => listMilestones(),
   createMilestone: (_w: string, _p: string, body: unknown) =>
@@ -305,6 +312,7 @@ describe('ProjectDetail', () => {
     useWorkspaceMock.mockReturnValue(resolved('admin'));
     listTeams.mockResolvedValue([engine]);
     getProject.mockResolvedValue(launch);
+    listProjects.mockResolvedValue({ projects: [], next_cursor: null });
     listIssues.mockResolvedValue({ issues: [], next_cursor: null });
     listMilestones.mockResolvedValue([]);
     listProjectUpdates.mockResolvedValue({ updates: [], next_cursor: null });
@@ -383,6 +391,46 @@ describe('ProjectDetail', () => {
     await waitFor(() => {
       expect(updateProject).toHaveBeenCalledWith({ health: 'at_risk' });
     });
+  });
+
+  it('marks the project as blocked by another from the properties row', async () => {
+    const user = userEvent.setup();
+    const foundation: ProjectRead = {
+      ...launch,
+      project_id: 'prj-2',
+      name: 'Foundation',
+    };
+    listProjects.mockResolvedValue({
+      projects: [launch, foundation],
+      next_cursor: null,
+    });
+    createProjectRelation.mockResolvedValue({
+      relation_id: 'rel-1',
+      type: 'blocked_by',
+      project_id: 'prj-1',
+      target_project_id: 'prj-2',
+      created_by: 'user-1',
+      created_at: '2026-10-23T00:00:00Z',
+    });
+    renderPage();
+
+    const row = await screen.findByRole('group', { name: 'Properties' });
+    await user.click(
+      within(row).getByRole('button', { name: 'Blocked by: Blocked by' })
+    );
+    await user.click(await screen.findByRole('option', { name: /Foundation/ }));
+
+    await waitFor(() => {
+      expect(createProjectRelation).toHaveBeenCalledWith({
+        type: 'blocked_by',
+        target_project_id: 'prj-2',
+      });
+    });
+    expect(
+      within(row).getByRole('button', {
+        name: 'Blocked by: Blocked by Foundation',
+      })
+    ).toBeInTheDocument();
   });
 
   it('puts the project in an initiative from the properties row', async () => {
