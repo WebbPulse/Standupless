@@ -34,6 +34,7 @@ jobs:
               - '.github/workflows/ci.yml'
             frontend:
               - 'frontend/**'
+              - 'terraform/cloudfront.tf'
               - 'backend/openapi.json'
               - '.github/workflows/ci.yml'
             cli:
@@ -146,7 +147,7 @@ jobs:
       format-check-command: npm run format:check
       typecheck-command: npm run type-check
       test-command: npm run test:run -- --coverage
-      build-command: npm run build
+      build-command: npm run build && npm run check:csp-hashes
       audit-level: moderate
       circular-imports-path: src/
       codeartifact-domain: webbpulse
