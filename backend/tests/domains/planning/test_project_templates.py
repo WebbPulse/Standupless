@@ -37,7 +37,7 @@ BLUEPRINT: dict[str, Any] = {
     "issues": [
         {"key": "plan", "title": "Write the plan", "priority": "urgent", "milestone_key": "alpha"},
         {"title": "Review the plan", "parent_key": "plan", "milestone_key": "alpha", "assignee_id": MEMBER},
-        {"title": "Announce", "milestone_key": "m2"},
+        {"title": "Announce", "milestone_key": "m1"},
     ],
 }
 
@@ -78,7 +78,7 @@ def test_a_project_template_is_kept_apart_from_issue_templates(teams: TestClient
     saved = _save(teams, workspace)
 
     assert saved["kind"] == "project"
-    assert [row["key"] for row in saved["project"]["milestones"]] == ["alpha", "m2"]
+    assert [row["key"] for row in saved["project"]["milestones"]] == ["alpha", "m1"]
     assert [row["key"] for row in saved["project"]["issues"]] == ["plan", "i1", "i2"]
     issue_names = [row["name"] for row in teams.get(f"{_base(workspace)}/teams/{TEAM}/templates").json()["templates"]]
     project_list = teams.get(f"{_base(workspace)}/teams/{TEAM}/templates", params={"kind": "project"}).json()

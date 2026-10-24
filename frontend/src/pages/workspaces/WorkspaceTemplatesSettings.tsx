@@ -101,10 +101,7 @@ const WorkspaceProjectTemplates: React.FC<WorkspaceProjectTemplatesProps> = ({
 
       {error !== null && (
         <ErrorAlert
-          message={errorMessage(
-            error,
-            'Could not load the project templates.'
-          )}
+          message={errorMessage(error, 'Could not load the project templates.')}
         />
       )}
 

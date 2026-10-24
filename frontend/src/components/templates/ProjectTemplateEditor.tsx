@@ -780,9 +780,7 @@ const ProjectTemplateForm: React.FC<ProjectTemplateFormProps> = ({
 };
 
 /** Lists and edits a set of project templates. */
-export const ProjectTemplateEditor: React.FC<
-  ProjectTemplateEditorProps
-> = ({
+export const ProjectTemplateEditor: React.FC<ProjectTemplateEditorProps> = ({
   templates,
   scope,
   canEdit,

@@ -122,10 +122,7 @@ export const ProjectTemplatesSection: React.FC<
 
       {error !== null && (
         <ErrorAlert
-          message={errorMessage(
-            error,
-            'Could not load the project templates.'
-          )}
+          message={errorMessage(error, 'Could not load the project templates.')}
         />
       )}
 
