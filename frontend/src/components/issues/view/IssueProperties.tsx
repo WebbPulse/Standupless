@@ -6,9 +6,10 @@
  * view's visible properties, so hiding a property hides it everywhere.
  *
  * Chips act on a click: a project or cycle chip opens its page. For a person
- * who can edit, the label and estimate chips open their pickers in place, as
- * the glyphs do. Where a person cannot edit, those chips and the priority,
- * status and assignee glyphs narrow the view to their value instead.
+ * who can edit, the label, estimate and date chips open their pickers in
+ * place, as the glyphs do. Where a person cannot edit, the label and estimate
+ * chips and the priority, status and assignee glyphs narrow the view to their
+ * value instead, and the date chips stay inert.
  */
 
 import React from 'react';
@@ -51,6 +52,7 @@ import {
 import SlaBadge from '../SlaBadge';
 import {
   AssigneePicker,
+  DatePicker,
   EstimatePicker,
   LabelsPicker,
   PriorityPicker,
@@ -358,6 +360,61 @@ const EstimateChipPicker: React.FC<ChipPickerProps> = ({
   );
 };
 
+/** Props for DateChipPicker: the chip pickers' props and which date. */
+interface DateChipPickerProps extends ChipPickerProps {
+  field: 'start_date' | 'due_date';
+}
+
+/**
+ * One of the issue's dates as a chip opening the date picker. The start date
+ * may not fall after the due date, nor the due date before the start, as on
+ * the issue's own rail, and a past due date keeps its warning colour.
+ */
+const DateChipPicker: React.FC<DateChipPickerProps> = ({
+  issue,
+  field,
+  className,
+}) => {
+  const { update } = useIssueViewEnv();
+  const start = field === 'start_date';
+  const value = start ? issue.start_date : issue.due_date;
+  if (value === null) return null;
+  const name = start ? 'Start date' : 'Due date';
+  const min = start ? null : issue.start_date;
+  const max = start ? issue.due_date : null;
+  return (
+    <span className={cn('shrink-0', className)}>
+      <DatePicker
+        field={name}
+        value={value}
+        {...(min === null ? {} : { min })}
+        {...(max === null ? {} : { max })}
+        onChange={(next) => {
+          if (next === value) return;
+          update([issue.id], start ? { start_date: next } : { due_date: next });
+        }}
+        renderTrigger={(trigger) => (
+          <ChipTrigger
+            trigger={trigger}
+            label={`${name}: ${shortDateLabel(value)}`}
+            className={cn(
+              CHIP_CLASS,
+              !start && isPastDue(value) && 'border-danger/40 text-danger'
+            )}
+          >
+            {start ? (
+              <LuCalendarClock aria-hidden="true" className="h-3 w-3" />
+            ) : (
+              <LuCalendar aria-hidden="true" className="h-3 w-3" />
+            )}
+            <span className="truncate">{shortDateLabel(value)}</span>
+          </ChipTrigger>
+        )}
+      />
+    </span>
+  );
+};
+
 /** A timestamp as a short day. */
 const dayOf = (value: string): string => shortDateLabel(value.slice(0, 10));
 
@@ -600,7 +657,14 @@ export const MetaChips: React.FC<MetaChipsProps> = ({
             <span className="truncate">{issue.estimate}</span>
           </FilterChipButton>
         ))}
-      {shows('start_date') && issue.start_date !== null && (
+      {canEdit && shows('start_date') && issue.start_date !== null && (
+        <DateChipPicker
+          issue={issue}
+          field="start_date"
+          className={card ? 'inline-flex' : hide}
+        />
+      )}
+      {!canEdit && shows('start_date') && issue.start_date !== null && (
         <Chip
           label="Start date"
           icon={<LuCalendarClock aria-hidden="true" className="h-3 w-3" />}
@@ -609,7 +673,14 @@ export const MetaChips: React.FC<MetaChipsProps> = ({
           {shortDateLabel(issue.start_date)}
         </Chip>
       )}
-      {shows('due_date') && issue.due_date !== null && (
+      {canEdit && shows('due_date') && issue.due_date !== null && (
+        <DateChipPicker
+          issue={issue}
+          field="due_date"
+          className={card ? 'inline-flex' : hide}
+        />
+      )}
+      {!canEdit && shows('due_date') && issue.due_date !== null && (
         <Chip
           label="Due date"
           icon={<LuCalendar aria-hidden="true" className="h-3 w-3" />}

@@ -14,8 +14,8 @@
  * Writes are optimistic. The changed rows are laid over the read at once and
  * stay there until the list re-reads a newer version of the issue, so a row
  * never flickers back to its old value between the write landing and the
- * next poll. A failed write drops its overlay and says so in a toast. A due
- * date is written issue by issue, because the bulk route never takes dates.
+ * next poll. A failed write drops its overlay and says so in a toast. A date
+ * is written issue by issue, because the bulk route never takes dates.
  * Deleting hides the rows at once and puts back any the server refuses.
  * Archiving goes through the bulk route and does the same when the view
  * leaves archived issues out, as restoring does in the archive view. Every
@@ -213,7 +213,12 @@ const readCollection = async (
 
 /** The bulk patch a change becomes. A manual position is never bulk written. */
 const bulkPatch = (change: IssueChange): IssueBulkPatch => {
-  const { sort_order: _order, due_date: _due, ...patch } = change;
+  const {
+    sort_order: _order,
+    start_date: _start,
+    due_date: _due,
+    ...patch
+  } = change;
   return patch;
 };
 
@@ -392,7 +397,10 @@ export const useIssueCollection = (
 
       const oneByOne =
         planned.length === 1 ||
-        planned.some(({ change: own }) => own.due_date !== undefined);
+        planned.some(
+          ({ change: own }) =>
+            own.start_date !== undefined || own.due_date !== undefined
+        );
       if (oneByOne) {
         const writes = planned.map(({ issue, change: own }) =>
           updateIssue(workspaceId, issue.id, singlePatch(issue, own)).then(
