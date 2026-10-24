@@ -215,8 +215,9 @@ const createWindow = (): void => {
   guardNavigation(window.webContents);
 
   window.once('ready-to-show', () => window.show());
+  const contentsId = window.webContents.id;
   window.on('closed', () => {
-    navigateReady.delete(window.webContents.id);
+    navigateReady.delete(contentsId);
     mainWindow = null;
   });
 
