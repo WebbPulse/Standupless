@@ -213,7 +213,9 @@ export const parseDisplayField = <K extends keyof ProjectsDisplay>(
   if (value === null || value === undefined) return undefined;
   if (field === 'columns')
     return columnValue(columnList(value)) as ProjectsDisplay[K];
-  return DISPLAY_CHOICES[field].includes(value)
+  const choices: Partial<Record<keyof ProjectsDisplay, readonly string[]>> =
+    DISPLAY_CHOICES;
+  return choices[field]?.includes(value) === true
     ? (value as ProjectsDisplay[K])
     : undefined;
 };
