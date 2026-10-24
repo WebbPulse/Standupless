@@ -11532,15 +11532,14 @@
         "type": "object"
       },
       "ProjectsDisplay": {
-        "description": "How the person arranges the workspace projects list.\n\n`direction` runs the groups in their own order or reversed, and `rows`\ngroups again inside each group, `none` by default. `closed` is how far back\ncompleted and canceled projects show: all of them, those closed in the past\nweek, month or quarter, or none. `lead_team` set to `lead` keeps, on a team's\nprojects page, only the projects that team leads. `empty` shows or hides\nboard columns with no projects. `zoom` is the timeline layout's scale.\n`columns` names the properties shown beside the project name, comma\nseparated in the list's own order, and empty shows the name alone; a list of\nnames is accepted and stored the same way. Every field has the list's own\ndefault, so an account that never arranged the list reads as the list opens.",
+        "description": "How the person arranges the workspace projects list.\n\n`direction` runs the groups in their own order or reversed, and `rows`\ngroups again inside each group, `none` by default. `closed` is which\nclosed projects show: all of them, canceled ones included, the projects\ncompleted in the past two weeks (the default) or month, or none.\n`lead_team` set to `lead` keeps, on a team's projects page, only the\nprojects that team leads. `empty` shows or hides\nboard columns with no projects. `zoom` is the timeline layout's scale.\n`columns` names the properties shown beside the project name, comma\nseparated in the list's own order, and empty shows the name alone; a list of\nnames is accepted and stored the same way. Every field has the list's own\ndefault, so an account that never arranged the list reads as the list opens.",
         "properties": {
           "closed": {
-            "default": "all",
+            "default": "fortnight",
             "enum": [
               "all",
-              "week",
+              "fortnight",
               "month",
-              "quarter",
               "none"
             ],
             "title": "Closed",

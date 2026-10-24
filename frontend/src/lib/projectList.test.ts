@@ -303,26 +303,36 @@ describe('board moves', () => {
   });
 });
 
-describe('completed window', () => {
+describe('closed window', () => {
   const now = new Date('2026-10-21T00:00:00Z');
 
   it('keeps open projects whatever the window', () => {
     expect(withinClosedWindow(project({}), 'none', now)).toBe(true);
   });
 
-  it('keeps a recent close and drops an old one', () => {
+  it('keeps a recent completion and drops an old one', () => {
     const recent = project({
       status: 'completed',
-      completed_at: '2026-10-18T00:00:00Z',
+      completed_at: '2026-10-11T00:00:00Z',
     });
     const old = project({
-      status: 'canceled',
+      status: 'completed',
       completed_at: '2026-08-01T00:00:00Z',
     });
-    expect(withinClosedWindow(recent, 'week', now)).toBe(true);
+    expect(withinClosedWindow(recent, 'fortnight', now)).toBe(true);
     expect(withinClosedWindow(old, 'month', now)).toBe(false);
     expect(withinClosedWindow(old, 'all', now)).toBe(true);
     expect(withinClosedWindow(recent, 'none', now)).toBe(false);
+  });
+
+  it('keeps canceled projects only when all closed projects show', () => {
+    const canceled = project({
+      status: 'canceled',
+      completed_at: '2026-10-20T00:00:00Z',
+    });
+    expect(withinClosedWindow(canceled, 'fortnight', now)).toBe(false);
+    expect(withinClosedWindow(canceled, 'month', now)).toBe(false);
+    expect(withinClosedWindow(canceled, 'all', now)).toBe(true);
   });
 
   it('falls back to the last update before closes were recorded', () => {
@@ -330,7 +340,12 @@ describe('completed window', () => {
       status: 'completed',
       updated_at: '2026-10-20T00:00:00Z',
     });
-    expect(withinClosedWindow(closed, 'week', now)).toBe(true);
+    const stale = project({
+      status: 'completed',
+      updated_at: '2026-09-20T00:00:00Z',
+    });
+    expect(withinClosedWindow(closed, 'fortnight', now)).toBe(true);
+    expect(withinClosedWindow(stale, 'fortnight', now)).toBe(false);
   });
 });
 

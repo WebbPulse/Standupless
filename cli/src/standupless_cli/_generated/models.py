@@ -1489,7 +1489,7 @@ class ProjectUpdateRead(TypedDict):
 
 
 class ProjectsDisplay(TypedDict):
-    closed: NotRequired[Literal["all", "week", "month", "quarter", "none"]]
+    closed: NotRequired[Literal["all", "fortnight", "month", "none"]]
     columns: NotRequired[str]
     direction: NotRequired[Literal["asc", "desc"]]
     empty: NotRequired[Literal["show", "hide"]]

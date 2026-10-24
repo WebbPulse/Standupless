@@ -17,7 +17,7 @@ ProjectsGroupField = Literal["status", "health", "priority", "initiative", "lead
 
 ProjectsOrderField = Literal["target", "start", "name", "priority", "progress", "created", "updated", "customers"]
 
-ProjectsClosedField = Literal["all", "week", "month", "quarter", "none"]
+ProjectsClosedField = Literal["all", "fortnight", "month", "none"]
 
 ProjectsZoomField = Literal["week", "month", "quarter", "year"]
 
@@ -72,10 +72,11 @@ class ProjectsDisplay(BaseModel):
     """How the person arranges the workspace projects list.
 
     `direction` runs the groups in their own order or reversed, and `rows`
-    groups again inside each group, `none` by default. `closed` is how far back
-    completed and canceled projects show: all of them, those closed in the past
-    week, month or quarter, or none. `lead_team` set to `lead` keeps, on a team's
-    projects page, only the projects that team leads. `empty` shows or hides
+    groups again inside each group, `none` by default. `closed` is which
+    closed projects show: all of them, canceled ones included, the projects
+    completed in the past two weeks (the default) or month, or none.
+    `lead_team` set to `lead` keeps, on a team's projects page, only the
+    projects that team leads. `empty` shows or hides
     board columns with no projects. `zoom` is the timeline layout's scale.
     `columns` names the properties shown beside the project name, comma
     separated in the list's own order, and empty shows the name alone; a list of
@@ -88,7 +89,7 @@ class ProjectsDisplay(BaseModel):
     direction: ProjectsDirectionField = "asc"
     rows: ProjectsGroupField = "none"
     order: ProjectsOrderField = "target"
-    closed: ProjectsClosedField = "all"
+    closed: ProjectsClosedField = "fortnight"
     lead_team: ProjectsLeadTeamField = "all"
     empty: ProjectsEmptyField = "show"
     zoom: ProjectsZoomField = "month"

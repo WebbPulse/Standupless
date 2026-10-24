@@ -91,7 +91,7 @@ def test_a_project_view_without_an_arrangement_takes_the_default(client: TestCli
         "direction": "asc",
         "rows": "none",
         "order": "target",
-        "closed": "all",
+        "closed": "fortnight",
         "lead_team": "all",
         "empty": "show",
         "zoom": "month",
@@ -213,7 +213,7 @@ def test_a_retired_arrangement_choice_reads_as_the_default(
             view_id="01PROJVIEW",
             name="Retired",
             entity="projects",
-            projects_display={"layout": "gallery", "group": "lead"},
+            projects_display={"layout": "gallery", "group": "lead", "closed": "week"},
             owner_id=MEMBER,
         )
     )
@@ -222,6 +222,7 @@ def test_a_retired_arrangement_choice_reads_as_the_default(
 
     assert view["projects_display"]["layout"] == "list"
     assert view["projects_display"]["group"] == "lead"
+    assert view["projects_display"]["closed"] == "fortnight"
 
 
 def test_insights_and_share_links_refuse_a_project_view(client: TestClient, workspace: str) -> None:

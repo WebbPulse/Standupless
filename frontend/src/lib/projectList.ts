@@ -96,32 +96,29 @@ export const PROJECT_GROUPING_LABELS: Record<ProjectGrouping, string> = {
   none: 'No grouping',
 };
 
-/** Which completed and canceled projects the list keeps. */
-export type ClosedWindow = 'all' | 'week' | 'month' | 'quarter' | 'none';
+/** Which closed projects the list keeps: all, recently completed ones, or none. */
+export type ClosedWindow = 'all' | 'fortnight' | 'month' | 'none';
 
 /** The windows in the order the display menu offers them. */
 export const CLOSED_WINDOWS: ClosedWindow[] = [
   'all',
-  'week',
+  'fortnight',
   'month',
-  'quarter',
   'none',
 ];
 
 /** How each window reads in the display menu. */
 export const CLOSED_WINDOW_LABELS: Record<ClosedWindow, string> = {
   all: 'All',
-  week: 'Past week',
+  fortnight: 'Past 2 weeks',
   month: 'Past month',
-  quarter: 'Past quarter',
   none: 'None',
 };
 
 /** How many days back each recent window reaches. */
-const CLOSED_WINDOW_DAYS: Record<'week' | 'month' | 'quarter', number> = {
-  week: 7,
+const CLOSED_WINDOW_DAYS: Record<'fortnight' | 'month', number> = {
+  fortnight: 14,
   month: 30,
-  quarter: 90,
 };
 
 /** A property the projects list and board can show beside each project's name. */
@@ -265,7 +262,7 @@ export const DEFAULT_PROJECTS_DISPLAY: ProjectsDisplay = {
   direction: 'asc',
   rows: 'none',
   order: 'target',
-  closed: 'all',
+  closed: 'fortnight',
   lead_team: 'all',
   empty: 'show',
   zoom: 'month',
@@ -346,9 +343,10 @@ export const isClosedProject = (project: ProjectRead): boolean =>
   project.status === 'completed' || project.status === 'canceled';
 
 /**
- * Whether a project stays in the list under a completed projects window.
- * Open projects always stay. A closed one is judged by when it closed, or by
- * its last update on a row closed before the close time was recorded.
+ * Whether a project stays in the list under a closed projects window.
+ * Open projects always stay, and canceled ones only under `all`. A completed
+ * one is judged by when it closed, or by its last update on a row closed
+ * before the close time was recorded.
  */
 export const withinClosedWindow = (
   project: ProjectRead,
@@ -356,7 +354,7 @@ export const withinClosedWindow = (
   now: Date
 ): boolean => {
   if (!isClosedProject(project) || closed === 'all') return true;
-  if (closed === 'none') return false;
+  if (closed === 'none' || project.status === 'canceled') return false;
   const closedAt = Date.parse(project.completed_at ?? project.updated_at);
   if (Number.isNaN(closedAt)) return true;
   return now.getTime() - closedAt <= CLOSED_WINDOW_DAYS[closed] * 86400000;

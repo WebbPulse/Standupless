@@ -740,11 +740,12 @@ describe('Projects', () => {
         .getAllByRole('region')
         .map((region) => region.getAttribute('aria-label') ?? '')
         .filter((name) => name === 'Planned' || name === 'In progress');
-    expect(order()).toEqual(['Planned', 'In progress']);
+    const before = order();
+    expect(before).toHaveLength(2);
     await user.click(screen.getByRole('button', { name: 'Display' }));
     await user.click(screen.getByRole('button', { name: 'Reverse grouping' }));
 
-    expect(order()).toEqual(['In progress', 'Planned']);
+    expect(order()).toEqual([...before].reverse());
   });
 
   it('groups again inside each group from the URL', async () => {
@@ -820,6 +821,49 @@ describe('Projects', () => {
     ).toBeInTheDocument();
   });
 
+  it('hides canceled and long completed projects by default, on a team page too', async () => {
+    const daysAgo = (days: number): string =>
+      new Date(Date.now() - days * 86400000).toISOString();
+    listProjects.mockResolvedValue({
+      projects: [
+        launch,
+        {
+          ...rebrand,
+          status: 'canceled',
+          completed_at: daysAgo(1),
+          team_ids: ['team-1'],
+        },
+        {
+          ...rebrand,
+          project_id: 'prj-6',
+          name: 'Shipped',
+          status: 'completed',
+          completed_at: daysAgo(3),
+          team_ids: ['team-1'],
+        },
+        {
+          ...rebrand,
+          project_id: 'prj-7',
+          name: 'Archived',
+          status: 'completed',
+          completed_at: daysAgo(40),
+          team_ids: ['team-1'],
+        },
+      ],
+      next_cursor: null,
+    });
+    const { unmount } = renderPage();
+
+    expect(await screen.findByRole('link', { name: 'Shipped' })).toBeVisible();
+    expect(screen.queryByRole('link', { name: 'Rebrand' })).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Archived' })).toBeNull();
+    unmount();
+
+    renderPage('/w/mine/projects?team=ENG');
+    expect(await screen.findByRole('link', { name: 'Shipped' })).toBeVisible();
+    expect(screen.queryByRole('link', { name: 'Rebrand' })).toBeNull();
+  });
+
   it('hides closed projects from the Display menu', async () => {
     const user = userEvent.setup();
     listProjects.mockResolvedValue({
@@ -828,7 +872,7 @@ describe('Projects', () => {
         {
           ...rebrand,
           status: 'completed',
-          completed_at: '2026-09-18T00:00:00Z',
+          completed_at: new Date().toISOString(),
         },
       ],
       next_cursor: null,

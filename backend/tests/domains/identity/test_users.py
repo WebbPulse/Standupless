@@ -61,7 +61,7 @@ def test_the_caller_reads_their_own_row(client: TestClient, repositories: Any) -
             "direction": "asc",
             "rows": "none",
             "order": "target",
-            "closed": "all",
+            "closed": "fortnight",
             "lead_team": "all",
             "empty": "show",
             "zoom": "month",
@@ -197,6 +197,7 @@ def test_the_projects_display_is_kept_whole_and_refuses_unknown_choices(client: 
         ("layout", "gallery"),
         ("group", "label"),
         ("closed", "year"),
+        ("closed", "quarter"),
         ("zoom", "day"),
         ("direction", "up"),
         ("rows", "label"),
@@ -231,9 +232,7 @@ def test_a_retired_projects_list_column_is_dropped_on_read(client: TestClient, r
     assert client.get("/api/users/me").json()["projects_display"]["columns"] == "health,issues"
 
 
-def test_an_arrangement_saved_before_rows_keeps_summary_and_dependencies(
-    client: TestClient, repositories: Any
-) -> None:
+def test_an_arrangement_saved_before_rows_keeps_summary_and_dependencies(client: TestClient, repositories: Any) -> None:
     """Columns stored before summary and dependencies were choices read with both on, as the list then drew them."""
     make_user(repositories, OWNER, "owner@example.com", display_name="Owner")
     repositories.users.update(OWNER, projects_display={"columns": "issues,health"})

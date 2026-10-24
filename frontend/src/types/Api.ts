@@ -53,7 +53,7 @@ export interface ProjectsDisplayPreference {
     | 'created'
     | 'updated'
     | 'customers';
-  closed: 'all' | 'week' | 'month' | 'quarter' | 'none';
+  closed: 'all' | 'fortnight' | 'month' | 'none';
   /** Whether groups run in their own order or reversed. */
   direction?: 'asc' | 'desc';
   /** The grouping inside each group. */
