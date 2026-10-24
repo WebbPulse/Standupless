@@ -488,12 +488,13 @@ describe('the peek activity feed', () => {
   });
 
   it('keeps the peek open on Escape while typing a comment', async () => {
-    const user = userEvent.setup();
     renderPeek();
 
     const surface = await findComposer();
-    await user.click(surface);
-    await user.keyboard('a {Escape}');
+    act(() => {
+      editorOf(surface).commands.setContent('Half a thought');
+    });
+    fireEvent.keyDown(surface, { key: 'Escape' });
 
     expect(onClose).not.toHaveBeenCalled();
   });
