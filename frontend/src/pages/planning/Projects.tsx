@@ -106,6 +106,7 @@ import { useWorkspaceProjects } from '../../hooks/useWorkspaceProjects';
 import { ROLL_UP_PARAM, useSubTeamRollUp } from '../../hooks/useSubTeamRollUp';
 import { canWriteIssues } from '../../lib/capabilities';
 import { cn } from '../../lib/cn';
+import { slotIndex } from '../../lib/dropSlot';
 import { errorMessage } from '../../lib/errors';
 import { sharedChange, viewVisibility } from '../../lib/issueView';
 import {
@@ -131,6 +132,7 @@ import {
   groupPatch,
   groupProjects,
   groupValue,
+  manualPlacements,
   sortProjects,
   withinClosedWindow,
   withinLeadTeams,
@@ -408,12 +410,17 @@ interface ProjectRowProps {
   rowRef: (node: HTMLElement | null) => void;
   onPointerEnter: () => void;
   refreshKey: ReturnType<typeof useWorkspaceProjects>['queryKey'];
+  /** Whether the row is the one being dragged, drawn faded. */
+  dragging?: boolean;
+  /** Starts dragging the row to reorder it, or undefined where it cannot move. */
+  onDragStart?: ((event: React.DragEvent) => void) | undefined;
+  onDragEnd?: (() => void) | undefined;
 }
 
 /**
  * One project as a table row. The whole row opens the project; the health,
  * priority, status, lead and date cells sit above that link and edit in
- * place, optimistically.
+ * place, optimistically. An editable row drags to reorder within its group.
  */
 const ProjectRow: React.FC<ProjectRowProps> = ({
   project: server,
@@ -429,6 +436,9 @@ const ProjectRow: React.FC<ProjectRowProps> = ({
   rowRef,
   onPointerEnter,
   refreshKey,
+  dragging = false,
+  onDragStart,
+  onDragEnd,
 }) => {
   const { value, update } = useOptimisticRecord<ProjectRead, ProjectUpdate>(
     server,
@@ -457,16 +467,22 @@ const ProjectRow: React.FC<ProjectRowProps> = ({
   return (
     <li
       ref={rowRef}
+      data-project-id={project.project_id}
+      draggable={editable && onDragStart !== undefined}
+      onDragStart={onDragStart}
+      onDragEnd={onDragEnd}
       onPointerEnter={onPointerEnter}
       style={gridTracks(shown)}
       className={cn(
         GRID,
         'relative h-11 border-b border-line px-4 text-sm transition-colors duration-100 hover:bg-surface has-[a:active]:bg-raised lg:px-6',
-        isActive && 'bg-surface'
+        isActive && 'bg-surface',
+        dragging && 'opacity-40'
       )}
     >
       <Link
         to={href}
+        draggable={false}
         aria-label={project.name}
         data-hover="parent"
         className="absolute inset-0 focus-visible:ring-1 focus-visible:ring-accent focus-visible:outline-none focus-visible:ring-inset"
@@ -648,6 +664,12 @@ const ProjectRow: React.FC<ProjectRowProps> = ({
   );
 };
 
+/** A list row being dragged, and the group or sub-group it reorders within. */
+interface ListDrag {
+  projectId: string;
+  list: string;
+}
+
 /** A new project being written: the fields its column set and the teams it starts on. */
 interface Creating {
   preset: ProjectMove;
@@ -825,6 +847,8 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading }) => {
 
   const [creating, setCreating] = useState<Creating | null>(null);
   const [folded, setFolded] = useState<string[]>([]);
+  const [listDrag, setListDrag] = useState<ListDrag | null>(null);
+  const [listSlot, setListSlot] = useState<number | null>(null);
   const toggleFolded = (key: string): void => {
     setFolded((held) =>
       held.includes(key)
@@ -888,6 +912,27 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading }) => {
   );
 
   const sorted = useMemo(() => sortProjects(rows, ordering), [rows, ordering]);
+
+  const endListDrag = (): void => {
+    setListDrag(null);
+    setListSlot(null);
+  };
+
+  const dropInList = (items: ProjectRead[], index: number): void => {
+    const moving = listDrag;
+    endListDrag();
+    if (moving === null) return;
+    const placements = manualPlacements(items, moving.projectId, index);
+    if (placements === null || placements.length === 0) return;
+    for (const placement of placements) {
+      const project = rows.find(
+        (row) => row.project_id === placement.projectId
+      );
+      if (project !== undefined)
+        moveProject(project, { sort_order: placement.sort_order });
+    }
+    if (ordering !== 'manual') changeDisplay({ order: 'manual' });
+  };
   const groups = useMemo(
     () =>
       directedGroups(
@@ -1531,34 +1576,103 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading }) => {
                   : null;
               const list = (
                 items: ProjectRead[],
-                start: number
-              ): React.ReactElement => (
-                <ul>
-                  {items.map((project, index) => {
-                    const position = start + index;
-                    return (
-                      <ProjectRow
-                        key={project.project_id}
-                        project={project}
-                        slug={slug}
-                        workspaceId={workspaceId}
-                        teams={teams}
-                        people={people}
-                        projectLabels={projectLabels}
-                        byId={projectsById}
-                        shown={shownColumns}
-                        workspaceRole={workspace?.role}
-                        isActive={position === activeIndex}
-                        rowRef={registerItem(position)}
-                        onPointerEnter={() => {
-                          setActiveIndex(position);
-                        }}
-                        refreshKey={queryKey}
-                      />
-                    );
-                  })}
-                </ul>
-              );
+                start: number,
+                key: string
+              ): React.ReactElement => {
+                const dragging =
+                  listDrag?.list === key ? listDrag.projectId : null;
+                const others = items.filter(
+                  (project) => project.project_id !== dragging
+                );
+                const marker =
+                  dragging === null || listSlot === null
+                    ? undefined
+                    : (others[listSlot]?.project_id ?? null);
+                const placeholder = (
+                  <li
+                    key="drop-placeholder"
+                    aria-hidden="true"
+                    className="h-11 border-b border-dashed border-accent bg-accent-soft/40"
+                  />
+                );
+                return (
+                  <ul
+                    onDragOver={(event) => {
+                      if (dragging === null) return;
+                      event.preventDefault();
+                      event.dataTransfer.dropEffect = 'move';
+                      const next = slotIndex(
+                        event.currentTarget,
+                        dragging,
+                        event.clientY
+                      );
+                      if (next !== listSlot) setListSlot(next);
+                    }}
+                    onDragLeave={(event) => {
+                      if (
+                        dragging !== null &&
+                        !event.currentTarget.contains(
+                          event.relatedTarget as Node
+                        )
+                      )
+                        setListSlot(null);
+                    }}
+                    onDrop={(event) => {
+                      if (dragging === null) return;
+                      event.preventDefault();
+                      dropInList(
+                        items,
+                        listSlot ??
+                          slotIndex(
+                            event.currentTarget,
+                            dragging,
+                            event.clientY
+                          )
+                      );
+                    }}
+                  >
+                    {items.map((project, index) => {
+                      const position = start + index;
+                      return (
+                        <React.Fragment key={project.project_id}>
+                          {marker === project.project_id && placeholder}
+                          <ProjectRow
+                            project={project}
+                            slug={slug}
+                            workspaceId={workspaceId}
+                            teams={teams}
+                            people={people}
+                            projectLabels={projectLabels}
+                            byId={projectsById}
+                            shown={shownColumns}
+                            workspaceRole={workspace?.role}
+                            isActive={position === activeIndex}
+                            rowRef={registerItem(position)}
+                            onPointerEnter={() => {
+                              setActiveIndex(position);
+                            }}
+                            refreshKey={queryKey}
+                            dragging={dragging === project.project_id}
+                            onDragStart={(event) => {
+                              event.dataTransfer.effectAllowed = 'move';
+                              event.dataTransfer.setData(
+                                'text/plain',
+                                project.name
+                              );
+                              setListDrag({
+                                projectId: project.project_id,
+                                list: key,
+                              });
+                            }}
+                            onDragEnd={endListDrag}
+                          />
+                        </React.Fragment>
+                      );
+                    })}
+                    {marker === null && placeholder}
+                  </ul>
+                );
+              };
               return (
                 <section key={group.key} aria-label={group.label}>
                   {group.kind !== 'none' && (
@@ -1601,7 +1715,7 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading }) => {
                   )}
                   {open &&
                     (subs === null
-                      ? list(group.rows, starts.get(group.key) ?? 0)
+                      ? list(group.rows, starts.get(group.key) ?? 0, group.key)
                       : subs.map(({ sub, fold }) => {
                           const subOpen = !folded.includes(fold);
                           return (
@@ -1630,7 +1744,8 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading }) => {
                                   {String(sub.rows.length)}
                                 </span>
                               </button>
-                              {subOpen && list(sub.rows, starts.get(fold) ?? 0)}
+                              {subOpen &&
+                                list(sub.rows, starts.get(fold) ?? 0, fold)}
                             </section>
                           );
                         }))}
@@ -1655,6 +1770,10 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading }) => {
           projectLabels={projectLabels}
           workspaceRole={workspace?.role}
           onMove={moveProject}
+          ordering={ordering}
+          onOrderingChange={(value) => {
+            changeDisplay({ order: value });
+          }}
           createIn={(column) => {
             if (!canCreate) return undefined;
             if (column.kind === 'team') {
