@@ -81,7 +81,13 @@ class NotificationChannels(BaseModel):
 
 
 class UserRead(BaseModel):
-    """The caller's own account, in the shape the frontend's `UserRead` expects."""
+    """The caller's own account, in the shape the frontend's `UserRead` expects.
+
+    `projects_display` is the person's projects arrangement, the built-in one
+    when they never arranged the page, and `projects_display_saved` says whether
+    they did. A person who has not opens the page with their team's or the
+    workspace's default instead.
+    """
 
     id: str
     email: str
@@ -99,6 +105,7 @@ class UserRead(BaseModel):
     name_display: NameDisplayField = "username"
     font_size: FontSizeField = "default"
     projects_display: ProjectsDisplay = Field(default_factory=ProjectsDisplay)
+    projects_display_saved: bool = False
     auto_grant_new_scopes: bool = False
 
 
@@ -151,7 +158,8 @@ class UserPreferencesUpdate(BaseModel):
     `name_display` and `font_size` are the interface preferences the account
     Preferences page sets, kept on the row so they follow the person to every
     device. `projects_display` replaces how the projects list is arranged as a
-    whole. `auto_grant_new_scopes` lets scopes the product adds later reach the
+    whole, and null forgets the arrangement, so the page opens with the team's or
+    the workspace's default again. `auto_grant_new_scopes` lets scopes the product adds later reach the
     connected apps that were given every scope. Deliberately not a settings
     domain of its own: a few values on the row the product already owns are cheaper
     than a table and a second read on every notification.
@@ -234,6 +242,7 @@ def _as_read(user: "Any") -> UserRead:
         name_display=_known(user.name_display, NAME_DISPLAYS, "username"),
         font_size=_known(user.font_size, FONT_SIZES, "default"),
         projects_display=stored_projects_display(user.projects_display),
+        projects_display_saved=bool(user.projects_display),
         auto_grant_new_scopes=bool(user.auto_grant_new_scopes),
     )
 
@@ -345,8 +354,10 @@ def update_current_user_preferences(
             changes[field] = value
     if payload.projects_display is not None:
         display = payload.projects_display.model_dump()
-        if display != stored_projects_display(user.projects_display).model_dump():
+        if display != user.projects_display:
             changes["projects_display"] = display
+    elif "projects_display" in payload.model_fields_set and user.projects_display:
+        changes["projects_display"] = {}
     if not changes:
         return _as_read(user)
     return _as_read(repos.users.update(subject, **changes))

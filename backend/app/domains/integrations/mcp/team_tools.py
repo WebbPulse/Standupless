@@ -70,6 +70,7 @@ from app.domains.integrations.mcp.toolkit import (
     nullable,
     nullable_enum,
     object_schema,
+    projects_display_schema,
     string,
     team_id_ref,
     team_ref,
@@ -220,8 +221,10 @@ def _auto_close_settings_json(settings: AutoCloseSettings) -> dict[str, Any]:
 
 def _display_defaults_json(call: ToolCall, team_id: str) -> dict[str, Any]:
     """A team's display defaults as the display defaults route answers them, without the team id."""
-    defaults = team_writes.display_defaults(call.repositories, call.context.workspace_id, team_id)
-    body = TeamDisplayDefaultsRead.from_row(defaults).model_dump(mode="json")
+    workspace_id = call.context.workspace_id
+    defaults = team_writes.display_defaults(call.repositories, workspace_id, team_id)
+    workspace = team_writes.workspace_display_defaults(call.repositories, workspace_id)
+    body = TeamDisplayDefaultsRead.from_row(defaults, workspace).model_dump(mode="json")
     body.pop("team_id", None)
     return body
 
@@ -558,9 +561,11 @@ def _update_auto_close_settings(call: ToolCall) -> Any:
 
 
 def _update_display_defaults(call: ToolCall) -> Any:
-    """Set or clear what a team's issue list and board open with for members who have not changed them."""
+    """Set or clear what a team's issue list, board and projects page open with for members who kept theirs."""
     team = admin_team(call)
-    payload = TeamDisplayDefaultsUpdate.model_validate(given_arguments(call, ("list_display", "board_display")))
+    payload = TeamDisplayDefaultsUpdate.model_validate(
+        given_arguments(call, ("list_display", "board_display", "projects_display"))
+    )
     team_writes.update_display_defaults(
         call.repositories, call.context.workspace_id, team.team_id, call.context.user_id, payload
     )
@@ -1036,8 +1041,9 @@ TEAM_TOOLS: tuple[Tool, ...] = (
         name="update_team_display_defaults",
         description=(
             "Set the default layout, grouping, ordering, row properties and switches a team's issue list "
-            "(list_display) and board (board_display) open with for members who have not changed their own "
-            "display. A page left out keeps its default and null clears it. Needs team admin."
+            "(list_display), board (board_display) and projects page (projects_display) open with for members "
+            "who have not changed their own display. A page left out keeps its default and null clears it, so "
+            "the projects page falls back to the workspace default. Needs team admin."
         ),
         scopes=("teams:write",),
         schema=object_schema(
@@ -1045,6 +1051,12 @@ TEAM_TOOLS: tuple[Tool, ...] = (
                 "team_id": string(TEAM_ARGUMENT),
                 "list_display": _display_options_schema("issue list"),
                 "board_display": _display_options_schema("board"),
+                "projects_display": projects_display_schema(
+                    "What the team's projects page opens with: layout, group and direction, rows, order, "
+                    "closed, lead_team, empty, zoom and columns, replacing the saved default whole; a missing "
+                    "field takes the built-in choice and null clears the team default",
+                    clearable=True,
+                ),
             },
             required=("team_id",),
         ),

@@ -96,6 +96,7 @@ import { usePlanningTeamLists } from '../../hooks/usePlanningTeamLists';
 import { useShortcut } from '../../hooks/useShortcuts';
 import { useProjectMoves } from '../../hooks/useProjectMoves';
 import { useProjectsDisplay } from '../../hooks/useProjectsDisplay';
+import { useProjectsDisplayDefault } from '../../hooks/useProjectsDisplayDefault';
 import { useTeam } from '../../hooks/useTeam';
 import { useTimelineShortcuts } from '../../hooks/useTimelineShortcuts';
 import { useWorkspace } from '../../hooks/useWorkspace';
@@ -713,11 +714,20 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading }) => {
   const customerFilter = isMember
     ? (params.get('customer') ?? baseOf('customer'))
     : '';
+  const filteredTeam = teams.find((team) => team.key_prefix === teamFilter);
+  const { fallback: displayDefault, actionsFor: defaultActionsFor } =
+    useProjectsDisplayDefault({
+      workspaceId,
+      workspaceRole: workspace?.role,
+      team: filteredTeam,
+      workspacePage: teamFilter === '',
+      enabled: base === undefined,
+    });
   const {
     display,
     change: changeDisplay,
     reset,
-  } = useProjectsDisplay(base?.display);
+  } = useProjectsDisplay(base?.display, displayDefault);
   const {
     layout,
     group: grouping,
@@ -732,7 +742,6 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading }) => {
     () => columnList(display.columns),
     [display.columns]
   );
-  const filteredTeam = teams.find((team) => team.key_prefix === teamFilter);
   const baseRollUp = base?.rollUp ?? true;
   const {
     subTeams,
@@ -1423,6 +1432,7 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading }) => {
                   }
                 : {})}
               onReset={reset}
+              defaultActions={defaultActionsFor(display)}
               customerOrdering={isMember}
             />
             {layout === 'timeline' && (

@@ -24,6 +24,7 @@ from app.common.api.schemas.teams import (
     TeamCreate,
     TeamDisplayDefaultsUpdate,
     TeamUpdate,
+    WorkspaceDisplayDefaultsUpdate,
 )
 from app.common.db.dynamo.base import utc_now
 from app.common.db.dynamo.memberships import Membership, team_member_key
@@ -36,6 +37,7 @@ from app.common.db.dynamo.team_config import (
     SlaSettings,
     Status,
     TeamDisplayDefaults,
+    WorkspaceDisplayDefaults,
     cycle_settings_key,
     default_archive_settings,
     default_auto_close_settings,
@@ -430,7 +432,7 @@ def update_auto_close_settings(
 
 
 def display_defaults(repositories: Repositories, workspace_id: str, team_id: str) -> TeamDisplayDefaults:
-    """What a team's issue list and board open with, every page on its built-in default when none was saved."""
+    """What a team's issue list, board and projects page open with, each on its own default when none was saved."""
     stored = repositories.team_config.get_display_defaults(workspace_id, team_id)
     return stored or default_team_display_defaults(workspace_id, team_id)
 
@@ -441,7 +443,8 @@ def update_display_defaults(
     """Set or clear the display options a team's members see until they change them.
 
     Only the pages the payload named move: options replace that page's saved
-    default whole and null clears it, so the page opens on its built-in default.
+    default whole and null clears it, so the page opens on its built-in default,
+    or for the projects page on the workspace default.
     """
     current = display_defaults(repositories, workspace_id, team_id)
     changes: dict[str, Any] = {"updated_by": actor_id}
@@ -449,7 +452,32 @@ def update_display_defaults(
         if name in payload.model_fields_set:
             options = getattr(payload, name)
             changes[name] = options.as_row() if options is not None else None
+    if "projects_display" in payload.model_fields_set:
+        arrangement = payload.projects_display
+        changes["projects_display"] = arrangement.model_dump() if arrangement is not None else None
     return repositories.team_config.put_display_defaults(current.model_copy(update=changes))
+
+
+def workspace_display_defaults(repositories: Repositories, workspace_id: str) -> WorkspaceDisplayDefaults:
+    """What the workspace projects page opens with, the built-in arrangement when no admin saved one."""
+    stored = repositories.team_config.get_workspace_display_defaults(workspace_id)
+    return stored or WorkspaceDisplayDefaults(workspace_id=workspace_id)
+
+
+def update_workspace_display_defaults(
+    repositories: Repositories, workspace_id: str, actor_id: str, payload: WorkspaceDisplayDefaultsUpdate
+) -> WorkspaceDisplayDefaults:
+    """Set or clear the projects arrangement every member opens with until they arrange it themselves.
+
+    The caller has been held to workspace admin. A left out `projects_display`
+    keeps the saved default and null clears it.
+    """
+    current = workspace_display_defaults(repositories, workspace_id)
+    changes: dict[str, Any] = {"updated_by": actor_id}
+    if "projects_display" in payload.model_fields_set:
+        arrangement = payload.projects_display
+        changes["projects_display"] = arrangement.model_dump() if arrangement is not None else None
+    return repositories.team_config.put_workspace_display_defaults(current.model_copy(update=changes))
 
 
 def archive_settings(repositories: Repositories, workspace_id: str, team_id: str) -> ArchiveSettings:
