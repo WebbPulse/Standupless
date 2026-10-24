@@ -8,7 +8,9 @@
  * board whose columns follow the grouping and take dropped cards, or to a
  * timeline; groups by health or priority; and hides completed projects
  * outside the chosen window. The Display menu also hides and shows list
- * columns, and the blocked and blocking filters narrow the rows. Save as view stores the filters and the
+ * columns, reverses the groups, groups again inside each group, keeps only
+ * the projects a filtered team leads, and drops empty board columns, and the
+ * blocked and blocking filters narrow the rows. Save as view stores the filters and the
  * arrangement as a view of projects and opens it.
  */
 
@@ -726,6 +728,167 @@ describe('Projects', () => {
       );
     });
     expect(await screen.findByText('view page')).toBeInTheDocument();
+  });
+
+  it('reverses the groups from the Display menu', async () => {
+    const user = userEvent.setup();
+    renderPage();
+
+    await screen.findByRole('link', { name: 'Launch' });
+    const order = (): string[] =>
+      screen
+        .getAllByRole('region')
+        .map((region) => region.getAttribute('aria-label') ?? '')
+        .filter((name) => name === 'Planned' || name === 'In progress');
+    const before = order();
+    expect(before).toHaveLength(2);
+    await user.click(screen.getByRole('button', { name: 'Display' }));
+    await user.click(screen.getByRole('button', { name: 'Reverse grouping' }));
+
+    expect(order()).toEqual([...before].reverse());
+  });
+
+  it('groups again inside each group from the URL', async () => {
+    listProjects.mockResolvedValue({
+      projects: [launch, { ...rebrand, team_ids: ['team-2'] }],
+      next_cursor: null,
+    });
+    renderPage('/w/mine/projects?rows=team');
+
+    const nested = await screen.findByRole('region', {
+      name: 'In progress, Engine',
+    });
+    expect(
+      within(nested).getByRole('link', { name: 'Launch' })
+    ).toBeInTheDocument();
+    expect(
+      within(screen.getByRole('region', { name: 'Planned, Design' })).getByRole(
+        'link',
+        { name: 'Rebrand' }
+      )
+    ).toBeInTheDocument();
+  });
+
+  it('keeps only the projects a filtered team leads when asked', async () => {
+    const user = userEvent.setup();
+    listProjects.mockResolvedValue({
+      projects: [launch, { ...rebrand, team_ids: ['team-1', 'team-2'] }],
+      next_cursor: null,
+    });
+    renderPage('/w/mine/projects?team=ENG');
+
+    await screen.findByRole('link', { name: 'Rebrand' });
+    await user.click(screen.getByRole('button', { name: 'Display' }));
+    await user.click(
+      screen.getByRole('switch', { name: 'Only show lead team projects' })
+    );
+
+    await waitFor(() => {
+      expect(screen.queryByRole('link', { name: 'Rebrand' })).toBeNull();
+    });
+    expect(screen.getByRole('link', { name: 'Launch' })).toBeInTheDocument();
+  });
+
+  it('offers the lead team switch only with a team filter', async () => {
+    const user = userEvent.setup();
+    renderPage();
+
+    await screen.findByRole('link', { name: 'Launch' });
+    await user.click(screen.getByRole('button', { name: 'Display' }));
+
+    expect(
+      screen.queryByRole('switch', { name: 'Only show lead team projects' })
+    ).toBeNull();
+  });
+
+  it('drops empty board columns from the Display menu', async () => {
+    const user = userEvent.setup();
+    renderPage('/w/mine/projects?layout=board');
+
+    await screen.findByRole('list', { name: 'Backlog projects' });
+    await user.click(screen.getByRole('button', { name: 'Display' }));
+    await user.click(
+      screen.getByRole('switch', { name: 'Show empty columns' })
+    );
+
+    await waitFor(() => {
+      expect(
+        screen.queryByRole('list', { name: 'Backlog projects' })
+      ).toBeNull();
+    });
+    expect(
+      screen.getByRole('list', { name: 'In progress projects' })
+    ).toBeInTheDocument();
+  });
+
+  it('hides canceled and long completed projects by default, on a team page too', async () => {
+    const daysAgo = (days: number): string =>
+      new Date(Date.now() - days * 86400000).toISOString();
+    listProjects.mockResolvedValue({
+      projects: [
+        launch,
+        {
+          ...rebrand,
+          status: 'canceled',
+          completed_at: daysAgo(1),
+          team_ids: ['team-1'],
+        },
+        {
+          ...rebrand,
+          project_id: 'prj-6',
+          name: 'Shipped',
+          status: 'completed',
+          completed_at: daysAgo(3),
+          team_ids: ['team-1'],
+        },
+        {
+          ...rebrand,
+          project_id: 'prj-7',
+          name: 'Archived',
+          status: 'completed',
+          completed_at: daysAgo(40),
+          team_ids: ['team-1'],
+        },
+      ],
+      next_cursor: null,
+    });
+    const { unmount } = renderPage();
+
+    expect(await screen.findByRole('link', { name: 'Shipped' })).toBeVisible();
+    expect(screen.queryByRole('link', { name: 'Rebrand' })).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Archived' })).toBeNull();
+    unmount();
+
+    renderPage('/w/mine/projects?team=ENG');
+    expect(await screen.findByRole('link', { name: 'Shipped' })).toBeVisible();
+    expect(screen.queryByRole('link', { name: 'Rebrand' })).toBeNull();
+  });
+
+  it('hides closed projects from the Display menu', async () => {
+    const user = userEvent.setup();
+    listProjects.mockResolvedValue({
+      projects: [
+        launch,
+        {
+          ...rebrand,
+          status: 'completed',
+          completed_at: new Date().toISOString(),
+        },
+      ],
+      next_cursor: null,
+    });
+    renderPage();
+
+    await screen.findByRole('link', { name: 'Rebrand' });
+    await user.click(screen.getByRole('button', { name: 'Display' }));
+    await user.selectOptions(
+      screen.getByLabelText('Show closed projects'),
+      'none'
+    );
+
+    await waitFor(() => {
+      expect(screen.queryByRole('link', { name: 'Rebrand' })).toBeNull();
+    });
   });
 
   describe('with a sub-team', () => {

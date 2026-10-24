@@ -53,7 +53,16 @@ export interface ProjectsDisplayPreference {
     | 'created'
     | 'updated'
     | 'customers';
-  closed: 'all' | 'week' | 'month' | 'quarter' | 'none';
+  closed: 'all' | 'fortnight' | 'month' | 'none';
+  /** Whether groups run in their own order or reversed. */
+  direction?: 'asc' | 'desc';
+  /** The grouping inside each group. */
+  rows?:
+    'status' | 'health' | 'priority' | 'initiative' | 'lead' | 'team' | 'none';
+  /** Whether a team page keeps only the projects that team leads. */
+  lead_team?: 'all' | 'lead';
+  /** Whether the board shows columns that hold no project. */
+  empty?: 'show' | 'hide';
   zoom: 'week' | 'month' | 'quarter' | 'year';
   /** The shown list columns, comma separated, absent on a row saved before columns could be chosen. */
   columns?: string;
