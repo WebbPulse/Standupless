@@ -7,7 +7,8 @@
  * means a long-lived tab or desktop window picks up each release on its own.
  */
 
-import React, { useEffect, useRef } from 'react';
+import type React from 'react';
+import { useEffect, useRef } from 'react';
 import { useLocation } from 'react-router-dom';
 import {
   BUILD_CHECK_INTERVAL_MS,
