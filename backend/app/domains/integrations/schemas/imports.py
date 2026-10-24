@@ -23,7 +23,9 @@ class IssueImportRequest(BaseModel):
     team_id: str = Field(min_length=1, max_length=64)
     preset: ImportPreset = "generic"
     csv: str = Field(
-        min_length=1, max_length=MAX_CSV_BYTES, description=(
+        min_length=1,
+        max_length=MAX_CSV_BYTES,
+        description=(
             "The whole CSV file as text, header row first. With the trello preset, the board's JSON export instead."
         ),
     )

@@ -80,11 +80,7 @@ def _position(item: dict[str, Any]) -> float:
 def trello_to_csv(text: str) -> str:
     """Flatten a Trello board export into CSV under the `trello` preset's headers."""
     board = _load_board(text)
-    lists = {
-        str(item.get("id")): item
-        for item in _objects(board, "lists")
-        if not item.get("closed")
-    }
+    lists = {str(item.get("id")): item for item in _objects(board, "lists") if not item.get("closed")}
     members = {str(item.get("id")): item for item in _objects(board, "members")}
     board_labels = {str(item.get("id")): item for item in _objects(board, "labels")}
     checklists: dict[str, list[dict[str, Any]]] = {}
@@ -105,11 +101,7 @@ def trello_to_csv(text: str) -> str:
                     names.append(name)
         return ", ".join(names)
 
-    cards = [
-        card
-        for card in _objects(board, "cards")
-        if not card.get("closed") and str(card.get("idList")) in lists
-    ]
+    cards = [card for card in _objects(board, "cards") if not card.get("closed") and str(card.get("idList")) in lists]
     cards.sort(key=lambda card: (_position(lists[str(card.get("idList"))]), _position(card)))
 
     out = io.StringIO()
