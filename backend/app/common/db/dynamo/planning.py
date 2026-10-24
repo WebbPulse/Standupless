@@ -188,6 +188,9 @@ def progress_measure(estimating_teams: int) -> ProgressMeasure:
 COUNTER_KEYS: frozenset[str] = frozenset(COUNT_BUCKETS + POINT_BUCKETS + UNESTIMATED_BUCKETS + CARRY_COUNTERS)
 """Every key a rollup may move inside a planning row's `counts` map."""
 
+CYCLE_RECOUNT_KEYS: tuple[str, ...] = COUNT_BUCKETS + POINT_BUCKETS + UNESTIMATED_BUCKETS
+"""The cycle counters a recount can rebuild from the issues a cycle holds now, carry counters excluded."""
+
 CYCLE_HISTORY = "cycle_history"
 """The kind of one daily scope snapshot of a cycle."""
 
@@ -1698,6 +1701,51 @@ class PlanningRepository:
         except ConditionFailed:
             return False
         return True
+
+    def read_cycle_counters(self, workspace_id: str, planning_key: str) -> tuple[dict[str, int], int] | None:
+        """One cycle's raw `counts` map and rollup revision, unfloored, or `None` when the row is gone."""
+        item = self._get(workspace_id, planning_key)
+        if item is None:
+            return None
+        values = item.get("counts")
+        source: Mapping[str, Any] = values if isinstance(values, Mapping) else {}
+        return {str(key): int(value or 0) for key, value in source.items()}, int(item.get("rollup_rev", 0) or 0)
+
+    def set_cycle_counts(
+        self, workspace_id: str, planning_key: str, counts: Mapping[str, int], *, rev: int
+    ) -> Mapping[str, Any] | None:
+        """Write one cycle's recounted issue, point and unestimated buckets, returning the row after.
+
+        Conditional on the rollup revision still being `rev`, so a counter move
+        that landed after the caller read the row is never overwritten; the
+        revision is bumped so the snapshot that follows orders after it. The carry
+        counters are left alone. `None` when the row is gone or moved on.
+        """
+        wanted = {bucket: value for bucket, value in counts.items() if bucket in CYCLE_RECOUNT_KEYS}
+        if not workspace_id or not planning_key or not wanted:
+            return None
+        names: dict[str, str] = {"#counts": "counts", "#rev": "rollup_rev"}
+        values: dict[str, Any] = {":next": rev + 1}
+        clauses: list[str] = ["#rev = :next"]
+        for index, (bucket, value) in enumerate(sorted(wanted.items())):
+            names[f"#b{index}"] = bucket
+            values[f":v{index}"] = int(value)
+            clauses.append(f"#counts.#b{index} = :v{index}")
+        held = Attr("rollup_rev").eq(rev)
+        if rev == 0:
+            held = held | Attr("rollup_rev").not_exists()
+        try:
+            item = self._repository.update(
+                {"workspace_id": workspace_id, "planning_key": planning_key},
+                update_expression="SET " + ", ".join(clauses),
+                expression_names=names,
+                expression_values=values,
+                condition=Attr("planning_key").exists() & Attr("counts").exists() & held,
+                return_values="ALL_NEW",
+            )
+        except ConditionFailed:
+            return None
+        return item if item is not None else {}
 
     def delete(self, workspace_id: str, planning_key: str) -> bool:
         """Remove one planning row, reporting whether one was there."""

@@ -46,9 +46,11 @@ from app.common.composition.consumers import CONSUMERS
 from app.common.db.dynamo.planning import (
     CATEGORY_BUCKETS,
     COUNT_BUCKETS,
+    CYCLE_RECOUNT_KEYS,
     ESTIMATING_TEAMS,
     POINT_PREFIX,
     UNESTIMATED_PREFIX,
+    Cycle,
     Project,
     ProjectMilestone,
     cycle_key,
@@ -180,6 +182,8 @@ def recount_project(
     workspace_id: str,
     project_id: str,
     record: Mapping[str, Any],
+    *,
+    write: bool = True,
 ) -> int:
     """Write one project's and each of its milestones' counts from its issues, returning rows written.
 
@@ -193,6 +197,9 @@ def recount_project(
     project spanning teams sums each team's sizes, and every row records how many
     of the project's teams estimate, which is what makes its progress read in
     points rather than issues.
+
+    With `write` off nothing is written or posted, and the answer is how many
+    rows would have been.
     """
     project = repositories.planning.get_project(workspace_id, project_id)
     if project is None:
@@ -240,12 +247,64 @@ def recount_project(
     for planning_key, (counts, statuses) in wanted.items():
         if stored.get(planning_key) == counts and stored_statuses.get(planning_key) == statuses:
             continue
-        if repositories.planning.set_counts(workspace_id, planning_key, counts, statuses):
+        if not write or repositories.planning.set_counts(workspace_id, planning_key, counts, statuses):
             written += 1
+    if not write:
+        return written
     for milestone in milestones:
         before = stored[milestone_key(project_id, milestone.milestone_id)]
         post_milestone_completion(repositories, milestone, before, milestone_counts[milestone.milestone_id])
     return written
+
+
+def cycle_counts(repositories: Repositories, workspace_id: str, cycle: Cycle) -> dict[str, int]:
+    """The issue, point and unestimated buckets of one cycle, counted from the issues it holds now.
+
+    Weighed exactly as `deltas_for` moves them, so a recount lands on the numbers
+    the consumer would have reached had it seen every record.
+    """
+    scales = _TeamScales(repositories, workspace_id)
+    counts = {key: 0 for key in CYCLE_RECOUNT_KEYS}
+    for issue in repositories.issues.iter_for_cycle(workspace_id, cycle.team_id, cycle.cycle_id):
+        bucket = CATEGORY_BUCKETS.get(scales.category(issue.team_id, issue.status_id))
+        if bucket is None:
+            continue
+        counts[bucket] += 1
+        counts[f"{POINT_PREFIX}{bucket}"] += estimate_points(issue.estimate)
+        if is_unestimated(issue.estimate):
+            counts[f"{UNESTIMATED_PREFIX}{bucket}"] += 1
+    return counts
+
+
+def recount_cycle(
+    repositories: Repositories, workspace_id: str, cycle: Cycle, *, write: bool = True, today: str | None = None
+) -> bool:
+    """Rebuild one cycle's counters from its issues when they drifted, answering whether they had.
+
+    For healing counters that missed a move. The row is read before the issues and
+    written only while its rollup revision is unchanged, so a move the consumer
+    made in between wins and the next run picks the cycle up again. A cycle still
+    running or upcoming also gets the day's snapshot, so its burn-up reads the
+    healed scope; a finished cycle's history is left as it was. The carry
+    counters record past closes and are never rebuilt.
+    """
+    planning_key = cycle_key(cycle.team_id, cycle.cycle_id)
+    stored = repositories.planning.read_cycle_counters(workspace_id, planning_key)
+    if stored is None:
+        return False
+    held, rev = stored
+    counts = cycle_counts(repositories, workspace_id, cycle)
+    if all(held.get(key, 0) == value for key, value in counts.items()):
+        return False
+    if not write:
+        return True
+    after = repositories.planning.set_cycle_counts(workspace_id, planning_key, counts, rev=rev)
+    if after is None:
+        return False
+    day = today if today is not None else datetime.now(timezone.utc).date().isoformat()
+    if cycle.status(day) in ("active", "upcoming"):
+        snapshot_cycle(repositories, workspace_id, planning_key, {}, after, day)
+    return True
 
 
 def is_complete(counts: Mapping[str, int]) -> bool:
