@@ -13,7 +13,6 @@ from typing import Any
 from fastapi.testclient import TestClient
 
 from app.common.core.constants import ISSUE_BODY_MAX_BYTES
-
 from tests.domains.helpers import ADMIN, GUEST, MEMBER, OUTSIDER, OWNER, add_team_member, sign_in
 from tests.domains.planning.conftest import OTHER_TEAM, TEAM, WORKSPACE, seed_project
 
