@@ -91,8 +91,12 @@ describe('projectViewBase', () => {
     expect(base.display).toEqual({
       layout: 'board',
       group: 'lead',
+      direction: 'asc',
+      rows: 'none',
       order: 'name',
       closed: 'none',
+      lead_team: 'all',
+      empty: 'show',
       zoom: 'year',
       columns: 'health,status',
     });

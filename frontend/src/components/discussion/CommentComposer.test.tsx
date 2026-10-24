@@ -1,7 +1,8 @@
 /**
  * The comment composer. Covers that a pasted image lands in the comment as an
  * embed of its stored content path, and that posting links only the uploads
- * the text still embeds while deleting the rest.
+ * the text still embeds while deleting the rest, and that a new thread can be
+ * synced to a linked pull request as it posts, with a warning for a public one.
  */
 
 import type { Editor } from '@tiptap/core';
@@ -13,12 +14,18 @@ import {
   waitFor,
 } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { AttachmentRead, CommentRead } from '../../types/Api';
+import type {
+  AttachmentRead,
+  CommentRead,
+  GithubThreadTargetRead,
+} from '../../types/Api';
 import CommentComposer from './CommentComposer';
 
 const createComment = vi.fn<(body: unknown) => Promise<CommentRead>>();
 const uploadAttachment = vi.fn<(file: File) => Promise<AttachmentRead>>();
 const deleteAttachment = vi.fn<(id: string) => Promise<void>>();
+const syncThread =
+  vi.fn<(commentId: string, payload: unknown) => Promise<unknown>>();
 
 vi.mock('../../api/drafts', () => ({
   listIssueDrafts: () => Promise.resolve([]),
@@ -32,6 +39,26 @@ vi.mock('../../api/discussion', () => ({
     uploadAttachment(file),
   deleteAttachment: (_w: string, id: string) => deleteAttachment(id),
 }));
+
+vi.mock('../../api/integrations', () => ({
+  syncThread: (_w: string, _i: string, commentId: string, payload: unknown) =>
+    syncThread(commentId, payload),
+}));
+
+/** A linked pull request a new thread may sync to. */
+const target = (
+  overrides: Partial<GithubThreadTargetRead> = {}
+): GithubThreadTargetRead => ({
+  kind: 'pull_request',
+  repository_id: 'repo-1',
+  full_name: 'acme/api',
+  number: 7,
+  title: 'Fix the login',
+  url: 'https://github.com/acme/api/pull/7',
+  private: true,
+  ref: 'acme/api#7',
+  ...overrides,
+});
 
 /** One committed attachment with the id given. */
 const attachment = (id: string, title: string): AttachmentRead => ({
@@ -76,6 +103,8 @@ beforeEach(() => {
   uploadAttachment.mockReset();
   deleteAttachment.mockReset();
   deleteAttachment.mockResolvedValue(undefined);
+  syncThread.mockReset();
+  syncThread.mockResolvedValue({});
 });
 
 describe('the comment composer', () => {
@@ -144,5 +173,114 @@ describe('the comment composer', () => {
       expect(deleteAttachment).toHaveBeenCalledWith('att-2');
     });
     expect(createComment).toHaveBeenCalledWith({ body: 'Never mind' });
+  });
+
+  it('syncs a new thread to the one linked pull request as it posts', async () => {
+    createComment.mockResolvedValue({ comment_id: 'c-9' } as CommentRead);
+    render(
+      <CommentComposer
+        workspaceId="ws-1"
+        issueId="iss-1"
+        people={[]}
+        threadTargets={[target()]}
+      />
+    );
+    const surface = await findSurface();
+    act(() => {
+      editorOf(surface).commands.setContent('Ready for review');
+    });
+
+    const toggle = screen.getByRole('button', { name: /Sync to GitHub/ });
+    act(() => {
+      fireEvent.click(toggle);
+    });
+    expect(
+      screen.getByRole('button', { name: /Syncing to acme\/api#7/ })
+    ).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.queryByRole('status')).toBeNull();
+
+    const send = screen.getByRole('button', { name: 'Comment' });
+    await waitFor(() => {
+      expect(send).toBeEnabled();
+    });
+    act(() => {
+      fireEvent.click(send);
+    });
+
+    await waitFor(() => {
+      expect(syncThread).toHaveBeenCalledWith('c-9', {
+        repository_id: 'repo-1',
+        number: 7,
+      });
+    });
+  });
+
+  it('warns before syncing a thread to a public repository', async () => {
+    render(
+      <CommentComposer
+        workspaceId="ws-1"
+        issueId="iss-1"
+        people={[]}
+        threadTargets={[target({ private: false })]}
+      />
+    );
+    await findSurface();
+
+    act(() => {
+      fireEvent.click(screen.getByRole('button', { name: /Sync to GitHub/ }));
+    });
+
+    expect(screen.getByRole('status')).toHaveTextContent(
+      'Public repository: anyone can read this thread on GitHub.'
+    );
+  });
+
+  it('posts without syncing when the toggle is left off', async () => {
+    createComment.mockResolvedValue({ comment_id: 'c-10' } as CommentRead);
+    const onPosted = vi.fn();
+    render(
+      <CommentComposer
+        workspaceId="ws-1"
+        issueId="iss-1"
+        people={[]}
+        threadTargets={[target()]}
+        onPosted={onPosted}
+      />
+    );
+    const surface = await findSurface();
+    act(() => {
+      editorOf(surface).commands.setContent('Just a note');
+    });
+    const send = screen.getByRole('button', { name: 'Comment' });
+    await waitFor(() => {
+      expect(send).toBeEnabled();
+    });
+    act(() => {
+      fireEvent.click(send);
+    });
+
+    await waitFor(() => {
+      expect(onPosted).toHaveBeenCalled();
+    });
+    expect(syncThread).not.toHaveBeenCalled();
+  });
+
+  it('offers no sync on a reply', async () => {
+    render(
+      <CommentComposer
+        workspaceId="ws-1"
+        issueId="iss-1"
+        people={[]}
+        parentCommentId="c-1"
+        threadTargets={[target()]}
+      />
+    );
+    await screen.findByRole(
+      'textbox',
+      { name: 'Write a reply' },
+      { timeout: 10_000 }
+    );
+
+    expect(screen.queryByRole('button', { name: /Sync to GitHub/ })).toBeNull();
   });
 });

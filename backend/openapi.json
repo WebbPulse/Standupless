@@ -2170,7 +2170,7 @@
         "type": "object"
       },
       "CommentRead": {
-        "description": "One comment as the API returns it.",
+        "description": "One comment as the API returns it.\n\n`github_thread` is set on a root comment whose thread is synced to a GitHub\npull request or issue.",
         "properties": {
           "attachments": {
             "items": {
@@ -2210,6 +2210,16 @@
               }
             ],
             "title": "Edited At"
+          },
+          "github_thread": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GithubThread"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "issue_id": {
             "title": "Issue Id",
@@ -5159,6 +5169,164 @@
         "title": "GitHubImportRequest",
         "type": "object"
       },
+      "GithubThread": {
+        "description": "Where a root comment's thread is mirrored on GitHub.\n\n`kind` says whether the target is a pull request or a GitHub issue, and\n`private` is the repository's visibility when the thread was synced, which is\nwhat the composer warns on. `comment_url` is the App's opening comment on\nGitHub, empty until that post lands.",
+        "properties": {
+          "comment_url": {
+            "default": "",
+            "title": "Comment Url",
+            "type": "string"
+          },
+          "full_name": {
+            "title": "Full Name",
+            "type": "string"
+          },
+          "kind": {
+            "default": "pull_request",
+            "title": "Kind",
+            "type": "string"
+          },
+          "number": {
+            "title": "Number",
+            "type": "integer"
+          },
+          "private": {
+            "default": true,
+            "title": "Private",
+            "type": "boolean"
+          },
+          "repository_id": {
+            "title": "Repository Id",
+            "type": "string"
+          },
+          "synced_at": {
+            "format": "date-time",
+            "title": "Synced At",
+            "type": "string"
+          },
+          "synced_by": {
+            "title": "Synced By",
+            "type": "string"
+          },
+          "target_url": {
+            "default": "",
+            "title": "Target Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "repository_id",
+          "full_name",
+          "number",
+          "synced_by"
+        ],
+        "title": "GithubThread",
+        "type": "object"
+      },
+      "GithubThreadRead": {
+        "description": "One root comment's thread sync, empty once it is unsynced.",
+        "properties": {
+          "comment_id": {
+            "title": "Comment Id",
+            "type": "string"
+          },
+          "github_thread": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GithubThread"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "issue_id": {
+            "title": "Issue Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "comment_id",
+          "issue_id"
+        ],
+        "title": "GithubThreadRead",
+        "type": "object"
+      },
+      "GithubThreadTargetRead": {
+        "description": "A pull request or GitHub issue one of an issue's comment threads may be synced to.\n\n`private` is what the composer warns on: a thread synced to a public\nrepository is published there.",
+        "properties": {
+          "full_name": {
+            "title": "Full Name",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "pull_request",
+              "issue"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "number": {
+            "title": "Number",
+            "type": "integer"
+          },
+          "private": {
+            "title": "Private",
+            "type": "boolean"
+          },
+          "ref": {
+            "title": "Ref",
+            "type": "string"
+          },
+          "repository_id": {
+            "title": "Repository Id",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "repository_id",
+          "full_name",
+          "number",
+          "title",
+          "url",
+          "private",
+          "ref"
+        ],
+        "title": "GithubThreadTargetRead",
+        "type": "object"
+      },
+      "GithubThreadWrite": {
+        "additionalProperties": false,
+        "description": "Which linked pull request or GitHub issue to sync a thread to.",
+        "properties": {
+          "number": {
+            "minimum": 1.0,
+            "title": "Number",
+            "type": "integer"
+          },
+          "repository_id": {
+            "minLength": 1,
+            "title": "Repository Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "repository_id",
+          "number"
+        ],
+        "title": "GithubThreadWrite",
+        "type": "object"
+      },
       "HealthBreakdownRead": {
         "description": "How many of an initiative's visible projects report each health.",
         "properties": {
@@ -5656,6 +5824,43 @@
           "importable"
         ],
         "title": "ImportRowRead",
+        "type": "object"
+      },
+      "InboxClearRequest": {
+        "description": "The body a bulk delete takes: which of the caller's notifications to remove.\n\n`read_only` keeps to rows already read. Without it every row goes except those\nstill snoozed, unless `include_snoozed` takes them too. `kinds` keeps to those\nnotification kinds, matching the list's filter.",
+        "properties": {
+          "include_snoozed": {
+            "default": false,
+            "title": "Include Snoozed",
+            "type": "boolean"
+          },
+          "kinds": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 50,
+            "title": "Kinds",
+            "type": "array"
+          },
+          "read_only": {
+            "default": false,
+            "title": "Read Only",
+            "type": "boolean"
+          }
+        },
+        "title": "InboxClearRequest",
+        "type": "object"
+      },
+      "InboxClearResult": {
+        "description": "How many notifications a bulk delete removed.",
+        "properties": {
+          "deleted": {
+            "default": 0,
+            "title": "Deleted",
+            "type": "integer"
+          }
+        },
+        "title": "InboxClearResult",
         "type": "object"
       },
       "InboxCountRead": {
@@ -11781,23 +11986,40 @@
         "type": "object"
       },
       "ProjectsDisplay": {
-        "description": "How the person arranges the workspace projects list.\n\n`closed` is how far back completed and canceled projects show: all of them,\nthose closed in the past week, month or quarter, or none. `zoom` is the\ntimeline layout's scale. `columns` names the list columns shown beside the\nproject name, comma separated in the list's own order, and empty shows the\nname alone; a list of names is accepted and stored the same way. Every field\nhas the list's own default, so an account that never arranged the list reads\nas the list opens.",
+        "description": "How the person arranges the workspace projects list.\n\n`direction` runs the groups in their own order or reversed, and `rows`\ngroups again inside each group, `none` by default. `closed` is which\nclosed projects show: all of them, canceled ones included, the projects\ncompleted in the past two weeks (the default) or month, or none.\n`lead_team` set to `lead` keeps, on a team's projects page, only the\nprojects that team leads. `empty` shows or hides\nboard columns with no projects. `zoom` is the timeline layout's scale.\n`columns` names the properties shown beside the project name, comma\nseparated in the list's own order, and empty shows the name alone; a list of\nnames is accepted and stored the same way. Every field has the list's own\ndefault, so an account that never arranged the list reads as the list opens.",
         "properties": {
           "closed": {
-            "default": "all",
+            "default": "fortnight",
             "enum": [
               "all",
-              "week",
+              "fortnight",
               "month",
-              "quarter",
               "none"
             ],
             "title": "Closed",
             "type": "string"
           },
           "columns": {
-            "default": "health,priority,status,lead,start,target,teams,progress",
+            "default": "summary,dependencies,health,priority,status,lead,start,target,teams,progress",
             "title": "Columns",
+            "type": "string"
+          },
+          "direction": {
+            "default": "asc",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "title": "Direction",
+            "type": "string"
+          },
+          "empty": {
+            "default": "show",
+            "enum": [
+              "show",
+              "hide"
+            ],
+            "title": "Empty",
             "type": "string"
           },
           "group": {
@@ -11824,6 +12046,15 @@
             "title": "Layout",
             "type": "string"
           },
+          "lead_team": {
+            "default": "all",
+            "enum": [
+              "all",
+              "lead"
+            ],
+            "title": "Lead Team",
+            "type": "string"
+          },
           "order": {
             "default": "target",
             "enum": [
@@ -11837,6 +12068,20 @@
               "customers"
             ],
             "title": "Order",
+            "type": "string"
+          },
+          "rows": {
+            "default": "none",
+            "enum": [
+              "status",
+              "health",
+              "priority",
+              "initiative",
+              "lead",
+              "team",
+              "none"
+            ],
+            "title": "Rows",
             "type": "string"
           },
           "zoom": {
@@ -30405,6 +30650,65 @@
         ]
       }
     },
+    "/api/workspaces/{workspace_id}/inbox/clear": {
+      "post": {
+        "description": "Delete the caller's own notifications in bulk: the read ones, or all of them.\n\nOnly the caller's own partition is read, so nothing in anyone else's inbox can\nmatch. `kinds` narrows it as the list's filter does, and a row still snoozed\ngoes only when a full clear sends `include_snoozed`.",
+        "operationId": "clear_inbox_api_workspaces__workspace_id__inbox_clear_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InboxClearRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InboxClearResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Clear Inbox",
+        "tags": [
+          "views"
+        ]
+      }
+    },
     "/api/workspaces/{workspace_id}/inbox/count": {
       "get": {
         "description": "How many of the caller's notifications are unread, capped at 100.\n\nCapped because the badge stops meaning anything past that, and counting no\nfurther keeps a busy inbox costing the same as a quiet one.",
@@ -35538,6 +35842,215 @@
           }
         ],
         "summary": "Get Issue Sync",
+        "tags": [
+          "integrations"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/issues/{issue_id}/github-sync/thread-targets": {
+      "get": {
+        "description": "Where this issue's threads may be synced: its linked pull requests and its one way GitHub issue.\n\nEmpty when nothing is linked, which is when the composer offers no sync.",
+        "operationId": "list_thread_targets_api_workspaces__workspace_id__issues__issue_id__github_sync_thread_targets_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "issue_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Issue Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/GithubThreadTargetRead"
+                  },
+                  "title": "Response List Thread Targets Api Workspaces  Workspace Id  Issues  Issue Id  Github Sync Thread Targets Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "List Thread Targets",
+        "tags": [
+          "integrations"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/issues/{issue_id}/github-sync/threads/{comment_id}": {
+      "delete": {
+        "description": "Stop mirroring one thread. Comments already copied stay where they are on both sides.",
+        "operationId": "delete_thread_sync_api_workspaces__workspace_id__issues__issue_id__github_sync_threads__comment_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "issue_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Issue Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "comment_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Comment Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GithubThreadRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Delete Thread Sync",
+        "tags": [
+          "integrations"
+        ]
+      },
+      "put": {
+        "description": "Sync one root comment's thread to a linked pull request or GitHub issue.\n\nThe App posts an opening comment quoting the root, then each new reply, and\nGitHub comments written there afterwards land in the thread. A reply is a 409,\na target that is not linked is a 422, and the GitHub issue a two way sync\nmirrors is a 409. Syncing to the same target again changes nothing.",
+        "operationId": "put_thread_sync_api_workspaces__workspace_id__issues__issue_id__github_sync_threads__comment_id__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "issue_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Issue Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "comment_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Comment Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GithubThreadWrite"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GithubThreadRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Put Thread Sync",
         "tags": [
           "integrations"
         ]

@@ -8,6 +8,9 @@
  * the only one whose remaining days matter. Upcoming follows it, and
  * everything finished collapses into a section that stays shut until asked
  * for. Every cycle opens its own page with the burn-up and the issues.
+ * J and K, or the arrow keys, move a highlight through the current cycle and
+ * the rows of every open group in the order they are drawn, and Enter opens
+ * the highlighted cycle.
  *
  * Velocity sits under the current cycle: what the last closed cycles
  * delivered and how the cycle being planned compares with that average.
@@ -31,7 +34,7 @@ import {
   LuRotateCcw,
   LuTrash2,
 } from 'react-icons/lu';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
   createCycle,
   deleteCycle,
@@ -53,6 +56,7 @@ import WorkspaceShell from '../../components/workspace/WorkspaceShell';
 import TeamTabs from '../../components/workspace/TeamTabs';
 import TeamTitle from '../../components/workspace/TeamTitle';
 import SubTeamToggle from '../../components/workspace/SubTeamToggle';
+import { useListKeyboardNav } from '../../hooks/useListKeyboardNav';
 import { useShortcut } from '../../hooks/useShortcuts';
 import { useSubTeamRollUp } from '../../hooks/useSubTeamRollUp';
 import { useTeam } from '../../hooks/useTeam';
@@ -94,6 +98,9 @@ interface CycleRowProps {
   isAdmin: boolean;
   onCancel: (cycle: CycleRead) => void;
   onDelete: (cycle: CycleRead) => void;
+  isActive: boolean;
+  rowRef: (node: HTMLElement | null) => void;
+  onPointerEnter: () => void;
 }
 
 /** Props for CycleControls: one cycle and what the caller may do to it. */
@@ -159,10 +166,22 @@ const CycleRow: React.FC<CycleRowProps> = ({
   isAdmin,
   onCancel,
   onDelete,
+  isActive,
+  rowRef,
+  onPointerEnter,
 }) => {
   const percent = completionPercent(cycle.counts);
   return (
-    <li className="group/row relative flex h-11 items-center gap-3 border-b border-line px-3 transition-colors duration-100 last:border-b-0 hover:bg-surface has-[a:active]:bg-raised">
+    <li
+      ref={rowRef}
+      onPointerEnter={onPointerEnter}
+      aria-current={isActive ? 'true' : undefined}
+      className={cn(
+        'group/row relative flex h-11 items-center gap-3 border-b border-line px-3 transition-colors duration-100 last:border-b-0 hover:bg-surface has-[a:active]:bg-raised',
+        isActive &&
+          'bg-surface before:absolute before:inset-y-0 before:left-0 before:w-0.5 before:bg-accent'
+      )}
+    >
       <Link
         to={href}
         aria-label={cycleTitle(cycle)}
@@ -203,7 +222,12 @@ const CycleRow: React.FC<CycleRowProps> = ({
 };
 
 /** Props for ActiveCycle: the running cycle, given its own card. */
-type ActiveCycleProps = CycleControlsProps & { href: string };
+type ActiveCycleProps = CycleControlsProps & {
+  href: string;
+  isActive: boolean;
+  cardRef: (node: HTMLElement | null) => void;
+  onPointerEnter: () => void;
+};
 
 /** The running cycle, shown in full rather than as a row. */
 const ActiveCycle: React.FC<ActiveCycleProps> = ({
@@ -213,12 +237,21 @@ const ActiveCycle: React.FC<ActiveCycleProps> = ({
   isAdmin,
   onCancel,
   onDelete,
+  isActive,
+  cardRef,
+  onPointerEnter,
 }) => {
   const percent = completionPercent(cycle.counts);
   return (
     <section
+      ref={cardRef}
+      onPointerEnter={onPointerEnter}
       aria-label="Current cycle"
-      className="rounded-md border border-line bg-surface p-4"
+      aria-current={isActive ? 'true' : undefined}
+      className={cn(
+        'rounded-md border border-line bg-surface p-4 transition-colors duration-100',
+        isActive && 'border-accent ring-1 ring-accent'
+      )}
     >
       <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
         <h2 className="text-base font-semibold">
@@ -269,25 +302,39 @@ interface CycleGroupProps {
   title: string;
   cycles: CycleRead[];
   hrefFor: (cycle: CycleRead) => string;
-  defaultOpen: boolean;
+  isOpen: boolean;
+  onToggle: () => void;
   canEdit: boolean;
   isAdmin: boolean;
   onCancel: (cycle: CycleRead) => void;
   onDelete: (cycle: CycleRead) => void;
+  /** The keyboard position of the group's first row. */
+  start: number;
+  activeIndex: number;
+  registerItem: (index: number) => (node: HTMLElement | null) => void;
+  setActiveIndex: (index: number) => void;
 }
 
-/** One named group of cycles, collapsible so a long past does not fill the page. */
+/**
+ * One named group of cycles, collapsible so a long past does not fill the
+ * page. The page holds whether it is open, so a folded group's rows drop out
+ * of the keyboard order.
+ */
 const CycleGroup: React.FC<CycleGroupProps> = ({
   title,
   cycles,
   hrefFor,
-  defaultOpen,
+  isOpen,
+  onToggle,
   canEdit,
   isAdmin,
   onCancel,
   onDelete,
+  start,
+  activeIndex,
+  registerItem,
+  setActiveIndex,
 }) => {
-  const [isOpen, setIsOpen] = useState(defaultOpen);
   if (cycles.length === 0) return null;
 
   return (
@@ -295,9 +342,7 @@ const CycleGroup: React.FC<CycleGroupProps> = ({
       <button
         type="button"
         aria-expanded={isOpen}
-        onClick={() => {
-          setIsOpen((held) => !held);
-        }}
+        onClick={onToggle}
         className="mb-1 flex items-center gap-1.5 text-xs font-medium text-text-muted transition-colors duration-100 hover:text-text focus-visible:ring-1 focus-visible:ring-accent focus-visible:outline-none"
       >
         <LuChevronRight
@@ -314,7 +359,7 @@ const CycleGroup: React.FC<CycleGroupProps> = ({
       </button>
       {isOpen && (
         <ul className="rounded-md border border-line">
-          {cycles.map((cycle) => (
+          {cycles.map((cycle, index) => (
             <CycleRow
               key={cycle.cycle_id}
               cycle={cycle}
@@ -323,6 +368,11 @@ const CycleGroup: React.FC<CycleGroupProps> = ({
               isAdmin={isAdmin}
               onCancel={onCancel}
               onDelete={onDelete}
+              isActive={start + index === activeIndex}
+              rowRef={registerItem(start + index)}
+              onPointerEnter={() => {
+                setActiveIndex(start + index);
+              }}
             />
           ))}
         </ul>
@@ -334,6 +384,7 @@ const CycleGroup: React.FC<CycleGroupProps> = ({
 /** The cycles of the team named by the route's key prefix. */
 export const Cycles: React.FC = () => {
   const { keyPrefix, slug } = useParams<{ slug: string; keyPrefix: string }>();
+  const navigate = useNavigate();
   const { workspace } = useWorkspace();
   const auth = useQueryAuth();
   const {
@@ -349,6 +400,8 @@ export const Cycles: React.FC = () => {
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [goal, setGoal] = useState('');
+  const [isUpcomingOpen, setIsUpcomingOpen] = useState(true);
+  const [isPastOpen, setIsPastOpen] = useState(false);
 
   const teamId = team?.id ?? '';
   const { subTeams, rollUp, toggle } = useSubTeamRollUp(team);
@@ -445,6 +498,47 @@ export const Cycles: React.FC = () => {
     setIsCreating(false);
   }, []);
 
+  const cycles = useMemo(() => data?.cycles ?? [], [data]);
+  const { active, upcoming, past } = useMemo(
+    () => ({
+      active: cycles.filter((row) => row.status === 'active'),
+      upcoming: cycles.filter((row) => row.status === 'upcoming'),
+      past: cycles
+        .filter(
+          (row) => row.status === 'completed' || row.status === 'cancelled'
+        )
+        .reverse(),
+    }),
+    [cycles]
+  );
+  const visible = useMemo(
+    () => [
+      ...active,
+      ...(isUpcomingOpen ? upcoming : []),
+      ...(isPastOpen ? past : []),
+    ],
+    [active, upcoming, past, isUpcomingOpen, isPastOpen]
+  );
+  const teamPrefix = team?.key_prefix ?? '';
+  const hrefFor = useCallback(
+    (cycle: CycleRead): string =>
+      cyclePath(slug ?? '', teamPrefix, cycle.cycle_id),
+    [slug, teamPrefix]
+  );
+  const onActivate = useCallback(
+    (index: number): void => {
+      const cycle = visible[index];
+      if (cycle !== undefined) void navigate(hrefFor(cycle));
+    },
+    [visible, navigate, hrefFor]
+  );
+  const { activeIndex, setActiveIndex, registerItem } = useListKeyboardNav({
+    count: visible.length,
+    onActivate,
+    resetKey: visible.map((row) => row.cycle_id).join(','),
+    enabled: !isCreating,
+  });
+
   useShortcut({
     keys: 'shift+n',
     label: 'New cycle',
@@ -476,15 +570,6 @@ export const Cycles: React.FC = () => {
       </WorkspaceShell>
     );
   }
-
-  const cycles = data?.cycles ?? [];
-  const active = cycles.filter((row) => row.status === 'active');
-  const upcoming = cycles.filter((row) => row.status === 'upcoming');
-  const past = cycles
-    .filter((row) => row.status === 'completed' || row.status === 'cancelled')
-    .reverse();
-  const hrefFor = (cycle: CycleRead): string =>
-    cyclePath(slug ?? '', team.key_prefix, cycle.cycle_id);
 
   return (
     <WorkspaceShell
@@ -542,7 +627,7 @@ export const Cycles: React.FC = () => {
           />
         ) : (
           <>
-            {active.map((cycle) => (
+            {active.map((cycle, index) => (
               <ActiveCycle
                 key={cycle.cycle_id}
                 cycle={cycle}
@@ -551,6 +636,11 @@ export const Cycles: React.FC = () => {
                 isAdmin={isAdmin}
                 onCancel={onCancel}
                 onDelete={onDelete}
+                isActive={index === activeIndex}
+                cardRef={registerItem(index)}
+                onPointerEnter={() => {
+                  setActiveIndex(index);
+                }}
               />
             ))}
             {velocity !== null && velocity !== undefined && (
@@ -560,7 +650,14 @@ export const Cycles: React.FC = () => {
               title="Upcoming"
               cycles={upcoming}
               hrefFor={hrefFor}
-              defaultOpen
+              isOpen={isUpcomingOpen}
+              onToggle={() => {
+                setIsUpcomingOpen((held) => !held);
+              }}
+              start={active.length}
+              activeIndex={activeIndex}
+              registerItem={registerItem}
+              setActiveIndex={setActiveIndex}
               canEdit={canEdit}
               isAdmin={isAdmin}
               onCancel={onCancel}
@@ -570,7 +667,14 @@ export const Cycles: React.FC = () => {
               title="Past"
               cycles={past}
               hrefFor={hrefFor}
-              defaultOpen={false}
+              isOpen={isPastOpen}
+              onToggle={() => {
+                setIsPastOpen((held) => !held);
+              }}
+              start={active.length + (isUpcomingOpen ? upcoming.length : 0)}
+              activeIndex={activeIndex}
+              registerItem={registerItem}
+              setActiveIndex={setActiveIndex}
               canEdit={canEdit}
               isAdmin={isAdmin}
               onCancel={onCancel}

@@ -344,6 +344,12 @@ export const cyclesKey = (
   status: string
 ): QueryKey => ['cycles', workspaceId, teamId, status];
 
+/** A team's automatic cycle schedule. */
+export const cycleSettingsKey = (
+  workspaceId: string,
+  teamId: string
+): QueryKey => ['cycle-settings', workspaceId, teamId];
+
 /** One team's project list, which varies on the status filter applied. */
 export const projectsKey = (
   workspaceId: string,
@@ -474,6 +480,12 @@ export const teamSyncKey = (workspaceId: string, teamId: string): QueryKey => [
   workspaceId,
   teamId,
 ];
+
+/** The linked pull requests and GitHub issue an issue's threads may sync to. */
+export const threadTargetsKey = (
+  workspaceId: string,
+  issueId: string
+): QueryKey => ['github-thread-targets', workspaceId, issueId];
 
 /** The GitHub issue one issue mirrors. */
 export const issueSyncKey = (

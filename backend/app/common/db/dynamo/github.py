@@ -175,6 +175,9 @@ BACKLINK_PREFIX = "backlink#"
 LABEL_SYNC_PREFIX = "labelsync#"
 LABEL_SET_KEY = "labelset#settings"
 """The one row per workspace holding its workspace label set opt-in."""
+THREAD_TARGET_PREFIX = "thrtarget#"
+THREAD_COMMENT_PREFIX = "thrcmt#"
+THREAD_GITHUB_PREFIX = "thrgh#"
 DISPATCH_SLOTS_KEY = "dispatch#slots"
 """The one row per workspace holding the leases on its in-flight webhook attempts."""
 
@@ -190,8 +193,11 @@ SYNC_PREFIXES: tuple[str, ...] = (
     GITHUB_COMMENT_PREFIX,
     BACKLINK_PREFIX,
     LABEL_SYNC_PREFIX,
+    THREAD_TARGET_PREFIX,
+    THREAD_COMMENT_PREFIX,
+    THREAD_GITHUB_PREFIX,
 )
-"""Every sort key prefix the issue sync writes, which is what a purge has to clear."""
+"""Every sort key prefix the issue sync and the synced threads write, which is what a purge has to clear."""
 
 SyncDirection = Literal["two_way", "github_to_standupless"]
 
@@ -247,6 +253,31 @@ def label_sync_key(repository_id: str, label_id: str) -> str:
 
 WORKSPACE_LABEL_SYNC_TEAM = ""
 """The `team_id` of a label sync row the workspace label set wrote rather than a team's sync."""
+
+
+def thread_target_prefix(repository_id: str, number: int) -> str:
+    """The sort key prefix of every synced thread on one GitHub pull request or issue."""
+    return f"{THREAD_TARGET_PREFIX}{repository_id}#{number}#"
+
+
+def thread_target_key(repository_id: str, number: int, root_comment_id: str) -> str:
+    """The sort key of the pointer from one GitHub pull request or issue to one synced thread."""
+    return f"{thread_target_prefix(repository_id, number)}{root_comment_id}"
+
+
+def thread_comment_prefix(issue_id: str) -> str:
+    """The sort key prefix of every synced thread comment of one issue."""
+    return f"{THREAD_COMMENT_PREFIX}{issue_id}#"
+
+
+def thread_comment_key(issue_id: str, comment_id: str) -> str:
+    """The sort key of one synced thread comment's mirror state."""
+    return f"{thread_comment_prefix(issue_id)}{comment_id}"
+
+
+def thread_github_key(github_comment_id: str) -> str:
+    """The sort key of the pointer from a GitHub comment to the thread comment it mirrors."""
+    return f"{THREAD_GITHUB_PREFIX}{github_comment_id}"
 
 
 def ws_issue(workspace_id: str, issue_id: str) -> str:
@@ -720,6 +751,51 @@ class LabelSetSetting(BaseModel):
     include_public: bool = False
     updated_by: str = ""
     updated_at: datetime = Field(default_factory=utc_now)
+
+
+class ThreadTarget(BaseModel):
+    """The pointer from one GitHub pull request or issue to a comment thread synced to it.
+
+    Keyed by the repository, the number and the thread's root comment, so an
+    inbound comment finds every thread on its pull request or issue with one
+    prefix query. A row whose root no longer names this target is stale and is
+    ignored, which is what makes an unsync safe to half finish.
+    """
+
+    workspace_id: str
+    github_key: str
+    issue_id: str
+    team_id: str
+    root_comment_id: str
+    repository_id: str
+    number: int
+    synced_at: datetime = Field(default_factory=utc_now)
+
+
+class ThreadComment(BaseModel):
+    """The mirror state of one comment in a synced thread and the GitHub comment it pairs with.
+
+    Like `CommentSync`, `origin` names the side that wrote the comment first and
+    only that side's edits carry across, and `state` is `pending` while an
+    outbound post holds the claim. Kept apart from `CommentSync` under its own
+    prefixes, because the issue sync forgets every `cmtsync#` row of an issue
+    when the issue stops syncing, and a thread outlives that.
+    """
+
+    workspace_id: str
+    github_key: str
+    issue_id: str
+    comment_id: str
+    root_comment_id: str
+    repository_id: str
+    number: int
+    github_comment_id: str = ""
+    html_url: str = ""
+    origin: str = "standupless"
+    state: str = "linked"
+    body: str = ""
+    github_updated_ms: int = 0
+    synced_at: datetime = Field(default_factory=utc_now)
 
 
 def _stored_time(value: datetime) -> str:
@@ -1646,6 +1722,131 @@ class GithubRepository:
             github_key=github_comment_key(sync.github_comment_id),
             target_id=sync.comment_id,
             issue_id=sync.issue_id,
+        )
+        self._repository.put(as_item(pointer), condition=condition)
+
+    def put_thread_target(self, target: ThreadTarget) -> ThreadTarget:
+        """Point a GitHub pull request or issue at a thread synced to it."""
+        self._repository.put(as_item(target))
+        return target
+
+    def thread_targets(self, workspace_id: str, repository_id: str, number: int) -> list[ThreadTarget]:
+        """Every thread synced to one GitHub pull request or issue, the most recently synced first."""
+        if not repository_id or not number:
+            return []
+        rows = [
+            ThreadTarget.model_validate(dict(item))
+            for item in self._query(workspace_id, thread_target_prefix(repository_id, number), 200, consistent=True)
+        ]
+        return sorted(rows, key=lambda row: row.synced_at, reverse=True)
+
+    def get_thread_target(
+        self, workspace_id: str, repository_id: str, number: int, root_comment_id: str
+    ) -> ThreadTarget | None:
+        """The pointer for one synced thread, or `None`."""
+        if not workspace_id or not repository_id or not number or not root_comment_id:
+            return None
+        item = self._repository.get(
+            {"workspace_id": workspace_id, "github_key": thread_target_key(repository_id, number, root_comment_id)}
+        )
+        return ThreadTarget.model_validate(dict(item)) if item is not None else None
+
+    def get_thread_comment(self, workspace_id: str, issue_id: str, comment_id: str) -> ThreadComment | None:
+        """One thread comment's mirror state, or `None`."""
+        if not workspace_id or not issue_id or not comment_id:
+            return None
+        item = self._repository.get(
+            {"workspace_id": workspace_id, "github_key": thread_comment_key(issue_id, comment_id)}
+        )
+        return ThreadComment.model_validate(dict(item)) if item is not None else None
+
+    def thread_comment_for_github(self, workspace_id: str, github_comment_id: str) -> ThreadComment | None:
+        """The mirror state of the thread comment a GitHub comment pairs with, or `None`."""
+        if not workspace_id or not github_comment_id:
+            return None
+        item = self._repository.get({"workspace_id": workspace_id, "github_key": thread_github_key(github_comment_id)})
+        if item is None:
+            return None
+        return self.get_thread_comment(workspace_id, str(item.get("issue_id", "")), str(item.get("target_id", "")))
+
+    def list_thread_comments(self, workspace_id: str, issue_id: str, root_comment_id: str) -> list[ThreadComment]:
+        """Every mirror row of one synced thread."""
+        rows = [
+            ThreadComment.model_validate(dict(item))
+            for item in self._query(workspace_id, thread_comment_prefix(issue_id), 1000, consistent=True)
+        ]
+        return [row for row in rows if row.root_comment_id == root_comment_id]
+
+    def claim_thread_comment(self, row: ThreadComment, *, stale_before: datetime | None = None) -> bool:
+        """Write a new thread comment's mirror row, refusing when one is already there.
+
+        A row that already names a GitHub comment claims that comment's pointer
+        first, so one GitHub comment delivered twice becomes one reply here.
+        """
+        if row.github_comment_id:
+            try:
+                self._put_thread_github_pointer(
+                    row, condition=Attr("github_key").not_exists() | Attr("target_id").eq(row.comment_id)
+                )
+            except ConditionFailed:
+                return False
+        condition = Attr("github_key").not_exists()
+        if stale_before is not None:
+            condition = condition | (Attr("state").eq("pending") & Attr("synced_at").lt(_stored_time(stale_before)))
+        try:
+            self._repository.put(as_item(row), condition=condition)
+        except ConditionFailed:
+            return False
+        return True
+
+    def save_thread_comment(self, row: ThreadComment) -> ThreadComment:
+        """Replace one thread comment's mirror row and its GitHub pointer."""
+        saved = row.model_copy(update={"synced_at": utc_now()})
+        self._repository.put(as_item(saved))
+        if saved.github_comment_id:
+            self._put_thread_github_pointer(saved)
+        return saved
+
+    def delete_thread_comment(self, row: ThreadComment) -> None:
+        """Forget one thread comment's mirror row and its GitHub pointer."""
+        if row.github_comment_id:
+            self._delete(row.workspace_id, thread_github_key(row.github_comment_id))
+        self._delete(row.workspace_id, row.github_key)
+
+    def delete_thread(
+        self, workspace_id: str, issue_id: str, root_comment_id: str, repository_id: str, number: int
+    ) -> int:
+        """Forget one synced thread: its target pointer, then every mirror row and GitHub pointer under it.
+
+        The pointer goes first, so an inbound comment racing the unsync finds no
+        thread rather than half of one.
+        """
+        removed = int(self._delete(workspace_id, thread_target_key(repository_id, number, root_comment_id)))
+        for row in self.list_thread_comments(workspace_id, issue_id, root_comment_id):
+            self.delete_thread_comment(row)
+            removed += 1
+        return removed
+
+    def delete_threads_for_issue(self, workspace_id: str, issue_id: str) -> int:
+        """Forget every synced thread of one issue, which a purge of the issue needs."""
+        removed = 0
+        roots: set[tuple[str, str, int]] = set()
+        for item in self._query(workspace_id, thread_comment_prefix(issue_id), 1000, consistent=True):
+            row = ThreadComment.model_validate(dict(item))
+            roots.add((row.root_comment_id, row.repository_id, row.number))
+            self.delete_thread_comment(row)
+            removed += 1
+        for root_comment_id, repository_id, number in roots:
+            removed += int(self._delete(workspace_id, thread_target_key(repository_id, number, root_comment_id)))
+        return removed
+
+    def _put_thread_github_pointer(self, row: ThreadComment, *, condition: Any = None) -> None:
+        """Point the GitHub comment at the thread comment it mirrors."""
+        pointer = SyncPointer(
+            workspace_id=row.workspace_id,
+            github_key=thread_github_key(row.github_comment_id),
+            target_id=row.comment_id,
+            issue_id=row.issue_id,
         )
         self._repository.put(as_item(pointer), condition=condition)
 

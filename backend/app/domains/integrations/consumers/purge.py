@@ -53,6 +53,7 @@ def step(repositories: Repositories, job: PurgeJob, deadline: Deadline) -> int |
         for issue in issues:
             repositories.github.delete_links_for_issue(job.workspace_id, issue.issue_id)
             repositories.github.delete_issue_sync(job.workspace_id, issue.issue_id)
+            repositories.github.delete_threads_for_issue(job.workspace_id, issue.issue_id)
             after = issue.number
             if deadline.expired():
                 return after

@@ -319,6 +319,7 @@ def _integrations_routers() -> "Sequence[RouterSpec]":
         slack,
         standup,
         sync,
+        threads,
         transitions,
         webhooks,
     )
@@ -333,6 +334,7 @@ def _integrations_routers() -> "Sequence[RouterSpec]":
         (links.router, "/workspaces", ("integrations",)),
         (reviews.router, "/workspaces", ("integrations",)),
         (sync.router, "/workspaces", ("integrations",)),
+        (threads.router, "/workspaces", ("integrations",)),
         (standup.router, "/workspaces", ("integrations",)),
         (release_backfill.router, "/workspaces", ("integrations",)),
         (imports.router, "/workspaces", ("integrations",)),

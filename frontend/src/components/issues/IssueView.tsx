@@ -996,14 +996,16 @@ export const IssueView: React.FC<IssueViewProps> = ({
 
                   {showSubIssues && (
                     <SubIssues
+                      workspaceId={workspaceId}
                       slug={slug}
+                      parent={issue}
                       rows={children.rows}
                       isLoading={children.isLoading}
                       error={children.error}
                       progress={issue.progress}
                       statuses={options.statuses}
                       people={options.people}
-                      {...(canAct ? { onAdd: addSubIssue } : {})}
+                      canEdit={canAct}
                     />
                   )}
                 </div>

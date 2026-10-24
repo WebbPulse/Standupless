@@ -36,15 +36,16 @@ import { useMutationWithRefetch } from '@webbpulse/api-client/react';
 import {
   LuCheck,
   LuCheckCheck,
-  LuBellRing,
   LuCalendar,
   LuClock,
   LuDownload,
+  LuEllipsis,
   LuGitPullRequest,
   LuGoal,
   LuInbox,
   LuMailOpen,
   LuTarget,
+  LuTrash2,
   LuTriangleAlert,
   LuUpload,
   LuX,
@@ -52,6 +53,7 @@ import {
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   appendNotifications,
+  clearInbox,
   deleteNotification,
   listInbox,
   markAllRead,
@@ -64,6 +66,7 @@ import { ErrorAlert } from '../../components/ui/alert';
 import Avatar from '../../components/ui/avatar';
 import Button, { IconButton } from '../../components/ui/button';
 import Dialog from '../../components/ui/dialog';
+import { Menu, MenuItem, MenuSeparator } from '../../components/ui/menu';
 import EmptyState from '../../components/ui/empty-state';
 import Spinner from '../../components/ui/spinner';
 import Tooltip from '../../components/ui/tooltip';
@@ -76,6 +79,7 @@ import { cn } from '../../lib/cn';
 import { m3ErrorMessage } from '../../lib/errors';
 import { timestampLabel } from '../../lib/issueDisplay';
 import { compactAge, fullTimestamp } from '../../lib/relativeTime';
+import { showToast } from '../../lib/toast';
 import {
   exportSettingsPath,
   importSettingsPath,
@@ -105,7 +109,8 @@ import {
 } from './groups';
 import { InboxDisplayMenu, InboxFilterMenu } from './InboxViewMenus';
 import { keepPinned, type PinnedRow } from './pinned';
-import { SNOOZE_PRESETS, snoozeLabel } from './snooze';
+import SnoozeDialog from './SnoozeDialog';
+import { snoozeLabel } from './snooze';
 
 /** How often the inbox re-reads, matching the badge so the two agree. */
 const POLL_MS = 60000;
@@ -787,6 +792,26 @@ const emptyMessage = (view: InboxView): string =>
       : 'Nothing unread.';
 
 /** Lists the caller's notifications, one row per subject, beside the selected one's issue. */
+/** Which rows a bulk delete removes: the read ones or every one. */
+type ClearScope = 'read' | 'all';
+
+/** What a bulk delete confirmation says it removes under the current view. */
+const clearDescription = (scope: ClearScope, view: InboxView): string => {
+  const filtered = view.categories.length > 0 ? ' of the filtered types' : '';
+  if (scope === 'read')
+    return `Every read notification${filtered} is deleted. Unread and snoozed ones stay. This cannot be undone.`;
+  const snoozed = view.showSnoozed
+    ? ', snoozed ones included'
+    : '. Snoozed ones stay';
+  return `Every notification${filtered} is deleted${snoozed}. This cannot be undone.`;
+};
+
+/** The notice a finished bulk delete raises. */
+const deletedLabel = (deleted: number): string =>
+  deleted === 1
+    ? 'Deleted 1 notification'
+    : `Deleted ${String(deleted)} notifications`;
+
 export const Inbox: React.FC = () => {
   const { workspace } = useWorkspace();
   const navigate = useNavigate();
@@ -797,6 +822,7 @@ export const Inbox: React.FC = () => {
   >({});
   const [snoozing, setSnoozing] = useState<InboxGroup | null>(null);
   const [pinned, setPinned] = useState<PinnedRow | null>(null);
+  const [clearing, setClearing] = useState<ClearScope | null>(null);
 
   const workspaceId = workspace?.id ?? '';
   const slug = workspace?.slug ?? '';
@@ -925,6 +951,20 @@ export const Inbox: React.FC = () => {
     error: readAllError,
   } = useMutationWithRefetch(() => markAllRead(workspaceId), refetchKeys);
 
+  const {
+    mutate: clearAll,
+    isMutating: isClearing,
+    error: clearError,
+  } = useMutationWithRefetch(
+    (scope: ClearScope) =>
+      clearInbox(workspaceId, {
+        read_only: scope === 'read',
+        ...(query.include_snoozed === true ? { include_snoozed: true } : {}),
+        ...(query.kind === undefined ? {} : { kinds: query.kind }),
+      }),
+    refetchKeys
+  );
+
   const { mutate: remove, error: removeError } = useMutationWithRefetch(
     (notificationIds: string[]) =>
       Promise.all(
@@ -1021,6 +1061,16 @@ export const Inbox: React.FC = () => {
       )
     );
     void readAll().catch(() => undefined);
+  };
+
+  const clearEverything = (scope: ClearScope): void => {
+    setClearing(null);
+    select(null);
+    void clearAll(scope)
+      .then((deleted) => {
+        showToast(deletedLabel(deleted));
+      })
+      .catch(() => undefined);
   };
 
   const hasRows = groups.length > 0;
@@ -1139,6 +1189,9 @@ export const Inbox: React.FC = () => {
     removeError === null
       ? null
       : m3ErrorMessage(removeError, 'Could not remove that row.'),
+    clearError === null
+      ? null
+      : m3ErrorMessage(clearError, 'Could not delete those notifications.'),
   ].filter((message): message is string => message !== null);
 
   const closePane = (): void => {
@@ -1153,17 +1206,44 @@ export const Inbox: React.FC = () => {
         <div className="flex items-center gap-1.5">
           <InboxFilterMenu view={view} onChange={changeView} />
           <InboxDisplayMenu view={view} onChange={changeView} />
-          <Button
-            variant="secondary"
-            size="sm"
-            disabled={isReadingAll || groups.length === 0}
-            onClick={readEverything}
+          <Menu
+            label="Inbox actions"
+            align="end"
+            trigger={(trigger) => (
+              <IconButton label="Inbox actions" size="sm" {...trigger}>
+                <LuEllipsis className="h-3.5 w-3.5" aria-hidden="true" />
+              </IconButton>
+            )}
           >
-            <LuCheckCheck className="h-3.5 w-3.5" aria-hidden="true" />
-            <span className="sr-only sm:not-sr-only">
-              {isReadingAll ? 'Marking' : 'Mark all read'}
-            </span>
-          </Button>
+            <MenuItem
+              disabled={isReadingAll || groups.length === 0}
+              onSelect={readEverything}
+            >
+              <LuCheckCheck className="h-3.5 w-3.5" aria-hidden="true" />
+              Mark all read
+            </MenuItem>
+            <MenuSeparator />
+            <MenuItem
+              danger
+              disabled={isClearing}
+              onSelect={() => {
+                setClearing('read');
+              }}
+            >
+              <LuTrash2 className="h-3.5 w-3.5" aria-hidden="true" />
+              Delete all read notifications
+            </MenuItem>
+            <MenuItem
+              danger
+              disabled={isClearing}
+              onSelect={() => {
+                setClearing('all');
+              }}
+            >
+              <LuTrash2 className="h-3.5 w-3.5" aria-hidden="true" />
+              Delete all notifications
+            </MenuItem>
+          </Menu>
         </div>
       }
     >
@@ -1292,48 +1372,51 @@ export const Inbox: React.FC = () => {
           )}
         </div>
       </div>
-      <Dialog
+      <SnoozeDialog
         open={snoozing !== null}
+        subject={snoozing === null ? 'It' : subjectName(snoozing.latest)}
+        snoozed={snoozing !== null && snoozedIds(snoozing).length > 0}
+        onSnooze={(until) => {
+          if (snoozing !== null) snoozeGroup(snoozing, until);
+        }}
+        onUnsnooze={() => {
+          if (snoozing !== null) unsnoozeGroup(snoozing);
+        }}
         onClose={() => {
           setSnoozing(null);
         }}
-        title="Snooze notification"
-        description={`${snoozing === null ? 'It' : subjectName(snoozing.latest)} comes back unread at the time you pick.`}
+      />
+      <Dialog
+        open={clearing !== null}
+        onClose={() => {
+          setClearing(null);
+        }}
+        title={
+          clearing === 'read'
+            ? 'Delete all read notifications'
+            : 'Delete all notifications'
+        }
+        description={clearDescription(clearing ?? 'all', view)}
         size="sm"
       >
-        <ul className="flex flex-col gap-1">
-          {snoozing !== null && snoozedIds(snoozing).length > 0 ? (
-            <li>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="w-full justify-start"
-                onClick={() => {
-                  unsnoozeGroup(snoozing);
-                }}
-              >
-                <LuBellRing className="h-3.5 w-3.5" aria-hidden="true" />
-                Unsnooze now
-              </Button>
-            </li>
-          ) : null}
-          {SNOOZE_PRESETS.map((preset) => (
-            <li key={preset.id}>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="w-full justify-start"
-                onClick={() => {
-                  if (snoozing !== null)
-                    snoozeGroup(snoozing, preset.until(new Date()));
-                }}
-              >
-                <LuClock className="h-3.5 w-3.5" aria-hidden="true" />
-                {preset.label}
-              </Button>
-            </li>
-          ))}
-        </ul>
+        <div className="flex justify-end gap-2">
+          <Button
+            variant="secondary"
+            onClick={() => {
+              setClearing(null);
+            }}
+          >
+            Cancel
+          </Button>
+          <Button
+            variant="danger"
+            onClick={() => {
+              if (clearing !== null) clearEverything(clearing);
+            }}
+          >
+            Delete
+          </Button>
+        </div>
       </Dialog>
     </WorkspaceShell>
   );

@@ -27,6 +27,9 @@ import type {
   GithubLabelSetRead,
   GithubLabelSetWrite,
   GithubRepositoryRead,
+  GithubThreadRead,
+  GithubThreadTargetRead,
+  GithubThreadWrite,
   InstallUrlRead,
   IssueSyncRead,
   SlackChannelRead,
@@ -493,6 +496,58 @@ export const getIssueSync = async (
     if (isApiErrorWithStatus(error) && error.status === 404) return null;
     throw error;
   }
+};
+
+/** The route an issue's thread sync targets are listed on. */
+export const threadTargetsPath = (
+  workspaceId: string,
+  issueId: string
+): string => `${issueSyncPath(workspaceId, issueId)}/thread-targets`;
+
+/** The route one root comment's thread sync is set and removed through. */
+export const threadSyncPath = (
+  workspaceId: string,
+  issueId: string,
+  commentId: string
+): string => `${issueSyncPath(workspaceId, issueId)}/threads/${commentId}`;
+
+/** Lists the linked pull requests and GitHub issue a thread may be synced to. */
+export const listThreadTargets = async (
+  workspaceId: string,
+  issueId: string,
+  signal?: AbortSignal
+): Promise<GithubThreadTargetRead[]> => {
+  const response = await apiClient.get<GithubThreadTargetRead[]>(
+    threadTargetsPath(workspaceId, issueId),
+    signalOptions(signal)
+  );
+  return Array.isArray(response.data) ? response.data : [];
+};
+
+/** Syncs one root comment's thread to a linked pull request or GitHub issue. */
+export const syncThread = async (
+  workspaceId: string,
+  issueId: string,
+  commentId: string,
+  payload: GithubThreadWrite
+): Promise<GithubThreadRead> => {
+  const response = await apiClient.put<GithubThreadRead>(
+    threadSyncPath(workspaceId, issueId, commentId),
+    payload
+  );
+  return response.data;
+};
+
+/** Stops mirroring one thread. Comments already copied stay on both sides. */
+export const unsyncThread = async (
+  workspaceId: string,
+  issueId: string,
+  commentId: string
+): Promise<GithubThreadRead> => {
+  const response = await apiClient.delete<GithubThreadRead>(
+    threadSyncPath(workspaceId, issueId, commentId)
+  );
+  return response.data;
 };
 
 /** Lists a scope's webhooks, without any secret. */

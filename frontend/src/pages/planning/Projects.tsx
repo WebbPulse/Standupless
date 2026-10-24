@@ -1,17 +1,22 @@
 /**
  * Every project in the workspace, laid out as a dense list, a board or a
- * timeline. The list shows icon and name with its blocked and blocking flags,
- * then the columns the Display menu keeps on: health, priority, status, lead,
- * start and target dates, teams, issues and progress. Hidden columns leave
- * the grid, and health, priority, status, lead and both dates edit from the
- * row without opening it. The board puts projects in columns by
- * the grouping and moves them between columns by dragging; the timeline draws
- * them as bars from start to target date. Rows group by status, health,
- * priority, initiative, lead or team, order by date, name, priority or
- * progress, and completed projects show for all time, a recent window or not
- * at all. Filters narrow by status, lead, team, and whether an open blocker
- * holds a project up or it holds another up. The arrangement is saved to the account and carried in the URL so
- * an arranged page can be shared. Filtered to a parent team, the page
+ * timeline. The list shows icon and name, then the properties the Display
+ * menu keeps on: the summary, next milestone and dependency flags beside the
+ * name, and columns for health, priority, status, lead, members, start and
+ * target dates, teams, issues, created, updated and completed dates, and
+ * progress. Hidden columns leave the grid, and health, priority, status, lead
+ * and both dates edit from the row without opening it. The board puts
+ * projects in columns by the grouping and moves them between columns by
+ * dragging, and can drop columns that hold nothing; the timeline draws them
+ * as bars from start to target date. Rows group by status, health, priority,
+ * initiative, lead or team in either direction, the list can group again
+ * inside each group, rows order by date, name, priority or progress, and
+ * closed projects show for all time, a recent window or not at all. Filters
+ * narrow by status, lead, team, and whether an open blocker holds a project
+ * up or it holds another up, and on a team the page can keep only the
+ * projects that team leads. Ctrl or Cmd and B flips between list and board.
+ * The arrangement is saved to the account and carried in the URL so an
+ * arranged page can be shared. Filtered to a parent team, the page
  * includes the projects of its visible sub-teams, with the issue list's
  * toggle to show the team alone. The arrangement and filters save as a view
  * of projects, and opened as that view the page starts from what it stores,
@@ -25,6 +30,7 @@ import {
   LuBookmarkPlus,
   LuBuilding2,
   LuChevronRight,
+  LuDiamond,
   LuListFilter,
   LuPencil,
   LuPlus,
@@ -112,17 +118,25 @@ import {
 } from '../../lib/planningDisplay';
 import { PROJECT_STATUS_ORDER, canEditProject } from '../../lib/planningModel';
 import {
+  INLINE_PROJECT_COLUMNS,
   PROJECTS_DISPLAY_FIELDS,
   PROJECT_COLUMN_LABELS,
   columnList,
   columnValue,
+  directedGroups,
+  effectiveRows,
   groupProjects,
   groupValue,
   sortProjects,
   withinClosedWindow,
+  withinLeadTeams,
+  type EmptyColumnsChoice,
+  type LeadTeamChoice,
   type ProjectColumn,
   type ProjectGroup,
+  type ProjectGrouping,
 } from '../../lib/projectList';
+import { shortDateLabel } from '../../lib/propertyOptions';
 import {
   orderedStatuses,
   type FlagFilter,
@@ -133,6 +147,7 @@ import {
 import { viewKey } from '../../lib/queryKeys';
 import { showErrorToast, showToast } from '../../lib/toast';
 import type {
+  ProjectMilestoneMarkerRead,
   ProjectRead,
   ProjectStatus,
   ProjectUpdate,
@@ -146,16 +161,32 @@ import type { TimelineZoom } from '../../lib/timeline';
 const GRID =
   'grid grid-cols-[var(--project-columns-narrow)] items-center gap-3 md:grid-cols-[var(--project-columns)]';
 
+/** A property the list draws in a column of its own rather than beside the name. */
+type GridColumn = Exclude<
+  ProjectColumn,
+  'summary' | 'milestones' | 'dependencies'
+>;
+
+/** The shown properties that take a grid column, in drawing order. */
+const gridColumns = (shown: readonly ProjectColumn[]): GridColumn[] =>
+  shown.filter(
+    (column): column is GridColumn => !INLINE_PROJECT_COLUMNS.has(column)
+  );
+
 /** How wide each list column runs beside the name. */
-const COLUMN_WIDTHS: Record<ProjectColumn, string> = {
+const COLUMN_WIDTHS: Record<GridColumn, string> = {
   health: '7rem',
   priority: '2rem',
   status: '8.5rem',
   lead: '2rem',
+  members: '4.5rem',
   start: '6rem',
   target: '6rem',
   teams: '6rem',
   issues: '4rem',
+  created: '5.5rem',
+  updated: '5.5rem',
+  completed: '5.5rem',
   progress: '4.5rem',
 };
 
@@ -167,7 +198,7 @@ const gridTracks = (shown: readonly ProjectColumn[]): React.CSSProperties =>
   ({
     '--project-columns': [
       'minmax(0,1fr)',
-      ...shown.map((column) => COLUMN_WIDTHS[column]),
+      ...gridColumns(shown).map((column) => COLUMN_WIDTHS[column]),
     ].join(' '),
     '--project-columns-narrow': shown.includes('progress')
       ? 'minmax(0,1fr) 3.5rem'
@@ -194,23 +225,88 @@ const CLOSED_STATUSES: ReadonlySet<ProjectStatus> = new Set([
 const NO_LEAD = 'none';
 
 /** How each column's header cell sits over its column. */
-const HEADER_CLASSES: Record<ProjectColumn, string> = {
+const HEADER_CLASSES: Record<GridColumn, string> = {
   health: 'hidden px-2 md:block',
   priority: 'hidden text-center md:block',
   status: 'hidden px-2 md:block',
   lead: 'hidden text-center md:block',
+  members: 'hidden md:block',
   start: 'hidden px-2 md:block',
   target: 'hidden px-2 md:block',
   teams: 'hidden md:block',
   issues: 'hidden text-right md:block',
+  created: 'hidden md:block',
+  updated: 'hidden md:block',
+  completed: 'hidden md:block',
   progress: 'text-right',
 };
 
 /** The short header text of each column, where the header names it. */
-const HEADER_LABELS: Record<ProjectColumn, string> = {
+const HEADER_LABELS: Record<GridColumn, string> = {
   ...PROJECT_COLUMN_LABELS,
   start: 'Start',
   target: 'Target',
+};
+
+/** How a stored timestamp reads in a date column, or a dash when there is none. */
+const timestampLabel = (value: string | null | undefined): string =>
+  value === null || value === undefined || value === ''
+    ? '-'
+    : shortDateLabel(value.slice(0, 10));
+
+/** The project's next open milestone beside its name, or how many are done when all are. */
+const NextMilestone: React.FC<{
+  markers: ProjectMilestoneMarkerRead[] | undefined;
+}> = ({ markers }) => {
+  if (markers === undefined || markers.length === 0) return null;
+  const next = markers.find((marker) => !marker.completed);
+  const done = markers.filter((marker) => marker.completed).length;
+  return (
+    <span
+      title={`${String(done)} of ${String(markers.length)} milestones done`}
+      className="hidden max-w-40 min-w-0 shrink-0 items-center gap-1 text-xs text-text-muted lg:flex"
+    >
+      <LuDiamond aria-hidden="true" className="h-3 w-3 shrink-0" />
+      <span className="truncate">
+        {next === undefined
+          ? `${String(done)}/${String(markers.length)}`
+          : next.name}
+      </span>
+    </span>
+  );
+};
+
+/** Up to three member avatars, with a count of the rest. */
+const MemberAvatars: React.FC<{
+  memberIds: string[];
+  people: Assignable[];
+}> = ({ memberIds, people }) => {
+  const members = memberIds
+    .map((id) => people.find((person) => person.user_id === id))
+    .filter((person): person is Assignable => person !== undefined);
+  return (
+    <span className="pointer-events-none hidden min-w-0 items-center md:flex">
+      {members.slice(0, 3).map((person) => (
+        <span key={person.user_id} className="-ml-1 first:ml-0">
+          <Avatar
+            name={personLabel(person)}
+            src={personAvatar(person)}
+            size="xs"
+          />
+        </span>
+      ))}
+      {members.length > 3 && (
+        <span className="ml-1 text-2xs text-text-faint">
+          +{String(members.length - 3)}
+        </span>
+      )}
+      <span className="sr-only">
+        {members.length === 0
+          ? 'No members'
+          : `Members ${members.map(personLabel).join(', ')}`}
+      </span>
+    </span>
+  );
 };
 
 /** A blocked or blocking filter value, `true`, `false`, or empty when unset. */
@@ -364,13 +460,20 @@ const ProjectRow: React.FC<ProjectRowProps> = ({
       <div className="pointer-events-none flex min-w-0 items-center gap-2.5">
         <ProjectIcon icon={project.icon} color={project.color} />
         <span className="truncate font-medium text-text">{project.name}</span>
-        <ProjectDependencyMarkers project={project} byId={byId} />
-        <UpdateDueBadge project={project} className="shrink-0" />
-        {project.description !== null && project.description !== '' && (
-          <span className="hidden min-w-0 truncate text-xs text-text-faint xl:block">
-            {project.description.split('\n')[0]}
-          </span>
+        {has('dependencies') && (
+          <ProjectDependencyMarkers project={project} byId={byId} />
         )}
+        <UpdateDueBadge project={project} className="shrink-0" />
+        {has('milestones') && (
+          <NextMilestone markers={project.milestone_markers} />
+        )}
+        {has('summary') &&
+          project.description !== null &&
+          project.description !== '' && (
+            <span className="hidden min-w-0 truncate text-xs text-text-faint xl:block">
+              {project.description.split('\n')[0]}
+            </span>
+          )}
       </div>
       {has('health') && (
         <div className="relative z-10 hidden md:block">
@@ -419,6 +522,9 @@ const ProjectRow: React.FC<ProjectRowProps> = ({
             }}
           />
         </div>
+      )}
+      {has('members') && (
+        <MemberAvatars memberIds={project.member_ids} people={people} />
       )}
       {has('start') && (
         <div className="relative z-10 hidden min-w-0 tabular-nums md:block">
@@ -476,6 +582,24 @@ const ProjectRow: React.FC<ProjectRowProps> = ({
           <span aria-hidden="true">{`${String(project.counts.done)}/${String(project.counts.total)}`}</span>
           <span className="sr-only">{`${String(project.counts.done)} of ${String(project.counts.total)} issues done`}</span>
         </span>
+      )}
+      {(['created', 'updated', 'completed'] as const).map(
+        (column) =>
+          has(column) && (
+            <span
+              key={column}
+              className="pointer-events-none hidden truncate text-xs text-text-muted tabular-nums md:block"
+            >
+              <span className="sr-only">{`${PROJECT_COLUMN_LABELS[column]} `}</span>
+              {timestampLabel(
+                column === 'created'
+                  ? project.created_at
+                  : column === 'updated'
+                    ? project.updated_at
+                    : project.completed_at
+              )}
+            </span>
+          )
       )}
       {has('progress') && (
         <span className="pointer-events-none flex items-center justify-end gap-1.5 text-xs text-text-muted tabular-nums">
@@ -564,7 +688,16 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading }) => {
     change: changeDisplay,
     reset,
   } = useProjectsDisplay(base?.display);
-  const { layout, group: grouping, order: ordering, closed, zoom } = display;
+  const {
+    layout,
+    group: grouping,
+    direction,
+    order: ordering,
+    closed,
+    zoom,
+  } = display;
+  const subGrouping =
+    layout === 'list' ? effectiveRows(grouping, display.rows) : 'none';
   const shownColumns = useMemo(
     () => columnList(display.columns),
     [display.columns]
@@ -576,6 +709,13 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading }) => {
     rollUp,
     toggle: toggleRollUp,
   } = useSubTeamRollUp(filteredTeam, true, baseRollUp);
+  const leadTeamIds = useMemo(
+    () =>
+      filteredTeam === undefined
+        ? null
+        : [filteredTeam.id, ...(rollUp ? subTeams.map((team) => team.id) : [])],
+    [filteredTeam, rollUp, subTeams]
+  );
   const heldRollUp = params.get(ROLL_UP_PARAM);
   const savedFilter = toProjectViewFilter({
     teamId:
@@ -624,7 +764,7 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading }) => {
 
   const { initiatives } = useInitiatives(
     workspaceId,
-    grouping === 'initiative'
+    grouping === 'initiative' || subGrouping === 'initiative'
   );
   const { apply: applyMoves, move: moveProject } = useProjectMoves(
     workspaceId,
@@ -670,7 +810,10 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading }) => {
               openBlockers(project, projectsById).length > 0
             ) && flagMatches(blockingFilter, heldProjects(project).length > 0)
         )
-        .filter((project) => withinClosedWindow(project, closed, now)),
+        .filter((project) => withinClosedWindow(project, closed, now))
+        .filter((project) =>
+          withinLeadTeams(project, display.lead_team, leadTeamIds)
+        ),
     [
       applyMoves,
       projects,
@@ -681,48 +824,87 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading }) => {
       blockingFilter,
       closed,
       now,
+      display.lead_team,
+      leadTeamIds,
     ]
   );
 
   const sorted = useMemo(() => sortProjects(rows, ordering), [rows, ordering]);
   const groups = useMemo(
-    () => groupProjects(sorted, grouping, people, teams, { initiatives }),
-    [sorted, grouping, people, teams, initiatives]
+    () =>
+      directedGroups(
+        groupProjects(sorted, grouping, people, teams, { initiatives }),
+        direction
+      ),
+    [sorted, grouping, people, teams, initiatives, direction]
   );
   const columns = useMemo(
     () =>
       layout !== 'board'
         ? []
-        : groupProjects(sorted, grouping, people, teams, {
-            initiatives,
-            keepEmpty: true,
-          }).filter((column) => {
+        : directedGroups(
+            groupProjects(sorted, grouping, people, teams, {
+              initiatives,
+              keepEmpty: true,
+            }),
+            direction
+          ).filter((column) => {
+            if (display.empty === 'hide' && column.rows.length === 0)
+              return false;
             if (column.kind !== 'status') return true;
             const status = groupValue(column) as ProjectStatus;
             if (statusFilter.length > 0) return statusFilter.includes(status);
             return closed !== 'none' || !CLOSED_STATUSES.has(status);
           }),
-    [layout, sorted, grouping, people, teams, initiatives, statusFilter, closed]
+    [
+      layout,
+      sorted,
+      grouping,
+      people,
+      teams,
+      initiatives,
+      direction,
+      display.empty,
+      statusFilter,
+      closed,
+    ]
   );
   const isOpen = useCallback(
     (group: ProjectGroup) =>
       group.kind === 'none' || !folded.includes(group.key),
     [folded]
   );
-  const visible = useMemo(
-    () => groups.filter(isOpen).flatMap((group) => group.rows),
-    [groups, isOpen]
-  );
-  const starts = useMemo(
+  const sections = useMemo(
     () =>
-      groups.map((_, index) =>
-        groups
-          .slice(0, index)
-          .filter(isOpen)
-          .reduce((sum, group) => sum + group.rows.length, 0)
-      ),
-    [groups, isOpen]
+      groups.map((group) => ({
+        group,
+        subs:
+          subGrouping === 'none'
+            ? null
+            : groupProjects(group.rows, subGrouping, people, teams, {
+                initiatives,
+              }).map((sub) => ({ sub, fold: `${group.key}/${sub.key}` })),
+      })),
+    [groups, subGrouping, people, teams, initiatives]
   );
+  const { visible, starts } = useMemo(() => {
+    const shown: ProjectRead[] = [];
+    const at = new Map<string, number>();
+    for (const { group, subs } of sections) {
+      if (!isOpen(group)) continue;
+      if (subs === null) {
+        at.set(group.key, shown.length);
+        shown.push(...group.rows);
+        continue;
+      }
+      for (const { sub, fold } of subs) {
+        if (folded.includes(fold)) continue;
+        at.set(fold, shown.length);
+        shown.push(...sub.rows);
+      }
+    }
+    return { visible: shown, starts: at };
+  }, [sections, isOpen, folded]);
 
   const onActivate = useCallback(
     (index: number) => {
@@ -867,6 +1049,16 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading }) => {
     handler: (event) => {
       event?.preventDefault();
       void saveOver();
+    },
+  });
+
+  useShortcut({
+    keys: 'mod+b',
+    label: 'Toggle list and board',
+    group: 'Projects',
+    handler: (event) => {
+      event?.preventDefault();
+      changeDisplay({ layout: layout === 'board' ? 'list' : 'board' });
     },
   });
 
@@ -1126,6 +1318,18 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading }) => {
               onGroupingChange={(value) => {
                 changeDisplay({ group: value });
               }}
+              direction={direction}
+              onDirectionChange={(value) => {
+                changeDisplay({ direction: value });
+              }}
+              {...(layout === 'list'
+                ? {
+                    rows: display.rows,
+                    onRowsChange: (value: ProjectGrouping) => {
+                      changeDisplay({ rows: value });
+                    },
+                  }
+                : {})}
               ordering={ordering}
               onOrderingChange={(value) => {
                 changeDisplay({ order: value });
@@ -1134,7 +1338,23 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading }) => {
               onClosedChange={(value) => {
                 changeDisplay({ closed: value });
               }}
-              {...(layout === 'list'
+              {...(filteredTeam === undefined
+                ? {}
+                : {
+                    leadTeam: display.lead_team,
+                    onLeadTeamChange: (value: LeadTeamChoice) => {
+                      changeDisplay({ lead_team: value });
+                    },
+                  })}
+              {...(layout === 'board'
+                ? {
+                    empty: display.empty,
+                    onEmptyChange: (value: EmptyColumnsChoice) => {
+                      changeDisplay({ empty: value });
+                    },
+                  }
+                : {})}
+              {...(layout !== 'timeline'
                 ? {
                     columns: shownColumns,
                     onColumnsChange: (value: ProjectColumn[]) => {
@@ -1185,7 +1405,7 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading }) => {
             )}
           >
             <span>Name</span>
-            {shownColumns.map((column) => (
+            {gridColumns(shownColumns).map((column) => (
               <span key={column} className={HEADER_CLASSES[column]}>
                 {column === 'priority' ? (
                   <span className="sr-only">
@@ -1213,13 +1433,41 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading }) => {
               }
             />
           ) : (
-            groups.map((group, groupIndex) => {
+            sections.map(({ group, subs }) => {
               const open = isOpen(group);
-              const start = starts[groupIndex] ?? 0;
               const status =
                 group.kind === 'status'
                   ? (group.key.slice('status:'.length) as ProjectStatus)
                   : null;
+              const list = (
+                items: ProjectRead[],
+                start: number
+              ): React.ReactElement => (
+                <ul>
+                  {items.map((project, index) => {
+                    const position = start + index;
+                    return (
+                      <ProjectRow
+                        key={project.project_id}
+                        project={project}
+                        slug={slug}
+                        workspaceId={workspaceId}
+                        teams={teams}
+                        people={people}
+                        byId={projectsById}
+                        shown={shownColumns}
+                        workspaceRole={workspace?.role}
+                        isActive={position === activeIndex}
+                        rowRef={registerItem(position)}
+                        onPointerEnter={() => {
+                          setActiveIndex(position);
+                        }}
+                        refreshKey={queryKey}
+                      />
+                    );
+                  })}
+                </ul>
+              );
               return (
                 <section key={group.key} aria-label={group.label}>
                   {group.kind !== 'none' && (
@@ -1260,32 +1508,41 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading }) => {
                       )}
                     </div>
                   )}
-                  {open && (
-                    <ul>
-                      {group.rows.map((project, index) => {
-                        const position = start + index;
-                        return (
-                          <ProjectRow
-                            key={project.project_id}
-                            project={project}
-                            slug={slug}
-                            workspaceId={workspaceId}
-                            teams={teams}
-                            people={people}
-                            byId={projectsById}
-                            shown={shownColumns}
-                            workspaceRole={workspace?.role}
-                            isActive={position === activeIndex}
-                            rowRef={registerItem(position)}
-                            onPointerEnter={() => {
-                              setActiveIndex(position);
-                            }}
-                            refreshKey={queryKey}
-                          />
-                        );
-                      })}
-                    </ul>
-                  )}
+                  {open &&
+                    (subs === null
+                      ? list(group.rows, starts.get(group.key) ?? 0)
+                      : subs.map(({ sub, fold }) => {
+                          const subOpen = !folded.includes(fold);
+                          return (
+                            <section
+                              key={fold}
+                              aria-label={`${group.label}, ${sub.label}`}
+                            >
+                              <button
+                                type="button"
+                                aria-expanded={subOpen}
+                                onClick={() => {
+                                  toggleFolded(fold);
+                                }}
+                                className="flex h-8 w-full min-w-0 items-center gap-2 border-b border-line bg-bg pr-4 pl-8 text-left text-xs font-medium text-text-muted transition-colors duration-100 hover:bg-surface focus-visible:ring-1 focus-visible:ring-accent focus-visible:outline-none focus-visible:ring-inset lg:pr-6 lg:pl-10"
+                              >
+                                <LuChevronRight
+                                  aria-hidden="true"
+                                  className={cn(
+                                    'h-3 w-3 text-text-faint transition-transform duration-100',
+                                    subOpen && 'rotate-90'
+                                  )}
+                                />
+                                <ProjectGroupGlyph group={sub} teams={teams} />
+                                <span className="truncate">{sub.label}</span>
+                                <span className="font-normal text-text-faint tabular-nums">
+                                  {String(sub.rows.length)}
+                                </span>
+                              </button>
+                              {subOpen && list(sub.rows, starts.get(fold) ?? 0)}
+                            </section>
+                          );
+                        }))}
                 </section>
               );
             })
@@ -1297,6 +1554,7 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading }) => {
         <ProjectsBoard
           columns={columns}
           projects={rows}
+          shown={shownColumns}
           slug={slug}
           workspaceId={workspaceId}
           teams={teams}

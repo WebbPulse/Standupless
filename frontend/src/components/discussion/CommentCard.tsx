@@ -14,6 +14,11 @@
  * Hovering a comment only fades its actions in, and never changes its layout:
  * with no reactions yet, the add-reaction button sits among those actions
  * rather than in a row under the body that would appear and push the thread.
+ *
+ * A thread can be synced to a pull request or GitHub issue linked to the issue
+ * from its root's menu. A synced root wears a GitHub badge linking to the
+ * mirrored comment, and its menu offers to open it there or to unsync, which
+ * stops mirroring and leaves what was already copied on both sides.
  */
 
 import React, { Suspense, lazy, useRef, useState } from 'react';
@@ -21,23 +26,33 @@ import { useMutationWithRefetch } from '@webbpulse/api-client/react';
 import {
   LuCopy,
   LuEllipsis,
+  LuExternalLink,
+  LuGithub,
   LuPencil,
   LuReply,
   LuTrash2,
+  LuUnlink,
 } from 'react-icons/lu';
 import { deleteComment, updateComment } from '../../api/discussion';
+import { syncThread, unsyncThread } from '../../api/integrations';
 import { errorMessage } from '../../lib/errors';
 import { personLabel, type Assignable } from '../../lib/issuePeople';
 import { embeddedAttachmentIds } from '../../lib/media';
 import { submitKeysLabel } from '../../lib/platform';
 import { commentsKey } from '../../lib/queryKeys';
+import {
+  PUBLIC_THREAD_WARNING,
+  targetKey,
+  threadRef,
+  threadUrl,
+} from '../../lib/threadSync';
 import { showErrorToast, showToast } from '../../lib/toast';
-import type { CommentRead } from '../../types/Api';
+import type { CommentRead, GithubThreadTargetRead } from '../../types/Api';
 import type { RichMarkdownHandle } from '../editor/RichMarkdownEditor';
 import Avatar from '../ui/avatar';
 import Button, { IconButton } from '../ui/button';
 import Markdown from '../ui/markdown';
-import Menu, { MenuItem, MenuSeparator } from '../ui/menu';
+import Menu, { MenuItem, MenuLabel, MenuSeparator } from '../ui/menu';
 import RelativeTime from '../ui/relative-time';
 import ViaSource from '../ui/via-source';
 import AttachmentList from './AttachmentChips';
@@ -53,6 +68,8 @@ interface ReaderProps {
   currentUserId: string;
   canComment: boolean;
   isAdmin: boolean;
+  /** Where a thread may be synced on GitHub; empty offers no sync. */
+  threadTargets?: GithubThreadTargetRead[];
 }
 
 /** Props for one comment inside a card. */
@@ -76,6 +93,7 @@ const CommentItem: React.FC<CommentItemProps> = ({
   currentUserId,
   canComment,
   isAdmin,
+  threadTargets = [],
   onReply,
 }) => {
   const [editing, setEditing] = useState(false);
@@ -100,6 +118,46 @@ const CommentItem: React.FC<CommentItemProps> = ({
     () => deleteComment(workspaceId, comment.comment_id, issueId),
     queryKey
   );
+
+  const { mutate: sync } = useMutationWithRefetch(
+    (target: GithubThreadTargetRead) =>
+      syncThread(workspaceId, issueId, comment.comment_id, {
+        repository_id: target.repository_id,
+        number: target.number,
+      }),
+    queryKey
+  );
+
+  const { mutate: unsync } = useMutationWithRefetch(
+    () => unsyncThread(workspaceId, issueId, comment.comment_id),
+    queryKey
+  );
+
+  const syncTo = (target: GithubThreadTargetRead): void => {
+    void sync(target)
+      .then(() => {
+        showToast(
+          target.private
+            ? `Thread synced to ${target.ref}`
+            : `Thread synced to ${target.ref}. ${PUBLIC_THREAD_WARNING}`
+        );
+      })
+      .catch((failure: unknown) => {
+        showErrorToast(
+          errorMessage(failure, 'Could not sync that thread to GitHub.')
+        );
+      });
+  };
+
+  const stopSync = (): void => {
+    void unsync()
+      .then(() => {
+        showToast('Thread no longer syncs to GitHub');
+      })
+      .catch((failure: unknown) => {
+        showErrorToast(errorMessage(failure, 'Could not unsync that thread.'));
+      });
+  };
 
   const saveDraft = (): void => {
     const body = (editor.current?.getMarkdown() ?? draft).trim();
@@ -132,6 +190,9 @@ const CommentItem: React.FC<CommentItemProps> = ({
   );
   const hasReactions = comment.reactions.some((group) => group.count > 0);
   const canDelete = isAuthor || isAdmin;
+  const isRoot = comment.parent_comment_id === null;
+  const thread = isRoot ? (comment.github_thread ?? null) : null;
+  const canSync = isRoot && canComment && thread === null;
 
   return (
     <article
@@ -146,6 +207,19 @@ const CommentItem: React.FC<CommentItemProps> = ({
         <ViaSource source={comment.source} />
         {comment.edited_at !== null && (
           <span className="text-xs text-text-faint">(edited)</span>
+        )}
+        {thread !== null && (
+          <a
+            href={threadUrl(thread)}
+            target="_blank"
+            rel="noreferrer"
+            title={`Synced to ${threadRef(thread)}`}
+            aria-label={`Synced to ${threadRef(thread)} on GitHub`}
+            className="inline-flex items-center gap-1 rounded-sm px-1 text-xs text-text-faint transition-colors duration-100 hover:text-text"
+          >
+            <LuGithub aria-hidden="true" className="h-3.5 w-3.5" />
+            <span className="hidden sm:inline">{threadRef(thread)}</span>
+          </a>
         )}
         <div className="ml-auto flex items-center gap-0.5 opacity-0 transition-opacity duration-100 group-focus-within/comment:opacity-100 group-hover/comment:opacity-100 pointer-coarse:opacity-100">
           {canComment && !hasReactions && (
@@ -187,6 +261,48 @@ const CommentItem: React.FC<CommentItemProps> = ({
                 <LuPencil aria-hidden="true" className="h-3.5 w-3.5" />
                 Edit
               </MenuItem>
+            )}
+            {thread !== null && (
+              <>
+                <MenuSeparator />
+                <MenuItem
+                  onSelect={() => {
+                    globalThis.open(threadUrl(thread), '_blank', 'noreferrer');
+                  }}
+                >
+                  <LuExternalLink aria-hidden="true" className="h-3.5 w-3.5" />
+                  Open on GitHub
+                </MenuItem>
+                {canComment && (
+                  <MenuItem onSelect={stopSync}>
+                    <LuUnlink aria-hidden="true" className="h-3.5 w-3.5" />
+                    Unsync from GitHub
+                  </MenuItem>
+                )}
+              </>
+            )}
+            {canSync && threadTargets.length > 0 && (
+              <>
+                <MenuSeparator />
+                <MenuLabel>Sync thread to GitHub</MenuLabel>
+                {threadTargets.map((target) => (
+                  <MenuItem
+                    key={targetKey(target)}
+                    textValue={`Sync thread to GitHub ${target.ref} ${target.title}`}
+                    onSelect={() => {
+                      syncTo(target);
+                    }}
+                  >
+                    <LuGithub aria-hidden="true" className="h-3.5 w-3.5" />
+                    <span className="truncate">{target.ref}</span>
+                    {!target.private && (
+                      <span className="ml-auto text-2xs text-text-faint">
+                        Public
+                      </span>
+                    )}
+                  </MenuItem>
+                ))}
+              </>
             )}
             {canDelete && (
               <>

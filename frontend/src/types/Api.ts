@@ -53,7 +53,16 @@ export interface ProjectsDisplayPreference {
     | 'created'
     | 'updated'
     | 'customers';
-  closed: 'all' | 'week' | 'month' | 'quarter' | 'none';
+  closed: 'all' | 'fortnight' | 'month' | 'none';
+  /** Whether groups run in their own order or reversed. */
+  direction?: 'asc' | 'desc';
+  /** The grouping inside each group. */
+  rows?:
+    'status' | 'health' | 'priority' | 'initiative' | 'lead' | 'team' | 'none';
+  /** Whether a team page keeps only the projects that team leads. */
+  lead_team?: 'all' | 'lead';
+  /** Whether the board shows columns that hold no project. */
+  empty?: 'show' | 'hide';
   zoom: 'week' | 'month' | 'quarter' | 'year';
   /** The shown list columns, comma separated, absent on a row saved before columns could be chosen. */
   columns?: string;
@@ -1354,8 +1363,52 @@ export interface CommentRead {
   attachments?: AttachmentRead[];
   /** Which client made the change; absent on rows written before sources were recorded. */
   source?: ChangeSource | null;
+  /** Where a root comment's thread is mirrored on GitHub, when it is. */
+  github_thread?: GithubThread | null;
   created_at: string;
   edited_at: string | null;
+}
+
+/**
+ * Where a root comment's thread is mirrored on GitHub. `private` is the
+ * repository's visibility when it was synced, and `comment_url` is the App's
+ * opening comment there, empty until that post lands.
+ */
+export interface GithubThread {
+  kind: 'pull_request' | 'issue';
+  repository_id: string;
+  full_name: string;
+  number: number;
+  target_url: string;
+  private: boolean;
+  synced_by: string;
+  synced_at: string;
+  comment_url: string;
+}
+
+/** A linked pull request or GitHub issue a thread may be synced to. */
+export interface GithubThreadTargetRead {
+  kind: 'pull_request' | 'issue';
+  repository_id: string;
+  full_name: string;
+  number: number;
+  title: string;
+  url: string;
+  private: boolean;
+  ref: string;
+}
+
+/** Which linked pull request or GitHub issue to sync a thread to. */
+export interface GithubThreadWrite {
+  repository_id: string;
+  number: number;
+}
+
+/** One root comment's thread sync, with no thread once it is unsynced. */
+export interface GithubThreadRead {
+  comment_id: string;
+  issue_id: string;
+  github_thread?: GithubThread | null;
 }
 
 /** The body the comment list answers with, oldest first. */
@@ -1842,6 +1895,21 @@ export interface IssueReminderListRead {
 /** How many rows a mark-read call changed. */
 export interface InboxReadResult {
   updated: number;
+}
+
+/**
+ * Which of the caller's rows a bulk delete removes: read rows only, or every
+ * row, with snoozed rows only when asked, optionally narrowed to some kinds.
+ */
+export interface InboxClearWrite {
+  read_only?: boolean;
+  include_snoozed?: boolean;
+  kinds?: string[];
+}
+
+/** How many rows a bulk delete removed. */
+export interface InboxClearResult {
+  deleted: number;
 }
 
 /**

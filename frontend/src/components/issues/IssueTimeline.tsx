@@ -13,6 +13,7 @@
 import React, {
   useCallback,
   useEffect,
+  useId,
   useMemo,
   useRef,
   useState,
@@ -42,6 +43,7 @@ import { Link, useLocation } from 'react-router-dom';
 import { appendComments, listComments } from '../../api/discussion';
 import { appendActivity, listActivity } from '../../api/issues';
 import { useCursorPages, type CursorPage } from '../../hooks/useCursorPages';
+import { useThreadTargets } from '../../hooks/useThreadTargets';
 import {
   groupSentence,
   shortSha,
@@ -350,6 +352,11 @@ export const IssueTimeline: React.FC<IssueTimelineProps> = ({
     [slug, teamKeyPrefix]
   );
   const enabled = workspaceId !== '' && issueId !== '';
+  const threadTargets = useThreadTargets(
+    workspaceId,
+    issueId,
+    enabled && canComment
+  );
 
   const readActivity = useCallback(
     async (
@@ -443,10 +450,11 @@ export const IssueTimeline: React.FC<IssueTimelineProps> = ({
   }, [hash, comments.rows]);
 
   const loading = activity.isLoading || comments.isLoading;
+  const headingId = useId();
 
   return (
-    <section aria-labelledby="activity-heading" className="space-y-4">
-      <h2 id="activity-heading" className="text-sm font-semibold text-text">
+    <section aria-labelledby={headingId} className="space-y-4">
+      <h2 id={headingId} className="text-sm font-semibold text-text">
         Activity
       </h2>
 
@@ -528,6 +536,7 @@ export const IssueTimeline: React.FC<IssueTimelineProps> = ({
                   currentUserId={currentUserId}
                   canComment={canComment}
                   isAdmin={isAdmin}
+                  threadTargets={threadTargets}
                 />
               </li>
             );
@@ -540,6 +549,7 @@ export const IssueTimeline: React.FC<IssueTimelineProps> = ({
           workspaceId={workspaceId}
           issueId={issueId}
           people={context.people}
+          threadTargets={threadTargets}
         />
       )}
     </section>

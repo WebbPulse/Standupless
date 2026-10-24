@@ -2,21 +2,24 @@
  * A compact pane that shows one issue beside a list or board without leaving
  * it. Triage is mostly a run of small changes across many issues, and opening
  * each one as a page loses the place in the list every time. The pane carries
- * the same pickers as the detail rail, applied optimistically, and links out
- * to the full page for the discussion and history it leaves out. Cmd or
- * Ctrl+Shift+P sets the peeked issue's parent from the keyboard.
+ * the same pickers as the detail rail, applied optimistically, and the same
+ * activity and comment feed as the page, newest last, with a comment box at
+ * its foot, so a thread can be read and answered without leaving the list.
+ * Cmd or Ctrl+Shift+P sets the peeked issue's parent from the keyboard.
  */
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useQueryAuth } from '@webbpulse/auth/react';
 import { usePolledQuery } from '@webbpulse/api-client/react';
 import { LuMaximize2, LuX } from 'react-icons/lu';
 import { Link } from 'react-router-dom';
 import { getIssue, updateIssue } from '../../api/issues';
 import { useAuth } from '../../hooks/useAuth';
+import { isTypingTarget } from '../../hooks/useCommandPalette';
 import { useShortcut } from '../../hooks/useShortcuts';
 import { useTeamOptions } from '../../hooks/useTeamOptions';
 import { useWorkspace } from '../../hooks/useWorkspace';
+import type { ActivityContext } from '../../lib/activityDisplay';
 import { canWriteIssues, isTeamAdmin } from '../../lib/capabilities';
 import { errorMessage } from '../../lib/errors';
 import { timestampLabel } from '../../lib/issueDisplay';
@@ -33,6 +36,7 @@ import { Toaster } from '../ui/toast';
 import { RelationMarkers } from './BlockedMarker';
 import IssueBody from './IssueBody';
 import IssueFields, { PropertyRow, PropertySection } from './IssueFields';
+import IssueTimeline from './IssueTimeline';
 import { IssueMilestonePicker } from './PlanningPickers';
 import PlanningRowLink from './PlanningRowLink';
 import SetParentDialog, { SET_PARENT_KEYS } from './SetParentDialog';
@@ -91,11 +95,40 @@ export const IssuePeek: React.FC<IssuePeekProps> = ({ issueId, onClose }) => {
       candidate.id !== issue?.id && candidate.parent_id !== issue?.id
   );
 
+  const context = useMemo<ActivityContext>(
+    () => ({
+      statuses: options.statuses,
+      people: options.people,
+      labels: options.labels.map((label) => ({
+        id: label.id,
+        name: label.name,
+      })),
+      issues: options.parents.map((row) => ({ id: row.id, key: row.key })),
+      projects: options.projects.map((project) => ({
+        id: project.project_id,
+        name: project.name,
+      })),
+      cycles: options.cycles.map((cycle) => ({
+        id: cycle.cycle_id,
+        name: cycle.name,
+      })),
+    }),
+    [
+      options.statuses,
+      options.people,
+      options.labels,
+      options.parents,
+      options.projects,
+      options.cycles,
+    ]
+  );
+
   useEffect(() => {
     const onKey = (event: KeyboardEvent): void => {
       if (event.key !== 'Escape' || event.defaultPrevented) return;
+      if (isTypingTarget(event.target)) return;
       const target = event.target as HTMLElement | null;
-      if (target?.closest('input, textarea, [role="dialog"]') != null) return;
+      if (target?.closest('[role="dialog"]') != null) return;
       onClose();
     };
     document.addEventListener('keydown', onKey);
@@ -288,6 +321,19 @@ export const IssuePeek: React.FC<IssuePeekProps> = ({ issueId, onClose }) => {
               <p className="text-xs text-text-faint">
                 Last updated {timestampLabel(issue.updated_at)}
               </p>
+            </div>
+
+            <div className="border-t border-line pt-5">
+              <IssueTimeline
+                workspaceId={workspaceId}
+                issueId={issue.id}
+                currentUserId={user?.id ?? ''}
+                canComment={canEdit}
+                isAdmin={isAdmin}
+                context={context}
+                slug={workspace?.slug ?? ''}
+                teamKeyPrefix={team?.key_prefix ?? ''}
+              />
             </div>
           </div>
         )}
