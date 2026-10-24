@@ -1,8 +1,9 @@
 /**
  * The menu a right click opens on a row or a card: every property command,
  * setting or removing the parent issue, duplicating one issue or converting
- * it into a project, the copy commands, and archive and delete, each with the key that does the
- * same from the keyboard. It acts on the selection when the row clicked is
+ * it into a project, marking a relation to another issue, the copy commands
+ * (git branch name included), and archive and delete, each with the key that
+ * does the same from the keyboard. It acts on the selection when the row clicked is
  * part of it, and on that one issue otherwise.
  */
 
@@ -17,6 +18,7 @@ import {
   LuCopyPlus,
   LuCornerUpLeft,
   LuEye,
+  LuGitBranch,
   LuHexagon,
   LuLink2,
   LuMilestone,
@@ -34,9 +36,11 @@ import {
 import type { OrderedIssueRead } from '../../../api/issues';
 import { allArchived } from '../../../lib/issueDisplay';
 import {
+  COPY_BRANCH_KEYS,
   COPY_ISSUE_ID_KEYS,
   COPY_ISSUE_URL_KEYS,
 } from '../../../lib/copyIssue';
+import type { LinkType } from '../../../types/Api';
 import {
   ContextMenu,
   MenuItem,
@@ -47,6 +51,7 @@ import {
   CONVERT_TO_PROJECT_LABEL,
   DUPLICATE_ISSUE_LABEL,
 } from '../../../lib/issueConversion';
+import { RELATION_COMMANDS } from '../RelationGlyphs';
 import { SET_PARENT_KEYS } from '../SetParentDialog';
 import {
   ARCHIVE_ISSUE_KEYS,
@@ -95,8 +100,15 @@ export interface IssueRowMenuProps {
   onDuplicate?: (() => void) | undefined;
   /** Asks to convert the issue into a project, offered for one issue at a time. */
   onConvertToProject?: (() => void) | undefined;
+  /**
+   * Opens the relation dialog on the issue starting on a relation, offered
+   * for one issue at a time.
+   */
+  onRelation?: ((type: LinkType) => void) | undefined;
   onCopyId: () => void;
   onCopyUrl: () => void;
+  /** Copies the issue's git branch name, offered for one issue at a time. */
+  onCopyBranch?: (() => void) | undefined;
   /** Opens the one issue, absent for a selection. */
   onOpen?: (() => void) | undefined;
   /**
@@ -128,8 +140,10 @@ export const IssueRowMenu: React.FC<IssueRowMenuProps> = ({
   onAssignToMe,
   onDuplicate,
   onConvertToProject,
+  onRelation,
   onCopyId,
   onCopyUrl,
+  onCopyBranch,
   onOpen,
   onOpenInNewTab,
   onPeek,
@@ -233,6 +247,23 @@ export const IssueRowMenu: React.FC<IssueRowMenuProps> = ({
             </MenuItem>
           )}
           <MenuSeparator />
+          {onRelation !== undefined && (
+            <>
+              {RELATION_COMMANDS.map((command) => (
+                <MenuItem
+                  key={command.type}
+                  onSelect={() => {
+                    onRelation(command.type);
+                  }}
+                >
+                  <command.icon aria-hidden="true" className="h-3.5 w-3.5" />
+                  {`${command.label}…`}
+                  <MenuShortcut keys={command.keys} />
+                </MenuItem>
+              ))}
+              <MenuSeparator />
+            </>
+          )}
         </>
       )}
       <MenuItem onSelect={onCopyId}>
@@ -245,6 +276,13 @@ export const IssueRowMenu: React.FC<IssueRowMenuProps> = ({
         Copy link
         <MenuShortcut keys={COPY_ISSUE_URL_KEYS} />
       </MenuItem>
+      {onCopyBranch !== undefined && (
+        <MenuItem onSelect={onCopyBranch}>
+          <LuGitBranch aria-hidden="true" className="h-3.5 w-3.5" />
+          Copy git branch name
+          <MenuShortcut keys={COPY_BRANCH_KEYS} />
+        </MenuItem>
+      )}
       {canEdit && (onArchive !== undefined || onDelete !== undefined) && (
         <>
           <MenuSeparator />

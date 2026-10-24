@@ -4,7 +4,8 @@
  * fade in, rather than in a row under the body that appears on hover, and a
  * reaction on a comment carries the issue it was written on. Also covers
  * syncing a thread to GitHub from its menu, the badge a synced thread wears,
- * and unsyncing it.
+ * and unsyncing it, and resolving a thread: the collapsed one-line summary,
+ * expanding it, and unresolving it.
  */
 
 import { render, screen, waitFor } from '@testing-library/react';
@@ -23,6 +24,8 @@ const addReaction = vi.fn<(target: unknown) => Promise<ReactionGroup>>();
 const syncThread =
   vi.fn<(commentId: string, payload: unknown) => Promise<unknown>>();
 const unsyncThread = vi.fn<(commentId: string) => Promise<unknown>>();
+const resolveThread = vi.fn<(commentId: string) => Promise<unknown>>();
+const unresolveThread = vi.fn<(commentId: string) => Promise<unknown>>();
 
 vi.mock('../../api/integrations', () => ({
   syncThread: (_w: string, _i: string, commentId: string, payload: unknown) =>
@@ -72,6 +75,10 @@ vi.mock('../../api/discussion', async () => {
   return {
     ...actual,
     addReaction: (_w: string, target: unknown) => addReaction(target),
+    resolveThread: (_w: string, _i: string, commentId: string) =>
+      resolveThread(commentId),
+    unresolveThread: (_w: string, _i: string, commentId: string) =>
+      unresolveThread(commentId),
   };
 });
 
@@ -130,6 +137,10 @@ beforeEach(() => {
   syncThread.mockResolvedValue({});
   unsyncThread.mockReset();
   unsyncThread.mockResolvedValue({});
+  resolveThread.mockReset();
+  resolveThread.mockResolvedValue({});
+  unresolveThread.mockReset();
+  unresolveThread.mockResolvedValue({});
   addReaction.mockReset();
   addReaction.mockResolvedValue({
     emoji: '👍',
@@ -294,5 +305,144 @@ describe('comment card', () => {
     expect(screen.queryAllByRole('link', { name: /Synced to/ })).toHaveLength(
       0
     );
+  });
+});
+
+/** A reply under the root `c-1`. */
+const reply = (commentId: string, body: string): CommentRead => ({
+  ...comment(),
+  comment_id: commentId,
+  parent_comment_id: 'c-1',
+  body,
+});
+
+/** Renders one thread with replies, resolved or not, for a reader. */
+const renderThread = (
+  overrides: Partial<CommentRead> = {},
+  replies: CommentRead[] = [],
+  canComment = true
+): void => {
+  render(
+    <MemoryRouter>
+      <CommentCard
+        comment={{ ...comment(), ...overrides }}
+        replies={replies}
+        people={[
+          {
+            user_id: 'user-2',
+            display_name: 'Bea',
+            email: 'bea@example.com',
+          },
+        ]}
+        workspaceId="ws-1"
+        issueId="iss-1"
+        currentUserId="user-1"
+        canComment={canComment}
+        isAdmin={false}
+      />
+    </MemoryRouter>
+  );
+};
+
+const resolved = {
+  resolution: { resolved_by: 'user-2', resolved_at: '2026-10-24T11:00:00Z' },
+};
+
+describe('resolving a thread', () => {
+  it('resolves an open thread from its root menu', async () => {
+    const user = userEvent.setup();
+    renderThread();
+
+    await user.click(screen.getByRole('button', { name: 'Comment actions' }));
+    await user.click(screen.getByRole('menuitem', { name: 'Resolve thread' }));
+
+    await waitFor(() => {
+      expect(resolveThread).toHaveBeenCalledWith('c-1');
+    });
+  });
+
+  it('offers no resolve on a reply', async () => {
+    const user = userEvent.setup();
+    renderThread({}, [reply('c-2', 'Agreed')]);
+
+    const menus = screen.getAllByRole('button', { name: 'Comment actions' });
+    await user.click(menus[1]!);
+
+    expect(
+      screen.queryByRole('menuitem', { name: /resolve thread/i })
+    ).toBeNull();
+  });
+
+  it('offers no resolve to a reader who cannot comment', async () => {
+    const user = userEvent.setup();
+    renderThread({}, [], false);
+
+    await user.click(screen.getByRole('button', { name: 'Comment actions' }));
+
+    expect(
+      screen.queryByRole('menuitem', { name: /resolve thread/i })
+    ).toBeNull();
+  });
+
+  it('collapses a resolved thread to one line naming who resolved it', () => {
+    renderThread({ ...resolved, body: '**Ship** it?' }, [
+      reply('c-2', 'Yes'),
+      reply('c-3', 'Done'),
+    ]);
+
+    const row = screen.getByRole('button', { name: /Show thread/ });
+    expect(row).toHaveAttribute('aria-expanded', 'false');
+    expect(row).toHaveTextContent('Ship it?');
+    expect(row).toHaveTextContent('2 replies');
+    expect(row).toHaveTextContent('Resolved by Bea');
+    expect(screen.queryByRole('article')).toBeNull();
+  });
+
+  it('expands a resolved thread on click and collapses it again', async () => {
+    const user = userEvent.setup();
+    renderThread(resolved, [reply('c-2', 'Yes')]);
+
+    await user.click(screen.getByRole('button', { name: /Show thread/ }));
+
+    expect(screen.getAllByRole('article')).toHaveLength(2);
+    expect(screen.getByText(/Resolved by Bea/)).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Collapse thread' }));
+
+    expect(screen.queryByRole('article')).toBeNull();
+  });
+
+  it('unresolves an expanded thread, whoever resolved it', async () => {
+    const user = userEvent.setup();
+    renderThread(resolved);
+
+    await user.click(screen.getByRole('button', { name: /Show thread/ }));
+    await user.click(screen.getByRole('button', { name: 'Unresolve' }));
+
+    await waitFor(() => {
+      expect(unresolveThread).toHaveBeenCalledWith('c-1');
+    });
+  });
+
+  it('unresolves from the root menu of an expanded thread', async () => {
+    const user = userEvent.setup();
+    renderThread(resolved);
+
+    await user.click(screen.getByRole('button', { name: /Show thread/ }));
+    await user.click(screen.getByRole('button', { name: 'Comment actions' }));
+    await user.click(
+      screen.getByRole('menuitem', { name: 'Unresolve thread' })
+    );
+
+    await waitFor(() => {
+      expect(unresolveThread).toHaveBeenCalledWith('c-1');
+    });
+  });
+
+  it('shows a reopened thread in full again', () => {
+    renderThread({ resolution: null }, [reply('c-2', 'One more thing')]);
+
+    expect(screen.queryByRole('button', { name: /Show thread/ })).toBeNull();
+    expect(screen.getAllByRole('article')).toHaveLength(2);
   });
 });

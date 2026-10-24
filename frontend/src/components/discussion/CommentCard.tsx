@@ -19,11 +19,23 @@
  * from its root's menu. A synced root wears a GitHub badge linking to the
  * mirrored comment, and its menu offers to open it there or to unsync, which
  * stops mirroring and leaves what was already copied on both sides.
+ *
+ * Any member may resolve a thread from its root's menu. A resolved thread
+ * collapses to one line naming who resolved it, which expands on click to the
+ * whole thread with a way to unresolve it. Replying reopens a thread, which the
+ * server does, so the card only follows what the thread list says.
  */
 
 import React, { Suspense, lazy, useRef, useState } from 'react';
-import { useMutationWithRefetch } from '@webbpulse/api-client/react';
 import {
+  invalidateQueries,
+  useMutationWithRefetch,
+} from '@webbpulse/api-client/react';
+import {
+  LuChevronDown,
+  LuChevronRight,
+  LuCircleCheck,
+  LuCircleDot,
   LuCopy,
   LuEllipsis,
   LuExternalLink,
@@ -33,19 +45,29 @@ import {
   LuTrash2,
   LuUnlink,
 } from 'react-icons/lu';
-import { deleteComment, updateComment } from '../../api/discussion';
+import {
+  deleteComment,
+  resolveThread,
+  unresolveThread,
+  updateComment,
+} from '../../api/discussion';
 import { syncThread, unsyncThread } from '../../api/integrations';
 import { errorMessage } from '../../lib/errors';
-import { personLabel, type Assignable } from '../../lib/issuePeople';
+import {
+  actorLabel,
+  personLabel,
+  type Assignable,
+} from '../../lib/issuePeople';
 import { embeddedAttachmentIds } from '../../lib/media';
 import { submitKeysLabel } from '../../lib/platform';
-import { commentsKey } from '../../lib/queryKeys';
+import { activityKey, commentsKey } from '../../lib/queryKeys';
 import {
   PUBLIC_THREAD_WARNING,
   targetKey,
   threadRef,
   threadUrl,
 } from '../../lib/threadSync';
+import { commentExcerpt, replyCountLabel } from '../../lib/threadResolution';
 import { showErrorToast, showToast } from '../../lib/toast';
 import type { CommentRead, GithubThreadTargetRead } from '../../types/Api';
 import type { RichMarkdownHandle } from '../editor/RichMarkdownEditor';
@@ -79,6 +101,8 @@ interface CommentItemProps extends ReaderProps {
   people: Assignable[];
   /** Opens the thread's reply box, or undefined on a reply. */
   onReply?: () => void;
+  /** Resolves or reopens the thread, on its root alone. */
+  onToggleResolved?: () => void;
 }
 
 /** The anchor a comment is linked to, so a copied link scrolls to it. */
@@ -95,6 +119,7 @@ const CommentItem: React.FC<CommentItemProps> = ({
   isAdmin,
   threadTargets = [],
   onReply,
+  onToggleResolved,
 }) => {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(comment.body);
@@ -193,6 +218,7 @@ const CommentItem: React.FC<CommentItemProps> = ({
   const isRoot = comment.parent_comment_id === null;
   const thread = isRoot ? (comment.github_thread ?? null) : null;
   const canSync = isRoot && canComment && thread === null;
+  const isResolved = isRoot && (comment.resolution ?? null) !== null;
 
   return (
     <article
@@ -260,6 +286,16 @@ const CommentItem: React.FC<CommentItemProps> = ({
               >
                 <LuPencil aria-hidden="true" className="h-3.5 w-3.5" />
                 Edit
+              </MenuItem>
+            )}
+            {isRoot && canComment && onToggleResolved !== undefined && (
+              <MenuItem onSelect={onToggleResolved}>
+                {isResolved ? (
+                  <LuCircleDot aria-hidden="true" className="h-3.5 w-3.5" />
+                ) : (
+                  <LuCircleCheck aria-hidden="true" className="h-3.5 w-3.5" />
+                )}
+                {isResolved ? 'Unresolve thread' : 'Resolve thread'}
               </MenuItem>
             )}
             {thread !== null && (
@@ -427,16 +463,132 @@ export const CommentCard: React.FC<CommentCardProps> = ({
   ...reader
 }) => {
   const [replying, setReplying] = useState(false);
+  const [expanded, setExpanded] = useState(false);
+  const queryKey = commentsKey(reader.issueId);
+  const resolution = comment.resolution ?? null;
+
+  const { mutate: resolve } = useMutationWithRefetch(
+    () => resolveThread(reader.workspaceId, reader.issueId, comment.comment_id),
+    queryKey
+  );
+
+  const { mutate: unresolve } = useMutationWithRefetch(
+    () =>
+      unresolveThread(reader.workspaceId, reader.issueId, comment.comment_id),
+    queryKey
+  );
+
   const openReply = (): void => {
     setReplying(true);
   };
 
+  const markResolved = (): void => {
+    void resolve()
+      .then(() => {
+        setExpanded(false);
+        setReplying(false);
+        invalidateQueries([activityKey(reader.issueId)]);
+        showToast('Thread resolved');
+      })
+      .catch((failure: unknown) => {
+        showErrorToast(errorMessage(failure, 'Could not resolve that thread.'));
+      });
+  };
+
+  const markOpen = (): void => {
+    void unresolve()
+      .then(() => {
+        invalidateQueries([activityKey(reader.issueId)]);
+        showToast('Thread reopened');
+      })
+      .catch((failure: unknown) => {
+        showErrorToast(errorMessage(failure, 'Could not reopen that thread.'));
+      });
+  };
+
+  const author = personLabel({
+    user_id: comment.author.user_id,
+    email: comment.author.email,
+    display_name: comment.author.display_name,
+  });
+
+  if (resolution !== null && !expanded) {
+    const resolver = actorLabel('user', resolution.resolved_by, people);
+    const excerpt = commentExcerpt(comment.body);
+    const count = replyCountLabel(replies.length);
+    return (
+      <div
+        id={`comment-${comment.comment_id}`}
+        className="rounded-lg border border-line bg-surface"
+      >
+        <button
+          type="button"
+          aria-expanded={false}
+          aria-label={`Resolved thread by ${author}, resolved by ${resolver}. Show thread`}
+          className="flex w-full min-w-0 items-center gap-2 rounded-lg px-4 py-2 text-left text-sm text-text-muted transition-colors duration-100 hover:bg-raised hover:text-text"
+          onClick={() => {
+            setExpanded(true);
+          }}
+        >
+          <LuChevronRight
+            aria-hidden="true"
+            className="h-3.5 w-3.5 shrink-0 text-text-faint"
+          />
+          <Avatar name={author} src={comment.author.avatar_url} size="xs" />
+          <span className="shrink-0 font-medium text-text">{author}</span>
+          {excerpt !== '' && (
+            <span className="min-w-0 truncate text-text-muted">{excerpt}</span>
+          )}
+          <span className="ml-auto flex shrink-0 items-center gap-1.5 text-xs text-text-faint">
+            {count !== '' && <span>{count}</span>}
+            {count !== '' && <span aria-hidden="true">·</span>}
+            <LuCircleCheck
+              aria-hidden="true"
+              className="h-3.5 w-3.5 text-success"
+            />
+            <span className="hidden sm:inline">Resolved by {resolver}</span>
+          </span>
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div className="rounded-lg border border-line bg-surface">
+      {resolution !== null && (
+        <div className="flex items-center gap-2 border-b border-line px-4 py-1.5 text-xs text-text-faint">
+          <LuCircleCheck
+            aria-hidden="true"
+            className="h-3.5 w-3.5 text-success"
+          />
+          <span className="min-w-0 truncate">
+            Resolved by {actorLabel('user', resolution.resolved_by, people)}
+          </span>
+          <RelativeTime value={resolution.resolved_at} />
+          <div className="ml-auto flex items-center gap-1">
+            {reader.canComment && (
+              <Button variant="ghost" size="sm" onClick={markOpen}>
+                Unresolve
+              </Button>
+            )}
+            <IconButton
+              label="Collapse thread"
+              size="sm"
+              aria-expanded
+              onClick={() => {
+                setExpanded(false);
+              }}
+            >
+              <LuChevronDown className="h-3.5 w-3.5" />
+            </IconButton>
+          </div>
+        </div>
+      )}
       <CommentItem
         comment={comment}
         people={people}
         onReply={openReply}
+        onToggleResolved={resolution !== null ? markOpen : markResolved}
         {...reader}
       />
       {replies.map((reply) => (
@@ -462,6 +614,9 @@ export const CommentCard: React.FC<CommentCardProps> = ({
               compact
               onPosted={() => {
                 setReplying(false);
+                if (resolution !== null) {
+                  invalidateQueries([activityKey(reader.issueId)]);
+                }
               }}
               onCancel={() => {
                 setReplying(false);
