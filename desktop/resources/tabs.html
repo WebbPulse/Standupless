@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; style-src 'unsafe-inline'"
+    />
+    <title>Tabs</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --strip: #f4f4f5;
+        --tab-hover: rgba(0, 0, 0, 0.05);
+        --tab-active: #ffffff;
+        --tab-active-border: rgba(0, 0, 0, 0.08);
+        --text: #6b6f76;
+        --text-active: #1b1c1f;
+        --close-hover: rgba(0, 0, 0, 0.08);
+        --divider: rgba(0, 0, 0, 0.1);
+        --focus: #5e6ad2;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --strip: #0f1012;
+          --tab-hover: rgba(255, 255, 255, 0.05);
+          --tab-active: #1c1d21;
+          --tab-active-border: rgba(255, 255, 255, 0.07);
+          --text: #8a8f98;
+          --text-active: #eeeff1;
+          --close-hover: rgba(255, 255, 255, 0.1);
+          --divider: rgba(255, 255, 255, 0.08);
+        }
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        overflow: hidden;
+        background: var(--strip);
+        font:
+          12px/1 system-ui,
+          -apple-system,
+          'Segoe UI',
+          sans-serif;
+        user-select: none;
+        -webkit-user-select: none;
+      }
+      #strip {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        height: 38px;
+        padding: 0 8px;
+        border-bottom: 1px solid var(--divider);
+      }
+      html.inset #strip {
+        padding-left: 80px;
+        -webkit-app-region: drag;
+      }
+      #tabs {
+        display: flex;
+        align-items: center;
+        gap: 2px;
+        min-width: 0;
+        flex: 0 1 auto;
+        overflow: hidden;
+      }
+      .tab {
+        position: relative;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        flex: 0 1 200px;
+        min-width: 56px;
+        height: 26px;
+        padding: 0 4px 0 10px;
+        border: 1px solid transparent;
+        border-radius: 6px;
+        color: var(--text);
+        cursor: default;
+        -webkit-app-region: no-drag;
+      }
+      .tab:hover {
+        background: var(--tab-hover);
+      }
+      .tab.active {
+        background: var(--tab-active);
+        border-color: var(--tab-active-border);
+        color: var(--text-active);
+      }
+      .tab.drop-before {
+        box-shadow: inset 2px 0 0 var(--focus);
+      }
+      .tab.drop-after {
+        box-shadow: inset -2px 0 0 var(--focus);
+      }
+      .label {
+        flex: 1 1 auto;
+        min-width: 0;
+        overflow: hidden;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+        line-height: 26px;
+      }
+      .spinner {
+        display: none;
+        flex: 0 0 auto;
+        width: 10px;
+        height: 10px;
+        border: 1.5px solid var(--divider);
+        border-top-color: var(--text);
+        border-radius: 50%;
+        animation: spin 0.8s linear infinite;
+      }
+      .tab.loading .spinner {
+        display: block;
+      }
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+      button {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex: 0 0 auto;
+        padding: 0;
+        border: 0;
+        border-radius: 4px;
+        background: transparent;
+        color: inherit;
+        font: inherit;
+        -webkit-app-region: no-drag;
+      }
+      button:focus-visible,
+      .tab:focus-visible {
+        outline: 2px solid var(--focus);
+        outline-offset: -2px;
+      }
+      .close {
+        width: 18px;
+        height: 18px;
+        font-size: 14px;
+        line-height: 1;
+        visibility: hidden;
+      }
+      .tab:hover .close,
+      .tab.active .close {
+        visibility: visible;
+      }
+      .close:hover {
+        background: var(--close-hover);
+      }
+      #new {
+        width: 26px;
+        height: 26px;
+        font-size: 16px;
+        color: var(--text);
+      }
+      #new:hover {
+        background: var(--tab-hover);
+        color: var(--text-active);
+      }
+    </style>
+  </head>
+  <body>
+    <div id="strip">
+      <div id="tabs" role="tablist" aria-label="Tabs"></div>
+      <button id="new" type="button" title="New tab" aria-label="New tab">
+        +
+      </button>
+    </div>
+  </body>
+</html>

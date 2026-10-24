@@ -49,6 +49,7 @@ import type { IssueContextState } from '../../../hooks/useIssueContext';
 import { usePeekIssue } from '../../../hooks/usePeekIssue';
 import { useShortcut } from '../../../hooks/useShortcuts';
 import { WorkspaceContext } from '../../../contexts/WorkspaceContextDefinition';
+import { desktopOpenInNewTab } from '../../../lib/desktop';
 import { errorMessage } from '../../../lib/errors';
 import {
   filterFieldsFor,
@@ -1046,6 +1047,7 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
   const [convertIssue] = converting === null ? [] : resolve([converting]);
   const menuIssues = menu === null ? [] : resolve(menu.ids);
   const menuSingle = menuIssues.length === 1 ? menuIssues[0] : undefined;
+  const openInNewTab = desktopOpenInNewTab();
 
   const loading =
     lists.isLoading || (collection.isLoading && collection.issues.length === 0);
@@ -1266,6 +1268,15 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
               ? undefined
               : () => {
                   openIssue(menuSingle);
+                }
+          }
+          onOpenInNewTab={
+            openInNewTab === null
+              ? undefined
+              : () => {
+                  for (const issue of menuIssues) {
+                    openInNewTab(issuePath(slug, issue.key));
+                  }
                 }
           }
           onPeek={

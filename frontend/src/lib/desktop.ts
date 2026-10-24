@@ -140,6 +140,12 @@ export interface DesktopBridge {
    * predate it.
    */
   openExternal?: (url: string) => void;
+  /** Whether the app shows the page in tabs. Absent on builds without them. */
+  tabs?: boolean;
+  /**
+   * Opens an app path in a new background tab. Absent on builds without tabs.
+   */
+  openInNewTab?: (path: string) => void;
 }
 
 /** The bridge when the page runs inside the desktop app, otherwise null. */
@@ -170,6 +176,20 @@ export const desktopBrowserSignIn = (): (() => void) | null => {
   const bridge = desktopBridge();
   return typeof bridge?.signInWithBrowser === 'function'
     ? () => bridge.signInWithBrowser?.()
+    : null;
+};
+
+/** Whether the page runs in a desktop app tab, so it names itself for one. */
+export const desktopHasTabs = (): boolean => desktopBridge()?.tabs === true;
+
+/**
+ * The desktop app's open in new tab, or null in a browser or on a desktop
+ * build without tabs, where no menu offers it.
+ */
+export const desktopOpenInNewTab = (): ((path: string) => void) | null => {
+  const bridge = desktopBridge();
+  return typeof bridge?.openInNewTab === 'function'
+    ? (path: string) => bridge.openInNewTab?.(path)
     : null;
 };
 

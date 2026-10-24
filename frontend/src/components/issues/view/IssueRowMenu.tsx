@@ -20,6 +20,7 @@ import {
   LuHexagon,
   LuLink2,
   LuMilestone,
+  LuPlus,
   LuRefreshCw,
   LuSignal,
   LuSquareArrowOutUpRight,
@@ -98,6 +99,11 @@ export interface IssueRowMenuProps {
   onCopyUrl: () => void;
   /** Opens the one issue, absent for a selection. */
   onOpen?: (() => void) | undefined;
+  /**
+   * Opens the issues in new desktop app tabs, absent in a browser, where the
+   * browser's own link menu does this.
+   */
+  onOpenInNewTab?: (() => void) | undefined;
   /** Peeks the one issue, absent for a selection. */
   onPeek?: (() => void) | undefined;
   /** Archives the issues, or restores them when all are archived. */
@@ -125,6 +131,7 @@ export const IssueRowMenu: React.FC<IssueRowMenuProps> = ({
   onCopyId,
   onCopyUrl,
   onOpen,
+  onOpenInNewTab,
   onPeek,
   onArchive,
   onDelete,
@@ -149,7 +156,9 @@ export const IssueRowMenu: React.FC<IssueRowMenuProps> = ({
       }
       onClose={onClose}
     >
-      {(onOpen !== undefined || onPeek !== undefined) && (
+      {(onOpen !== undefined ||
+        onOpenInNewTab !== undefined ||
+        onPeek !== undefined) && (
         <>
           {onOpen !== undefined && (
             <MenuItem onSelect={onOpen}>
@@ -159,6 +168,12 @@ export const IssueRowMenu: React.FC<IssueRowMenuProps> = ({
               />
               Open issue
               <MenuShortcut keys="enter" />
+            </MenuItem>
+          )}
+          {onOpenInNewTab !== undefined && (
+            <MenuItem onSelect={onOpenInNewTab}>
+              <LuPlus aria-hidden="true" className="h-3.5 w-3.5" />
+              {issues.length === 1 ? 'Open in new tab' : 'Open in new tabs'}
             </MenuItem>
           )}
           {onPeek !== undefined && (

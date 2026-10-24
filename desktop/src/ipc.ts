@@ -14,6 +14,9 @@ export const CHANNELS = {
   navigateReady: 'standupless:navigate-ready',
   signInWithBrowser: 'standupless:sign-in-with-browser',
   openExternal: 'standupless:open-external',
+  openInNewTab: 'standupless:open-in-new-tab',
+  tabsState: 'standupless:tabs-state',
+  tabCommand: 'standupless:tab-command',
 } as const;
 
 /** The longest notification title or body the shell shows. */
@@ -69,3 +72,44 @@ export const parseNotify = (value: unknown): NotifyPayload | null => {
 /** Narrows a theme source. */
 export const parseTheme = (value: unknown): ThemeSource | null =>
   value === 'system' || value === 'light' || value === 'dark' ? value : null;
+
+/** One tab as the tab strip draws it. */
+export interface StripTab {
+  id: number;
+  title: string;
+  loading: boolean;
+}
+
+/** Everything the tab strip draws. */
+export interface StripState {
+  tabs: StripTab[];
+  activeId: number | null;
+  /** Whether the strip leaves room for the macOS window buttons. */
+  inset: boolean;
+}
+
+/** A request from the tab strip. */
+export type TabCommand =
+  | { type: 'activate'; id: number }
+  | { type: 'close'; id: number }
+  | { type: 'move'; id: number; index: number }
+  | { type: 'new' };
+
+/** Whether a value is a whole, non-negative number. */
+const isIndex = (value: unknown): value is number =>
+  typeof value === 'number' && Number.isInteger(value) && value >= 0;
+
+/** Narrows a tab strip request. */
+export const parseTabCommand = (value: unknown): TabCommand | null => {
+  if (typeof value !== 'object' || value === null) return null;
+  const raw = value as Record<string, unknown>;
+  if (raw.type === 'new') return { type: 'new' };
+  if (!isIndex(raw.id)) return null;
+  if (raw.type === 'activate' || raw.type === 'close') {
+    return { type: raw.type, id: raw.id };
+  }
+  if (raw.type === 'move' && isIndex(raw.index)) {
+    return { type: 'move', id: raw.id, index: raw.index };
+  }
+  return null;
+};

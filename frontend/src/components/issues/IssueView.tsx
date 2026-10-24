@@ -230,6 +230,8 @@ const sameIds = (a: Set<string>, b: Set<string>): boolean =>
 /** The pieces a frame lays out: the bar's title and actions, and the view. */
 export interface IssueViewParts {
   title: ReactNode;
+  /** The issue as plain text, its key and title, for a desktop tab. */
+  label: string;
   /** The favorite star a full page shows right after the title; a pane keeps it in its actions. */
   titleAccessory?: ReactNode;
   actions?: ReactNode;
@@ -1122,6 +1124,7 @@ export const IssueView: React.FC<IssueViewProps> = ({
     <>
       {frame({
         title,
+        label: issue === null ? shownKey : `${issue.key} ${issue.title}`,
         ...(actions === undefined ? {} : { actions }),
         ...(embedded || favorite === undefined
           ? {}
