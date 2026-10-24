@@ -659,6 +659,7 @@ class DisplayOptionsBody(TypedDict):
             "estimate_desc",
             "customer_requests_desc",
             "customer_revenue_desc",
+            "completed_desc",
         ]
         | None
     ]
@@ -2087,6 +2088,7 @@ class ShareLinkCreate(TypedDict):
             "estimate_desc",
             "customer_requests_desc",
             "customer_revenue_desc",
+            "completed_desc",
         ]
         | None
     ]
@@ -2873,6 +2875,7 @@ class ViewCreate(TypedDict):
             "estimate_desc",
             "customer_requests_desc",
             "customer_revenue_desc",
+            "completed_desc",
         ]
         | None
     ]
@@ -2896,6 +2899,7 @@ class ViewCreate(TypedDict):
             "estimate_desc",
             "customer_requests_desc",
             "customer_revenue_desc",
+            "completed_desc",
         ]
     ]
     sub_group_by: NotRequired[
@@ -2987,6 +2991,7 @@ class ViewUpdate(TypedDict):
             "estimate_desc",
             "customer_requests_desc",
             "customer_revenue_desc",
+            "completed_desc",
         ]
         | None
     ]
@@ -3010,6 +3015,7 @@ class ViewUpdate(TypedDict):
             "estimate_desc",
             "customer_requests_desc",
             "customer_revenue_desc",
+            "completed_desc",
         ]
         | None
     ]
