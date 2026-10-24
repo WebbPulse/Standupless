@@ -101,12 +101,12 @@ def test_picking_a_real_status_accepts_it(client: TestClient, triage: str, repos
     assert ("pending", "accepted") in _triage_rows(repositories, waiting["id"])
 
 
-def test_the_status_filter_selects_triage(client: TestClient, triage: str) -> None:
+def test_the_status_filter_selects_triage(client: TestClient, triage: str, statuses: "dict[str, Any]") -> None:
     """`status_id=triage` lists the waiting issues, and excluding it leaves them out."""
     sign_in(client, MEMBER)
     waiting = create_issue(client, WORKSPACE)
     sign_in(client, OWNER)
-    kept = create_issue(client, WORKSPACE)
+    kept = create_issue(client, WORKSPACE, status_id=statuses["backlog"].status_id)
 
     either = [("team_id", TEAM), ("status_id", "triage"), ("status_id", kept["status_id"])]
     excluded = {"team_id": TEAM, "include_triage": "true", "status_id_not": "triage"}
@@ -120,12 +120,12 @@ def test_the_status_filter_selects_triage(client: TestClient, triage: str) -> No
     assert [row["id"] for row in without] == [kept["id"]]
 
 
-def test_a_link_shows_a_waiting_issue_as_triage(client: TestClient, triage: str) -> None:
+def test_a_link_shows_a_waiting_issue_as_triage(client: TestClient, triage: str, statuses: "dict[str, Any]") -> None:
     """The far side of a link reports the triage status, not its hidden one."""
     sign_in(client, MEMBER)
     waiting = create_issue(client, WORKSPACE)
     sign_in(client, OWNER)
-    issue = create_issue(client, WORKSPACE)
+    issue = create_issue(client, WORKSPACE, status_id=statuses["backlog"].status_id)
 
     created = client.post(f"{BASE}/{issue['id']}/links", json={"type": "relates_to", "target_issue_id": waiting["id"]})
     links = client.get(f"{BASE}/{issue['id']}/links").json()["links"]

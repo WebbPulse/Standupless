@@ -1075,7 +1075,8 @@ ISSUE_TOOLS: tuple[Tool, ...] = (
     Tool(
         name="create_issue",
         description=(
-            "Create an issue in a team, allocating its key. The status defaults to the team's first. "
+            "Create an issue in a team, allocating its key. With no status_id it starts in the team's first status, "
+            "or in triage while the team has triage on; a sub-issue from a team member skips triage unless asked. "
             "parent_id makes it a sub-issue; cycle_id, project_id and project_milestone_id place it. "
             "template_id fills every field not passed from one of the team's templates (see list_templates), "
             "and title may then be omitted when the template has one. "
