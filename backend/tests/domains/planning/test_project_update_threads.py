@@ -12,6 +12,8 @@ from typing import Any
 
 from fastapi.testclient import TestClient
 
+from app.common.core.constants import ISSUE_BODY_MAX_BYTES
+
 from tests.domains.helpers import ADMIN, GUEST, MEMBER, OUTSIDER, OWNER, add_team_member, sign_in
 from tests.domains.planning.conftest import OTHER_TEAM, TEAM, WORKSPACE, seed_project
 
@@ -81,7 +83,7 @@ def test_a_reply_needs_a_body(client: TestClient, workspace: str) -> None:
     path = _comments(workspace, project_id, update["update_id"])
 
     assert client.post(path, json={"body": "   "}).status_code == 422
-    assert client.post(path, json={"body": "x" * 20000}).status_code == 422
+    assert client.post(path, json={"body": "x" * (ISSUE_BODY_MAX_BYTES + 1)}).status_code == 422
 
 
 def test_only_the_author_or_an_admin_edits_or_deletes_a_reply(
