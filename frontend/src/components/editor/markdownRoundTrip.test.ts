@@ -39,6 +39,10 @@ const EXACT: [string, string][] = [
     'a code fence with a blank line',
     '```ts\nconst a = 1;\n\nconst b = 2;\n```',
   ],
+  ['a fenced ts block keeps its alias', '```ts\nconst a: number = 1;\n```'],
+  ['a fenced python block', '```python\nprint("hi")\n```'],
+  ['a fence in a language the picker does not list', '```foo\nx\n```'],
+  ['a fence with no language', '```\nplain text\n```'],
   ['an image', '![alt text](https://example.com/a.png)'],
   [
     'an uploaded image',

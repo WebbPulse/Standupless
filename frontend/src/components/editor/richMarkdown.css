@@ -177,3 +177,29 @@
 .rich-markdown .ProseMirror-gapcursor::after {
   @apply border-t border-text;
 }
+
+.rich-markdown .rich-code-block {
+  @apply relative;
+}
+
+.rich-markdown .rich-code-bar {
+  @apply absolute top-1 right-1 flex items-center gap-1 whitespace-normal select-none;
+}
+
+.rich-markdown .rich-code-label {
+  @apply px-1 text-2xs leading-5 text-text-faint;
+}
+
+.rich-markdown .rich-code-language {
+  @apply h-5 cursor-pointer rounded-xs border border-transparent bg-surface px-1 text-2xs text-text-faint outline-none hover:border-line hover:text-text focus-visible:border-line-strong focus-visible:text-text;
+}
+
+.rich-markdown[contenteditable='true'] .rich-code-label,
+.rich-markdown[contenteditable='false'] .rich-code-language {
+  @apply hidden;
+}
+
+.rich-markdown .rich-code-block:hover .rich-code-label,
+.rich-markdown .rich-code-block:focus-within .rich-code-label {
+  @apply text-text-muted;
+}
