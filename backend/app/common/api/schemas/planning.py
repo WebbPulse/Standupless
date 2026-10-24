@@ -982,7 +982,7 @@ class ProjectRead(BaseModel):
     )
     links: Optional[list[ProjectLinkRead]] = Field(
         default=None,
-        description="The project's Resources links in manual order, filled on a single project read and left out of lists",
+        description="The project's Resources links in manual order, filled on a single project read only",
     )
     created_by: str
     created_at: datetime

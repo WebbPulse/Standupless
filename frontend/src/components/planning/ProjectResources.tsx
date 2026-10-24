@@ -196,6 +196,7 @@ const ResourceRow: React.FC<ResourceRowProps> = ({
         target="_blank"
         rel="noopener noreferrer"
         title={link.url}
+        data-hover="parent"
         className="flex min-w-0 flex-1 items-center gap-2 rounded-sm text-sm text-text focus-visible:outline-2 focus-visible:outline-accent"
       >
         <LinkIcon url={link.url} />

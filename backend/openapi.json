@@ -12526,7 +12526,7 @@
                 "type": "null"
               }
             ],
-            "description": "The project's Resources links in manual order, filled on a single project read and left out of lists",
+            "description": "The project's Resources links in manual order, filled on a single project read only",
             "title": "Links"
           },
           "measure": {
