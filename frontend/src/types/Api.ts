@@ -1354,8 +1354,52 @@ export interface CommentRead {
   attachments?: AttachmentRead[];
   /** Which client made the change; absent on rows written before sources were recorded. */
   source?: ChangeSource | null;
+  /** Where a root comment's thread is mirrored on GitHub, when it is. */
+  github_thread?: GithubThread | null;
   created_at: string;
   edited_at: string | null;
+}
+
+/**
+ * Where a root comment's thread is mirrored on GitHub. `private` is the
+ * repository's visibility when it was synced, and `comment_url` is the App's
+ * opening comment there, empty until that post lands.
+ */
+export interface GithubThread {
+  kind: 'pull_request' | 'issue';
+  repository_id: string;
+  full_name: string;
+  number: number;
+  target_url: string;
+  private: boolean;
+  synced_by: string;
+  synced_at: string;
+  comment_url: string;
+}
+
+/** A linked pull request or GitHub issue a thread may be synced to. */
+export interface GithubThreadTargetRead {
+  kind: 'pull_request' | 'issue';
+  repository_id: string;
+  full_name: string;
+  number: number;
+  title: string;
+  url: string;
+  private: boolean;
+  ref: string;
+}
+
+/** Which linked pull request or GitHub issue to sync a thread to. */
+export interface GithubThreadWrite {
+  repository_id: string;
+  number: number;
+}
+
+/** One root comment's thread sync, with no thread once it is unsynced. */
+export interface GithubThreadRead {
+  comment_id: string;
+  issue_id: string;
+  github_thread?: GithubThread | null;
 }
 
 /** The body the comment list answers with, oldest first. */

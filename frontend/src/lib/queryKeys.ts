@@ -472,6 +472,12 @@ export const teamSyncKey = (workspaceId: string, teamId: string): QueryKey => [
   teamId,
 ];
 
+/** The linked pull requests and GitHub issue an issue's threads may sync to. */
+export const threadTargetsKey = (
+  workspaceId: string,
+  issueId: string
+): QueryKey => ['github-thread-targets', workspaceId, issueId];
+
 /** The GitHub issue one issue mirrors. */
 export const issueSyncKey = (
   workspaceId: string,
