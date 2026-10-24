@@ -72,7 +72,7 @@ def revoked_sessions(monkeypatch: pytest.MonkeyPatch) -> list[str]:
     """Record every account whose refresh families deprovisioning ends, instead of reaching the table."""
     calls: list[str] = []
 
-    def revoke(user_id: str) -> int:
+    def revoke(user_id: str, **_: Any) -> int:
         """Remember the account and report one family ended."""
         calls.append(user_id)
         return 1

@@ -61,9 +61,10 @@ def revoke_account_access(repositories: "Repositories", user_id: str) -> Revocat
 
 def _revoke_refresh_families(user_id: str) -> int:
     """Revoke every refresh family the user holds, through the store every function shares."""
+    from app.common.session_audit import Revoker
     from app.common.sessions import revoke_refresh_families
 
-    return revoke_refresh_families(user_id)
+    return revoke_refresh_families(user_id, revoker=Revoker(id=user_id, reason="account_deleted"))
 
 
 def _revoke_connected_apps(user_id: str) -> int:

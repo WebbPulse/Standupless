@@ -100,10 +100,7 @@ def build_authorization_server(settings: "Settings") -> AuthorizationServer | No
     as well as the consents. The stores and settings are the ones `package_glue`
     mounts the server with, so both halves read the same tables.
     """
-    from webbpulse.dynamodb import Repository
     from webbpulse.identity import (
-        REFRESH_TOKENS_TABLE,
-        DynamoRefreshTokenStore,
         IdentityStores,
         OAuthServerService,
         TokenService,
@@ -111,6 +108,7 @@ def build_authorization_server(settings: "Settings") -> AuthorizationServer | No
     )
     from webbpulse.identity.flows import IdentityFlows
 
+    from app.common.session_audit import client_names_from, refresh_token_store
     from app.domains.identity.identity_hooks import StanduplessIdentityHooks
     from app.domains.identity.oauth_server_glue import build_oauth_server_stores
     from app.domains.identity.package_glue import build_identity_settings
@@ -121,20 +119,14 @@ def build_authorization_server(settings: "Settings") -> AuthorizationServer | No
     if not identity_settings.mcp_oauth_enabled:
         return None
     tokens = TokenService(identity_settings, signing_client(identity_settings))
-    refresh_tokens = DynamoRefreshTokenStore(
-        Repository(
-            REFRESH_TOKENS_TABLE,
-            prefix=settings.dynamodb_table_prefix,
-            endpoint_url=settings.DYNAMODB_ENDPOINT_URL or None,
-        )
-    )
+    stores = build_oauth_server_stores(settings)
+    refresh_tokens = refresh_token_store(settings, client_names=client_names_from(stores.clients))
     flows = IdentityFlows(
         identity_settings,
         StanduplessIdentityHooks(),
         IdentityStores(refresh_tokens=refresh_tokens),
         tokens,
     )
-    stores = build_oauth_server_stores(settings)
     return AuthorizationServer(
         service=OAuthServerService(identity_settings, stores, tokens, flows=flows),
         stores=stores,
