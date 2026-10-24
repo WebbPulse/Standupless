@@ -180,7 +180,13 @@ class FakeJira:
         start = int(params.get("startAt") or 0)
         limit = int(params.get("maxResults") or 50)
         page = copy.deepcopy(rows[start : start + limit])
-        return {key: page, "startAt": start, "maxResults": limit, "total": len(rows), "isLast": start + limit >= len(rows)}
+        return {
+            key: page,
+            "startAt": start,
+            "maxResults": limit,
+            "total": len(rows),
+            "isLast": start + limit >= len(rows),
+        }
 
     def answer(
         self, method: str, path: str, params: dict[str, str], body: Any, authorization: str

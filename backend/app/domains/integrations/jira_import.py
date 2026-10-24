@@ -337,9 +337,7 @@ def _plan(
     plans = []
     for source, category in sources:
         status = resolve_status(lookup, by_id, mapping, source, category)
-        plans.append(
-            StatusPlan(source=source, category=category, status_id=status.status_id, status_name=status.name)
-        )
+        plans.append(StatusPlan(source=source, category=category, status_id=status.status_id, status_name=status.name))
     return ProjectPreview(
         mapping=mapping,
         issue_count=issue_count,
@@ -874,8 +872,8 @@ def _links_step(
         if issue is None or issue.team_id != mapping.team_id:
             continue
         parent = fields.get("parent")
-        linkable = isinstance(parent, dict) and parent.get("id") and not (
-            mapping.epics_as == "projects" and _is_epic(parent)
+        linkable = (
+            isinstance(parent, dict) and parent.get("id") and not (mapping.epics_as == "projects" and _is_epic(parent))
         )
         parent_id = row(str(parent["id"])) if linkable and isinstance(parent, dict) else None
         if parent_id is not None and not issue.parent_id:
@@ -901,9 +899,7 @@ def _links_step(
             source_id, relation, sink_id = ends
             if repositories.relations.get(job.workspace_id, source_id, relation, sink_id) is not None:
                 continue
-            if relation == "relates_to" and repositories.relations.get(
-                job.workspace_id, sink_id, relation, source_id
-            ):
+            if relation == "relates_to" and repositories.relations.get(job.workspace_id, sink_id, relation, source_id):
                 continue
             link_row = repositories.relations.link(job.workspace_id, source_id, relation, sink_id, job.requested_by)
             blocked = blocked_side(link_row)

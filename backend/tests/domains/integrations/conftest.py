@@ -430,5 +430,7 @@ def no_jira(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         jira_import,
         "client_factory",
-        lambda site, email, token: JiraClient(url=site, email=email, token=token, transport=httpx.MockTransport(refused)),
+        lambda site, email, token: JiraClient(
+            url=site, email=email, token=token, transport=httpx.MockTransport(refused)
+        ),
     )

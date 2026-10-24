@@ -159,7 +159,9 @@ def _preview_jira_import(call: ToolCall) -> Any:
     site, credentials = _signin(call)
     choices = _choices(call)
     try:
-        previews = jira_import.preview_projects(call.repositories, call.context.workspace_id, site, credentials, choices)
+        previews = jira_import.preview_projects(
+            call.repositories, call.context.workspace_id, site, credentials, choices
+        )
     except CHOICE_ERRORS as exc:
         raise _choice_error(exc) from None
     return {

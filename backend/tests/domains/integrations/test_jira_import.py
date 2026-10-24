@@ -332,7 +332,9 @@ def test_a_jql_filter_alone_maps_every_site_status(
     """With no project, the filter names the issues and the site's statuses are the ones to map."""
     sign_in(client, ADMIN)
 
-    response = client.post(f"{ROUTE}/preview", json={**signin(), "projects": [{"jql": "labels = bug-bash", "team_id": TEAM}]})
+    response = client.post(
+        f"{ROUTE}/preview", json={**signin(), "projects": [{"jql": "labels = bug-bash", "team_id": TEAM}]}
+    )
 
     assert response.status_code == 200, response.text
     [preview] = response.json()["projects"]
@@ -700,9 +702,7 @@ def test_sealed_credentials_open_only_under_their_own_purpose(workspace: str, bu
 
     assert FAKE_TOKEN.encode() not in sealed
     assert FAKE_EMAIL.encode() not in sealed
-    opened = jira_import.Credentials.opened(
-        linear_import.open_key(WORKSPACE, first, purpose=jira_import.SEAL_PURPOSE)
-    )
+    opened = jira_import.Credentials.opened(linear_import.open_key(WORKSPACE, first, purpose=jira_import.SEAL_PURPOSE))
     assert (opened.email, opened.token) == (FAKE_EMAIL, FAKE_TOKEN)
     assert FAKE_TOKEN not in repr(opened)
     with pytest.raises(linear_import.KeyGone):
@@ -805,7 +805,9 @@ def test_the_mcp_tools_list_preview_start_follow_and_cancel_an_import(
     assert row.after == AUDITED
 
 
-def test_a_member_key_cannot_import_over_mcp(client: TestClient, repositories: Any, bucket: str, jira: FakeJira) -> None:
+def test_a_member_key_cannot_import_over_mcp(
+    client: TestClient, repositories: Any, bucket: str, jira: FakeJira
+) -> None:
     """The tools check the same admin capability the routes do."""
     secret = mint_for(repositories, MEMBER, ("settings:read", "settings:write", "admin"))
 
