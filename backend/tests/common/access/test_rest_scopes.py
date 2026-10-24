@@ -139,10 +139,11 @@ def test_a_rest_scope_refusal_says_where_to_grant_it(client: TestClient, reposit
 
     assert response.status_code == 403, response.text
     body = response.json()
-    assert body["missing"] == ["issues:write"]
-    assert body["grant_url"].endswith("/w/acme/settings/connected-apps")
-    assert body["api_keys_url"].endswith("/w/acme/settings/api-keys")
-    assert body["grant_url"] in body["message"]
+    hint = body["details"]
+    assert hint["missing"] == ["issues:write"]
+    assert hint["grant_url"].endswith("/w/acme/settings/connected-apps")
+    assert hint["api_keys_url"].endswith("/w/acme/settings/api-keys")
+    assert hint["grant_url"] in body["message"]
 
 
 def test_a_rest_refusal_the_role_blocks_offers_no_grant(workspace: str) -> None:

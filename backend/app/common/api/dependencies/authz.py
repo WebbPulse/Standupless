@@ -1265,7 +1265,8 @@ def require_scopes_present(
 
     A user context is unrestricted, so only a key or a token narrows further; this
     keeps the intersection rule in one place. With `repositories` the refusal also
-    links to where the scope can be granted, read from the workspace's slug.
+    links to where the scope can be granted, read from the workspace's slug, under
+    the error envelope's `details`.
     """
     if context.actor is ActorKind.USER:
         return
@@ -1273,8 +1274,14 @@ def require_scopes_present(
     if missing:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail=insufficient_scope_detail(context, missing, repositories),
+            detail=_as_http_detail(insufficient_scope_detail(context, missing, repositories)),
         )
+
+
+def _as_http_detail(detail: dict[str, Any]) -> dict[str, Any]:
+    """Move a refusal's hint fields under `details`, the only extra key the REST envelope keeps."""
+    hint = {key: value for key, value in detail.items() if key not in ("error_code", "message")}
+    return {"error_code": detail["error_code"], "message": detail["message"], "details": hint}
 
 
 def scope_grant_links(repositories: Optional[RepositoryBundle], workspace_id: str) -> tuple[str, str]:

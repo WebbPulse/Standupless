@@ -142,7 +142,7 @@ When the product adds a scope, an existing grant does not carry it. A person wid
 - **When it applies.** The refresh guard (`build_refresh_guard`) runs before each MCP token refresh. After the authentication policy check passes, it adds the scopes offered since to an opted-in all-scope grant, and the package mints the refreshed token from that grant, so this refresh carries them. `updated_at` is unchanged because the policy is judged against it. Every request still cuts the token to the role's live ceiling, so a member never spends `admin`. A failed widening is logged and the refresh goes ahead as before.
 - **Audit.** Each widening writes one `connected_app.scopes_auto_granted` row to the grant's workspace log, with the person as actor, source `mcp`, the client as target, `before.scopes`, `after.scopes` and `after.added`. The write skips the `connected_app.authorized` row a new consent records.
 
-A REST `INSUFFICIENT_SCOPE` refusal carries the same hint as the MCP error: `missing`, `grant_url` for the workspace's Connected apps page, and `api_keys_url`, or a role message and no links when the role cannot hold the scope.
+A REST `INSUFFICIENT_SCOPE` refusal carries the same hint as the MCP error, under `details`: `missing`, `grant_url` for the workspace's Connected apps page, and `api_keys_url`, or a role message and no links when the role cannot hold the scope.
 
 ## 6. Platform gaps to fill upstream
 
