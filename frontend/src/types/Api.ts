@@ -643,6 +643,8 @@ export interface LabelRead {
   is_group?: boolean;
   /** The group this label sits in, or null outside one. */
   parent_id?: string | null;
+  /** A short description, carried to linked GitHub repositories. */
+  description?: string | null;
 }
 
 /** The body the labels route answers with. */
@@ -673,6 +675,8 @@ export interface LabelCreate {
   is_group?: boolean;
   /** The group to put the label in, of the same scope. */
   parent_id?: string | null;
+  /** A short description, up to 100 characters. */
+  description?: string | null;
 }
 
 /** The editable fields on a label. */
@@ -681,6 +685,8 @@ export interface LabelUpdate {
   color?: string;
   /** Moves the label into this group, or out of its group with null. */
   parent_id?: string | null;
+  /** A short description, or null to clear it. */
+  description?: string | null;
 }
 
 /**

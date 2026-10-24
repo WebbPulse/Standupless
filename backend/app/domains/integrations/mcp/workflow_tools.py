@@ -148,6 +148,7 @@ def _create_workspace_label(call: ToolCall) -> Any:
         {
             "name": call.require("name"),
             "color": call.require("color"),
+            "description": call.optional("description"),
             "is_group": bool(call.optional("is_group", False)),
             "parent_id": group_id,
         }
@@ -159,7 +160,7 @@ def _update_workspace_label(call: ToolCall) -> Any:
     """Rename or recolour a workspace label in every team at once."""
     check_capability(call.repositories, call.context, Capability.WORKSPACE_ADMIN)
     found = _workspace_label_ref(call, call.require("label"))
-    fields = given_arguments(call, ("name", "color"))
+    fields = given_arguments(call, ("name", "color", "description"))
     named, group_id = group_argument(
         call, call.repositories.team_config.list_workspace_labels(call.context.workspace_id)
     )
@@ -327,6 +328,7 @@ WORKFLOW_TOOLS: tuple[Tool, ...] = (
             {
                 "name": string("The label name, unique within the workspace labels"),
                 "color": string("A hex colour such as #5e6ad2"),
+                "description": string("A short description, up to 100 characters, shown on synced GitHub repositories"),
                 "is_group": boolean("Create a label group rather than a label"),
                 "group": string("Put the label in this workspace label group: its id or its name"),
             },
@@ -346,6 +348,7 @@ WORKFLOW_TOOLS: tuple[Tool, ...] = (
                 "label": string("The workspace label: its id, its name or its Group/Label path"),
                 "name": string("A new name"),
                 "color": string("A new hex colour such as #5e6ad2"),
+                "description": string("A new description; an empty string clears it"),
                 "group": string("Move it into this workspace label group, by id or name; an empty string ungroups it"),
             },
             required=("label",),

@@ -62,6 +62,7 @@ RELEVANT_EVENTS = frozenset(
         "check_run",
         "create",
         "release",
+        "label",
     }
 )
 

@@ -171,6 +171,13 @@ def handle_record(repositories: Repositories, record: Mapping[str, Any]) -> None
             issue_sync.push_backlink(repositories, job)
         else:
             issue_sync.push_comment(repositories, job)
+    elif kind in ("github.label_sync", "github.label_rename"):
+        from app.domains.integrations import label_sync
+
+        if kind == label_sync.LABEL_SYNC_JOB:
+            label_sync.reconcile(repositories, job)
+        else:
+            label_sync.apply_rename(repositories, job)
 
 
 def _announce_update_due(repositories: Repositories, job: Mapping[str, Any]) -> None:

@@ -98,6 +98,7 @@ def create_label(
             label_id=label_id,
             name=payload.name,
             color=payload.color,
+            description=(payload.description or "").strip() or None,
             is_group=payload.is_group,
             parent_id=payload.parent_id,
         )

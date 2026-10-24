@@ -172,6 +172,7 @@ GITHUB_ISSUE_PREFIX = "ghissue#"
 COMMENT_SYNC_PREFIX = "cmtsync#"
 GITHUB_COMMENT_PREFIX = "ghcomment#"
 BACKLINK_PREFIX = "backlink#"
+LABEL_SYNC_PREFIX = "labelsync#"
 DISPATCH_SLOTS_KEY = "dispatch#slots"
 """The one row per workspace holding the leases on its in-flight webhook attempts."""
 
@@ -186,6 +187,7 @@ SYNC_PREFIXES: tuple[str, ...] = (
     COMMENT_SYNC_PREFIX,
     GITHUB_COMMENT_PREFIX,
     BACKLINK_PREFIX,
+    LABEL_SYNC_PREFIX,
 )
 """Every sort key prefix the issue sync writes, which is what a purge has to clear."""
 
@@ -229,6 +231,16 @@ def github_comment_key(github_comment_id: str) -> str:
 def backlink_key(issue_id: str) -> str:
     """The sort key of the App's backlink comment on the GitHub issue one issue syncs with."""
     return f"{BACKLINK_PREFIX}{issue_id}"
+
+
+def label_sync_prefix(repository_id: str) -> str:
+    """The sort key prefix of every label sync row of one repository."""
+    return f"{LABEL_SYNC_PREFIX}{repository_id}#"
+
+
+def label_sync_key(repository_id: str, label_id: str) -> str:
+    """The sort key of one team label's sync state in one repository."""
+    return f"{label_sync_prefix(repository_id)}{label_id}"
 
 
 def ws_issue(workspace_id: str, issue_id: str) -> str:
@@ -663,6 +675,28 @@ class IssueBacklink(BaseModel):
     body: str = ""
     state: str = "pending"
     claimed_at: datetime = Field(default_factory=utc_now)
+
+
+class LabelSync(BaseModel):
+    """The sync state of one team label and the repository label it mirrors.
+
+    `name`, `color` and `description` are the repository label as last written or
+    seen, which is how a rename is carried: the row still names the label by its
+    old GitHub name. `created` says Standupless created the repository label,
+    and only such a label is deleted from GitHub when the team label goes, so a
+    label that was already in the repository and was adopted by name survives.
+    """
+
+    workspace_id: str
+    github_key: str
+    team_id: str
+    repository_id: str
+    label_id: str
+    name: str
+    color: str = ""
+    description: str = ""
+    created: bool = False
+    synced_at: datetime = Field(default_factory=utc_now)
 
 
 def _stored_time(value: datetime) -> str:
@@ -1415,6 +1449,23 @@ class GithubRepository:
         """Every linked issue sync row of one team, for a backlink backfill."""
         rows = [IssueSync.model_validate(dict(item)) for item in self._query(workspace_id, ISSUE_SYNC_PREFIX, limit)]
         return [row for row in rows if row.team_id == team_id and row.state == "linked" and row.number]
+
+    def list_label_syncs(self, workspace_id: str, repository_id: str, *, limit: int = 1000) -> list[LabelSync]:
+        """Every label sync row of one repository."""
+        if not repository_id:
+            return []
+        items = self._query(workspace_id, label_sync_prefix(repository_id), limit)
+        return [LabelSync.model_validate(dict(item)) for item in items]
+
+    def save_label_sync(self, row: LabelSync) -> LabelSync:
+        """Store one label's sync state."""
+        saved = row.model_copy(update={"synced_at": utc_now()})
+        self._repository.put(as_item(saved))
+        return saved
+
+    def delete_label_sync(self, workspace_id: str, repository_id: str, label_id: str) -> bool:
+        """Forget one label's sync state."""
+        return self._delete(workspace_id, label_sync_key(repository_id, label_id))
 
     def get_backlink(self, workspace_id: str, issue_id: str) -> IssueBacklink | None:
         """One issue's backlink comment row, or `None`."""

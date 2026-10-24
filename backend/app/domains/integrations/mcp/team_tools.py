@@ -187,6 +187,7 @@ def label_json(label: Label) -> dict[str, Any]:
         "team_id": label.team_id or None,
         "name": label.name,
         "color": label.color,
+        "description": label.description,
         "scope": label.scope,
         "hidden": label.hidden,
         "inherited_name": label.inherited_name,
@@ -753,6 +754,7 @@ def _create_label(call: ToolCall) -> Any:
         {
             "name": call.require("name"),
             "color": call.require("color"),
+            "description": call.optional("description"),
             "is_group": bool(call.optional("is_group", False)),
             "parent_id": group_id,
         }
@@ -766,7 +768,7 @@ def _update_label(call: ToolCall) -> Any:
     """Rename, recolour, group or ungroup a label."""
     team = admin_team(call)
     found = label_ref(call, team.team_id, call.require("label"))
-    fields = given_arguments(call, ("name", "color"))
+    fields = given_arguments(call, ("name", "color", "description"))
     own = [
         row
         for row in call.repositories.team_config.list_labels(call.context.workspace_id, team.team_id)
@@ -1286,6 +1288,7 @@ TEAM_TOOLS: tuple[Tool, ...] = (
                 "team_id": string(TEAM_ARGUMENT),
                 "name": string("The label name, unique within the team"),
                 "color": string("A hex colour such as #5e6ad2"),
+                "description": string("A short description, up to 100 characters, shown on synced GitHub repositories"),
                 "is_group": boolean("Create a label group rather than a label"),
                 "group": string("Put the label in this team label group: its id or its name"),
             },
@@ -1307,6 +1310,7 @@ TEAM_TOOLS: tuple[Tool, ...] = (
                 "label": string("The label: its id, its name or its Group/Label path"),
                 "name": string("A new name"),
                 "color": string("A new hex colour such as #5e6ad2"),
+                "description": string("A new description; an empty string clears it"),
                 "group": string("Move it into this team label group, by id or name; an empty string ungroups it"),
             },
             required=("team_id", "label"),

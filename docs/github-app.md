@@ -118,6 +118,7 @@ comments of a repository a team syncs with.
 - Check run
 - Create
 - Release
+- Label
 - Installation
 - Installation repositories
 
@@ -131,7 +132,12 @@ GitHub Releases, for a repository pinned to a team with that release source. A
 branch created, and a Release edited, deleted or saved as a draft, are answered
 200 without being queued. Both use Contents, which the App already has.
 
-The manifest names only the first ten: GitHub delivers installation and
+Label carries a rename made on GitHub to the team label a repository label
+mirrors, for a team that syncs labels, so issues keep carrying it. Edits by the
+App itself, and any other label change, are answered without a write. It uses
+Issues, which the App already has.
+
+The manifest names only the first eleven: GitHub delivers installation and
 installation repository events to every App without a subscription. Nothing else. An event that is not on this list is answered 200 and dropped by the
 receiver, so subscribing to more would only spend deliveries.
 
@@ -190,6 +196,19 @@ once:
 
 Until then a repository whose release source is tags or GitHub Releases records
 nothing live, and a release backfill still rebuilds its releases from its tags.
+
+## Adding label events to an existing App
+
+An App created before label definition sync does not subscribe to the label
+event. No permission changes, so no installation has to accept anything. Each
+environment's App is changed by hand, once:
+
+1. On the App's settings page, open Permissions & events.
+2. Under Subscribe to events, check Label.
+3. Save changes.
+
+Until then labels created, renamed, recoloured and deleted in Standupless still
+reach GitHub, and a rename made on GitHub is not carried back.
 
 ## Release sources
 

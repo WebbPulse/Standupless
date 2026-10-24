@@ -1109,6 +1109,7 @@ class JoinableWorkspaceRead(TypedDict):
 
 class LabelCreate(TypedDict):
     color: str
+    description: NotRequired[str | None]
     is_group: NotRequired[bool]
     name: str
     parent_id: NotRequired[str | None]
@@ -1120,6 +1121,7 @@ class LabelMerge(TypedDict):
 
 class LabelRead(TypedDict):
     color: str
+    description: NotRequired[str | None]
     hidden: NotRequired[bool]
     id: str
     inherited_name: NotRequired[str | None]
@@ -1131,6 +1133,7 @@ class LabelRead(TypedDict):
 
 class LabelUpdate(TypedDict):
     color: NotRequired[str | None]
+    description: NotRequired[str | None]
     name: NotRequired[str | None]
     parent_id: NotRequired[str | None]
 

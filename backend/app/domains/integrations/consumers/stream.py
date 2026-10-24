@@ -280,6 +280,23 @@ def queue_comment_sync(repositories: Repositories, record: Mapping[str, Any]) ->
     return True
 
 
+def queue_label_sync(repositories: Repositories, record: Mapping[str, Any]) -> int:
+    """Queue a repository label reconcile for every team that syncs labels, when a label definition moved.
+
+    Every syncing team is queued rather than only the label's own, because a
+    workspace or parent team label reaches every team that inherits it, and a
+    reconcile with nothing to do makes no write.
+    """
+    from app.domains.integrations.label_sync import definition_changed, queue_for_workspace
+
+    new_image = deserialize_image(record, "NewImage")
+    old_image = deserialize_image(record, "OldImage")
+    if not settings.WEBHOOK_DISPATCH_QUEUE_URL or not definition_changed(old_image, new_image):
+        return 0
+    image = new_image or old_image
+    return queue_for_workspace(repositories, str(image.get("workspace_id", "")))
+
+
 def handle_record(
     repositories: Repositories,
     record: Mapping[str, Any],
@@ -321,6 +338,7 @@ def handle_record(
     elif physical == table_name("team_config", prefix):
         if _is_label(record):
             publish(repositories, payloads.LABEL, record, cache)
+            queue_label_sync(repositories, record)
     else:
         _log.warning(
             "Ignored a stream record from an unexpected table.",
