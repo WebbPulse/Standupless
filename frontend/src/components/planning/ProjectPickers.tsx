@@ -926,7 +926,7 @@ export const ProjectLabelsPicker: React.FC<ProjectLabelsPickerProps> = ({
               trigger.onClick();
             }}
             className={cn(
-              'inline-flex min-w-0 items-center gap-1 rounded-sm disabled:cursor-default',
+              'inline-flex min-w-0 items-center gap-1 rounded-sm hover:opacity-80 disabled:cursor-default disabled:hover:opacity-100',
               className
             )}
           >
