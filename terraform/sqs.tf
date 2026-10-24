@@ -6,7 +6,7 @@ module "github_events_queue" {
   count = local.github_queues_enabled ? 1 : 0
 
   source  = "terraform.webbpulse.com/WebbPulse/platform-modules/aws//modules/sqs-queue"
-  version = "~> 2.27"
+  version = "~> 2.45"
 
   name = "${local.prefix}-github-events"
 
@@ -24,7 +24,7 @@ module "webhook_dispatch_queue" {
   count = local.github_queues_enabled ? 1 : 0
 
   source  = "terraform.webbpulse.com/WebbPulse/platform-modules/aws//modules/sqs-queue"
-  version = "~> 2.27"
+  version = "~> 2.45"
 
   name = "${local.prefix}-webhook-dispatch"
 
@@ -114,7 +114,7 @@ module "team_purge_queue" {
   for_each = local.team_purge_enabled ? toset(local.team_purge_stages) : toset([])
 
   source  = "terraform.webbpulse.com/WebbPulse/platform-modules/aws//modules/sqs-queue"
-  version = "~> 2.27"
+  version = "~> 2.45"
 
   name = "${local.prefix}-team-purge-${each.key}"
 
@@ -214,7 +214,7 @@ module "workspace_export_queue" {
   count = local.workspace_export_enabled ? 1 : 0
 
   source  = "terraform.webbpulse.com/WebbPulse/platform-modules/aws//modules/sqs-queue"
-  version = "~> 2.27"
+  version = "~> 2.45"
 
   name = "${local.prefix}-workspace-export"
 
@@ -255,7 +255,7 @@ module "issue_import_queue" {
   count = local.issue_import_enabled ? 1 : 0
 
   source  = "terraform.webbpulse.com/WebbPulse/platform-modules/aws//modules/sqs-queue"
-  version = "~> 2.27"
+  version = "~> 2.45"
 
   name = "${local.prefix}-issue-import"
 

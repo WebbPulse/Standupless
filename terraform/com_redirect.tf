@@ -29,7 +29,7 @@ resource "aws_route53_zone" "com_redirect" {
 
 module "com_redirect_certificate" {
   source  = "terraform.webbpulse.com/WebbPulse/platform-modules/aws//modules/acm-certificate"
-  version = "~> 2.27"
+  version = "~> 2.45"
 
   providers = {
     aws         = aws.us_east_1
