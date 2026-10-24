@@ -873,6 +873,390 @@
         "title": "ArchiveSettingsUpdate",
         "type": "object"
       },
+      "AsanaImportPreviewRead": {
+        "description": "What an Asana import would do, project by project, read from Asana without writing anything.",
+        "properties": {
+          "projects": {
+            "items": {
+              "$ref": "#/components/schemas/AsanaProjectPreviewRead"
+            },
+            "title": "Projects",
+            "type": "array"
+          }
+        },
+        "required": [
+          "projects"
+        ],
+        "title": "AsanaImportPreviewRead",
+        "type": "object"
+      },
+      "AsanaImportRequest": {
+        "description": "An Asana import or its preview: the token, sealed while the job runs and deleted after, and the projects.",
+        "properties": {
+          "projects": {
+            "items": {
+              "$ref": "#/components/schemas/AsanaProjectChoice"
+            },
+            "maxItems": 50,
+            "minItems": 1,
+            "title": "Projects",
+            "type": "array"
+          },
+          "token": {
+            "description": "An Asana personal access token. Used for this request or import only and never stored after it.",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "token",
+          "projects"
+        ],
+        "title": "AsanaImportRequest",
+        "type": "object"
+      },
+      "AsanaProjectChoice": {
+        "description": "One Asana project to import, the Standupless team it goes into, and how its tasks map.",
+        "properties": {
+          "create_project": {
+            "default": true,
+            "description": "Also write the Asana project as a Standupless project.",
+            "title": "Create Project",
+            "type": "boolean"
+          },
+          "project_gid": {
+            "pattern": "^[0-9]{1,32}$",
+            "title": "Project Gid",
+            "type": "string"
+          },
+          "status_field_gid": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9]{1,32}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A single choice custom field whose options set the status, instead of the task's section.",
+            "title": "Status Field Gid"
+          },
+          "statuses": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Section or option name to the id of the team status it lands in. Anything unmapped lands in the status of the same name, else the status its name means, else the team's default.",
+            "maxProperties": 200,
+            "title": "Statuses",
+            "type": "object"
+          },
+          "team_id": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Team Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "project_gid",
+          "team_id"
+        ],
+        "title": "AsanaProjectChoice",
+        "type": "object"
+      },
+      "AsanaProjectListRead": {
+        "description": "Every project the token can read across its Asana workspaces.",
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AsanaProjectRead"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "AsanaProjectListRead",
+        "type": "object"
+      },
+      "AsanaProjectMappingRead": {
+        "description": "One Asana project an Asana import reads, the Standupless team it writes into, and how its tasks map.",
+        "properties": {
+          "create_project": {
+            "title": "Create Project",
+            "type": "boolean"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "project_gid": {
+            "title": "Project Gid",
+            "type": "string"
+          },
+          "status_field_gid": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status Field Gid"
+          },
+          "status_field_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status Field Name"
+          },
+          "statuses": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Statuses",
+            "type": "object"
+          },
+          "team_id": {
+            "title": "Team Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "project_gid",
+          "name",
+          "team_id",
+          "create_project"
+        ],
+        "title": "AsanaProjectMappingRead",
+        "type": "object"
+      },
+      "AsanaProjectPreviewRead": {
+        "description": "What importing one Asana project would do.",
+        "properties": {
+          "completed_count": {
+            "title": "Completed Count",
+            "type": "integer"
+          },
+          "create_project": {
+            "title": "Create Project",
+            "type": "boolean"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "project_gid": {
+            "title": "Project Gid",
+            "type": "string"
+          },
+          "sections": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Sections",
+            "type": "array"
+          },
+          "status_field_gid": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status Field Gid"
+          },
+          "status_field_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status Field Name"
+          },
+          "status_fields": {
+            "items": {
+              "$ref": "#/components/schemas/AsanaStatusFieldRead"
+            },
+            "title": "Status Fields",
+            "type": "array"
+          },
+          "statuses": {
+            "items": {
+              "$ref": "#/components/schemas/AsanaStatusPlanRead"
+            },
+            "title": "Statuses",
+            "type": "array"
+          },
+          "task_count": {
+            "description": "How many tasks the project holds, as Asana counts them.",
+            "title": "Task Count",
+            "type": "integer"
+          },
+          "team_id": {
+            "title": "Team Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "project_gid",
+          "name",
+          "team_id",
+          "create_project",
+          "task_count",
+          "completed_count",
+          "sections",
+          "status_fields",
+          "statuses"
+        ],
+        "title": "AsanaProjectPreviewRead",
+        "type": "object"
+      },
+      "AsanaProjectRead": {
+        "description": "One project the token can read in Asana.",
+        "properties": {
+          "archived": {
+            "title": "Archived",
+            "type": "boolean"
+          },
+          "completed": {
+            "title": "Completed",
+            "type": "boolean"
+          },
+          "gid": {
+            "title": "Gid",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "team_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Team Name"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
+          },
+          "workspace_gid": {
+            "title": "Workspace Gid",
+            "type": "string"
+          },
+          "workspace_name": {
+            "title": "Workspace Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "gid",
+          "name",
+          "workspace_gid",
+          "workspace_name",
+          "archived",
+          "completed"
+        ],
+        "title": "AsanaProjectRead",
+        "type": "object"
+      },
+      "AsanaStatusFieldRead": {
+        "description": "One single choice custom field of a project that could set the status instead of the section.",
+        "properties": {
+          "gid": {
+            "title": "Gid",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "options": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Options",
+            "type": "array"
+          }
+        },
+        "required": [
+          "gid",
+          "name",
+          "options"
+        ],
+        "title": "AsanaStatusFieldRead",
+        "type": "object"
+      },
+      "AsanaStatusPlanRead": {
+        "description": "Where one section or option of a project lands.",
+        "properties": {
+          "source": {
+            "title": "Source",
+            "type": "string"
+          },
+          "status_id": {
+            "title": "Status Id",
+            "type": "string"
+          },
+          "status_name": {
+            "title": "Status Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source",
+          "status_id",
+          "status_name"
+        ],
+        "title": "AsanaStatusPlanRead",
+        "type": "object"
+      },
+      "AsanaTokenRequest": {
+        "description": "An Asana personal access token, used for this request only and never stored.",
+        "properties": {
+          "token": {
+            "description": "An Asana personal access token. Used for this request or import only and never stored after it.",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "token"
+        ],
+        "title": "AsanaTokenRequest",
+        "type": "object"
+      },
       "AttachmentListRead": {
         "properties": {
           "attachments": {
@@ -7901,6 +8285,13 @@
       "IssueImportRead": {
         "description": "One import job and how far it has got.",
         "properties": {
+          "asana_projects": {
+            "items": {
+              "$ref": "#/components/schemas/AsanaProjectMappingRead"
+            },
+            "title": "Asana Projects",
+            "type": "array"
+          },
           "counts": {
             "additionalProperties": {
               "type": "integer"
@@ -7966,7 +8357,8 @@
             "enum": [
               "csv",
               "linear",
-              "github"
+              "github",
+              "asana"
             ],
             "title": "Kind",
             "type": "string"
@@ -30348,6 +30740,183 @@
           }
         ],
         "summary": "Start Issue Import",
+        "tags": [
+          "integrations"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/imports/asana": {
+      "post": {
+        "description": "Queue an import of Asana projects into Standupless teams, refusing a second while one is running.",
+        "operationId": "start_asana_import_api_workspaces__workspace_id__imports_asana_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AsanaImportRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IssueImportRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Start Asana Import",
+        "tags": [
+          "integrations"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/imports/asana/preview": {
+      "post": {
+        "description": "What importing the chosen Asana projects would do, read from Asana and writing nothing.",
+        "operationId": "preview_asana_import_api_workspaces__workspace_id__imports_asana_preview_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AsanaImportRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AsanaImportPreviewRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Preview Asana Import",
+        "tags": [
+          "integrations"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/imports/asana/projects": {
+      "post": {
+        "description": "The Asana projects a personal access token can read, to choose from; the token is not kept.",
+        "operationId": "list_asana_projects_api_workspaces__workspace_id__imports_asana_projects_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AsanaTokenRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AsanaProjectListRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "List Asana Projects",
         "tags": [
           "integrations"
         ]

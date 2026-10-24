@@ -4177,8 +4177,8 @@ export interface IssueImportPreviewRead {
 export type ImportStatus =
   'queued' | 'running' | 'completed' | 'failed' | 'cancelled';
 
-/** What an import reads: an uploaded CSV, a Linear workspace through its API, or a GitHub repository's Issues. */
-export type ImportKind = 'csv' | 'linear' | 'github';
+/** What an import reads: an uploaded CSV, a Linear or Asana workspace through its API, or a GitHub repository's Issues. */
+export type ImportKind = 'csv' | 'linear' | 'asana' | 'github';
 
 /** The tallies a Linear import keeps, by name. */
 export type LinearImportCount =
@@ -4203,6 +4203,26 @@ export type GitHubImportCount =
   | 'labels'
   | 'already_synced'
   | 'pull_requests_skipped';
+
+/** The tallies an Asana import keeps, by name. */
+export type AsanaImportCount =
+  | 'issues_created'
+  | 'issues_updated'
+  | 'comments'
+  | 'labels'
+  | 'projects'
+  | 'sub_issues';
+
+/** One Asana project an Asana import reads, the team it writes into, and how its tasks map. */
+export interface AsanaProjectMappingRead {
+  project_gid: string;
+  name: string;
+  team_id: string;
+  create_project: boolean;
+  status_field_gid?: string | null;
+  status_field_name?: string | null;
+  statuses?: Record<string, string>;
+}
 
 /** One Linear team a Linear import reads and the Standupless team it writes into. */
 export interface LinearTeamMappingRead {
@@ -4238,8 +4258,11 @@ export interface IssueImportRead {
   kind?: ImportKind;
   /** How many issues a Linear import found already imported and updated. */
   updated_count?: number;
-  counts?: Partial<Record<LinearImportCount | GitHubImportCount, number>>;
+  counts?: Partial<
+    Record<LinearImportCount | AsanaImportCount | GitHubImportCount, number>
+  >;
   linear_teams?: LinearTeamMappingRead[];
+  asana_projects?: AsanaProjectMappingRead[];
   /** The repository a GitHub import reads; its full name is the file name. */
   github_repository_id?: string | null;
   /** What a running Linear or GitHub import is reading now. */
@@ -4275,6 +4298,74 @@ export interface LinearTeamChoice {
 export interface LinearImportRequest {
   api_key: string;
   teams: LinearTeamChoice[];
+}
+
+/** One project an Asana personal access token can read. */
+export interface AsanaProjectRead {
+  gid: string;
+  name: string;
+  workspace_gid: string;
+  workspace_name: string;
+  team_name?: string | null;
+  archived: boolean;
+  completed: boolean;
+  url?: string | null;
+}
+
+/** Every project an Asana token can read across its Asana workspaces. */
+export interface AsanaProjectListRead {
+  items: AsanaProjectRead[];
+}
+
+/** One Asana project to import, the team it goes into, and how its tasks map. */
+export interface AsanaProjectChoice {
+  project_gid: string;
+  team_id: string;
+  create_project?: boolean;
+  /** A single choice custom field whose options set the status instead of the section. */
+  status_field_gid?: string | null;
+  /** Section or option name to the id of the team status it lands in. */
+  statuses?: Record<string, string>;
+}
+
+/** The body an Asana import or its preview takes. The token is used for the job only. */
+export interface AsanaImportRequest {
+  token: string;
+  projects: AsanaProjectChoice[];
+}
+
+/** Where one section or option of an Asana project lands. */
+export interface AsanaStatusPlanRead {
+  source: string;
+  status_id: string;
+  status_name: string;
+}
+
+/** One single choice custom field that could set the status instead of the section. */
+export interface AsanaStatusFieldRead {
+  gid: string;
+  name: string;
+  options: string[];
+}
+
+/** What importing one Asana project would do. */
+export interface AsanaProjectPreviewRead {
+  project_gid: string;
+  name: string;
+  team_id: string;
+  create_project: boolean;
+  status_field_gid?: string | null;
+  status_field_name?: string | null;
+  task_count: number;
+  completed_count: number;
+  sections: string[];
+  status_fields: AsanaStatusFieldRead[];
+  statuses: AsanaStatusPlanRead[];
+}
+
+/** What an Asana import would do, project by project, writing nothing. */
+export interface AsanaImportPreviewRead {
+  projects: AsanaProjectPreviewRead[];
 }
 
 /** One repository the workspace's installed GitHub App covers, to import the Issues of. */
