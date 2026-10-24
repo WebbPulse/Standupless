@@ -10,7 +10,8 @@ somebody deliberately reopened.
 
 As in Linear, only a key in the branch name, in the title, or right after a magic
 word moves an issue's status. A key the body mentions in passing still links the
-pull request to the issue, and moves nothing.
+pull request to the issue, and moves nothing. A key named after `Refs` moves as the
+pull request opens but never on its merge, which only a closing word may trigger.
 """
 
 from __future__ import annotations
@@ -59,17 +60,42 @@ _REFERENCE_PATTERN = re.compile(
 )
 
 
+_LIST_SEPARATOR = re.compile(r"\s*(?:,\s*(?:and\s+|&\s*)?|\s+and\s+|\s*&\s*)")
+"""What joins one key to the next in a list a single word governs, as in `Fixes A-1, A-2 and A-3`."""
+
+
+def _key_at(text: str, position: int, prefixes: Prefixes) -> tuple[tuple[str, int], int] | None:
+    """The key that starts exactly at `position`, with the offset just past it, or `None`."""
+    window = text[position : position + 32]
+    for hit, key in key_matches(window, prefixes):
+        if hit.start() == 0:
+            return (key.team_id, key.number), position + hit.end()
+    return None
+
+
 def _keys_after(pattern: re.Pattern[str], text: str, prefixes: Prefixes) -> dict[tuple[str, int], str]:
-    """Each key that directly follows a match of `pattern`, mapped to the matched word."""
+    """Each key a match of `pattern` governs, mapped to the matched word.
+
+    The word governs the key right after it and any further keys joined to it by a
+    comma, `and` or `&`. Anything else ends the list, so a full stop, a newline or
+    another word such as `refs` hands the keys after it to whatever governs them.
+    """
     if not text:
         return {}
     named: dict[tuple[str, int], str] = {}
     for match in pattern.finditer(text):
         word = " ".join(match.group(1).lower().split())
-        window = text[match.end() : match.end() + 32]
-        for hit, key in key_matches(window, prefixes):
-            if hit.start() == 0:
-                named[(key.team_id, key.number)] = word
+        position = match.end()
+        while True:
+            found = _key_at(text, position, prefixes)
+            if found is None:
+                break
+            ident, position = found
+            named[ident] = word
+            separator = _LIST_SEPARATOR.match(text, position)
+            if separator is None:
+                break
+            position = separator.end()
     return named
 
 
@@ -77,8 +103,9 @@ def find_closing(text: str, prefixes: Prefixes) -> dict[tuple[str, int], str]:
     """Which issues this text closes, as `(team_id, number)` mapped to the magic word.
 
     A word counts only when the key follows it directly, so "fixes ABC-1" closes and
-    "ABC-1 is not fixed" does not. The window is deliberately short: anything longer
-    starts matching a key mentioned in a later sentence. Keyed by team and number
+    "ABC-1 is not fixed" does not. A list joined by commas or `and` closes every key
+    in it, and a sentence break or another word ends it, so "Fixes ABC-1. Refs
+    ABC-2" and "Fixes ABC-1, refs ABC-2" close ABC-1 alone. Keyed by team and number
     rather than by the written key, so a retired prefix closes the same issue.
     """
     return _keys_after(_MAGIC_PATTERN, text, prefixes)
@@ -87,8 +114,8 @@ def find_closing(text: str, prefixes: Prefixes) -> dict[tuple[str, int], str]:
 def find_referencing(text: str, prefixes: Prefixes) -> dict[tuple[str, int], str]:
     """Which issues this text names after a non-closing word such as `Refs` or `Part of`.
 
-    Such a key moves the issue as the pull request progresses, the same as a key in
-    the title, but a merge does not close it.
+    Such a key moves the issue as the pull request opens and becomes ready, the
+    same as a key in the title, but a merge leaves it where it is.
     """
     return _keys_after(_REFERENCE_PATTERN, text, prefixes)
 
@@ -107,10 +134,17 @@ def extract(
     found twice is kept once. The magic word is read from the title and body only,
     which is what a commit message cannot contribute. A key moves its issue's status
     when the branch, the title, a commit message or a magic word in the body names
-    it; a bare mention in the body only links.
+    it; a bare mention in the body only links. A key that a `Refs` style word names
+    and no closing word does holds on merge, even when the title or branch also
+    carries it, because `Refs` is how a pull request says it is only part of the work.
     """
     closing = {**find_closing(title, prefixes), **find_closing(body, prefixes)}
-    referencing = find_referencing(body, prefixes)
+    referencing = {**find_referencing(title, prefixes), **find_referencing(body, prefixes)}
+    closed_anywhere = set(closing)
+    for message in commit_messages:
+        closed_anywhere |= set(find_closing(message, prefixes))
+        referencing.update(find_referencing(message, prefixes))
+    held = set(referencing) - closed_anywhere
 
     keys: dict[tuple[str, int], FoundKey] = {}
     moving: set[tuple[str, int]] = set(closing) | set(referencing)
@@ -129,6 +163,7 @@ def extract(
             number=found.number,
             magic_word=closing.get((found.team_id, found.number)),
             moves_status=(found.team_id, found.number) in moving,
+            holds_on_merge=(found.team_id, found.number) in held,
         )
         for found in sorted(keys.values(), key=lambda row: (row.team_id, row.number))
     ]
