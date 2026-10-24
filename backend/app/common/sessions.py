@@ -8,26 +8,27 @@ each knowing the table's name and index.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
 
-def revoke_refresh_families(user_id: str) -> int:
+if TYPE_CHECKING:  # pragma: no cover
+    from app.common.session_audit import Revoker
+
+
+def revoke_refresh_families(user_id: str, *, revoker: "Revoker | None" = None) -> int:
     """Revoke every refresh family the user holds, or nothing when no issuer is configured.
 
     Answers how many families were live. Access tokens already issued run out on
-    their own short lifetime; nothing can refresh them once this returns.
+    their own short lifetime; nothing can refresh them once this returns. Each live
+    session is recorded as revoked by `revoker`, or by the person themselves.
     """
-    from webbpulse.dynamodb import Repository
-    from webbpulse.identity import REFRESH_TOKENS_TABLE, DynamoRefreshTokenStore
+    from contextlib import nullcontext
 
     from app.common.core.config import get_settings
+    from app.common.session_audit import refresh_token_store, revoked_by
 
     settings = get_settings()
     if not settings.IDENTITY_ISSUER or not user_id:
         return 0
-    store = DynamoRefreshTokenStore(
-        Repository(
-            REFRESH_TOKENS_TABLE,
-            prefix=settings.dynamodb_table_prefix,
-            endpoint_url=settings.DYNAMODB_ENDPOINT_URL or None,
-        )
-    )
-    return store.revoke_all_for_user(user_id)
+    store = refresh_token_store(settings)
+    with revoked_by(revoker) if revoker is not None else nullcontext():
+        return store.revoke_all_for_user(user_id)

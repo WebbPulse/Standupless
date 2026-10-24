@@ -462,3 +462,62 @@ def test_consent_to_a_workspace_the_user_does_not_belong_to_is_refused(client: T
     response = consent(client, screen.text, WORKSPACE_TWO)
     assert response.status_code == 400
     assert response.json()["error"] == "invalid_request"
+
+
+def test_an_mcp_sign_in_and_its_revocation_reach_the_audit_log(client: TestClient, repositories: Any) -> None:
+    """The code exchange is a sign-in naming the client, a refresh adds nothing, and `/revoke` ends it."""
+    from app.common import audit
+
+    make_user(repositories, MEMBER, "member@example.com")
+    make_workspace(repositories, WORKSPACE_ONE, "one", OWNER)
+    repositories.workspaces.set_billing(WORKSPACE_ONE, plan="business")
+    add_member(repositories, WORKSPACE_ONE, MEMBER, "member")
+    client_id = register_client(client)
+    sign_in(client, MEMBER)
+
+    verifier, challenge = pkce_pair()
+    screen = authorize(client, client_id, "issues:read", challenge)
+    code = code_from(consent(client, screen.text, WORKSPACE_ONE))
+    exchange = client.post(
+        f"{PREFIX}/token",
+        data={
+            "grant_type": "authorization_code",
+            "code": code,
+            "client_id": client_id,
+            "redirect_uri": "http://localhost:7777/callback",
+            "code_verifier": verifier,
+            "resource": RESOURCE,
+        },
+    )
+    assert exchange.status_code == 200, exchange.text
+    refreshed = client.post(
+        f"{PREFIX}/token",
+        data={
+            "grant_type": "refresh_token",
+            "refresh_token": exchange.json()["refresh_token"],
+            "client_id": client_id,
+            "resource": RESOURCE,
+        },
+    )
+    assert refreshed.status_code == 200, refreshed.text
+
+    created = audit.list_page(repositories, WORKSPACE_ONE, event="session.created", actor_id=MEMBER).events
+    assert len(created) == 1
+    assert created[0].source == "mcp"
+    assert created[0].target_label == "Test MCP Client"
+    assert created[0].after is not None
+    assert created[0].after["client_name"] == "Test MCP Client"
+
+    revoked = client.post(
+        f"{PREFIX}/revoke",
+        data={"token": refreshed.json()["refresh_token"], "client_id": client_id},
+    )
+    assert revoked.status_code == 200, revoked.text
+
+    ended = audit.list_page(repositories, WORKSPACE_ONE, event="session.revoked").events
+    assert len(ended) == 1
+    assert ended[0].actor_id == MEMBER
+    assert ended[0].source == "mcp"
+    assert ended[0].target_id == created[0].target_id
+    assert ended[0].after is not None
+    assert ended[0].after["reason"] == "client_revoked"
