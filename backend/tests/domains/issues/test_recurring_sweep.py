@@ -15,13 +15,14 @@ from typing import Any
 import pytest
 
 from app.common.db.dynamo.issues import Issue
+from app.common.db.dynamo.team_config import default_triage_settings
 from app.common.db.dynamo.team_recurring import RecurringIssue, recurring_key
 from app.common.db.dynamo.team_templates import IssueTemplate, template_key
 from app.common.recurring_issues import CREATOR_GONE, TEMPLATE_GONE
 from app.domains.issues.consumers.rollup import handle_record
 from app.domains.issues.cycle_close import CYCLE_CLOSE_SOURCE
 from app.domains.issues.recurring import sweep
-from tests.domains.helpers import MEMBER, make_user
+from tests.domains.helpers import MEMBER, add_team_member, make_user
 from tests.domains.issues.conftest import TEAM, WORKSPACE
 
 NOW = datetime(2026, 10, 12, 9, 7, tzinfo=timezone.utc)
@@ -98,6 +99,21 @@ def test_a_due_schedule_creates_one_issue_from_its_template(repositories: Any, s
     assert stored.last_issue_id == issue.issue_id
     assert stored.last_issue_key == issue.key
     assert stored.last_run_at is not None
+
+
+def test_a_due_schedule_files_into_triage_while_the_team_has_it_on(repositories: Any, schedule: RecurringIssue) -> None:
+    """A template with no status leaves the new issue in triage, even from a team member."""
+    add_team_member(repositories, WORKSPACE, TEAM, MEMBER, "member")
+    repositories.team_config.put_triage_settings(
+        default_triage_settings(WORKSPACE, TEAM).model_copy(update={"enabled": True})
+    )
+
+    sweep(repositories, now=NOW)
+
+    issue_id = _stored(repositories).last_issue_id
+    assert issue_id is not None
+    stored = repositories.issues.get(WORKSPACE, issue_id)
+    assert stored is not None and stored.in_triage is True
 
 
 def test_a_second_sweep_at_the_same_moment_creates_nothing(repositories: Any, schedule: RecurringIssue) -> None:

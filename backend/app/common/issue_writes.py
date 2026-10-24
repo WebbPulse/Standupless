@@ -415,7 +415,14 @@ def create_issue(repositories: Repositories, context: AuthzContext, payload: Iss
     )
 
     mentions = mentioned_user_ids(repositories, context.workspace_id, payload.body)
-    in_triage = lands_in_triage(repositories, context, payload.team_id, requested_triage)
+    in_triage = lands_in_triage(
+        repositories,
+        context,
+        payload.team_id,
+        requested_triage,
+        status_named=bool(status_ref),
+        has_parent=parent_id is not None,
+    )
     number = repositories.counters.allocate_issue_number(context.workspace_id, payload.team_id)
     issue = Issue(
         workspace_id=context.workspace_id,

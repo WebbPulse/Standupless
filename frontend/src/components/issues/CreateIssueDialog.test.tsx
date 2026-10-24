@@ -45,6 +45,19 @@ vi.mock('../../api/teams', () => ({
   createLabel: vi.fn(),
 }));
 
+const triage = vi.hoisted(() => ({ on: false }));
+
+vi.mock('../../hooks/useTriageTeams', async () => {
+  const actual = await vi.importActual<
+    typeof import('../../hooks/useTriageTeams')
+  >('../../hooks/useTriageTeams');
+  return {
+    ...actual,
+    useTriageOn: (teamId: string | null | undefined) =>
+      triage.on && teamId === 't-1',
+  };
+});
+
 vi.mock('../../api/views', () => ({
   similarIssues: (_w: string, title: string) => similarIssues(title),
 }));
@@ -154,6 +167,7 @@ let counter = 0;
 
 beforeEach(() => {
   counter = 0;
+  triage.on = false;
   for (const spy of [
     createIssue,
     listTeams,
@@ -271,6 +285,46 @@ describe('filing an issue', () => {
       'Ship it'
     );
     expect(onCreated).not.toHaveBeenCalled();
+  });
+});
+
+describe('triage', () => {
+  it('defaults the status to Triage while the team has triage on', async () => {
+    triage.on = true;
+    const user = userEvent.setup();
+    renderDialog();
+
+    expect(
+      screen.getByRole('button', { name: 'Status: Triage' })
+    ).toBeInTheDocument();
+    await user.type(screen.getByRole('textbox', { name: 'Title' }), 'Ship it');
+    await user.click(screen.getByRole('button', { name: /Create issue/ }));
+
+    await waitFor(() => {
+      expect(createIssue).toHaveBeenCalledWith({
+        team_id: 't-1',
+        title: 'Ship it',
+      });
+    });
+  });
+
+  it('files into a picked status instead of Triage', async () => {
+    triage.on = true;
+    const user = userEvent.setup();
+    renderDialog();
+
+    await user.type(screen.getByRole('textbox', { name: 'Title' }), 'Ship it');
+    await user.click(screen.getByRole('button', { name: 'Status: Triage' }));
+    await user.click(screen.getByRole('option', { name: /Todo/ }));
+    await user.click(screen.getByRole('button', { name: /Create issue/ }));
+
+    await waitFor(() => {
+      expect(createIssue).toHaveBeenCalledWith({
+        team_id: 't-1',
+        title: 'Ship it',
+        status_id: 'st-2',
+      });
+    });
   });
 });
 

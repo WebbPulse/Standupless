@@ -334,17 +334,30 @@ def team_role(repositories: Repositories, context: AuthzContext, team_id: str) -
     return IMPLIED_TEAM_ROLE.get(context.role)
 
 
-def lands_in_triage(repositories: Repositories, context: AuthzContext, team_id: str, requested: bool) -> bool:
+def lands_in_triage(
+    repositories: Repositories,
+    context: AuthzContext,
+    team_id: str,
+    requested: bool,
+    *,
+    status_named: bool = False,
+    has_parent: bool = False,
+) -> bool:
     """Whether a new issue in one team starts in its triage inbox.
 
     Only when the team has triage on: then an issue filed by a guest, by someone
-    outside the team or by a workspace key lands there, and a member may ask for it.
+    outside the team or by a workspace key always lands there, and so does a
+    member's issue that names no status. A member who names a real status files
+    straight into it, and a member's sub-issue files straight in unless triage
+    is asked for.
     """
     if not triage_on(repositories, context.workspace_id, team_id):
         return False
     if requested or context.is_guest or is_service_subject(context.user_id):
         return True
-    return repositories.memberships.get_team_membership(context.workspace_id, team_id, context.user_id) is None
+    if repositories.memberships.get_team_membership(context.workspace_id, team_id, context.user_id) is None:
+        return True
+    return not status_named and not has_parent
 
 
 def triage_on(repositories: Repositories, workspace_id: str, team_id: str) -> bool:
