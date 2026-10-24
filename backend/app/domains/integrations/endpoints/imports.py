@@ -11,6 +11,10 @@ A Linear import reads a Linear workspace through Linear's API with a personal
 key the admin pastes. The key is checked against Linear first, then sealed
 beside the job until it ends, and never appears in a response, a log or the
 audit row. Any import can be cancelled; what it already wrote stays.
+
+A GitHub import reads one repository's Issues through the workspace's installed
+GitHub App, so it needs no key: the admin picks a repository the installation
+covers and the team the issues go into.
 """
 
 from __future__ import annotations
@@ -25,7 +29,11 @@ from app.common.api.dependencies.repositories import Repositories, get_repositor
 from app.common.csv_import import CsvRejected
 from app.common.issue_rules import require_team_member, unprocessable
 from app.common.linear_api import LinearAuthFailed, LinearError
+from app.domains.integrations import github_import
 from app.domains.integrations.schemas.imports import (
+    GitHubImportRepositoryListRead,
+    GitHubImportRepositoryRead,
+    GitHubImportRequest,
     IssueImportListRead,
     IssueImportPreviewRead,
     IssueImportRead,
@@ -209,6 +217,57 @@ def start_linear_import(
             "preset": job.preset,
             "teams": [{"linear_key": mapping.linear_key, "team_id": mapping.team_id} for mapping in mappings],
         },
+    )
+    return IssueImportRead.from_job(job)
+
+
+@router.get("/{workspace_id}/imports/github/repositories", response_model=GitHubImportRepositoryListRead)
+def list_github_import_repositories(
+    context: Annotated[AuthzContext, Depends(require(Capability.WORKSPACE_ADMIN))],
+    repositories: Annotated[Repositories, Depends(get_repositories)],
+) -> GitHubImportRepositoryListRead:
+    """The repositories the installed GitHub App covers, to choose the one whose Issues are imported."""
+    rows = github_import.importable_repositories(repositories, context.workspace_id)
+    return GitHubImportRepositoryListRead(
+        items=[
+            GitHubImportRepositoryRead(
+                repository_id=row.repository_id, full_name=row.full_name, private=row.private, team_id=row.team_id
+            )
+            for row in rows
+        ]
+    )
+
+
+@router.post(
+    "/{workspace_id}/imports/github",
+    response_model=IssueImportRead,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+def start_github_import(
+    body: GitHubImportRequest,
+    context: Annotated[AuthzContext, Depends(require(Capability.WORKSPACE_ADMIN))],
+    repositories: Annotated[Repositories, Depends(get_repositories)],
+) -> IssueImportRead:
+    """Queue an import of one repository's Issues into one team, refusing a second while one is running."""
+    try:
+        job = github_import.start_github_import(repositories, context, body.team_id, body.repository_id)
+    except github_import.RepositoryNotAvailable as exc:
+        raise unprocessable(str(exc)) from None
+    except issue_import.ImportUnavailable as exc:
+        raise _unavailable(exc) from exc
+    except issue_import.ImportInProgress as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"error_code": "CONFLICT", "message": str(exc)},
+        ) from exc
+    audit.record(
+        repositories,
+        context,
+        "import.started",
+        target_type="import",
+        target_id=job.import_id,
+        target_label=job.file_name,
+        after={"preset": job.preset, "team_id": job.team_id, "repository_id": job.github_repository_id},
     )
     return IssueImportRead.from_job(job)
 

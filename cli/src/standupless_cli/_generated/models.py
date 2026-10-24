@@ -736,6 +736,18 @@ class GitHubAppStatus(TypedDict):
     secret_available: bool
 
 
+class GitHubImportRepositoryRead(TypedDict):
+    full_name: str
+    private: bool
+    repository_id: str
+    team_id: NotRequired[str | None]
+
+
+class GitHubImportRequest(TypedDict):
+    repository_id: str
+    team_id: str
+
+
 class HealthBreakdownRead(TypedDict):
     at_risk: NotRequired[int]
     none: NotRequired[int]
@@ -3160,6 +3172,10 @@ class FormFieldBlueprint(TypedDict):
     type: str
 
 
+class GitHubImportRepositoryListRead(TypedDict):
+    items: list[GitHubImportRepositoryRead]
+
+
 class HomeAttentionItem(TypedDict):
     issue: AppCommonApiSchemasIssuesIssueRead
     reasons: list[Literal["overdue", "due_soon", "sla_breached", "sla_at_risk", "blocked"]]
@@ -3286,8 +3302,9 @@ class IssueImportRead(TypedDict):
     error: NotRequired[str | None]
     file_name: str
     finished_at: NotRequired[str | None]
+    github_repository_id: NotRequired[str | None]
     import_id: str
-    kind: NotRequired[Literal["csv", "linear"]]
+    kind: NotRequired[Literal["csv", "linear", "github"]]
     labels_created: int
     linear_teams: NotRequired[list[LinearTeamMappingRead]]
     linked_count: NotRequired[int]
