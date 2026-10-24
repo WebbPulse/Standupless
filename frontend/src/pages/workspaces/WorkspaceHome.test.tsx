@@ -1,11 +1,12 @@
 /**
  * The workspace home: the setup steps for a workspace with no team, the
  * ask-an-admin note for someone who may not create one, the focus groups and
- * the summary line drawn from the one home read, the side sections, keyboard
- * movement across sections, and a warm return that draws without a skeleton.
+ * the summary line drawn from the one home read, the focus rows' inline
+ * pickers, the side sections, keyboard movement across sections, and a warm
+ * return that draws without a skeleton.
  */
 
-import { render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
@@ -29,11 +30,34 @@ const useTeamsMock = vi.fn<() => UseTeamsResult>();
 const openCreateTeam = vi.fn<() => void>();
 const canCreateTeam = vi.fn<() => boolean>();
 const membersMock = vi.fn<() => MemberRead[]>();
+const updateIssue =
+  vi.fn<
+    (
+      workspaceId: string,
+      issueId: string,
+      patch: Record<string, unknown>
+    ) => Promise<IssueRead>
+  >();
 
 vi.mock('../../api/home', () => ({
   getHome: () => getHome(),
   browserTimezone: () => 'UTC',
 }));
+
+vi.mock('../../api/issues', async () => {
+  const actual =
+    await vi.importActual<typeof import('../../api/issues')>(
+      '../../api/issues'
+    );
+  return {
+    ...actual,
+    updateIssue: (
+      workspaceId: string,
+      issueId: string,
+      patch: Record<string, unknown>
+    ) => updateIssue(workspaceId, issueId, patch),
+  };
+});
 
 vi.mock('../../api/integrations', () => ({
   readInstallation: () => Promise.resolve({ status: 'not_installed' }),
@@ -382,6 +406,14 @@ beforeEach(() => {
   useTeamsMock.mockReturnValue(teamsResult([team]));
   membersMock.mockReturnValue([member('user-1'), member('user-2')]);
   getHome.mockResolvedValue(fullHome());
+  updateIssue.mockReset();
+  updateIssue.mockImplementation((_workspaceId, _issueId, patch) =>
+    Promise.resolve({
+      ...late,
+      ...patch,
+      updated_at: '2026-09-18T00:00:00Z',
+    })
+  );
 });
 
 describe('WorkspaceHome', () => {
@@ -427,8 +459,8 @@ describe('WorkspaceHome', () => {
     expect(within(focus).getByText('Overdue')).toBeVisible();
     expect(within(focus).getByText('In progress')).toBeVisible();
     const rows = within(focus)
-      .getAllByRole('link')
-      .map((link) => link.textContent);
+      .getAllByRole('listitem')
+      .map((row) => row.textContent);
     expect(rows.join(' ')).toMatch(/ENG-3.*ENG-7/);
     expect(
       within(focus).getByText('Renew the signing certificate')
@@ -520,6 +552,36 @@ describe('WorkspaceHome', () => {
     expect(
       within(steps).queryByRole('link', { name: 'Invite people' })
     ).not.toBeInTheDocument();
+  });
+
+  it('clears a due date from a focus row without opening the issue', async () => {
+    renderPage();
+    const focus = await screen.findByRole('list', { name: 'Your open issues' });
+
+    fireEvent.click(within(focus).getByRole('button', { name: /^Due date:/ }));
+    fireEvent.click(screen.getByRole('option', { name: /Clear date/ }));
+
+    expect(updateIssue).toHaveBeenCalledWith('ws-1', 'iss-2', {
+      due_date: null,
+    });
+    expect(
+      within(focus).queryByRole('button', { name: /^Due date:/ })
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText('Issue page')).not.toBeInTheDocument();
+  });
+
+  it('offers the priority picker on a focus row for an editor', async () => {
+    renderPage();
+    const focus = await screen.findByRole('list', { name: 'Your open issues' });
+
+    expect(
+      within(focus).queryByRole('checkbox', { name: /^Select / })
+    ).not.toBeInTheDocument();
+    for (const picker of within(focus).getAllByRole('button', {
+      name: /^Priority:/,
+    })) {
+      expect(picker).toBeEnabled();
+    }
   });
 
   it('opens the highlighted row on Enter after moving with j', async () => {

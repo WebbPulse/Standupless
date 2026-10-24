@@ -7,14 +7,20 @@
 
 import { render, screen, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
-import { describe, expect, it } from 'vitest';
-import type { ScopedLabel, ScopedStatus } from '../../lib/issueView';
-import type { IssueRead } from '../../types/Api';
-import IssueRow from './IssueRow';
+import { describe, expect, it, vi } from 'vitest';
+import type { OrderedIssueRead } from '../../../api/issues';
+import {
+  defaultViewState,
+  type IssueContext,
+  type ScopedLabel,
+  type ScopedStatus,
+} from '../../../lib/issueView';
+import { IssueViewEnvContext, type IssueViewEnv } from './IssueViewContext';
+import { IssueListRow } from './ListRows';
 
 const TEAMS = ['team-1', 'team-2', 'team-3'];
 
-const issue = (overrides: Partial<IssueRead>): IssueRead => ({
+const issue = (overrides: Partial<OrderedIssueRead>): OrderedIssueRead => ({
   id: 'iss-1',
   workspace_id: 'ws-1',
   team_id: 'team-1',
@@ -75,18 +81,41 @@ const statuses: ScopedStatus[] = TEAMS.map((teamId) => ({
   team_id: teamId,
 }));
 
-const renderRow = (row: IssueRead) =>
+const context: IssueContext = {
+  statuses,
+  labels,
+  people: [],
+  projects: [],
+  cycles: [],
+};
+
+/** A viewer's env over the merged lists, selecting nothing. */
+const env: IssueViewEnv = {
+  slug: 'acme',
+  state: defaultViewState(),
+  context,
+  forTeam: () => context,
+  scaleFor: () => 'off',
+  canEdit: false,
+  update: vi.fn(),
+  createLabel: () => Promise.resolve(null),
+  focusedId: null,
+  selected: new Set(),
+  selectable: false,
+  peekedKey: null,
+  focus: vi.fn(),
+  toggleSelected: vi.fn(),
+  peek: vi.fn(),
+};
+
+const renderRow = (row: OrderedIssueRead) =>
   render(
     <MemoryRouter>
-      <ul>
-        <IssueRow
-          issue={row}
-          slug="acme"
-          statuses={statuses}
-          labels={labels}
-          people={[]}
-        />
-      </ul>
+      <IssueViewEnvContext.Provider value={env}>
+        <ul>
+          <IssueListRow issue={row} />
+        </ul>
+      </IssueViewEnvContext.Provider>
     </MemoryRouter>
   );
 
@@ -95,7 +124,7 @@ const pillNames = (): string[] =>
     .queryAllByText(/^(bug|defect|feature|dogfood)$/)
     .map((node) => node.textContent ?? '');
 
-describe('IssueRow labels across teams', () => {
+describe('IssueListRow labels across teams', () => {
   it('draws a workspace label inherited by three teams once', () => {
     renderRow(issue({ label_ids: ['lbl-feature'] }));
     expect(pillNames()).toEqual(['feature']);
@@ -109,5 +138,10 @@ describe('IssueRow labels across teams', () => {
   it('names a workspace label as the issue team overrides it', () => {
     renderRow(issue({ team_id: 'team-2', label_ids: ['lbl-bug'] }));
     expect(pillNames()).toEqual(['defect']);
+  });
+
+  it('draws no select checkbox in a list that selects nothing', () => {
+    renderRow(issue({}));
+    expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
   });
 });

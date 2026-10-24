@@ -19,6 +19,7 @@ from tests.domains.integrations.conftest import OTHER_TEAM, TEAM, WORKSPACE
 ADMIN_ROUTES: tuple[tuple[str, str], ...] = (
     ("GET", f"/api/workspaces/{WORKSPACE}/github/install-url"),
     ("GET", f"/api/workspaces/{WORKSPACE}/github/installation"),
+    ("PUT", f"/api/workspaces/{WORKSPACE}/github/installation/label-set"),
     ("GET", f"/api/workspaces/{WORKSPACE}/github/repositories"),
     ("GET", f"/api/workspaces/{WORKSPACE}/webhooks"),
     ("POST", f"/api/workspaces/{WORKSPACE}/webhooks"),

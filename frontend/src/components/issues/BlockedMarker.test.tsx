@@ -1,5 +1,5 @@
 /**
- * The blocked and blocking flags on a list row. Covers that each shows only
+ * The blocked and blocking flags a list row draws. Covers that each shows only
  * while its count is above zero, that it names the count, that older rows
  * without the count draw nothing, and that the tooltip names open blockers
  * only.
@@ -9,8 +9,12 @@ import { render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { describe, expect, it } from 'vitest';
 import type { IssueRead, LinkRead } from '../../types/Api';
-import { BlockedMarker, BlockingMarker, relationLines } from './BlockedMarker';
-import IssueRow from './IssueRow';
+import {
+  BlockedMarker,
+  BlockingMarker,
+  RelationMarkers,
+  relationLines,
+} from './BlockedMarker';
 
 const issue = (overrides: Partial<IssueRead>): IssueRead => ({
   id: 'iss-1',
@@ -41,13 +45,9 @@ const renderRow = (row: IssueRead) =>
   render(
     <MemoryRouter>
       <ul>
-        <IssueRow
-          issue={row}
-          slug="acme"
-          statuses={[]}
-          labels={[]}
-          people={[]}
-        />
+        <li>
+          <RelationMarkers issue={row} />
+        </li>
       </ul>
     </MemoryRouter>
   );

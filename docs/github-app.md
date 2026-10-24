@@ -318,6 +318,33 @@ queue retries, and a backlink counts as posted only with a real comment id.
 Staging proves the sync against `WebbPulse/standupless-staging-e2e`, see the
 End-to-end section of `CLAUDE.md`.
 
+## Workspace label set
+
+A workspace admin can turn on "Keep workspace labels on every repository" in the
+workspace's GitHub settings (`PUT /api/workspaces/{id}/github/installation/label-set`).
+Every workspace label, with its GitHub name, color and description, is then
+written to each repository the installation can see, by the same per-label code
+a team's label sync uses.
+
+- Only workspace labels are pushed. Team overrides belong to their team, and a
+  repository a team syncs labels with is skipped, because that team's reconcile
+  already carries the inherited workspace labels.
+- Public repositories are left out unless the admin also ticks "Include public
+  repositories", since the push publishes the label names there.
+- Turning the set on, or widening it to public repositories, queues a push from
+  the first repository. A workspace label created, renamed, recolored or
+  deleted queues the same push, and a repository added to the installation
+  queues a push of just that repository.
+- The push runs as `github.label_set_push` jobs on the dispatch queue, ten
+  repositories per page in repository id order, each page inside a 20 second
+  GitHub call budget. A page queues the next one itself, held back until the
+  rate limit resets when GitHub or the budget says to stop.
+- The set's own `LabelSync` rows are stored with an empty team id. A label is
+  deleted on GitHub only when Standupless created it and its workspace label is
+  gone; turning the set off deletes nothing.
+- The setting lives on the installation's `labelset#settings` row, removed on
+  disconnect, and every change is audited as `github.label_set_updated`.
+
 ## After creating it
 
 The Create GitHub App button fills the five keys below. Terraform does not declare

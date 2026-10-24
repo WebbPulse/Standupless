@@ -71,6 +71,7 @@ import ProjectTimeline, {
   type ProjectTimelineHandle,
 } from '../../components/planning/ProjectTimeline';
 import { ErrorAlert } from '../../components/ui/alert';
+import LoadError from '../../components/ui/load-error';
 import Avatar from '../../components/ui/avatar';
 import Button, { IconButton } from '../../components/ui/button';
 import { Combobox, type ComboboxOption } from '../../components/ui/combobox';
@@ -602,13 +603,14 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading }) => {
     }),
     [customerFilter, customerOrdering]
   );
-  const { projects, error, isLoading, queryKey } = useWorkspaceProjects(
-    workspaceId,
-    filteredTeam?.id ?? '',
-    !isResolvingTeams && (teamFilter === '' || filteredTeam !== undefined),
-    rollUp,
-    narrowing
-  );
+  const { projects, error, isLoading, queryKey, refetch } =
+    useWorkspaceProjects(
+      workspaceId,
+      filteredTeam?.id ?? '',
+      !isResolvingTeams && (teamFilter === '' || filteredTeam !== undefined),
+      rollUp,
+      narrowing
+    );
   const { customers } = useCustomers(workspaceId, isMember);
   const teamIds = useMemo(() => teams.map((team) => team.id), [teams]);
   const projectsById = useMemo(
@@ -1163,11 +1165,12 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading }) => {
       )}
       {error !== null && error !== undefined && (
         <div className="px-4 pt-3 lg:px-6">
-          <ErrorAlert
+          <LoadError
             message={errorMessage(
               error,
               'Could not load projects. Try again shortly.'
             )}
+            onRetry={refetch}
           />
         </div>
       )}

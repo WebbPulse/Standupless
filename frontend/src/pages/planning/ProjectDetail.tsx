@@ -67,6 +67,7 @@ import { ErrorAlert } from '../../components/ui/alert';
 import Button, { IconButton } from '../../components/ui/button';
 import Dialog from '../../components/ui/dialog';
 import EmptyState from '../../components/ui/empty-state';
+import LoadError from '../../components/ui/load-error';
 import Menu, { MenuItem } from '../../components/ui/menu';
 import { SkeletonRows } from '../../components/ui/skeleton';
 import WorkspaceShell from '../../components/workspace/WorkspaceShell';
@@ -86,7 +87,7 @@ import { useWorkspace } from '../../hooks/useWorkspace';
 import { useWorkspaceProjects } from '../../hooks/useWorkspaceProjects';
 import { canWriteIssues, isTeamAdmin } from '../../lib/capabilities';
 import { cn } from '../../lib/cn';
-import { errorMessage } from '../../lib/errors';
+import { errorMessage, hasStatus, NOT_FOUND } from '../../lib/errors';
 import { personLabel } from '../../lib/issuePeople';
 import { useOptimisticRecord } from '../../lib/optimistic';
 import { projectsPath } from '../../lib/paths';
@@ -197,6 +198,7 @@ export const ProjectDetail: React.FC = () => {
     data: server,
     error,
     isLoading,
+    refetch,
   } = usePolledQuery(read, {
     intervalMs: POLL_MS,
     enabled: workspaceId !== '' && projectId !== '',
@@ -368,14 +370,27 @@ export const ProjectDetail: React.FC = () => {
     );
   }
 
+  if (
+    project === null &&
+    error !== null &&
+    error !== undefined &&
+    !hasStatus(error, NOT_FOUND)
+  ) {
+    return (
+      <WorkspaceShell title="Project" leading={crumbs}>
+        <LoadError
+          message={errorMessage(error, 'Could not load this project.')}
+          onRetry={() => {
+            void refetch();
+          }}
+        />
+      </WorkspaceShell>
+    );
+  }
+
   if (project === null) {
     return (
       <WorkspaceShell title="Project not found" leading={crumbs}>
-        {error !== null && (
-          <ErrorAlert
-            message={errorMessage(error, 'Could not load this project.')}
-          />
-        )}
         <EmptyState message="That project does not exist, or you do not have access to it." />
       </WorkspaceShell>
     );

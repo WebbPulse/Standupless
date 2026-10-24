@@ -34,3 +34,28 @@ class DiscordChannelRead(BaseModel):
 
     id: str
     name: str
+
+
+class DiscordLinkRead(BaseModel):
+    """Whether the caller's personal notifications reach their Discord direct messages.
+
+    `available` says the workspace has the Discord App in a server, `linked` that
+    the caller has a route, and `problem` why that route cannot deliver right now,
+    such as closed DMs or the App leaving the server, which a new link clears.
+    Nothing here names another member or carries a token.
+    """
+
+    configured: bool
+    available: bool
+    linked: bool = False
+    discord_user_id: str | None = None
+    guild_name: str | None = None
+    linked_at: datetime | None = None
+    problem: str | None = None
+
+
+class DiscordLinkUrlRead(BaseModel):
+    """Where to send the caller to link their Discord account, and when that link stops working."""
+
+    url: str
+    expires_at: datetime

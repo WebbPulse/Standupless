@@ -42,6 +42,7 @@ from app.common.composition.consumers import CONSUMERS
 from app.common.core.config import settings
 from app.common.db.dynamo.github import WebhookEndpoint
 from app.common.db.dynamo.planning import CYCLE, PROJECT, PROJECT_UPDATE
+from app.common.db.dynamo.team_config import WORKSPACE_LABEL_PREFIX
 from app.common.team_privacy import destination_can_carry
 from app.domains.integrations.channels import events as channel_events
 from app.domains.integrations.channels.events import DestinationCache
@@ -285,8 +286,10 @@ def queue_label_sync(repositories: Repositories, record: Mapping[str, Any]) -> i
 
     Every syncing team is queued rather than only the label's own, because a
     workspace or parent team label reaches every team that inherits it, and a
-    reconcile with nothing to do makes no write.
+    reconcile with nothing to do makes no write. A workspace label also queues
+    the workspace label set push, when the workspace has it on.
     """
+    from app.domains.integrations.label_set import queue_on_change
     from app.domains.integrations.label_sync import definition_changed, queue_for_workspace
 
     new_image = deserialize_image(record, "NewImage")
@@ -294,7 +297,13 @@ def queue_label_sync(repositories: Repositories, record: Mapping[str, Any]) -> i
     if not settings.WEBHOOK_DISPATCH_QUEUE_URL or not definition_changed(old_image, new_image):
         return 0
     image = new_image or old_image
-    return queue_for_workspace(repositories, str(image.get("workspace_id", "")))
+    workspace_id = str(image.get("workspace_id", ""))
+    queued = queue_for_workspace(repositories, workspace_id)
+    if str(image.get("config_key", "")).startswith(WORKSPACE_LABEL_PREFIX) and queue_on_change(
+        repositories, workspace_id
+    ):
+        queued += 1
+    return queued
 
 
 def handle_record(

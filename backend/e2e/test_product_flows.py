@@ -2611,6 +2611,21 @@ class TestDiscordApp:
         removed = api.delete(base)
         assert removed.status_code == 404, removed.text[:400]
 
+    @WRITES
+    def test_the_personal_link_answers_before_an_install(self, api: Any, workspace: "dict[str, Any]") -> None:
+        """A member's own Discord link reads as unlinked, offers no consent link without an App, removes nothing."""
+        mine = f"/api/workspaces/{workspace['id']}/discord/me"
+        read = api.get(mine)
+        assert read.status_code == 200, read.text[:400]
+        assert read.json()["linked"] is False, read.json()
+        assert read.json()["available"] is False, read.json()
+
+        started = api.get(f"{mine}/link-url")
+        assert started.status_code == (404 if read.json()["configured"] else 409), started.text[:400]
+
+        unlinked = api.delete(mine)
+        assert unlinked.status_code == 404, unlinked.text[:400]
+
     def test_the_receiver_refuses_an_interaction_discord_did_not_sign(self, anon: Any) -> None:
         """An unsigned ping is answered 401, or 404 where the App is off, and never with a pong."""
         response = anon.post("/api/discord/interactions", json={"type": 1})

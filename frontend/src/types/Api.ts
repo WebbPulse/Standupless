@@ -2782,6 +2782,22 @@ export interface GithubInstallationRead {
   installed_by: string;
   installed_at: string;
   repository_count: number;
+  /** Whether the workspace labels are pushed to every repository the App sees. */
+  label_set: GithubLabelSetRead;
+}
+
+/** The workspace label set push: on or off, and whether public repositories get it. */
+export interface GithubLabelSetRead {
+  enabled: boolean;
+  include_public: boolean;
+  /** True on a write that turned the push on and queued the first run. */
+  queued: boolean;
+}
+
+/** Turns the workspace label set push on or off. */
+export interface GithubLabelSetWrite {
+  enabled: boolean;
+  include_public: boolean;
 }
 
 /** A linked pull request's review decision. */
@@ -3721,6 +3737,26 @@ export interface DiscordConnectionRead {
 export interface DiscordChannelRead {
   id: string;
   name: string;
+}
+
+/** Whether the caller's personal notifications reach their Discord direct messages. */
+export interface DiscordLinkRead {
+  /** Whether this environment has a Discord App at all. */
+  configured: boolean;
+  /** Whether this workspace added the Discord App to a server, so a link can be made. */
+  available: boolean;
+  linked: boolean;
+  discord_user_id?: string | null;
+  guild_name?: string | null;
+  linked_at?: string | null;
+  /** Why a linked account stopped receiving messages, or null while it works. */
+  problem?: string | null;
+}
+
+/** Where to send the caller to link their Discord account, and when that link stops working. */
+export interface DiscordLinkUrlRead {
+  url: string;
+  expires_at: string;
 }
 
 /** What a test message got back. */

@@ -9,6 +9,7 @@
  */
 
 import type { Editor } from '@tiptap/core';
+import { ApiError } from '@webbpulse/api-client';
 import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
@@ -501,6 +502,45 @@ describe('ProjectDetail', () => {
     expect(
       await screen.findByText(/That project does not exist/)
     ).toBeInTheDocument();
+  });
+
+  it('offers a retry when the project could not be read', async () => {
+    const user = userEvent.setup();
+    getProject.mockRejectedValue(new Error('Network down'));
+    renderPage();
+
+    const retry = await screen.findByRole('button', { name: 'Retry' });
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'Could not load this project.'
+    );
+    expect(
+      screen.queryByText(/That project does not exist/)
+    ).not.toBeInTheDocument();
+
+    getProject.mockResolvedValue(launch);
+    await user.click(retry);
+
+    expect(await screen.findByText('Getting it out')).toBeInTheDocument();
+  });
+
+  it('reports a project the server answers 404 for as not found', async () => {
+    getProject.mockRejectedValue(
+      new ApiError({
+        status: 404,
+        statusText: 'Not Found',
+        body: { message: 'Project not found.' },
+        url: '/api/workspaces/ws-1/projects/prj-1',
+        method: 'GET',
+      })
+    );
+    renderPage();
+
+    expect(
+      await screen.findByText(/That project does not exist/)
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'Retry' })
+    ).not.toBeInTheDocument();
   });
 
   it('writes a status change in place', async () => {

@@ -204,6 +204,7 @@ const installation = (
     'https://github.com/organizations/WebbPulse/settings/installations/42',
   avatar_url: '',
   suspended: false,
+  label_set: { enabled: false, include_public: false, queued: false },
   installed_by: 'user-1',
   installed_at: '2026-10-01T00:00:00Z',
   repository_count: 2,
