@@ -433,3 +433,44 @@ def test_a_merged_link_says_whether_it_closed_its_issue(
     link = SimpleNamespace(magic_word=magic_word, moves_status=moves_status, holds_on_merge=holds_on_merge)
 
     assert linking.link_closes(link) == closes
+
+
+def test_a_key_only_in_a_commit_body_links_without_moving() -> None:
+    """A commit body that names a key in prose is a mention, so a merge never moves that issue."""
+    found = {
+        row.key: row
+        for row in linking.extract(
+            PREFIXES, commit_messages=["ABC-2: Cap entries at 120\n\nThe API lowered it in ABC-1 so it fits."]
+        )
+    }
+
+    assert found["ABC-2"].moves_status is True
+    assert found["ABC-1"].moves_status is False
+    assert found["ABC-1"].magic_word is None
+
+
+def test_a_closing_word_in_a_commit_body_still_moves() -> None:
+    """A commit body that says `Fixes` is not a bare mention, so its key moves."""
+    found = linking.extract(PREFIXES, commit_messages=["Fix the thing\n\nFixes ABC-1"])
+
+    assert found[0].moves_status is True
+    assert found[0].magic_word is None
+
+
+def test_a_merge_commit_title_line_moves() -> None:
+    """A merge commit carries the pull request's title on its second line, which moves like a squash title."""
+    found = linking.extract(
+        PREFIXES, commit_messages=["Merge pull request #12 from acme/work\n\nABC-1 a change\n\nSee ABC-2."]
+    )
+
+    assert {row.key: row.moves_status for row in found} == {"ABC-1": True, "ABC-2": False}
+
+
+def test_a_commit_subject_splits_at_the_first_line() -> None:
+    """A squash subject is its first line, and a merge commit's subject keeps the title after it."""
+    assert linking.commit_subject("A (#1)\n\nbody") == ("A (#1)", "\nbody")
+    assert linking.commit_subject("Merge pull request #2 from a/b\n\nTitle\n\nbody") == (
+        "Merge pull request #2 from a/b\nTitle",
+        "\nbody",
+    )
+    assert linking.commit_subject("") == ("", "")
