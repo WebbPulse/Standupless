@@ -15,7 +15,9 @@ ProjectsLayoutField = Literal["list", "board", "timeline"]
 
 ProjectsGroupField = Literal["status", "health", "priority", "initiative", "lead", "team", "none"]
 
-ProjectsOrderField = Literal["target", "start", "name", "priority", "progress", "created", "updated", "customers"]
+ProjectsOrderField = Literal[
+    "target", "start", "name", "priority", "progress", "created", "updated", "customers", "manual"
+]
 
 ProjectsClosedField = Literal["all", "fortnight", "month", "none"]
 

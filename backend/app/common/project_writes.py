@@ -39,6 +39,7 @@ from app.common.db.dynamo.planning import Project, new_planning_id, normalise_pr
 from app.common.initiative_writes import require_initiative_access, require_initiative_target
 from app.common.issue_rules import COMPLETED_CATEGORIES, require_team_member
 from app.common.issue_writes import apply_patch, store_patch
+from app.common.order_keys import order_key_first
 from app.common.planning_rules import (
     check_project_dates,
     load_readable_project,
@@ -58,7 +59,7 @@ from app.common.project_templates import add_template_rows, fill_project, find_p
 from app.common.relation_effects import cancelled_status, categories_for
 from app.common.sub_teams import listed_teams
 
-NOT_NULLABLE = ("name", "status", "team_ids", "priority", "member_ids")
+NOT_NULLABLE = ("name", "status", "team_ids", "priority", "member_ids", "sort_order")
 """Patch fields that may be omitted but never cleared, because every project has one."""
 
 STATUS_VALUES = ("backlog", "planned", "in_progress", "paused", "completed", "canceled", "done")
@@ -265,7 +266,9 @@ def create_project(repositories: Repositories, context: AuthzContext, payload: P
     team appears in that team's planning. A named project template fills the
     fields left out before anything is checked, and its milestones and issues
     are added once the project exists, its dates counted from today. Any
-    template issue left out is named in `skipped_template_issues`.
+    template issue left out is named in `skipped_template_issues`. The new
+    project takes a manual position ahead of every placed one, so it opens the
+    manual ordering.
     """
     teams = payload.teams
     require_team_changes(repositories, context, teams)
@@ -281,6 +284,7 @@ def create_project(repositories: Repositories, context: AuthzContext, payload: P
     if payload.initiative_id is not None:
         require_initiative_target(repositories, context, payload.initiative_id)
 
+    first = order_key_first(row.sort_order for row in repositories.planning.list_projects(context.workspace_id))
     project_id = new_planning_id()
     project = Project(
         workspace_id=context.workspace_id,
@@ -301,6 +305,7 @@ def create_project(repositories: Repositories, context: AuthzContext, payload: P
         update_interval_days=payload.update_interval_days,
         initiative_id=payload.initiative_id,
         completed_at=utc_now() if payload.status in CLOSED_STATUSES else None,
+        sort_order=first,
         created_by=context.user_id,
     )
     try:

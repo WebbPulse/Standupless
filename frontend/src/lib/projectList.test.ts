@@ -7,19 +7,23 @@
  * a card by the column's value, that the completed window keeps recent closes
  * only, that groups reverse, that the second grouping drops when it repeats
  * the first, that a team page can keep only the projects it leads, and that
- * the display reads the URL before the saved choice.
+ * the display reads the URL before the saved choice. Manual ordering runs by
+ * the stored rank with unplaced projects last, and a drop writes the keys
+ * that put a project where it was dropped.
  */
 
 import { describe, expect, it } from 'vitest';
 import type { ProjectRead, TeamRead } from '../types/Api';
 import {
   DEFAULT_PROJECTS_DISPLAY,
+  cellChange,
   directedGroups,
   dropPatch,
   effectiveRows,
   groupPatch,
   groupProjects,
   inGroup,
+  manualPlacements,
   parseGrouping,
   parseOrdering,
   resolveDisplay,
@@ -440,5 +444,78 @@ describe('URL parsing and tones', () => {
     expect(parseGrouping('bogus')).toBe('status');
     expect(parseOrdering(null)).toBe('target');
     expect(parseGrouping('lead')).toBe('lead');
+  });
+});
+
+describe('manual ordering', () => {
+  const placed = (id: string, key: string | null, created = '2026-09-01') =>
+    project({
+      project_id: id,
+      name: id,
+      sort_order: key,
+      created_at: `${created}T00:00:00Z`,
+    });
+
+  it('runs placed projects by key, then unplaced ones newest first', () => {
+    const rows = [
+      placed('old', null, '2026-09-01'),
+      placed('second', 'V'),
+      placed('new', null, '2026-09-05'),
+      placed('first', 'F'),
+    ];
+    expect(sortProjects(rows, 'manual').map((row) => row.project_id)).toEqual([
+      'first',
+      'second',
+      'new',
+      'old',
+    ]);
+  });
+
+  it('writes one key between placed neighbours', () => {
+    const rows = [placed('a', 'F'), placed('b', 'V'), placed('c', 'k')];
+    expect(manualPlacements(rows, 'c', 1)).toEqual([
+      { projectId: 'c', sort_order: 'N' },
+    ]);
+    expect(manualPlacements(rows, 'c', 0)).toEqual([
+      { projectId: 'c', sort_order: '7' },
+    ]);
+  });
+
+  it('places the unplaced rows ahead of the drop point too', () => {
+    const rows = [
+      placed('a', 'F'),
+      placed('b', null, '2026-09-05'),
+      placed('c', null, '2026-09-01'),
+    ];
+    expect(manualPlacements(rows, 'c', 2)).toEqual([
+      { projectId: 'b', sort_order: 'c' },
+      { projectId: 'c', sort_order: 'o' },
+    ]);
+  });
+
+  it('lands after the row shown above it in any shown order', () => {
+    const rows = [placed('b', 'V'), placed('a', 'F'), placed('c', 'k')];
+    expect(manualPlacements(rows, 'c', 2)).toEqual([
+      { projectId: 'c', sort_order: 'N' },
+    ]);
+    expect(manualPlacements(rows, 'c', 1)).toEqual([]);
+  });
+
+  it('answers null for a project not among the rows', () => {
+    expect(manualPlacements([placed('a', 'F')], 'z', 0)).toBeNull();
+  });
+
+  it('tells a drop that changes nothing from one the cell refuses', () => {
+    const row = project({ status: 'planned' });
+    const [planned] = groupProjects([row], 'status', [], []);
+    if (planned === undefined) throw new Error('expected a status group');
+    expect(cellChange(row, [planned])).toEqual({});
+    const teamGroup = {
+      key: 'team:t2',
+      label: 'Other',
+      kind: 'team' as const,
+      rows: [],
+    };
+    expect(cellChange(row, [teamGroup])).toBeNull();
   });
 });

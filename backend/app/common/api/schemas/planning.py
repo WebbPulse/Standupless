@@ -583,6 +583,8 @@ class ProjectUpdate(BaseModel):
     and a null `initiative_id` takes the project out of its initiative.
     `open_issues` says what happens to the issues still open in a project the
     patch leaves completed or canceled; without it they stay where they are.
+    `sort_order` is the project's manual position, a base 62 fractional key
+    shared by every viewer, so a drag rewrites only the project moved.
     """
 
     team_id: Optional[str] = Field(default=None, min_length=1)
@@ -600,6 +602,7 @@ class ProjectUpdate(BaseModel):
     member_ids: Optional[list[str]] = Field(default=None, max_length=MEMBERS_MAX)
     update_interval_days: Optional[int] = None
     initiative_id: Optional[str] = Field(default=None, min_length=1)
+    sort_order: Optional[str] = None
     open_issues: Optional[ProjectOpenIssues] = None
 
     @field_validator("update_interval_days")
@@ -649,6 +652,12 @@ class ProjectUpdate(BaseModel):
     def check_status(cls, value: object) -> object:
         """Accept an earlier status name as the status it now is."""
         return _legacy_status(value)
+
+    @field_validator("sort_order")
+    @classmethod
+    def check_sort_order(cls, value: Optional[str]) -> Optional[str]:
+        """Hold a manual position to the base 62 alphabet and its length cap."""
+        return _check_sort_order(value)
 
 
 class SkippedTemplateIssueRead(BaseModel):
@@ -719,6 +728,10 @@ class ProjectRead(BaseModel):
     next_update_due_at: Optional[datetime] = None
     update_due_state: Optional[UpdateDueState] = None
     initiative_id: Optional[str] = None
+    sort_order: Optional[str] = Field(
+        default=None,
+        description="The manual position, a base 62 fractional key; null on a project never placed, which sorts last",
+    )
     open_issue_count: Optional[int] = Field(
         default=None,
         description="Issues still open in the project, answered by a patch that leaves it completed or canceled",
@@ -796,6 +809,7 @@ class ProjectRead(BaseModel):
             next_update_due_at=next_update_due_at(project, default_interval_days),
             update_due_state=update_due_state(project, default_interval_days, now),
             initiative_id=project.initiative_id,
+            sort_order=project.sort_order,
             completed_at=project.completed_at,
             created_by=project.created_by,
             created_at=project.created_at,
