@@ -821,3 +821,28 @@ def test_project_dependencies_round_trip_over_mcp(
     assert looped
     assert removed["relation_id"] == created["relation_id"]
     assert answer(tool(client, secret, "list_project_relations", {"project_id": "Home project"}))["relations"] == []
+
+
+def test_list_projects_filters_by_blocked_and_blocking(
+    client: TestClient, repositories: Any, planning: dict[str, str]
+) -> None:
+    """list_projects takes the projects page's blocked and blocking filters and refuses a non boolean."""
+    secret = mint_for(repositories, MEMBER, PROJECTS)
+    second = answer(tool(client, secret, "create_project", {"name": "Second project", "team_ids": [TEAM]}))
+    answer(
+        tool(
+            client,
+            secret,
+            "create_project_relation",
+            {"project_id": "Second project", "type": "blocked_by", "target_project_id": "Home project"},
+        )
+    )
+
+    def listed(arguments: dict[str, Any]) -> set[str]:
+        """The project ids list_projects answers for these arguments."""
+        return {row["project_id"] for row in answer(tool(client, secret, "list_projects", arguments))["projects"]}
+
+    assert listed({"is_blocked": True}) == {second["project_id"]}
+    assert listed({"is_blocking": True}) == {planning["project_id"]}
+    assert listed({"is_blocked": False, "is_blocking": False}) == set()
+    assert "is_blocked" in refusal(tool(client, secret, "list_projects", {"is_blocked": "yes"}))

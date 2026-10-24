@@ -110,6 +110,58 @@ const CLOSED_WINDOW_DAYS: Record<'week' | 'month' | 'quarter', number> = {
   quarter: 90,
 };
 
+/** A column the projects list can show beside each project's name. */
+export type ProjectColumn =
+  | 'health'
+  | 'priority'
+  | 'status'
+  | 'lead'
+  | 'start'
+  | 'target'
+  | 'teams'
+  | 'issues'
+  | 'progress';
+
+/** The columns in the order the list draws them and the menu offers them. */
+export const PROJECT_COLUMNS: ProjectColumn[] = [
+  'health',
+  'priority',
+  'status',
+  'lead',
+  'start',
+  'target',
+  'teams',
+  'issues',
+  'progress',
+];
+
+/** How each column reads in the display menu and the list header. */
+export const PROJECT_COLUMN_LABELS: Record<ProjectColumn, string> = {
+  health: 'Health',
+  priority: 'Priority',
+  status: 'Status',
+  lead: 'Lead',
+  start: 'Start date',
+  target: 'Target date',
+  teams: 'Teams',
+  issues: 'Issues',
+  progress: 'Progress',
+};
+
+/** The columns a person who never chose sees, matching the server. */
+export const DEFAULT_PROJECT_COLUMNS =
+  'health,priority,status,lead,start,target,teams,progress';
+
+/** The known columns a stored or URL value names, in drawing order. */
+export const columnList = (value: string): ProjectColumn[] => {
+  const named = value.split(',').map((token) => token.trim());
+  return PROJECT_COLUMNS.filter((column) => named.includes(column));
+};
+
+/** A column choice written the one way the account, the URL and views store it. */
+export const columnValue = (columns: readonly ProjectColumn[]): string =>
+  PROJECT_COLUMNS.filter((column) => columns.includes(column)).join(',');
+
 /** The whole projects display, as the account stores it. */
 export interface ProjectsDisplay {
   layout: ProjectLayout;
@@ -117,6 +169,8 @@ export interface ProjectsDisplay {
   order: ProjectOrdering;
   closed: ClosedWindow;
   zoom: TimelineZoom;
+  /** The shown list columns, comma separated in drawing order. */
+  columns: string;
 }
 
 /** What a person who never arranged the page sees, matching the server. */
@@ -126,10 +180,14 @@ export const DEFAULT_PROJECTS_DISPLAY: ProjectsDisplay = {
   order: 'target',
   closed: 'all',
   zoom: 'month',
+  columns: DEFAULT_PROJECT_COLUMNS,
 };
 
-/** The choices each display field accepts, for reading URL values. */
-const DISPLAY_CHOICES: { [K in keyof ProjectsDisplay]: readonly string[] } = {
+/** The display fields that hold one choice from a fixed set. */
+type ChoiceField = Exclude<keyof ProjectsDisplay, 'columns'>;
+
+/** The choices each single choice display field accepts, for reading URL values. */
+const DISPLAY_CHOICES: { [K in ChoiceField]: readonly string[] } = {
   layout: PROJECT_LAYOUTS,
   group: PROJECT_GROUPINGS,
   order: PROJECT_ORDERINGS,
@@ -138,23 +196,29 @@ const DISPLAY_CHOICES: { [K in keyof ProjectsDisplay]: readonly string[] } = {
 };
 
 /** The display fields, in the order they are written to the URL. */
-export const PROJECTS_DISPLAY_FIELDS = Object.keys(
-  DISPLAY_CHOICES
-) as (keyof ProjectsDisplay)[];
+export const PROJECTS_DISPLAY_FIELDS: (keyof ProjectsDisplay)[] = [
+  ...(Object.keys(DISPLAY_CHOICES) as ChoiceField[]),
+  'columns',
+];
 
 /**
  * Reads one display field from a URL or stored value, or undefined when the
- * value is missing or not a choice the page knows.
+ * value is missing or not a choice the page knows. Columns keep the known
+ * names in drawing order, and an empty value means every column is hidden.
  */
 export const parseDisplayField = <K extends keyof ProjectsDisplay>(
   field: K,
   value: string | null | undefined
-): ProjectsDisplay[K] | undefined =>
-  value !== null &&
-  value !== undefined &&
-  DISPLAY_CHOICES[field].includes(value)
+): ProjectsDisplay[K] | undefined => {
+  if (value === null || value === undefined) return undefined;
+  if (field === 'columns')
+    return columnValue(columnList(value)) as ProjectsDisplay[K];
+  const choices: Partial<Record<keyof ProjectsDisplay, readonly string[]>> =
+    DISPLAY_CHOICES;
+  return choices[field]?.includes(value) === true
     ? (value as ProjectsDisplay[K])
     : undefined;
+};
 
 /**
  * The display in force: each field from the URL when it names a known
@@ -176,6 +240,7 @@ export const resolveDisplay = (
     order: pick('order'),
     closed: pick('closed'),
     zoom: pick('zoom'),
+    columns: pick('columns'),
   };
 };
 

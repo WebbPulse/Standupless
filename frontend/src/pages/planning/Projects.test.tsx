@@ -7,7 +7,8 @@
  * the toggle narrows it to the team alone. The Display menu switches to a
  * board whose columns follow the grouping and take dropped cards, or to a
  * timeline; groups by health or priority; and hides completed projects
- * outside the chosen window. Save as view stores the filters and the
+ * outside the chosen window. The Display menu also hides and shows list
+ * columns, and the blocked and blocking filters narrow the rows. Save as view stores the filters and the
  * arrangement as a view of projects and opens it.
  */
 
@@ -293,6 +294,64 @@ describe('Projects', () => {
     expect(
       await screen.findAllByRole('button', { name: 'Lead: No lead' })
     ).toHaveLength(2);
+  });
+
+  it('hides a column turned off in the Display menu and shows issues turned on', async () => {
+    const user = userEvent.setup();
+    renderPage();
+
+    expect(
+      await screen.findAllByRole('button', { name: 'Health: No updates' })
+    ).toHaveLength(2);
+    expect(screen.queryByText('2 of 4 issues done')).toBeNull();
+    await user.click(screen.getByRole('button', { name: 'Display' }));
+    const health = screen.getByRole('button', { name: 'Health' });
+    expect(health).toHaveAttribute('aria-pressed', 'true');
+    await user.click(health);
+    await user.click(screen.getByRole('button', { name: 'Issues' }));
+
+    await waitFor(() => {
+      expect(
+        screen.queryByRole('button', { name: 'Health: No updates' })
+      ).toBeNull();
+    });
+    expect(screen.getAllByText('2 of 4 issues done')).toHaveLength(2);
+  });
+
+  it('reads the shown columns from the URL', async () => {
+    renderPage('/w/mine/projects?columns=status,progress');
+
+    await screen.findByRole('link', { name: 'Launch' });
+    expect(
+      screen.queryByRole('button', { name: 'Health: No updates' })
+    ).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Lead: No lead' })).toBeNull();
+  });
+
+  it('narrows to blocked and blocking projects from the URL', async () => {
+    listProjects.mockResolvedValue({
+      projects: [
+        { ...launch, blocking_project_ids: ['prj-2'] },
+        { ...rebrand, blocked_by_project_ids: ['prj-1'] },
+      ],
+      next_cursor: null,
+    });
+    const { unmount } = renderPage('/w/mine/projects?blocked=true');
+
+    expect(
+      await screen.findByRole('link', { name: 'Rebrand' })
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Launch' })).toBeNull();
+    expect(
+      screen.getByRole('button', { name: 'Blocked filter: Yes' })
+    ).toBeInTheDocument();
+    unmount();
+
+    renderPage('/w/mine/projects?blocking=true');
+    expect(
+      await screen.findByRole('link', { name: 'Launch' })
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Rebrand' })).toBeNull();
   });
 
   it('writes a health change from the row', async () => {

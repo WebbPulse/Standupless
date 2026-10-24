@@ -410,8 +410,18 @@ def _list_projects(call: ToolCall) -> Any:
         cursor=call.optional("cursor"),
         limit=limit(call.optional("limit")),
         include_sub_teams=call.optional("include_sub_teams", False) is True,
+        is_blocked=_optional_flag(call, "is_blocked"),
+        is_blocking=_optional_flag(call, "is_blocking"),
     )
     return {"projects": [_project_json(row) for row in rows], "next_cursor": next_cursor}
+
+
+def _optional_flag(call: ToolCall, name: str) -> Optional[bool]:
+    """One optional true or false argument, None when absent, refusing anything else."""
+    value = call.optional(name)
+    if value is None or isinstance(value, bool):
+        return value
+    raise ToolError(f"{name} must be true or false")
 
 
 def _get_project(call: ToolCall) -> Any:
@@ -818,6 +828,14 @@ PLANNING_TOOLS: tuple[Tool, ...] = (
                 "include_sub_teams": {
                     "type": "boolean",
                     "description": "With team_id, also list the projects of that team's sub-teams, default false",
+                },
+                "is_blocked": {
+                    "type": "boolean",
+                    "description": "true for projects an open project blocks, false for the rest",
+                },
+                "is_blocking": {
+                    "type": "boolean",
+                    "description": "true for open projects that block another project, false for the rest",
                 },
                 **page_properties(),
             }

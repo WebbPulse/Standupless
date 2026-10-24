@@ -52,6 +52,8 @@ def list_projects(
     cursor: Annotated[Optional[str], Query()] = None,
     limit: Annotated[int, Query(ge=1, le=MAX_LIMIT)] = DEFAULT_LIMIT,
     include_sub_teams: Annotated[bool, Query()] = False,
+    is_blocked: Annotated[Optional[bool], Query()] = None,
+    is_blocking: Annotated[Optional[bool], Query()] = None,
 ) -> CursorPage[ProjectRead]:
     """One page of the workspace's projects the caller can see, by target date, undated last.
 
@@ -62,7 +64,8 @@ def list_projects(
     Undated projects sort last, because an absent target is a project nobody has
     committed to yet. `include_sub_teams` with `team_id` also lists the projects
     of the team's sub-teams the caller may read, so a private sub-team stays out
-    for outsiders.
+    for outsiders. `is_blocked` keeps the projects an open blocker holds up and
+    `is_blocking` the open projects holding another up, each false for the rest.
     """
     window, next_cursor = list_project_page(
         repositories,
@@ -73,6 +76,8 @@ def list_projects(
         limit=limit,
         initiative_id=initiative_id,
         include_sub_teams=include_sub_teams,
+        is_blocked=is_blocked,
+        is_blocking=is_blocking,
     )
     return ProjectListRead(items=window, next_cursor=next_cursor)
 

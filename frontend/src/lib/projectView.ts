@@ -1,6 +1,7 @@
 /**
  * A saved view of projects, translated to and from the projects page. The
- * page filters by a team's key prefix, a set of statuses and one lead, and a
+ * page filters by a team's key prefix, a set of statuses, one lead, and
+ * whether a project is blocked or blocking, and a
  * view stores the team by id, so these helpers are the one place that maps
  * between the two. Opened as a view, the page treats the view as its base:
  * the URL only carries what differs from it, and saving writes the page's
@@ -21,6 +22,10 @@ export interface ProjectViewBase {
   status: ProjectStatus[];
   /** A lead's user id, `none` for projects without one, or empty. */
   lead: string;
+  /** `true` or `false` to keep only projects an open blocker does or does not hold up, or empty. */
+  blocked: FlagFilter;
+  /** `true` or `false` to keep only open projects that do or do not hold another up, or empty. */
+  blocking: FlagFilter;
   /** Whether a parent team rolls up its sub-teams' projects. */
   rollUp: boolean;
   display: ProjectsDisplay;
@@ -31,8 +36,17 @@ export interface ProjectViewState {
   teamId: string;
   status: readonly ProjectStatus[];
   lead: string;
+  blocked: FlagFilter;
+  blocking: FlagFilter;
   rollUp: boolean;
 }
+
+/** A yes or no project filter as the page holds it, empty when unset. */
+export type FlagFilter = '' | 'true' | 'false';
+
+/** A stored yes or no filter as the page holds it. */
+const flagOf = (value: string | undefined): FlagFilter =>
+  value === 'true' || value === 'false' ? value : '';
 
 /** A stored value that may be one text or a list of them, as a list. */
 const asList = (value: string | readonly string[] | undefined): string[] =>
@@ -64,6 +78,8 @@ export const projectViewBase = (
     teamId,
     status: orderedStatuses(asList(filter.status)),
     lead: asList(filter.lead_id)[0] ?? '',
+    blocked: flagOf(filter.is_blocked),
+    blocking: flagOf(filter.is_blocking),
     rollUp: filter.sub_teams !== 'false',
     display: resolveDisplay(() => null, view.projects_display ?? undefined),
   };
@@ -78,6 +94,8 @@ export const toProjectViewFilter = (
     ? {}
     : { status: orderedStatuses(state.status) }),
   ...(state.lead === '' ? {} : { lead_id: [state.lead] }),
+  ...(state.blocked === '' ? {} : { is_blocked: state.blocked }),
+  ...(state.blocking === '' ? {} : { is_blocking: state.blocking }),
   ...(state.teamId !== '' && !state.rollUp
     ? { sub_teams: 'false' as const }
     : {}),
@@ -92,4 +110,6 @@ export const sameProjectFilter = (
   orderedStatuses(asList(left.status)).join(',') ===
     orderedStatuses(asList(right.status)).join(',') &&
   asList(left.lead_id).join(',') === asList(right.lead_id).join(',') &&
+  flagOf(left.is_blocked) === flagOf(right.is_blocked) &&
+  flagOf(left.is_blocking) === flagOf(right.is_blocking) &&
   (left.sub_teams ?? 'true') === (right.sub_teams ?? 'true');

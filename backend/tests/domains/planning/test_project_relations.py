@@ -146,3 +146,28 @@ def test_deleting_a_project_takes_its_dependencies(client: TestClient, workspace
     assert deleted.status_code == 204
     assert read["blocked_by_project_ids"] == []
     assert client.get(_relations(workspace, second["project_id"])).json()["relations"] == []
+
+
+def _listed_names(client: TestClient, workspace: str, **flags: str) -> set[str]:
+    """The names of the projects the list keeps under the given dependency filters."""
+    response = client.get(f"/api/workspaces/{workspace}/projects", params=flags)
+    assert response.status_code == 200, response.text
+    return {row["name"] for row in response.json()["projects"]}
+
+
+def test_the_list_filters_by_blocked_and_blocking(client: TestClient, workspace: str) -> None:
+    """Blocked needs an open blocker and blocking needs the blocker itself open, as the row flags read."""
+    sign_in(client, MEMBER)
+    foundation = seed_project(client, workspace, name="Foundation")
+    walls = seed_project(client, workspace, name="Walls")
+    survey = seed_project(client, workspace, name="Survey", status="completed")
+    roof = seed_project(client, workspace, name="Roof")
+    seed_project(client, workspace, name="Garden")
+    _link(client, workspace, foundation["project_id"], "blocks", walls["project_id"])
+    _link(client, workspace, survey["project_id"], "blocks", roof["project_id"])
+
+    assert _listed_names(client, workspace, is_blocked="true") == {"Walls"}
+    assert _listed_names(client, workspace, is_blocking="true") == {"Foundation"}
+    assert _listed_names(client, workspace, is_blocked="false") == {"Foundation", "Survey", "Roof", "Garden"}
+    assert _listed_names(client, workspace, is_blocking="false") == {"Walls", "Survey", "Roof", "Garden"}
+    assert _listed_names(client, workspace, is_blocked="false", is_blocking="false") == {"Survey", "Roof", "Garden"}

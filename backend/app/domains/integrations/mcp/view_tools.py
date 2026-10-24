@@ -16,7 +16,7 @@ from typing import Any, Optional, get_args
 from fastapi import HTTPException
 
 from app.common.api.dependencies.authz import Capability, check_capability
-from app.common.api.schemas.projects_display import PROJECTS_DISPLAY_FIELDS
+from app.common.api.schemas.projects_display import PROJECTS_COLUMNS, PROJECTS_DISPLAY_FIELDS
 from app.common.api.schemas.views import (
     COMPLETED_WINDOWS,
     VIEW_ENTITIES,
@@ -111,12 +111,17 @@ def _projects_display() -> dict[str, Any]:
     return {
         "type": "object",
         "properties": {
-            field: {"type": "string", "enum": list(choices)} for field, choices in PROJECTS_DISPLAY_FIELDS.items()
+            **{field: {"type": "string", "enum": list(choices)} for field, choices in PROJECTS_DISPLAY_FIELDS.items()},
+            "columns": {
+                "type": "array",
+                "items": {"type": "string", "enum": list(PROJECTS_COLUMNS)},
+                "description": "The list columns shown beside the name; an empty list shows the name alone",
+            },
         },
         "additionalProperties": False,
         "description": (
             "Project views only: layout (list, board, timeline), group, order, closed (how far back completed "
-            "and canceled projects show) and the timeline zoom; a missing field takes the default"
+            "and canceled projects show), the timeline zoom and the list columns; a missing field takes the default"
         ),
     }
 
@@ -159,7 +164,7 @@ def _view_properties(*, clearable: bool) -> dict[str, Any]:
                 "of condition objects with these same keys and their own match, each counting as one condition, "
                 "and a group may hold groups of its own, two levels at most. A project view's filter instead "
                 "takes team_id, status (project statuses such as planned or in_progress), lead_id (user ids, "
-                "'none' for no lead) and sub_teams as true or false."
+                "'none' for no lead), sub_teams, and is_blocked and is_blocking, each as true or false."
             ),
         },
         "sort": enum(SORTS, "Sort order"),

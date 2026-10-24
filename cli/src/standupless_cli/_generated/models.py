@@ -1468,6 +1468,7 @@ class ProjectUpdateRead(TypedDict):
 
 class ProjectsDisplay(TypedDict):
     closed: NotRequired[Literal["all", "week", "month", "quarter", "none"]]
+    columns: NotRequired[str]
     group: NotRequired[Literal["status", "health", "priority", "initiative", "lead", "team", "none"]]
     layout: NotRequired[Literal["list", "board", "timeline"]]
     order: NotRequired[Literal["target", "start", "name", "priority", "progress", "created", "updated"]]
