@@ -21,10 +21,7 @@ import Avatar from '../../ui/avatar';
 import { IconButton } from '../../ui/button';
 import { PriorityGlyph } from '../../ui/glyphs';
 import { StatusIcon } from '../../ui/StatusIcon';
-import {
-  TruncatedText,
-  useTruncationTooltip,
-} from '../../ui/truncated-text';
+import { TruncatedText, useTruncationTooltip } from '../../ui/truncated-text';
 import ProgressRing from '../../planning/ProgressRing';
 import { RelationMarkers } from '../BlockedMarker';
 import {

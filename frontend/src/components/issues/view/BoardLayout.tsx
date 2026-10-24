@@ -35,10 +35,7 @@ import { issuePath } from '../../../lib/paths';
 import { showToast } from '../../../lib/toast';
 import { IconButton } from '../../ui/button';
 import { Menu, MenuItem } from '../../ui/menu';
-import {
-  TruncatedText,
-  useTruncationTooltip,
-} from '../../ui/truncated-text';
+import { TruncatedText, useTruncationTooltip } from '../../ui/truncated-text';
 import { RelationMarkers } from '../BlockedMarker';
 import {
   AssigneeCell,
