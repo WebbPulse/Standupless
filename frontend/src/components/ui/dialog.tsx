@@ -49,6 +49,11 @@ export const Dialog: React.FC<DialogProps> = ({
   const panel = useRef<HTMLDivElement>(null);
   const body = useRef<HTMLDivElement>(null);
   const titleId = useId();
+  const close = useRef(onClose);
+
+  useEffect(() => {
+    close.current = onClose;
+  }, [onClose]);
 
   useEffect(() => {
     if (!open) return;
@@ -62,7 +67,7 @@ export const Dialog: React.FC<DialogProps> = ({
     const onKey = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         event.stopPropagation();
-        onClose();
+        close.current();
         return;
       }
       if (event.key !== 'Tab' || panel.current === null) return;
@@ -86,7 +91,7 @@ export const Dialog: React.FC<DialogProps> = ({
       document.body.style.overflow = bodyOverflow;
       previous?.focus();
     };
-  }, [open, onClose]);
+  }, [open]);
 
   if (!open) return null;
 

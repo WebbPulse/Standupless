@@ -1,7 +1,8 @@
 /**
  * Where a dialog puts focus when it opens: on the first control in its body,
  * never on the Close button, so opening one from the keyboard does not pop the
- * Close tooltip; and on a control the content focused itself, when it did.
+ * Close tooltip; on a control the content focused itself, when it did; and
+ * where the user moved it, when the owner re-renders with a new onClose.
  */
 
 import { fireEvent, render, screen } from '@testing-library/react';
@@ -58,6 +59,46 @@ describe('Dialog focus on open', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Open' }));
 
     expect(screen.getByRole('button', { name: 'Save' })).toHaveFocus();
+  });
+
+  it('leaves focus where the user moved it when the owner re-renders', () => {
+    const { rerender } = render(
+      <Dialog open onClose={() => undefined} title="Rename">
+        <input aria-label="Name" />
+        <input aria-label="Description" />
+      </Dialog>
+    );
+    const description = screen.getByLabelText('Description');
+    description.focus();
+
+    rerender(
+      <Dialog open onClose={() => undefined} title="Rename">
+        <input aria-label="Name" />
+        <input aria-label="Description" />
+      </Dialog>
+    );
+
+    expect(description).toHaveFocus();
+  });
+
+  it('closes through the latest onClose after a re-render', () => {
+    const first = vi.fn();
+    const latest = vi.fn();
+    const { rerender } = render(
+      <Dialog open onClose={first} title="Rename">
+        <input aria-label="Name" />
+      </Dialog>
+    );
+    rerender(
+      <Dialog open onClose={latest} title="Rename">
+        <input aria-label="Name" />
+      </Dialog>
+    );
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+
+    expect(latest).toHaveBeenCalledTimes(1);
+    expect(first).not.toHaveBeenCalled();
   });
 
   it('falls back to the panel when the body has no control', () => {
