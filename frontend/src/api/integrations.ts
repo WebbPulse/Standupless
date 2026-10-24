@@ -20,6 +20,8 @@ import type {
   ChannelUpdate,
   DiscordChannelRead,
   DiscordConnectionRead,
+  DiscordLinkRead,
+  DiscordLinkUrlRead,
   GithubInstallationRead,
   GithubIssueLinkRead,
   GithubRepositoryRead,
@@ -138,6 +140,14 @@ export const discordConnectionPath = (workspaceId: string): string =>
 /** The route that mints the Discord App install link. */
 export const discordInstallUrlPath = (workspaceId: string): string =>
   `${discordConnectionPath(workspaceId)}/install-url`;
+
+/** The route the caller's own Discord direct message link is read and removed on. */
+export const discordLinkPath = (workspaceId: string): string =>
+  `${discordConnectionPath(workspaceId)}/me`;
+
+/** The route that mints the consent link the caller follows to link their Discord account. */
+export const discordLinkUrlPath = (workspaceId: string): string =>
+  `${discordLinkPath(workspaceId)}/link-url`;
 
 /** The route listing the Discord channels a team, or the workspace, can pick for the bot to post to. */
 export const discordChannelsPath = (
@@ -752,6 +762,36 @@ export const deleteDiscordConnection = async (
   workspaceId: string
 ): Promise<void> => {
   await apiClient.delete(discordConnectionPath(workspaceId));
+};
+
+/** Whether the caller's own Discord account is linked for direct messages, and why it stopped if it did. */
+export const getDiscordLink = async (
+  workspaceId: string,
+  signal?: AbortSignal
+): Promise<DiscordLinkRead> => {
+  const response = await apiClient.get<DiscordLinkRead>(
+    discordLinkPath(workspaceId),
+    signalOptions(signal)
+  );
+  return response.data;
+};
+
+/**
+ * Mints the Discord consent link that links the caller's Discord account. It
+ * asks Discord only for `identify` and returns to notification settings.
+ */
+export const getDiscordLinkUrl = async (
+  workspaceId: string
+): Promise<DiscordLinkUrlRead> => {
+  const response = await apiClient.get<DiscordLinkUrlRead>(
+    discordLinkUrlPath(workspaceId)
+  );
+  return response.data;
+};
+
+/** Stops the caller's Discord direct messages in this workspace and forgets their Discord account. */
+export const unlinkDiscord = async (workspaceId: string): Promise<void> => {
+  await apiClient.delete(discordLinkPath(workspaceId));
 };
 
 /** Lists the Discord channels the installed bot can post to, for the channel picker. */

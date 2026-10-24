@@ -502,6 +502,12 @@ export const discordConnectionKey = (workspaceId: string): QueryKey => [
   workspaceId,
 ];
 
+/** Whether the caller's Discord account is linked for direct messages in this workspace. */
+export const discordLinkKey = (workspaceId: string): QueryKey => [
+  'discord-link',
+  workspaceId,
+];
+
 /** The Discord channels the installed bot can post to, offered when adding a team or workspace channel. */
 export const discordChannelsKey = (
   workspaceId: string,

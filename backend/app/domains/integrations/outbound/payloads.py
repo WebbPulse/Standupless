@@ -209,6 +209,10 @@ class Links:
         """The workspace integrations page, where Slack, Discord and workspace channels are managed."""
         return f"{self._base()}/settings/integrations"
 
+    def notification_settings(self) -> str:
+        """The caller's notification settings page, where chat direct messages are linked."""
+        return f"{self._base()}/settings/notifications"
+
 
 type Builder = Callable[[Repositories, Links, str, Mapping[str, Any]], tuple[dict[str, Any], str, tuple[str, ...]]]
 """Build `data`, `url` and the team ids for one image of one type."""

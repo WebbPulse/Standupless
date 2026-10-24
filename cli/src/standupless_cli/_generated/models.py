@@ -575,6 +575,21 @@ class DiscordInstallUrlRead(TypedDict):
     url: str
 
 
+class DiscordLinkRead(TypedDict):
+    available: bool
+    configured: bool
+    discord_user_id: NotRequired[str | None]
+    guild_name: NotRequired[str | None]
+    linked: NotRequired[bool]
+    linked_at: NotRequired[str | None]
+    problem: NotRequired[str | None]
+
+
+class DiscordLinkUrlRead(TypedDict):
+    expires_at: str
+    url: str
+
+
 class DisplayOptionsBody(TypedDict):
     completed_window: NotRequired[Literal["all", "past_week", "past_month", "none"] | None]
     group_by: NotRequired[

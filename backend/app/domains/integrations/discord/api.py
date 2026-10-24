@@ -26,7 +26,10 @@ INSTALL_SCOPES: tuple[str, ...] = ("bot", "applications.commands")
 """What an install asks for: the bot joining the server, and the commands in it."""
 
 LINK_SCOPES: tuple[str, ...] = ("identify", "email")
-"""What linking a person asks for: their Discord id and their email, read once."""
+"""What linking a person from a Discord command asks for: their Discord id and their email, read once."""
+
+SETTINGS_LINK_SCOPES: tuple[str, ...] = ("identify",)
+"""What linking from Standupless settings asks for: the Discord id alone, since the member is already signed in."""
 
 VIEW_CHANNEL = 1 << 10
 SEND_MESSAGES = 1 << 11
@@ -37,6 +40,9 @@ BOT_PERMISSIONS = VIEW_CHANNEL | SEND_MESSAGES | EMBED_LINKS
 
 UNKNOWN_GUILD = 10004
 UNKNOWN_CHANNEL = 10003
+UNKNOWN_USER = 10013
+CANNOT_MESSAGE_USER = 50007
+INVALID_RECIPIENT = 50033
 MISSING_ACCESS = 50001
 MISSING_PERMISSIONS = 50013
 
@@ -73,12 +79,12 @@ def install_url(state: str) -> str:
     return f"{AUTHORIZE_URL}?{query}"
 
 
-def link_url(state: str) -> str:
-    """Where to send a Discord person to link their account by their confirmed email."""
+def link_url(state: str, scopes: tuple[str, ...] = LINK_SCOPES) -> str:
+    """Where to send a Discord person to link their account, asking for `scopes`."""
     query = urlencode(
         {
             "client_id": settings.DISCORD_APPLICATION_ID,
-            "scope": " ".join(LINK_SCOPES),
+            "scope": " ".join(scopes),
             "response_type": "code",
             "redirect_uri": redirect_uri(),
             "state": state,

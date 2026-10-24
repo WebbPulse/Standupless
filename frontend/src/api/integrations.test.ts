@@ -27,6 +27,11 @@ import {
   getInstallation,
   getSlackConnection,
   getSlackLink,
+  getDiscordLink,
+  getDiscordLinkUrl,
+  discordLinkPath,
+  discordLinkUrlPath,
+  unlinkDiscord,
   getSlackInstallUrl,
   installUrlPath,
   installationPath,
@@ -73,6 +78,7 @@ import type {
   SlackChannelRead,
   SlackConnectionRead,
   SlackLinkRead,
+  DiscordLinkRead,
   TransitionRead,
   WebhookDeliveryRead,
   WebhookEndpointRead,
@@ -381,6 +387,35 @@ describe('the Slack App', () => {
     del.mockResolvedValue({ data: null });
     await unlinkSlack(WS);
     expect(del).toHaveBeenCalledWith(slackLinkPath(WS), undefined);
+  });
+
+  it("reads, starts and removes the caller's own Discord link", async () => {
+    expect(discordLinkPath(WS)).toBe('/workspaces/ws-mine/discord/me');
+    expect(discordLinkUrlPath(WS)).toBe(
+      '/workspaces/ws-mine/discord/me/link-url'
+    );
+    const link: DiscordLinkRead = {
+      configured: true,
+      available: true,
+      linked: true,
+      discord_user_id: '1100000000000000002',
+      guild_name: 'Acme',
+      linked_at: '2026-10-24T00:00:00Z',
+      problem: null,
+    };
+    get.mockResolvedValueOnce({ data: link });
+    await expect(getDiscordLink(WS)).resolves.toEqual(link);
+    expect(get).toHaveBeenCalledWith(discordLinkPath(WS), undefined);
+    const started = {
+      url: 'https://discord.com/oauth2/authorize?scope=identify',
+      expires_at: '2026-10-24T00:10:00Z',
+    };
+    get.mockResolvedValueOnce({ data: started });
+    await expect(getDiscordLinkUrl(WS)).resolves.toEqual(started);
+    expect(get).toHaveBeenCalledWith(discordLinkUrlPath(WS), undefined);
+    del.mockResolvedValue({ data: null });
+    await unlinkDiscord(WS);
+    expect(del).toHaveBeenCalledWith(discordLinkPath(WS), undefined);
   });
 });
 
