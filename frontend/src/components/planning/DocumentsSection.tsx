@@ -2,7 +2,9 @@
  * The documents under a project or an initiative, on its overview: specs,
  * plans and notes written in Markdown, each opening on its own page. A new
  * document is created untitled and opened straight away, the way a blank page
- * is started, and a row renames or deletes in place.
+ * is started, and a row renames or deletes in place. When the parent offers
+ * document templates, the new document button opens a menu of them beside a
+ * blank page, the default one first.
  */
 
 import React, { useState } from 'react';
@@ -14,14 +16,21 @@ import {
   LuTrash2,
 } from 'react-icons/lu';
 import { Link, useNavigate } from 'react-router-dom';
+import useDocumentTemplates from '../../hooks/useDocumentTemplates';
 import useDocuments from '../../hooks/useDocuments';
 import { personLabel, type Assignable } from '../../lib/issuePeople';
 import { documentPath } from '../../lib/paths';
 import { showToast } from '../../lib/toast';
-import type { DocumentParentKind, DocumentSummaryRead } from '../../types/Api';
+import type {
+  DocumentCreate,
+  DocumentParentKind,
+  DocumentSummaryRead,
+  TemplateRead,
+} from '../../types/Api';
+import { Badge } from '../ui/badge';
 import { Button, IconButton } from '../ui/button';
 import Dialog from '../ui/dialog';
-import Menu, { MenuItem, MenuSeparator } from '../ui/menu';
+import Menu, { MenuItem, MenuLabel, MenuSeparator } from '../ui/menu';
 import RelativeTime from '../ui/relative-time';
 
 /** The longest title a document may carry, as the server holds it. */
@@ -96,20 +105,37 @@ export const DocumentsSection: React.FC<DocumentsSectionProps> = ({
     parentKind,
     parentId
   );
+  const offer = useDocumentTemplates(
+    workspaceId,
+    parentKind,
+    parentId,
+    canCreate
+  );
   const [creating, setCreating] = useState(false);
   const [renaming, setRenaming] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<DocumentSummaryRead | null>(null);
 
-  const start = (): void => {
+  const startFrom = (body: string | DocumentCreate): void => {
     if (creating) return;
     setCreating(true);
-    void create(UNTITLED).then((made) => {
+    void create(body).then((made) => {
       setCreating(false);
       if (made !== null) {
         void navigate(documentPath(slug, made.document_id));
       }
     });
   };
+  const start = (): void => {
+    startFrom(UNTITLED);
+  };
+  const startFromTemplate = (template: TemplateRead): void => {
+    startFrom({ template_id: template.id });
+  };
+  const defaultId = offer.defaultDocument?.id ?? null;
+  const ordered = [
+    ...offer.templates.filter((template) => template.id === defaultId),
+    ...offer.templates.filter((template) => template.id !== defaultId),
+  ];
 
   const authorOf = (row: DocumentSummaryRead): string =>
     personLabel(people.find((person) => person.user_id === row.author_id));
@@ -121,7 +147,7 @@ export const DocumentsSection: React.FC<DocumentsSectionProps> = ({
         <h2 id={headingId} className="text-sm font-medium text-text">
           Documents
         </h2>
-        {canCreate && (
+        {canCreate && ordered.length === 0 && (
           <IconButton
             label="New document"
             size="sm"
@@ -130,6 +156,44 @@ export const DocumentsSection: React.FC<DocumentsSectionProps> = ({
           >
             <LuPlus className="h-3.5 w-3.5" />
           </IconButton>
+        )}
+        {canCreate && ordered.length > 0 && (
+          <Menu
+            label="New document"
+            align="end"
+            trigger={(trigger) => (
+              <IconButton
+                label="New document"
+                size="sm"
+                disabled={creating}
+                {...trigger}
+              >
+                <LuPlus className="h-3.5 w-3.5" />
+              </IconButton>
+            )}
+          >
+            <MenuItem onSelect={start}>
+              <LuFileText aria-hidden="true" className="h-3.5 w-3.5" />
+              Blank document
+            </MenuItem>
+            <MenuSeparator />
+            <MenuLabel>Templates</MenuLabel>
+            {ordered.map((template) => (
+              <MenuItem
+                key={template.id}
+                textValue={template.name}
+                onSelect={() => {
+                  startFromTemplate(template);
+                }}
+              >
+                <LuFileText aria-hidden="true" className="h-3.5 w-3.5" />
+                <span className="min-w-0 flex-1 truncate">{template.name}</span>
+                {template.id === defaultId && (
+                  <Badge tone="accent">Default</Badge>
+                )}
+              </MenuItem>
+            ))}
+          </Menu>
         )}
       </div>
       {documents.length === 0 && !isLoading && (

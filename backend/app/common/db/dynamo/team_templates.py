@@ -1,14 +1,15 @@
-"""Issue and project template rows of the `team_config` table.
+"""Issue, project and document template rows of the `team_config` table.
 
-A row's `kind` says which it is: an issue template fills a new issue, and a
-project template a new project with its milestones and issues. A team's
+A row's `kind` says which it is: an issue template fills a new issue, a
+project template a new project with its milestones and issues, and a document
+template the title and body of a new document or project update. A team's
 templates are rows at `team#<pid>#template#<id>` and the workspace's,
 which every team offers, at `workspace#template#<id>` with no `team_id`. A team's
 default template is one settings row at `team#<pid>#templates`, which the
 `team#<pid>#template#` prefix does not match, so a list never reads it as a
 template. Each set is small and read as one prefix query, which is why templates
 share the table with the statuses and labels they name rather than taking one of
-their own. The two kinds share the keys and the prefix, so a read filters on
+their own. The kinds share the keys and the prefix, so a read filters on
 `kind`.
 """
 
@@ -28,6 +29,9 @@ ISSUE_TEMPLATE = "issue_template"
 
 PROJECT_TEMPLATE = "project_template"
 """The `kind` a project template row carries."""
+
+DOCUMENT_TEMPLATE = "document_template"
+"""The `kind` a document template row carries: a title and a Markdown body."""
 
 TEMPLATE_SETTINGS = "template_settings"
 """The `kind` of a team's template settings row."""
@@ -116,11 +120,12 @@ class ProjectBlueprint(BaseModel):
 
 
 class IssueTemplate(BaseModel):
-    """A reusable starting point for a new issue, or with `kind` a project, and the fields it fills.
+    """A reusable starting point for a new issue, or with `kind` a project or a document, and the fields it fills.
 
     `team_id` is `None` for a workspace template. `position` orders a scope's
     templates in the picker and the settings page. A project template carries
-    `project` and leaves the issue fields unset.
+    `project` and leaves the issue fields unset, and a document template sets
+    only `title` and `body`.
     """
 
     workspace_id: str
@@ -147,7 +152,7 @@ class IssueTemplate(BaseModel):
 
 
 class TemplateSettings(BaseModel):
-    """A team's template settings: the templates its issue and project create dialogs open with."""
+    """A team's template settings: the templates its issue, project, document and update composers open with."""
 
     workspace_id: str
     config_key: str
@@ -155,6 +160,8 @@ class TemplateSettings(BaseModel):
     kind: str = TEMPLATE_SETTINGS
     default_template_id: Optional[str] = None
     default_project_template_id: Optional[str] = None
+    default_document_template_id: Optional[str] = None
+    default_update_template_id: Optional[str] = None
     updated_at: Optional[datetime] = None
 
 
@@ -171,7 +178,7 @@ class TemplateRows:
     def get_template(
         self, workspace_id: str, team_id: Optional[str], template_id: str, kind: Optional[str] = ISSUE_TEMPLATE
     ) -> IssueTemplate | None:
-        """One template of a team, or of the workspace when `team_id` is `None`, of one kind or of either."""
+        """One template of a team, or of the workspace when `team_id` is `None`, of one kind or with `None` of any."""
         if not workspace_id or not template_id:
             return None
         item = self._repository.get({"workspace_id": workspace_id, "config_key": template_key(team_id, template_id)})
@@ -181,7 +188,7 @@ class TemplateRows:
         return row if kind is None or row.kind == kind else None
 
     def _items(self, workspace_id: str, prefix: str, limit: int) -> list[dict[str, Any]]:
-        """Every template row under one prefix, of either kind."""
+        """Every template row under one prefix, of any kind."""
         if not workspace_id:
             return []
         items = self._repository.iter_query(
@@ -226,7 +233,7 @@ class TemplateRows:
     def delete_template(
         self, workspace_id: str, team_id: Optional[str], template_id: str, kind: Optional[str] = ISSUE_TEMPLATE
     ) -> bool:
-        """Remove one template, of one kind or with `None` of either, reporting whether one was there."""
+        """Remove one template, of one kind or with `None` of any, reporting whether one was there."""
         if self.get_template(workspace_id, team_id, template_id, kind) is None:
             return False
         key = {"workspace_id": workspace_id, "config_key": template_key(team_id, template_id)}
@@ -247,7 +254,7 @@ class TemplateRows:
         return stored
 
     def delete_team_templates(self, workspace_id: str, team_id: str, *, batch: int = 100) -> int:
-        """Remove every template of either kind and the template settings of one team, for the team purge."""
+        """Remove every template of any kind and the template settings of one team, for the team purge."""
         removed = 0
         settings_key = {"workspace_id": workspace_id, "config_key": template_settings_key(team_id)}
         if self._repository.get(settings_key) is not None:

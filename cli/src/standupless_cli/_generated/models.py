@@ -571,8 +571,9 @@ class DisplayOptionsBody(TypedDict):
 
 
 class DocumentCreate(TypedDict):
-    body: NotRequired[str]
-    title: str
+    body: NotRequired[str | None]
+    template_id: NotRequired[str | None]
+    title: NotRequired[str | None]
 
 
 class DocumentMentionRead(TypedDict):
@@ -767,8 +768,9 @@ class InitiativeUpdate(TypedDict):
 
 
 class InitiativeUpdateCreate(TypedDict):
-    body: str
+    body: NotRequired[str | None]
     health: Literal["on_track", "at_risk", "off_track"]
+    template_id: NotRequired[str | None]
 
 
 class InitiativeUpdatePatch(TypedDict):
@@ -1360,8 +1362,9 @@ class ProjectUpdate(TypedDict):
 
 
 class ProjectUpdateCreate(TypedDict):
-    body: str
+    body: NotRequired[str | None]
     health: Literal["on_track", "at_risk", "off_track"]
+    template_id: NotRequired[str | None]
 
 
 class ProjectUpdatePatch(TypedDict):
@@ -2309,7 +2312,7 @@ class TemplateCreate(TypedDict):
     body: NotRequired[str | None]
     cycle_id: NotRequired[str | None]
     estimate: NotRequired[str | None]
-    kind: NotRequired[Literal["issue", "project"]]
+    kind: NotRequired[Literal["issue", "project", "document"]]
     label_ids: NotRequired[list[str]]
     name: str
     position: NotRequired[int | None]
@@ -2329,7 +2332,7 @@ class TemplateRead(TypedDict):
     cycle_id: NotRequired[str | None]
     estimate: NotRequired[str | None]
     id: str
-    kind: NotRequired[Literal["issue", "project"]]
+    kind: NotRequired[Literal["issue", "project", "document"]]
     label_ids: NotRequired[list[str]]
     name: str
     position: NotRequired[int]
@@ -2345,16 +2348,22 @@ class TemplateRead(TypedDict):
 
 
 class TemplateSettingsRead(TypedDict):
+    default_document_template_id: NotRequired[str | None]
     default_project_template_id: NotRequired[str | None]
     default_template_id: NotRequired[str | None]
+    default_update_template_id: NotRequired[str | None]
+    effective_default_document_template_id: NotRequired[str | None]
     effective_default_project_template_id: NotRequired[str | None]
     effective_default_template_id: NotRequired[str | None]
+    effective_default_update_template_id: NotRequired[str | None]
     team_id: str
 
 
 class TemplateSettingsUpdate(TypedDict):
+    default_document_template_id: NotRequired[str | None]
     default_project_template_id: NotRequired[str | None]
     default_template_id: NotRequired[str | None]
+    default_update_template_id: NotRequired[str | None]
 
 
 class TemplateUpdate(TypedDict):
@@ -3066,6 +3075,12 @@ class CycleListRead(TypedDict):
 class DocumentListRead(TypedDict):
     documents: list[DocumentSummaryRead]
     next_cursor: NotRequired[str | None]
+
+
+class DocumentTemplateListRead(TypedDict):
+    default_document_template_id: NotRequired[str | None]
+    default_update_template_id: NotRequired[str | None]
+    templates: list[TemplateRead]
 
 
 class DocumentVersionListRead(TypedDict):

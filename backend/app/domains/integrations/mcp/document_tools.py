@@ -84,9 +84,10 @@ def _get_document(call: ToolCall) -> Any:
 
 
 def _create_document(call: ToolCall) -> Any:
-    """Write a new document under a project or an initiative."""
+    """Write a new document under a project or an initiative, from a document template when one is named."""
     kind, parent_id = _parent(call)
-    payload = DocumentCreate.model_validate({"title": call.require("title"), "body": call.optional("body") or ""})
+    fields = {name: call.optional(name) for name in ("title", "body", "template_id")}
+    payload = DocumentCreate.model_validate({name: value for name, value in fields.items() if value is not None})
     return _document_json(create_document(call.repositories, call.context, kind, parent_id, payload))
 
 
@@ -127,16 +128,20 @@ DOCUMENT_TOOLS: tuple[Tool, ...] = (
         name="create_document",
         description=(
             "Write a Markdown document under a project or an initiative. Issue keys such as ABC-12 in the body "
-            "link to those issues and show on their pages."
+            "link to those issues and show on their pages. Give template_id to start from a document template; "
+            "list_templates with kind document lists them."
         ),
         scopes=("projects:write",),
         schema=object_schema(
             {
                 **PARENT_PROPERTIES,
-                "title": string("The document title"),
-                "body": string("The document, in Markdown"),
+                "title": string("The document title. Required unless template_id is given, which fills it"),
+                "body": string("The document, in Markdown. Left out, a template's body is used"),
+                "template_id": string(
+                    "A document template to start from: id or name. Offered are the templates of the project's "
+                    "teams and the workspace's, or the workspace's alone for an initiative"
+                ),
             },
-            required=("title",),
         ),
         handler=_create_document,
     ),

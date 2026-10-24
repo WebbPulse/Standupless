@@ -3,7 +3,9 @@
  * offers beside its own. Any member reads them; a workspace owner or admin
  * adds, edits, reorders and deletes them. A workspace template carries only
  * workspace statuses and labels, since anything team scoped would not exist
- * in every team it reaches. Project templates follow, kept the same way.
+ * in every team it reaches. Project templates follow, kept the same way,
+ * then document templates, which every project and initiative offers for a
+ * new document or update.
  */
 
 import React from 'react';
@@ -29,6 +31,7 @@ import { useWorkspace } from '../../hooks/useWorkspace';
 import { canManageMembers } from '../../lib/capabilities';
 import { errorMessage } from '../../lib/errors';
 import {
+  workspaceDocumentTemplatesKey,
   workspaceLabelsKey,
   workspaceProjectTemplatesKey,
   workspaceStatusesKey,
@@ -113,6 +116,81 @@ const WorkspaceProjectTemplates: React.FC<WorkspaceProjectTemplatesProps> = ({
           scope="workspace"
           canEdit={canEdit}
           options={{ statuses, labels }}
+          actions={{ create, update, remove }}
+        />
+      )}
+    </section>
+  );
+};
+
+/** Props for WorkspaceDocumentTemplates. */
+interface WorkspaceDocumentTemplatesProps {
+  workspaceId: string;
+  canEdit: boolean;
+}
+
+/** Lists and edits the workspace's document templates. */
+const WorkspaceDocumentTemplates: React.FC<WorkspaceDocumentTemplatesProps> = ({
+  workspaceId,
+  canEdit,
+}) => {
+  const auth = useQueryAuth();
+  const keys = [workspaceDocumentTemplatesKey(workspaceId)];
+
+  const { data, error, isLoading } = usePolledQuery(
+    ({ signal }) => listWorkspaceTemplates(workspaceId, signal, 'document'),
+    {
+      intervalMs: POLL_MS,
+      queryKey: workspaceDocumentTemplatesKey(workspaceId),
+      auth,
+      enabled: workspaceId !== '',
+    }
+  );
+
+  const { mutate: create } = useMutationWithRefetch(
+    (body: TemplateCreate) => createWorkspaceTemplate(workspaceId, body),
+    keys
+  );
+  const { mutate: update } = useMutationWithRefetch(
+    (template: TemplateRead, body: TemplateUpdate) =>
+      updateWorkspaceTemplate(workspaceId, template.id, body),
+    keys
+  );
+  const { mutate: remove } = useMutationWithRefetch(
+    (template: TemplateRead) =>
+      deleteWorkspaceTemplate(workspaceId, template.id),
+    keys
+  );
+
+  return (
+    <section className="space-y-4">
+      <div className="space-y-1">
+        <h2 className="text-base font-semibold">Document templates</h2>
+        <p className="text-sm text-text-muted">
+          Document templates defined here are offered for a new document or
+          update on every project and initiative. Only a workspace admin changes
+          them here.
+        </p>
+      </div>
+
+      {error !== null && (
+        <ErrorAlert
+          message={errorMessage(
+            error,
+            'Could not load the document templates.'
+          )}
+        />
+      )}
+
+      {isLoading || data === null ? (
+        <SkeletonRows count={2} label="Loading document templates" />
+      ) : (
+        <TemplateEditor
+          kind="document"
+          templates={data.templates}
+          scope="workspace"
+          canEdit={canEdit}
+          options={{ statuses: [], labels: [] }}
           actions={{ create, update, remove }}
         />
       )}
@@ -213,6 +291,13 @@ const WorkspaceTemplatesSettings: React.FC = () => {
             canEdit={canEdit}
             statuses={statuses ?? []}
             labels={labels ?? []}
+          />
+        </div>
+
+        <div className="pt-6">
+          <WorkspaceDocumentTemplates
+            workspaceId={workspaceId}
+            canEdit={canEdit}
           />
         </div>
       </div>

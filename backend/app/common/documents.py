@@ -35,6 +35,7 @@ from app.common.api.schemas.documents import (
     DocumentSummaryRead,
     DocumentVersionRead,
 )
+from app.common import document_templates
 from app.common.change_source import ChangeSource
 from app.common.db.dynamo.base import utc_now
 from app.common.db.dynamo.documents import (
@@ -301,14 +302,17 @@ def create_document(
     parent_id: str,
     payload: DocumentCreate,
 ) -> DocumentRead:
-    """Write a new document under a parent the caller may edit."""
+    """Write a new document under a parent the caller may edit, from a document template when one is named."""
     if parent_kind not in PARENT_KINDS:
         raise unprocessable(f"parent_kind must be one of {', '.join(PARENT_KINDS)}")
     parent = load_parent(repositories, context, parent_kind, parent_id)
     rights = Rights(repositories, context)
     if not rights.can_edit(parent):
         raise forbidden()
-    keys = mention_keys(payload.title, payload.body)
+    payload = document_templates.fill_document(repositories, context, parent.teams, payload)
+    title = payload.title or document_templates.UNTITLED
+    text = payload.body or ""
+    keys = mention_keys(title, text)
     now = utc_now()
     document_id = new_document_id()
     document = Document(
@@ -316,13 +320,13 @@ def create_document(
         document_id=document_id,
         parent_kind=parent.kind,
         parent_id=parent.parent_id,
-        title=payload.title,
+        title=title,
         author_id=context.user_id,
         updated_by=context.user_id,
         source=context.source,
         created_at=now,
         updated_at=now,
-        terms=sorted(ranked_terms(payload.title, payload.body, cap=TERMS_MAX)),
+        terms=sorted(ranked_terms(title, text, cap=TERMS_MAX)),
         mention_keys=keys,
         mentions=resolve_mentions(repositories, context, keys),
     )
@@ -331,7 +335,7 @@ def create_document(
         document_id=document_id,
         parent_kind=parent.kind,
         parent_id=parent.parent_id,
-        body=payload.body,
+        body=text,
     )
     try:
         repositories.documents.create(document, body)
