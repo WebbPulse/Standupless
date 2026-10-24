@@ -107,6 +107,17 @@ class RepositoryRead(BaseModel):
     release_source: RepositoryReleaseSourceRead = Field(default_factory=RepositoryReleaseSourceRead)
 
 
+class LabelSetRead(BaseModel):
+    """Whether the workspace pushes its labels to every repository the installation can see.
+
+    `queued` is true on a write that turned the push on and queued the first run.
+    """
+
+    enabled: bool = False
+    include_public: bool = False
+    queued: bool = False
+
+
 class InstallationRead(BaseModel):
     """The GitHub App installation a workspace has, if any."""
 
@@ -121,6 +132,14 @@ class InstallationRead(BaseModel):
     installed_by: str
     installed_at: datetime
     repository_count: int
+    label_set: LabelSetRead = Field(default_factory=LabelSetRead)
+
+
+class LabelSetWrite(BaseModel):
+    """Turn the workspace label set push on or off, and choose whether public repositories get it."""
+
+    enabled: bool
+    include_public: bool = False
 
 
 class RepositoryLinkWrite(BaseModel):

@@ -6771,6 +6771,9 @@
             "title": "Installed By",
             "type": "string"
           },
+          "label_set": {
+            "$ref": "#/components/schemas/LabelSetRead"
+          },
           "manage_url": {
             "default": "",
             "title": "Manage Url",
@@ -8842,6 +8845,47 @@
           "color"
         ],
         "title": "LabelRead",
+        "type": "object"
+      },
+      "LabelSetRead": {
+        "description": "Whether the workspace pushes its labels to every repository the installation can see.\n\n`queued` is true on a write that turned the push on and queued the first run.",
+        "properties": {
+          "enabled": {
+            "default": false,
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "include_public": {
+            "default": false,
+            "title": "Include Public",
+            "type": "boolean"
+          },
+          "queued": {
+            "default": false,
+            "title": "Queued",
+            "type": "boolean"
+          }
+        },
+        "title": "LabelSetRead",
+        "type": "object"
+      },
+      "LabelSetWrite": {
+        "description": "Turn the workspace label set push on or off, and choose whether public repositories get it.",
+        "properties": {
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "include_public": {
+            "default": false,
+            "title": "Include Public",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "enabled"
+        ],
+        "title": "LabelSetWrite",
         "type": "object"
       },
       "LabelUpdate": {
@@ -29036,6 +29080,65 @@
           }
         ],
         "summary": "Get Installation",
+        "tags": [
+          "integrations"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/github/installation/label-set": {
+      "put": {
+        "description": "Turn the workspace label set push on or off, a 404 with no installation, or a 409 with no App.\n\nTurning it on, or widening it to public repositories, queues a push to every\nrepository the installation can see. Turning it off stops later pushes and\ndeletes nothing on GitHub.",
+        "operationId": "put_label_set_api_workspaces__workspace_id__github_installation_label_set_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LabelSetWrite"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LabelSetRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Put Label Set",
         "tags": [
           "integrations"
         ]

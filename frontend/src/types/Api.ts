@@ -2767,6 +2767,22 @@ export interface GithubInstallationRead {
   installed_by: string;
   installed_at: string;
   repository_count: number;
+  /** Whether the workspace labels are pushed to every repository the App sees. */
+  label_set: GithubLabelSetRead;
+}
+
+/** The workspace label set push: on or off, and whether public repositories get it. */
+export interface GithubLabelSetRead {
+  enabled: boolean;
+  include_public: boolean;
+  /** True on a write that turned the push on and queued the first run. */
+  queued: boolean;
+}
+
+/** Turns the workspace label set push on or off. */
+export interface GithubLabelSetWrite {
+  enabled: boolean;
+  include_public: boolean;
 }
 
 /** A linked pull request's review decision. */

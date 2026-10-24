@@ -42,6 +42,9 @@ UNCOVERED_BY_DESIGN: Final[dict[tuple[str, str], str]] = {
     ("DELETE", "/api/workspaces/{workspace_id}/github/installation"): (
         "needs a real installation to remove, and removing the stage's shared installation would break the next run."
     ),
+    ("PUT", "/api/workspaces/{workspace_id}/github/installation/label-set"): (
+        "needs a real installation, and turning it on writes labels to every repository the stage's App sees."
+    ),
     ("GET", "/api/workspaces/{workspace_id}/github/repositories"): (
         "lists an installation's repositories, so it needs the installation above."
     ),

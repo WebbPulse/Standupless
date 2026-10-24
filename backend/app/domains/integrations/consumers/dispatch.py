@@ -183,6 +183,10 @@ def handle_record(repositories: Repositories, record: Mapping[str, Any]) -> None
             label_sync.reconcile(repositories, job)
         else:
             label_sync.apply_rename(repositories, job)
+    elif kind == "github.label_set_push":
+        from app.domains.integrations import label_set
+
+        label_set.push_page(repositories, job)
 
 
 def _announce_update_due(repositories: Repositories, job: Mapping[str, Any]) -> None:

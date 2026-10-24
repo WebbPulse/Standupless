@@ -932,20 +932,6 @@ class InstallUrlRead(TypedDict):
     url: str
 
 
-class InstallationRead(TypedDict):
-    account_login: str
-    account_type: str
-    avatar_url: NotRequired[str]
-    html_url: str
-    installation_id: str
-    installed_at: str
-    installed_by: str
-    manage_url: NotRequired[str]
-    repository_count: int
-    repository_selection: str
-    suspended: NotRequired[bool]
-
-
 class InviteAccept(TypedDict):
     token: str
 
@@ -1129,6 +1115,17 @@ class LabelRead(TypedDict):
     name: str
     parent_id: NotRequired[str | None]
     scope: NotRequired[Literal["team", "parent", "workspace"]]
+
+
+class LabelSetRead(TypedDict):
+    enabled: NotRequired[bool]
+    include_public: NotRequired[bool]
+    queued: NotRequired[bool]
+
+
+class LabelSetWrite(TypedDict):
+    enabled: bool
+    include_public: NotRequired[bool]
 
 
 class LabelUpdate(TypedDict):
@@ -3311,6 +3308,21 @@ class InitiativeRead(TypedDict):
 class InitiativeUpdateListRead(TypedDict):
     next_cursor: NotRequired[str | None]
     updates: list[InitiativeUpdateRead]
+
+
+class InstallationRead(TypedDict):
+    account_login: str
+    account_type: str
+    avatar_url: NotRequired[str]
+    html_url: str
+    installation_id: str
+    installed_at: str
+    installed_by: str
+    label_set: NotRequired[LabelSetRead]
+    manage_url: NotRequired[str]
+    repository_count: int
+    repository_selection: str
+    suspended: NotRequired[bool]
 
 
 class InviteListRead(TypedDict):

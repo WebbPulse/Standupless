@@ -22,13 +22,14 @@ to the new name with it, so the next issue push does not put the old name back.
 from __future__ import annotations
 
 import logging
-from typing import Any, Mapping
+from dataclasses import dataclass
+from typing import Any, Callable, Mapping
 
 from fastapi import HTTPException
 
 from app.common.api.dependencies.repositories import Repositories
 from app.common.api.schemas.teams import LabelUpdate, OverrideUpdate
-from app.common.db.dynamo.github import LabelSync, TeamSync, label_sync_key
+from app.common.db.dynamo.github import WORKSPACE_LABEL_SYNC_TEAM, LabelSync, TeamSync, label_sync_key
 from app.common.db.dynamo.team_config import TEAM_SCOPE, Label
 from app.common.labels import github_label_names
 from app.domains.integrations import github_issues
@@ -100,6 +101,19 @@ def _remote_by_name(entries: list[Mapping[str, Any]]) -> dict[str, Mapping[str, 
     return {str(entry.get("name", "")).lower(): entry for entry in entries if entry.get("name")}
 
 
+@dataclass(frozen=True)
+class SyncTarget:
+    """The repository one label set is written to, and the team it belongs to.
+
+    `team_id` is `WORKSPACE_LABEL_SYNC_TEAM` for the workspace label set, which
+    has no issue snapshots to move on a rename.
+    """
+
+    workspace_id: str
+    repository_id: str
+    team_id: str = WORKSPACE_LABEL_SYNC_TEAM
+
+
 def reconcile(repositories: Repositories, job: Mapping[str, Any]) -> None:
     """Bring the repository's labels in line with the team's, one label at a time."""
     workspace_id = str(job.get("workspace_id", ""))
@@ -109,32 +123,56 @@ def reconcile(repositories: Repositories, job: Mapping[str, Any]) -> None:
         return
     config, token = writable
     labels = repositories.team_config.list_labels(workspace_id, team_id)
-    names = github_label_names(labels)
     rows = {row.label_id: row for row in repositories.github.list_label_syncs(workspace_id, config.repository_id)}
-    remote = _remote_by_name(github_issues.list_labels(token(), config.repository_id))
+    write_labels(
+        repositories,
+        SyncTarget(workspace_id, config.repository_id, team_id),
+        token,
+        labels,
+        rows,
+        still_exists=lambda label_id: repositories.team_config.get_label(workspace_id, team_id, label_id) is not None,
+    )
+
+
+def write_labels(
+    repositories: Repositories,
+    target: SyncTarget,
+    token: _Token,
+    labels: list[Label],
+    rows: dict[str, LabelSync],
+    *,
+    still_exists: Callable[[str], bool],
+) -> None:
+    """Write `labels` to the target repository, then forget each row in `rows` no label claimed.
+
+    A forgotten row's repository label is deleted only when Standupless created
+    it and `still_exists` says its label is gone rather than hidden.
+    """
+    names = github_label_names(labels)
+    remote = _remote_by_name(github_issues.list_labels(token(), target.repository_id))
     for label in labels:
         if label.is_group or label.hidden or label.label_id not in names:
             continue
-        _sync_one(repositories, config, token, label, names[label.label_id], rows.pop(label.label_id, None), remote)
+        _sync_one(repositories, target, token, label, names[label.label_id], rows.pop(label.label_id, None), remote)
     for row in rows.values():
-        if repositories.team_config.get_label(workspace_id, team_id, row.label_id) is not None:
+        if still_exists(row.label_id):
             continue
         if row.created:
-            github_issues.delete_label(token(), config.repository_id, row.name)
-        repositories.github.delete_label_sync(workspace_id, config.repository_id, row.label_id)
+            github_issues.delete_label(token(), target.repository_id, row.name)
+        repositories.github.delete_label_sync(target.workspace_id, target.repository_id, row.label_id)
         _log.info("Removed a label's sync.", extra={"event": "integrations.label_sync.removed", "deleted": row.created})
 
 
 def _sync_one(
     repositories: Repositories,
-    config: TeamSync,
+    target: SyncTarget,
     token: _Token,
     label: Label,
     name: str,
     row: LabelSync | None,
     remote: Mapping[str, Mapping[str, Any]],
 ) -> None:
-    """Create, adopt, rename or recolour the repository label one team label mirrors."""
+    """Create, adopt, rename or recolour the repository label one label mirrors."""
     description = label.description or ""
     current = remote.get(row.name.lower()) if row is not None else None
     if current is None:
@@ -143,10 +181,10 @@ def _sync_one(
     try:
         if current is None:
             if not github_issues.create_label(
-                token(), config.repository_id, name, label.color, description=description
+                token(), target.repository_id, name, label.color, description=description
             ):
                 github_issues.update_label(
-                    token(), config.repository_id, name, color=label.color, description=description
+                    token(), target.repository_id, name, color=label.color, description=description
                 )
                 created = row.created if row is not None else False
         elif (
@@ -156,7 +194,7 @@ def _sync_one(
         ):
             github_issues.update_label(
                 token(),
-                config.repository_id,
+                target.repository_id,
                 str(current.get("name", "")),
                 new_name=name,
                 color=label.color,
@@ -168,13 +206,13 @@ def _sync_one(
             extra={"event": "integrations.label_sync.refused"},
         )
         return
-    if row is not None and row.name != name:
-        rename_in_snapshots(repositories, config.workspace_id, config.team_id, row.name, name)
+    if target.team_id and row is not None and row.name != name:
+        rename_in_snapshots(repositories, target.workspace_id, target.team_id, row.name, name)
     updated = LabelSync(
-        workspace_id=config.workspace_id,
-        github_key=label_sync_key(config.repository_id, label.label_id),
-        team_id=config.team_id,
-        repository_id=config.repository_id,
+        workspace_id=target.workspace_id,
+        github_key=label_sync_key(target.repository_id, label.label_id),
+        team_id=target.team_id,
+        repository_id=target.repository_id,
         label_id=label.label_id,
         name=name,
         color=_hex(label.color),
