@@ -81,6 +81,15 @@ vi.mock('../../hooks/useAuth', () => ({
   }),
 }));
 
+vi.mock('../../api/projectLabels', () => ({
+  projectLabelsPath: (workspaceId: string) =>
+    `/workspaces/${workspaceId}/project-labels`,
+  listProjectLabels: () => Promise.resolve([]),
+  createProjectLabel: vi.fn(),
+  updateProjectLabel: vi.fn(),
+  deleteProjectLabel: vi.fn(),
+}));
+
 vi.mock('../../api/customers', () => ({
   listCustomers: () => Promise.resolve([]),
   listTargetRequests: () => Promise.resolve([]),

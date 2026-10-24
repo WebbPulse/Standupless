@@ -55,6 +55,7 @@ import {
   InitiativePicker,
   LeadPicker,
   MembersPicker,
+  ProjectLabelsPicker,
   ProjectLookPicker,
   ProjectStatusPicker,
   TeamsPicker,
@@ -73,6 +74,7 @@ import Menu, { MenuItem } from '../../components/ui/menu';
 import { SkeletonRows } from '../../components/ui/skeleton';
 import WorkspaceShell from '../../components/workspace/WorkspaceShell';
 import useCloseProjectPrompt from '../../hooks/useCloseProjectPrompt';
+import { useProjectLabels } from '../../hooks/useProjectLabels';
 import useCreateDocumentCommand from '../../hooks/useCreateDocumentCommand';
 import { useCreatePlannedIssue } from '../../hooks/useCreatePlannedIssue';
 import useDocumentTemplates from '../../hooks/useDocumentTemplates';
@@ -222,6 +224,7 @@ export const ProjectDetail: React.FC = () => {
   });
 
   const closePrompt = useCloseProjectPrompt({ workspaceId, project, update });
+  const projectLabels = useProjectLabels(workspaceId);
 
   const serverTeamIds = project?.team_ids;
   const teamIds = useMemo(() => serverTeamIds ?? [], [serverTeamIds]);
@@ -471,6 +474,15 @@ export const ProjectDetail: React.FC = () => {
         disabled={!canEdit}
         onChange={(memberIds) => {
           void update({ member_ids: memberIds });
+        }}
+      />
+      <ProjectLabelsPicker
+        variant="chip"
+        value={project.label_ids ?? []}
+        labels={projectLabels.labels}
+        disabled={!canEdit}
+        onChange={(labelIds) => {
+          void update({ label_ids: labelIds });
         }}
       />
       <span className="inline-flex items-center gap-1">
@@ -776,6 +788,7 @@ export const ProjectDetail: React.FC = () => {
                 teams={teams}
                 initiatives={initiatives}
                 milestones={milestones.milestones}
+                projectLabels={projectLabels.labels}
                 updates={updates.updates}
                 updatesHaveMore={updates.hasMore}
                 onLoadMoreUpdates={updates.loadMore}
