@@ -75,12 +75,12 @@ def categories_for(repositories: Repositories, workspace_id: str, team_ids: Iter
     return categories
 
 
-def recount_blocked(repositories: Repositories, workspace_id: str, issue_id: str) -> int | None:
+def recount_blocked(repositories: Repositories, workspace_id: str, issue_id: str, *, write: bool = True) -> int | None:
     """Write how many open issues block one issue, answering the count.
 
     Recounted from the stored links rather than incremented, so a retried stream
     record or a repeated link lands on the same number. Nothing is written when the
-    count already holds or the issue is gone.
+    count already holds, the issue is gone or `write` is off.
     """
     issue = repositories.issues.get(workspace_id, issue_id)
     if issue is None:
@@ -93,17 +93,18 @@ def recount_blocked(repositories: Repositories, workspace_id: str, issue_id: str
     rows = repositories.issues.get_many(workspace_id, blockers)
     categories = categories_for(repositories, workspace_id, (row.team_id for row in rows.values()))
     count = sum(1 for row in rows.values() if categories.get(row.status_id) not in COMPLETED_CATEGORIES)
-    if issue.blocked_by_open_count != count:
+    if write and issue.blocked_by_open_count != count:
         repositories.issues.set_blocked_by_open_count(workspace_id, issue_id, count)
     return count
 
 
-def recount_blocking(repositories: Repositories, workspace_id: str, issue_id: str) -> int | None:
+def recount_blocking(repositories: Repositories, workspace_id: str, issue_id: str, *, write: bool = True) -> int | None:
     """Write how many issues one open issue blocks, answering the count.
 
     Recounted from the stored links like `recount_blocked`, and zero while the
     issue itself is completed or cancelled, which is when Linear stops showing it
-    as blocking. Nothing is written when the count already holds or the issue is gone.
+    as blocking. Nothing is written when the count already holds, the issue is
+    gone or `write` is off.
     """
     issue = repositories.issues.get(workspace_id, issue_id)
     if issue is None:
@@ -116,7 +117,7 @@ def recount_blocking(repositories: Repositories, workspace_id: str, issue_id: st
             for relation in repositories.relations.list_for_issue(workspace_id, issue_id, limit=1000)
             if relation.relation_type == "blocks"
         )
-    if issue.blocking_count != count:
+    if write and issue.blocking_count != count:
         repositories.issues.set_blocking_count(workspace_id, issue_id, count)
     return count
 
