@@ -30,6 +30,8 @@ import {
   issueWeight,
   pointWeigher,
   projectHistoryGraph,
+  projectProjection,
+  projectionIn,
   projectionNote,
 } from './planningModel';
 
@@ -562,6 +564,79 @@ describe('projectHistoryGraph', () => {
 
     expect(graph?.days[graph.days.length - 1]).toBe('2026-03-05');
     expect(graph?.forecast).toBeNull();
+  });
+});
+
+describe('projectProjection', () => {
+  it('reads the recent completion rate in the measure asked for', () => {
+    const history = recorded();
+
+    expect(
+      projectProjection(history.days, 'points', '2026-03-09', '2026-03-05')
+    ).toEqual({
+      rate_per_day: 2,
+      expected_date: '2026-03-11',
+      days_past_target: 2,
+    });
+  });
+
+  it('needs three days and remaining scope', () => {
+    const history = recorded();
+
+    expect(
+      projectProjection(history.days.slice(0, 2), 'issues', null, '2026-03-02')
+    ).toBeNull();
+    expect(
+      projectProjection(
+        [1, 2, 3].map((day) => recordedDay(`2026-03-0${String(day)}`, 4, 4)),
+        'issues',
+        null,
+        '2026-03-03'
+      )
+    ).toBeNull();
+  });
+
+  it('reads a stall as no rate', () => {
+    expect(
+      projectProjection(
+        [1, 2, 3].map((day) => recordedDay(`2026-03-0${String(day)}`, 4, 1)),
+        'points',
+        null,
+        '2026-03-03'
+      )
+    ).toEqual({ rate_per_day: 0, expected_date: null, days_past_target: null });
+  });
+});
+
+describe('projectionIn', () => {
+  it("keeps the server's projection in the project's own measure", () => {
+    const history = recorded();
+
+    expect(projectionIn(history, 'issues')).toBe(history.projection);
+  });
+
+  it('reads the other measure off the recorded days', () => {
+    const history = recorded({
+      projection: {
+        rate_per_day: 9,
+        expected_date: '2026-03-06',
+        days_past_target: -3,
+      },
+    });
+
+    expect(projectionIn(history, 'points')?.rate_per_day).toBe(2);
+  });
+
+  it("draws the graph in the measure chosen over the project's own", () => {
+    const graph = projectHistoryGraph(recorded(), 'points');
+
+    expect(graph?.points[4]).toEqual({
+      date: '2026-03-05',
+      scope: 20,
+      started: 8,
+      completed: 8,
+    });
+    expect(graph?.forecast).toEqual({ date: '2026-03-11', value: 20 });
   });
 });
 

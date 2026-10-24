@@ -326,6 +326,73 @@ export interface ProjectForecast {
   value: number;
 }
 
+/** How many recent days a project's completion rate is read over. */
+export const PROJECTION_WINDOW_DAYS = 14;
+
+/** The furthest ahead a projected finish is named, in days. */
+export const MAX_PROJECTION_DAYS = 3650;
+
+/**
+ * Where the recent completion rate lands a project's remaining scope in one
+ * measure, read off its recorded days the way the server reads it in the
+ * project's own measure. `null` when the series is too short, the scope is
+ * empty or the scope is already complete.
+ */
+export const projectProjection = (
+  days: readonly CycleHistoryPoint[],
+  measure: PlanningMeasure,
+  targetDate: string | null,
+  today: string
+): ProjectProjectionRead | null => {
+  if (days.length < MIN_PROJECTION_DAYS) return null;
+  const series = historySeries([...days], measure);
+  const last = series[series.length - 1];
+  if (last === undefined) return null;
+  const remaining = last.scope - last.completed;
+  if (last.scope <= 0 || remaining <= 0) return null;
+  const window = series.slice(-(PROJECTION_WINDOW_DAYS + 1));
+  const opened = window[0]?.completed ?? 0;
+  const rate = (last.completed - opened) / (window.length - 1);
+  if (rate <= 0) {
+    return { rate_per_day: 0, expected_date: null, days_past_target: null };
+  }
+  const rounded = Math.round(rate * 100) / 100;
+  const needed = Math.ceil(remaining / rate);
+  if (needed > MAX_PROJECTION_DAYS) {
+    return {
+      rate_per_day: rounded,
+      expected_date: null,
+      days_past_target: null,
+    };
+  }
+  const expected = shiftDay(today, needed);
+  return {
+    rate_per_day: rounded,
+    expected_date: expected,
+    days_past_target:
+      targetDate === null || targetDate === ''
+        ? null
+        : dayGap(targetDate, expected),
+  };
+};
+
+/**
+ * A project history's projection in one measure: the server's own when it
+ * is the project's measure, and read off the recorded days otherwise.
+ */
+export const projectionIn = (
+  history: ProjectHistoryRead,
+  measure: PlanningMeasure
+): ProjectProjectionRead | null =>
+  measure === history.measure
+    ? history.projection
+    : projectProjection(
+        history.days,
+        measure,
+        history.target_date,
+        history.today
+      );
+
 /** A project's recorded progress graph, ready for the burn-up chart. */
 export interface ProjectHistoryGraph {
   points: BurnUpPoint[];
@@ -343,25 +410,28 @@ export interface ProjectHistoryGraph {
  * within {@link FORECAST_HORIZON_DAYS} of today. The forecast extends the
  * recent completion rate from today to the projected finish, or to the last
  * day drawn when the finish lies past it, capped at the current scope.
+ * It reads in `measure`, the project's own unless the viewer chose the other.
  */
 export const projectHistoryGraph = (
-  history: ProjectHistoryRead
+  history: ProjectHistoryRead,
+  measure: PlanningMeasure = history.measure
 ): ProjectHistoryGraph | null => {
   if (history.recorded_since === null) return null;
-  const points = historySeries(history.days, history.measure);
+  const projection = projectionIn(history, measure);
+  const points = historySeries(history.days, measure);
   const first = points[0];
   const last = points[points.length - 1];
   if (first === undefined || last === undefined) return null;
   if (points.every((point) => point.scope === 0)) return null;
   const horizon = shiftDay(last.date, FORECAST_HORIZON_DAYS);
   const target = history.target_date;
-  const expected = history.projection?.expected_date ?? null;
+  const expected = projection?.expected_date ?? null;
   let end = last.date;
   if (target !== null && target > end && target <= horizon) end = target;
   if (expected !== null && expected > end && expected <= horizon) {
     end = expected;
   }
-  const rate = history.projection?.rate_per_day ?? 0;
+  const rate = projection?.rate_per_day ?? 0;
   let forecast: ProjectForecast | null = null;
   if (rate > 0 && end > last.date) {
     const date = expected !== null && expected <= end ? expected : end;
