@@ -2,14 +2,19 @@
  * One saved view, opened as the list or board its stored filters and display
  * describe. The view's own settings are the page's base, so changes made here
  * live in the URL until they are saved over the view or as a new one, and a
- * link to the view always opens it as it was saved.
+ * link to the view always opens it as it was saved. A view of projects opens
+ * as the projects page, on the same terms.
  */
 
 import React, { useMemo, useState } from 'react';
 import { useQueryAuth } from '@webbpulse/auth/react';
 import { usePolledQuery } from '@webbpulse/api-client/react';
 import { Link, useParams } from 'react-router-dom';
-import { getView, type SavedViewDisplayRead } from '../../api/views';
+import {
+  getView,
+  listsProjects,
+  type SavedViewDisplayRead,
+} from '../../api/views';
 import IssueViewPage from '../../components/issues/view/IssueViewPage';
 import { ErrorAlert } from '../../components/ui/alert';
 import { SkeletonRows } from '../../components/ui/skeleton';
@@ -21,6 +26,7 @@ import { errorMessage } from '../../lib/errors';
 import { viewScope, viewToState } from '../../lib/issueView';
 import { viewsPath } from '../../lib/paths';
 import { viewKey } from '../../lib/queryKeys';
+import Projects from '../planning/Projects';
 import type { TeamRead } from '../../types/Api';
 
 /** How often the view is re-read. */
@@ -115,6 +121,16 @@ export const ViewDetail: React.FC = () => {
           <SkeletonRows label="Loading view" />
         )}
       </WorkspaceShell>
+    );
+  }
+
+  if (listsProjects(view)) {
+    return (
+      <Projects
+        key={`${view.view_id}:${view.updated_at}`}
+        view={view}
+        leading={leading}
+      />
     );
   }
 

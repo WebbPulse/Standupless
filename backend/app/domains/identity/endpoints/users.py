@@ -8,7 +8,7 @@ own that table.
 from __future__ import annotations
 
 import logging
-from typing import Any, Literal, Optional, get_args
+from typing import Any, Optional
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
@@ -25,6 +25,7 @@ from app.common.api.dependencies.authz import (
     require_person,
 )
 from app.common.api.dependencies.repositories import Repositories, get_repositories
+from app.common.api.schemas.projects_display import ProjectsDisplay, stored_projects_display
 from app.common.db.dynamo.inbox import NOTIFICATION_KINDS, NotificationKind
 from app.common.db.dynamo.users import (
     FONT_SIZES,
@@ -72,54 +73,6 @@ class NotificationChannels(BaseModel):
 
     in_app: bool
     email: bool
-
-
-ProjectsLayoutField = Literal["list", "board", "timeline"]
-
-ProjectsGroupField = Literal["status", "health", "priority", "initiative", "lead", "team", "none"]
-
-ProjectsOrderField = Literal["target", "start", "name", "priority", "progress", "created", "updated"]
-
-ProjectsClosedField = Literal["all", "week", "month", "quarter", "none"]
-
-ProjectsZoomField = Literal["week", "month", "quarter", "year"]
-
-
-class ProjectsDisplay(BaseModel):
-    """How the person arranges the workspace projects list.
-
-    `closed` is how far back completed and canceled projects show: all of them,
-    those closed in the past week, month or quarter, or none. `zoom` is the
-    timeline layout's scale. Every field has the list's own default, so an
-    account that never arranged the list reads as the list opens.
-    """
-
-    layout: ProjectsLayoutField = "list"
-    group: ProjectsGroupField = "status"
-    order: ProjectsOrderField = "target"
-    closed: ProjectsClosedField = "all"
-    zoom: ProjectsZoomField = "month"
-
-
-PROJECTS_DISPLAY_FIELDS: dict[str, tuple[str, ...]] = {
-    "layout": get_args(ProjectsLayoutField),
-    "group": get_args(ProjectsGroupField),
-    "order": get_args(ProjectsOrderField),
-    "closed": get_args(ProjectsClosedField),
-    "zoom": get_args(ProjectsZoomField),
-}
-"""The choices each stored projects display field may still hold."""
-
-
-def _projects_display(stored: dict[str, str]) -> ProjectsDisplay:
-    """The stored projects display, each field the default once its choice is retired."""
-    defaults = ProjectsDisplay()
-    return ProjectsDisplay(
-        **{
-            field: _known(str(stored.get(field, "")), allowed, getattr(defaults, field))
-            for field, allowed in PROJECTS_DISPLAY_FIELDS.items()
-        }
-    )
 
 
 class UserRead(BaseModel):
@@ -270,7 +223,7 @@ def _as_read(user: "Any") -> UserRead:
         week_start=_known(user.week_start, WEEK_STARTS, "monday"),
         name_display=_known(user.name_display, NAME_DISPLAYS, "username"),
         font_size=_known(user.font_size, FONT_SIZES, "default"),
-        projects_display=_projects_display(user.projects_display),
+        projects_display=stored_projects_display(user.projects_display),
     )
 
 
@@ -381,7 +334,7 @@ def update_current_user_preferences(
             changes[field] = value
     if payload.projects_display is not None:
         display = payload.projects_display.model_dump()
-        if display != _projects_display(user.projects_display).model_dump():
+        if display != stored_projects_display(user.projects_display).model_dump():
             changes["projects_display"] = display
     if not changes:
         return _as_read(user)

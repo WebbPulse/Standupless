@@ -18014,7 +18014,7 @@
         "type": "object"
       },
       "ViewCreate": {
-        "description": "The body a saved view create takes.\n\n`owner_id` and `scope` are absent on purpose: the owner comes from the\nauthorization context and the scope is derived from `team_id` and `shared`,\nso neither is something a caller can assert. `shared` without a team files\nthe view under the whole workspace.",
+        "description": "The body a saved view create takes.\n\n`owner_id` and `scope` are absent on purpose: the owner comes from the\nauthorization context and the scope is derived from `team_id` and `shared`,\nso neither is something a caller can assert. `shared` without a team files\nthe view under the whole workspace. `entity` set to `projects` saves a projects\npage arrangement: its filter takes the projects page's keys and\n`projects_display` its layout, grouping, ordering and completed window, while\nthe issue display fields are ignored.",
         "properties": {
           "color": {
             "anyOf": [
@@ -18067,6 +18067,15 @@
               }
             ],
             "title": "Description"
+          },
+          "entity": {
+            "default": "issues",
+            "enum": [
+              "issues",
+              "projects"
+            ],
+            "title": "Entity",
+            "type": "string"
           },
           "filter": {
             "additionalProperties": true,
@@ -18166,6 +18175,16 @@
             "default": false,
             "title": "Ordering Reversed",
             "type": "boolean"
+          },
+          "projects_display": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProjectsDisplay"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "shared": {
             "default": false,
@@ -18294,7 +18313,7 @@
         "type": "object"
       },
       "ViewRead": {
-        "description": "One saved view as the API returns it.\n\n`favorite` is the caller's own star, not a property of the view, so the same\nview reads differently to two members.",
+        "description": "One saved view as the API returns it.\n\n`favorite` is the caller's own star, not a property of the view, so the same\nview reads differently to two members. `projects_display` is the arrangement of\na project view and null on an issue view.",
         "properties": {
           "color": {
             "anyOf": [
@@ -18333,6 +18352,15 @@
               }
             ],
             "title": "Description"
+          },
+          "entity": {
+            "default": "issues",
+            "enum": [
+              "issues",
+              "projects"
+            ],
+            "title": "Entity",
+            "type": "string"
           },
           "favorite": {
             "default": false,
@@ -18397,6 +18425,16 @@
           "owner_id": {
             "title": "Owner Id",
             "type": "string"
+          },
+          "projects_display": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProjectsDisplay"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "scope": {
             "title": "Scope",
@@ -18487,7 +18525,7 @@
         "type": "object"
       },
       "ViewUpdate": {
-        "description": "The body a saved view patch takes, every field optional.\n\n`kind` and `team_id` are not patchable: the team decides the sort key the\nrow is filed under, so moving it would be a delete and a create wearing the name\nof an update. `shared` is the one exception, for a view without a team: it\nmoves a personal view to the whole workspace or back, which refiles the row\nunder the same view id.",
+        "description": "The body a saved view patch takes, every field optional.\n\n`kind` and `team_id` are not patchable: the team decides the sort key the\nrow is filed under, so moving it would be a delete and a create wearing the name\nof an update. `shared` is the one exception, for a view without a team: it\nmoves a personal view to the whole workspace or back, which refiles the row\nunder the same view id. `entity` is fixed at create, and `projects_display`\napplies only to a project view.",
         "properties": {
           "color": {
             "anyOf": [
@@ -18650,6 +18688,16 @@
               }
             ],
             "title": "Ordering Reversed"
+          },
+          "projects_display": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProjectsDisplay"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "shared": {
             "anyOf": [
@@ -42908,7 +42956,7 @@
     },
     "/api/workspaces/{workspace_id}/views": {
       "get": {
-        "description": "Saved views the caller may read, narrowed by scope.\n\n`all` is the caller's own views plus the team views of teams they can see,\nwhich for a guest is only the teams they hold a membership in, so the listing\nis built from what they may read rather than filtered afterwards. The\nanswer carries a weak `ETag`, so an unchanged poll gets a 304.",
+        "description": "Saved views the caller may read, narrowed by scope and, with `entity`, to issue or project views.\n\n`all` is the caller's own views plus the team views of teams they can see,\nwhich for a guest is only the teams they hold a membership in, so the listing\nis built from what they may read rather than filtered afterwards. The\nanswer carries a weak `ETag`, so an unchanged poll gets a 304.",
         "operationId": "list_views_api_workspaces__workspace_id__views_get",
         "parameters": [
           {
@@ -42951,6 +42999,26 @@
                 }
               ],
               "title": "Team Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "entity",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "issues",
+                    "projects"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Entity"
             }
           }
         ],

@@ -7,7 +7,8 @@
  * the toggle narrows it to the team alone. The Display menu switches to a
  * board whose columns follow the grouping and take dropped cards, or to a
  * timeline; groups by health or priority; and hides completed projects
- * outside the chosen window.
+ * outside the chosen window. Save as view stores the filters and the
+ * arrangement as a view of projects and opens it.
  */
 
 import {
@@ -30,6 +31,7 @@ import type {
   WorkspaceRead,
   WorkspaceRole,
 } from '../../types/Api';
+import type { SavedViewDisplayRead } from '../../api/views';
 import Projects from './Projects';
 
 const listProjects =
@@ -44,6 +46,17 @@ const updateProject =
   vi.fn<(id: string, patch: ProjectUpdate) => Promise<ProjectRead>>();
 const createProject = vi.fn<(body: ProjectCreate) => Promise<ProjectRead>>();
 const listTeams = vi.fn<() => Promise<TeamRead[]>>();
+const createView =
+  vi.fn<(body: Record<string, unknown>) => Promise<SavedViewDisplayRead>>();
+
+vi.mock('../../api/views', async () => {
+  const actual =
+    await vi.importActual<typeof import('../../api/views')>('../../api/views');
+  return {
+    ...actual,
+    createView: (_w: string, body: Record<string, unknown>) => createView(body),
+  };
+});
 
 vi.mock('../../hooks/useAuth', () => ({
   useAuth: () => ({
@@ -178,6 +191,7 @@ const renderPage = (entry = '/w/mine/projects') =>
       <Routes>
         <Route path="/w/:slug/projects" element={<Projects />} />
         <Route path="/w/:slug/projects/:id" element={<p>project page</p>} />
+        <Route path="/w/:slug/views/:viewId" element={<p>view page</p>} />
       </Routes>
     </MemoryRouter>
   );
@@ -558,6 +572,38 @@ describe('Projects', () => {
 
     await screen.findByRole('link', { name: 'Launch' });
     expect(screen.queryByRole('link', { name: 'Shipped' })).toBeNull();
+  });
+
+  it('saves the filters and arrangement as a view of projects', async () => {
+    const user = userEvent.setup();
+    createView.mockResolvedValue({
+      view_id: 'view-9',
+      name: 'Planned board',
+    } as SavedViewDisplayRead);
+    renderPage('/w/mine/projects?status=planned&layout=board');
+
+    await screen.findByRole('link', { name: 'Rebrand' });
+    await user.click(screen.getByRole('button', { name: 'Save as view' }));
+    const dialog = await screen.findByRole('dialog');
+    await user.type(
+      within(dialog).getByLabelText('View name'),
+      'Planned board'
+    );
+    await user.click(within(dialog).getByRole('button', { name: 'Save view' }));
+
+    await waitFor(() => {
+      expect(createView).toHaveBeenCalledWith(
+        expect.objectContaining({
+          name: 'Planned board',
+          entity: 'projects',
+          filter: { status: ['planned'] },
+          projects_display: expect.objectContaining({
+            layout: 'board',
+          }) as unknown,
+        })
+      );
+    });
+    expect(await screen.findByText('view page')).toBeInTheDocument();
   });
 
   describe('with a sub-team', () => {

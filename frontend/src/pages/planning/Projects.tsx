@@ -10,20 +10,36 @@
  * at all. The arrangement is saved to the account and carried in the URL so
  * an arranged page can be shared. Filtered to a parent team, the page
  * includes the projects of its visible sub-teams, with the issue list's
- * toggle to show the team alone.
+ * toggle to show the team alone. The arrangement and filters save as a view
+ * of projects, and opened as that view the page starts from what it stores,
+ * keeps changes in the URL until they are saved over it or as a new view,
+ * and leaves the account's own arrangement alone.
  */
 
 import React, { useCallback, useMemo, useRef, useState } from 'react';
 import { invalidateQueries } from '@webbpulse/api-client/react';
 import {
+  LuBookmarkPlus,
   LuChevronRight,
   LuListFilter,
+  LuPencil,
   LuPlus,
   LuTarget,
   LuX,
 } from 'react-icons/lu';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { updateProject } from '../../api/planning';
+import {
+  createView,
+  updateView,
+  type SavedViewDisplayRead,
+  type SavedViewFilter,
+} from '../../api/views';
+import {
+  SaveViewDialog,
+  refreshViewLists,
+  type ViewDetails,
+} from '../../components/issues/view/IssueViewPage';
 import CreateProjectDialog from '../../components/planning/CreateProjectDialog';
 import ProgressRing from '../../components/planning/ProgressRing';
 import { PriorityPicker } from '../../components/issues/PropertyPickers';
@@ -48,10 +64,12 @@ import Avatar from '../../components/ui/avatar';
 import Button, { IconButton } from '../../components/ui/button';
 import { Combobox, type ComboboxOption } from '../../components/ui/combobox';
 import EmptyState from '../../components/ui/empty-state';
+import FavoriteButton from '../../components/ui/FavoriteButton';
 import { Popover } from '../../components/ui/popover';
 import { SkeletonRows } from '../../components/ui/skeleton';
 import SubTeamToggle from '../../components/workspace/SubTeamToggle';
 import WorkspaceShell from '../../components/workspace/WorkspaceShell';
+import { useAuth } from '../../hooks/useAuth';
 import useCloseProjectPrompt from '../../hooks/useCloseProjectPrompt';
 import { useInitiatives } from '../../hooks/useInitiatives';
 import { useListKeyboardNav } from '../../hooks/useListKeyboardNav';
@@ -67,26 +85,36 @@ import { ROLL_UP_PARAM, useSubTeamRollUp } from '../../hooks/useSubTeamRollUp';
 import { canWriteIssues } from '../../lib/capabilities';
 import { cn } from '../../lib/cn';
 import { errorMessage } from '../../lib/errors';
+import { sharedChange, viewVisibility } from '../../lib/issueView';
 import {
   personAvatar,
   personLabel,
   type Assignable,
 } from '../../lib/issuePeople';
 import { useOptimisticRecord } from '../../lib/optimistic';
-import { projectPath } from '../../lib/paths';
+import { projectPath, viewPath } from '../../lib/paths';
 import {
   PROJECT_STATUS_LABELS,
   progressPercent,
 } from '../../lib/planningDisplay';
 import { PROJECT_STATUS_ORDER, canEditProject } from '../../lib/planningModel';
 import {
+  PROJECTS_DISPLAY_FIELDS,
   groupProjects,
   groupValue,
   sortProjects,
   withinClosedWindow,
   type ProjectGroup,
 } from '../../lib/projectList';
+import {
+  orderedStatuses,
+  projectViewBase,
+  sameProjectFilter,
+  toProjectViewFilter,
+} from '../../lib/projectView';
 import { shortDateLabel } from '../../lib/propertyOptions';
+import { viewKey } from '../../lib/queryKeys';
+import { showErrorToast, showToast } from '../../lib/toast';
 import type {
   ProjectRead,
   ProjectStatus,
@@ -329,9 +357,24 @@ const ProjectRow: React.FC<ProjectRowProps> = ({
   );
 };
 
+/** Which dialog is open over the page, saving a new view or editing the open one. */
+type Saving = 'new' | 'details' | null;
+
+/** The filters the page keeps in the URL. */
+type FilterField = 'team' | 'status' | 'lead';
+
+/** Props for Projects. */
+export interface ProjectsProps {
+  /** A view of projects the page opens as, its stored filters and arrangement the base. */
+  view?: SavedViewDisplayRead;
+  /** What sits before the title, the way back to the views list for a view. */
+  leading?: React.ReactNode;
+}
+
 /** The projects of the whole workspace, grouped, filtered and editable. */
-export const Projects: React.FC = () => {
+export const Projects: React.FC<ProjectsProps> = ({ view, leading }) => {
   const { workspace } = useWorkspace();
+  const { user } = useAuth();
   const slug = workspace?.slug ?? '';
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
@@ -341,26 +384,64 @@ export const Projects: React.FC = () => {
     isLoading: isResolvingTeams,
     error: teamsError,
   } = useTeam(undefined);
+  const [saving, setSaving] = useState<Saving>(null);
+  const [updating, setUpdating] = useState(false);
 
-  const teamFilter = params.get('team') ?? '';
+  const base = useMemo(
+    () => (view === undefined ? undefined : projectViewBase(view, teams)),
+    [view, teams]
+  );
+  const baseOf = useCallback(
+    (field: FilterField): string =>
+      base === undefined
+        ? ''
+        : field === 'team'
+          ? base.team
+          : field === 'status'
+            ? base.status.join(',')
+            : base.lead,
+    [base]
+  );
+  const teamFilter = params.get('team') ?? baseOf('team');
+  const statusText = params.get('status') ?? baseOf('status');
   const statusFilter = useMemo(
     () =>
-      (params.get('status') ?? '')
+      statusText
         .split(',')
         .filter((value): value is ProjectStatus =>
           PROJECT_STATUS_ORDER.includes(value as ProjectStatus)
         ),
-    [params]
+    [statusText]
   );
-  const leadFilter = params.get('lead') ?? '';
-  const { display, change: changeDisplay, reset } = useProjectsDisplay();
+  const leadFilter = params.get('lead') ?? baseOf('lead');
+  const {
+    display,
+    change: changeDisplay,
+    reset,
+  } = useProjectsDisplay(base?.display);
   const { layout, group: grouping, order: ordering, closed, zoom } = display;
   const filteredTeam = teams.find((team) => team.key_prefix === teamFilter);
+  const baseRollUp = base?.rollUp ?? true;
   const {
     subTeams,
     rollUp,
     toggle: toggleRollUp,
-  } = useSubTeamRollUp(filteredTeam);
+  } = useSubTeamRollUp(filteredTeam, true, baseRollUp);
+  const heldRollUp = params.get(ROLL_UP_PARAM);
+  const savedFilter = toProjectViewFilter({
+    teamId:
+      filteredTeam?.id ??
+      (base !== undefined && teamFilter === base.team ? base.teamId : ''),
+    status: statusFilter,
+    lead: leadFilter,
+    rollUp: heldRollUp === null ? baseRollUp : heldRollUp !== '0',
+  });
+  const changed =
+    base !== undefined &&
+    (!sameProjectFilter(savedFilter, toProjectViewFilter(base)) ||
+      PROJECTS_DISPLAY_FIELDS.some(
+        (field) => display[field] !== base.display[field]
+      ));
 
   const { projects, error, isLoading, queryKey } = useWorkspaceProjects(
     workspaceId,
@@ -475,20 +556,90 @@ export const Projects: React.FC = () => {
     enabled: creating === null && layout === 'list',
   });
 
-  const setParam = (field: string, value: string): void => {
-    const next = new URLSearchParams(params);
-    if (value === '') next.delete(field);
+  const writeParam = (
+    next: URLSearchParams,
+    field: FilterField,
+    value: string
+  ): void => {
+    if (value === baseOf(field)) next.delete(field);
     else next.set(field, value);
+  };
+
+  const setParam = (field: FilterField, value: string): void => {
+    const next = new URLSearchParams(params);
+    writeParam(next, field, value);
     setParams(next, { replace: true });
+  };
+
+  const saveNew = async (details: ViewDetails): Promise<void> => {
+    const shareWith = details.shared ? details.teamId : undefined;
+    try {
+      const created = await createView(workspaceId, {
+        name: details.name,
+        kind: 'list',
+        entity: 'projects',
+        filter: savedFilter as unknown as SavedViewFilter,
+        projects_display: display,
+        ...(shareWith === undefined ? {} : { team_id: shareWith }),
+        ...(shareWith === undefined && details.shared ? { shared: true } : {}),
+        ...details.look,
+      });
+      refreshViewLists(workspaceId, details.teamId);
+      setSaving(null);
+      showToast(`Saved view ${created.name}.`);
+      void navigate(viewPath(slug, created.view_id));
+    } catch (failure) {
+      showErrorToast(errorMessage(failure, 'Could not save the view.'));
+    }
+  };
+
+  const saveDetails = async (details: ViewDetails): Promise<void> => {
+    if (view === undefined) return;
+    try {
+      await updateView(workspaceId, view.view_id, {
+        name: details.name,
+        ...details.look,
+        ...sharedChange(view, details.shared),
+      });
+      invalidateQueries(viewKey(workspaceId, view.view_id));
+      refreshViewLists(workspaceId, view.team_id ?? undefined);
+      setSaving(null);
+      showToast('View updated.');
+    } catch (failure) {
+      showErrorToast(errorMessage(failure, 'Could not update the view.'));
+    }
+  };
+
+  const saveOver = async (): Promise<void> => {
+    if (view === undefined) return;
+    setUpdating(true);
+    try {
+      await updateView(workspaceId, view.view_id, {
+        filter: savedFilter as unknown as SavedViewFilter,
+        projects_display: display,
+      });
+      invalidateQueries(viewKey(workspaceId, view.view_id));
+      refreshViewLists(workspaceId, view.team_id ?? undefined);
+      showToast('View updated.');
+    } catch (failure) {
+      showErrorToast(errorMessage(failure, 'Could not update the view.'));
+    } finally {
+      setUpdating(false);
+    }
+  };
+
+  const discard = (): void => {
+    setParams(new URLSearchParams(), { replace: true });
   };
 
   const toggleStatus = (status: string): void => {
     const held = statusFilter as string[];
     setParam(
       'status',
-      (held.includes(status)
-        ? held.filter((value) => value !== status)
-        : [...held, status]
+      orderedStatuses(
+        held.includes(status)
+          ? held.filter((value) => value !== status)
+          : [...held, status]
       ).join(',')
     );
   };
@@ -504,6 +655,29 @@ export const Projects: React.FC = () => {
     handler: (event) => {
       event?.preventDefault();
       setCreating('planned');
+    },
+  });
+
+  useShortcut({
+    keys: 'shift+v',
+    label: 'Save as view',
+    scope: 'page',
+    group: 'Projects',
+    enabled: saving === null && creating === null,
+    handler: () => {
+      setSaving('new');
+    },
+  });
+
+  useShortcut({
+    keys: 'mod+s',
+    label: 'Save view changes',
+    scope: 'page',
+    group: 'Projects',
+    enabled: changed && !updating && saving === null,
+    handler: (event) => {
+      event?.preventDefault();
+      void saveOver();
     },
   });
 
@@ -573,23 +747,96 @@ export const Projects: React.FC = () => {
   const showSkeleton =
     teamsError === null && (isResolvingTeams || isLoading) && rows.length === 0;
 
+  const saveBar = !changed ? null : (
+    <div
+      role="region"
+      aria-label="Unsaved view changes"
+      className="flex w-full flex-wrap items-center gap-2 rounded-md border border-line bg-surface px-2.5 py-1.5 text-xs"
+    >
+      <span
+        aria-hidden="true"
+        className="h-1.5 w-1.5 shrink-0 rounded-full bg-accent"
+      />
+      <span className="text-text-muted">Unsaved changes</span>
+      <span className="flex-1" />
+      <Button size="sm" variant="ghost" onClick={discard}>
+        Discard
+      </Button>
+      <Button
+        size="sm"
+        variant="ghost"
+        onClick={() => {
+          setSaving('new');
+        }}
+      >
+        Save as new
+      </Button>
+      <Button
+        size="sm"
+        variant="primary"
+        disabled={updating}
+        onClick={() => void saveOver()}
+      >
+        Save
+      </Button>
+    </div>
+  );
+
   return (
     <WorkspaceShell
-      title="Projects"
+      title={view?.name ?? 'Projects'}
+      {...(leading === undefined ? {} : { leading })}
+      {...(view === undefined
+        ? {}
+        : {
+            titleAccessory: (
+              <FavoriteButton
+                workspaceId={workspaceId}
+                kind="view"
+                targetId={view.view_id}
+                title={view.name}
+              />
+            ),
+          })}
       flush
       actions={
-        canCreate ? (
-          <Button
-            variant="primary"
-            size="sm"
-            onClick={() => {
-              setCreating('planned');
-            }}
-          >
-            <LuPlus aria-hidden="true" />
-            New project
-          </Button>
-        ) : undefined
+        <div className="flex items-center gap-1.5">
+          {view === undefined ? (
+            <Button
+              size="sm"
+              variant="ghost"
+              className="gap-1.5"
+              onClick={() => {
+                setSaving('new');
+              }}
+            >
+              <LuBookmarkPlus aria-hidden="true" className="h-3.5 w-3.5" />
+              Save as view
+            </Button>
+          ) : (
+            <IconButton
+              label="Edit view details"
+              size="sm"
+              onClick={() => {
+                setSaving('details');
+              }}
+            >
+              <LuPencil aria-hidden="true" className="h-3.5 w-3.5" />
+            </IconButton>
+          )}
+          {canCreate && (
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={() => {
+                setCreating('planned');
+              }}
+            >
+              <LuPlus aria-hidden="true" />
+              New project
+            </Button>
+          )}
+        </div>
       }
       toolbar={
         <div className="flex flex-wrap items-center gap-1.5">
@@ -618,8 +865,7 @@ export const Projects: React.FC = () => {
             selected={teamFilter === '' ? [] : [teamFilter]}
             onSelect={(value) => {
               const next = new URLSearchParams(params);
-              if (value === teamFilter) next.delete('team');
-              else next.set('team', value);
+              writeParam(next, 'team', value === teamFilter ? '' : value);
               next.delete(ROLL_UP_PARAM);
               setParams(next, { replace: true });
             }}
@@ -633,10 +879,10 @@ export const Projects: React.FC = () => {
               size="sm"
               onClick={() => {
                 const next = new URLSearchParams(params);
-                next.delete('team');
+                writeParam(next, 'team', '');
+                writeParam(next, 'status', '');
+                writeParam(next, 'lead', '');
                 next.delete(ROLL_UP_PARAM);
-                next.delete('status');
-                next.delete('lead');
                 setParams(next, { replace: true });
               }}
             >
@@ -668,6 +914,7 @@ export const Projects: React.FC = () => {
               <TimelineControls {...timelineControls} />
             )}
           </div>
+          {saveBar}
         </div>
       }
     >
@@ -863,6 +1110,49 @@ export const Projects: React.FC = () => {
             invalidateQueries(queryKey);
             void navigate(projectPath(slug, project.project_id));
           }}
+        />
+      )}
+      {saving === 'new' && (
+        <SaveViewDialog
+          open
+          onClose={() => {
+            setSaving(null);
+          }}
+          title={view === undefined ? 'Save view' : 'Save as new view'}
+          teams={teams}
+          initialTeamId={filteredTeam?.id}
+          canShareWorkspace={workspace?.role !== 'guest'}
+          initialName={view === undefined ? '' : `${view.name} copy`}
+          {...(view === undefined
+            ? {}
+            : {
+                initialLook: {
+                  icon: view.icon ?? null,
+                  color: view.color ?? null,
+                  description: view.description ?? null,
+                },
+              })}
+          onSave={saveNew}
+        />
+      )}
+      {saving === 'details' && view !== undefined && (
+        <SaveViewDialog
+          open
+          onClose={() => {
+            setSaving(null);
+          }}
+          title="Edit view"
+          teams={teams}
+          detailsOnly
+          {...viewVisibility(view, user?.id, workspace?.role)}
+          submitLabel="Save changes"
+          initialName={view.name}
+          initialLook={{
+            icon: view.icon ?? null,
+            color: view.color ?? null,
+            description: view.description ?? null,
+          }}
+          onSave={saveDetails}
         />
       )}
     </WorkspaceShell>

@@ -2549,6 +2549,7 @@ class ViewCreate(TypedDict):
     ]
     completed_window: NotRequired[Literal["all", "past_week", "past_month", "none"] | None]
     description: NotRequired[str | None]
+    entity: NotRequired[Literal["issues", "projects"]]
     filter: NotRequired[dict[str, Any]]
     group_by: NotRequired[
         Literal["status", "assignee", "priority", "label", "milestone", "project", "cycle", "parent", "team", "sla"]
@@ -2574,6 +2575,7 @@ class ViewCreate(TypedDict):
         | None
     ]
     ordering_reversed: NotRequired[bool]
+    projects_display: NotRequired[ProjectsDisplay | None]
     shared: NotRequired[bool]
     show_archived: NotRequired[bool]
     show_completed: NotRequired[bool]
@@ -2628,6 +2630,7 @@ class ViewRead(TypedDict):
     completed_window: NotRequired[Literal["all", "past_week", "past_month", "none"]]
     created_at: str
     description: NotRequired[str | None]
+    entity: NotRequired[Literal["issues", "projects"]]
     favorite: NotRequired[bool]
     filter: NotRequired[dict[str, Any]]
     group_by: NotRequired[str | None]
@@ -2638,6 +2641,7 @@ class ViewRead(TypedDict):
     ordering: NotRequired[str | None]
     ordering_reversed: NotRequired[bool]
     owner_id: str
+    projects_display: NotRequired[ProjectsDisplay | None]
     scope: str
     show_archived: NotRequired[bool]
     show_completed: NotRequired[bool]
@@ -2681,6 +2685,7 @@ class ViewUpdate(TypedDict):
         | None
     ]
     ordering_reversed: NotRequired[bool | None]
+    projects_display: NotRequired[ProjectsDisplay | None]
     shared: NotRequired[bool | None]
     show_archived: NotRequired[bool | None]
     show_completed: NotRequired[bool | None]
