@@ -243,6 +243,7 @@ export const SubIssues: React.FC<SubIssuesProps> = ({
                 <Link
                   to={issuePath(slug, child.key)}
                   title={child.title}
+                  data-hover="parent"
                   className="flex h-7 min-w-0 flex-1 items-center gap-1.5 rounded-sm pr-1 text-xs"
                   onKeyDown={(event) => {
                     if (event.key !== ' ') return;
