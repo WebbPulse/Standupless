@@ -1342,6 +1342,13 @@ class ProjectCreate(TypedDict):
     update_interval_days: NotRequired[int | None]
 
 
+class ProjectMilestoneMarkerRead(TypedDict):
+    completed: bool
+    milestone_id: str
+    name: str
+    target_date: str
+
+
 class ProjectOpenIssues(TypedDict):
     action: Literal["keep", "move", "cancel"]
     project_id: NotRequired[str | None]
@@ -3422,6 +3429,7 @@ class ProjectRead(TypedDict):
     lead_id: NotRequired[str | None]
     measure: NotRequired[Literal["points", "issues"]]
     member_ids: NotRequired[list[str]]
+    milestone_markers: NotRequired[list[ProjectMilestoneMarkerRead]]
     name: str
     next_update_due_at: NotRequired[str | None]
     open_issue_count: NotRequired[int | None]

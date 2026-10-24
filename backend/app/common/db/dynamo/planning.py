@@ -1077,6 +1077,21 @@ class PlanningRepository:
         rows = [as_milestone(item) for item in items if is_milestone(item)]
         return sorted(rows, key=milestone_order)
 
+    def list_workspace_milestones(self, workspace_id: str, *, max_items: int = 10_000) -> list[ProjectMilestone]:
+        """Every milestone of every project in the workspace, in one query under the milestone prefix.
+
+        The project list reads this once to mark milestones on the timeline rather
+        than reading each project's milestones in turn.
+        """
+        if not workspace_id:
+            return []
+        items = self._repository.iter_query(
+            Key("workspace_id").eq(workspace_id) & Key("planning_key").begins_with(MILESTONE_KEY_PREFIX),
+            max_items=max_items,
+        )
+        rows = [as_milestone(item) for item in items if is_milestone(item)]
+        return sorted(rows, key=milestone_order)
+
     def create_milestone(self, milestone: ProjectMilestone) -> ProjectMilestone:
         """Store a new milestone, raising `ConditionFailed` when the key is taken."""
         self._repository.put(as_milestone_item(milestone), condition=Attr("planning_key").not_exists())

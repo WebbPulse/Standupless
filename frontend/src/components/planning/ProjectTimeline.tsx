@@ -9,6 +9,11 @@
  * when the rows are grouped. A line runs from the end of each blocking
  * project's bar to the start of the bar it holds up, drawn in the danger tone
  * when the waiting project is planned to start before its blocker ends.
+ * Dragging from the dot at a bar's end onto another project makes the first
+ * block the second, and dragging from the dot at its start makes it wait on
+ * the second. Hovering a line lights it and clicking it offers to remove it,
+ * and a focused bar opens the same links from its menu key or Shift+F10.
+ * Each dated milestone draws as a diamond on its project's lane.
  */
 
 import React, {
@@ -29,12 +34,14 @@ import {
 } from 'react-icons/lu';
 import { Link, useNavigate } from 'react-router-dom';
 import { updateProject } from '../../api/planning';
+import { useTimelineLinks } from '../../hooks/useTimelineLinks';
 import ProjectGroupGlyph from './ProjectGroupGlyph';
 import { TeamKey } from './ProjectPickers';
 import ProjectHealthGlyph from './ProjectHealthGlyph';
 import ProjectIcon from './ProjectIcon';
 import Avatar from '../ui/avatar';
 import Button, { IconButton } from '../ui/button';
+import { ContextMenu, MenuItem, MenuLabel, MenuSeparator } from '../ui/menu';
 import type { useWorkspaceProjects } from '../../hooks/useWorkspaceProjects';
 import { cn } from '../../lib/cn';
 import { errorMessage } from '../../lib/errors';
@@ -44,14 +51,22 @@ import {
   type Assignable,
 } from '../../lib/issuePeople';
 import { useOptimisticRecord } from '../../lib/optimistic';
-import { projectPath } from '../../lib/paths';
+import { projectMilestonePath, projectPath } from '../../lib/paths';
 import { healthLabel } from '../../lib/projectLook';
 import {
   PROJECT_STATUS_LABELS,
   progressPercent,
 } from '../../lib/planningDisplay';
 import { canEditProject } from '../../lib/planningModel';
-import { dependencyLines, dependencyPath } from '../../lib/projectDependencies';
+import {
+  dependencyLines,
+  dependencyPath,
+  draftPath,
+  linkFromDrag,
+  withPendingLinks,
+  type DependencyLine,
+  type LinkSide,
+} from '../../lib/projectDependencies';
 import type { ProjectGroup } from '../../lib/projectList';
 import {
   PX_PER_DAY,
@@ -61,6 +76,7 @@ import {
   clampLabel,
   dayValue,
   dragBar,
+  milestoneMarks,
   offscreenSide,
   stepZoom,
   timelineHeader,
@@ -105,6 +121,38 @@ interface DragState {
   moved: boolean;
 }
 
+/** A link being dragged from a bar's dot, in lane pixels. */
+interface LinkDrag {
+  sourceId: string;
+  side: LinkSide;
+  originX: number;
+  originY: number;
+  fromX: number;
+  fromY: number;
+  toX: number;
+  toY: number;
+  moved: boolean;
+  targetId: string | null;
+}
+
+/** The menu open on the timeline: a bar's links, or one line's. */
+type TimelineMenu =
+  | { kind: 'bar'; projectId: string; x: number; y: number }
+  | { kind: 'line'; line: DependencyLine; x: number; y: number };
+
+/** A point on the page as lane pixels of the lanes box it falls in. */
+const lanePoint = (
+  node: HTMLElement | null,
+  clientX: number,
+  clientY: number
+): { x: number; y: number } => {
+  const box = node?.getBoundingClientRect();
+  return {
+    x: clientX - (box?.left ?? 0) - NAME_WIDTH,
+    y: clientY - (box?.top ?? 0),
+  };
+};
+
 /** Props for TimelineRow: one project and the timeline it sits on. */
 interface TimelineRowProps {
   project: ProjectRead;
@@ -118,6 +166,21 @@ interface TimelineRowProps {
   view: ViewWindow;
   refreshKey: ReturnType<typeof useWorkspaceProjects>['queryKey'];
   onReveal: (day: number) => void;
+  /** This project is where the link being dragged would land. */
+  linkTarget: boolean;
+  onLinkStart: (
+    projectId: string,
+    side: LinkSide,
+    event: React.PointerEvent<HTMLElement>
+  ) => void;
+  onLinkOver: (projectId: string, onBar: boolean) => void;
+  onLinkOut: (projectId: string, fromBar: boolean) => void;
+  onBarMenu: (
+    projectId: string,
+    x: number,
+    y: number,
+    origin: HTMLElement | null
+  ) => void;
 }
 
 /** The bar's own border and fill when a project has picked a colour. */
@@ -148,6 +211,11 @@ const TimelineRow: React.FC<TimelineRowProps> = ({
   view,
   refreshKey,
   onReveal,
+  linkTarget,
+  onLinkStart,
+  onLinkOver,
+  onLinkOut,
+  onBarMenu,
 }) => {
   const navigate = useNavigate();
   const { value, update } = useOptimisticRecord<ProjectRead, ProjectUpdate>(
@@ -217,6 +285,21 @@ const TimelineRow: React.FC<TimelineRowProps> = ({
   };
 
   const onBarKey = (event: React.KeyboardEvent<HTMLElement>): void => {
+    if (
+      event.key === 'ContextMenu' ||
+      (event.shiftKey && event.key === 'F10')
+    ) {
+      if (!editable) return;
+      event.preventDefault();
+      const box = event.currentTarget.getBoundingClientRect();
+      onBarMenu(
+        project.project_id,
+        box.left,
+        box.bottom + 4,
+        event.currentTarget
+      );
+      return;
+    }
     if (event.key === 'Enter') {
       event.preventDefault();
       void navigate(href);
@@ -244,9 +327,23 @@ const TimelineRow: React.FC<TimelineRowProps> = ({
     bar === null
       ? 'Not scheduled'
       : `${dayValue(bar.start)} to ${dayValue(bar.end)}`;
+  const marks = milestoneMarks(
+    project.milestone_markers ?? [],
+    range,
+    pxPerDay
+  );
 
   return (
-    <li className="group/row flex h-10 border-b border-line">
+    <li
+      className="group/row flex h-10 border-b border-line"
+      data-timeline-project={project.project_id}
+      onPointerEnter={() => {
+        onLinkOver(project.project_id, false);
+      }}
+      onPointerLeave={() => {
+        onLinkOut(project.project_id, false);
+      }}
+    >
       <div
         className="sticky left-0 z-20 flex shrink-0 items-center gap-2 border-r border-line bg-bg px-4 text-sm group-hover/row:bg-surface"
         style={{ width: NAME_WIDTH }}
@@ -280,7 +377,8 @@ const TimelineRow: React.FC<TimelineRowProps> = ({
       <div
         className={cn(
           'relative shrink-0',
-          bar === null && editable && 'cursor-copy'
+          bar === null && editable && 'cursor-copy',
+          bar !== null && 'pointer-events-none'
         )}
         style={{ width: (range.end - range.start) * pxPerDay }}
         onClick={(event) => {
@@ -319,10 +417,29 @@ const TimelineRow: React.FC<TimelineRowProps> = ({
                 setDrag(null);
               }}
               onKeyDown={onBarKey}
+              onContextMenu={(event) => {
+                if (!editable) return;
+                event.preventDefault();
+                event.stopPropagation();
+                onBarMenu(
+                  project.project_id,
+                  event.clientX,
+                  event.clientY,
+                  null
+                );
+              }}
+              onPointerEnter={() => {
+                onLinkOver(project.project_id, true);
+              }}
+              onPointerLeave={() => {
+                onLinkOut(project.project_id, true);
+              }}
+              data-timeline-bar={project.project_id}
               className={cn(
-                'absolute top-2 flex h-6 items-center overflow-visible rounded-sm border border-accent/40 bg-accent-soft text-xs text-text select-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none',
+                'pointer-events-auto absolute top-2 flex h-6 items-center overflow-visible rounded-sm border border-accent/40 bg-accent-soft text-xs text-text select-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none',
                 editable ? 'cursor-grab' : 'cursor-pointer',
-                drag !== null && 'cursor-grabbing shadow-md ring-1 ring-accent'
+                drag !== null && 'cursor-grabbing shadow-md ring-1 ring-accent',
+                linkTarget && 'ring-2 ring-accent'
               )}
               style={{ left, width, ...barTint(project.color) }}
               data-color={project.color ?? ''}
@@ -367,6 +484,30 @@ const TimelineRow: React.FC<TimelineRowProps> = ({
                 </span>
               </span>
             </div>
+            {editable &&
+              (['start', 'end'] as const).map((end) => (
+                <span
+                  key={end}
+                  aria-hidden="true"
+                  data-link-handle={end}
+                  title={
+                    end === 'end'
+                      ? 'Drag onto a project this one blocks'
+                      : 'Drag onto a project this one waits on'
+                  }
+                  onPointerDown={(event) => {
+                    event.stopPropagation();
+                    onLinkStart(project.project_id, end, event);
+                  }}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                  }}
+                  className="pointer-events-auto absolute top-5 z-20 h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 cursor-crosshair touch-none rounded-full border border-accent bg-bg opacity-0 transition duration-100 group-hover/row:opacity-100 hover:scale-125 hover:bg-accent"
+                  style={{
+                    left: end === 'start' ? left - 8 : left + width + 8,
+                  }}
+                />
+              ))}
             {drag !== null && drag.moved && (
               <span
                 aria-hidden="true"
@@ -384,7 +525,7 @@ const TimelineRow: React.FC<TimelineRowProps> = ({
                   event.stopPropagation();
                   onReveal(bar.start);
                 }}
-                className="absolute top-2.5 z-10 inline-flex h-5 items-center gap-1 rounded-xs border border-line bg-surface px-1.5 text-2xs text-text-muted hover:text-text"
+                className="pointer-events-auto absolute top-2.5 z-10 inline-flex h-5 items-center gap-1 rounded-xs border border-line bg-surface px-1.5 text-2xs text-text-muted hover:text-text"
                 style={
                   side === 'before'
                     ? { left: view.left + 4 }
@@ -400,6 +541,31 @@ const TimelineRow: React.FC<TimelineRowProps> = ({
             )}
           </>
         )}
+        {marks.map((mark) => (
+          <Link
+            key={mark.milestoneId}
+            to={projectMilestonePath(
+              slug,
+              project.project_id,
+              mark.milestoneId
+            )}
+            aria-label={`Milestone ${mark.name}, ${mark.date}`}
+            title={`${mark.name} · ${mark.date}`}
+            data-milestone={mark.milestoneId}
+            data-completed={mark.completed ? 'true' : 'false'}
+            onPointerDown={(event) => {
+              event.stopPropagation();
+            }}
+            onClick={(event) => {
+              event.stopPropagation();
+            }}
+            className={cn(
+              'pointer-events-auto absolute top-5 z-20 h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rotate-45 rounded-[1px] border border-text-muted transition-transform duration-100 hover:scale-125 focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none',
+              mark.completed ? 'bg-text-muted' : 'bg-bg'
+            )}
+            style={{ left: mark.x }}
+          />
+        ))}
       </div>
     </li>
   );
@@ -511,6 +677,9 @@ export const ProjectTimeline: React.FC<ProjectTimelineProps> = ({
         projects.flatMap((project) => [
           project.start_date,
           project.target_date,
+          ...(project.milestone_markers ?? []).map(
+            (marker) => marker.target_date
+          ),
         ]),
         today
       ),
@@ -584,147 +753,488 @@ export const ProjectTimeline: React.FC<ProjectTimelineProps> = ({
   }, [readView, hasRows]);
 
   const todayLeft = (today - range.start + 0.5) * pxPerDay;
+  const { pending, link, unlink } = useTimelineLinks(
+    workspaceId,
+    projects,
+    refreshKey
+  );
+  const shown = useMemo(
+    () => withPendingLinks(groups, pending),
+    [groups, pending]
+  );
+  const byId = useMemo(
+    () =>
+      new Map(
+        shown.flatMap((group) =>
+          group.rows.map((project) => [project.project_id, project] as const)
+        )
+      ),
+    [shown]
+  );
   const lines = useMemo(
-    () => dependencyLines(groups, folded, range, pxPerDay),
-    [groups, folded, range, pxPerDay]
+    () => dependencyLines(shown, folded, range, pxPerDay),
+    [shown, folded, range, pxPerDay]
   );
 
+  const lanes = useRef<HTMLDivElement | null>(null);
+  const [linkDrag, setLinkDrag] = useState<LinkDrag | null>(null);
+  const linkHeld = useRef<LinkDrag | null>(null);
+  const holdLink = useCallback((next: LinkDrag | null): void => {
+    linkHeld.current = next;
+    setLinkDrag(next);
+  }, []);
+  const linking = linkDrag !== null;
+
+  const startLink = useCallback(
+    (
+      projectId: string,
+      side: LinkSide,
+      event: React.PointerEvent<HTMLElement>
+    ): void => {
+      if (event.button !== 0) return;
+      event.preventDefault();
+      const handle = event.currentTarget;
+      if (handle.hasPointerCapture?.(event.pointerId))
+        handle.releasePointerCapture(event.pointerId);
+      const dot = handle.getBoundingClientRect();
+      const from = lanePoint(
+        lanes.current,
+        dot.left + dot.width / 2,
+        dot.top + dot.height / 2
+      );
+      holdLink({
+        sourceId: projectId,
+        side,
+        originX: event.clientX,
+        originY: event.clientY,
+        fromX: from.x,
+        fromY: from.y,
+        toX: from.x,
+        toY: from.y,
+        moved: false,
+        targetId: null,
+      });
+    },
+    [holdLink]
+  );
+
+  const overLink = useCallback(
+    (projectId: string, onBar: boolean): void => {
+      const held = linkHeld.current;
+      if (held === null || held.targetId === projectId) return;
+      if (projectId === held.sourceId && !onBar) return;
+      holdLink({ ...held, targetId: projectId });
+    },
+    [holdLink]
+  );
+
+  const outLink = useCallback(
+    (projectId: string, fromBar: boolean): void => {
+      const held = linkHeld.current;
+      if (held === null || held.targetId !== projectId) return;
+      if (fromBar && projectId !== held.sourceId) return;
+      holdLink({ ...held, targetId: null });
+    },
+    [holdLink]
+  );
+
+  useEffect(() => {
+    if (!linking) return;
+    const onMove = (event: PointerEvent): void => {
+      const held = linkHeld.current;
+      if (held === null) return;
+      const point = lanePoint(lanes.current, event.clientX, event.clientY);
+      holdLink({
+        ...held,
+        toX: point.x,
+        toY: point.y,
+        moved:
+          held.moved ||
+          Math.hypot(
+            event.clientX - held.originX,
+            event.clientY - held.originY
+          ) > 4,
+      });
+    };
+    const onUp = (): void => {
+      const held = linkHeld.current;
+      holdLink(null);
+      if (held === null || held.targetId === null) return;
+      const pair = linkFromDrag(held.side, held.sourceId, held.targetId);
+      link(held.sourceId, pair.blockerId, pair.blockedId);
+    };
+    const onCancel = (): void => {
+      holdLink(null);
+    };
+    const onKey = (event: KeyboardEvent): void => {
+      if (event.key !== 'Escape') return;
+      event.preventDefault();
+      holdLink(null);
+    };
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+    window.addEventListener('pointercancel', onCancel);
+    window.addEventListener('keydown', onKey);
+    return () => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('pointercancel', onCancel);
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [linking, link, holdLink]);
+
+  const [hoverLine, setHoverLine] = useState<string | null>(null);
+  const [menu, setMenu] = useState<TimelineMenu | null>(null);
+  const menuOrigin = useRef<HTMLElement | null>(null);
+  const openBarMenu = useCallback(
+    (projectId: string, x: number, y: number, origin: HTMLElement | null) => {
+      menuOrigin.current = origin;
+      setMenu({ kind: 'bar', projectId, x, y });
+    },
+    []
+  );
+  const closeMenu = useCallback((): void => {
+    const origin = menuOrigin.current;
+    menuOrigin.current = null;
+    setMenu(null);
+    origin?.focus();
+  }, []);
+  const openLineMenu = (
+    line: DependencyLine,
+    event: React.MouseEvent
+  ): void => {
+    event.preventDefault();
+    event.stopPropagation();
+    menuOrigin.current = null;
+    setMenu({ kind: 'line', line, x: event.clientX, y: event.clientY });
+  };
+  const nameOf = (projectId: string): string =>
+    byId.get(projectId)?.name ?? 'Another project';
+  const editableId = (projectId: string): boolean => {
+    const project = byId.get(projectId);
+    return (
+      project !== undefined && canEditProject(workspaceRole, project, teams)
+    );
+  };
+
+  const renderMenu = (): React.ReactNode => {
+    if (menu === null) return null;
+    if (menu.kind === 'line') {
+      const { line } = menu;
+      const blocker = nameOf(line.blockerId);
+      const blocked = nameOf(line.blockedId);
+      const pathId = editableId(line.blockerId)
+        ? line.blockerId
+        : editableId(line.blockedId)
+          ? line.blockedId
+          : null;
+      return (
+        <ContextMenu
+          x={menu.x}
+          y={menu.y}
+          label={`${blocker} blocks ${blocked}`}
+          onClose={closeMenu}
+        >
+          <MenuLabel>{`${blocker} blocks ${blocked}`}</MenuLabel>
+          <MenuItem to={projectPath(slug, line.blockerId)}>
+            {`Open ${blocker}`}
+          </MenuItem>
+          <MenuItem to={projectPath(slug, line.blockedId)}>
+            {`Open ${blocked}`}
+          </MenuItem>
+          {pathId !== null && (
+            <>
+              <MenuSeparator />
+              <MenuItem
+                danger
+                onSelect={() => {
+                  unlink(pathId, line.blockerId, line.blockedId);
+                }}
+              >
+                Remove dependency
+              </MenuItem>
+            </>
+          )}
+        </ContextMenu>
+      );
+    }
+    const project = byId.get(menu.projectId);
+    if (project === undefined) return null;
+    const projectId = project.project_id;
+    const blocking = project.blocking_project_ids ?? [];
+    const blockedBy = project.blocked_by_project_ids ?? [];
+    const others = projects.filter(
+      (other) =>
+        other.project_id !== projectId &&
+        !blocking.includes(other.project_id) &&
+        !blockedBy.includes(other.project_id)
+    );
+    return (
+      <ContextMenu
+        x={menu.x}
+        y={menu.y}
+        label={`Dependencies of ${project.name}`}
+        onClose={closeMenu}
+      >
+        {(blocking.length > 0 || blockedBy.length > 0) && (
+          <>
+            <MenuLabel>Linked</MenuLabel>
+            {blocking.map((otherId) => (
+              <MenuItem
+                key={`blocks-${otherId}`}
+                danger
+                onSelect={() => {
+                  unlink(projectId, projectId, otherId);
+                }}
+              >
+                {`Remove: blocks ${nameOf(otherId)}`}
+              </MenuItem>
+            ))}
+            {blockedBy.map((otherId) => (
+              <MenuItem
+                key={`blocked-${otherId}`}
+                danger
+                onSelect={() => {
+                  unlink(projectId, otherId, projectId);
+                }}
+              >
+                {`Remove: blocked by ${nameOf(otherId)}`}
+              </MenuItem>
+            ))}
+            <MenuSeparator />
+          </>
+        )}
+        {others.length === 0 ? (
+          <MenuItem disabled>No other projects to link</MenuItem>
+        ) : (
+          <>
+            <MenuLabel>Blocks</MenuLabel>
+            {others.map((other) => (
+              <MenuItem
+                key={`add-blocks-${other.project_id}`}
+                onSelect={() => {
+                  link(projectId, projectId, other.project_id);
+                }}
+              >
+                {`Blocks ${other.name}`}
+              </MenuItem>
+            ))}
+            <MenuLabel>Blocked by</MenuLabel>
+            {others.map((other) => (
+              <MenuItem
+                key={`add-blocked-${other.project_id}`}
+                onSelect={() => {
+                  link(projectId, other.project_id, projectId);
+                }}
+              >
+                {`Blocked by ${other.name}`}
+              </MenuItem>
+            ))}
+          </>
+        )}
+      </ContextMenu>
+    );
+  };
+
   return (
-    <div
-      ref={scroller}
-      onScroll={readView}
-      className="relative min-h-0 flex-1 overflow-auto"
-      data-testid={testId}
-    >
-      <div className="relative" style={{ width: NAME_WIDTH + laneWidth }}>
-        <div className="sticky top-0 z-30 flex border-b border-line bg-bg">
-          <div
-            className="sticky left-0 z-10 flex shrink-0 items-end border-r border-line bg-bg px-4 pb-1.5 text-xs text-text-muted"
-            style={{ width: NAME_WIDTH }}
-          >
-            {`${String(projects.length)} ${projects.length === 1 ? 'project' : 'projects'}`}
-          </div>
-          <div
-            className="relative h-12 shrink-0"
-            style={{ width: laneWidth }}
-            aria-hidden="true"
-          >
-            {header.major.map((tick) => (
-              <span
-                key={`major-${String(tick.day)}`}
-                className="absolute top-0 flex h-6 items-center border-l border-line px-2 text-xs font-medium text-text"
-                style={{
-                  left: (tick.day - range.start) * pxPerDay,
-                  width: tick.span * pxPerDay,
-                }}
-              >
+    <>
+      <div
+        ref={scroller}
+        onScroll={readView}
+        className="relative min-h-0 flex-1 overflow-auto"
+        data-testid={testId}
+      >
+        <div className="relative" style={{ width: NAME_WIDTH + laneWidth }}>
+          <div className="sticky top-0 z-30 flex border-b border-line bg-bg">
+            <div
+              className="sticky left-0 z-10 flex shrink-0 items-end border-r border-line bg-bg px-4 pb-1.5 text-xs text-text-muted"
+              style={{ width: NAME_WIDTH }}
+            >
+              {`${String(projects.length)} ${projects.length === 1 ? 'project' : 'projects'}`}
+            </div>
+            <div
+              className="relative h-12 shrink-0"
+              style={{ width: laneWidth }}
+              aria-hidden="true"
+            >
+              {header.major.map((tick) => (
                 <span
-                  className="sticky truncate"
-                  style={{ left: NAME_WIDTH + 8 }}
-                >
-                  {tick.label}
-                </span>
-              </span>
-            ))}
-            {header.minor.map((tick) => (
-              <span
-                key={`minor-${String(tick.day)}`}
-                className="absolute top-6 flex h-6 items-center overflow-hidden border-l border-line/60 pl-1 text-2xs text-text-faint"
-                style={{
-                  left: (tick.day - range.start) * pxPerDay,
-                  width: tick.span * pxPerDay,
-                }}
-              >
-                {tick.span * pxPerDay >= 18 ? tick.label : ''}
-              </span>
-            ))}
-            <span
-              className="absolute top-6 z-10 -translate-x-1/2 rounded-xs bg-accent px-1 text-2xs font-medium text-bg"
-              style={{ left: todayLeft }}
-            >
-              Today
-            </span>
-          </div>
-        </div>
-        <div className="relative">
-          <div
-            aria-hidden="true"
-            className="pointer-events-none absolute inset-y-0"
-            style={{ left: NAME_WIDTH, width: laneWidth }}
-          >
-            {header.major.map((tick) => (
-              <span
-                key={`grid-${String(tick.day)}`}
-                className="absolute inset-y-0 border-l border-line"
-                style={{ left: (tick.day - range.start) * pxPerDay }}
-              />
-            ))}
-            <span
-              className="absolute inset-y-0 z-10 w-px bg-accent"
-              style={{ left: todayLeft }}
-            />
-            {lines.length > 0 && (
-              <svg
-                className="absolute inset-0 h-full overflow-visible"
-                width={laneWidth}
-                data-testid="timeline-dependencies"
-              >
-                {lines.map((line) => (
-                  <g
-                    key={line.key}
-                    data-dependency={line.key}
-                    data-late={line.late ? 'true' : 'false'}
-                    className={line.late ? 'text-danger' : 'text-text-faint'}
-                  >
-                    <path
-                      d={dependencyPath(line)}
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth={1.25}
-                    />
-                    <path
-                      d={`M ${String(line.toX - 6)} ${String(line.toY - 3.5)} L ${String(line.toX)} ${String(line.toY)} L ${String(line.toX - 6)} ${String(line.toY + 3.5)} Z`}
-                      fill="currentColor"
-                    />
-                  </g>
-                ))}
-              </svg>
-            )}
-          </div>
-          {groups.map((group) => (
-            <TimelineGroup
-              key={group.key}
-              group={group}
-              teams={teams}
-              folded={folded.includes(group.key)}
-              listLabel={listLabel}
-              onToggle={() => {
-                onToggleGroup(group.key);
-              }}
-            >
-              {group.rows.map((project) => (
-                <TimelineRow
-                  key={project.project_id}
-                  project={project}
-                  slug={slug}
-                  workspaceId={workspaceId}
-                  teams={teams}
-                  people={people}
-                  workspaceRole={workspaceRole}
-                  range={range}
-                  pxPerDay={pxPerDay}
-                  view={view}
-                  refreshKey={refreshKey}
-                  onReveal={(day) => {
-                    scrollToDay(day, 24);
+                  key={`major-${String(tick.day)}`}
+                  className="absolute top-0 flex h-6 items-center border-l border-line px-2 text-xs font-medium text-text"
+                  style={{
+                    left: (tick.day - range.start) * pxPerDay,
+                    width: tick.span * pxPerDay,
                   }}
+                >
+                  <span
+                    className="sticky truncate"
+                    style={{ left: NAME_WIDTH + 8 }}
+                  >
+                    {tick.label}
+                  </span>
+                </span>
+              ))}
+              {header.minor.map((tick) => (
+                <span
+                  key={`minor-${String(tick.day)}`}
+                  className="absolute top-6 flex h-6 items-center overflow-hidden border-l border-line/60 pl-1 text-2xs text-text-faint"
+                  style={{
+                    left: (tick.day - range.start) * pxPerDay,
+                    width: tick.span * pxPerDay,
+                  }}
+                >
+                  {tick.span * pxPerDay >= 18 ? tick.label : ''}
+                </span>
+              ))}
+              <span
+                className="absolute top-6 z-10 -translate-x-1/2 rounded-xs bg-accent px-1 text-2xs font-medium text-bg"
+                style={{ left: todayLeft }}
+              >
+                Today
+              </span>
+            </div>
+          </div>
+          <div
+            ref={lanes}
+            className={cn('relative', linking && 'cursor-crosshair')}
+          >
+            <div
+              aria-hidden="true"
+              className="pointer-events-none absolute inset-y-0"
+              style={{ left: NAME_WIDTH, width: laneWidth }}
+            >
+              {header.major.map((tick) => (
+                <span
+                  key={`grid-${String(tick.day)}`}
+                  className="absolute inset-y-0 border-l border-line"
+                  style={{ left: (tick.day - range.start) * pxPerDay }}
                 />
               ))}
-            </TimelineGroup>
-          ))}
+              <span
+                className="absolute inset-y-0 z-10 w-px bg-accent"
+                style={{ left: todayLeft }}
+              />
+              {(lines.length > 0 || linkDrag !== null) && (
+                <svg
+                  className="absolute inset-0 h-full overflow-visible"
+                  width={laneWidth}
+                  data-testid="timeline-dependencies"
+                >
+                  {lines.map((line) => {
+                    const lit =
+                      hoverLine === line.key ||
+                      (menu?.kind === 'line' && menu.line.key === line.key);
+                    return (
+                      <g
+                        key={line.key}
+                        data-dependency={line.key}
+                        data-late={line.late ? 'true' : 'false'}
+                        data-active={lit ? 'true' : 'false'}
+                        className={
+                          lit
+                            ? 'text-accent'
+                            : line.late
+                              ? 'text-danger'
+                              : 'text-text-faint'
+                        }
+                      >
+                        <title>{`${nameOf(line.blockerId)} blocks ${nameOf(line.blockedId)}`}</title>
+                        <path
+                          d={dependencyPath(line)}
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth={lit ? 2 : 1.25}
+                        />
+                        <path
+                          d={`M ${String(line.toX - 6)} ${String(line.toY - 3.5)} L ${String(line.toX)} ${String(line.toY)} L ${String(line.toX - 6)} ${String(line.toY + 3.5)} Z`}
+                          fill="currentColor"
+                        />
+                        <path
+                          d={dependencyPath(line)}
+                          fill="none"
+                          stroke="transparent"
+                          strokeWidth={10}
+                          data-dependency-hit={line.key}
+                          style={{ pointerEvents: 'stroke', cursor: 'pointer' }}
+                          onPointerEnter={() => {
+                            setHoverLine(line.key);
+                          }}
+                          onPointerLeave={() => {
+                            setHoverLine((held) =>
+                              held === line.key ? null : held
+                            );
+                          }}
+                          onClick={(event) => {
+                            openLineMenu(line, event);
+                          }}
+                          onContextMenu={(event) => {
+                            openLineMenu(line, event);
+                          }}
+                        />
+                      </g>
+                    );
+                  })}
+                  {linkDrag?.moved === true && (
+                    <path
+                      d={draftPath(
+                        linkDrag.side,
+                        linkDrag.fromX,
+                        linkDrag.fromY,
+                        linkDrag.toX,
+                        linkDrag.toY
+                      )}
+                      data-testid="timeline-link-draft"
+                      fill="none"
+                      className="text-accent"
+                      stroke="currentColor"
+                      strokeWidth={1.5}
+                      strokeDasharray="4 3"
+                    />
+                  )}
+                </svg>
+              )}
+            </div>
+            {groups.map((group) => (
+              <TimelineGroup
+                key={group.key}
+                group={group}
+                teams={teams}
+                folded={folded.includes(group.key)}
+                listLabel={listLabel}
+                onToggle={() => {
+                  onToggleGroup(group.key);
+                }}
+              >
+                {group.rows.map((project) => (
+                  <TimelineRow
+                    key={project.project_id}
+                    project={project}
+                    slug={slug}
+                    workspaceId={workspaceId}
+                    teams={teams}
+                    people={people}
+                    workspaceRole={workspaceRole}
+                    range={range}
+                    pxPerDay={pxPerDay}
+                    view={view}
+                    refreshKey={refreshKey}
+                    onReveal={(day) => {
+                      scrollToDay(day, 24);
+                    }}
+                    linkTarget={linkDrag?.targetId === project.project_id}
+                    onLinkStart={startLink}
+                    onLinkOver={overLink}
+                    onLinkOut={outLink}
+                    onBarMenu={openBarMenu}
+                  />
+                ))}
+              </TimelineGroup>
+            ))}
+          </div>
         </div>
       </div>
-    </div>
+      {renderMenu()}
+    </>
   );
 };
 

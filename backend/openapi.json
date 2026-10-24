@@ -10295,6 +10295,36 @@
         "title": "ProjectListRead",
         "type": "object"
       },
+      "ProjectMilestoneMarkerRead": {
+        "description": "One dated milestone of a project, as the timeline marks it on the project's lane.",
+        "properties": {
+          "completed": {
+            "description": "Every issue in the milestone is finished, and it holds at least one",
+            "title": "Completed",
+            "type": "boolean"
+          },
+          "milestone_id": {
+            "title": "Milestone Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "target_date": {
+            "title": "Target Date",
+            "type": "string"
+          }
+        },
+        "required": [
+          "milestone_id",
+          "name",
+          "target_date",
+          "completed"
+        ],
+        "title": "ProjectMilestoneMarkerRead",
+        "type": "object"
+      },
       "ProjectOpenIssues": {
         "description": "What a patch that completes or cancels a project does with the issues still open in it.\n\n`keep` leaves them in the project, `move` moves them to the project named by\n`project_id`, and `cancel` moves each to its team's first canceled status.",
         "properties": {
@@ -10468,6 +10498,14 @@
               "type": "string"
             },
             "title": "Member Ids",
+            "type": "array"
+          },
+          "milestone_markers": {
+            "description": "The project's milestones that have a target date, earliest first, filled on the project list",
+            "items": {
+              "$ref": "#/components/schemas/ProjectMilestoneMarkerRead"
+            },
+            "title": "Milestone Markers",
             "type": "array"
           },
           "name": {

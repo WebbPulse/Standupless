@@ -1,7 +1,7 @@
 /**
  * The roadmap's day arithmetic: parsing dates to day numbers and back, the
  * span the timeline covers, how drags move and resize a bar, and where a
- * label and an off-screen marker sit.
+ * label, an off-screen marker and a milestone diamond sit.
  */
 
 import { describe, expect, it } from 'vitest';
@@ -11,6 +11,7 @@ import {
   dayNumber,
   dayValue,
   dragBar,
+  milestoneMarks,
   offscreenSide,
   timelineHeader,
   timelineRange,
@@ -110,5 +111,31 @@ describe('offscreenSide', () => {
     expect(offscreenSide(0, 50, 100, 500)).toBe('before');
     expect(offscreenSide(600, 50, 100, 500)).toBe('after');
     expect(offscreenSide(80, 50, 100, 500)).toBeNull();
+  });
+});
+
+describe('milestoneMarks', () => {
+  const range = { start: day('2026-10-01'), end: day('2026-11-01') };
+  const marker = (id: string, date: string) => ({
+    milestone_id: id,
+    name: id,
+    target_date: date,
+    completed: false,
+  });
+
+  it('centres a diamond on its target day', () => {
+    const [mark] = milestoneMarks([marker('m1', '2026-10-03')], range, 10);
+
+    expect(mark).toMatchObject({ milestoneId: 'm1', x: 25 });
+  });
+
+  it('leaves out a milestone outside the drawn range', () => {
+    expect(
+      milestoneMarks(
+        [marker('early', '2026-09-30'), marker('late', '2026-11-01')],
+        range,
+        10
+      )
+    ).toEqual([]);
   });
 });
