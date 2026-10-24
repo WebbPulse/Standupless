@@ -1100,8 +1100,11 @@ ISSUE_TOOLS: tuple[Tool, ...] = (
     Tool(
         name="create_issue",
         description=(
-            "Create an issue in a team, allocating its key. With no status_id it starts in the team's first status, "
-            "or in triage while the team has triage on; a sub-issue from a team member skips triage unless asked. "
+            "Create an issue in a team, allocating its key. With no status_id it starts in the team's first status "
+            "while the team has triage off. While triage is on, an issue with no status_id waits in triage even "
+            "when project_id or cycle_id is passed; a team member skips triage by naming a real status_id such as "
+            "Backlog or Todo, and a team member's sub-issue skips it unless asked. Issues from guests, people "
+            "outside the team and workspace keys always wait in triage while it is on. "
             "parent_id makes it a sub-issue; cycle_id, project_id and project_milestone_id place it. "
             "template_id fills every field not passed from one of the team's templates (see list_templates), "
             "and title may then be omitted when the template has one. A form template (one with form_fields) also "
@@ -1115,7 +1118,10 @@ ISSUE_TOOLS: tuple[Tool, ...] = (
                 "team_id": string("The team to create it in"),
                 "title": string("The issue title"),
                 "body": string("The issue body, in Markdown"),
-                "status_id": string("The starting status, by id or name; 'triage' files it into triage"),
+                "status_id": string(
+                    "The starting status, by id or name; a real status skips triage for a team member, "
+                    "'triage' files it into triage"
+                ),
                 "priority": enum(PRIORITIES, "The priority, defaulting to none"),
                 "assignee_id": string("Who to assign it to; 'me' is the caller"),
                 "label_ids": string_list("Labels of the same team, by id or name"),
