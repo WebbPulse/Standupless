@@ -54,7 +54,8 @@ export interface ProjectsDisplayPreference {
     | 'progress'
     | 'created'
     | 'updated'
-    | 'customers';
+    | 'customers'
+    | 'manual';
   closed: 'all' | 'fortnight' | 'month' | 'none';
   /** Whether groups run in their own order or reversed. */
   direction?: 'asc' | 'desc';
@@ -2339,6 +2340,8 @@ export interface ProjectRead {
   update_due_state?: ProjectUpdateDueState | null;
   /** The initiative the project belongs to, or null outside any. */
   initiative_id?: string | null;
+  /** The manual position, a base 62 fractional key; null on a project never placed. */
+  sort_order?: string | null;
   /** Issues still open in the project, answered by a patch that leaves it completed or canceled. */
   open_issue_count?: number | null;
   /** When the project last became completed or canceled, null while it is open. */
@@ -2514,6 +2517,8 @@ export interface ProjectUpdate {
   update_interval_days?: ProjectUpdateInterval | null;
   /** Moves the project into an initiative; a null takes it out of one. */
   initiative_id?: string | null;
+  /** The manual position, a base 62 fractional key shared by every viewer. */
+  sort_order?: string;
   /** What to do with the open issues, taken only by a patch that completes or cancels the project. */
   open_issues?: ProjectOpenIssues;
 }

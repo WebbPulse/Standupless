@@ -553,6 +553,8 @@ class Project(BaseModel):
     count of open and closed issues per status id, beside the category buckets.
     `completed_at` is when the project last became completed or canceled, and
     None while it is open or on a row closed before the field existed.
+    `sort_order` is the workspace-wide manual position, a base 62 fractional
+    key; None on a row never placed, which the manual ordering puts last.
     """
 
     workspace_id: str
@@ -580,6 +582,7 @@ class Project(BaseModel):
     update_interval_days: int | None = None
     initiative_id: str | None = None
     completed_at: datetime | None = None
+    sort_order: str | None = None
     created_by: str
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
@@ -843,6 +846,7 @@ PROJECT_OPTIONAL_FIELDS: tuple[str, ...] = (
     "last_update_at",
     "update_interval_days",
     "initiative_id",
+    "sort_order",
     "import_batch_id",
 )
 """The project attributes a null value removes from the row rather than storing."""

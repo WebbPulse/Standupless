@@ -11916,6 +11916,18 @@
             "title": "Slug Id",
             "type": "string"
           },
+          "sort_order": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The manual position, a base 62 fractional key; null on a project never placed, which sorts last",
+            "title": "Sort Order"
+          },
           "start_date": {
             "anyOf": [
               {
@@ -12276,7 +12288,7 @@
         "type": "object"
       },
       "ProjectUpdate": {
-        "description": "The body a project patch takes.\n\n`team_ids` replaces the teams the caller can see; teams the caller cannot see\nare kept as they are, so a guest's edit never drops a team it was never\nshown. `team_id` is the single-team spelling an older client sends; it moves\nnothing and must name one of the project's teams, or the patch is a 404.\nA null `update_interval_days` returns the project to the workspace's cadence,\nand a null `initiative_id` takes the project out of its initiative.\n`open_issues` says what happens to the issues still open in a project the\npatch leaves completed or canceled; without it they stay where they are.",
+        "description": "The body a project patch takes.\n\n`team_ids` replaces the teams the caller can see; teams the caller cannot see\nare kept as they are, so a guest's edit never drops a team it was never\nshown. `team_id` is the single-team spelling an older client sends; it moves\nnothing and must name one of the project's teams, or the patch is a 404.\nA null `update_interval_days` returns the project to the workspace's cadence,\nand a null `initiative_id` takes the project out of its initiative.\n`open_issues` says what happens to the issues still open in a project the\npatch leaves completed or canceled; without it they stay where they are.\n`sort_order` is the project's manual position, a base 62 fractional key\nshared by every viewer, so a drag rewrites only the project moved.",
         "properties": {
           "color": {
             "anyOf": [
@@ -12439,6 +12451,17 @@
               }
             ],
             "title": "Priority"
+          },
+          "sort_order": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sort Order"
           },
           "start_date": {
             "anyOf": [
@@ -12798,7 +12821,8 @@
               "progress",
               "created",
               "updated",
-              "customers"
+              "customers",
+              "manual"
             ],
             "title": "Order",
             "type": "string"
