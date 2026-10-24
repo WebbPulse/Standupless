@@ -53,7 +53,7 @@ locals {
       secrets     = true
       ses         = false
       memory      = 512
-      tables      = ["comments", "reactions", "attachments", "subscriptions", "rate-limits"]
+      tables      = ["comments", "reactions", "attachments", "subscriptions", "activity", "rate-limits"]
       read_tables = ["memberships", "workspaces", "users", "teams", "issues", "api-keys"]
     }
     planning = {

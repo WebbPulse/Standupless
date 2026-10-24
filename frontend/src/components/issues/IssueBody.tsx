@@ -21,6 +21,7 @@ import { updateIssue } from '../../api/issues';
 import { dragHasFiles, filesFrom } from '../../lib/attachments';
 import { cn } from '../../lib/cn';
 import { errorMessage } from '../../lib/errors';
+import type { Assignable } from '../../lib/issuePeople';
 import { contentPath, mediaKindOf } from '../../lib/media';
 import { rememberPreview, useMedia } from '../../lib/mediaContext';
 import { submitKeysLabel } from '../../lib/platform';
@@ -41,6 +42,8 @@ export interface IssueBodyProps {
   issue: IssueRead;
   canEdit: boolean;
   onSaved: (issue: IssueRead) => void;
+  /** The people an @mention in the description can name. */
+  people?: Assignable[];
   /**
    * Attaches files dropped before the editor has loaded to the issue. Once it
    * has, files go into the text instead.
@@ -90,6 +93,7 @@ export const IssueBody: React.FC<IssueBodyProps> = ({
   issue,
   canEdit,
   onSaved,
+  people,
   onDropFiles,
 }) => {
   const [dragging, setDragging] = useState(false);
@@ -234,6 +238,9 @@ export const IssueBody: React.FC<IssueBodyProps> = ({
               onFocusChange={setBodyFocused}
               {...(canEdit ? { placeholder: PLACEHOLDER } : {})}
               {...(canEdit ? { uploadFile } : {})}
+              {...(canEdit && people !== undefined
+                ? { mentionPeople: people }
+                : {})}
             />
           </Suspense>
         ) : (

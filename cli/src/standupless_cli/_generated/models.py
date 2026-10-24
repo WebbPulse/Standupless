@@ -31,6 +31,7 @@ ActivityRead = TypedDict(
             "unarchived",
             "subscriber_added",
             "subscriber_removed",
+            "mentioned",
         ],
         "release_id": NotRequired[str | None],
         "source": NotRequired[Literal["web", "mcp", "cli", "api", "github", "system"] | None],

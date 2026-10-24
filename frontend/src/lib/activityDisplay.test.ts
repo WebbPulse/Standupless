@@ -332,6 +332,23 @@ describe('describeActivity', () => {
     );
   });
 
+  it('reads a mention backlink from a description or a comment', () => {
+    expect(
+      text({
+        kind: 'mentioned',
+        field: 'description',
+        to: { id: 'i-4', key: 'ABC-4', title: 'Other' },
+      })
+    ).toBe('mentioned this in ABC-4 Other');
+    expect(
+      text({
+        kind: 'mentioned',
+        field: 'comment',
+        to: { id: 'i-4', key: 'ABC-4', title: 'Other', comment_id: 'c-1' },
+      })
+    ).toBe('mentioned this in a comment on ABC-4 Other');
+  });
+
   it('falls back to plain words for a field it does not know', () => {
     expect(text({ field: 'story_points' })).toBe('changed the story points');
   });

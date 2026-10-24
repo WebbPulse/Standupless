@@ -18,6 +18,7 @@ from app.common.api.pagination import resume_key
 from app.common.change_source import source_for
 from app.common.db.dynamo.activity import Activity, as_activity
 from app.common.issue_keys import current_reference_value, is_issue_reference, retired_prefixes
+from app.common.issue_mentions import visible_backlink
 from app.common.issue_rules import load_visible_issue
 
 
@@ -64,6 +65,7 @@ def activity_page(
     `source` keeps only the rows made through that client, filtered within the page,
     so a filtered page can be short while its cursor still walks the whole history.
     A GitHub or system row written before sources were recorded matches its actor kind.
+    A "mentioned in" backlink from a team the caller cannot see is dropped the same way.
     """
     load_visible_issue(repositories, context, issue_id)
     scope = f"activity:{context.workspace_id}:{issue_id}"
@@ -73,7 +75,7 @@ def activity_page(
         limit=limit,
         start_key=resume_key(cursor, scope),
     )
-    rows = [as_activity(item) for item in page.items]
+    rows = [row for row in (as_activity(item) for item in page.items) if visible_backlink(context, row)]
     if source is not None:
         rows = [row for row in rows if source_for(row.source, row.actor_kind) == source]
     rows = with_current_keys(repositories, context.workspace_id, rows)

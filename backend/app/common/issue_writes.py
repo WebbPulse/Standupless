@@ -36,6 +36,7 @@ from app.common.issue_archive import archive_issue, unarchive_issue
 from app.common.issue_filters import ME, NONE, IssueFilter, estimate_value
 from app.common.issue_keyed_reads import keyed_rows
 from app.common.issue_keys import current_all
+from app.common.issue_mentions import record_issue_mentions
 from app.common.issue_rules import (
     TRIAGE_STATUS_ID,
     changed_fields,
@@ -495,6 +496,7 @@ def create_issue(repositories: Repositories, context: AuthzContext, payload: Iss
             ]
         )
     subscribe_touched(repositories, created, None)
+    record_issue_mentions(repositories, context, created, None, created.body, place="description")
     return created
 
 
@@ -643,6 +645,8 @@ def store_patch(
                 context.source,
             )
         )
+    if issue.body != stored.body:
+        record_issue_mentions(repositories, context, stored, issue.body, stored.body, place="description")
     return stored
 
 

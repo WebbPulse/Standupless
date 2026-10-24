@@ -730,7 +730,8 @@ export type ActivityKind =
   | 'archived'
   | 'unarchived'
   | 'subscriber_added'
-  | 'subscriber_removed';
+  | 'subscriber_removed'
+  | 'mentioned';
 
 /**
  * Direct sub-issue counts, maintained by the rollup consumer rather than the
