@@ -24,7 +24,10 @@ A Linear import, kind `linear`, is the same job reading Linear's API instead
 of a stored file; `app.common.linear_import` holds its steps and its sealed key.
 A GitHub import, kind `github`, reads one repository's Issues through the
 installed GitHub App; its steps live with the App in the integrations domain and
-register themselves in `PAGE_RUNNERS`. An Asana import, kind `asana`, reads
+register themselves in `PAGE_RUNNERS`. A Shortcut import, kind `shortcut`, reads
+Shortcut's REST API with a pasted token that is sealed beside the job the way a
+Linear key is; it also lives in the integrations domain and registers itself.
+An Asana import, kind `asana`, reads
 chosen Asana projects through Asana's REST API with a pasted personal access
 token sealed beside the job the way a Linear key is, and registers itself too.
 A job may be cancelled while it runs: every step reads the job again before it
@@ -132,9 +135,9 @@ IMPORT_READ_REPOSITORIES: tuple[str, ...] = ("workspaces", "memberships", "users
 
 ImportStatus = Literal["queued", "running", "completed", "failed", "cancelled"]
 
-ImportKind = Literal["csv", "linear", "github", "asana"]
+ImportKind = Literal["csv", "linear", "github", "shortcut", "asana"]
 
-SEALED_KEY_KINDS: set[str] = {"linear", "asana"}
+SEALED_KEY_KINDS: frozenset[str] = frozenset({"linear", "shortcut", "asana"})
 """The import kinds that keep a sealed token beside the job, deleted when the job fails or is cancelled."""
 
 PAGE_RUNNERS: dict[str, Callable[[Any, "ImportJob"], "ImportJob"]] = {}
@@ -157,6 +160,15 @@ class PageRetriesExhausted(Exception):
 
 class ImportNotFound(Exception):
     """No import with that id exists in the workspace."""
+
+
+class SourceTeamMapping(BaseModel):
+    """One team of the source tool an API import reads and the Standupless team it writes into."""
+
+    source_id: str
+    key: str = ""
+    name: str = ""
+    team_id: str
 
 
 class AsanaProjectMapping(BaseModel):
@@ -183,6 +195,7 @@ class ImportJob(BaseModel):
     mapping: dict[str, Optional[str]]
     linear_teams: list[LinearTeamMapping] = Field(default_factory=list)
     github_repository_id: str = ""
+    source_teams: list[SourceTeamMapping] = Field(default_factory=list)
     asana_projects: list[AsanaProjectMapping] = Field(default_factory=list)
     phase_index: int = 0
     after: Optional[str] = None
