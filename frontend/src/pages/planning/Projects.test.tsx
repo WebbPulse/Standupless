@@ -64,6 +64,15 @@ const listTeams = vi.fn<() => Promise<TeamRead[]>>();
 const createView =
   vi.fn<(body: Record<string, unknown>) => Promise<SavedViewDisplayRead>>();
 
+vi.mock('../../api/projectLabels', () => ({
+  projectLabelsPath: (workspaceId: string) =>
+    `/workspaces/${workspaceId}/project-labels`,
+  listProjectLabels: () => Promise.resolve([]),
+  createProjectLabel: vi.fn(),
+  updateProjectLabel: vi.fn(),
+  deleteProjectLabel: vi.fn(),
+}));
+
 vi.mock('../../api/views', async () => {
   const actual =
     await vi.importActual<typeof import('../../api/views')>('../../api/views');

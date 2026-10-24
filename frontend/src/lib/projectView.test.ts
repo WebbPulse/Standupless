@@ -59,6 +59,7 @@ describe('projectViewBase', () => {
       blocking: 'false',
       rollUp: false,
       customer: '',
+      label: '',
       display: DEFAULT_PROJECTS_DISPLAY,
     });
   });
@@ -166,6 +167,21 @@ describe('toProjectViewFilter', () => {
         customer: 'customer-1',
       })
     ).toEqual({ customer_id: ['customer-1'] });
+  });
+
+  it('stores a project label filter as a list and reads it back', () => {
+    const filter = toProjectViewFilter({
+      teamId: '',
+      status: [],
+      lead: '',
+      blocked: '',
+      blocking: '',
+      rollUp: true,
+      label: 'label-1',
+    });
+
+    expect(filter).toEqual({ label_id: ['label-1'] });
+    expect(projectViewBase(stored({ ...filter }), []).label).toBe('label-1');
   });
 });
 
