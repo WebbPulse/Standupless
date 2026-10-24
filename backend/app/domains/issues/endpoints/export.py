@@ -88,6 +88,8 @@ def export_issues(
     is_blocked: Annotated[Optional[bool], Query()] = None,
     is_blocking: Annotated[Optional[bool], Query()] = None,
     has_relation: Values = None,
+    customer_id: Values = None,
+    customer_id_not: Values = None,
     match: Annotated[Optional[str], Query()] = None,
     groups: Annotated[Optional[str], Query(max_length=8000)] = None,
     include_archived: Annotated[bool, Query()] = False,
@@ -152,6 +154,8 @@ def export_issues(
             is_blocked=is_blocked,
             is_blocking=is_blocking,
             has_relation=has_relation,
+            customer_id=customer_id,
+            customer_id_not=customer_id_not,
             match=match,
             groups=groups,
         )

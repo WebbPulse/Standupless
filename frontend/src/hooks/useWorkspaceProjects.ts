@@ -11,10 +11,16 @@ import { useQueryAuth } from '@webbpulse/auth/react';
 import { usePolledQuery, type QueryKey } from '@webbpulse/api-client/react';
 import { listProjects } from '../api/planning';
 import { projectsKey } from '../lib/queryKeys';
-import type { ProjectRead } from '../types/Api';
+import type { ProjectListQuery, ProjectRead } from '../types/Api';
 
 /** How often the projects re-read. */
 const POLL_MS = 60000;
+
+/** The customer filter and sort the server applies, which only the projects page asks for. */
+export type ProjectNarrowing = Pick<
+  ProjectListQuery,
+  'customer_id' | 'customer_id_not' | 'sort'
+>;
 
 /** What {@link useWorkspaceProjects} hands back. */
 export interface WorkspaceProjects {
@@ -36,7 +42,8 @@ export const listAllProjects = async (
   workspaceId: string,
   teamId: string,
   signal?: AbortSignal,
-  includeSubTeams = false
+  includeSubTeams = false,
+  narrowing: ProjectNarrowing = {}
 ): Promise<ProjectRead[]> => {
   const projects: ProjectRead[] = [];
   let cursor: string | null = null;
@@ -44,6 +51,7 @@ export const listAllProjects = async (
     const page = await listProjects(
       workspaceId,
       {
+        ...narrowing,
         ...(teamId === '' ? {} : { team_id: teamId }),
         ...(teamId !== '' && includeSubTeams
           ? { include_sub_teams: true }
@@ -61,26 +69,45 @@ export const listAllProjects = async (
 
 /**
  * Reads the projects, narrowed to one team when `teamId` is not empty, with
- * its visible sub-teams' projects too when `includeSubTeams` is set.
+ * its visible sub-teams' projects too when `includeSubTeams` is set, and by
+ * customer or in customer order when `narrowing` asks.
  */
 export const useWorkspaceProjects = (
   workspaceId: string,
   teamId: string,
   enabled = true,
-  includeSubTeams = false
+  includeSubTeams = false,
+  narrowing: ProjectNarrowing = {}
 ): WorkspaceProjects => {
   const auth = useQueryAuth();
   const rollUp = teamId !== '' && includeSubTeams;
+  const narrowingKey = JSON.stringify([
+    narrowing.customer_id ?? [],
+    narrowing.customer_id_not ?? [],
+    narrowing.sort ?? '',
+  ]);
   const queryKey = projectsKey(
     workspaceId,
     rollUp ? `${teamId}:sub-teams` : teamId,
-    ''
+    narrowingKey === '[[],[],""]' ? '' : narrowingKey
   );
 
   const read = useCallback(
-    ({ signal }: { signal?: AbortSignal }) =>
-      listAllProjects(workspaceId, teamId, signal, rollUp),
-    [workspaceId, teamId, rollUp]
+    ({ signal }: { signal?: AbortSignal }) => {
+      const [customerIds, customerIdsNot, sort] = JSON.parse(narrowingKey) as [
+        string[],
+        string[],
+        string,
+      ];
+      return listAllProjects(workspaceId, teamId, signal, rollUp, {
+        ...(customerIds.length === 0 ? {} : { customer_id: customerIds }),
+        ...(customerIdsNot.length === 0
+          ? {}
+          : { customer_id_not: customerIdsNot }),
+        ...(sort === '' ? {} : { sort: sort as ProjectListQuery['sort'] }),
+      });
+    },
+    [workspaceId, teamId, rollUp, narrowingKey]
   );
 
   const { data, error, isLoading } = usePolledQuery(read, {

@@ -23,6 +23,7 @@ import React, { useCallback, useMemo, useRef, useState } from 'react';
 import { invalidateQueries } from '@webbpulse/api-client/react';
 import {
   LuBookmarkPlus,
+  LuBuilding2,
   LuChevronRight,
   LuListFilter,
   LuPencil,
@@ -80,6 +81,7 @@ import { SkeletonRows } from '../../components/ui/skeleton';
 import SubTeamToggle from '../../components/workspace/SubTeamToggle';
 import WorkspaceShell from '../../components/workspace/WorkspaceShell';
 import { useAuth } from '../../hooks/useAuth';
+import { useCustomers } from '../../hooks/useCustomers';
 import useCloseProjectPrompt from '../../hooks/useCloseProjectPrompt';
 import { useInitiatives } from '../../hooks/useInitiatives';
 import { useListKeyboardNav } from '../../hooks/useListKeyboardNav';
@@ -213,6 +215,8 @@ const HEADER_LABELS: Record<ProjectColumn, string> = {
 /** A blocked or blocking filter value, `true`, `false`, or empty when unset. */
 const flagParam = (value: string): FlagFilter =>
   value === 'true' || value === 'false' ? value : '';
+/** The customer filter value for projects no customer asked for. */
+const NO_CUSTOMER = 'none';
 
 /** Props for FilterButton: one filter's options and what is chosen. */
 interface FilterButtonProps {
@@ -490,7 +494,7 @@ const ProjectRow: React.FC<ProjectRowProps> = ({
 type Saving = 'new' | 'details' | null;
 
 /** The filters the page keeps in the URL. */
-type FilterField = 'team' | 'status' | 'lead' | 'blocked' | 'blocking';
+type FilterField = 'team' | 'status' | 'lead' | 'blocked' | 'blocking' | 'customer';
 
 /** Props for Projects. */
 export interface ProjectsProps {
@@ -549,6 +553,10 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading }) => {
   const blockingFilter = flagParam(
     params.get('blocking') ?? baseOf('blocking')
   );
+  const isMember = workspace !== null && workspace.role !== 'guest';
+  const customerFilter = isMember
+    ? (params.get('customer') ?? baseOf('customer'))
+    : '';
   const {
     display,
     change: changeDisplay,
@@ -576,6 +584,7 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading }) => {
     blocked: blockedFilter,
     blocking: blockingFilter,
     rollUp: heldRollUp === null ? baseRollUp : heldRollUp !== '0',
+    customer: isMember ? customerFilter : (base?.customer ?? ''),
   });
   const changed =
     base !== undefined &&
@@ -584,12 +593,22 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading }) => {
         (field) => display[field] !== base.display[field]
       ));
 
+  const customerOrdering = isMember && ordering === 'customers';
+  const narrowing = useMemo(
+    () => ({
+      ...(customerFilter === '' ? {} : { customer_id: [customerFilter] }),
+      ...(customerOrdering ? { sort: 'customer_requests_desc' as const } : {}),
+    }),
+    [customerFilter, customerOrdering]
+  );
   const { projects, error, isLoading, queryKey } = useWorkspaceProjects(
     workspaceId,
     filteredTeam?.id ?? '',
     !isResolvingTeams && (teamFilter === '' || filteredTeam !== undefined),
-    rollUp
+    rollUp,
+    narrowing
   );
+  const { customers } = useCustomers(workspaceId, isMember);
   const teamIds = useMemo(() => teams.map((team) => team.id), [teams]);
   const projectsById = useMemo(
     () => new Map(projects.map((project) => [project.project_id, project])),
@@ -811,7 +830,8 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading }) => {
     statusFilter.length > 0 ||
     leadFilter !== '' ||
     blockedFilter !== '' ||
-    blockingFilter !== '';
+    blockingFilter !== '' ||
+    customerFilter !== '';
 
   useShortcut({
     keys: 'shift+p',
@@ -891,6 +911,14 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading }) => {
         />
       ),
       keywords: [person.email],
+    })),
+  ];
+  const customerOptions: ComboboxOption[] = [
+    { value: NO_CUSTOMER, label: 'No customer' },
+    ...customers.map((customer) => ({
+      value: customer.customer_id,
+      label: customer.name,
+      icon: <LuBuilding2 className="h-3.5 w-3.5 text-text-muted" />,
     })),
   ];
   const teamOptions: ComboboxOption[] = teamTree(teams).map(
@@ -1025,6 +1053,16 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading }) => {
               setParam('lead', value === leadFilter ? '' : value);
             }}
           />
+          {isMember && (
+            <FilterButton
+              field="Customer"
+              options={customerOptions}
+              selected={customerFilter === '' ? [] : [customerFilter]}
+              onSelect={(value) => {
+                setParam('customer', value === customerFilter ? '' : value);
+              }}
+            />
+          )}
           <FilterButton
             field="Team"
             options={teamOptions}
@@ -1066,6 +1104,7 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading }) => {
                 writeParam(next, 'lead', '');
                 writeParam(next, 'blocked', '');
                 writeParam(next, 'blocking', '');
+                writeParam(next, 'customer', '');
                 next.delete(ROLL_UP_PARAM);
                 setParams(next, { replace: true });
               }}
@@ -1101,6 +1140,7 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading }) => {
                   }
                 : {})}
               onReset={reset}
+              customerOrdering={isMember}
             />
             {layout === 'timeline' && (
               <TimelineControls {...timelineControls} />

@@ -75,7 +75,8 @@ export type FilterField =
   | 'sla'
   | 'blocked'
   | 'blocking'
-  | 'relation';
+  | 'relation'
+  | 'customer';
 
 /**
  * Whether a filter keeps or excludes the issues matching its values, or, for
@@ -125,6 +126,7 @@ const SERVER_ONLY_FIELDS: ReadonlySet<FilterField> = new Set([
   'subscriber',
   'blocking',
   'relation',
+  'customer',
 ]);
 
 /** The fields filtered by a day bound rather than a set of values. */
@@ -261,6 +263,11 @@ export interface IssueContext {
    * grouping by parent issue heads each group with its key and title.
    */
   parents?: ReadonlyMap<string, ParentRef>;
+  /**
+   * The workspace's customers. Guests may not read customers, so a list
+   * offers the customer filter only when this is set.
+   */
+  customers?: { id: string; name: string }[];
 }
 
 /** How a parent issue heads its group: its key and title. */
@@ -338,14 +345,18 @@ export const fieldsFor = <T extends string>(
  * from each project the list knows.
  */
 export const filterFieldsFor = (
-  context: Pick<IssueContext, 'milestones' | 'teams' | 'projects'>
+  context: Pick<
+    IssueContext,
+    'milestones' | 'teams' | 'projects' | 'customers'
+  >
 ): FilterField[] =>
   FILTER_FIELDS.filter(
     (field) =>
       (field !== 'milestone' ||
         context.milestones !== undefined ||
         context.projects.length > 0) &&
-      (field !== 'team' || (context.teams ?? []).length > 1)
+      (field !== 'team' || (context.teams ?? []).length > 1) &&
+      (field !== 'customer' || context.customers !== undefined)
   );
 
 /** How a grouping reads in the interface. */
@@ -375,6 +386,8 @@ export const ORDERINGS: IssueListSort[] = [
   'estimate_desc',
   'sla_asc',
   'key_asc',
+  'customer_requests_desc',
+  'customer_revenue_desc',
 ];
 
 /** How an ordering reads in the interface. */
@@ -389,6 +402,8 @@ export const ORDERING_LABELS: Record<IssueListSort, string> = {
   status_asc: 'Status',
   start_asc: 'Start date',
   estimate_desc: 'Estimate',
+  customer_requests_desc: 'Customer requests',
+  customer_revenue_desc: 'Customer revenue',
 };
 
 /** The filterable fields, in menu order. */
@@ -415,6 +430,7 @@ export const FILTER_FIELDS: FilterField[] = [
   'blocked',
   'blocking',
   'relation',
+  'customer',
 ];
 
 /** How a filter field reads in the interface. */
@@ -441,6 +457,7 @@ export const FILTER_LABELS: Record<FilterField, string> = {
   blocked: 'Blocked',
   blocking: 'Blocking',
   relation: 'Relations',
+  customer: 'Customer',
 };
 
 /**
@@ -482,6 +499,7 @@ const FILTER_KEYS: Record<FilterField, string> = {
   blocked: 'is_blocked',
   blocking: 'is_blocking',
   relation: 'has_relation',
+  customer: 'customer_id',
 };
 
 /** The fields whose filter can keep only issues carrying every value. */
@@ -929,6 +947,7 @@ const issueFilterValues = (issue: IssueRead, field: FilterField): string[] => {
     case 'content':
     case 'blocking':
     case 'relation':
+    case 'customer':
       return [];
   }
 };

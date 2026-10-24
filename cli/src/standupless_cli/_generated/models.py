@@ -592,6 +592,8 @@ class DisplayOptionsBody(TypedDict):
             "status_asc",
             "start_asc",
             "estimate_desc",
+            "customer_requests_desc",
+            "customer_revenue_desc",
         ]
         | None
     ]
@@ -1483,7 +1485,7 @@ class ProjectsDisplay(TypedDict):
     columns: NotRequired[str]
     group: NotRequired[Literal["status", "health", "priority", "initiative", "lead", "team", "none"]]
     layout: NotRequired[Literal["list", "board", "timeline"]]
-    order: NotRequired[Literal["target", "start", "name", "priority", "progress", "created", "updated"]]
+    order: NotRequired[Literal["target", "start", "name", "priority", "progress", "created", "updated", "customers"]]
     zoom: NotRequired[Literal["week", "month", "quarter", "year"]]
 
 
@@ -1877,6 +1879,8 @@ class ShareLinkCreate(TypedDict):
             "status_asc",
             "start_asc",
             "estimate_desc",
+            "customer_requests_desc",
+            "customer_revenue_desc",
         ]
         | None
     ]
@@ -2620,6 +2624,8 @@ class ViewCreate(TypedDict):
             "status_asc",
             "start_asc",
             "estimate_desc",
+            "customer_requests_desc",
+            "customer_revenue_desc",
         ]
         | None
     ]
@@ -2641,6 +2647,8 @@ class ViewCreate(TypedDict):
             "status_asc",
             "start_asc",
             "estimate_desc",
+            "customer_requests_desc",
+            "customer_revenue_desc",
         ]
     ]
     sub_group_by: NotRequired[
@@ -2730,6 +2738,8 @@ class ViewUpdate(TypedDict):
             "status_asc",
             "start_asc",
             "estimate_desc",
+            "customer_requests_desc",
+            "customer_revenue_desc",
         ]
         | None
     ]
@@ -2751,6 +2761,8 @@ class ViewUpdate(TypedDict):
             "status_asc",
             "start_asc",
             "estimate_desc",
+            "customer_requests_desc",
+            "customer_revenue_desc",
         ]
         | None
     ]
@@ -3439,6 +3451,8 @@ class ProjectRead(TypedDict):
     counts: CountsRead
     created_at: str
     created_by: str
+    customer_request_count: NotRequired[int | None]
+    customer_revenue: NotRequired[int | None]
     description: NotRequired[str | None]
     health: NotRequired[Literal["on_track", "at_risk", "off_track"] | None]
     icon: NotRequired[str | None]

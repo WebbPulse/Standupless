@@ -32,6 +32,7 @@ from app.common.api.schemas.issues import (
 from app.common.change_source import CHANGE_SOURCES
 from app.common.comment_drafts import clear_posted_draft
 from app.common.comment_writes import comment_page, create_comment
+from app.common.customer_index import require_customer_list_reader
 from app.common.cycle_schedule import RELATIVE_CYCLES
 from app.common.db.dynamo.comments import Comment
 from app.common.db.dynamo.github import IssueLink
@@ -88,7 +89,9 @@ SORTS: tuple[str, ...] = get_args(SortField)
 SORT_HELP = (
     "The order, defaulting to updated_desc; sla_asc puts the soonest SLA breach first "
     "and issues without a running SLA last; status_asc follows the board's status order, "
-    "start_asc the earliest start date and estimate_desc the largest estimate"
+    "start_asc the earliest start date and estimate_desc the largest estimate; "
+    "customer_requests_desc puts the most customer requests first and customer_revenue_desc "
+    "the highest summed revenue of the customers asking"
 )
 
 REVERSE_HELP = "Turn the sort around, issues without the sorted value still last, default false"
@@ -166,6 +169,8 @@ FILTER_ARGUMENTS: tuple[str, ...] = (
     "project_id_not",
     "project_milestone_id_not",
     "cycle_id_not",
+    "customer_id",
+    "customer_id_not",
 )
 """The issue list filter arguments the tools take, by the HTTP list's query parameter names."""
 
@@ -238,6 +243,8 @@ def _filter_properties(*, with_assignee: bool = True) -> dict[str, Any]:
         "project_id_not": one_or_many("In none of these projects"),
         "project_milestone_id_not": one_or_many("In none of these project milestones"),
         "cycle_id_not": one_or_many("In none of these cycles"),
+        "customer_id": one_or_many("Requested by any of these customers; 'none' is issues no customer asked for"),
+        "customer_id_not": one_or_many("Requested by none of these customers; 'none' keeps requested issues only"),
         "due_before": string("Due before this day, YYYY-MM-DD, exclusive"),
         "due_after": string("Due after this day, YYYY-MM-DD, exclusive"),
         "created_after": string("Created after this day, YYYY-MM-DD, exclusive"),
@@ -433,6 +440,7 @@ def _search_issues(call: ToolCall) -> Any:
     else:
         teams = visible_team_ids(call.repositories, call.context)
 
+    require_customer_list_reader(call.context, wanted.needs_customers, None)
     wanted = resolve_issue_filter(call.repositories, call.context.workspace_id, teams, wanted)
     categories: dict[str, str] = {}
     if wanted.needs_categories:

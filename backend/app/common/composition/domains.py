@@ -249,6 +249,7 @@ _ISSUES_READ_REPOSITORIES = (
     "teams",
     "releases",
     "api_keys",
+    "customers",
 )
 
 _VIEWS_REPOSITORIES = ("views", "inbox", "search_index", "share_links", "audit")

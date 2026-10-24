@@ -32,7 +32,14 @@ export const PROJECT_LAYOUT_LABELS: Record<ProjectLayout, string> = {
 
 /** What the projects list can order by. */
 export type ProjectOrdering =
-  'target' | 'start' | 'name' | 'priority' | 'progress' | 'created' | 'updated';
+  | 'target'
+  | 'start'
+  | 'name'
+  | 'priority'
+  | 'progress'
+  | 'created'
+  | 'updated'
+  | 'customers';
 
 /** The orderings in the order the display menu offers them. */
 export const PROJECT_ORDERINGS: ProjectOrdering[] = [
@@ -43,7 +50,13 @@ export const PROJECT_ORDERINGS: ProjectOrdering[] = [
   'progress',
   'created',
   'updated',
+  'customers',
 ];
+
+/** The orderings that read who asked for each project, which guests may not. */
+export const CUSTOMER_PROJECT_ORDERINGS: ReadonlySet<ProjectOrdering> = new Set(
+  ['customers']
+);
 
 /** How each ordering reads in the display menu. */
 export const PROJECT_ORDERING_LABELS: Record<ProjectOrdering, string> = {
@@ -54,6 +67,7 @@ export const PROJECT_ORDERING_LABELS: Record<ProjectOrdering, string> = {
   progress: 'Progress',
   created: 'Created',
   updated: 'Last updated',
+  customers: 'Customer requests',
 };
 
 /** What the projects list can group by. */
@@ -330,6 +344,11 @@ export const sortProjects = (
         return right.created_at.localeCompare(left.created_at);
       case 'updated':
         return right.updated_at.localeCompare(left.updated_at);
+      case 'customers':
+        return (
+          (right.customer_request_count ?? 0) -
+          (left.customer_request_count ?? 0)
+        );
       case 'name':
         return 0;
     }

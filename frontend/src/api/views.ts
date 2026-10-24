@@ -92,6 +92,7 @@ export interface ViewFilterNegations {
   groups?: SavedViewFilterGroup[];
   team_id_not?: string | string[];
   creator_id_not?: string | string[];
+  customer_id_not?: string | string[];
   status_id_not?: string | string[];
   status_category_not?: string | string[];
   assignee_id_not?: string | string[];
@@ -116,6 +117,8 @@ export interface ProjectViewFilter {
   sub_teams?: 'true' | 'false';
   is_blocked?: 'true' | 'false';
   is_blocking?: 'true' | 'false';
+  customer_id?: string | string[];
+  customer_id_not?: string | string[];
 }
 
 /** A stored filter with the negation keys, every key the issue list takes. */

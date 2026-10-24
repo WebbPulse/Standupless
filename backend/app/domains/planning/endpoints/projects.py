@@ -28,6 +28,7 @@ from app.common.api.schemas.planning import (
     ProjectRelationCreate,
     ProjectRelationListRead,
     ProjectRelationRead,
+    ProjectSortField,
     ProjectUpdate,
 )
 from app.common.planning_rules import load_readable_project
@@ -54,6 +55,9 @@ def list_projects(
     include_sub_teams: Annotated[bool, Query()] = False,
     is_blocked: Annotated[Optional[bool], Query()] = None,
     is_blocking: Annotated[Optional[bool], Query()] = None,
+    customer_id: Annotated[Optional[list[str]], Query()] = None,
+    customer_id_not: Annotated[Optional[list[str]], Query()] = None,
+    sort: Annotated[Optional[ProjectSortField], Query()] = None,
 ) -> CursorPage[ProjectRead]:
     """One page of the workspace's projects the caller can see, by target date, undated last.
 
@@ -66,6 +70,12 @@ def list_projects(
     of the team's sub-teams the caller may read, so a private sub-team stays out
     for outsiders. `is_blocked` keeps the projects an open blocker holds up and
     `is_blocking` the open projects holding another up, each false for the rest.
+
+    `customer_id` keeps the projects any named customer asked for and
+    `customer_id_not` drops them, `none` standing for no customer request.
+    `sort=customer_requests_desc` puts the most requested projects first and
+    `customer_revenue_desc` the highest summed customer revenue, target date
+    breaking ties; both fill `customer_request_count`. Guests may use neither.
     """
     window, next_cursor = list_project_page(
         repositories,
@@ -78,6 +88,9 @@ def list_projects(
         include_sub_teams=include_sub_teams,
         is_blocked=is_blocked,
         is_blocking=is_blocking,
+        customer_id=customer_id,
+        customer_id_not=customer_id_not,
+        sort=sort,
     )
     return ProjectListRead(items=window, next_cursor=next_cursor)
 

@@ -20,6 +20,7 @@ from app.common.api.dependencies.authz import AuthzContext
 from app.common.api.dependencies.repositories import Repositories
 from app.common.api.pagination import digest_scope, merge_sorted, resume_key
 from app.common.api.schemas.issues import IssueBulkUpdate, IssueCreate
+from app.common.customer_index import CustomerIndex, require_customer_list_reader
 from app.common.db.dynamo.activity import build_activity
 from app.common.db.dynamo.api_keys import is_service_subject
 from app.common.db.dynamo.base import utc_now
@@ -129,13 +130,21 @@ def status_rank(issue: Issue, ranks: StatusRanks) -> tuple[int, int]:
     return ranks.get((issue.team_id, issue.status_id), (len(STATUS_CATEGORIES), 0))
 
 
-def sort_key(sort: str, ranks: Optional[StatusRanks] = None) -> Any:
+def sort_key(sort: str, ranks: Optional[StatusRanks] = None, customers: Optional[CustomerIndex] = None) -> Any:
     """The key one sort orders a merged fan-out by.
 
     Written as one function so the merge and the fallback ordering inside a single
     team's page cannot disagree about what a sort means. `ranks` carries the board
-    order the status sort climbs, and every status ties without it.
+    order the status sort climbs, and every status ties without it. `customers`
+    carries the request counts and revenue the customer sorts read, and every
+    issue ties at zero without it.
     """
+    if sort == "customer_requests_desc":
+        held = customers or CustomerIndex()
+        return lambda issue: (held.request_count("issue", issue.issue_id), issue.updated_at, issue.issue_id)
+    if sort == "customer_revenue_desc":
+        held = customers or CustomerIndex()
+        return lambda issue: (held.revenue_of("issue", issue.issue_id), issue.updated_at, issue.issue_id)
     if sort == "created_desc":
         return lambda issue: (issue.created_at, issue.issue_id)
     if sort == "key_asc":
@@ -172,12 +181,19 @@ def descending(sort: str) -> bool:
     return sort not in ASCENDING_SORTS
 
 
-def unset_value(sort: str) -> Optional[Callable[[Issue], bool]]:
+def unset_value(sort: str, customers: Optional[CustomerIndex] = None) -> Optional[Callable[[Issue], bool]]:
     """Whether an issue lacks the value one sort reads, or `None` for a sort over a value every issue has.
 
     A reversed sort still lists those issues last, the way a list reads in either
-    direction, so they are held apart from the reversal.
+    direction, so they are held apart from the reversal. An issue no customer asked
+    for has no value under either customer sort.
     """
+    if sort == "customer_requests_desc":
+        held = customers or CustomerIndex()
+        return lambda issue: held.request_count("issue", issue.issue_id) == 0
+    if sort == "customer_revenue_desc":
+        held = customers or CustomerIndex()
+        return lambda issue: held.revenue_of("issue", issue.issue_id) == 0
     if sort == "due_asc":
         return lambda issue: issue.due_date is None
     if sort == "sla_asc":
@@ -192,11 +208,16 @@ def unset_value(sort: str) -> Optional[Callable[[Issue], bool]]:
 
 
 def order_issues(
-    rows: list[Issue], sort: str, *, reverse: bool = False, ranks: Optional[StatusRanks] = None
+    rows: list[Issue],
+    sort: str,
+    *,
+    reverse: bool = False,
+    ranks: Optional[StatusRanks] = None,
+    customers: Optional[CustomerIndex] = None,
 ) -> list[Issue]:
     """Rows in one sort's order, or its reverse with issues lacking the sorted value still last."""
-    ordered = merge_sorted(rows, sort_key(sort, ranks), descending=descending(sort) != reverse)
-    missing = unset_value(sort) if reverse else None
+    ordered = merge_sorted(rows, sort_key(sort, ranks, customers), descending=descending(sort) != reverse)
+    missing = unset_value(sort, customers) if reverse else None
     if missing is None:
         return ordered
     return [issue for issue in ordered if not missing(issue)] + [issue for issue in ordered if missing(issue)]
@@ -234,7 +255,8 @@ def list_issues(
     if not teams:
         return [], None
 
-    wanted = resolve_issue_filter(repositories, context.workspace_id, teams, wanted)
+    require_customer_list_reader(context, wanted.needs_customers, sort)
+    wanted = resolve_issue_filter(repositories, context.workspace_id, teams, wanted, sort=sort)
     categories: dict[str, str] = {}
     if wanted.needs_categories:
         for candidate in teams:
@@ -257,10 +279,10 @@ def list_issues(
         scope=scope,
         limit=limit,
         keep=lambda issue: wanted.matches(issue, categories),
-        key=sort_key(sort, ranks),
+        key=sort_key(sort, ranks, wanted.customer_index),
         descending=descending(sort) != reverse,
         rows=keyed,
-        last=unset_value(sort) if reverse else None,
+        last=unset_value(sort, wanted.customer_index) if reverse else None,
     )
 
 

@@ -117,6 +117,8 @@ def list_issues(
     is_blocked: Annotated[Optional[bool], Query()] = None,
     is_blocking: Annotated[Optional[bool], Query()] = None,
     has_relation: Values = None,
+    customer_id: Values = None,
+    customer_id_not: Values = None,
     match: Annotated[Optional[str], Query()] = None,
     groups: Annotated[Optional[str], Query(max_length=8000)] = None,
     include_archived: Annotated[bool, Query()] = False,
@@ -150,6 +152,10 @@ def list_issues(
     conditions in one group under the list's fixed scope. `content`
     matches title and description text, `label_id_all` wants every label named,
     and `completed_after` and `completed_before` bound the day an issue was done.
+    `customer_id` keeps the issues one of the named customers asked for and
+    `customer_id_not` drops them, `none` standing for no customer request, and
+    the `customer_requests_desc` and `customer_revenue_desc` sorts put the most
+    requested or highest revenue issues first. Guests may use neither.
 
     Archived issues are left out unless `include_archived` is set, and
     `archived_only` lists nothing but them, the archive view. That read goes
@@ -226,6 +232,8 @@ def list_issues(
             is_blocked=is_blocked,
             is_blocking=is_blocking,
             has_relation=has_relation,
+            customer_id=customer_id,
+            customer_id_not=customer_id_not,
             include_triage=include_triage,
             triage_only=triage_only,
             match=match,

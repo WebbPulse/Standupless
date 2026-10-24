@@ -58,6 +58,7 @@ describe('projectViewBase', () => {
       blocked: 'true',
       blocking: 'false',
       rollUp: false,
+      customer: '',
       display: DEFAULT_PROJECTS_DISPLAY,
     });
   });
@@ -148,6 +149,20 @@ describe('toProjectViewFilter', () => {
       sub_teams: 'false',
     });
   });
+
+  it('stores a customer filter as a list', () => {
+    expect(
+      toProjectViewFilter({
+        teamId: '',
+        status: [],
+        lead: '',
+        blocked: '',
+        blocking: '',
+        rollUp: true,
+        customer: 'customer-1',
+      })
+    ).toEqual({ customer_id: ['customer-1'] });
+  });
 });
 
 describe('sameProjectFilter', () => {
@@ -165,5 +180,8 @@ describe('sameProjectFilter', () => {
     expect(
       sameProjectFilter({ is_blocking: 'false' }, { is_blocking: 'false' })
     ).toBe(true);
+    expect(
+      sameProjectFilter({ customer_id: 'customer-1' }, { customer_id: [] })
+    ).toBe(false);
   });
 });

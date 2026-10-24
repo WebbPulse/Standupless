@@ -51,7 +51,8 @@ export interface ProjectsDisplayPreference {
     | 'priority'
     | 'progress'
     | 'created'
-    | 'updated';
+    | 'updated'
+    | 'customers';
   closed: 'all' | 'week' | 'month' | 'quarter' | 'none';
   zoom: 'week' | 'month' | 'quarter' | 'year';
   /** The shown list columns, comma separated, absent on a row saved before columns could be chosen. */
@@ -709,7 +710,9 @@ export type IssueSort =
   | 'sla_asc'
   | 'status_asc'
   | 'start_asc'
-  | 'estimate_desc';
+  | 'estimate_desc'
+  | 'customer_requests_desc'
+  | 'customer_revenue_desc';
 
 /** The kinds of link a pair of issues may hold. */
 export type LinkType = 'blocks' | 'blocked_by' | 'relates_to' | 'duplicate_of';
@@ -1567,6 +1570,7 @@ export interface ViewFilter {
   is_blocked?: 'true' | 'false';
   is_blocking?: 'true' | 'false';
   has_relation?: string | string[];
+  customer_id?: string | string[];
   q?: string;
 }
 
@@ -2228,6 +2232,10 @@ export interface ProjectRead {
   blocking_project_ids?: string[];
   /** The project's dated milestones, earliest first, filled on the project list. */
   milestone_markers?: ProjectMilestoneMarkerRead[];
+  /** How many customer requests name the project, set when the list was filtered or sorted by customer. */
+  customer_request_count?: number | null;
+  /** The summed revenue of the customers asking, set when the list was sorted by revenue. */
+  customer_revenue?: number | null;
   created_by: string;
   created_at: string;
   updated_at: string;
@@ -2643,9 +2651,18 @@ export interface ProjectListQuery {
   initiative_id?: string;
   /** With `team_id`, also list the projects of its sub-teams the caller can see. */
   include_sub_teams?: boolean;
+  /** Only the projects these customers asked for, `none` for projects no customer asked for. */
+  customer_id?: string[];
+  /** Leaves out the projects these customers asked for, `none` for projects no customer asked for. */
+  customer_id_not?: string[];
+  sort?: ProjectSortField;
   cursor?: string;
   limit?: number;
 }
+
+/** How the projects route orders its rows, target date first by default. */
+export type ProjectSortField =
+  'target_asc' | 'customer_requests_desc' | 'customer_revenue_desc';
 
 /**
  * One cycle or project as the roadmap draws it. A projection rather than the

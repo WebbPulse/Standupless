@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING, Iterable, Mapping, Optional
 
 from fastapi import HTTPException, status
 
+from app.common.customer_index import CUSTOMER_SORTS, REVENUE_SORT, CustomerIndex, load_customer_index
 from app.common.cycle_schedule import RELATIVE_CYCLES, relative_cycle
 from app.common.db.dynamo.planning import Cycle
 from app.common.issue_filters import FilterValues, IssueFilter
@@ -78,8 +79,13 @@ def resolve_issue_filter(
     wanted: IssueFilter,
     *,
     today: Optional[date] = None,
+    sort: Optional[str] = None,
 ) -> IssueFilter:
-    """The filter with relative cycles named and the link and subscription indexes attached.
+    """The filter with relative cycles named and the link, subscription and customer indexes attached.
+
+    The customer index is read when the filter names a customer or `sort` orders
+    by customer requests, so a list sorting that way finds the counts on the
+    filter it already carries.
 
     A cycle value that is neither `none`, a relative cycle nor a cycle of one of
     `teams` is refused with a 400 naming it, rather than quietly matching nothing.
@@ -88,7 +94,8 @@ def resolve_issue_filter(
     nothing.
     """
     people = wanted.subscribers
-    if not (wanted.needs_cycles or wanted.needs_relations or people):
+    needs_customers = wanted.needs_customers or sort in CUSTOMER_SORTS
+    if not (wanted.needs_cycles or wanted.needs_relations or people or needs_customers):
         return wanted
     by_team: Optional[dict[str, list[Cycle]]] = None
     if wanted.needs_cycles:
@@ -105,7 +112,10 @@ def resolve_issue_filter(
             )
             for person in sorted(people)
         }
-    return _attach(wanted, by_team, today or date.today(), relation_ids, subscribed)
+    customers: Optional[CustomerIndex] = None
+    if needs_customers:
+        customers = load_customer_index(repositories, workspace_id, with_revenue=sort == REVENUE_SORT)
+    return _attach(wanted, by_team, today or date.today(), relation_ids, subscribed, customers)
 
 
 def _attach(
@@ -114,6 +124,7 @@ def _attach(
     day: date,
     relation_ids: Optional[Mapping[str, frozenset[str]]],
     subscribed: Optional[Mapping[str, frozenset[str]]],
+    customers: Optional[CustomerIndex] = None,
 ) -> IssueFilter:
     """One filter and each of its groups with the reads `resolve_issue_filter` took applied."""
     cycle_ids, cycle_ids_not = wanted.cycle_ids, wanted.cycle_ids_not
@@ -126,5 +137,6 @@ def _attach(
         cycle_ids_not=cycle_ids_not,
         relation_ids=relation_ids if relation_ids is not None else wanted.relation_ids,
         subscribed_issue_ids=subscribed if subscribed is not None else wanted.subscribed_issue_ids,
-        groups=tuple(_attach(group, by_team, day, relation_ids, subscribed) for group in wanted.groups),
+        customer_index=customers if customers is not None else wanted.customer_index,
+        groups=tuple(_attach(group, by_team, day, relation_ids, subscribed, customers) for group in wanted.groups),
     )

@@ -54,6 +54,32 @@ describe('DisplayMenu', () => {
     );
   });
 
+  it('offers the customer orderings only where the list allows them', async () => {
+    const user = userEvent.setup();
+    const { rerender } = render(
+      <DisplayMenu
+        state={defaultViewState('list')}
+        onChange={vi.fn<(state: ViewState) => void>()}
+      />
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Display' }));
+    expect(optionsOf(screen.getByLabelText('Ordering'))).not.toContain(
+      'Customer requests'
+    );
+
+    rerender(
+      <DisplayMenu
+        state={defaultViewState('list')}
+        onChange={vi.fn<(state: ViewState) => void>()}
+        customerSorts
+      />
+    );
+    expect(optionsOf(screen.getByLabelText('Ordering'))).toEqual(
+      expect.arrayContaining(['Customer requests', 'Customer revenue'])
+    );
+  });
+
   it('leaves team out of a single team list', async () => {
     const user = userEvent.setup();
     render(

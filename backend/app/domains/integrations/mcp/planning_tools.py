@@ -33,6 +33,7 @@ from app.common.api.schemas.planning import (
     ProjectRead,
     ProjectRelationCreate,
     ProjectRelationRead,
+    ProjectSortField,
     ProjectUpdate,
     ProjectUpdateCreate,
     ProjectUpdatePatch,
@@ -68,12 +69,14 @@ from app.domains.integrations.mcp.toolkit import (
     ToolCall,
     ambiguous,
     enum,
+    filter_values,
     initiative_id_ref,
     issue_ref,
     limit,
     nullable,
     nullable_enum,
     object_schema,
+    one_or_many,
     page_properties,
     project_id_ref,
     resolve_user,
@@ -93,6 +96,8 @@ PROJECT_HEALTHS: tuple[str, ...] = get_args(ProjectHealthField)
 PROJECT_PRIORITIES: tuple[str, ...] = get_args(ProjectPriorityField)
 
 PROJECT_ICONS: tuple[str, ...] = get_args(ProjectIconField)
+
+PROJECT_SORTS: tuple[str, ...] = get_args(ProjectSortField)
 
 OPEN_ISSUE_ACTIONS: tuple[str, ...] = get_args(ProjectOpenIssuesAction)
 
@@ -222,6 +227,12 @@ def _project_json(project: ProjectRead) -> dict[str, Any]:
         "blocked_by_project_ids": project.blocked_by_project_ids,
         "blocking_project_ids": project.blocking_project_ids,
         **({} if project.open_issue_count is None else {"open_issue_count": project.open_issue_count}),
+        **(
+            {}
+            if project.customer_request_count is None
+            else {"customer_request_count": project.customer_request_count}
+        ),
+        **({} if project.customer_revenue is None else {"customer_revenue": project.customer_revenue}),
         **(
             {}
             if project.skipped_template_issues is None
@@ -401,6 +412,7 @@ def _list_projects(call: ToolCall) -> Any:
     team_id = _team_id(call) if call.optional("team_id") is not None else None
     status_filter = call.optional("status")
     initiative = call.optional("initiative_id")
+    sort = call.optional("sort")
     rows, next_cursor = list_projects(
         call.repositories,
         call.context,
@@ -412,6 +424,9 @@ def _list_projects(call: ToolCall) -> Any:
         include_sub_teams=call.optional("include_sub_teams", False) is True,
         is_blocked=_optional_flag(call, "is_blocked"),
         is_blocking=_optional_flag(call, "is_blocking"),
+        customer_id=filter_values(call.optional("customer_id")),
+        customer_id_not=filter_values(call.optional("customer_id_not")),
+        sort=str(sort) if sort else None,
     )
     return {"projects": [_project_json(row) for row in rows], "next_cursor": next_cursor}
 
@@ -837,6 +852,15 @@ PLANNING_TOOLS: tuple[Tool, ...] = (
                     "type": "boolean",
                     "description": "true for open projects that block another project, false for the rest",
                 },
+                "customer_id": one_or_many(
+                    "Only projects any of these customers asked for; 'none' is projects no customer asked for"
+                ),
+                "customer_id_not": one_or_many("Only projects none of these customers asked for"),
+                "sort": enum(
+                    PROJECT_SORTS,
+                    "The order, defaulting to target_asc; customer_requests_desc puts the most customer requests "
+                    "first and customer_revenue_desc the highest summed revenue of the customers asking",
+                ),
                 **page_properties(),
             }
         ),

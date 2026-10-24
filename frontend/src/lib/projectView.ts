@@ -1,7 +1,7 @@
 /**
  * A saved view of projects, translated to and from the projects page. The
- * page filters by a team's key prefix, a set of statuses, one lead, and
- * whether a project is blocked or blocking, and a
+ * page filters by a team's key prefix, a set of statuses, one lead, one
+ * customer, and whether a project is blocked or blocking, and a
  * view stores the team by id, so these helpers are the one place that maps
  * between the two. Opened as a view, the page treats the view as its base:
  * the URL only carries what differs from it, and saving writes the page's
@@ -28,6 +28,8 @@ export interface ProjectViewBase {
   blocking: FlagFilter;
   /** Whether a parent team rolls up its sub-teams' projects. */
   rollUp: boolean;
+  /** A customer's id, `none` for projects no customer asked for, or empty. */
+  customer: string;
   display: ProjectsDisplay;
 }
 
@@ -39,6 +41,7 @@ export interface ProjectViewState {
   blocked: FlagFilter;
   blocking: FlagFilter;
   rollUp: boolean;
+  customer?: string;
 }
 
 /** A yes or no project filter as the page holds it, empty when unset. */
@@ -81,6 +84,7 @@ export const projectViewBase = (
     blocked: flagOf(filter.is_blocked),
     blocking: flagOf(filter.is_blocking),
     rollUp: filter.sub_teams !== 'false',
+    customer: asList(filter.customer_id)[0] ?? '',
     display: resolveDisplay(() => null, view.projects_display ?? undefined),
   };
 };
@@ -96,6 +100,9 @@ export const toProjectViewFilter = (
   ...(state.lead === '' ? {} : { lead_id: [state.lead] }),
   ...(state.blocked === '' ? {} : { is_blocked: state.blocked }),
   ...(state.blocking === '' ? {} : { is_blocking: state.blocking }),
+  ...((state.customer ?? '') === ''
+    ? {}
+    : { customer_id: [state.customer ?? ''] }),
   ...(state.teamId !== '' && !state.rollUp
     ? { sub_teams: 'false' as const }
     : {}),
@@ -112,4 +119,6 @@ export const sameProjectFilter = (
   asList(left.lead_id).join(',') === asList(right.lead_id).join(',') &&
   flagOf(left.is_blocked) === flagOf(right.is_blocked) &&
   flagOf(left.is_blocking) === flagOf(right.is_blocking) &&
+  asList(left.customer_id).join(',') ===
+    asList(right.customer_id).join(',') &&
   (left.sub_teams ?? 'true') === (right.sub_teams ?? 'true');

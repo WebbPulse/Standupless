@@ -13,6 +13,7 @@ import {
   applyChange,
   defaultViewState,
   fieldsFor,
+  filterFieldsFor,
   filterValuesFor,
   GROUP_FIELDS,
   groupIssues,
@@ -327,6 +328,30 @@ describe('the query', () => {
         filters: [{ field: 'sla', op: 'is_not', values: ['none'] }],
       })
     ).toEqual({ sla_status: ['none'], sort: 'priority_desc' });
+  });
+
+  it('sends a customer filter and its exclusion to the server', () => {
+    expect(
+      viewStateQuery({
+        ...base,
+        ordering: 'customer_requests_desc',
+        filters: [
+          { field: 'customer', op: 'is', values: ['cu-1', NONE] },
+          { field: 'customer', op: 'is_not', values: ['cu-2'] },
+        ],
+      })
+    ).toEqual({
+      customer_id: ['cu-1', NONE],
+      customer_id_not: ['cu-2'],
+      sort: 'customer_requests_desc',
+    });
+  });
+
+  it('offers the customer filter only with the customers in hand', () => {
+    expect(filterFieldsFor({ projects: [] })).not.toContain('customer');
+    expect(filterFieldsFor({ projects: [], customers: [] })).toContain(
+      'customer'
+    );
   });
 
   it('toggles a value on and off a clause', () => {
