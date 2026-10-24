@@ -642,9 +642,13 @@ describe('Projects', () => {
 
     fireEvent.mouseMove(link, { clientX: 10, clientY: 10 });
 
-    expect(
-      await screen.findByRole('tooltip', { hidden: true })
-    ).toHaveTextContent('Launch');
+    await waitFor(() => {
+      expect(
+        screen
+          .queryAllByRole('tooltip', { hidden: true })
+          .map((tip) => tip.textContent)
+      ).toContain('Launch');
+    });
   });
 
   it('links a row to its project page', async () => {
