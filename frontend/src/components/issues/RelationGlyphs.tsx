@@ -98,10 +98,10 @@ export const DuplicateGlyph: React.FC<RelationGlyphProps> = (props) => (
 );
 
 /** The colour class of the blocked glyph. */
-export const BLOCKED_TONE = 'text-warning';
+export const BLOCKED_TONE = 'text-danger';
 
 /** The colour class of the blocking glyph. */
-export const BLOCKING_TONE = 'text-danger';
+export const BLOCKING_TONE = 'text-warning';
 
 /** The blocked flag in its theme colour, for a menu or command icon slot. */
 export const BlockedIcon: React.FC<RelationGlyphProps> = ({
