@@ -116,9 +116,17 @@ def mark_read(repositories: Repositories, context: AuthzContext, payload: InboxR
     """Mark some or all of the caller's notifications read, answering how many moved.
 
     An id already read, or belonging to someone else, counts as nothing changed.
+    `kinds` narrows a mark of everything to those kinds and is refused beside ids.
     """
+    if payload.kinds and not payload.all:
+        raise unprocessable("kinds only narrows all")
     if payload.all:
-        return repositories.inbox.mark_all_read(context.workspace_id, context.user_id)
+        unknown = sorted(set(payload.kinds) - set(INBOX_KINDS))
+        if unknown:
+            raise unprocessable(f"Unknown notification kind: {', '.join(unknown)}")
+        return repositories.inbox.mark_all_read(
+            context.workspace_id, context.user_id, kinds=tuple(dict.fromkeys(payload.kinds))
+        )
     if not payload.notification_ids:
         raise unprocessable("Send notification_ids or all")
     return repositories.inbox.mark_read(context.workspace_id, context.user_id, payload.notification_ids)

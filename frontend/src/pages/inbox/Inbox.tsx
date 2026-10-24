@@ -931,6 +931,10 @@ const clearDescription = (scope: ClearScope, view: InboxView): string => {
   return `Every notification${filtered} is deleted${snoozed}. This cannot be undone.`;
 };
 
+/** What the mark all read action is called, naming the filter when one narrows it. */
+const markAllLabel = (view: InboxView): string =>
+  view.categories.length > 0 ? 'Mark filtered types read' : 'Mark all read';
+
 /** The notice a finished bulk delete raises. */
 const deletedLabel = (deleted: number): string =>
   deleted === 1
@@ -960,6 +964,7 @@ export const Inbox: React.FC = () => {
   const enabled = workspaceId !== '';
   const queryKey = inboxKey(workspaceId, viewSlice(view));
   const query = useMemo(() => viewQuery(view), [view]);
+  const readAllLabel = markAllLabel(view);
   const selectedId = params.get(SELECTED_PARAM);
 
   const changeView = useCallback((next: InboxView) => {
@@ -1083,7 +1088,10 @@ export const Inbox: React.FC = () => {
     mutate: readAll,
     isMutating: isReadingAll,
     error: readAllError,
-  } = useMutationWithRefetch(() => markAllRead(workspaceId), refetchKeys);
+  } = useMutationWithRefetch(
+    () => markAllRead(workspaceId, query.kind ?? []),
+    refetchKeys
+  );
 
   const {
     mutate: clearAll,
@@ -1475,7 +1483,7 @@ export const Inbox: React.FC = () => {
   });
   useShortcut({
     keys: 'shift+r',
-    label: 'Mark all read',
+    label: readAllLabel,
     group: 'Inbox',
     enabled: hasRows && !isReadingAll,
     handler: () => {
@@ -1534,7 +1542,7 @@ export const Inbox: React.FC = () => {
               onSelect={readEverything}
             >
               <LuCheckCheck className="h-3.5 w-3.5" aria-hidden="true" />
-              Mark all read
+              {readAllLabel}
             </MenuItem>
             <MenuSeparator />
             <MenuItem

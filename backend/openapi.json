@@ -6385,12 +6385,20 @@
         "type": "object"
       },
       "InboxReadRequest": {
-        "description": "The body a mark-read takes: either a list of ids or the whole inbox.",
+        "description": "The body a mark-read takes: either a list of ids or the whole inbox.\n\n`kinds` narrows `all` to those notification kinds, matching the list's filter,\nso marking everything read under a filter leaves the hidden types alone.",
         "properties": {
           "all": {
             "default": false,
             "title": "All",
             "type": "boolean"
+          },
+          "kinds": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 50,
+            "title": "Kinds",
+            "type": "array"
           },
           "notification_ids": {
             "anyOf": [
