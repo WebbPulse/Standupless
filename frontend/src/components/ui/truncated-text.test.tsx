@@ -147,10 +147,10 @@ describe('TruncatedText', () => {
   it('shows the given text over the rendered children', () => {
     render(
       <TruncatedText text="Full name">
-        <em>Full name</em>
+        <em>Full</em>
       </TruncatedText>
     );
-    const label = sized(screen.getByText('Full name', { selector: 'span' }), {
+    const label = sized(screen.getByText('Full').parentElement as HTMLElement, {
       scrollWidth: 240,
     });
 
