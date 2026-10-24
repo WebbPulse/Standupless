@@ -3,7 +3,8 @@
  * the form as it opens and says what it adds, the create names the template
  * and leaves out what it still holds for the server to fill, an edited field
  * is sent, going back to no template sends every field without it, and a
- * template issue the server left out raises a notice.
+ * template issue the server left out raises a notice. A project created in a
+ * board column starts with the column's fields and joins its initiative.
  */
 
 import { render, screen, waitFor } from '@testing-library/react';
@@ -12,6 +13,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type {
   ProjectCreate,
   ProjectRead,
+  ProjectUpdate,
   TeamRead,
   TemplateListRead,
   TemplateRead,
@@ -19,11 +21,15 @@ import type {
 import CreateProjectDialog from './CreateProjectDialog';
 
 const createProject = vi.fn<(body: ProjectCreate) => Promise<ProjectRead>>();
+const updateProject =
+  vi.fn<(id: string, patch: ProjectUpdate) => Promise<ProjectRead>>();
 const listTeamTemplates =
   vi.fn<(teamId: string, kind?: string) => Promise<TemplateListRead>>();
 
 vi.mock('../../api/planning', () => ({
   createProject: (_w: string, body: ProjectCreate) => createProject(body),
+  updateProject: (_w: string, id: string, patch: ProjectUpdate) =>
+    updateProject(id, patch),
 }));
 
 vi.mock('../../api/templates', () => ({
@@ -147,6 +153,50 @@ beforeEach(() => {
   });
   onCreated.mockReset();
   showToast.mockReset();
+  updateProject.mockReset();
+});
+
+describe('a project created in a board column', () => {
+  it('starts with the column fields and joins its initiative', async () => {
+    const user = userEvent.setup();
+    listTeamTemplates.mockResolvedValue({
+      templates: [],
+      default_template_id: null,
+    });
+    updateProject.mockImplementation((id, patch) =>
+      Promise.resolve({
+        ...created({ team_ids: ['t-1'], name: 'Search' }),
+        project_id: id,
+        initiative_id: patch.initiative_id ?? null,
+      })
+    );
+    render(
+      <CreateProjectDialog
+        workspaceId="ws-1"
+        teams={[team]}
+        initialTeamIds={['t-1']}
+        preset={{ priority: 'high', health: 'at_risk', initiative_id: 'ini-1' }}
+        onClose={vi.fn()}
+        onCreated={onCreated}
+      />
+    );
+
+    await user.type(
+      screen.getByRole('textbox', { name: 'Project name' }),
+      'Search'
+    );
+    await user.click(screen.getByRole('button', { name: 'Create project' }));
+
+    await waitFor(() => {
+      expect(onCreated).toHaveBeenCalledTimes(1);
+    });
+    expect(createProject).toHaveBeenCalledWith(
+      expect.objectContaining({ priority: 'high', health: 'at_risk' })
+    );
+    expect(updateProject).toHaveBeenCalledWith(expect.any(String), {
+      initiative_id: 'ini-1',
+    });
+  });
 });
 
 describe('project templates in the new project dialog', () => {
