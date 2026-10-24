@@ -45,9 +45,10 @@ export interface SessionLabelInput {
   client: string;
   platform: string;
   clientId: string;
+  browser?: string;
 }
 
-/** The product a session runs in, without its platform, or an empty string for a browser. */
+/** The product or browser a session runs in, without its platform, or an empty string. */
 const productLabel = (session: SessionLabelInput, appName: string): string => {
   if (session.clientId !== '') {
     return appName !== ''
@@ -62,14 +63,14 @@ const productLabel = (session: SessionLabelInput, appName: string): string => {
   if (session.client !== '') {
     return CLIENT_LABELS[session.client] ?? session.client;
   }
-  return '';
+  return session.browser ?? '';
 };
 
 /**
- * What a session is, as a person reads it: the connected app or client it runs
- * in, or a browser, with the platform when known. `appName` is the connected
- * app's name for an OAuth session. A session that names nothing falls back to
- * its device class.
+ * What a session is, as a person reads it: the connected app, client or
+ * browser it runs in, with the platform when known, such as `Chrome on macOS`.
+ * `appName` is the connected app's name for an OAuth session. A session that
+ * names nothing falls back to its device class.
  */
 export const sessionLabel = (
   session: SessionLabelInput,

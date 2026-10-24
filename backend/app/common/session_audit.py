@@ -124,6 +124,7 @@ def _route_revoker(owner_id: str) -> Revoker:
     if path.endswith("/revoke"):
         return Revoker(id=owner_id, source="mcp", ip=captured.ip, reason="client_revoked")
     reasons = (
+        ("/sessions/revoke-others", "sign_out_others"),
         ("/logout-all", "signed_out_everywhere"),
         ("/logout", "signed_out"),
         ("/password", "password_changed"),
@@ -171,7 +172,8 @@ def _label(record: "RefreshTokenRecord", client_name: str) -> str:
     """How the audit page names a session: the client app, or the browser and platform."""
     if client_name:
         return client_name
-    described = " on ".join(part for part in (record.client, record.platform) if part)
+    product = record.client or record.browser
+    described = " on ".join(part for part in (product, record.platform) if part)
     return described or record.device or "Session"
 
 
@@ -301,6 +303,7 @@ class AuditedRefreshTokenStore(DynamoRefreshTokenStore):
             "device": record.device,
             "client": record.client,
             "platform": record.platform,
+            "browser": record.browser,
         }
         if client_id:
             after["client_id"] = client_id
