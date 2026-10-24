@@ -14,8 +14,8 @@
  * Writes are optimistic. The changed rows are laid over the read at once and
  * stay there until the list re-reads a newer version of the issue, so a row
  * never flickers back to its old value between the write landing and the
- * next poll. A failed write drops its overlay and says so in a toast. A due
- * date is written issue by issue, because the bulk route never takes dates.
+ * next poll. A failed write drops its overlay and says so in a toast. A date
+ * is written issue by issue, because the bulk route never takes dates.
  * Deleting hides the rows at once and puts back any the server refuses.
  * Archiving goes through the bulk route and does the same when the view
  * leaves archived issues out, as restoring does in the archive view. Every
