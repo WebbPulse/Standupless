@@ -302,11 +302,18 @@ export interface IssueListRowProps {
   issue: OrderedIssueRead;
   /** Where the row sits when the section nests sub-issues. */
   tree?: IssueTreePlace | undefined;
+  /** Hands the row element up, for a list that scrolls its highlight. */
+  rowRef?: ((node: HTMLLIElement | null) => void) | undefined;
 }
 
 /** One dense row. */
-export const IssueListRow: React.FC<IssueListRowProps> = ({ issue, tree }) => {
+export const IssueListRow: React.FC<IssueListRowProps> = ({
+  issue,
+  tree,
+  rowRef,
+}) => {
   const env = useIssueViewEnv();
+  const selectable = env.selectable !== false;
   const shows = (property: (typeof env.state.visible)[number]): boolean =>
     env.state.visible.includes(property);
   const isFocused = env.focusedId === issue.id;
@@ -323,6 +330,7 @@ export const IssueListRow: React.FC<IssueListRowProps> = ({ issue, tree }) => {
 
   return (
     <li
+      ref={rowRef}
       data-row-id={issue.id}
       aria-selected={isSelected}
       {...(tree === undefined ? {} : { 'aria-level': tree.depth + 1 })}
@@ -351,34 +359,37 @@ export const IssueListRow: React.FC<IssueListRowProps> = ({ issue, tree }) => {
           'flex shrink-0 items-center',
           !selecting &&
             (tree === undefined || tree.childCount === 0) &&
-            'max-sm:hidden'
+            'max-sm:hidden',
+          !selectable && tree === undefined && 'hidden'
         )}
       >
-        <span
-          className={cn(
-            'relative z-10 flex w-5 shrink-0 justify-center',
-            !selecting && 'pointer-coarse:hidden'
-          )}
-        >
-          <input
-            type="checkbox"
-            aria-label={`Select ${issue.key}`}
-            checked={isSelected}
-            onChange={(event) => {
-              env.toggleSelected(
-                issue.id,
-                (event.nativeEvent as MouseEvent).shiftKey
-              );
-            }}
-            onKeyDown={holdSpace}
+        {selectable && (
+          <span
             className={cn(
-              'h-3.5 w-3.5 cursor-pointer accent-accent',
-              !selecting &&
-                !isSelected &&
-                'opacity-0 group-hover/row:opacity-100 focus-visible:opacity-100'
+              'relative z-10 flex w-5 shrink-0 justify-center',
+              !selecting && 'pointer-coarse:hidden'
             )}
-          />
-        </span>
+          >
+            <input
+              type="checkbox"
+              aria-label={`Select ${issue.key}`}
+              checked={isSelected}
+              onChange={(event) => {
+                env.toggleSelected(
+                  issue.id,
+                  (event.nativeEvent as MouseEvent).shiftKey
+                );
+              }}
+              onKeyDown={holdSpace}
+              className={cn(
+                'h-3.5 w-3.5 cursor-pointer accent-accent',
+                !selecting &&
+                  !isSelected &&
+                  'opacity-0 group-hover/row:opacity-100 focus-visible:opacity-100'
+              )}
+            />
+          </span>
+        )}
         <TreeDisclosure issueKey={issue.key} place={tree} />
       </span>
       {shows('priority') && <PriorityCell issue={issue} />}
@@ -414,7 +425,7 @@ export const IssueListRow: React.FC<IssueListRowProps> = ({ issue, tree }) => {
         {...titleTip.handlers}
         data-hover="parent"
         onClick={(event) => {
-          if (event.shiftKey) {
+          if (event.shiftKey && selectable) {
             event.preventDefault();
             env.toggleSelected(issue.id, true);
             return;

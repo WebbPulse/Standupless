@@ -7,7 +7,7 @@
 
 import { createContext, useContext } from 'react';
 import type { OrderedIssueRead } from '../../../api/issues';
-import type { IssueCollection } from '../../../hooks/useIssueCollection';
+import type { IssueWrite } from '../../../hooks/useOptimisticIssues';
 import type { ParentRef } from '../../../lib/issueTree';
 import type {
   FilterField,
@@ -36,11 +36,13 @@ export interface IssueViewEnv {
   /** The team name shown on rows of a view that spans teams. */
   teamNameFor?: (teamId: string) => string | undefined;
   canEdit: boolean;
-  update: IssueCollection['update'];
+  update: IssueWrite;
   createLabel: (teamId: string, name: string) => Promise<LabelRead | null>;
   /** The row the keyboard sits on, or null. */
   focusedId: string | null;
   selected: ReadonlySet<string>;
+  /** False for a list that selects nothing, which draws no checkboxes. */
+  selectable?: boolean;
   /** The issue key showing in the peek pane, or null. */
   peekedKey: string | null;
   /** Moves the keyboard focus to a row. */

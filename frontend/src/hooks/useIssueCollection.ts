@@ -11,10 +11,10 @@
  * so a poll that finds nothing is a bodiless 304. The server asks for a full
  * read when a delta cannot be trusted, and a failed delta falls back to one.
  *
- * Writes are optimistic. The changed rows are laid over the read at once and
- * stay there until the list re-reads a newer version of the issue, so a row
- * never flickers back to its old value between the write landing and the
- * next poll. A failed write drops its overlay and says so in a toast. A date
+ * Writes are optimistic, through useOptimisticIssues. The changed rows are
+ * laid over the read at once and stay there until the list re-reads a newer
+ * version of the issue, so a row never flickers back to its old value between
+ * the write landing and the next poll. A failed write drops its overlay and says so in a toast. A date
  * is written issue by issue, because the bulk route never takes dates.
  * Deleting hides the rows at once and puts back any the server refuses.
  * Archiving goes through the bulk route and does the same when the view
@@ -32,17 +32,18 @@ import {
   deleteIssue,
   listIssueDelta,
   listIssues,
-  updateIssue,
-  type IssueBulkPatch,
   type IssueListFilters,
   type OrderedIssueRead,
 } from '../api/issues';
 import { errorMessage } from '../lib/errors';
 import { mergeIssueDelta } from '../lib/issueDelta';
-import { recordArchive, recordIssueChange } from '../lib/issueUndo';
-import { applyChange, changeIsNoop, type IssueChange } from '../lib/issueView';
+import { recordArchive } from '../lib/issueUndo';
 import { showErrorToast, showToast } from '../lib/toast';
-import type { IssueRead } from '../types/Api';
+import {
+  chunks,
+  useOptimisticIssues,
+  type IssueWrite,
+} from './useOptimisticIssues';
 
 /** How many rows one page reads, the list route's cap. */
 export const PAGE_SIZE = 100;
@@ -74,12 +75,6 @@ interface HeldRead {
   read: CollectionRead;
 }
 
-/** A row laid over the read, and the version of the row it was laid over. */
-interface Overlay {
-  issue: OrderedIssueRead;
-  since: string;
-}
-
 /** What {@link useIssueCollection} hands back. */
 export interface IssueCollection {
   /** The rows with every pending and confirmed write applied. */
@@ -95,10 +90,7 @@ export interface IssueCollection {
    * them, or a function answering each issue's own change, or null to leave
    * that issue alone.
    */
-  update: (
-    ids: readonly string[],
-    change: IssueChange | ((issue: OrderedIssueRead) => IssueChange | null)
-  ) => void;
+  update: IssueWrite;
   /** Deletes the given issues, hiding them until the server answers. */
   remove?: (ids: readonly string[]) => Promise<void>;
   /**
@@ -211,37 +203,6 @@ const readCollection = async (
   return readAll(workspaceId, query, signal);
 };
 
-/** The bulk patch a change becomes. A manual position is never bulk written. */
-const bulkPatch = (change: IssueChange): IssueBulkPatch => {
-  const {
-    sort_order: _order,
-    start_date: _start,
-    due_date: _due,
-    ...patch
-  } = change;
-  return patch;
-};
-
-/** The single issue patch a change becomes, with the full label list. */
-const singlePatch = (
-  issue: OrderedIssueRead,
-  change: IssueChange
-): Record<string, unknown> => {
-  const { add_label_ids, remove_label_ids, ...fields } = change;
-  return add_label_ids === undefined && remove_label_ids === undefined
-    ? fields
-    : { ...fields, label_ids: applyChange(issue, change).label_ids };
-};
-
-/** Splits a list into runs of at most `size`. */
-const chunks = <T>(items: T[], size: number): T[][] => {
-  const out: T[][] = [];
-  for (let at = 0; at < items.length; at += size) {
-    out.push(items.slice(at, at + size));
-  }
-  return out;
-};
-
 /**
  * Reads the issues a query matches and writes changes to them optimistically.
  * `scope` names what the rows belong to, such as a team or a view, and is
@@ -259,7 +220,6 @@ export const useIssueCollection = (
     () => ['issue-collection', workspaceId, scope, queryJson] as const,
     [workspaceId, scope, queryJson]
   );
-  const [overlays, setOverlays] = useState<Record<string, Overlay>>({});
   const [hidden, setHidden] = useState<ReadonlySet<string>>(() => new Set());
   const heldRef = useRef<HeldRead | null>(null);
 
@@ -284,173 +244,15 @@ export const useIssueCollection = (
     }
   );
 
-  const layOver = useCallback((written: readonly IssueRead[]): void => {
-    const base = new Map(
-      (heldRef.current?.read.issues ?? []).map((row) => [row.id, row])
-    );
-    setOverlays((held) => {
-      const next = { ...held };
-      for (const issue of written) {
-        const row = held[issue.id]?.issue ?? base.get(issue.id);
-        if (row === undefined) continue;
-        next[issue.id] = {
-          since: base.get(issue.id)?.updated_at ?? '',
-          issue: { ...row, ...issue, sort_order: row.sort_order ?? null },
-        };
-      }
-      return next;
-    });
-  }, []);
-
   const read = data?.issues;
+  const {
+    issues: overlaid,
+    update,
+    layOver,
+  } = useOptimisticIssues(workspaceId, read, queryKey);
   const issues = useMemo(
-    () =>
-      (read ?? [])
-        .filter((issue) => !hidden.has(issue.id))
-        .map((issue) => {
-          const overlay = overlays[issue.id];
-          return overlay !== undefined && overlay.since === issue.updated_at
-            ? overlay.issue
-            : issue;
-        }),
-    [read, overlays, hidden]
-  );
-
-  const update = useCallback<IssueCollection['update']>(
-    (ids, change) => {
-      const byId = new Map(issues.map((issue) => [issue.id, issue]));
-      const baseById = new Map((read ?? []).map((issue) => [issue.id, issue]));
-      const planned: { issue: OrderedIssueRead; change: IssueChange }[] = [];
-      for (const id of ids) {
-        const issue = byId.get(id);
-        if (issue === undefined) continue;
-        const own = typeof change === 'function' ? change(issue) : change;
-        if (own === null || changeIsNoop(issue, own)) continue;
-        planned.push({ issue, change: own });
-      }
-      if (planned.length === 0) return;
-
-      const sinceOf = (id: string): string =>
-        baseById.get(id)?.updated_at ?? '';
-
-      setOverlays((held) => {
-        const next = { ...held };
-        for (const { issue, change: own } of planned) {
-          next[issue.id] = {
-            issue: applyChange(issue, own),
-            since: sinceOf(issue.id),
-          };
-        }
-        return next;
-      });
-
-      const rollback = (failed: string[], cause: unknown): void => {
-        setOverlays((held) => {
-          const next = { ...held };
-          for (const id of failed) delete next[id];
-          return next;
-        });
-        showErrorToast(
-          errorMessage(
-            cause,
-            failed.length === 1
-              ? 'Could not update that issue.'
-              : `Could not update ${String(failed.length)} issues.`
-          )
-        );
-        invalidateQueries(queryKey);
-      };
-
-      const landed: OrderedIssueRead[] = [];
-      const record = (): void => {
-        const before = new Map(planned.map(({ issue }) => [issue.id, issue]));
-        recordIssueChange(
-          workspaceId,
-          landed.flatMap((after) => {
-            const prior = before.get(after.id);
-            return prior === undefined ? [] : [{ before: prior, after }];
-          }),
-          { invalidate: [queryKey], onReverted: layOver }
-        );
-      };
-
-      const confirm = (written: OrderedIssueRead[]): void => {
-        landed.push(...written);
-        setOverlays((held) => {
-          const next = { ...held };
-          for (const issue of written) {
-            const overlay = next[issue.id];
-            if (overlay === undefined) continue;
-            next[issue.id] = {
-              since: overlay.since,
-              issue: {
-                ...overlay.issue,
-                ...issue,
-                sort_order:
-                  issue.sort_order ?? overlay.issue.sort_order ?? null,
-              },
-            };
-          }
-          return next;
-        });
-      };
-
-      const oneByOne =
-        planned.length === 1 ||
-        planned.some(
-          ({ change: own }) =>
-            own.start_date !== undefined || own.due_date !== undefined
-        );
-      if (oneByOne) {
-        const writes = planned.map(({ issue, change: own }) =>
-          updateIssue(workspaceId, issue.id, singlePatch(issue, own)).then(
-            (written) => {
-              confirm([written]);
-            },
-            (cause: unknown) => {
-              rollback([issue.id], cause);
-            }
-          )
-        );
-        void Promise.all(writes).then(() => {
-          record();
-          invalidateQueries(queryKey);
-        });
-        return;
-      }
-
-      const batches = new Map<
-        string,
-        { patch: IssueBulkPatch; ids: string[] }
-      >();
-      for (const { issue, change: own } of planned) {
-        const patch = bulkPatch(own);
-        const slot = JSON.stringify(patch);
-        const batch = batches.get(slot) ?? { patch, ids: [] };
-        batch.ids.push(issue.id);
-        batches.set(slot, batch);
-      }
-      const writes = [...batches.values()].flatMap((batch) =>
-        chunks(batch.ids, BULK_MAX_ISSUES).map((part) =>
-          bulkUpdateIssues(workspaceId, {
-            issue_ids: part,
-            patch: batch.patch,
-          }).then(
-            (answer) => {
-              confirm(answer.issues);
-            },
-            (cause: unknown) => {
-              rollback(part, cause);
-            }
-          )
-        )
-      );
-      void Promise.all(writes).then(() => {
-        record();
-        invalidateQueries(queryKey);
-      });
-    },
-    [issues, read, workspaceId, queryKey, layOver]
+    () => overlaid.filter((issue) => !hidden.has(issue.id)),
+    [overlaid, hidden]
   );
 
   const remove = useCallback(
