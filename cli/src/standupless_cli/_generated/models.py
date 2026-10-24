@@ -1083,7 +1083,7 @@ class IssueImportRequest(TypedDict):
     csv: str
     file_name: NotRequired[str]
     mapping: NotRequired[dict[str, str | None] | None]
-    preset: NotRequired[Literal["generic", "jira", "linear"]]
+    preset: NotRequired[Literal["generic", "jira", "linear", "asana", "shortcut", "pivotal", "trello"]]
     team_id: str
 
 

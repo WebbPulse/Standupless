@@ -2,8 +2,9 @@
 
 The job and its source file live side by side in the attachments bucket under
 `imports/<workspace_id>/<import_id>/`: `job.json` is the job's state and
-`source.csv` is the file as uploaded. Keeping the job as an object beside its
-file needs no table, and the bucket's lifecycle rule on `imports/` retires both.
+`source.csv` is the file as uploaded, or for a Trello board the CSV it converts
+to. Keeping the job as an object beside its file needs no table, and the
+bucket's lifecycle rule on `imports/` retires both.
 
 A job walks the file in pages of `PAGE_SIZE` rows. Each page is one queue
 message carrying the cursor it starts at, and a message whose cursor is not the
@@ -61,6 +62,7 @@ from app.common.csv_import import (
 )
 from app.common.db.dynamo.base import utc_now
 from app.common.linear_import import LinearTeamMapping
+from app.common.trello_import import prepare_source
 
 _log = logging.getLogger(__name__)
 
@@ -438,6 +440,8 @@ def resolve_row(repositories: Any, lookup: TeamLookup, workspace_id: str, raw: R
             problems.append(
                 RowProblem(row=line, field="status", message=f"Unknown status {raw.status!r}, put in {status.name}")
             )
+    if raw.completed and status.category not in ("completed", "cancelled"):
+        status = lookup.status_by_category.get("completed", status)
 
     assignee_id: Optional[str] = None
     if raw.assignee:
@@ -498,7 +502,7 @@ def preview_import(
     overrides: Optional[Mapping[str, Optional[str]]] = None,
 ) -> Preview:
     """Read a whole file against one team and say what an import would do, writing nothing."""
-    parsed = parse_csv(text)
+    parsed = parse_csv(prepare_source(preset, text))
     mapping = resolve_mapping(parsed.headers, preset, overrides)
     lookup = load_lookup(repositories, workspace_id, team_id)
     raws = read_rows(parsed, mapping)
@@ -557,6 +561,7 @@ def start_import(
     if not queue_url and settings.is_production:
         raise ImportUnavailable("Issue imports are not configured for this environment")
     require_team_member(repositories, context, team_id)
+    text = prepare_source(preset, text)
     parsed = parse_csv(text)
     mapping = resolve_mapping(parsed.headers, preset, overrides)
     now = utc_now()

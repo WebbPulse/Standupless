@@ -1,0 +1,4 @@
+Task ID,Created At,Completed At,Last Modified,Name,Section/Column,Assignee,Assignee Email,Start Date,Due Date,Tags,Notes,Projects,Parent task,Story Points
+1205000000000001,2026-09-01,,2026-09-03,Plan the launch,In Progress,Mel Member,member@example.com,,2026-10-15,"Launch,Marketing",Pick a date and a channel.,Launch,,5
+1205000000000002,2026-09-02,2026-09-05,2026-09-05,Book the venue,To Do,Mel Member,member@example.com,,,,Call three venues.,Launch,Plan the launch,
+1205000000000003,2026-09-02,,2026-09-02,Write the press note,Backlog,,,,,Marketing,,Launch,Plan the launch,2
