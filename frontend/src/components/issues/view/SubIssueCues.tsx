@@ -91,7 +91,7 @@ export const TreeGuides: React.FC<TreeGuidesProps> = ({
 /** Props for SubIssueProgressChip. */
 export interface SubIssueProgressChipProps {
   progress: { total: number; completed: number };
-  className?: string;
+  className?: string | undefined;
 }
 
 /** A parent's sub-issue progress as a ring and a done/total count. */
@@ -123,7 +123,7 @@ export const SubIssueProgressChip: React.FC<SubIssueProgressChipProps> = ({
 export interface ParentPrefixProps {
   slug: string;
   parent: ParentRef;
-  className?: string;
+  className?: string | undefined;
 }
 
 /**
