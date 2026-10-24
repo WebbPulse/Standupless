@@ -1226,11 +1226,13 @@ class MilestoneUpdate(TypedDict):
 
 
 class NotificationChannels(TypedDict):
+    chat: NotRequired[bool]
     email: bool
     in_app: bool
 
 
 class NotificationChannelsUpdate(TypedDict):
+    chat: NotRequired[bool | None]
     email: NotRequired[bool | None]
     in_app: NotRequired[bool | None]
 
@@ -1987,6 +1989,16 @@ class SlackConnectionRead(TypedDict):
 class SlackInstallUrlRead(TypedDict):
     expires_at: str
     url: str
+
+
+class SlackLinkRead(TypedDict):
+    available: bool
+    configured: bool
+    linked: NotRequired[bool]
+    linked_at: NotRequired[str | None]
+    problem: NotRequired[str | None]
+    slack_team_name: NotRequired[str | None]
+    slack_user_id: NotRequired[str | None]
 
 
 class SsoConnectionRead(TypedDict):
