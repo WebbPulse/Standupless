@@ -77,9 +77,9 @@ describe('isMobileHandoffLink', () => {
 
   it('ignores other links and schemes', () => {
     expect(isMobileHandoffLink('standupless://w/acme', SCHEMES)).toBe(false);
-    expect(
-      isMobileHandoffLink('other://auth/handoff?code=abc', SCHEMES)
-    ).toBe(false);
+    expect(isMobileHandoffLink('other://auth/handoff?code=abc', SCHEMES)).toBe(
+      false
+    );
     expect(
       isMobileHandoffLink('https://standupless.dev/auth/handoff', SCHEMES)
     ).toBe(false);
