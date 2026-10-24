@@ -1828,6 +1828,23 @@ export const groupIssues = (
 };
 
 /**
+ * The groups left once status groups outside a set of categories are dropped,
+ * so a view scoped to some categories never shows columns the scope cannot
+ * fill. Groups of any other field, or any set left out, pass through.
+ */
+export const withinStatusCategories = (
+  groups: IssueGroup[],
+  field: GroupField,
+  categories: readonly StatusCategory[] | undefined
+): IssueGroup[] =>
+  categories === undefined || field !== 'status'
+    ? groups
+    : groups.filter(
+        (group) =>
+          group.category === undefined || categories.includes(group.category)
+      );
+
+/**
  * When an issue's SLA breaches, in milliseconds, or null when it has no
  * timer, so the SLA ordering can put those last. A paused timer sorts by the
  * deadline it would have if it resumed now.

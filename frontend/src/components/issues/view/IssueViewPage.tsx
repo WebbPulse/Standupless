@@ -70,7 +70,7 @@ import ExportCsvButton from '../export/ExportCsvButton';
 import { viewKey, viewsKey } from '../../../lib/queryKeys';
 import { showErrorToast, showToast } from '../../../lib/toast';
 import { estimateOptionsOf } from '../../../lib/validation';
-import type { TeamRead } from '../../../types/Api';
+import type { StatusCategory, TeamRead } from '../../../types/Api';
 import Button, { IconButton } from '../../ui/button';
 import FavoriteButton from '../../ui/FavoriteButton';
 import Dialog from '../../ui/dialog';
@@ -393,6 +393,11 @@ export interface IssueViewPageProps {
    * team's default and the caller administers that team.
    */
   teamDefault?: TeamDefaultControl | undefined;
+  /**
+   * The status categories the scope covers, so status groups and board
+   * columns it cannot fill stay hidden. Left out, every category shows.
+   */
+  statusCategories?: readonly StatusCategory[] | undefined;
 }
 
 /** What a page needs to change the team default display it opens over. */
@@ -428,6 +433,7 @@ export const IssueViewPage: React.FC<IssueViewPageProps> = ({
   archive = false,
   titleAccessory,
   teamDefault,
+  statusCategories,
 }) => {
   const auth = useQueryAuth();
   const navigate = useNavigate();
@@ -926,6 +932,7 @@ export const IssueViewPage: React.FC<IssueViewPageProps> = ({
             collapseKey={`${workspaceId}.${view?.view_id ?? scopeKey}`}
             {...(emptyMessage === undefined ? {} : { emptyMessage })}
             filterFields={filterFields}
+            statusCategories={statusCategories}
           />
         </div>
         {insightsOpen && (

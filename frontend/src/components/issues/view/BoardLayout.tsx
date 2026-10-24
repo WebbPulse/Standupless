@@ -34,7 +34,9 @@ import {
   type IssueChange,
   type IssueGroup,
   type ViewState,
+  withinStatusCategories,
 } from '../../../lib/issueView';
+import type { StatusCategory } from '../../../types/Api';
 import { parentRefOf } from '../../../lib/issueTree';
 import { issuePath } from '../../../lib/paths';
 import { showToast } from '../../../lib/toast';
@@ -217,6 +219,11 @@ export interface BoardLayoutProps {
   createIn?:
     | ((group: IssueGroup, sub?: IssueGroup) => (() => void) | undefined)
     | undefined;
+  /**
+   * The status categories the view's scope covers. Status columns outside
+   * them are left out, even with empty columns shown.
+   */
+  statusCategories?: readonly StatusCategory[] | undefined;
 }
 
 /** The board. */
@@ -226,6 +233,7 @@ export const BoardLayout: React.FC<BoardLayoutProps> = ({
   onToggle,
   onStateChange,
   createIn,
+  statusCategories,
 }) => {
   const env = useIssueViewEnv();
   const { state, context } = env;
@@ -236,7 +244,11 @@ export const BoardLayout: React.FC<BoardLayoutProps> = ({
   const laneField = state.subGroupBy;
 
   const { columns, hidden, lanes } = useMemo(() => {
-    const all = groupIssues(issues, columnField, context, true);
+    const all = withinStatusCategories(
+      groupIssues(issues, columnField, context, true),
+      columnField,
+      statusCategories
+    );
     const shown = state.showEmpty
       ? all
       : all.filter((column) => column.issues.length > 0);
@@ -263,7 +275,15 @@ export const BoardLayout: React.FC<BoardLayoutProps> = ({
         cells: groupIssues(lane.issues, columnField, context, true),
       })),
     };
-  }, [issues, columnField, laneField, context, state.showEmpty, collapsed]);
+  }, [
+    issues,
+    columnField,
+    laneField,
+    context,
+    state.showEmpty,
+    collapsed,
+    statusCategories,
+  ]);
 
   const byId = useMemo(
     () => new Map(issues.map((issue) => [issue.id, issue])),
