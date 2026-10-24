@@ -1,0 +1,270 @@
+{
+  "me": {
+    "gid": "1100000000000001",
+    "name": "Adam Admin",
+    "email": "admin@example.com",
+    "workspaces": [{ "gid": "1000000000000001", "name": "Acme" }]
+  },
+  "projects": {
+    "1000000000000001": [
+      {
+        "gid": "1200000000000001",
+        "name": "Website relaunch",
+        "archived": false,
+        "completed": false,
+        "notes": "Ship the new site before the conference.",
+        "start_on": "2026-09-01",
+        "due_on": "2026-10-31",
+        "created_at": "2026-08-01T09:00:00.000Z",
+        "owner": { "gid": "1100000000000002", "email": "member@example.com", "name": "Mel Member" },
+        "permalink_url": "https://app.asana.com/0/1200000000000001/1200000000000001",
+        "team": { "gid": "1050000000000001", "name": "Marketing" },
+        "workspace": { "gid": "1000000000000001", "name": "Acme" }
+      },
+      {
+        "gid": "1200000000000002",
+        "name": "Old archive",
+        "archived": true,
+        "completed": true,
+        "notes": "",
+        "start_on": null,
+        "due_on": null,
+        "created_at": "2025-01-10T09:00:00.000Z",
+        "owner": null,
+        "permalink_url": "https://app.asana.com/0/1200000000000002/1200000000000002",
+        "team": null,
+        "workspace": { "gid": "1000000000000001", "name": "Acme" }
+      }
+    ]
+  },
+  "sections": {
+    "1200000000000001": [
+      { "gid": "1210000000000001", "name": "To do" },
+      { "gid": "1210000000000002", "name": "Doing" },
+      { "gid": "1210000000000003", "name": "Waiting on legal" },
+      { "gid": "1210000000000004", "name": "Done" }
+    ],
+    "1200000000000002": [{ "gid": "1210000000000005", "name": "Untitled section" }]
+  },
+  "custom_field_settings": {
+    "1200000000000001": [
+      {
+        "gid": "1310000000000001",
+        "custom_field": {
+          "gid": "1300000000000001",
+          "name": "Priority",
+          "resource_subtype": "enum",
+          "enum_options": [
+            { "gid": "1301000000000001", "name": "High" },
+            { "gid": "1301000000000002", "name": "Low" }
+          ]
+        }
+      },
+      {
+        "gid": "1310000000000002",
+        "custom_field": {
+          "gid": "1300000000000002",
+          "name": "Stage",
+          "resource_subtype": "enum",
+          "enum_options": [
+            { "gid": "1302000000000001", "name": "Backlog" },
+            { "gid": "1302000000000002", "name": "Shipping" }
+          ]
+        }
+      },
+      {
+        "gid": "1310000000000003",
+        "custom_field": {
+          "gid": "1300000000000003",
+          "name": "Budget code",
+          "resource_subtype": "text"
+        }
+      }
+    ],
+    "1200000000000002": []
+  },
+  "task_counts": {
+    "1200000000000001": { "num_tasks": 5, "num_completed_tasks": 1 },
+    "1200000000000002": { "num_tasks": 0, "num_completed_tasks": 0 }
+  },
+  "tasks": {
+    "1200000000000001": [
+      {
+        "gid": "1400000000000001",
+        "name": "Write the launch plan",
+        "notes": "Draft the plan and share it with the team.",
+        "completed": false,
+        "completed_at": null,
+        "created_at": "2026-09-01T09:00:00.000Z",
+        "due_on": "2026-09-30",
+        "due_at": null,
+        "start_on": "2026-09-10",
+        "assignee": { "gid": "1100000000000002", "email": "member@example.com", "name": "Mel Member" },
+        "created_by": { "gid": "1100000000000002", "email": "member@example.com" },
+        "tags": [
+          { "gid": "1500000000000001", "name": "Launch", "color": "dark-green" },
+          { "gid": "1500000000000002", "name": "Docs", "color": null }
+        ],
+        "memberships": [
+          {
+            "project": { "gid": "1200000000000001" },
+            "section": { "gid": "1210000000000002", "name": "Doing" }
+          }
+        ],
+        "custom_fields": [
+          {
+            "gid": "1300000000000001",
+            "name": "Priority",
+            "resource_subtype": "enum",
+            "enum_value": { "gid": "1301000000000001", "name": "High" }
+          },
+          {
+            "gid": "1300000000000002",
+            "name": "Stage",
+            "resource_subtype": "enum",
+            "enum_value": { "gid": "1302000000000002", "name": "Shipping" }
+          },
+          { "gid": "1300000000000003", "name": "Budget code", "resource_subtype": "text", "enum_value": null }
+        ],
+        "permalink_url": "https://app.asana.com/0/1200000000000001/1400000000000001",
+        "num_subtasks": 1
+      },
+      {
+        "gid": "1400000000000002",
+        "name": "Book the venue",
+        "notes": "",
+        "completed": false,
+        "completed_at": null,
+        "created_at": "2026-09-02T09:00:00.000Z",
+        "due_on": null,
+        "due_at": null,
+        "start_on": null,
+        "assignee": { "gid": "1100000000000009", "email": "riley@example.org", "name": "Riley Stranger" },
+        "created_by": { "gid": "1100000000000009", "email": "riley@example.org" },
+        "tags": [{ "gid": "1500000000000001", "name": "Launch", "color": "dark-green" }],
+        "memberships": [
+          {
+            "project": { "gid": "1200000000000001" },
+            "section": { "gid": "1210000000000003", "name": "Waiting on legal" }
+          }
+        ],
+        "custom_fields": [
+          {
+            "gid": "1300000000000001",
+            "name": "Priority",
+            "resource_subtype": "enum",
+            "enum_value": { "gid": "1301000000000002", "name": "Low" }
+          },
+          {
+            "gid": "1300000000000002",
+            "name": "Stage",
+            "resource_subtype": "enum",
+            "enum_value": { "gid": "1302000000000001", "name": "Backlog" }
+          }
+        ],
+        "permalink_url": "https://app.asana.com/0/1200000000000001/1400000000000002",
+        "num_subtasks": 0
+      },
+      {
+        "gid": "1400000000000003",
+        "name": "Pick a domain",
+        "notes": "standupless.dev style, short.",
+        "completed": true,
+        "completed_at": "2026-09-05T12:00:00.000Z",
+        "created_at": "2026-09-03T09:00:00.000Z",
+        "due_on": "2026-09-05",
+        "due_at": null,
+        "start_on": null,
+        "assignee": null,
+        "created_by": null,
+        "tags": [],
+        "memberships": [
+          {
+            "project": { "gid": "1200000000000001" },
+            "section": { "gid": "1210000000000001", "name": "To do" }
+          }
+        ],
+        "custom_fields": [],
+        "permalink_url": "https://app.asana.com/0/1200000000000001/1400000000000003",
+        "num_subtasks": 0
+      }
+    ],
+    "1200000000000002": []
+  },
+  "subtasks": {
+    "1400000000000001": [
+      {
+        "gid": "1400000000000011",
+        "name": "Outline the sections",
+        "notes": "",
+        "completed": false,
+        "completed_at": null,
+        "created_at": "2026-09-04T09:00:00.000Z",
+        "due_on": null,
+        "due_at": null,
+        "start_on": null,
+        "assignee": null,
+        "created_by": { "gid": "1100000000000002", "email": "member@example.com" },
+        "tags": [],
+        "memberships": [],
+        "custom_fields": [],
+        "permalink_url": "https://app.asana.com/0/0/1400000000000011",
+        "num_subtasks": 1
+      }
+    ],
+    "1400000000000011": [
+      {
+        "gid": "1400000000000012",
+        "name": "Ask legal about the footer",
+        "notes": "",
+        "completed": true,
+        "completed_at": "2026-09-06T09:00:00.000Z",
+        "created_at": "2026-09-05T09:00:00.000Z",
+        "due_on": null,
+        "due_at": null,
+        "start_on": null,
+        "assignee": null,
+        "created_by": null,
+        "tags": [],
+        "memberships": [],
+        "custom_fields": [],
+        "permalink_url": "https://app.asana.com/0/0/1400000000000012",
+        "num_subtasks": 0
+      }
+    ]
+  },
+  "stories": {
+    "1400000000000001": [
+      {
+        "gid": "1600000000000001",
+        "resource_subtype": "assigned",
+        "text": "Mel Member assigned to you",
+        "created_at": "2026-09-01T09:05:00.000Z",
+        "created_by": { "gid": "1100000000000002", "email": "member@example.com", "name": "Mel Member" }
+      },
+      {
+        "gid": "1600000000000002",
+        "resource_subtype": "comment_added",
+        "text": "First draft is up.",
+        "created_at": "2026-09-02T10:00:00.000Z",
+        "created_by": { "gid": "1100000000000002", "email": "member@example.com", "name": "Mel Member" }
+      },
+      {
+        "gid": "1600000000000003",
+        "resource_subtype": "comment_added",
+        "text": "Looks good to me.",
+        "created_at": "2026-09-02T11:00:00.000Z",
+        "created_by": { "gid": "1100000000000009", "email": "riley@example.org", "name": "Riley Stranger" }
+      }
+    ],
+    "1400000000000011": [
+      {
+        "gid": "1600000000000004",
+        "resource_subtype": "comment_added",
+        "text": "Started on the outline.",
+        "created_at": "2026-09-04T10:00:00.000Z",
+        "created_by": { "gid": "1100000000000002", "email": "member@example.com", "name": "Mel Member" }
+      }
+    ]
+  }
+}

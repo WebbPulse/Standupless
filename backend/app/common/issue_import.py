@@ -24,7 +24,9 @@ A Linear import, kind `linear`, is the same job reading Linear's API instead
 of a stored file; `app.common.linear_import` holds its steps and its sealed key.
 A GitHub import, kind `github`, reads one repository's Issues through the
 installed GitHub App; its steps live with the App in the integrations domain and
-register themselves in `PAGE_RUNNERS`.
+register themselves in `PAGE_RUNNERS`. An Asana import, kind `asana`, reads
+chosen Asana projects through Asana's REST API with a pasted personal access
+token sealed beside the job the way a Linear key is, and registers itself too.
 A job may be cancelled while it runs: every step reads the job again before it
 saves its progress and keeps a cancel it finds.
 
@@ -130,7 +132,10 @@ IMPORT_READ_REPOSITORIES: tuple[str, ...] = ("workspaces", "memberships", "users
 
 ImportStatus = Literal["queued", "running", "completed", "failed", "cancelled"]
 
-ImportKind = Literal["csv", "linear", "github"]
+ImportKind = Literal["csv", "linear", "github", "asana"]
+
+SEALED_KEY_KINDS: set[str] = {"linear", "asana"}
+"""The import kinds that keep a sealed token beside the job, deleted when the job fails or is cancelled."""
 
 PAGE_RUNNERS: dict[str, Callable[[Any, "ImportJob"], "ImportJob"]] = {}
 """The page runner of each import kind whose source lives in a domain, registered when its module loads."""
@@ -154,6 +159,19 @@ class ImportNotFound(Exception):
     """No import with that id exists in the workspace."""
 
 
+class AsanaProjectMapping(BaseModel):
+    """One Asana project an Asana import reads, the team it writes into, and how its tasks map."""
+
+    project_gid: str
+    name: str = ""
+    team_id: str
+    create_project: bool = True
+    status_field_gid: str = ""
+    status_field_name: str = ""
+    statuses: dict[str, str] = Field(default_factory=dict)
+    created_at: str = ""
+
+
 class ImportJob(BaseModel):
     """One import: who asked, into which team, how the file maps, and how far it has got."""
 
@@ -165,6 +183,7 @@ class ImportJob(BaseModel):
     mapping: dict[str, Optional[str]]
     linear_teams: list[LinearTeamMapping] = Field(default_factory=list)
     github_repository_id: str = ""
+    asana_projects: list[AsanaProjectMapping] = Field(default_factory=list)
     phase_index: int = 0
     after: Optional[str] = None
     counts: dict[str, int] = Field(default_factory=dict)
@@ -638,8 +657,8 @@ def handle_page(repositories: Any, workspace_id: str, import_id: str, cursor: in
 
 
 def fail(repositories: Any, job: ImportJob, exc: BaseException) -> ImportJob:
-    """Mark a job failed, delete a Linear job's key, and tell the requester, unless it was cancelled."""
-    if job.kind == "linear":
+    """Mark a job failed, delete a sealed token it kept, and tell the requester, unless it was cancelled."""
+    if job.kind in SEALED_KEY_KINDS:
         from app.common.linear_import import delete_key
 
         delete_key(job.workspace_id, job.import_id)
@@ -856,7 +875,7 @@ def _cancelled(job: ImportJob) -> ImportJob | None:
 
 
 def cancel_import(workspace_id: str, import_id: str) -> ImportJob:
-    """Stop one import: mark it cancelled and delete a Linear import's key, leaving what it wrote.
+    """Stop one import: mark it cancelled and delete a sealed token it kept, leaving what it wrote.
 
     A job that already finished is answered as it is. Raises `ImportNotFound`
     when the workspace has no such import.
@@ -867,7 +886,7 @@ def cancel_import(workspace_id: str, import_id: str) -> ImportJob:
     if job.status in FINISHED:
         return job
     cancelled = save_job(job.model_copy(update={"status": "cancelled", "finished_at": utc_now()}))
-    if job.kind == "linear":
+    if job.kind in SEALED_KEY_KINDS:
         from app.common.linear_import import delete_key
 
         delete_key(workspace_id, import_id)
@@ -1001,8 +1020,8 @@ def notify(repositories: Any, job: ImportJob) -> bool:
     completed = job.status == "completed"
     plural = "issue" if job.created_count == 1 else "issues"
     title = f"Imported {job.created_count} {plural} into {name}" if completed else f"The import into {name} failed"
-    if job.kind in ("linear", "github"):
-        origin = "Linear" if job.kind == "linear" else job.file_name or "GitHub"
+    if job.kind != "csv":
+        origin = job.file_name or ("GitHub" if job.kind == "github" else job.kind.title())
         title = f"Imported {job.created_count} {plural} from {origin}"
         if not completed:
             title = f"The import from {origin} failed"

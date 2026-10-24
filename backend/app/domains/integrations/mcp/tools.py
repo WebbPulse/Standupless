@@ -18,6 +18,7 @@ import json
 from typing import Any
 
 from app.domains.integrations.mcp.agent_profile_tools import AGENT_PROFILE_TOOLS
+from app.domains.integrations.mcp.asana_import_tools import ASANA_IMPORT_TOOLS
 from app.domains.integrations.mcp.audit_tools import AUDIT_TOOLS
 from app.domains.integrations.mcp.channel_tools import CHANNEL_TOOLS
 from app.domains.integrations.mcp.customer_tools import CUSTOMER_TOOLS
@@ -69,6 +70,7 @@ TOOLS: tuple[Tool, ...] = (
     *WORKSPACE_TOOLS,
     *EXPORT_TOOLS,
     *IMPORT_TOOLS,
+    *ASANA_IMPORT_TOOLS,
     *AUDIT_TOOLS,
     *TRIAGE_TOOLS,
     *AGENT_PROFILE_TOOLS,

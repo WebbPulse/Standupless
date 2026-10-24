@@ -309,6 +309,7 @@ def _integrations_routers() -> "Sequence[RouterSpec]":
     would have to know every team.
     """
     from app.domains.integrations.endpoints import (
+        asana_imports,
         channels,
         discord,
         imports,
@@ -338,6 +339,7 @@ def _integrations_routers() -> "Sequence[RouterSpec]":
         (standup.router, "/workspaces", ("integrations",)),
         (release_backfill.router, "/workspaces", ("integrations",)),
         (imports.router, "/workspaces", ("integrations",)),
+        (asana_imports.router, "/workspaces", ("integrations",)),
     ]
 
 

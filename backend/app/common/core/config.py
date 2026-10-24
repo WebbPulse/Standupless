@@ -331,6 +331,14 @@ class Settings(BaseServiceSettings):
         ),
     )
 
+    ASANA_API_URL: str = Field(
+        default="https://app.asana.com/api/1.0",
+        description=(
+            "Asana's REST API base, which the Asana importer reads projects through. Only the "
+            "local stack and the tests point it elsewhere, at a fake Asana server."
+        ),
+    )
+
     BILLING_ENABLED: bool = Field(
         default=False,
         description=(
