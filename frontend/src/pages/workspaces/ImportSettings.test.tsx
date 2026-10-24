@@ -3,8 +3,10 @@
  * dry runs it and sees the row problems, remaps a column, which runs the dry
  * run again with the change, and starts the import with the same body. For
  * Linear they paste a key, load its teams, map each and start, and the key is
- * cleared once the job is queued. A running job can be cancelled. Anyone
- * below admin is told they cannot.
+ * cleared once the job is queued. For GitHub they pick a repository the App
+ * covers and a team and start, or are told why they cannot when the App is
+ * missing or suspended. A running job can be cancelled. Anyone below admin is
+ * told they cannot.
  */
 
 import { render, screen, waitFor, within } from '@testing-library/react';
@@ -12,7 +14,11 @@ import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { WorkspaceContextType } from '../../contexts/WorkspaceContextDefinition';
+import type { InstallationState } from '../../api/integrations';
 import type {
+  GitHubImportRepositoryRead,
+  GitHubImportRequest,
+  GithubInstallationRead,
   IssueImportPreviewRead,
   IssueImportRead,
   IssueImportRequest,
@@ -34,6 +40,11 @@ const startLinearImport =
   vi.fn<(body: LinearImportRequest) => Promise<IssueImportRead>>();
 const cancelIssueImport =
   vi.fn<(importId: string) => Promise<IssueImportRead>>();
+const listGitHubImportRepositories =
+  vi.fn<() => Promise<GitHubImportRepositoryRead[]>>();
+const startGitHubImport =
+  vi.fn<(body: GitHubImportRequest) => Promise<IssueImportRead>>();
+const readInstallation = vi.fn<() => Promise<InstallationState>>();
 
 vi.mock('../../hooks/useAuth', () => ({
   useAuth: () => ({
@@ -59,7 +70,17 @@ vi.mock('../../api/imports', () => ({
     startLinearImport(body),
   cancelIssueImport: (_workspaceId: string, importId: string) =>
     cancelIssueImport(importId),
+  listGitHubImportRepositories: () => listGitHubImportRepositories(),
+  startGitHubImport: (_workspaceId: string, body: GitHubImportRequest) =>
+    startGitHubImport(body),
 }));
+
+vi.mock('../../api/integrations', async () => {
+  const actual = await vi.importActual<typeof import('../../api/integrations')>(
+    '../../api/integrations'
+  );
+  return { ...actual, readInstallation: () => readInstallation() };
+});
 
 vi.mock('@webbpulse/auth/react', async () => {
   const actual = await vi.importActual<typeof import('@webbpulse/auth/react')>(
@@ -170,6 +191,25 @@ const dryRun = (
   ...over,
 });
 
+/** An installation of the App on the WebbPulse organization. */
+const installation = (
+  over: Partial<GithubInstallationRead> = {}
+): GithubInstallationRead => ({
+  installation_id: '42',
+  account_login: 'WebbPulse',
+  account_type: 'Organization',
+  repository_selection: 'selected',
+  html_url: 'https://github.com/WebbPulse',
+  manage_url:
+    'https://github.com/organizations/WebbPulse/settings/installations/42',
+  avatar_url: '',
+  suspended: false,
+  installed_by: 'user-1',
+  installed_at: '2026-10-01T00:00:00Z',
+  repository_count: 2,
+  ...over,
+});
+
 /** Mounts the page inside a router, which the shell and section nav require. */
 const renderPage = () =>
   render(
@@ -181,6 +221,11 @@ const renderPage = () =>
 /** Switches the page from the Linear source to a CSV file. */
 const chooseCsv = async (user: ReturnType<typeof userEvent.setup>) => {
   await user.click(screen.getByRole('radio', { name: /CSV file/ }));
+};
+
+/** Switches the page from the Linear source to GitHub Issues. */
+const chooseGitHub = async (user: ReturnType<typeof userEvent.setup>) => {
+  await user.click(screen.getByRole('radio', { name: /GitHub Issues/ }));
 };
 
 /** Picks the CSV source and fixture file, then dry runs it. */
@@ -216,6 +261,30 @@ beforeEach(() => {
     job({ kind: 'linear', status: 'queued', file_name: '' })
   );
   cancelIssueImport.mockResolvedValue(job({ status: 'cancelled' }));
+  listGitHubImportRepositories.mockReset();
+  startGitHubImport.mockReset();
+  readInstallation.mockReset();
+  readInstallation.mockResolvedValue({
+    status: 'installed',
+    installation: installation(),
+  });
+  listGitHubImportRepositories.mockResolvedValue([
+    {
+      repository_id: '101',
+      full_name: 'WebbPulse/api',
+      private: false,
+      team_id: null,
+    },
+    {
+      repository_id: '102',
+      full_name: 'WebbPulse/web',
+      private: true,
+      team_id: 'team-2',
+    },
+  ]);
+  startGitHubImport.mockResolvedValue(
+    job({ kind: 'github', status: 'queued', file_name: 'WebbPulse/api' })
+  );
 });
 
 describe('the issue import page', () => {
@@ -377,6 +446,138 @@ describe('the issue import page', () => {
     expect(
       screen.getByText(/4 issues created, 3 comments, 2 relations, 1 cycle/)
     ).toBeInTheDocument();
+  });
+
+  it('imports a GitHub repository into the team it is pinned to', async () => {
+    const user = userEvent.setup();
+    renderPage();
+    await chooseGitHub(user);
+
+    const repository = await screen.findByLabelText('Repository');
+    expect(repository).toHaveValue('101');
+    expect(screen.getByLabelText('Team')).toHaveValue('team-1');
+
+    await user.selectOptions(repository, '102');
+    expect(screen.getByLabelText('Team')).toHaveValue('team-2');
+    expect(
+      screen.getByRole('option', { name: 'WebbPulse/web (private)' })
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Import issues' }));
+
+    await waitFor(() => {
+      expect(startGitHubImport).toHaveBeenCalledWith({
+        repository_id: '102',
+        team_id: 'team-2',
+      });
+    });
+  });
+
+  it('links to the GitHub settings when the App is not installed', async () => {
+    const user = userEvent.setup();
+    readInstallation.mockResolvedValue({ status: 'not_installed' });
+    renderPage();
+    await chooseGitHub(user);
+
+    expect(
+      await screen.findByText('The GitHub App is not installed')
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('link', { name: 'GitHub integration settings' })
+    ).toHaveAttribute('href', '/w/engineering/settings/integrations');
+    expect(listGitHubImportRepositories).not.toHaveBeenCalled();
+  });
+
+  it('says the App is suspended instead of listing repositories', async () => {
+    const user = userEvent.setup();
+    readInstallation.mockResolvedValue({
+      status: 'installed',
+      installation: installation({ suspended: true }),
+    });
+    renderPage();
+    await chooseGitHub(user);
+
+    expect(
+      await screen.findByText('The GitHub App is suspended')
+    ).toBeInTheDocument();
+    expect(screen.queryByLabelText('Repository')).not.toBeInTheDocument();
+    expect(listGitHubImportRepositories).not.toHaveBeenCalled();
+  });
+
+  it('says so when the App covers no repositories', async () => {
+    const user = userEvent.setup();
+    listGitHubImportRepositories.mockResolvedValue([]);
+    renderPage();
+    await chooseGitHub(user);
+
+    expect(
+      await screen.findByText('No repositories to import')
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'Import issues' })
+    ).toBeDisabled();
+  });
+
+  it('shows the start error from the server', async () => {
+    const user = userEvent.setup();
+    startGitHubImport.mockRejectedValue(new Error('Repository not available'));
+    renderPage();
+    await chooseGitHub(user);
+
+    await user.click(
+      await screen.findByRole('button', { name: 'Import issues' })
+    );
+
+    expect(await screen.findByRole('alert')).toBeInTheDocument();
+  });
+
+  it('lists what a finished GitHub import brought over and skipped', async () => {
+    listIssueImports.mockResolvedValue([
+      job({
+        kind: 'github',
+        file_name: 'WebbPulse/api',
+        created_count: 5,
+        updated_count: 2,
+        skipped_count: 1,
+        counts: {
+          issues_created: 5,
+          issues_updated: 2,
+          comments: 4,
+          already_synced: 1,
+          pull_requests_skipped: 3,
+        },
+      }),
+    ]);
+    renderPage();
+
+    expect(
+      await screen.findByText('GitHub WebbPulse/api into Platform')
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        /5 issues created, 2 updated, 4 comments, 1 already synced, 3 pull requests skipped/
+      )
+    ).toBeInTheDocument();
+  });
+
+  it('shows a running GitHub import reading issues', async () => {
+    listIssueImports.mockResolvedValue([
+      job({
+        kind: 'github',
+        status: 'running',
+        file_name: 'WebbPulse/api',
+        created_count: 12,
+        phase: 'issues',
+        phase_index: 0,
+        phase_count: 1,
+      }),
+    ]);
+    renderPage();
+
+    expect(
+      await screen.findByText(/Reading issues, 12 issues so far/)
+    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Cancel' })).toBeInTheDocument();
   });
 
   it('says so when there are no imports', async () => {
