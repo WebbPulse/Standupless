@@ -428,8 +428,6 @@ def _handle_pull_request(
         previous = repositories.github.get_link(workspace_id, link_id)
         issue_trigger = trigger if match.moves_status else None
         holds = promoted_holds.get(key, match.holds_on_merge)
-        if issue_trigger == "pr_merged" and holds:
-            issue_trigger = None
         newly_moving = previous is None or not previous.moves_status
         if match.moves_status and newly_moving and issue_trigger is None:
             issue_trigger = linking.trigger_for_new_link(
@@ -481,6 +479,7 @@ def _handle_pull_request(
                 issue,
                 issue_trigger,
                 closes=match.magic_word is not None,
+                holds=holds,
                 base_branch=base_branch,
                 event_at=event_at,
             )
@@ -860,6 +859,7 @@ def _apply_transition(
     closes: bool,
     event_at: datetime,
     base_branch: str = "",
+    holds: bool = False,
 ) -> str | None:
     """Move one issue if a rule says to and nobody has moved it since.
 
@@ -869,7 +869,10 @@ def _apply_transition(
     one for the branch the pull request targets, so a `Fixes` merge into `staging`
     lands in that branch's status rather than closing the issue. Opening, readying
     and merging only ever move an issue forward, so a promotion naming issues already
-    on staging leaves them there.
+    on staging leaves them there. A merge that holds its issue, because the pull
+    request only said `Refs`, still takes a branch rule into a status that is not
+    finished, so partial work merged into `staging` reaches On Staging, but it never
+    takes a rule for any branch or one that would finish the issue.
     """
     if not linking.may_apply(getattr(issue, "updated_at", None), event_at):
         _log.info(
@@ -888,6 +891,8 @@ def _apply_transition(
     target = rule.status_id
 
     if not target or target == issue.status_id:
+        return None
+    if holds and trigger == "pr_merged" and not _held_merge_may_take(rule, statuses):
         return None
     if trigger in linking.FORWARD_ONLY_TRIGGERS:
         by_id = {status.status_id: status for status in statuses}
@@ -918,6 +923,14 @@ def _apply_transition(
         )
     )
     return target
+
+
+def _held_merge_may_take(rule: Any, statuses: Sequence[Any]) -> bool:
+    """Whether a merge that holds its issue may still take `rule`: a branch rule into an unfinished status."""
+    if not rule.branch_pattern:
+        return False
+    target = next((status for status in statuses if status.status_id == rule.status_id), None)
+    return target is None or target.category not in linking.FINISHED_CATEGORIES
 
 
 def _enqueue_writeback(

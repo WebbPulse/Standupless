@@ -349,6 +349,9 @@ CATEGORY_RANK: Mapping[str, int] = {
 }
 """How far along the workflow each status category sits; the two finished categories share a rank."""
 
+FINISHED_CATEGORIES: frozenset[str] = frozenset({"completed", "cancelled"})
+"""The status categories that finish an issue, which a merge that only references it never moves it into."""
+
 FORWARD_ONLY_TRIGGERS: frozenset[str] = frozenset({"pr_opened", "pr_ready_for_review", "pr_merged"})
 """Triggers that may only move an issue further along, never back.
 
