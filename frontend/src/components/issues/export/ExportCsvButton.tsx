@@ -56,7 +56,7 @@ export const ExportCsvButton: React.FC<ExportCsvButtonProps> = ({
       onClick={() => void run()}
     >
       <LuDownload aria-hidden="true" className="h-3.5 w-3.5" />
-      {busy ? 'Exporting...' : label}
+      <span className="max-sm:sr-only">{busy ? 'Exporting...' : label}</span>
     </Button>
   );
 };
