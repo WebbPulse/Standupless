@@ -213,7 +213,7 @@ export const parseDisplayField = <K extends keyof ProjectsDisplay>(
   if (value === null || value === undefined) return undefined;
   if (field === 'columns')
     return columnValue(columnList(value)) as ProjectsDisplay[K];
-  return DISPLAY_CHOICES[field as ChoiceField].includes(value)
+  return DISPLAY_CHOICES[field].includes(value)
     ? (value as ProjectsDisplay[K])
     : undefined;
 };
