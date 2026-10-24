@@ -692,6 +692,8 @@ def foreign_arguments(name: str, foreign: dict[str, str], home_issue: str) -> di
         "list_github_thread_targets": {"issue_id": issue},
         "sync_comment_thread": {"issue_id": issue, "comment_id": "01M0000000000000000000000"},
         "unsync_comment_thread": {"issue_id": issue, "comment_id": "01M0000000000000000000000"},
+        "resolve_comment_thread": {"issue_id": issue, "comment_id": "01M0000000000000000000000"},
+        "unresolve_comment_thread": {"issue_id": issue, "comment_id": "01M0000000000000000000000"},
         "list_issue_relations": {"issue_id": issue},
         "list_issue_activity": {"issue_id": issue},
         "create_issue_relation": {"issue_id": home_issue, "type": "blocks", "target_issue_id": issue},

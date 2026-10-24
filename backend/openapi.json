@@ -132,7 +132,9 @@
               "unarchived",
               "subscriber_added",
               "subscriber_removed",
-              "mentioned"
+              "mentioned",
+              "thread_resolved",
+              "thread_unresolved"
             ],
             "title": "Kind",
             "type": "string"
@@ -2170,7 +2172,7 @@
         "type": "object"
       },
       "CommentRead": {
-        "description": "One comment as the API returns it.\n\n`github_thread` is set on a root comment whose thread is synced to a GitHub\npull request or issue.",
+        "description": "One comment as the API returns it.\n\n`github_thread` is set on a root comment whose thread is synced to a GitHub\npull request or issue, and `resolution` on a root whose thread is resolved,\nwhich a reader collapses to one line.",
         "properties": {
           "attachments": {
             "items": {
@@ -2254,6 +2256,16 @@
             "default": 0,
             "title": "Reply Count",
             "type": "integer"
+          },
+          "resolution": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ThreadResolution"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "source": {
             "anyOf": [
@@ -18883,6 +18895,25 @@
         "title": "TemplateUpdate",
         "type": "object"
       },
+      "ThreadResolution": {
+        "description": "Who marked a root comment's thread resolved, and when.\n\nHeld on the root because the root is the thread: a reader collapses the\nthread from the row it already has, and a reply that reopens it clears one\nattribute on one row.",
+        "properties": {
+          "resolved_at": {
+            "format": "date-time",
+            "title": "Resolved At",
+            "type": "string"
+          },
+          "resolved_by": {
+            "title": "Resolved By",
+            "type": "string"
+          }
+        },
+        "required": [
+          "resolved_by"
+        ],
+        "title": "ThreadResolution",
+        "type": "object"
+      },
       "TransitionCreate": {
         "additionalProperties": false,
         "description": "Add a rule for a trigger and target branch pattern that has none.",
@@ -35280,6 +35311,142 @@
           }
         ],
         "summary": "Create Comment",
+        "tags": [
+          "discussion"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/issues/{issue_id}/comments/{comment_id}/resolution": {
+      "delete": {
+        "description": "Unresolve one thread, whoever resolved it, answering its root comment.\n\nUnresolving an open thread changes nothing. A reply to a resolved thread\nreopens it the same way, without this call.",
+        "operationId": "delete_thread_resolution_api_workspaces__workspace_id__issues__issue_id__comments__comment_id__resolution_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "issue_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Issue Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "comment_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Comment Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommentRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Delete Thread Resolution",
+        "tags": [
+          "discussion"
+        ]
+      },
+      "put": {
+        "description": "Resolve one thread, answering its root comment with the resolution set.\n\nAny team member may resolve. A reply is a 409, because only a thread's root\ncarries the state, and resolving a resolved thread changes nothing. The\nthread's comments stay where they are; a reader collapses them.",
+        "operationId": "put_thread_resolution_api_workspaces__workspace_id__issues__issue_id__comments__comment_id__resolution_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "issue_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Issue Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "comment_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Comment Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommentRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Put Thread Resolution",
         "tags": [
           "discussion"
         ]

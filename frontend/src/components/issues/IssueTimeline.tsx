@@ -30,6 +30,7 @@ import {
   LuHash,
   LuLink2,
   LuListTree,
+  LuMessageSquareText,
   LuNetwork,
   LuPencil,
   LuRefreshCcw,
@@ -121,6 +122,7 @@ const ICONS: Record<ActivityIcon, IconType> = {
   relation: LuLink2,
   child: LuNetwork,
   team: LuUsers,
+  thread: LuMessageSquareText,
   other: LuPencil,
 };
 

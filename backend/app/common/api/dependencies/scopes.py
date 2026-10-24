@@ -256,6 +256,8 @@ ROUTE_SCOPES: Mapping[tuple[str, str], tuple[str, ...]] = {
     ("GET", "/{workspace_id}/comments/{comment_id}"): ISSUES_READ,
     ("PATCH", "/{workspace_id}/comments/{comment_id}"): COMMENTS_WRITE,
     ("DELETE", "/{workspace_id}/comments/{comment_id}"): NO_KEY_ACCESS,
+    ("PUT", "/{workspace_id}/issues/{issue_id}/comments/{comment_id}/resolution"): COMMENTS_WRITE,
+    ("DELETE", "/{workspace_id}/issues/{issue_id}/comments/{comment_id}/resolution"): COMMENTS_WRITE,
     ("GET", "/{workspace_id}/reactions"): ISSUES_READ,
     ("PUT", "/{workspace_id}/reactions"): NO_KEY_ACCESS,
     ("DELETE", "/{workspace_id}/reactions"): NO_KEY_ACCESS,
