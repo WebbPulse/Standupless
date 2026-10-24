@@ -11,8 +11,9 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.common import approved_domains, workspace_members
+from app.common import approved_domains, team_writes, workspace_members
 from app.common.api.dependencies.authz import Capability, check_capability
+from app.common.api.schemas.teams import WorkspaceDisplayDefaultsRead, WorkspaceDisplayDefaultsUpdate
 from app.common.api.schemas.workspaces import (
     InviteCreate,
     InviteRead,
@@ -29,6 +30,7 @@ from app.domains.integrations.mcp.toolkit import (
     enum,
     nullable,
     object_schema,
+    projects_display_schema,
     string,
     user_ref,
 )
@@ -78,10 +80,30 @@ def _assignable_role(call: ToolCall) -> str:
     return role
 
 
+def _display_defaults_json(call: ToolCall) -> dict[str, Any]:
+    """The workspace display defaults as the display defaults route answers them."""
+    defaults = team_writes.workspace_display_defaults(call.repositories, call.context.workspace_id)
+    return WorkspaceDisplayDefaultsRead.from_row(defaults).model_dump(mode="json")
+
+
 def _get_workspace(call: ToolCall) -> Any:
-    """The workspace this credential is bound to, with the caller's role and any scheduled deletion."""
+    """The bound workspace with the caller's role, any scheduled deletion and its display defaults."""
     check_capability(call.repositories, call.context, Capability.WORKSPACE_READ)
-    return workspace_members.read_workspace(call.repositories, call.context).model_dump(mode="json")
+    body = workspace_members.read_workspace(call.repositories, call.context).model_dump(mode="json")
+    body["display_defaults"] = _display_defaults_json(call)
+    return body
+
+
+def _update_workspace_display_defaults(call: ToolCall) -> Any:
+    """Set or clear the projects arrangement members open the workspace projects page with, as the PATCH route does."""
+    check_capability(call.repositories, call.context, Capability.WORKSPACE_ADMIN)
+    if not call.present("projects_display"):
+        raise ToolError("projects_display is required, null to clear the workspace default")
+    payload = WorkspaceDisplayDefaultsUpdate.model_validate({"projects_display": call.arguments["projects_display"]})
+    team_writes.update_workspace_display_defaults(
+        call.repositories, call.context.workspace_id, call.context.user_id, payload
+    )
+    return _display_defaults_json(call)
 
 
 def _update_workspace(call: ToolCall) -> Any:
@@ -178,8 +200,8 @@ def _remove_approved_domain(call: ToolCall) -> Any:
 WORKSPACE_TOOLS: tuple[Tool, ...] = (
     Tool(
         name="get_workspace",
-        description="The workspace this credential belongs to: name, slug, plan, the caller's role and any "
-        "scheduled deletion.",
+        description="The workspace this credential belongs to: name, slug, plan, the caller's role, any "
+        "scheduled deletion and the display defaults its projects page opens with.",
         scopes=("settings:read",),
         schema=object_schema({}),
         handler=_get_workspace,
@@ -202,6 +224,24 @@ WORKSPACE_TOOLS: tuple[Tool, ...] = (
             }
         ),
         handler=_update_workspace,
+    ),
+    Tool(
+        name="update_workspace_display_defaults",
+        description="Set the projects page arrangement every member opens with until they arrange it "
+        "themselves, unless their team set its own default. null clears it back to the built-in arrangement. "
+        "Needs workspace owner or admin.",
+        scopes=("settings:write", "admin"),
+        schema=object_schema(
+            {
+                "projects_display": projects_display_schema(
+                    "The projects page arrangement: layout, group and direction, rows, order, closed, lead_team, "
+                    "empty, zoom and columns, replacing the saved default whole; a missing field takes the "
+                    "built-in choice and null clears the workspace default",
+                    clearable=True,
+                ),
+            },
+        ),
+        handler=_update_workspace_display_defaults,
     ),
     Tool(
         name="list_workspace_members",

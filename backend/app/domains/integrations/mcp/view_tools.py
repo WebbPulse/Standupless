@@ -16,7 +16,6 @@ from typing import Any, Optional, get_args
 from fastapi import HTTPException
 
 from app.common.api.dependencies.authz import Capability, check_capability
-from app.common.api.schemas.projects_display import PROJECTS_COLUMNS, PROJECTS_DISPLAY_FIELDS
 from app.common.api.schemas.views import (
     COMPLETED_WINDOWS,
     VIEW_ENTITIES,
@@ -63,6 +62,7 @@ from app.domains.integrations.mcp.toolkit import (
     object_schema,
     one_or_many,
     page_properties,
+    projects_display_schema,
     string,
     team_id_ref,
 )
@@ -106,29 +106,6 @@ CLEARABLE_VIEW_FIELDS: tuple[str, ...] = (
     "description",
 )
 """The view fields an update clears by passing null."""
-
-
-def _projects_display() -> dict[str, Any]:
-    """The projects arrangement a project view keeps, each field one of the projects page's choices."""
-    return {
-        "type": "object",
-        "properties": {
-            **{field: {"type": "string", "enum": list(choices)} for field, choices in PROJECTS_DISPLAY_FIELDS.items()},
-            "columns": {
-                "type": "array",
-                "items": {"type": "string", "enum": list(PROJECTS_COLUMNS)},
-                "description": "The properties shown beside the name; an empty list shows the name alone",
-            },
-        },
-        "additionalProperties": False,
-        "description": (
-            "Project views only: layout (list, board, timeline), group and its direction, rows (a second "
-            "grouping inside each group), order, closed (all, fortnight by default, month or none: which "
-            "completed projects show, canceled ones only under all), "
-            "lead_team (lead keeps only projects the filtered team leads), empty (show or hide empty board "
-            "columns), the timeline zoom and the shown properties; a missing field takes the default"
-        ),
-    }
 
 
 def _boolean(description: str) -> dict[str, Any]:
@@ -187,7 +164,13 @@ def _view_properties(*, clearable: bool) -> dict[str, Any]:
             "Completed and cancelled issues to show: all, past_week, past_month or none; wins over show_completed",
         ),
         "show_archived": _boolean("Show archived issues"),
-        "projects_display": _projects_display(),
+        "projects_display": projects_display_schema(
+            "Project views only: layout (list, board, timeline), group and its direction, rows (a second "
+            "grouping inside each group), order, closed (all, fortnight by default, month or none: which "
+            "completed projects show, canceled ones only under all), "
+            "lead_team (lead keeps only projects the filtered team leads), empty (show or hide empty board "
+            "columns), the timeline zoom and the shown properties; a missing field takes the default"
+        ),
         "icon": {"type": ["string", "null"] if clearable else "string", "description": "Icon name for the view"},
         "color": {
             "type": ["string", "null"] if clearable else "string",

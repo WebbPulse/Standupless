@@ -13,6 +13,7 @@ from typing import Literal, Optional, Union
 
 from pydantic import BaseModel, Field, StrictBool, field_validator, model_validator
 
+from app.common.api.schemas.projects_display import ProjectsDisplay, stored_projects_display
 from app.common.api.schemas.views import (
     VISIBLE_PROPERTIES,
     CompletedWindowField,
@@ -35,6 +36,7 @@ from app.common.db.dynamo.team_config import (
     Status,
     TeamDisplayDefaults,
     TriageSettings,
+    WorkspaceDisplayDefaults,
 )
 from app.common.db.dynamo.teams import Team, is_valid_key_prefix
 from app.common.db.dynamo.users import User
@@ -701,31 +703,89 @@ class DisplayOptionsBody(BaseModel):
 class TeamDisplayDefaultsUpdate(BaseModel):
     """The body a team's display defaults patch takes.
 
-    `list_display` sets what the team's issue list opens with and `board_display`
-    what its board opens with. A page left out keeps its saved default, and null
-    clears it back to the built-in one. Each page's options are replaced whole.
+    `list_display` sets what the team's issue list opens with, `board_display`
+    what its board opens with and `projects_display` how the team's projects
+    page is arranged. A page left out keeps its saved default, and null clears
+    it back to the built-in one, or for projects to the workspace default. Each
+    page's options are replaced whole.
     """
 
     list_display: Optional[DisplayOptionsBody] = None
     board_display: Optional[DisplayOptionsBody] = None
+    projects_display: Optional[ProjectsDisplay] = None
+
+
+def _stored_or_none(stored: Optional[dict[str, str]]) -> Optional[ProjectsDisplay]:
+    """A stored projects default read the way a person's arrangement is, or `None` when none was saved."""
+    return None if stored is None else stored_projects_display(stored)
 
 
 class TeamDisplayDefaultsRead(BaseModel):
-    """A team's display defaults as the API returns them, null for a page on its built-in default."""
+    """A team's display defaults as the API returns them, null for a page on its built-in default.
+
+    `projects_display` is the team's own projects default, null when it set none.
+    `effective_projects_display` is what a member who never arranged the projects
+    page opens it with on this team: the team default, else the workspace
+    default, else the built-in arrangement.
+    """
 
     team_id: str
     list_display: Optional[DisplayOptionsBody] = None
     board_display: Optional[DisplayOptionsBody] = None
+    projects_display: Optional[ProjectsDisplay] = None
+    effective_projects_display: ProjectsDisplay = Field(default_factory=ProjectsDisplay)
     updated_by: Optional[str] = None
     updated_at: Optional[datetime] = None
 
     @classmethod
-    def from_row(cls, defaults: TeamDisplayDefaults) -> "TeamDisplayDefaultsRead":
-        """Build the response from a stored or default row."""
+    def from_row(
+        cls, defaults: TeamDisplayDefaults, workspace: Optional[WorkspaceDisplayDefaults] = None
+    ) -> "TeamDisplayDefaultsRead":
+        """Build the response from a stored or default row and the workspace default it falls back to."""
+        own = _stored_or_none(defaults.projects_display)
+        inherited = _stored_or_none(workspace.projects_display if workspace is not None else None)
         return cls(
             team_id=defaults.team_id,
             list_display=DisplayOptionsBody.from_row(defaults.list_display),
             board_display=DisplayOptionsBody.from_row(defaults.board_display),
+            projects_display=own,
+            effective_projects_display=own or inherited or ProjectsDisplay(),
+            updated_by=defaults.updated_by,
+            updated_at=defaults.updated_at,
+        )
+
+
+class WorkspaceDisplayDefaultsUpdate(BaseModel):
+    """The body the workspace display defaults patch takes.
+
+    `projects_display` replaces how the projects page is arranged for every
+    member who never arranged it and whose team set no default, and null clears
+    it back to the built-in arrangement. Left out, it keeps its saved default.
+    """
+
+    projects_display: Optional[ProjectsDisplay] = None
+
+
+class WorkspaceDisplayDefaultsRead(BaseModel):
+    """The workspace display defaults as the API returns them.
+
+    `projects_display` is null when no admin saved one, and
+    `effective_projects_display` is what the workspace projects page opens with
+    for a member who never arranged it.
+    """
+
+    projects_display: Optional[ProjectsDisplay] = None
+    effective_projects_display: ProjectsDisplay = Field(default_factory=ProjectsDisplay)
+    updated_by: Optional[str] = None
+    updated_at: Optional[datetime] = None
+
+    @classmethod
+    def from_row(cls, defaults: WorkspaceDisplayDefaults) -> "WorkspaceDisplayDefaultsRead":
+        """Build the response from a stored or default row."""
+        own = _stored_or_none(defaults.projects_display)
+        return cls(
+            projects_display=own,
+            effective_projects_display=own or ProjectsDisplay(),
             updated_by=defaults.updated_by,
             updated_at=defaults.updated_at,
         )

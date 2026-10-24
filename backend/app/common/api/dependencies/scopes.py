@@ -214,6 +214,8 @@ ROUTE_SCOPES: Mapping[tuple[str, str], tuple[str, ...]] = {
     ("DELETE", "/{workspace_id}/teams/{team_id}/statuses/{status_id}/override"): STATUSES_WRITE,
     ("PATCH", "/{workspace_id}/teams/{team_id}/labels/{label_id}/override"): LABELS_WRITE,
     ("DELETE", "/{workspace_id}/teams/{team_id}/labels/{label_id}/override"): LABELS_WRITE,
+    ("GET", "/{workspace_id}/display-defaults"): SETTINGS_READ,
+    ("PATCH", "/{workspace_id}/display-defaults"): SETTINGS_WRITE_ADMIN,
     ("GET", "/{workspace_id}/statuses"): STATUSES_READ,
     ("POST", "/{workspace_id}/statuses"): STATUSES_WRITE_ADMIN,
     ("PATCH", "/{workspace_id}/statuses/{status_id}"): STATUSES_WRITE_ADMIN,
