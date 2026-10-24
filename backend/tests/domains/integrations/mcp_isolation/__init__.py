@@ -13,6 +13,7 @@ from typing import Any, Callable
 from tests.domains.integrations.mcp_isolation import (
     agent_profiles,
     channels,
+    customers,
     documents,
     drafts,
     favorites,
@@ -39,6 +40,7 @@ AREAS = (
     initiatives,
     pulse,
     documents,
+    customers,
     releases,
     reviews,
     sync,

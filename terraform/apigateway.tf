@@ -46,6 +46,8 @@ locals {
       "/api/workspaces/{workspace_id}/pulse",
       "/api/workspaces/{workspace_id}/documents",
       "/api/workspaces/{workspace_id}/issues/{issue_id}/documents",
+      "/api/workspaces/{workspace_id}/customers",
+      "/api/workspaces/{workspace_id}/issues/{issue_id}/customer-requests",
     ]
 
     # Five of these sit inside another domain's subtree and are reached on

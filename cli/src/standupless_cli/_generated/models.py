@@ -393,6 +393,66 @@ class CreatedApp(TypedDict):
     slug: str
 
 
+class CustomerCreate(TypedDict):
+    domains: NotRequired[list[str]]
+    name: str
+    owner_id: NotRequired[str | None]
+    revenue: NotRequired[int | None]
+    size: NotRequired[int | None]
+    tier: NotRequired[str | None]
+
+
+class CustomerMerge(TypedDict):
+    into_customer_id: str
+
+
+class CustomerPatch(TypedDict):
+    domains: NotRequired[list[str] | None]
+    name: NotRequired[str | None]
+    owner_id: NotRequired[str | None]
+    revenue: NotRequired[int | None]
+    size: NotRequired[int | None]
+    tier: NotRequired[str | None]
+
+
+class CustomerRead(TypedDict):
+    can_delete: NotRequired[bool]
+    can_edit: NotRequired[bool]
+    created_at: str
+    created_by: str
+    customer_id: str
+    domains: NotRequired[list[str]]
+    name: str
+    owner_id: NotRequired[str | None]
+    request_count: NotRequired[int]
+    revenue: NotRequired[int | None]
+    size: NotRequired[int | None]
+    tier: NotRequired[str | None]
+    updated_at: str
+    workspace_id: str
+
+
+class CustomerRequestCreate(TypedDict):
+    body: NotRequired[str]
+    customer_id: str
+
+
+class CustomerRequestRead(TypedDict):
+    author_id: str
+    body: NotRequired[str]
+    can_delete: NotRequired[bool]
+    created_at: str
+    customer_id: str
+    customer_name: NotRequired[str]
+    request_id: str
+    source: NotRequired[Literal["web", "mcp", "cli", "api", "github", "system"] | None]
+    target_id: str
+    target_key: NotRequired[str]
+    target_kind: Literal["issue", "project"]
+    target_title: NotRequired[str]
+    workspace_id: str
+
+
 class CycleCapacityRead(TypedDict):
     carried_in: int
     carried_in_points: int
@@ -3065,6 +3125,16 @@ class ConnectedAppRead(TypedDict):
     new_scopes: NotRequired[list[str]]
     scopes: list[str]
     workspaces: list[ConnectedAppWorkspaceRead]
+
+
+class CustomerListRead(TypedDict):
+    customers: list[CustomerRead]
+    next_cursor: NotRequired[str | None]
+
+
+class CustomerRequestListRead(TypedDict):
+    next_cursor: NotRequired[str | None]
+    requests: list[CustomerRequestRead]
 
 
 class CycleListRead(TypedDict):

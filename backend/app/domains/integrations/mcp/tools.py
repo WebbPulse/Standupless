@@ -20,6 +20,7 @@ from typing import Any
 from app.domains.integrations.mcp.agent_profile_tools import AGENT_PROFILE_TOOLS
 from app.domains.integrations.mcp.audit_tools import AUDIT_TOOLS
 from app.domains.integrations.mcp.channel_tools import CHANNEL_TOOLS
+from app.domains.integrations.mcp.customer_tools import CUSTOMER_TOOLS
 from app.domains.integrations.mcp.document_tools import DOCUMENT_TOOLS
 from app.domains.integrations.mcp.draft_tools import DRAFT_TOOLS
 from app.domains.integrations.mcp.export_tools import EXPORT_TOOLS
@@ -58,6 +59,7 @@ TOOLS: tuple[Tool, ...] = (
     *INITIATIVE_TOOLS,
     *PULSE_TOOLS,
     *DOCUMENT_TOOLS,
+    *CUSTOMER_TOOLS,
     *RELEASE_TOOLS,
     *VIEW_TOOLS,
     *FAVORITE_TOOLS,
