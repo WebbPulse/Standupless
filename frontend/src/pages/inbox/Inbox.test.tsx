@@ -3,7 +3,8 @@
  * since the partition is built from the session, plus that marking one row and
  * marking every row reach the shapes the contract fixes, and that opening a row
  * selects it, marks it read and shows its issue beside the list. Also covers
- * the keyboard: U toggles read and unread, H snoozes to a preset, Backspace
+ * the keyboard: U toggles read and unread, H snoozes to a preset or a custom
+ * moment, Backspace
  * removes and Shift R marks everything read, and Show snoozed with its
  * unsnooze. Opening a row while read rows are hidden keeps it open once it is
  * read. Notifications about one issue fold into one row that opens and marks
@@ -12,7 +13,14 @@
  * sending the current filter along.
  */
 
-import { act, render, screen, waitFor, within } from '@testing-library/react';
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -23,6 +31,7 @@ import type {
   NotificationRead,
   WorkspaceRead,
 } from '../../types/Api';
+import { fromLocalInput, toLocalInput } from '../../lib/reminders';
 import BoundKeys from '../../test/BoundKeys';
 import { keysBound } from '../../test/shortcuts';
 import Inbox from './Inbox';
@@ -689,7 +698,7 @@ describe('inbox', () => {
     await keysBound('h');
     press('h');
     await user.click(
-      await screen.findByRole('button', { name: 'Tomorrow morning' })
+      await screen.findByRole('button', { name: /Tomorrow morning/ })
     );
 
     await waitFor(() => {
@@ -698,6 +707,28 @@ describe('inbox', () => {
     const [body] = snoozeNotifications.mock.calls[0] ?? [];
     expect(body?.notification_ids).toEqual(['n-1']);
     expect(new Date(body?.until ?? '').getTime()).toBeGreaterThan(Date.now());
+  });
+
+  it('snoozes the selected row to a custom moment with h', async () => {
+    const user = userEvent.setup();
+    renderPage('/w/mine/inbox?n=n-1');
+
+    await screen.findByLabelText('Peek iss-1');
+    await keysBound('h');
+    press('h');
+    const field = await screen.findByLabelText('Custom date and time');
+    const moment = new Date(Date.now() + 10 * 24 * 60 * 60 * 1000);
+    fireEvent.change(field, { target: { value: toLocalInput(moment) } });
+    await user.click(screen.getByRole('button', { name: 'Snooze' }));
+
+    await waitFor(() => {
+      expect(snoozeNotifications).toHaveBeenCalled();
+    });
+    const [body] = snoozeNotifications.mock.calls[0] ?? [];
+    expect(body?.notification_ids).toEqual(['n-1']);
+    expect(body?.until).toBe(
+      fromLocalInput(toLocalInput(moment))?.toISOString()
+    );
   });
 
   it('shows when a snoozed row comes back', async () => {
@@ -782,7 +813,7 @@ describe('inbox', () => {
     press('h');
 
     expect(
-      await screen.findByRole('button', { name: 'Tomorrow morning' })
+      await screen.findByRole('button', { name: /Tomorrow morning/ })
     ).toBeInTheDocument();
     expect(
       screen.queryByRole('button', { name: 'Unsnooze now' })

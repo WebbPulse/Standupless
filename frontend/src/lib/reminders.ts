@@ -180,10 +180,21 @@ export const fromLocalInput = (
   return fromWallClock({ year, month, day, hour, minute }, zone);
 };
 
-/** Why a custom moment cannot be used, or null when it can. */
+/** How the furthest allowed moment reads in a refusal, "the next year" or "the next 90 days". */
+const horizonLabel = (maxDays: number): string =>
+  maxDays === REMINDER_MAX_DAYS
+    ? 'the next year'
+    : `the next ${String(maxDays)} days`;
+
+/**
+ * Why a custom moment cannot be used, or null when it can. `maxDays` is the
+ * furthest out the server takes, a year for reminders unless a caller such as
+ * the inbox snooze passes its own bound.
+ */
 export const reminderProblem = (
   moment: Date | null,
-  now: Date = new Date()
+  now: Date = new Date(),
+  maxDays: number = REMINDER_MAX_DAYS
 ): string | null => {
   if (moment === null || Number.isNaN(moment.getTime())) {
     return 'Pick a date and time.';
@@ -191,11 +202,8 @@ export const reminderProblem = (
   if (moment.getTime() < now.getTime() + REMINDER_MIN_MS) {
     return 'Pick a time in the future.';
   }
-  if (
-    moment.getTime() >
-    now.getTime() + REMINDER_MAX_DAYS * 24 * 60 * 60 * 1000
-  ) {
-    return 'Pick a time within the next year.';
+  if (moment.getTime() > now.getTime() + maxDays * 24 * 60 * 60 * 1000) {
+    return `Pick a time within ${horizonLabel(maxDays)}.`;
   }
   return null;
 };
