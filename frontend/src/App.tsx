@@ -54,6 +54,7 @@ import VerifyEmailChange from './pages/authentication/VerifyEmailChange';
 import GithubApp from './pages/admin/GithubApp';
 import GithubAppCreated from './pages/admin/GithubAppCreated';
 import Board from './pages/board/Board';
+import CurrentCycle from './pages/planning/CurrentCycle';
 import CycleDetail from './pages/planning/CycleDetail';
 import Cycles from './pages/planning/Cycles';
 import Standup from './pages/teams/Standup';
@@ -218,6 +219,10 @@ const App: React.FC = () => (
           <Route path="team/:keyPrefix/archive" element={<TeamArchive />} />
           <Route path="team/:keyPrefix/triage" element={<TeamTriage />} />
           <Route path="team/:keyPrefix/cycles" element={<Cycles />} />
+          <Route
+            path="team/:keyPrefix/cycles/current"
+            element={<CurrentCycle />}
+          />
           <Route
             path="team/:keyPrefix/cycles/:cycleId"
             element={<CycleDetail />}

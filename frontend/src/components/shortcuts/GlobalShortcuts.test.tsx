@@ -1,7 +1,8 @@
 /**
  * The G then V shortcut: inside a team it opens that team's views and the
  * help lists it as team views, and anywhere else it opens the workspace
- * Views page.
+ * Views page. G then A opens the current cycle of the team in context and
+ * the help lists it.
  */
 
 import { render, screen, within } from '@testing-library/react';
@@ -116,5 +117,40 @@ describe('G then V', () => {
     const navigation = screen.getByRole('region', { name: 'Navigation' });
     expect(within(navigation).getByText('Go to views')).toBeInTheDocument();
     expect(within(navigation).queryByText('Go to team views')).toBeNull();
+  });
+});
+
+describe('G then A', () => {
+  it("opens the routed team's current cycle", async () => {
+    const user = await renderShortcuts('/w/mine/team/DES/board');
+
+    await user.keyboard('ga');
+
+    expect(navigate).toHaveBeenCalledWith('/w/mine/team/DES/cycles/current');
+  });
+
+  it("opens the issue's team current cycle from an issue page", async () => {
+    const user = await renderShortcuts('/w/mine/issues/DES-12');
+
+    await user.keyboard('ga');
+
+    expect(navigate).toHaveBeenCalledWith('/w/mine/team/DES/cycles/current');
+  });
+
+  it('opens the first team current cycle outside a team', async () => {
+    const user = await renderShortcuts('/w/mine/inbox');
+
+    await user.keyboard('ga');
+
+    expect(navigate).toHaveBeenCalledWith('/w/mine/team/ENG/cycles/current');
+  });
+
+  it('lists the shortcut in the shortcut sheet', async () => {
+    await renderShortcuts('/w/mine/team/ENG', true);
+
+    const navigation = screen.getByRole('region', { name: 'Navigation' });
+    expect(
+      within(navigation).getByText('Go to current cycle')
+    ).toBeInTheDocument();
   });
 });

@@ -84,6 +84,10 @@ export const teamBoardPath = (slug: string, keyPrefix: string): string =>
 export const teamCyclesPath = (slug: string, keyPrefix: string): string =>
   `${teamPath(slug, keyPrefix)}/cycles`;
 
+/** A team's running cycle, which redirects to that cycle or to the cycles list. */
+export const teamCurrentCyclePath = (slug: string, keyPrefix: string): string =>
+  `${teamCyclesPath(slug, keyPrefix)}/current`;
+
 /** A team's standup digest, for the date in `?date=` or the next one. */
 export const teamStandupPath = (slug: string, keyPrefix: string): string =>
   `${teamPath(slug, keyPrefix)}/standup`;
