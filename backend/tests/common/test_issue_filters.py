@@ -270,16 +270,16 @@ def test_is_blocked_reads_the_open_blocker_count() -> None:
     assert not unblocked.matches(_issue(blocked_by_open_count=2))
 
 
-def test_is_blocking_needs_an_open_issue_with_a_blocks_link() -> None:
-    """A completed or cancelled blocker no longer blocks anything."""
-    wanted = build_issue_filter(user_id=CALLER, is_blocking="true")
-    linked = IssueFilter(is_blocking=True, relation_ids={"blocks": frozenset({"A"})})
-    categories = {"todo": "unstarted", "done": "completed"}
+def test_is_blocking_reads_the_open_blocking_count() -> None:
+    """Blocking means an open issue it blocks counts on the row, the marker the row shows."""
+    blocking = build_issue_filter(user_id=CALLER, is_blocking="true")
+    not_blocking = build_issue_filter(user_id=CALLER, is_blocking=False)
 
-    assert wanted.needs_relations and wanted.needs_categories
-    assert linked.matches(_issue(issue_id="A"), categories)
-    assert not linked.matches(_issue(issue_id="A", status_id="done"), categories)
-    assert not linked.matches(_issue(issue_id="B"), categories)
+    assert not blocking.needs_relations and not blocking.needs_categories
+    assert blocking.matches(_issue(blocking_count=1))
+    assert not blocking.matches(_issue())
+    assert not_blocking.matches(_issue())
+    assert not not_blocking.matches(_issue(blocking_count=3))
 
 
 def test_has_relation_is_any_of_the_named_types() -> None:

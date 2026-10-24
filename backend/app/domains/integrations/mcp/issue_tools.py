@@ -235,7 +235,7 @@ def _filter_properties(*, with_assignee: bool = True) -> dict[str, Any]:
         },
         "is_blocking": {
             "type": "boolean",
-            "description": "True for open issues that block another, false for the rest",
+            "description": "True for open issues that block an open issue, false for the rest",
         },
         "has_relation": one_or_many(
             "Holding a link of any of these types: blocks, blocked_by, relates_to, duplicate_of"

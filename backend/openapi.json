@@ -4338,7 +4338,8 @@
                   "start_asc",
                   "estimate_desc",
                   "customer_requests_desc",
-                  "customer_revenue_desc"
+                  "customer_revenue_desc",
+                  "completed_desc"
                 ],
                 "type": "string"
               },
@@ -16461,7 +16462,8 @@
                   "start_asc",
                   "estimate_desc",
                   "customer_requests_desc",
-                  "customer_revenue_desc"
+                  "customer_revenue_desc",
+                  "completed_desc"
                 ],
                 "type": "string"
               },
@@ -21583,7 +21585,8 @@
                   "start_asc",
                   "estimate_desc",
                   "customer_requests_desc",
-                  "customer_revenue_desc"
+                  "customer_revenue_desc",
+                  "completed_desc"
                 ],
                 "type": "string"
               },
@@ -21642,7 +21645,8 @@
               "start_asc",
               "estimate_desc",
               "customer_requests_desc",
-              "customer_revenue_desc"
+              "customer_revenue_desc",
+              "completed_desc"
             ],
             "title": "Sort",
             "type": "string"
@@ -22094,7 +22098,8 @@
                   "start_asc",
                   "estimate_desc",
                   "customer_requests_desc",
-                  "customer_revenue_desc"
+                  "customer_revenue_desc",
+                  "completed_desc"
                 ],
                 "type": "string"
               },
@@ -22184,7 +22189,8 @@
                   "start_asc",
                   "estimate_desc",
                   "customer_requests_desc",
-                  "customer_revenue_desc"
+                  "customer_revenue_desc",
+                  "completed_desc"
                 ],
                 "type": "string"
               },

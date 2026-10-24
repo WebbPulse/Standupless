@@ -732,7 +732,8 @@ export type IssueSort =
   | 'start_asc'
   | 'estimate_desc'
   | 'customer_requests_desc'
-  | 'customer_revenue_desc';
+  | 'customer_revenue_desc'
+  | 'completed_desc';
 
 /** The kinds of link a pair of issues may hold. */
 export type LinkType = 'blocks' | 'blocked_by' | 'relates_to' | 'duplicate_of';

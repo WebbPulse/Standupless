@@ -24,6 +24,7 @@ import { canWriteIssues, isTeamAdmin } from '../../lib/capabilities';
 import { errorMessage } from '../../lib/errors';
 import { timestampLabel } from '../../lib/issueDisplay';
 import { recordPatch } from '../../lib/issueUndo';
+import { useRecordRecentIssue } from '../../lib/recentIssues';
 import { useOptimisticRecord } from '../../lib/optimistic';
 import { projectPatch } from '../../lib/milestones';
 import { issuePath, projectMilestonePath, projectPath } from '../../lib/paths';
@@ -79,6 +80,7 @@ export const IssuePeek: React.FC<IssuePeekProps> = ({ issueId, onClose }) => {
     write: (patch) => updateIssue(workspaceId, issueId, patch),
     invalidate: [activityKey(issueId)],
   });
+  useRecordRecentIssue(workspaceId, user?.id, issueId, issue, error);
 
   const { data: teams } = useTeams();
 

@@ -448,6 +448,23 @@ describe('the new orderings', () => {
       'none',
     ]);
   });
+
+  it('orders by latest completion, open rows last in either direction', () => {
+    const rows = [
+      issue({ id: 'open' }),
+      issue({ id: 'early', completed_at: '2026-10-01T00:00:00Z' }),
+      issue({ id: 'late', completed_at: '2026-10-20T00:00:00Z' }),
+    ];
+
+    expect(ORDERINGS).toContain('completed_desc');
+    expect(ids(sortIssues(rows, 'completed_desc'))).toEqual([
+      'late',
+      'early',
+      'open',
+    ]);
+    const reversed = sortIssues(rows, 'completed_desc', { reverse: true });
+    expect(ids(reversed)).toEqual(['early', 'late', 'open']);
+  });
 });
 
 describe('the ordering direction', () => {
