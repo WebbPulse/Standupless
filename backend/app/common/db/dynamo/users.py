@@ -23,9 +23,9 @@ from app.common.db.dynamo.tables import USERS
 
 EMAIL_INDEX = "email_lower-index"
 
-NotificationChannel = Literal["in_app", "email"]
+NotificationChannel = Literal["in_app", "email", "chat"]
 
-NOTIFICATION_CHANNELS: tuple[str, ...] = ("in_app", "email")
+NOTIFICATION_CHANNELS: tuple[str, ...] = ("in_app", "email", "chat")
 
 PulseDigestField = Literal["off", "daily", "weekly"]
 

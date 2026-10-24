@@ -34,7 +34,9 @@ BOT_SCOPES: tuple[str, ...] = (
 )
 """What the bot asks for: posting, picking a channel, the command, unfurls and finding the person."""
 
-GET_METHODS = frozenset({"conversations.list", "users.info", "auth.test", "auth.revoke", "chat.getPermalink"})
+GET_METHODS = frozenset(
+    {"conversations.list", "users.info", "users.lookupByEmail", "auth.test", "auth.revoke", "chat.getPermalink"}
+)
 """The methods that take no JSON body, sent as a query string instead."""
 
 

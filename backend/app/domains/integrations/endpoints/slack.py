@@ -26,9 +26,9 @@ from app.common.core.config import settings
 from app.common.db.dynamo.slack import SlackInstallation
 from app.domains.integrations.chat.returns import return_url
 from app.domains.integrations.install_state import StateError, mint_state, redeem_state, state_hint
-from app.domains.integrations.schemas.slack import SlackConnectionRead, SlackInstallUrlRead
+from app.domains.integrations.schemas.slack import SlackConnectionRead, SlackInstallUrlRead, SlackLinkRead
 from app.domains.integrations.service import not_configured, not_found
-from app.domains.integrations.slack import api, commands, install, signature, unfurls
+from app.domains.integrations.slack import api, commands, direct, install, signature, unfurls
 
 router = APIRouter()
 
@@ -105,6 +105,74 @@ def delete_slack_connection(context: WorkspaceAdmin, repositories: Bundle) -> Re
         target_label=current.slack_team_name,
         before={"slack_team_id": current.slack_team_id, "name": current.slack_team_name},
     )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+LINK_REFUSALS: dict[str, str] = {
+    "email_unverified": "Verify your email address before linking Slack.",
+    "slack_user_not_found": "No Slack account in this Slack workspace has your confirmed email address.",
+    "slack_unavailable": "Slack did not answer. Try again in a minute.",
+    "slack_refused": "Slack refused the lookup. Ask a workspace admin to reconnect the Slack App.",
+}
+"""What the settings page says for each reason a link could not be made."""
+
+
+def _link(repositories: Repositories, workspace_id: str, user_id: str) -> SlackLinkRead:
+    """What the caller's account settings show about their own Slack direct messages."""
+    if not settings.slack_configured:
+        return SlackLinkRead(configured=False, available=False)
+    installation = repositories.github.slack.get(workspace_id)
+    route = repositories.inbox.chat_routes.get(workspace_id, user_id, direct.PROVIDER)
+    if route is None:
+        return SlackLinkRead(
+            configured=True,
+            available=installation is not None,
+            slack_team_name=installation.slack_team_name if installation else None,
+        )
+    return SlackLinkRead(
+        configured=True,
+        available=installation is not None,
+        linked=True,
+        slack_user_id=route.external_user_id,
+        slack_team_name=installation.slack_team_name if installation else None,
+        linked_at=route.linked_at,
+        problem=direct.route_problem(route, installation) or None,
+    )
+
+
+@router.get("/{workspace_id}/slack/me", response_model=SlackLinkRead)
+def get_my_slack_link(context: WorkspaceReader, repositories: Bundle) -> SlackLinkRead:
+    """Whether the caller's personal notifications reach their Slack direct messages."""
+    return _link(repositories, context.workspace_id, context.user_id)
+
+
+@router.put(
+    "/{workspace_id}/slack/me",
+    response_model=SlackLinkRead,
+    responses={status.HTTP_409_CONFLICT: {"description": "The link could not be made, with the reason."}},
+)
+def link_my_slack(context: WorkspaceReader, repositories: Bundle) -> SlackLinkRead:
+    """Link the caller to the Slack user with their confirmed email, replacing any earlier link."""
+    if not settings.slack_configured:
+        raise not_configured("Slack App")
+    installation = repositories.github.slack.get(context.workspace_id)
+    if installation is None:
+        raise not_found()
+    try:
+        direct.link(repositories, installation, context.user_id)
+    except direct.LinkRefused as refused:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"error_code": refused.code.upper(), "message": LINK_REFUSALS.get(refused.code, "")},
+        ) from refused
+    return _link(repositories, context.workspace_id, context.user_id)
+
+
+@router.delete("/{workspace_id}/slack/me", status_code=status.HTTP_204_NO_CONTENT)
+def unlink_my_slack(context: WorkspaceReader, repositories: Bundle) -> Response:
+    """Stop the caller's Slack direct messages and forget which Slack user they are."""
+    if not repositories.inbox.chat_routes.delete(context.workspace_id, context.user_id, direct.PROVIDER):
+        raise not_found()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 

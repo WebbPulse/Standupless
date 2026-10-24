@@ -12,7 +12,7 @@ from app.common.composition.wiring import build_domain_app
 from app.common.db.dynamo.inbox import NOTIFICATION_KINDS
 from tests.domains.helpers import OWNER, make_user, sign_in, sign_in_through_gate
 
-ALL_ON = {"in_app": True, "email": True}
+ALL_ON = {"in_app": True, "email": True, "chat": True}
 
 
 @pytest.fixture
@@ -230,7 +230,7 @@ def test_one_kind_can_be_turned_off_per_channel(client: TestClient, repositories
     )
     assert response.status_code == 200
     body = response.json()
-    assert body["notification_preferences"]["commented"] == {"in_app": True, "email": False}
+    assert body["notification_preferences"]["commented"] == {"in_app": True, "email": False, "chat": True}
     assert body["notification_preferences"]["mentioned"] == ALL_ON
     assert body["email_notifications"] is True
 

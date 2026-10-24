@@ -703,3 +703,9 @@ export const targetCustomerRequestsKey = (
   kind: 'issue' | 'project',
   targetId: string
 ): QueryKey => ['targetCustomerRequests', workspaceId, kind, targetId];
+
+/** Whether the caller's personal notifications reach their own Slack direct messages in one workspace. */
+export const slackLinkKey = (workspaceId: string): QueryKey => [
+  'slack-link',
+  workspaceId,
+];

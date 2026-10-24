@@ -36,3 +36,21 @@ class SlackChannelRead(BaseModel):
     id: str
     name: str
     is_private: bool = False
+
+
+class SlackLinkRead(BaseModel):
+    """Whether the caller's personal notifications reach their Slack direct messages.
+
+    `available` says the workspace has the Slack App installed, `linked` that the
+    caller has a route, and `problem` why that route cannot deliver right now, such
+    as the App being removed or Slack refusing a message, which a new link clears.
+    Nothing here names another member or carries a token.
+    """
+
+    configured: bool
+    available: bool
+    linked: bool = False
+    slack_user_id: str | None = None
+    slack_team_name: str | None = None
+    linked_at: datetime | None = None
+    problem: str | None = None

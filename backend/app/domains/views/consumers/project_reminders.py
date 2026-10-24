@@ -34,6 +34,7 @@ from app.common.project_cadence import (
     next_update_due_at,
     queue_update_due_announcement,
 )
+from app.domains.views.consumers.chat_digest import hold_for_chat, wants_chat
 from app.domains.views.consumers.notify import (
     can_receive_workspace_subject,
     hold_for_digest,
@@ -90,7 +91,8 @@ def write_reminder(repositories: Repositories, project: Project, due_at: datetim
     lead = repositories.users.get(lead_id)
     in_app = lead.wants_notification(PROJECT_UPDATE_DUE, "in_app") if lead is not None else True
     email = lead is not None and lead.wants_notification(PROJECT_UPDATE_DUE, "email")
-    if not in_app and not email:
+    chat = wants_chat(repositories, lead, PROJECT_UPDATE_DUE, project.workspace_id)
+    if not in_app and not email and not chat:
         return False
 
     row = Notification(
@@ -114,6 +116,8 @@ def write_reminder(repositories: Repositories, project: Project, due_at: datetim
         return False
     if email:
         hold_for_digest(repositories, row)
+    if chat:
+        hold_for_chat(repositories, row)
     return True
 
 
@@ -202,7 +206,8 @@ def write_initiative_reminder(
         return False
     in_app = owner.wants_notification(INITIATIVE_UPDATE_DUE, "in_app")
     email = owner.wants_notification(INITIATIVE_UPDATE_DUE, "email")
-    if not in_app and not email:
+    chat = wants_chat(repositories, owner, INITIATIVE_UPDATE_DUE, initiative.workspace_id)
+    if not in_app and not email and not chat:
         return False
 
     row = Notification(
@@ -230,6 +235,8 @@ def write_initiative_reminder(
         return False
     if email:
         hold_for_digest(repositories, row)
+    if chat:
+        hold_for_chat(repositories, row)
     return True
 
 

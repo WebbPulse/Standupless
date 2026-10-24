@@ -9624,8 +9624,13 @@
         "type": "object"
       },
       "NotificationChannels": {
-        "description": "Where one kind of notification is delivered: the inbox and email.",
+        "description": "Where one kind of notification is delivered: the inbox, email and chat direct messages.\n\n`chat` covers every chat account the person linked, Slack today, and only\nreaches them once one is linked.",
         "properties": {
+          "chat": {
+            "default": true,
+            "title": "Chat",
+            "type": "boolean"
+          },
           "email": {
             "title": "Email",
             "type": "boolean"
@@ -9645,6 +9650,17 @@
       "NotificationChannelsUpdate": {
         "description": "A partial change to one kind's channels; an omitted channel keeps its value.",
         "properties": {
+          "chat": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Chat"
+          },
           "email": {
             "anyOf": [
               {
@@ -15621,6 +15637,75 @@
           "expires_at"
         ],
         "title": "SlackInstallUrlRead",
+        "type": "object"
+      },
+      "SlackLinkRead": {
+        "description": "Whether the caller's personal notifications reach their Slack direct messages.\n\n`available` says the workspace has the Slack App installed, `linked` that the\ncaller has a route, and `problem` why that route cannot deliver right now, such\nas the App being removed or Slack refusing a message, which a new link clears.\nNothing here names another member or carries a token.",
+        "properties": {
+          "available": {
+            "title": "Available",
+            "type": "boolean"
+          },
+          "configured": {
+            "title": "Configured",
+            "type": "boolean"
+          },
+          "linked": {
+            "default": false,
+            "title": "Linked",
+            "type": "boolean"
+          },
+          "linked_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Linked At"
+          },
+          "problem": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Problem"
+          },
+          "slack_team_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Slack Team Name"
+          },
+          "slack_user_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Slack User Id"
+          }
+        },
+        "required": [
+          "configured",
+          "available"
+        ],
+        "title": "SlackLinkRead",
         "type": "object"
       },
       "SsoConnectionRead": {
@@ -39279,6 +39364,145 @@
           }
         ],
         "summary": "Get Slack Install Url",
+        "tags": [
+          "integrations"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/slack/me": {
+      "delete": {
+        "description": "Stop the caller's Slack direct messages and forget which Slack user they are.",
+        "operationId": "unlink_my_slack_api_workspaces__workspace_id__slack_me_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Unlink My Slack",
+        "tags": [
+          "integrations"
+        ]
+      },
+      "get": {
+        "description": "Whether the caller's personal notifications reach their Slack direct messages.",
+        "operationId": "get_my_slack_link_api_workspaces__workspace_id__slack_me_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SlackLinkRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Get My Slack Link",
+        "tags": [
+          "integrations"
+        ]
+      },
+      "put": {
+        "description": "Link the caller to the Slack user with their confirmed email, replacing any earlier link.",
+        "operationId": "link_my_slack_api_workspaces__workspace_id__slack_me_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SlackLinkRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "409": {
+            "description": "The link could not be made, with the reason."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Link My Slack",
         "tags": [
           "integrations"
         ]

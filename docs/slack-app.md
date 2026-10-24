@@ -47,6 +47,17 @@ secret. Without them the public Slack routes answer 404, the install link answer
 - **People.** A command, shortcut or form runs as the Standupless member whose
   account email matches the Slack user's confirmed email, with that member's role
   and teams. Anyone else is told their account is not linked.
+- **Direct messages.** A member links themselves on Account > Notifications
+  (`PUT /api/workspaces/{id}/slack/me`). The bot looks their confirmed Standupless
+  email up with `users.lookupByEmail`, the same rule commands use, and stores the
+  Slack user and team as a chat route in the `inbox` table. Personal notifications
+  the member wants on the `chat` channel are held for two minutes, then the notify
+  consumer queues one `chat.digest` job per member on the dispatch queue and the
+  integrations dispatch consumer posts it with `chat.postMessage` to the Slack
+  user, which lands in the App's Messages tab. A refusal no retry fixes (the user
+  left, the App was removed, the team changed) marks the route broken and the
+  settings page asks the member to link again; a rate limit retries through the
+  queue. The standup digest and GitHub review requests stay out of chat.
 - **Unfurls.** Links to issues on this environment's host get a card, except
   issues in private teams, since everyone in the Slack channel would see it.
 - **Uninstall.** `app_uninstalled`, or `tokens_revoked` for the bot token, forgets
@@ -74,6 +85,16 @@ secret. Without them the public Slack routes answer 404, the install link answer
    hard coded data and sets the redirect URL), and press **Activate Public
    Distribution**, so workspaces other than WebbPulse's can install it. Listing in
    the Slack Marketplace is a separate review and not needed for installs.
+
+### Updating an existing App
+
+An App created before the Messages tab was in the manifest cannot send direct
+messages until it is updated. Open the App on https://api.slack.com/apps, choose
+**App Manifest**, paste the environment's manifest file (JSON tab) over the
+current one, and **Save Changes**. The tab adds no scope, so installed
+workspaces keep working without a reinstall. Until then a member's link works but
+the first message marks it broken with `messages_tab_disabled`, and linking again
+after the update resumes delivery.
 
 ## The secret keys
 
