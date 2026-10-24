@@ -126,6 +126,7 @@ import {
   columnValue,
   directedGroups,
   effectiveRows,
+  groupPatch,
   groupProjects,
   groupValue,
   sortProjects,
@@ -136,6 +137,7 @@ import {
   type ProjectColumn,
   type ProjectGroup,
   type ProjectGrouping,
+  type ProjectMove,
 } from '../../lib/projectList';
 import { shortDateLabel } from '../../lib/propertyOptions';
 import {
@@ -616,6 +618,12 @@ const ProjectRow: React.FC<ProjectRowProps> = ({
   );
 };
 
+/** A new project being written: the fields its column set and the teams it starts on. */
+interface Creating {
+  preset: ProjectMove;
+  teamIds?: string[];
+}
+
 /** Which dialog is open over the page, saving a new view or editing the open one. */
 type Saving = 'new' | 'details' | null;
 
@@ -707,7 +715,7 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading }) => {
     zoom,
   } = display;
   const subGrouping =
-    layout === 'list' ? effectiveRows(grouping, display.rows) : 'none';
+    layout === 'timeline' ? 'none' : effectiveRows(grouping, display.rows);
   const shownColumns = useMemo(
     () => columnList(display.columns),
     [display.columns]
@@ -782,7 +790,7 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading }) => {
   const [now] = useState(() => new Date());
   const timeline = useRef<ProjectTimelineHandle | null>(null);
 
-  const [creating, setCreating] = useState<ProjectStatus | null>(null);
+  const [creating, setCreating] = useState<Creating | null>(null);
   const [folded, setFolded] = useState<string[]>([]);
   const toggleFolded = (key: string): void => {
     setFolded((held) =>
@@ -877,6 +885,13 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading }) => {
       statusFilter,
       closed,
     ]
+  );
+  const lanes = useMemo(
+    () =>
+      layout !== 'board' || subGrouping === 'none'
+        ? undefined
+        : groupProjects(sorted, subGrouping, people, teams, { initiatives }),
+    [layout, subGrouping, sorted, people, teams, initiatives]
   );
   const isOpen = useCallback(
     (group: ProjectGroup) =>
@@ -1034,7 +1049,7 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading }) => {
     enabled: canCreate && creating === null,
     handler: (event) => {
       event?.preventDefault();
-      setCreating('planned');
+      setCreating({ preset: { status: 'planned' } });
     },
   });
 
@@ -1227,7 +1242,7 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading }) => {
               variant="primary"
               size="sm"
               onClick={() => {
-                setCreating('planned');
+                setCreating({ preset: { status: 'planned' } });
               }}
             >
               <LuPlus aria-hidden="true" />
@@ -1331,7 +1346,7 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading }) => {
               onDirectionChange={(value) => {
                 changeDisplay({ direction: value });
               }}
-              {...(layout === 'list'
+              {...(layout !== 'timeline'
                 ? {
                     rows: display.rows,
                     onRowsChange: (value: ProjectGrouping) => {
@@ -1510,7 +1525,7 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading }) => {
                           size="sm"
                           className="opacity-0 group-hover/header:opacity-100 focus-visible:opacity-100 pointer-coarse:opacity-100"
                           onClick={() => {
-                            setCreating(status);
+                            setCreating({ preset: { status } });
                           }}
                         >
                           <LuPlus className="h-3.5 w-3.5" />
@@ -1563,6 +1578,8 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading }) => {
       ) : layout === 'board' ? (
         <ProjectsBoard
           columns={columns}
+          lanes={lanes}
+          grouping={grouping}
           projects={rows}
           shown={shownColumns}
           slug={slug}
@@ -1572,10 +1589,19 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading }) => {
           workspaceRole={workspace?.role}
           onMove={moveProject}
           createIn={(column) => {
-            if (!canCreate || column.kind !== 'status') return undefined;
-            const status = groupValue(column) as ProjectStatus;
+            if (!canCreate) return undefined;
+            if (column.kind === 'team') {
+              const teamId = groupValue(column);
+              if (!writableTeams.some((team) => team.id === teamId))
+                return undefined;
+              return () => {
+                setCreating({ preset: {}, teamIds: [teamId] });
+              };
+            }
+            const preset = groupPatch(column);
+            if (preset === null) return undefined;
             return () => {
-              setCreating(status);
+              setCreating({ preset });
             };
           }}
         />
@@ -1611,8 +1637,9 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading }) => {
         <CreateProjectDialog
           workspaceId={workspaceId}
           teams={writableTeams}
-          initialTeamIds={initialTeamIds}
-          initialStatus={creating}
+          initialTeamIds={creating.teamIds ?? initialTeamIds}
+          initialStatus={creating.preset.status ?? 'planned'}
+          preset={creating.preset}
           onClose={() => {
             setCreating(null);
           }}

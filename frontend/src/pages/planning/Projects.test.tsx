@@ -11,9 +11,12 @@
  * columns, reverses the groups, groups again inside each group, keeps only
  * the projects a filtered team leads, and drops empty board columns, and the
  * blocked and blocking filters narrow the rows. Save as view stores the filters and the
- * arrangement as a view of projects and opens it. The page opens with the
- * team's or the workspace's default for everyone, which only an admin of
- * that scope sets or clears from the Display menu.
+ * arrangement as a view of projects and opens it. A board card edits its
+ * properties in place and from its context menu, a column header menu hides,
+ * collapses and isolates its column, and a drop into a swimlane changes both
+ * the column and the lane field. The page opens with the team's or the
+ * workspace's default for everyone, which only an admin of that scope sets or
+ * clears from the Display menu.
  */
 
 import {
@@ -777,6 +780,137 @@ describe('Projects', () => {
       await screen.findByRole('button', { name: 'Complete project' })
     ).toBeInTheDocument();
     expect(updateProject).not.toHaveBeenCalled();
+  });
+
+  it('edits a card property in place from its picker', async () => {
+    const user = userEvent.setup();
+    updateProject.mockResolvedValue({
+      ...launch,
+      priority: 'high',
+      updated_at: '2026-09-19T00:00:00Z',
+    });
+    renderPage('/w/mine/projects?layout=board');
+
+    const link = await screen.findByRole('link', { name: 'Launch' });
+    const card = link.closest('li');
+    if (card === null) throw new Error('no card');
+    await user.click(within(card).getByRole('button', { name: /^Priority: / }));
+    await user.click(await screen.findByRole('option', { name: /^High/ }));
+
+    await waitFor(() => {
+      expect(updateProject).toHaveBeenCalledWith('prj-1', {
+        priority: 'high',
+      });
+    });
+  });
+
+  it('opens a hidden property picker from the card menu', async () => {
+    const user = userEvent.setup();
+    renderPage('/w/mine/projects?layout=board');
+
+    const link = await screen.findByRole('link', { name: 'Launch' });
+    const card = link.closest('li');
+    if (card === null) throw new Error('no card');
+    expect(
+      within(card).queryByRole('button', { name: /^Members: / })
+    ).toBeNull();
+    fireEvent.contextMenu(card);
+    const menu = screen.getByRole('menu', { name: 'Launch actions' });
+    expect(
+      within(menu).getByRole('menuitem', { name: 'Open project' })
+    ).toBeInTheDocument();
+    await user.click(
+      within(menu).getByRole('menuitem', { name: 'Change members' })
+    );
+
+    await waitFor(() => {
+      expect(
+        within(card).getByRole('button', { name: /^Members: / })
+      ).toHaveAttribute('aria-expanded', 'true');
+    });
+  });
+
+  it('hides, restores and collapses a column from its header menu', async () => {
+    const user = userEvent.setup();
+    renderPage('/w/mine/projects?layout=board');
+
+    await screen.findByRole('list', { name: 'Paused projects' });
+    await user.click(
+      screen.getByRole('button', { name: 'Paused column options' })
+    );
+    await user.click(screen.getByRole('menuitem', { name: 'Hide column' }));
+
+    expect(screen.queryByRole('list', { name: 'Paused projects' })).toBeNull();
+    const rail = screen.getByRole('complementary', { name: 'Hidden columns' });
+    await user.click(within(rail).getByRole('button', { name: 'Show Paused' }));
+    expect(
+      screen.getByRole('list', { name: 'Paused projects' })
+    ).toBeInTheDocument();
+
+    await user.click(
+      screen.getByRole('button', { name: 'Paused column options' })
+    );
+    await user.click(screen.getByRole('menuitem', { name: 'Collapse column' }));
+    expect(
+      screen.getByRole('group', { name: 'Paused projects' })
+    ).toBeInTheDocument();
+    await user.click(
+      screen.getByRole('button', { name: 'Expand Paused column' })
+    );
+    expect(
+      screen.getByRole('list', { name: 'Paused projects' })
+    ).toBeInTheDocument();
+  });
+
+  it('shows only one column from its header menu', async () => {
+    const user = userEvent.setup();
+    renderPage('/w/mine/projects?layout=board');
+
+    await screen.findByRole('list', { name: 'Planned projects' });
+    await user.click(
+      screen.getByRole('button', { name: 'Planned column options' })
+    );
+    await user.click(
+      screen.getByRole('menuitem', { name: 'Show only this column' })
+    );
+
+    expect(
+      screen.getByRole('list', { name: 'Planned projects' })
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole('list', { name: 'In progress projects' })
+    ).toBeNull();
+  });
+
+  it('draws swimlanes and changes both fields on a drop into a lane', async () => {
+    listProjects.mockResolvedValue({
+      projects: [launch, { ...rebrand, priority: 'high' }],
+      next_cursor: null,
+    });
+    updateProject.mockResolvedValue({
+      ...launch,
+      status: 'paused',
+      priority: 'high',
+      updated_at: '2026-09-19T00:00:00Z',
+    });
+    renderPage('/w/mine/projects?layout=board&rows=priority');
+
+    const link = await screen.findByRole('link', { name: 'Launch' });
+    expect(screen.getByRole('region', { name: 'High' })).toBeInTheDocument();
+    const card = link.closest('li');
+    if (card === null) throw new Error('no card');
+    const data = { setData: vi.fn(), effectAllowed: '', dropEffect: '' };
+    fireEvent.dragStart(card, { dataTransfer: data });
+    const cell = screen.getByRole('list', { name: 'Paused, High projects' });
+    fireEvent.dragOver(cell, { dataTransfer: data });
+    fireEvent.drop(cell, { dataTransfer: data });
+
+    await waitFor(() => {
+      expect(updateProject).toHaveBeenCalledWith('prj-1', {
+        status: 'paused',
+        priority: 'high',
+      });
+    });
   });
 
   it('draws the timeline layout from the URL', async () => {
