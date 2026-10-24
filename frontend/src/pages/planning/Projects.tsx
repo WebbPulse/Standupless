@@ -86,6 +86,7 @@ import EmptyState from '../../components/ui/empty-state';
 import FavoriteButton from '../../components/ui/FavoriteButton';
 import { Popover } from '../../components/ui/popover';
 import { SkeletonRows } from '../../components/ui/skeleton';
+import { useTruncationTooltip } from '../../components/ui/truncated-text';
 import SubTeamToggle from '../../components/workspace/SubTeamToggle';
 import WorkspaceShell from '../../components/workspace/WorkspaceShell';
 import { useAuth } from '../../hooks/useAuth';
@@ -122,7 +123,6 @@ import {
 } from '../../lib/planningDisplay';
 import { PROJECT_STATUS_ORDER, canEditProject } from '../../lib/planningModel';
 import {
-  INLINE_PROJECT_COLUMNS,
   PROJECTS_DISPLAY_FIELDS,
   PROJECT_COLUMN_LABELS,
   columnList,
@@ -162,57 +162,18 @@ import type {
   TeamRead,
   WorkspaceRole,
 } from '../../types/Api';
+import {
+  COLUMN_TIERS,
+  PROJECT_GRID,
+  PROJECT_LIST_CONTAINER,
+  TIER_BLOCK,
+  TIER_FLEX,
+  gridColumns,
+  projectGridTracks,
+  type GridColumn,
+} from '../../lib/projectListLayout';
 import { teamTree } from '../../lib/teamOrder';
 import type { TimelineZoom } from '../../lib/timeline';
-
-/** The grid every header and row lines up on, its tracks set by gridTracks. */
-const GRID =
-  'grid grid-cols-[var(--project-columns-narrow)] items-center gap-3 md:grid-cols-[var(--project-columns)]';
-
-/** A property the list draws in a column of its own rather than beside the name. */
-type GridColumn = Exclude<
-  ProjectColumn,
-  'summary' | 'milestones' | 'dependencies' | 'labels'
->;
-
-/** The shown properties that take a grid column, in drawing order. */
-const gridColumns = (shown: readonly ProjectColumn[]): GridColumn[] =>
-  shown.filter(
-    (column): column is GridColumn => !INLINE_PROJECT_COLUMNS.has(column)
-  );
-
-/** How wide each list column runs beside the name. */
-const COLUMN_WIDTHS: Record<GridColumn, string> = {
-  health: '7rem',
-  priority: '2rem',
-  status: '8.5rem',
-  lead: '2rem',
-  members: '4.5rem',
-  start: '6rem',
-  target: '6rem',
-  teams: '6rem',
-  issues: '4rem',
-  created: '5.5rem',
-  updated: '5.5rem',
-  completed: '5.5rem',
-  progress: '4.5rem',
-  id: '5.5rem',
-};
-
-/**
- * The grid tracks for the shown columns: every one beside the name on wide
- * screens, and only progress on narrow ones, so a hidden column leaves no gap.
- */
-const gridTracks = (shown: readonly ProjectColumn[]): React.CSSProperties =>
-  ({
-    '--project-columns': [
-      'minmax(0,1fr)',
-      ...gridColumns(shown).map((column) => COLUMN_WIDTHS[column]),
-    ].join(' '),
-    '--project-columns-narrow': shown.includes('progress')
-      ? 'minmax(0,1fr) 3.5rem'
-      : 'minmax(0,1fr)',
-  }) as React.CSSProperties;
 
 /** The yes and no choices of the blocked and blocking filters. */
 const FLAG_OPTIONS: ComboboxOption[] = [
@@ -238,20 +199,20 @@ const NO_LABEL = 'none';
 
 /** How each column's header cell sits over its column. */
 const HEADER_CLASSES: Record<GridColumn, string> = {
-  health: 'hidden px-2 md:block',
-  priority: 'hidden text-center md:block',
-  status: 'hidden px-2 md:block',
-  lead: 'hidden text-center md:block',
-  members: 'hidden md:block',
-  start: 'hidden px-2 md:block',
-  target: 'hidden px-2 md:block',
-  teams: 'hidden md:block',
-  issues: 'hidden text-right md:block',
-  created: 'hidden md:block',
-  updated: 'hidden md:block',
-  completed: 'hidden md:block',
+  health: cn(TIER_BLOCK[COLUMN_TIERS.health], 'px-2'),
+  priority: cn(TIER_BLOCK[COLUMN_TIERS.priority], 'text-center'),
+  status: cn(TIER_BLOCK[COLUMN_TIERS.status], 'px-2'),
+  lead: cn(TIER_BLOCK[COLUMN_TIERS.lead], 'text-center'),
+  members: TIER_BLOCK[COLUMN_TIERS.members],
+  start: cn(TIER_BLOCK[COLUMN_TIERS.start], 'px-2'),
+  target: cn(TIER_BLOCK[COLUMN_TIERS.target], 'px-2'),
+  teams: TIER_BLOCK[COLUMN_TIERS.teams],
+  issues: cn(TIER_BLOCK[COLUMN_TIERS.issues], 'text-right'),
+  created: TIER_BLOCK[COLUMN_TIERS.created],
+  updated: TIER_BLOCK[COLUMN_TIERS.updated],
+  completed: TIER_BLOCK[COLUMN_TIERS.completed],
   progress: 'text-right',
-  id: 'hidden md:block',
+  id: TIER_BLOCK[COLUMN_TIERS.id],
 };
 
 /** The short header text of each column, where the header names it. */
@@ -277,7 +238,7 @@ const NextMilestone: React.FC<{
   return (
     <span
       title={`${String(done)} of ${String(markers.length)} milestones done`}
-      className="hidden max-w-40 min-w-0 shrink-0 items-center gap-1 text-xs text-text-muted lg:flex"
+      className="hidden max-w-40 min-w-0 shrink-[100] items-center gap-1 text-xs text-text-muted @min-[60rem]:flex"
     >
       <LuDiamond aria-hidden="true" className="h-3 w-3 shrink-0" />
       <span className="truncate">
@@ -298,7 +259,12 @@ const MemberAvatars: React.FC<{
     .map((id) => people.find((person) => person.user_id === id))
     .filter((person): person is Assignable => person !== undefined);
   return (
-    <span className="pointer-events-none hidden min-w-0 items-center md:flex">
+    <span
+      className={cn(
+        'pointer-events-none min-w-0 items-center',
+        TIER_FLEX[COLUMN_TIERS.members]
+      )}
+    >
       {members.slice(0, 3).map((person) => (
         <span key={person.user_id} className="-ml-1 first:ml-0">
           <Avatar
@@ -463,6 +429,7 @@ const ProjectRow: React.FC<ProjectRowProps> = ({
   const lead = people.find((person) => person.user_id === project.lead_id);
   const href = projectPath(slug, project.project_id);
   const has = (column: ProjectColumn): boolean => shown.includes(column);
+  const nameTip = useTruncationTooltip<HTMLSpanElement>();
 
   return (
     <li
@@ -472,9 +439,9 @@ const ProjectRow: React.FC<ProjectRowProps> = ({
       onDragStart={onDragStart}
       onDragEnd={onDragEnd}
       onPointerEnter={onPointerEnter}
-      style={gridTracks(shown)}
+      style={projectGridTracks(shown)}
       className={cn(
-        GRID,
+        PROJECT_GRID,
         'relative h-11 border-b border-line px-4 text-sm transition-colors duration-100 hover:bg-surface has-[a:active]:bg-raised lg:px-6',
         isActive && 'bg-surface',
         dragging && 'opacity-40'
@@ -485,17 +452,23 @@ const ProjectRow: React.FC<ProjectRowProps> = ({
         draggable={false}
         aria-label={project.name}
         data-hover="parent"
+        {...nameTip.handlers}
         className="absolute inset-0 focus-visible:ring-1 focus-visible:ring-accent focus-visible:outline-none focus-visible:ring-inset"
       />
       <div className="pointer-events-none flex min-w-0 items-center gap-2.5">
         <ProjectIcon icon={project.icon} color={project.color} />
-        <span className="truncate font-medium text-text">{project.name}</span>
+        <span
+          ref={nameTip.ref}
+          className="min-w-0 shrink truncate font-medium text-text"
+        >
+          {project.name}
+        </span>
         {has('dependencies') && (
           <ProjectDependencyMarkers project={project} byId={byId} />
         )}
         <UpdateDueBadge project={project} className="shrink-0" />
         {has('labels') && (
-          <span className="pointer-events-auto relative z-10 hidden min-w-0 md:inline-flex">
+          <span className="pointer-events-auto relative z-10 hidden min-w-0 shrink-[100] @min-[40rem]:inline-flex">
             <ProjectLabelsPicker
               inline
               value={project.label_ids ?? []}
@@ -513,13 +486,13 @@ const ProjectRow: React.FC<ProjectRowProps> = ({
         {has('summary') &&
           project.description !== null &&
           project.description !== '' && (
-            <span className="hidden min-w-0 truncate text-xs text-text-faint xl:block">
+            <span className="hidden min-w-0 shrink-[1000] truncate text-xs text-text-faint @min-[72rem]:block">
               {project.description.split('\n')[0]}
             </span>
           )}
       </div>
       {has('health') && (
-        <div className="relative z-10 hidden md:block">
+        <div className={cn('relative z-10', TIER_BLOCK[COLUMN_TIERS.health])}>
           <HealthPicker
             variant="rail"
             value={project.health}
@@ -531,7 +504,12 @@ const ProjectRow: React.FC<ProjectRowProps> = ({
         </div>
       )}
       {has('priority') && (
-        <div className="relative z-10 hidden min-w-0 justify-center md:flex">
+        <div
+          className={cn(
+            'relative z-10 min-w-0 justify-center',
+            TIER_FLEX[COLUMN_TIERS.priority]
+          )}
+        >
           <PriorityPicker
             variant="icon"
             value={project.priority}
@@ -543,7 +521,7 @@ const ProjectRow: React.FC<ProjectRowProps> = ({
         </div>
       )}
       {has('status') && (
-        <div className="relative z-10 hidden md:block">
+        <div className={cn('relative z-10', TIER_BLOCK[COLUMN_TIERS.status])}>
           <ProjectStatusPicker
             variant="rail"
             value={project.status}
@@ -554,7 +532,12 @@ const ProjectRow: React.FC<ProjectRowProps> = ({
         </div>
       )}
       {has('lead') && (
-        <div className="relative z-10 hidden min-w-0 justify-center md:flex">
+        <div
+          className={cn(
+            'relative z-10 min-w-0 justify-center',
+            TIER_FLEX[COLUMN_TIERS.lead]
+          )}
+        >
           <LeadPicker
             variant="icon"
             value={project.lead_id}
@@ -570,7 +553,12 @@ const ProjectRow: React.FC<ProjectRowProps> = ({
         <MemberAvatars memberIds={project.member_ids} people={people} />
       )}
       {has('start') && (
-        <div className="relative z-10 hidden min-w-0 tabular-nums md:block">
+        <div
+          className={cn(
+            'relative z-10 min-w-0 tabular-nums',
+            TIER_BLOCK[COLUMN_TIERS.start]
+          )}
+        >
           <DatePicker
             variant="rail"
             field="Start date"
@@ -588,7 +576,12 @@ const ProjectRow: React.FC<ProjectRowProps> = ({
         </div>
       )}
       {has('target') && (
-        <div className="relative z-10 hidden min-w-0 tabular-nums md:block">
+        <div
+          className={cn(
+            'relative z-10 min-w-0 tabular-nums',
+            TIER_BLOCK[COLUMN_TIERS.target]
+          )}
+        >
           <DatePicker
             variant="rail"
             field="Target date"
@@ -606,7 +599,12 @@ const ProjectRow: React.FC<ProjectRowProps> = ({
         </div>
       )}
       {has('teams') && (
-        <span className="pointer-events-none hidden min-w-0 items-center gap-1 md:flex">
+        <span
+          className={cn(
+            'pointer-events-none min-w-0 items-center gap-1',
+            TIER_FLEX[COLUMN_TIERS.teams]
+          )}
+        >
           {projectTeams.slice(0, 3).map((team) => (
             <TeamKey key={team.id} keyPrefix={team.key_prefix} />
           ))}
@@ -621,7 +619,12 @@ const ProjectRow: React.FC<ProjectRowProps> = ({
         </span>
       )}
       {has('issues') && (
-        <span className="pointer-events-none hidden justify-end text-xs text-text-muted tabular-nums md:flex">
+        <span
+          className={cn(
+            'pointer-events-none justify-end text-xs text-text-muted tabular-nums',
+            TIER_FLEX[COLUMN_TIERS.issues]
+          )}
+        >
           <span aria-hidden="true">{`${String(project.counts.done)}/${String(project.counts.total)}`}</span>
           <span className="sr-only">{`${String(project.counts.done)} of ${String(project.counts.total)} issues done`}</span>
         </span>
@@ -631,7 +634,10 @@ const ProjectRow: React.FC<ProjectRowProps> = ({
           has(column) && (
             <span
               key={column}
-              className="pointer-events-none hidden truncate text-xs text-text-muted tabular-nums md:block"
+              className={cn(
+                'pointer-events-none truncate text-xs text-text-muted tabular-nums',
+                TIER_BLOCK[COLUMN_TIERS[column]]
+              )}
             >
               <span className="sr-only">{`${PROJECT_COLUMN_LABELS[column]} `}</span>
               {timestampLabel(
@@ -651,7 +657,12 @@ const ProjectRow: React.FC<ProjectRowProps> = ({
         </span>
       )}
       {has('id') && (
-        <span className="pointer-events-none hidden truncate font-mono text-xs text-text-muted md:block">
+        <span
+          className={cn(
+            'pointer-events-none truncate font-mono text-xs text-text-muted',
+            TIER_BLOCK[COLUMN_TIERS.id]
+          )}
+        >
           <span className="sr-only">ID </span>
           {project.slug_id ?? project.project_id.slice(-8).toLowerCase()}
         </span>
@@ -659,6 +670,7 @@ const ProjectRow: React.FC<ProjectRowProps> = ({
       {lead !== undefined && (
         <span className="sr-only">{`Lead ${personLabel(lead)}`}</span>
       )}
+      {nameTip.tip}
       {closePrompt.dialog}
     </li>
   );
@@ -1530,12 +1542,17 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading }) => {
         </div>
       )}
       {layout === 'list' ? (
-        <div className="min-h-0 flex-1 overflow-y-auto">
+        <div
+          className={cn(
+            PROJECT_LIST_CONTAINER,
+            'min-h-0 flex-1 overflow-y-auto'
+          )}
+        >
           <div
             role="presentation"
-            style={gridTracks(shownColumns)}
+            style={projectGridTracks(shownColumns)}
             className={cn(
-              GRID,
+              PROJECT_GRID,
               'sticky top-0 z-20 h-8 border-b border-line bg-bg px-4 text-2xs font-medium tracking-wide text-text-faint uppercase lg:px-6'
             )}
           >
@@ -1547,7 +1564,7 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading }) => {
                     {PROJECT_COLUMN_LABELS.priority}
                   </span>
                 ) : column === 'progress' ? (
-                  <span className="hidden md:inline">
+                  <span className="hidden @min-[40rem]:inline">
                     {PROJECT_COLUMN_LABELS.progress}
                   </span>
                 ) : (

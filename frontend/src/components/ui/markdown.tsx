@@ -5,7 +5,8 @@
  * the new page a reference back to this one. An issue key renders as a chip
  * with the issue's status and title, and a link to a project or document of
  * the workspace as a chip with its name. Embedded images and videos, and
- * links to attached files, load through the page's media tokens.
+ * links to attached files, load through the page's media tokens. Fenced code
+ * is highlighted, once the highlighter loads, and carries a copy button.
  */
 
 import React, { useMemo } from 'react';
@@ -19,6 +20,7 @@ import {
   type InlineNode,
 } from '../../lib/markdown';
 import { AttachmentLink, MediaEmbed } from '../media/MediaEmbed';
+import HighlightedCode from './highlighted-code';
 import IssueChip from './IssueChip';
 import ReferenceChip from './ReferenceChip';
 
@@ -159,12 +161,11 @@ const renderBlock = (block: BlockNode, key: string): React.ReactNode => {
     }
     case 'code':
       return (
-        <pre
+        <HighlightedCode
           key={key}
-          className="overflow-x-auto rounded-md border border-line bg-surface px-3 py-2 font-mono text-xs leading-5 text-text"
-        >
-          <code>{block.value}</code>
-        </pre>
+          language={block.language}
+          value={block.value}
+        />
       );
     case 'quote':
       return (

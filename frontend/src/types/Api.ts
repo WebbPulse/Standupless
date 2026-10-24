@@ -835,8 +835,8 @@ export interface IssueRead {
    */
   blocked_by_open_count?: number;
   /**
-   * How many issues this one blocks while its own status is open, zero once it
-   * is completed or cancelled. Optional so older fixtures still type.
+   * How many open issues this one blocks while its own status is open, zero
+   * once it is completed or cancelled. Optional so older fixtures still type.
    */
   blocking_count?: number;
   /**
