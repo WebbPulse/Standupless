@@ -5,6 +5,7 @@
 
 import React from 'react';
 import { cn } from '../../lib/cn';
+import { TruncatedText } from './truncated-text';
 
 /** The tints a badge can take. */
 export type BadgeTone = 'neutral' | 'accent' | 'danger' | 'warning' | 'success';
@@ -43,6 +44,8 @@ export interface LabelChipProps {
   color: string;
   name: string;
   className?: string;
+  /** Show the full name on hover when it is cut off; off inside a tooltip that already names it. */
+  reveal?: boolean;
 }
 
 /** A team label as a dot and its name. */
@@ -50,6 +53,7 @@ export const LabelChip: React.FC<LabelChipProps> = ({
   color,
   name,
   className = '',
+  reveal = true,
 }) => (
   <span
     className={cn(
@@ -62,7 +66,11 @@ export const LabelChip: React.FC<LabelChipProps> = ({
       className="h-2 w-2 shrink-0 rounded-full"
       style={{ backgroundColor: color }}
     />
-    {name}
+    {reveal ? (
+      <TruncatedText className="min-w-0">{name}</TruncatedText>
+    ) : (
+      <span className="min-w-0 truncate">{name}</span>
+    )}
   </span>
 );
 
