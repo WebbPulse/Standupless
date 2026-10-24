@@ -542,6 +542,25 @@ def test_projects_create_and_update(client: TestClient, repositories: Any, works
     assert cleared["lead_id"] is None
 
 
+def test_project_activity_lists_what_the_tools_changed(client: TestClient, repositories: Any, workspace: str) -> None:
+    """A create, a status move and a new milestone read back through the feed, each by the key's owner."""
+    writer = mint_for(repositories, MEMBER, ("projects:write", "milestones:write"))
+    reader = mint_for(repositories, MEMBER, ("projects:read",))
+
+    created = answer(tool(client, writer, "create_project", {"name": "Launch", "team_ids": [TEAM]}))
+    project_id = created["project_id"]
+    answer(tool(client, writer, "update_project", {"project_id": project_id, "status": "in_progress"}))
+    answer(tool(client, writer, "create_milestone", {"project_id": project_id, "name": "Beta"}))
+    listed = answer(tool(client, reader, "list_project_activity", {"project_id": project_id}))
+
+    kinds = sorted(row["kind"] for row in listed["activity"])
+    assert kinds == ["created", "field_changed", "milestone_added"]
+    changed = next(row for row in listed["activity"] if row["kind"] == "field_changed")
+    assert (changed["field"], changed["from"], changed["to"]) == ("status", "backlog", "in_progress")
+    assert {row["actor_id"] for row in listed["activity"]} == {MEMBER}
+    assert listed["next_cursor"] is None
+
+
 def test_projects_carry_health_priority_look_and_members(client: TestClient, repositories: Any, workspace: str) -> None:
     """The Linear project properties are written and cleared through the tools like the route."""
     secret = mint_for(repositories, MEMBER, ("issues:write",))
@@ -717,6 +736,7 @@ def foreign_arguments(name: str, foreign: dict[str, str], home_issue: str) -> di
         },
         "delete_project_relation": {"project_id": foreign["project_id"], "target_project_id": foreign["project_id"]},
         "list_project_updates": {"project_id": foreign["project_id"]},
+        "list_project_activity": {"project_id": foreign["project_id"]},
         "create_project_update": {
             "project_id": foreign["project_id"],
             "body": "Should not land",

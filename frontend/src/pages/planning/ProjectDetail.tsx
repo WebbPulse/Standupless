@@ -60,6 +60,7 @@ import {
   TeamsPicker,
 } from '../../components/planning/ProjectPickers';
 import ProjectPropertyKeys from '../../components/planning/ProjectPropertyKeys';
+import ProjectActivityFeed from '../../components/planning/ProjectActivityFeed';
 import ProjectProgressPanel from '../../components/planning/ProjectProgressPanel';
 import ProjectUpdatesFeed from '../../components/planning/ProjectUpdatesFeed';
 import UpdateDueBadge from '../../components/planning/UpdateDueBadge';
@@ -768,6 +769,20 @@ export const ProjectDetail: React.FC = () => {
                     : `${String(project.counts.total)} issues across ${String(projectTeams.length)} ${projectTeams.length === 1 ? 'team' : 'teams'}.`}
                 </p>
               </section>
+              <ProjectActivityFeed
+                workspaceId={workspaceId}
+                projectId={projectId}
+                people={people}
+                teams={teams}
+                initiatives={initiatives}
+                milestones={milestones.milestones}
+                updates={updates.updates}
+                updatesHaveMore={updates.hasMore}
+                onLoadMoreUpdates={updates.loadMore}
+                onOpenUpdates={() => {
+                  setTab('updates');
+                }}
+              />
             </div>
             <ProjectProgressPanel
               project={project}
