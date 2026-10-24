@@ -17,6 +17,11 @@
  * back unread on its own when its time comes; Show snoozed lists what is still
  * waiting, and H on a snoozed row offers to unsnooze it now.
  *
+ * Removing or snoozing a row raises a notice with Undo, and Ctrl Z puts it
+ * back too. There is no route that restores a deleted notification, so a
+ * removed row is only hidden here until its Undo window lapses, and the
+ * delete is sent then, or sooner when the page is left.
+ *
  * Opening a row while read rows are hidden marks it read without pulling it
  * out from under the reader: the open row holds its place until the selection
  * moves.
@@ -32,7 +37,10 @@ import React, {
   useRef,
   useState,
 } from 'react';
-import { useMutationWithRefetch } from '@webbpulse/api-client/react';
+import {
+  invalidateQueries,
+  useMutationWithRefetch,
+} from '@webbpulse/api-client/react';
 import {
   LuCheck,
   LuCheckCheck,
@@ -80,6 +88,7 @@ import { m3ErrorMessage } from '../../lib/errors';
 import { timestampLabel } from '../../lib/issueDisplay';
 import { compactAge, fullTimestamp } from '../../lib/relativeTime';
 import { showToast } from '../../lib/toast';
+import { pushUndo, UNDO_TOAST_MS } from '../../lib/undo';
 import {
   exportSettingsPath,
   importSettingsPath,
@@ -762,6 +771,12 @@ interface UnreadOverride {
   was: boolean;
 }
 
+/** A removal waiting out its Undo window: the notifications it deletes and the timer that sends it. */
+interface HeldRemoval {
+  ids: string[];
+  timer: ReturnType<typeof setTimeout>;
+}
+
 /** Where the inbox keeps the viewer's filter and display choices between visits. */
 const VIEW_STORAGE_KEY = 'standupless.inbox.view';
 
@@ -823,6 +838,11 @@ export const Inbox: React.FC = () => {
   const [snoozing, setSnoozing] = useState<InboxGroup | null>(null);
   const [pinned, setPinned] = useState<PinnedRow | null>(null);
   const [clearing, setClearing] = useState<ClearScope | null>(null);
+  const [hidden, setHidden] = useState<ReadonlySet<string>>(
+    () => new Set<string>()
+  );
+  const holds = useRef(new Map<number, HeldRemoval>());
+  const nextHold = useRef(1);
 
   const workspaceId = workspace?.id ?? '';
   const slug = workspace?.slug ?? '';
@@ -873,17 +893,20 @@ export const Inbox: React.FC = () => {
     () =>
       keepPinned(
         groupNotifications(
-          fetched.map((row) => {
+          fetched.flatMap((row) => {
+            if (hidden.has(row.notification_id)) return [];
             const held = unreadOverrides[row.notification_id];
-            return held === undefined || held.was !== row.unread
-              ? row
-              : { ...row, unread: held.unread };
+            return [
+              held === undefined || held.was !== row.unread
+                ? row
+                : { ...row, unread: held.unread },
+            ];
           })
         ),
         pinned,
         selectedId
       ),
-    [fetched, unreadOverrides, pinned, selectedId]
+    [fetched, hidden, unreadOverrides, pinned, selectedId]
   );
 
   const setUnread = useCallback(
@@ -975,6 +998,53 @@ export const Inbox: React.FC = () => {
     refetchKeys
   );
 
+  const removeRef = useRef(remove);
+  useEffect(() => {
+    removeRef.current = remove;
+  }, [remove]);
+
+  useEffect(() => {
+    const held = holds.current;
+    const flush = (): void => {
+      const pending = [...held.values()];
+      held.clear();
+      for (const hold of pending) {
+        clearTimeout(hold.timer);
+        for (const id of hold.ids)
+          void deleteNotification(workspaceId, id).catch(() => undefined);
+      }
+      if (pending.length > 0) invalidateQueries([inboxCountKey(workspaceId)]);
+    };
+    window.addEventListener('pagehide', flush);
+    return () => {
+      window.removeEventListener('pagehide', flush);
+      flush();
+    };
+  }, [workspaceId]);
+
+  const hide = useCallback((ids: string[], on: boolean) => {
+    setHidden((held) => {
+      const next = new Set(held);
+      for (const id of ids) {
+        if (on) next.add(id);
+        else next.delete(id);
+      }
+      return next;
+    });
+  }, []);
+
+  const commitRemoval = useCallback(
+    (holdId: number) => {
+      const hold = holds.current.get(holdId);
+      if (hold === undefined) return;
+      holds.current.delete(holdId);
+      void removeRef.current(hold.ids).catch(() => {
+        hide(hold.ids, false);
+      });
+    },
+    [hide]
+  );
+
   const selected = useMemo(
     () =>
       selectedId === null
@@ -1029,7 +1099,25 @@ export const Inbox: React.FC = () => {
 
   const removeGroup = (group: InboxGroup): void => {
     stepPast(group);
-    void remove(groupIds(group)).catch(() => undefined);
+    const ids = groupIds(group);
+    hide(ids, true);
+    const holdId = nextHold.current;
+    nextHold.current += 1;
+    holds.current.set(holdId, {
+      ids,
+      timer: setTimeout(() => {
+        commitRemoval(holdId);
+      }, UNDO_TOAST_MS),
+    });
+    pushUndo(workspaceId, `Removed ${subjectName(group.latest)}`, () => {
+      const hold = holds.current.get(holdId);
+      if (hold === undefined)
+        return Promise.reject(new Error('The notification is already gone.'));
+      clearTimeout(hold.timer);
+      holds.current.delete(holdId);
+      hide(ids, false);
+      return Promise.resolve();
+    });
   };
 
   const toggleRead = (group: InboxGroup): void => {
@@ -1040,10 +1128,35 @@ export const Inbox: React.FC = () => {
   const snoozeGroup = (group: InboxGroup, until: Date): void => {
     setSnoozing(null);
     if (!view.showSnoozed) stepPast(group);
-    void snooze({
-      notificationIds: groupIds(group),
+    const ids = groupIds(group);
+    const wasRead = group.rows
+      .filter((row) => !row.unread)
+      .map((row) => row.notification_id);
+    const keys = refetchKeys;
+    const landed = snooze({
+      notificationIds: ids,
       until: until.toISOString(),
-    }).catch(() => undefined);
+    }).then(
+      () => true,
+      () => false
+    );
+    pushUndo(workspaceId, `Snoozed ${subjectName(group.latest)}`, async () => {
+      if (!(await landed)) return;
+      try {
+        await Promise.all(
+          batches(ids).map((batch) =>
+            markUnread(workspaceId, { notification_ids: batch })
+          )
+        );
+        await Promise.all(
+          batches(wasRead).map((batch) =>
+            markRead(workspaceId, { notification_ids: batch })
+          )
+        );
+      } finally {
+        invalidateQueries(keys);
+      }
+    });
   };
 
   const unsnoozeGroup = (group: InboxGroup): void => {

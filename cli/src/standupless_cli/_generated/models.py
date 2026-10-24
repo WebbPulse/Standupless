@@ -1496,6 +1496,12 @@ class ProjectOpenIssues(TypedDict):
     project_id: NotRequired[str | None]
 
 
+class ProjectProjectionRead(TypedDict):
+    days_past_target: NotRequired[int | None]
+    expected_date: NotRequired[str | None]
+    rate_per_day: float
+
+
 class ProjectRelationCreate(TypedDict):
     target_project_id: str
     type: Literal["blocks", "blocked_by"]
@@ -3677,6 +3683,17 @@ class MilestoneListRead(TypedDict):
 class ProjectActivityListRead(TypedDict):
     activity: list[ProjectActivityRead]
     next_cursor: NotRequired[str | None]
+
+
+class ProjectHistoryRead(TypedDict):
+    days: list[CycleHistoryPoint]
+    measure: Literal["points", "issues"]
+    project_id: str
+    projection: NotRequired[ProjectProjectionRead | None]
+    recorded_since: NotRequired[str | None]
+    start_date: NotRequired[str | None]
+    target_date: NotRequired[str | None]
+    today: str
 
 
 class ProjectRead(TypedDict):
