@@ -1328,6 +1328,22 @@ class MediaTokensRead(TypedDict):
     tokens: dict[str, str]
 
 
+class MemberCommentRead(TypedDict):
+    body: str
+    comment_id: str
+    parent_comment_id: NotRequired[str | None]
+
+
+class MemberProfileRead(TypedDict):
+    avatar_url: NotRequired[str | None]
+    display_name: str
+    full_name: NotRequired[str]
+    joined_at: str
+    role: Literal["owner", "admin", "member", "guest"]
+    team_ids: NotRequired[list[str]]
+    user_id: str
+
+
 class MemberRead(TypedDict):
     avatar_url: NotRequired[str | None]
     display_name: str
@@ -3764,6 +3780,18 @@ class LinkRead(TypedDict):
     type: str
 
 
+class MemberActivityRead(TypedDict):
+    activity: NotRequired[ActivityRead | None]
+    comment: NotRequired[MemberCommentRead | None]
+    created_at: str
+    id: str
+    issue_id: str
+    issue_key: str
+    issue_title: str
+    team_id: str
+    type: Literal["issue_change", "comment"]
+
+
 class MemberListRead(TypedDict):
     members: list[MemberRead]
 
@@ -4170,6 +4198,11 @@ class JiraImportPreviewRead(TypedDict):
 
 class LinkListRead(TypedDict):
     links: list[LinkRead]
+
+
+class MemberActivityListRead(TypedDict):
+    activity: list[MemberActivityRead]
+    next_cursor: NotRequired[str | None]
 
 
 class ProjectListRead(TypedDict):
