@@ -1,7 +1,7 @@
 /**
  * A saved view of projects, translated to and from the projects page. The
  * page filters by a team's key prefix, a set of statuses, one lead, one
- * customer, and whether a project is blocked or blocking, and a
+ * customer, one project label, and whether a project is blocked or blocking, and a
  * view stores the team by id, so these helpers are the one place that maps
  * between the two. Opened as a view, the page treats the view as its base:
  * the URL only carries what differs from it, and saving writes the page's
@@ -30,6 +30,8 @@ export interface ProjectViewBase {
   rollUp: boolean;
   /** A customer's id, `none` for projects no customer asked for, or empty. */
   customer: string;
+  /** A project label's id, `none` for projects carrying none, or empty. */
+  label: string;
   display: ProjectsDisplay;
 }
 
@@ -42,6 +44,7 @@ export interface ProjectViewState {
   blocking: FlagFilter;
   rollUp: boolean;
   customer?: string;
+  label?: string;
 }
 
 /** A yes or no project filter as the page holds it, empty when unset. */
@@ -85,6 +88,7 @@ export const projectViewBase = (
     blocking: flagOf(filter.is_blocking),
     rollUp: filter.sub_teams !== 'false',
     customer: asList(filter.customer_id)[0] ?? '',
+    label: asList(filter.label_id)[0] ?? '',
     display: resolveDisplay(() => null, view.projects_display ?? undefined),
   };
 };
@@ -103,6 +107,7 @@ export const toProjectViewFilter = (
   ...((state.customer ?? '') === ''
     ? {}
     : { customer_id: [state.customer ?? ''] }),
+  ...((state.label ?? '') === '' ? {} : { label_id: [state.label ?? ''] }),
   ...(state.teamId !== '' && !state.rollUp
     ? { sub_teams: 'false' as const }
     : {}),
@@ -120,4 +125,5 @@ export const sameProjectFilter = (
   flagOf(left.is_blocked) === flagOf(right.is_blocked) &&
   flagOf(left.is_blocking) === flagOf(right.is_blocking) &&
   asList(left.customer_id).join(',') === asList(right.customer_id).join(',') &&
+  asList(left.label_id).join(',') === asList(right.label_id).join(',') &&
   (left.sub_teams ?? 'true') === (right.sub_teams ?? 'true');
