@@ -219,8 +219,7 @@ const BoardCard: React.FC<BoardCardProps> = ({
       }}
       onBlur={(event) => {
         if (forced === null) return;
-        if (event.currentTarget.contains(event.relatedTarget as Node | null))
-          return;
+        if (event.currentTarget.contains(event.relatedTarget)) return;
         onForcedDone();
       }}
       className={cn(
