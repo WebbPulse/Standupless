@@ -27,6 +27,7 @@ from tests.domains.integrations.test_events_consumer import preset, pull_request
 
 __all__ = ["preset", "status_ids"]
 
+
 @pytest.fixture(autouse=True)
 def fresh_memos(monkeypatch: pytest.MonkeyPatch) -> None:
     """Start each test with no sweep window or low budget remembered from another."""
