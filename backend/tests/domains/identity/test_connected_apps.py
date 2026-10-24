@@ -71,9 +71,7 @@ def workspaces(repositories: Any) -> None:
     add_member(repositories, WORKSPACE_ONE, ADMIN, "admin")
 
 
-def grant(
-    server: Any, user_id: str, client_id: str, workspace_id: str, scope: str = "issues:read issues:write"
-) -> str:
+def grant(server: Any, user_id: str, client_id: str, workspace_id: str, scope: str = "issues:read issues:write") -> str:
     """Authorize `client_id` for `user_id` in one workspace, returning its refresh token."""
     verifier, challenge = pkce_pair()
     request = server.service.parse_authorization_request(

@@ -253,9 +253,8 @@ const AutoGrantSetting: React.FC = () => {
       <p className="pl-5.5 text-xs text-text-faint">
         When Standupless adds a permission, an app you authorized with every
         permission gets it at its next token refresh, without you approving it
-        here. Apps you gave less to are left as they are. Your role still
-        limits what any app can do, and each addition shows in the workspace
-        audit log.
+        here. Apps you gave less to are left as they are. Your role still limits
+        what any app can do, and each addition shows in the workspace audit log.
       </p>
       {saveError !== null && (
         <ErrorAlert
