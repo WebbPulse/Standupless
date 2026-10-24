@@ -4,14 +4,14 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.common.db.dynamo.planning import ProjectUpdateRow, project_update_key
+from app.common.db.dynamo.planning import ProjectLabel, ProjectUpdateRow, project_update_key
 from tests.domains.helpers import OWNER
 
-ANSWERS_AT_HOME: frozenset[str] = frozenset()
+ANSWERS_AT_HOME: frozenset[str] = frozenset({"list_project_labels", "create_project_label"})
 
 
 def seed(repositories: Any, workspace_id: str, team_id: str) -> dict[str, str]:
-    """A status update on the other workspace's project, so an update id can be named."""
+    """A status update on the other workspace's project and a project label, so their ids can be named."""
     project = repositories.planning.list_projects(workspace_id)[0]
     update = ProjectUpdateRow(
         workspace_id=workspace_id,
@@ -23,7 +23,9 @@ def seed(repositories: Any, workspace_id: str, team_id: str) -> dict[str, str]:
     )
     update.planning_key = project_update_key(project.project_id, update.update_id)
     repositories.planning.create_project_update(update)
-    return {"update_id": update.update_id}
+    label = ProjectLabel(workspace_id=workspace_id, name="Foreign label", color="#5e6ad2", created_by=OWNER)
+    repositories.planning.put_project_label(label, create=True)
+    return {"update_id": update.update_id, "project_label_id": label.label_id}
 
 
 def arguments(foreign: dict[str, str], home_issue: str) -> dict[str, dict[str, Any]]:
@@ -34,6 +36,10 @@ def arguments(foreign: dict[str, str], home_issue: str) -> dict[str, dict[str, A
     milestone = foreign["milestone_id"]
     issues = [foreign["issue_id"]]
     return {
+        "list_project_labels": {},
+        "create_project_label": {"name": "Home only", "color": "#5e6ad2"},
+        "update_project_label": {"label": foreign["project_label_id"], "name": "Should not land"},
+        "delete_project_label": {"label": foreign["project_label_id"]},
         "create_cycle": {
             "team_id": team,
             "name": "Should not land",

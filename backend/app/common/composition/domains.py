@@ -424,6 +424,7 @@ def _planning_routers() -> "Sequence[RouterSpec]":
         documents,
         initiatives,
         milestones,
+        project_labels,
         project_updates,
         projects,
         pulse,
@@ -433,6 +434,7 @@ def _planning_routers() -> "Sequence[RouterSpec]":
     return [
         (cycles.router, "/workspaces", ("planning",)),
         (projects.router, "/workspaces", ("planning",)),
+        (project_labels.router, "/workspaces", ("planning",)),
         (milestones.router, "/workspaces", ("planning",)),
         (project_updates.router, "/workspaces", ("planning",)),
         (documents.router, "/workspaces", ("planning",)),

@@ -58,6 +58,7 @@ def list_projects(
     customer_id: Annotated[Optional[list[str]], Query()] = None,
     customer_id_not: Annotated[Optional[list[str]], Query()] = None,
     sort: Annotated[Optional[ProjectSortField], Query()] = None,
+    label_id: Annotated[Optional[list[str]], Query()] = None,
 ) -> CursorPage[ProjectRead]:
     """One page of the workspace's projects the caller can see, by target date, undated last.
 
@@ -76,6 +77,8 @@ def list_projects(
     `sort=customer_requests_desc` puts the most requested projects first and
     `customer_revenue_desc` the highest summed customer revenue, target date
     breaking ties; both fill `customer_request_count`. Guests may use neither.
+    `label_id` keeps the projects carrying any named project label, `none`
+    standing for a project with none.
     """
     window, next_cursor = list_project_page(
         repositories,
@@ -91,6 +94,7 @@ def list_projects(
         customer_id=customer_id,
         customer_id_not=customer_id_not,
         sort=sort,
+        label_id=label_id,
     )
     return ProjectListRead(items=window, next_cursor=next_cursor)
 

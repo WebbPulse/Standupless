@@ -73,6 +73,15 @@ PROJECT_RELATION_KEY_PREFIX = "project_relation#"
 relation row.
 """
 
+PROJECT_LABEL = "project_label"
+
+PROJECT_LABEL_KEY_PREFIX = "project_label#"
+"""Where the workspace's project labels are filed, one row per label.
+
+`begins_with("project#")` never matches it, so the project listing never reads a
+label row.
+"""
+
 INITIATIVE = "initiative"
 
 INITIATIVE_KEY_PREFIX = "initiative#"
@@ -264,6 +273,11 @@ def project_relation_key(blocker_id: str, blocked_id: str) -> str:
     be stored and a repeat link lands on the key that is already there.
     """
     return f"{PROJECT_RELATION_KEY_PREFIX}{blocker_id}#{blocked_id}"
+
+
+def project_label_key(label_id: str) -> str:
+    """The sort key of one project label row."""
+    return f"{PROJECT_LABEL_KEY_PREFIX}{label_id}"
 
 
 def initiative_key(initiative_id: str) -> str:
@@ -513,6 +527,7 @@ class Project(BaseModel):
     `icon`, `color`, `health`, `priority` and `member_ids` are the Linear project
     properties. Each defaults to empty, so a row stored before they existed reads
     back as an unprioritised project with no health, icon, colour or members.
+    `label_ids` are the workspace project labels it carries, empty by default.
     `update_interval_days` is the project's own update cadence; None follows the
     workspace default and 0 turns reminders off. `status_counts` is the rollup's
     count of open and closed issues per status id, beside the category buckets.
@@ -536,6 +551,7 @@ class Project(BaseModel):
     health: str | None = None
     priority: str = "none"
     member_ids: list[str] = Field(default_factory=list)
+    label_ids: list[str] = Field(default_factory=list)
     counts: RollupCounts = Field(default_factory=RollupCounts)
     points: RollupCounts = Field(default_factory=RollupCounts)
     estimating_teams: int = 0
@@ -669,6 +685,26 @@ class ProjectRelation(BaseModel):
     def involves(self, project_id: str) -> bool:
         """Whether one project is either end of this dependency."""
         return project_id in (self.project_id, self.target_project_id)
+
+
+class ProjectLabel(BaseModel):
+    """One label of the workspace that tags projects, apart from the labels issues carry."""
+
+    workspace_id: str
+    planning_key: str = ""
+    label_id: str = Field(default_factory=new_planning_id)
+    kind: str = PROJECT_LABEL
+    name: str
+    color: str
+    description: str | None = None
+    created_by: str
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
+
+    def model_post_init(self, _context: Any) -> None:
+        """Derive the sort key from the id when none was given."""
+        if not self.planning_key:
+            self.planning_key = project_label_key(self.label_id)
 
 
 class ProjectMilestone(BaseModel):
@@ -1379,6 +1415,41 @@ class PlanningRepository:
             if row.involves(project_id)
         ]
         return self._repository.delete_many(keys) if keys else 0
+
+    def get_project_label(self, workspace_id: str, label_id: str) -> ProjectLabel | None:
+        """One project label of the workspace, or `None`."""
+        if not label_id:
+            return None
+        item = self._get(workspace_id, project_label_key(label_id))
+        if item is None or str(item.get("kind", "")) != PROJECT_LABEL:
+            return None
+        return ProjectLabel.model_validate(dict(item))
+
+    def list_project_labels(self, workspace_id: str, *, max_items: int = 1000) -> list[ProjectLabel]:
+        """Every project label of the workspace, by name."""
+        if not workspace_id:
+            return []
+        items = self._repository.iter_query(
+            Key("workspace_id").eq(workspace_id) & Key("planning_key").begins_with(PROJECT_LABEL_KEY_PREFIX),
+            max_items=max_items,
+        )
+        rows = [ProjectLabel.model_validate(dict(item)) for item in items if item.get("kind") == PROJECT_LABEL]
+        return sorted(rows, key=lambda row: (row.name.casefold(), row.label_id))
+
+    def put_project_label(self, label: ProjectLabel, *, create: bool) -> ProjectLabel:
+        """Store a new project label or write an edited one, raising `ConditionFailed` on a taken or missing key."""
+        item = label.model_dump(mode="json")
+        if item.get("description") is None:
+            item.pop("description", None)
+        condition = Attr("planning_key").not_exists() if create else Attr("planning_key").exists()
+        self._repository.put(item, condition=condition)
+        return label
+
+    def delete_project_label(self, workspace_id: str, label_id: str) -> None:
+        """Remove one project label row; the projects carrying it are cleared by the caller."""
+        if not workspace_id or not label_id:
+            return
+        self._repository.delete({"workspace_id": workspace_id, "planning_key": project_label_key(label_id)})
 
     def get_initiative(self, workspace_id: str, initiative_id: str) -> Initiative | None:
         """One initiative of the workspace, or `None`."""
