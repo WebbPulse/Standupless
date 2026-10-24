@@ -4234,3 +4234,78 @@ export interface DraftListRead {
 export interface DraftWrite {
   body: string;
 }
+
+/** The two kinds of record a customer request can name. */
+export type CustomerTargetKind = 'issue' | 'project';
+
+/**
+ * One customer of the workspace, with how many requests this caller can see
+ * from it. `can_edit` and `can_delete` say what this caller may do with it.
+ */
+export interface CustomerRead {
+  customer_id: string;
+  workspace_id: string;
+  name: string;
+  domains: string[];
+  tier: string | null;
+  owner_id: string | null;
+  revenue: number | null;
+  size: number | null;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+  request_count: number;
+  can_edit: boolean;
+  can_delete: boolean;
+}
+
+/** The body a customer create takes; only the name is required. */
+export interface CustomerCreate {
+  name: string;
+  domains?: string[];
+  tier?: string | null;
+  owner_id?: string | null;
+  revenue?: number | null;
+  size?: number | null;
+}
+
+/** The body a customer edit takes; a field left out is kept and null clears it. */
+export type CustomerPatch = Partial<CustomerCreate>;
+
+/** The workspace's customers, by name. */
+export interface CustomerListRead {
+  customers: CustomerRead[];
+  next_cursor: string | null;
+}
+
+/**
+ * One customer request: a customer asking for an issue or a project, with an
+ * optional quote. `target_key` is the issue key and empty for a project.
+ */
+export interface CustomerRequestRead {
+  request_id: string;
+  workspace_id: string;
+  customer_id: string;
+  customer_name: string;
+  target_kind: CustomerTargetKind;
+  target_id: string;
+  target_key: string;
+  target_title: string;
+  body: string;
+  author_id: string;
+  source?: string | null;
+  created_at: string;
+  can_delete: boolean;
+}
+
+/** The body a request create takes; the issue or project comes from the path. */
+export interface CustomerRequestCreate {
+  customer_id: string;
+  body?: string;
+}
+
+/** A list of customer requests, newest first. */
+export interface CustomerRequestListRead {
+  requests: CustomerRequestRead[];
+  next_cursor: string | null;
+}

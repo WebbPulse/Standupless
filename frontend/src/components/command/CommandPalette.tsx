@@ -45,6 +45,7 @@ import {
   LuArrowLeftRight,
   LuArrowRight,
   LuBot,
+  LuBuilding2,
   LuChevronLeft,
   LuCircleDot,
   LuFileText,
@@ -96,6 +97,7 @@ import { cn } from '../../lib/cn';
 import {
   accountSecuritySettingsPath,
   cliSetupPath,
+  customersPath,
   cyclePath,
   documentPath,
   inboxPath,
@@ -693,6 +695,13 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
         keywords: 'goals strategy portfolio',
         icon: <LuGoal className={ICON} />,
         to: initiativesPath(slug),
+      });
+      built.push({
+        id: 'nav-customers',
+        label: 'Customers',
+        keywords: 'accounts companies requests feedback',
+        icon: <LuBuilding2 className={ICON} />,
+        to: customersPath(slug),
       });
     }
     if (team !== undefined) {

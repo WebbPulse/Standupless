@@ -27,6 +27,7 @@ import {
 } from 'react-icons/lu';
 import type { IssueSubscription } from '../../hooks/useIssueSubscription';
 import { useTriageOn } from '../../hooks/useTriageTeams';
+import { useWorkspace } from '../../hooks/useWorkspace';
 import { cn } from '../../lib/cn';
 import { timestampLabel } from '../../lib/issueDisplay';
 import type { Assignable } from '../../lib/issuePeople';
@@ -47,6 +48,7 @@ import type {
 } from '../../types/Api';
 import { IconButton } from '../ui/button';
 import Menu, { MenuItem, MenuSeparator } from '../ui/menu';
+import CustomerRequestsSection from '../customers/CustomerRequestsSection';
 import GithubIssueSection from './GithubIssueSection';
 import GithubLinksSection from './GithubLinksSection';
 import IssueDocumentsSection from './IssueDocumentsSection';
@@ -204,6 +206,8 @@ export const IssuePropertiesPanel: React.FC<IssuePropertiesPanelProps> = ({
     };
   }, [opening]);
 
+  const { workspace } = useWorkspace();
+  const isMember = workspace !== null && workspace.role !== 'guest';
   const disabled = !canEdit;
   const scaleOn = team.estimate_scale !== 'off';
   const showEstimate =
@@ -513,6 +517,16 @@ export const IssuePropertiesPanel: React.FC<IssuePropertiesPanelProps> = ({
           issueId={issue.id}
           slug={slug}
         />
+        {isMember && (
+          <CustomerRequestsSection
+            workspaceId={workspaceId}
+            slug={slug}
+            targetKind="issue"
+            targetId={issue.id}
+            targetLabel={issue.key}
+            canAdd={canEdit}
+          />
+        )}
         <IssueSubscribers
           subscription={subscription}
           people={people}
