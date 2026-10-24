@@ -1,14 +1,16 @@
 /**
  * The issue import page. It opens on the import assistant, one row per
- * provider; Asana and Jira open the file flow with their preset
- * chosen and a note that their API import is coming, and the page links to
+ * provider; Jira opens the file flow with its preset
+ * chosen and a note that its API import is coming, and the page links to
  * the export below. For a CSV an admin picks a source, a team and a file,
  * dry runs it and sees the row problems, remaps a column, which runs the dry
  * run again with the change, and starts the import with the same body. For
  * Linear they paste a key, load its teams, map each and start, and the key is
  * cleared once the job is queued. For Shortcut they paste a token, load its
  * teams, map each, preview and start, and the token is cleared the same way.
- * For GitHub they pick a repository the App
+ * For Asana they paste a token, tick projects, pick a team, preview where
+ * each section lands, override one and start. For GitHub they pick a
+ * repository the App
  * covers and a team and start, or are told why they cannot when the App is
  * missing or suspended. A running job can be cancelled. Anyone below admin is
  * told they cannot.
@@ -21,6 +23,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { WorkspaceContextType } from '../../contexts/WorkspaceContextDefinition';
 import type { InstallationState } from '../../api/integrations';
 import type {
+  AsanaImportPreviewRead,
+  AsanaImportRequest,
+  AsanaProjectRead,
   GitHubImportRepositoryRead,
   GitHubImportRequest,
   GithubInstallationRead,
@@ -32,6 +37,7 @@ import type {
   ShortcutImportPreviewRead,
   ShortcutImportRequest,
   ShortcutTeamRead,
+  StatusRead,
   TeamRead,
   WorkspaceRead,
   WorkspaceRole,
@@ -52,6 +58,13 @@ const previewShortcutImport =
   vi.fn<(body: ShortcutImportRequest) => Promise<ShortcutImportPreviewRead>>();
 const startShortcutImport =
   vi.fn<(body: ShortcutImportRequest) => Promise<IssueImportRead>>();
+const listAsanaProjects =
+  vi.fn<(token: string) => Promise<AsanaProjectRead[]>>();
+const previewAsanaImport =
+  vi.fn<(body: AsanaImportRequest) => Promise<AsanaImportPreviewRead>>();
+const startAsanaImport =
+  vi.fn<(body: AsanaImportRequest) => Promise<IssueImportRead>>();
+const listStatuses = vi.fn<(teamId: string) => Promise<StatusRead[]>>();
 const cancelIssueImport =
   vi.fn<(importId: string) => Promise<IssueImportRead>>();
 const listGitHubImportRepositories =
@@ -88,12 +101,28 @@ vi.mock('../../api/imports', () => ({
     previewShortcutImport(body),
   startShortcutImport: (_workspaceId: string, body: ShortcutImportRequest) =>
     startShortcutImport(body),
+  listAsanaProjects: (_workspaceId: string, token: string) =>
+    listAsanaProjects(token),
+  previewAsanaImport: (_workspaceId: string, body: AsanaImportRequest) =>
+    previewAsanaImport(body),
+  startAsanaImport: (_workspaceId: string, body: AsanaImportRequest) =>
+    startAsanaImport(body),
   cancelIssueImport: (_workspaceId: string, importId: string) =>
     cancelIssueImport(importId),
   listGitHubImportRepositories: () => listGitHubImportRepositories(),
   startGitHubImport: (_workspaceId: string, body: GitHubImportRequest) =>
     startGitHubImport(body),
 }));
+
+vi.mock('../../api/teams', async () => {
+  const actual =
+    await vi.importActual<typeof import('../../api/teams')>('../../api/teams');
+  return {
+    ...actual,
+    listStatuses: (_workspaceId: string, teamId: string) =>
+      listStatuses(teamId),
+  };
+});
 
 vi.mock('../../api/integrations', async () => {
   const actual = await vi.importActual<typeof import('../../api/integrations')>(
@@ -320,6 +349,71 @@ beforeEach(() => {
     job({ kind: 'shortcut', status: 'queued', file_name: 'Shortcut' })
   );
   cancelIssueImport.mockResolvedValue(job({ status: 'cancelled' }));
+  listAsanaProjects.mockReset();
+  previewAsanaImport.mockReset();
+  startAsanaImport.mockReset();
+  listStatuses.mockReset();
+  listAsanaProjects.mockResolvedValue([
+    {
+      gid: '1200000000000001',
+      name: 'Website relaunch',
+      workspace_gid: '1000000000000001',
+      workspace_name: 'Acme',
+      team_name: 'Marketing',
+      archived: false,
+      completed: false,
+    },
+    {
+      gid: '1200000000000002',
+      name: 'Old archive',
+      workspace_gid: '1000000000000001',
+      workspace_name: 'Acme',
+      archived: true,
+      completed: true,
+    },
+  ]);
+  previewAsanaImport.mockResolvedValue({
+    projects: [
+      {
+        project_gid: '1200000000000001',
+        name: 'Website relaunch',
+        team_id: 'team-1',
+        create_project: true,
+        task_count: 5,
+        completed_count: 1,
+        sections: ['To do', 'Waiting on legal'],
+        status_fields: [
+          { gid: '1300000000000002', name: 'Stage', options: ['Backlog'] },
+        ],
+        statuses: [
+          { source: 'To do', status_id: 'st-todo', status_name: 'Todo' },
+          {
+            source: 'Waiting on legal',
+            status_id: 'st-backlog',
+            status_name: 'Backlog',
+          },
+        ],
+      },
+    ],
+  });
+  startAsanaImport.mockResolvedValue(
+    job({ kind: 'asana', status: 'queued', file_name: 'Asana' })
+  );
+  listStatuses.mockResolvedValue([
+    {
+      id: 'st-backlog',
+      name: 'Backlog',
+      category: 'backlog',
+      position: 0,
+    },
+    { id: 'st-todo', name: 'Todo', category: 'unstarted', position: 1 },
+    {
+      id: 'st-progress',
+      name: 'In Progress',
+      category: 'started',
+      position: 2,
+    },
+  ]);
   listGitHubImportRepositories.mockReset();
   startGitHubImport.mockReset();
   readInstallation.mockReset();
@@ -366,10 +460,7 @@ describe('the issue import page', () => {
     ).toHaveAttribute('href', '/w/engineering/settings/export');
   });
 
-  it.each([
-    [/^Asana/, 'asana', 'Asana'],
-    [/^Jira/, 'jira', 'Jira'],
-  ])(
+  it.each([[/^Jira/, 'jira', 'Jira']])(
     'opens the file flow with the preset chosen for %s',
     async (row, preset, title) => {
       const user = userEvent.setup();
@@ -628,6 +719,104 @@ describe('the issue import page', () => {
     expect(
       screen.getByText(
         /4 issues created, 3 comments, 1 sub-issue link, 1 project/
+      )
+    ).toBeInTheDocument();
+  });
+
+  it('previews Asana projects, takes a status override and clears the token', async () => {
+    const user = userEvent.setup();
+    renderPage();
+    await chooseProvider(user, /^Asana/);
+    expect(screen.queryByText(/coming soon/)).not.toBeInTheDocument();
+
+    await user.type(
+      screen.getByLabelText('Asana personal access token'),
+      'asana-example-token'
+    );
+    await user.click(screen.getByRole('button', { name: 'Load projects' }));
+
+    const relaunch = await screen.findByRole('checkbox', {
+      name: /Website relaunch/,
+    });
+    expect(relaunch).toBeChecked();
+    expect(
+      screen.getByRole('checkbox', { name: /Old archive/ })
+    ).not.toBeChecked();
+    expect(listAsanaProjects).toHaveBeenCalledWith('asana-example-token');
+    expect(
+      screen.getByRole('button', { name: 'Import 1 project' })
+    ).toBeDisabled();
+
+    await user.click(screen.getByRole('button', { name: 'Preview import' }));
+    const override = await screen.findByLabelText(
+      'Status for Waiting on legal'
+    );
+    expect(override).toHaveValue('st-backlog');
+    expect(screen.getByText('5 tasks, 1 completed')).toBeInTheDocument();
+    expect(listStatuses).toHaveBeenCalledWith('team-1');
+    expect(previewAsanaImport).toHaveBeenCalledWith({
+      token: 'asana-example-token',
+      projects: [
+        {
+          project_gid: '1200000000000001',
+          team_id: 'team-1',
+          create_project: true,
+          status_field_gid: null,
+          statuses: {},
+        },
+      ],
+    });
+
+    await user.selectOptions(override, 'st-progress');
+    await user.click(screen.getByRole('button', { name: 'Import 1 project' }));
+
+    await waitFor(() => {
+      expect(startAsanaImport).toHaveBeenCalledWith({
+        token: 'asana-example-token',
+        projects: [
+          {
+            project_gid: '1200000000000001',
+            team_id: 'team-1',
+            create_project: true,
+            status_field_gid: null,
+            statuses: { 'Waiting on legal': 'st-progress' },
+          },
+        ],
+      });
+    });
+    await waitFor(() => {
+      expect(screen.getByLabelText('Asana personal access token')).toHaveValue(
+        ''
+      );
+    });
+  });
+
+  it('lists what a finished Asana import brought over', async () => {
+    listIssueImports.mockResolvedValue([
+      job({
+        kind: 'asana',
+        file_name: 'Asana',
+        created_count: 5,
+        updated_count: 0,
+        counts: { comments: 3, labels: 2, sub_issues: 2, projects: 1 },
+        asana_projects: [
+          {
+            project_gid: '1200000000000001',
+            name: 'Website relaunch',
+            team_id: 'team-1',
+            create_project: true,
+          },
+        ],
+      }),
+    ]);
+    renderPage();
+
+    expect(
+      await screen.findByText('Asana Website relaunch into Platform')
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        /5 issues created, 3 comments, 2 new labels, 2 sub-issue links, 1 project/
       )
     ).toBeInTheDocument();
   });

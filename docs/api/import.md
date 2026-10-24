@@ -347,6 +347,74 @@ under its own purpose, exactly as a Linear key is, and deleted when the job
 completes, fails or is cancelled. It never appears in the job, an answer, a
 log, an audit event or imported data.
 
+## Import from Asana's API
+
+A workspace owner or admin can import Asana projects straight from Asana, with
+no export file. They paste an Asana personal access token, pick the Asana
+projects to bring over and the existing Standupless team each one goes into,
+preview where the tasks land, then start the import. There is no Asana OAuth
+app yet; the token is the only way in.
+
+| Surface | How |
+| --- | --- |
+| API | `POST /api/workspaces/{workspace_id}/imports/asana/projects`, `POST /api/workspaces/{workspace_id}/imports/asana/preview`, `POST /api/workspaces/{workspace_id}/imports/asana`, `POST /api/workspaces/{workspace_id}/imports/{import_id}/cancel`, and the `GET` routes above |
+| MCP | `list_asana_projects`, `preview_asana_import`, `import_asana_workspace`, `get_workspace_import`, `cancel_workspace_import` |
+| UI | Workspace settings, Import tab, source Asana, Connect via API |
+
+`POST .../imports/asana/projects` takes `{"token": "..."}` and answers every
+project the token can read across its Asana workspaces. A token Asana refuses
+answers 400 with code `ASANA_TOKEN_REFUSED`, and Asana not answering is 502
+with `ASANA_UNAVAILABLE`. The preview and the import take the token and
+`projects`, a list of `{"project_gid", "team_id", "create_project",
+"status_field_gid", "statuses"}`. The preview answers, per project, its task
+counts, its sections, the single choice fields that could set the status
+instead, and the team status each section or option lands in, writing nothing.
+The import answers 202 with the job, which has `kind` `asana`. A project the
+token cannot read, one chosen twice, a status field that is not a single
+choice field of the project, or a mapped status the team lacks answers 422,
+and a second import while one runs answers 409.
+
+### What is read
+
+Per chosen project, two phases: `project`, which writes the Asana project as a
+Standupless project when `create_project` is true, then `tasks`, which reads
+the project's top level tasks 20 at a time, each with its comments and
+subtasks. Lists are paged with Asana's `offset`, 100 records a call. A 429 is
+waited out for its `Retry-After`, at most 60 seconds per wait and 5 attempts
+per request, and a 5xx is retried the same way.
+
+### How values map
+
+- The status comes from the task's section in the project, or from the option
+  of the chosen single choice field. `statuses` maps any section or option name
+  to a team status id; anything unmapped lands in the team status with the same
+  name, else the status whose category the name means, such as `Doing` for
+  started, else the team default. A completed task always lands in a completed
+  status.
+- A single choice field named Priority sets the priority.
+- Tags become team labels, created when missing, with Asana's tag colour.
+- Assignee, creator and project owner are matched to members by email. A
+  comment by someone who is not a member keeps an `asana:<name>` placeholder
+  author. No account or invite is created.
+- Subtasks become sub-issues of the top level task. Subtasks of subtasks are
+  flattened onto the same top level task, three levels deep at most.
+- Due and start dates, the description and comments come across. A Standupless
+  project gets the Asana project's name, notes, owner, dates and whether it is
+  complete.
+
+Every row gets an id derived from the workspace and the Asana gid, and each
+issue keeps the gid and the task's URL in `external_ref`, so running the import
+again updates what the earlier run wrote. A task an earlier import wrote into a
+different team is left there with a warning.
+
+### The token
+
+The token is sealed beside the job like a Linear key, under its own purpose so
+it never opens as one, and deleted when the job completes, fails or is
+cancelled. It never appears in the job, an answer, a log, an audit event or
+imported data.
+
+
 ## Import from GitHub Issues
 
 A workspace owner or admin can import one repository's Issues through the
