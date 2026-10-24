@@ -13,6 +13,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type {
   IssueRead,
   MilestoneRead,
+  ProjectHistoryRead,
   ProjectRead,
   ProjectUpdateRead,
   StatusRead,
@@ -397,5 +398,82 @@ describe('ProjectProgressPanel', () => {
     );
 
     expect(stat('Scope')).toHaveTextContent('2points');
+  });
+
+  it('draws the recorded history with its projection against the target', () => {
+    const history: ProjectHistoryRead = {
+      project_id: 'prj-1',
+      start_date: '2026-09-22',
+      target_date: '2026-10-01',
+      today: '2026-09-26',
+      measure: 'issues',
+      recorded_since: '2026-09-23',
+      days: [22, 23, 24, 25, 26].map((day) => ({
+        date: `2026-09-${String(day)}`,
+        scope: 6,
+        started: day - 22,
+        completed: day - 22,
+        scope_points: 0,
+        started_points: 0,
+        completed_points: 0,
+      })),
+      projection: {
+        rate_per_day: 1,
+        expected_date: '2026-09-28',
+        days_past_target: -3,
+      },
+    };
+    render(
+      <ProjectProgressPanel
+        project={project}
+        issues={[]}
+        statuses={statuses}
+        complete={false}
+        milestones={[]}
+        onOpenMilestone={vi.fn()}
+        today="2026-09-26"
+        history={history}
+      />
+    );
+
+    expect(screen.getByTestId('project-progress-graph')).toBeInTheDocument();
+    expect(
+      screen.getByRole('img', {
+        name: /Scope 6, started 4, completed 4 issues as of 2026-09-26/,
+      })
+    ).toBeInTheDocument();
+    expect(screen.getByTestId('burn-up-forecast')).toBeInTheDocument();
+    expect(screen.getByTestId('burn-up-target')).toBeInTheDocument();
+    expect(screen.getByTestId('project-projection')).toHaveTextContent(
+      /3 days before the target\.$/
+    );
+  });
+
+  it('falls back to the issues while the history has nothing recorded', () => {
+    render(
+      <ProjectProgressPanel
+        project={project}
+        issues={[issue('1', 'todo'), issue('2', 'done')]}
+        statuses={statuses}
+        complete
+        milestones={[]}
+        onOpenMilestone={vi.fn()}
+        today="2026-09-26"
+        history={{
+          project_id: 'prj-1',
+          start_date: '2026-09-26',
+          target_date: '2026-10-01',
+          today: '2026-09-26',
+          measure: 'issues',
+          recorded_since: null,
+          days: [],
+          projection: null,
+        }}
+      />
+    );
+
+    expect(screen.getByTestId('project-progress-graph')).toBeInTheDocument();
+    expect(screen.queryByTestId('burn-up-forecast')).toBeNull();
+    expect(screen.queryByTestId('project-projection')).toBeNull();
   });
 });
