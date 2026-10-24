@@ -513,6 +513,37 @@ def test_project_dependencies_become_blocks_links_without_loops(
     assert len(repositories.planning.list_project_relations(WORKSPACE)) == 1
 
 
+def test_a_rejected_project_dependencies_query_still_completes_the_import(
+    client: TestClient,
+    repositories: Any,
+    workspace: str,
+    bucket: str,
+    linear: FakeLinear,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A schema mismatch on the dependencies query is a warning and a log line, never a failed import."""
+    add_dependent_projects(linear)
+    linear.rejected_operations = {"ProjectRelations"}
+    caplog.set_level(logging.WARNING)
+
+    job = start(client).json()
+
+    assert job["status"] == "completed", job
+    assert job["error"] is None
+    assert job["counts"]["issues_created"] == 4
+    assert job["counts"].get("project_relations", 0) == 0
+    assert repositories.planning.list_project_relations(WORKSPACE) == []
+    problems = {(problem["field"], problem["message"]) for problem in job["problems"]}
+    assert (
+        "project_relations",
+        "Linear would not list project dependencies (graphql_validation_failed), left out",
+    ) in problems
+    assert any(
+        getattr(record, "event", "") == "issue.import.linear_project_relations_skipped" for record in caplog.records
+    )
+    assert not key_stored(WORKSPACE, job["import_id"])
+
+
 def test_the_queue_runs_a_linear_import_a_step_at_a_time(
     client: TestClient, repositories: Any, workspace: str, queued: list[tuple[str, Any]], linear: FakeLinear
 ) -> None:

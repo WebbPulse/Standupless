@@ -59,6 +59,8 @@ from app.common.linear_api import (
     PROJECTS_QUERY,
     LinearAuthFailed,
     LinearClient,
+    LinearError,
+    LinearRateLimited,
     Page,
 )
 
@@ -123,6 +125,9 @@ INITIATIVE_STATUSES = frozenset({"planned", "active", "completed"})
 
 RELATION_TYPES: dict[str, str] = {"blocks": "blocks", "related": "relates_to", "duplicate": "duplicate_of"}
 """Linear's issue relation types as Standupless link types. Linear's `similar` has no counterpart."""
+
+TRANSIENT_CODES = frozenset({"unreachable", "unavailable"})
+"""Linear failures a page retry can fix, which an optional phase passes on rather than skips."""
 
 PROJECT_DEPENDENCY_TYPES = frozenset({"dependency", "blocks"})
 """The Linear project relation types that are a dependency between two projects."""
@@ -1115,12 +1120,31 @@ def _project_relations_step(repositories: Any, job: Any, client: LinearClient) -
     A dependency is kept only when both projects were imported. One already
     stored is left as it is, and one that would make projects wait on each other
     is left out with a warning, the same rule a dependency drawn by hand follows.
+    The phase is fail-soft: a query Linear rejects, such as a field its schema
+    no longer has, ends the phase with a warning and the import still completes.
+    A refused key, a rate limit and a transient failure are raised as usual.
     """
     from app.common.db.dynamo.planning import ProjectRelation, project_relation_key
     from app.common.project_relations import would_loop
 
     result = StepResult()
-    page = _page(client, PROJECT_RELATIONS_QUERY, ("projectRelations",), {}, job.after)
+    try:
+        page = _page(client, PROJECT_RELATIONS_QUERY, ("projectRelations",), {}, job.after)
+    except (LinearAuthFailed, LinearRateLimited):
+        raise
+    except LinearError as exc:
+        if exc.code in TRANSIENT_CODES:
+            raise
+        _log.warning(
+            "Linear rejected the project dependencies query, so the import goes on without them.",
+            extra={
+                "event": "issue.import.linear_project_relations_skipped",
+                "import_id": job.import_id,
+                "code": exc.code,
+            },
+        )
+        result.warn("project_relations", f"Linear would not list project dependencies ({exc.code}), left out")
+        return result
     relations = repositories.planning.list_project_relations(job.workspace_id) if page.nodes else []
     for node in page.nodes:
         ends = _dependency_ends(node)
