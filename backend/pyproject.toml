@@ -5,9 +5,9 @@ license = "LicenseRef-PolyForm-Strict-1.0.0"
 requires-python = ">=3.13"
 dependencies = [
   "webbpulse[fastapi,otel,dynamodb,aws-otel,security,identity,oauth,passkeys,github,stripe,sso,saml]>=0.101.0,<1",
-  "fastapi>=0.141.1",
+  "fastapi>=0.156.5",
   "pydantic[email]>=2.13.5",
-  "pydantic-settings>=2.15.0",
+  "pydantic-settings>=2.16.1",
   "python-json-logger>=4.2.0",
   "typing_extensions>=4.16.0",
   "PyJWT[crypto]>=2.15.1",
@@ -15,23 +15,23 @@ dependencies = [
   "python-multipart>=0.0.32",
   "pyotp>=2.10.0",
   "qrcode[pil]>=8.2",
-  "webauthn>=3.0.0",
+  "webauthn>=3.0.1",
   "httpx>=0.28.1",
-  "boto3>=1.43.90",
+  "boto3>=1.43.116",
   "emoji>=2.16.0",
   "tzdata>=2025.2",
 ]
 
 [dependency-groups]
 dev = [
-  "uvicorn>=0.52.4",
+  "uvicorn>=0.54.0",
   "boto3-stubs[dynamodb,sesv2]>=1.43.90",
   "moto[dynamodb]>=5.2.3",
   "pytest>=9.1.1",
   "pytest-asyncio>=1.4.0",
   "pytest-xdist>=3.8.0",
   "pytest-cov>=7.1.0",
-  "ruff>=0.16.6",
+  "ruff>=0.17.1",
   "pyright>=1.1.407",
   "bandit>=1.8.6",
   "pip-audit>=2.9.0",
