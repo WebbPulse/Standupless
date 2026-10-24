@@ -6,7 +6,8 @@
  * above the trigger when there is no room below, closes on Escape (even after
  * focus has left the panel), on an outside press, on Tab and when the command
  * palette opens, and hands focus back to the trigger when it closes from the
- * keyboard.
+ * keyboard. At phone widths the panel shows as a bottom sheet over a backdrop
+ * that closes it on a tap.
  */
 
 import React, { useCallback, useEffect, useId, useRef, useState } from 'react';
@@ -168,10 +169,20 @@ export const Popover: React.FC<PopoverProps> = ({
       })}
       {open && (
         <div
+          data-sheet-backdrop=""
+          aria-hidden="true"
+          onClick={() => {
+            close(false);
+          }}
+        />
+      )}
+      {open && (
+        <div
           ref={panel}
           id={panelId}
           role="dialog"
           aria-label={label}
+          data-sheet-panel=""
           onKeyDown={onPanelKeyDown}
           style={UNPLACED}
           className={cn(

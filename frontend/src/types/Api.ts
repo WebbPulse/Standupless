@@ -3466,6 +3466,7 @@ export const CHANNEL_EVENTS = [
   'comment_created',
   'project_update_posted',
   'project_update_due',
+  'standup_digest',
 ] as const;
 
 /** One event a team channel may post. */
@@ -4000,8 +4001,8 @@ export interface IssueImportPreviewRead {
 export type ImportStatus =
   'queued' | 'running' | 'completed' | 'failed' | 'cancelled';
 
-/** What an import reads: an uploaded CSV, or a Linear workspace through its API. */
-export type ImportKind = 'csv' | 'linear';
+/** What an import reads: an uploaded CSV, a Linear workspace through its API, or a GitHub repository's Issues. */
+export type ImportKind = 'csv' | 'linear' | 'github';
 
 /** The tallies a Linear import keeps, by name. */
 export type LinearImportCount =
@@ -4017,6 +4018,15 @@ export type LinearImportCount =
   | 'sub_issues'
   | 'relations'
   | 'project_relations';
+
+/** The tallies a GitHub import keeps, by name. */
+export type GitHubImportCount =
+  | 'issues_created'
+  | 'issues_updated'
+  | 'comments'
+  | 'labels'
+  | 'already_synced'
+  | 'pull_requests_skipped';
 
 /** One Linear team a Linear import reads and the Standupless team it writes into. */
 export interface LinearTeamMappingRead {
@@ -4052,9 +4062,11 @@ export interface IssueImportRead {
   kind?: ImportKind;
   /** How many issues a Linear import found already imported and updated. */
   updated_count?: number;
-  counts?: Partial<Record<LinearImportCount, number>>;
+  counts?: Partial<Record<LinearImportCount | GitHubImportCount, number>>;
   linear_teams?: LinearTeamMappingRead[];
-  /** What a running Linear import is reading now. */
+  /** The repository a GitHub import reads; its full name is the file name. */
+  github_repository_id?: string | null;
+  /** What a running Linear or GitHub import is reading now. */
   phase?: string | null;
   phase_index?: number;
   phase_count?: number;
@@ -4087,6 +4099,26 @@ export interface LinearTeamChoice {
 export interface LinearImportRequest {
   api_key: string;
   teams: LinearTeamChoice[];
+}
+
+/** One repository the workspace's installed GitHub App covers, to import the Issues of. */
+export interface GitHubImportRepositoryRead {
+  repository_id: string;
+  full_name: string;
+  private: boolean;
+  /** The team the repository is pinned to, if any. */
+  team_id?: string | null;
+}
+
+/** Every repository the installation covers; empty when the App is not installed or is suspended. */
+export interface GitHubImportRepositoryListRead {
+  items: GitHubImportRepositoryRead[];
+}
+
+/** The body a GitHub import starts with: one covered repository and the team its issues go into. */
+export interface GitHubImportRequest {
+  repository_id: string;
+  team_id: string;
 }
 
 /** Why an open issue assigned to the caller needs attention now. */

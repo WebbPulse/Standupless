@@ -631,6 +631,12 @@ export const workspaceImportsKey = (workspaceId: string): QueryKey => [
   workspaceId,
 ];
 
+/** The repositories a GitHub import can read in one workspace. */
+export const githubImportRepositoriesKey = (workspaceId: string): QueryKey => [
+  'github-import-repositories',
+  workspaceId,
+];
+
 /** The cache key for a workspace's authentication policy. */
 export const workspaceAuthPolicyKey = (workspaceId: string): QueryKey => [
   'workspace-auth-policy',

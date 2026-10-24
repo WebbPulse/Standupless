@@ -153,7 +153,11 @@ import {
 } from '../../lib/searchTerms';
 import { teamTree } from '../../lib/teamOrder';
 import type { Theme } from '../../lib/theme';
-import { currentOrFirstTeam, settingsLanding } from '../../lib/workspaceNav';
+import {
+  currentOrFirstTeam,
+  routeTeam,
+  settingsLanding,
+} from '../../lib/workspaceNav';
 import type { CycleRead, TeamRead, WorkspaceRead } from '../../types/Api';
 import { LOOKUP_POLL_MS } from '../../lib/polling';
 
@@ -353,6 +357,7 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
   const routePrefix = routeTeamPrefix(location.pathname, location.search);
   const issueKey = routeIssueKey(location.pathname);
   const team = currentOrFirstTeam(teams, routePrefix);
+  const insideTeam = routeTeam(teams, routePrefix) !== undefined;
 
   const deferred = useDeferredValue(term).trim();
   const isKey = page === 'root' && isIssueKey(deferred);
@@ -742,6 +747,7 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
         id: 'nav-team-views',
         label: `${team.name} views`,
         keywords: 'views saved filters go to views',
+        ...(insideTeam ? { hint: 'G then V' } : {}),
         icon: <LuLayers className={ICON} />,
         to: teamViewsPath(slug, team.key_prefix),
       });
@@ -764,7 +770,7 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
       {
         id: 'nav-views',
         label: 'Views',
-        hint: 'G then V',
+        ...(insideTeam ? {} : { hint: 'G then V' }),
         icon: <LuLayers className={ICON} />,
         to: viewsPath(slug),
       },
@@ -837,7 +843,7 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
       }))
     );
     return built;
-  }, [slug, team, teams, workspace]);
+  }, [insideTeam, slug, team, teams, workspace]);
 
   const teamSettings = useMemo<Command[]>(
     () =>
@@ -1272,7 +1278,7 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-start justify-center bg-black/40 px-2 pt-[max(0.5rem,env(safe-area-inset-top))] pb-6 backdrop-blur-[2px] sm:px-4 sm:pt-[12vh] dark:bg-black/60"
+      className="fixed inset-0 z-50 flex items-start justify-center bg-black/40 backdrop-blur-[2px] sm:px-4 sm:pt-[12vh] sm:pb-6 dark:bg-black/60"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) onClose();
       }}
@@ -1282,7 +1288,7 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
         aria-modal="true"
         aria-labelledby={titleId}
         onKeyDown={onKeyDown}
-        className="flex max-h-[50vh] w-full sm:max-h-[60vh] max-w-xl flex-col overflow-hidden rounded-lg border border-line bg-overlay shadow-overlay"
+        className="flex h-dvh w-full max-w-xl flex-col overflow-hidden bg-overlay pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] shadow-overlay sm:h-auto sm:max-h-[60vh] sm:rounded-lg sm:border sm:border-line sm:pt-0 sm:pb-0"
       >
         <h2 id={titleId} className="sr-only">
           Command palette
@@ -1342,6 +1348,14 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
           <kbd className="hidden shrink-0 rounded-xs border border-line px-1.5 py-0.5 font-sans text-2xs text-text-faint sm:block">
             Esc
           </kbd>
+          <button
+            type="button"
+            aria-label="Close command palette"
+            onClick={onClose}
+            className="-mr-2 inline-flex h-10 shrink-0 items-center rounded-sm px-2 text-sm font-medium text-accent hover:opacity-90 active:opacity-75 sm:hidden"
+          >
+            Cancel
+          </button>
         </div>
 
         <div className="min-h-0 flex-1 overflow-y-auto py-1.5">

@@ -35,8 +35,8 @@ const VARIANTS: Record<ButtonVariant, string> = {
 };
 
 const SIZES: Record<ButtonSize, string> = {
-  sm: 'h-7 px-2 text-xs gap-1.5 pointer-coarse:h-11',
-  md: 'h-8 px-3 text-sm gap-2 pointer-coarse:h-11',
+  sm: 'h-7 px-2 text-xs gap-1.5 pointer-coarse:h-11 pointer-coarse:min-w-11',
+  md: 'h-8 px-3 text-sm gap-2 pointer-coarse:h-11 pointer-coarse:min-w-11',
 };
 
 /** A button with the shared sizing, focus ring and disabled treatment. */

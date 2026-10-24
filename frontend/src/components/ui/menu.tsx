@@ -8,7 +8,8 @@
  *
  * The list is placed with fixed coordinates by the placement hook the popover uses too,
  * so it escapes a clipped sidebar, flips above the trigger near the bottom of
- * the screen and shifts back inside the viewport near either edge.
+ * the screen and shifts back inside the viewport near either edge. At phone
+ * widths both lists show as bottom sheets over a backdrop that closes them.
  */
 
 import React, {
@@ -24,7 +25,11 @@ import React, {
 import { Link } from 'react-router-dom';
 import { displayKeys } from '../../hooks/useShortcuts';
 import { cn } from '../../lib/cn';
-import { UNPLACED, useAnchoredPlacement } from './anchoredPlacement';
+import {
+  UNPLACED,
+  isSheetViewport,
+  useAnchoredPlacement,
+} from './anchoredPlacement';
 import { Kbd } from './badge';
 
 interface MenuState {
@@ -265,10 +270,18 @@ export const Menu: React.FC<MenuProps> = ({
       })}
       {open && (
         <div
+          data-sheet-backdrop=""
+          aria-hidden="true"
+          onClick={() => setOpen(false)}
+        />
+      )}
+      {open && (
+        <div
           ref={list}
           id={listId}
           role="menu"
           aria-label={label}
+          data-sheet-panel=""
           style={UNPLACED}
           className={LIST_CLASS}
         >
@@ -316,6 +329,10 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
   useLayoutEffect(() => {
     const node = list.current;
     if (node === null) return;
+    if (isSheetViewport()) {
+      node.style.visibility = 'visible';
+      return;
+    }
     const box = node.getBoundingClientRect();
     const left = Math.max(
       CONTEXT_EDGE,
@@ -344,7 +361,13 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
       }
       moveFocus(list.current, event);
     };
-    const onViewport = () => {
+    const onViewport = (event: Event) => {
+      if (
+        event.target instanceof Node &&
+        list.current?.contains(event.target) === true
+      ) {
+        return;
+      }
       onClose();
     };
     document.addEventListener('mousedown', onPointer);
@@ -360,23 +383,27 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({
   }, [onClose]);
 
   return (
-    <div
-      ref={list}
-      id={listId}
-      role="menu"
-      aria-label={label}
-      style={UNPLACED}
-      className={LIST_CLASS}
-      onContextMenu={(event) => {
-        event.preventDefault();
-      }}
-    >
-      <FilterChrome query={query} position="top" />
-      <MenuContext.Provider value={{ open: true, close: onClose, listId }}>
-        {children}
-      </MenuContext.Provider>
-      <FilterChrome query={query} position="bottom" />
-    </div>
+    <>
+      <div data-sheet-backdrop="" aria-hidden="true" />
+      <div
+        ref={list}
+        id={listId}
+        role="menu"
+        aria-label={label}
+        data-sheet-panel=""
+        style={UNPLACED}
+        className={LIST_CLASS}
+        onContextMenu={(event) => {
+          event.preventDefault();
+        }}
+      >
+        <FilterChrome query={query} position="top" />
+        <MenuContext.Provider value={{ open: true, close: onClose, listId }}>
+          {children}
+        </MenuContext.Provider>
+        <FilterChrome query={query} position="bottom" />
+      </div>
+    </>
   );
 };
 
@@ -444,7 +471,10 @@ export const MenuItem: React.FC<MenuItemProps> = ({
 
 /** The shortcut keys at the end of a menu item, one cap per key. */
 export const MenuShortcut: React.FC<{ keys: string }> = ({ keys }) => (
-  <span aria-hidden="true" className="ml-auto flex gap-0.5 pl-4">
+  <span
+    aria-hidden="true"
+    className="ml-auto flex gap-0.5 pl-4 pointer-coarse:hidden"
+  >
     {displayKeys(keys)
       .flatMap((token) => token.split(' '))
       .map((cap, index) => (

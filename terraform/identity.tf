@@ -26,11 +26,10 @@ locals {
     "integrations",
   ]
 
-  identity_oauth_link_reader_domains = [
-    "integrations",
-    "integrations-events-consumer",
-    "integrations-dispatch-consumer",
-  ]
+  identity_oauth_link_reader_domains = concat(
+    ["integrations", "integrations-events-consumer", "integrations-dispatch-consumer"],
+    var.issue_import_enabled ? ["integrations-import-consumer"] : [],
+  )
 
   identity_share_token_writer_domains = concat(["views"], local.team_purge_enabled ? ["views-purge-consumer"] : [])
 

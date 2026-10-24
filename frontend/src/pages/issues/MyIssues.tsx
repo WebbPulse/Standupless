@@ -68,7 +68,7 @@ const readTab = (value: string | null): MyIssuesTab =>
 
 const tabClass = (active: boolean): string =>
   cn(
-    'flex h-7 items-center rounded-sm px-2.5 text-sm font-medium transition-colors duration-100',
+    'flex h-7 items-center rounded-sm px-2.5 text-sm font-medium whitespace-nowrap transition-colors duration-100 pointer-coarse:h-10',
     'focus-visible:ring-1 focus-visible:ring-accent focus-visible:outline-none',
     active ? 'bg-raised text-text' : 'text-text-muted hover:text-text'
   );

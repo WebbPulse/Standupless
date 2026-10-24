@@ -46,6 +46,7 @@ ChannelEvent = Literal[
     "comment_created",
     "project_update_posted",
     "project_update_due",
+    "standup_digest",
 ]
 
 CHANNEL_EVENTS: tuple[str, ...] = (
@@ -56,6 +57,7 @@ CHANNEL_EVENTS: tuple[str, ...] = (
     "comment_created",
     "project_update_posted",
     "project_update_due",
+    "standup_digest",
 )
 """Every event a destination may filter on, in the order a settings page lists them."""
 

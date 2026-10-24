@@ -16,7 +16,12 @@ import {
 import { useCreateIssue } from '../../hooks/useCreateIssue';
 import { useShortcut } from '../../hooks/useShortcuts';
 import { UNDO_KEYS, UNDO_LABEL, useUndo } from '../../hooks/useUndo';
-import { currentOrFirstTeam, settingsLanding } from '../../lib/workspaceNav';
+import {
+  currentOrFirstTeam,
+  routeTeam,
+  settingsLanding,
+  viewsLanding,
+} from '../../lib/workspaceNav';
 import {
   inboxPath,
   myIssuesPath,
@@ -27,7 +32,6 @@ import {
   teamCyclesPath,
   teamPath,
   teamTriagePath,
-  viewsPath,
 } from '../../lib/paths';
 import type { TeamRead, WorkspaceRead } from '../../types/Api';
 
@@ -72,10 +76,9 @@ export const GlobalShortcuts: React.FC<GlobalShortcutsProps> = ({
   const createIssue = useCreateIssue();
   const undo = useUndo(workspace.id);
   const slug = workspace.slug;
-  const team = currentOrFirstTeam(
-    teams,
-    routeTeamPrefix(location.pathname, location.search)
-  );
+  const routePrefix = routeTeamPrefix(location.pathname, location.search);
+  const team = currentOrFirstTeam(teams, routePrefix);
+  const insideTeam = routeTeam(teams, routePrefix);
 
   const go = (to: string) => () => {
     void navigate(to);
@@ -152,9 +155,9 @@ export const GlobalShortcuts: React.FC<GlobalShortcutsProps> = ({
   });
   useShortcut({
     keys: 'g v',
-    label: 'Go to views',
+    label: insideTeam === undefined ? 'Go to views' : 'Go to team views',
     group: NAVIGATION,
-    handler: go(viewsPath(slug)),
+    handler: go(viewsLanding(slug, insideTeam)),
   });
   useShortcut({
     keys: 'o f',

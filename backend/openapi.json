@@ -1772,7 +1772,8 @@
                 "issue_assigned",
                 "comment_created",
                 "project_update_posted",
-                "project_update_due"
+                "project_update_due",
+                "standup_digest"
               ],
               "type": "string"
             },
@@ -1883,7 +1884,8 @@
                 "issue_assigned",
                 "comment_created",
                 "project_update_posted",
-                "project_update_due"
+                "project_update_due",
+                "standup_digest"
               ],
               "type": "string"
             },
@@ -2041,7 +2043,8 @@
                     "issue_assigned",
                     "comment_created",
                     "project_update_posted",
-                    "project_update_due"
+                    "project_update_due",
+                    "standup_digest"
                   ],
                   "type": "string"
                 },
@@ -4988,6 +4991,83 @@
         "title": "GitHubAppStatus",
         "type": "object"
       },
+      "GitHubImportRepositoryListRead": {
+        "description": "Every repository the installation covers, by name; empty when the App is not installed or is suspended.",
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/GitHubImportRepositoryRead"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "GitHubImportRepositoryListRead",
+        "type": "object"
+      },
+      "GitHubImportRepositoryRead": {
+        "description": "One repository the workspace's installed GitHub App covers, to import the Issues of.",
+        "properties": {
+          "full_name": {
+            "title": "Full Name",
+            "type": "string"
+          },
+          "private": {
+            "title": "Private",
+            "type": "boolean"
+          },
+          "repository_id": {
+            "title": "Repository Id",
+            "type": "string"
+          },
+          "team_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The team the repository is pinned to, if any.",
+            "title": "Team Id"
+          }
+        },
+        "required": [
+          "repository_id",
+          "full_name",
+          "private"
+        ],
+        "title": "GitHubImportRepositoryRead",
+        "type": "object"
+      },
+      "GitHubImportRequest": {
+        "description": "A GitHub import: one repository the installation covers and the team its issues go into.",
+        "properties": {
+          "repository_id": {
+            "maxLength": 32,
+            "minLength": 1,
+            "pattern": "^[0-9]+$",
+            "title": "Repository Id",
+            "type": "string"
+          },
+          "team_id": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Team Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "repository_id",
+          "team_id"
+        ],
+        "title": "GitHubImportRequest",
+        "type": "object"
+      },
       "HealthBreakdownRead": {
         "description": "How many of an initiative's visible projects report each health.",
         "properties": {
@@ -7554,6 +7634,18 @@
             ],
             "title": "Finished At"
           },
+          "github_repository_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The repository a GitHub import reads; its full name is the file name.",
+            "title": "Github Repository Id"
+          },
           "import_id": {
             "title": "Import Id",
             "type": "string"
@@ -7562,7 +7654,8 @@
             "default": "csv",
             "enum": [
               "csv",
-              "linear"
+              "linear",
+              "github"
             ],
             "title": "Kind",
             "type": "string"
@@ -7593,7 +7686,7 @@
                 "type": "null"
               }
             ],
-            "description": "What a running Linear import is reading now.",
+            "description": "What a running Linear or GitHub import is reading now.",
             "title": "Phase"
           },
           "phase_count": {
@@ -20474,7 +20567,8 @@
                 "issue_assigned",
                 "comment_created",
                 "project_update_posted",
-                "project_update_due"
+                "project_update_due",
+                "standup_digest"
               ],
               "type": "string"
             },
@@ -20562,7 +20656,8 @@
                     "issue_assigned",
                     "comment_created",
                     "project_update_posted",
-                    "project_update_due"
+                    "project_update_due",
+                    "standup_digest"
                   ],
                   "type": "string"
                 },
@@ -29261,6 +29356,114 @@
           }
         ],
         "summary": "Start Issue Import",
+        "tags": [
+          "integrations"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/imports/github": {
+      "post": {
+        "description": "Queue an import of one repository's Issues into one team, refusing a second while one is running.",
+        "operationId": "start_github_import_api_workspaces__workspace_id__imports_github_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GitHubImportRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IssueImportRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Start Github Import",
+        "tags": [
+          "integrations"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/imports/github/repositories": {
+      "get": {
+        "description": "The repositories the installed GitHub App covers, to choose the one whose Issues are imported.",
+        "operationId": "list_github_import_repositories_api_workspaces__workspace_id__imports_github_repositories_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GitHubImportRepositoryListRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "List Github Import Repositories",
         "tags": [
           "integrations"
         ]

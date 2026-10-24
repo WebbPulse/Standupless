@@ -242,6 +242,7 @@ describe('the team notifications section', () => {
           'issue_assigned',
           'comment_created',
           'project_update_posted',
+          'standup_digest',
         ],
       });
     });
@@ -504,6 +505,7 @@ describe('the chat app connections in team settings', () => {
           'comment_created',
           'project_update_posted',
           'project_update_due',
+          'standup_digest',
         ],
       });
     });
