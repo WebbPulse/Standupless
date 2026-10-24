@@ -14,9 +14,9 @@ from typing import Any, Iterator
 import pytest
 from fastapi.testclient import TestClient
 
+from app.common.api.schemas.projects_display import ProjectsDisplay
 from app.common.composition.domains import DOMAINS
 from app.common.composition.wiring import build_domain_app
-from app.common.api.schemas.projects_display import ProjectsDisplay
 from app.common.db.dynamo.team_config import WORKSPACE_DISPLAY_DEFAULTS_KEY, display_defaults_key
 from tests.domains.helpers import (
     ADMIN,

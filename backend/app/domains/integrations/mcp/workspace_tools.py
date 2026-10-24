@@ -240,7 +240,6 @@ WORKSPACE_TOOLS: tuple[Tool, ...] = (
                     clearable=True,
                 ),
             },
-            required=("projects_display",),
         ),
         handler=_update_workspace_display_defaults,
     ),
