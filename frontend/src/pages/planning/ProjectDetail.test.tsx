@@ -550,6 +550,23 @@ describe('ProjectDetail', () => {
     expect(await screen.findByText('Getting it out')).toBeInTheDocument();
   });
 
+  it('offers a retry instead of an endless skeleton when the teams fail', async () => {
+    const user = userEvent.setup();
+    listTeams.mockRejectedValue(new Error('Network down'));
+    renderPage();
+
+    const retry = await screen.findByRole('button', { name: 'Retry' });
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'Could not load the teams.'
+    );
+    expect(screen.queryByLabelText('Loading project')).not.toBeInTheDocument();
+
+    listTeams.mockResolvedValue([engine]);
+    await user.click(retry);
+
+    expect(await screen.findByText('Getting it out')).toBeInTheDocument();
+  });
+
   it('reports a project the server answers 404 for as not found', async () => {
     getProject.mockRejectedValue(
       new ApiError({

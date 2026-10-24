@@ -1646,6 +1646,7 @@ class ProjectUpdate(TypedDict):
     name: NotRequired[str | None]
     open_issues: NotRequired[ProjectOpenIssues | None]
     priority: NotRequired[Literal["none", "urgent", "high", "medium", "low"] | None]
+    sort_order: NotRequired[str | None]
     start_date: NotRequired[str | None]
     status: NotRequired[Literal["backlog", "planned", "in_progress", "paused", "completed", "canceled"] | None]
     target_date: NotRequired[str | None]
@@ -1687,7 +1688,9 @@ class ProjectsDisplay(TypedDict):
     group: NotRequired[Literal["status", "health", "priority", "initiative", "lead", "team", "none"]]
     layout: NotRequired[Literal["list", "board", "timeline"]]
     lead_team: NotRequired[Literal["all", "lead"]]
-    order: NotRequired[Literal["target", "start", "name", "priority", "progress", "created", "updated", "customers"]]
+    order: NotRequired[
+        Literal["target", "start", "name", "priority", "progress", "created", "updated", "customers", "manual"]
+    ]
     rows: NotRequired[Literal["status", "health", "priority", "initiative", "lead", "team", "none"]]
     zoom: NotRequired[Literal["week", "month", "quarter", "year"]]
 
@@ -3817,6 +3820,7 @@ class ProjectRead(TypedDict):
     project_id: str
     skipped_template_issues: NotRequired[list[SkippedTemplateIssueRead] | None]
     slug_id: NotRequired[str]
+    sort_order: NotRequired[str | None]
     start_date: NotRequired[str | None]
     status: Literal["backlog", "planned", "in_progress", "paused", "completed", "canceled"]
     status_counts: NotRequired[dict[str, int]]
