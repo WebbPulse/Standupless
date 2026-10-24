@@ -41,6 +41,7 @@ import {
   PriorityPicker,
 } from '../../components/issues/PropertyPickers';
 import EditableText from '../../components/planning/EditableText';
+import CustomerRequestsSection from '../../components/customers/CustomerRequestsSection';
 import DocumentsSection from '../../components/planning/DocumentsSection';
 import MilestonesSection from '../../components/planning/MilestonesSection';
 import ProjectIcon from '../../components/planning/ProjectIcon';
@@ -708,6 +709,17 @@ export const ProjectDetail: React.FC = () => {
                 canCreate={canEdit}
                 people={people}
               />
+              {workspace?.role !== 'guest' && (
+                <CustomerRequestsSection
+                  workspaceId={workspaceId}
+                  slug={slug}
+                  targetKind="project"
+                  targetId={projectId}
+                  targetLabel={project.name}
+                  canAdd={canEdit}
+                  variant="section"
+                />
+              )}
               <section aria-labelledby="project-issues-preview">
                 <div className="mb-2 flex items-center justify-between">
                   <h2

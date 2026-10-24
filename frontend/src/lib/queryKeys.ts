@@ -672,3 +672,28 @@ export const workspaceAuditLogKey = (
   filters.since ?? '',
   filters.until ?? '',
 ];
+
+/** The workspace's customers, by name. */
+export const customersKey = (workspaceId: string): QueryKey => [
+  'customers',
+  workspaceId,
+];
+
+/** One customer. */
+export const customerKey = (
+  workspaceId: string,
+  customerId: string
+): QueryKey => ['customer', workspaceId, customerId];
+
+/** One customer's requests, newest first. */
+export const customerRequestsKey = (
+  workspaceId: string,
+  customerId: string
+): QueryKey => ['customerRequests', workspaceId, customerId];
+
+/** The customer requests naming one issue or project, newest first. */
+export const targetCustomerRequestsKey = (
+  workspaceId: string,
+  kind: 'issue' | 'project',
+  targetId: string
+): QueryKey => ['targetCustomerRequests', workspaceId, kind, targetId];

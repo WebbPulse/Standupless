@@ -265,6 +265,7 @@ _VIEWS_READ_REPOSITORIES = (
     "subscriptions",
     "planning",
     "documents",
+    "customers",
     "counters",
     "api_keys",
     "activity",
@@ -377,6 +378,7 @@ _INTEGRATIONS_REPOSITORIES = (
     "planning",
     "releases",
     "documents",
+    "customers",
     "relations",
     "subscriptions",
     "teams",
@@ -414,6 +416,7 @@ def _planning_routers() -> "Sequence[RouterSpec]":
     team the row actually belongs to.
     """
     from app.domains.planning.endpoints import (
+        customers,
         cycles,
         documents,
         initiatives,
@@ -430,6 +433,7 @@ def _planning_routers() -> "Sequence[RouterSpec]":
         (milestones.router, "/workspaces", ("planning",)),
         (project_updates.router, "/workspaces", ("planning",)),
         (documents.router, "/workspaces", ("planning",)),
+        (customers.router, "/workspaces", ("planning",)),
         (initiatives.router, "/workspaces", ("planning",)),
         (roadmap.router, "/workspaces", ("planning",)),
         (pulse.router, "/workspaces", ("planning",)),
@@ -453,6 +457,7 @@ _PLANNING_REPOSITORIES = (
     "planning",
     "releases",
     "documents",
+    "customers",
     "idempotency",
     "issues",
     "activity",
