@@ -1346,7 +1346,7 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
             type="button"
             aria-label="Close command palette"
             onClick={onClose}
-            className="-mr-2 inline-flex h-10 shrink-0 items-center rounded-sm px-2 text-sm font-medium text-accent active:opacity-75 sm:hidden"
+            className="-mr-2 inline-flex h-10 shrink-0 items-center rounded-sm px-2 text-sm font-medium text-accent hover:opacity-90 active:opacity-75 sm:hidden"
           >
             Cancel
           </button>
