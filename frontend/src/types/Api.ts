@@ -4917,3 +4917,41 @@ export interface CustomerRequestListRead {
   requests: CustomerRequestRead[];
   next_cursor: string | null;
 }
+
+/** A workspace member as their member page shows them, without an email. */
+export interface MemberProfileRead {
+  user_id: string;
+  display_name: string;
+  full_name?: string;
+  avatar_url?: string | null;
+  role: 'owner' | 'admin' | 'member' | 'guest';
+  joined_at: string;
+  /** The teams the member belongs to that the viewer can see. */
+  team_ids?: string[];
+}
+
+/** A comment as a member's activity feed carries it, its body cut to an excerpt. */
+export interface MemberCommentRead {
+  comment_id: string;
+  body: string;
+  parent_comment_id?: string | null;
+}
+
+/** One row of a member's activity: an issue change or a comment. */
+export interface MemberActivityRead {
+  type: 'issue_change' | 'comment';
+  id: string;
+  created_at: string;
+  issue_id: string;
+  issue_key: string;
+  issue_title: string;
+  team_id: string;
+  activity?: ActivityRead | null;
+  comment?: MemberCommentRead | null;
+}
+
+/** A page of a member's activity, newest first. */
+export interface MemberActivityListRead {
+  activity: MemberActivityRead[];
+  next_cursor?: string | null;
+}
