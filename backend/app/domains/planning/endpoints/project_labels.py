@@ -39,9 +39,7 @@ def list_labels(
     return list_project_labels(repositories, context)
 
 
-@router.post(
-    "/{workspace_id}/project-labels", response_model=ProjectLabelRead, status_code=status.HTTP_201_CREATED
-)
+@router.post("/{workspace_id}/project-labels", response_model=ProjectLabelRead, status_code=status.HTTP_201_CREATED)
 def add_label(
     payload: ProjectLabelCreate,
     context: Annotated[AuthzContext, Depends(require(Capability.WORKSPACE_ADMIN))],
