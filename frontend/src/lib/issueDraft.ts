@@ -74,7 +74,7 @@ const isNullableString = (value: unknown): value is string | null =>
 const isParent = (value: unknown): value is IssueDraftParent | null => {
   if (value === null) return true;
   if (typeof value !== 'object') return false;
-  const row = value as Record<string, unknown>;
+  const row = value as Partial<Record<keyof IssueDraftParent, unknown>>;
   return (
     typeof row.id === 'string' &&
     typeof row.key === 'string' &&
@@ -98,7 +98,7 @@ const isStrings = (value: unknown): value is string[] =>
 /** Whether a parsed value has the shape of a saved draft. */
 export const isIssueDraft = (value: unknown): value is IssueDraft => {
   if (typeof value !== 'object' || value === null) return false;
-  const row = value as Record<string, unknown>;
+  const row = value as Partial<Record<keyof IssueDraft, unknown>>;
   return (
     typeof row.teamId === 'string' &&
     row.teamId !== '' &&
