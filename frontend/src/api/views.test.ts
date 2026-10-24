@@ -12,6 +12,7 @@ import {
   appendNotifications,
   boardColumnPath,
   boardPath,
+  clearInbox,
   createView,
   deleteNotification,
   deleteView,
@@ -20,6 +21,7 @@ import {
   getInboxCount,
   getView,
   inboxCountPath,
+  inboxClearPath,
   inboxPath,
   inboxReadPath,
   listBoardColumn,
@@ -169,6 +171,7 @@ describe('the paths', () => {
     expect(inboxPath(WS)).toBe('/workspaces/ws-mine/inbox');
     expect(inboxCountPath(WS)).toBe('/workspaces/ws-mine/inbox/count');
     expect(inboxReadPath(WS)).toBe('/workspaces/ws-mine/inbox/read');
+    expect(inboxClearPath(WS)).toBe('/workspaces/ws-mine/inbox/clear');
     expect(notificationPath(WS, 'ntf-1')).toBe(
       '/workspaces/ws-mine/inbox/ntf-1'
     );
@@ -378,6 +381,19 @@ describe('the inbox', () => {
     expect(post).toHaveBeenCalledWith(
       '/workspaces/ws-mine/inbox/read',
       { all: true },
+      undefined
+    );
+  });
+
+  it('deletes rows in bulk and reports how many went', async () => {
+    post.mockResolvedValue({ data: { deleted: 4 } });
+
+    await expect(
+      clearInbox(WS, { read_only: true, kinds: ['mentioned'] })
+    ).resolves.toBe(4);
+    expect(post).toHaveBeenCalledWith(
+      '/workspaces/ws-mine/inbox/clear',
+      { read_only: true, kinds: ['mentioned'] },
       undefined
     );
   });

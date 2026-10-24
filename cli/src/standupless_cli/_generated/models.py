@@ -841,6 +841,16 @@ class ImportRowRead(TypedDict):
     title: str
 
 
+class InboxClearRequest(TypedDict):
+    include_snoozed: NotRequired[bool]
+    kinds: NotRequired[list[str]]
+    read_only: NotRequired[bool]
+
+
+class InboxClearResult(TypedDict):
+    deleted: NotRequired[int]
+
+
 class InboxCountRead(TypedDict):
     unread: NotRequired[int]
 
