@@ -53,12 +53,13 @@ from app.common.planning_rules import (
     visible_team_ids,
 )
 from app.common.project_cadence import workspace_interval
+from app.common.project_labels import label_match, label_scope, label_values, require_project_labels
 from app.common.project_relations import Dependencies, dependency_map, fill_one, with_dependencies
 from app.common.project_templates import add_template_rows, fill_project, find_project_template
 from app.common.relation_effects import cancelled_status, categories_for
 from app.common.sub_teams import listed_teams
 
-NOT_NULLABLE = ("name", "status", "team_ids", "priority", "member_ids")
+NOT_NULLABLE = ("name", "status", "team_ids", "priority", "member_ids", "label_ids")
 """Patch fields that may be omitted but never cleared, because every project has one."""
 
 STATUS_VALUES = ("backlog", "planned", "in_progress", "paused", "completed", "canceled", "done")
@@ -139,6 +140,7 @@ def list_projects(
     customer_id: Optional[list[str]] = None,
     customer_id_not: Optional[list[str]] = None,
     sort: Optional[str] = None,
+    label_id: Optional[list[str]] = None,
 ) -> tuple[list[ProjectRead], Optional[str]]:
     """One page of the workspace's projects the caller can see, and the next cursor.
 
@@ -157,7 +159,8 @@ def list_projects(
     `customer_requests_desc` or `customer_revenue_desc` orders by request count or
     the asking customers' summed revenue, highest first, target date breaking ties.
     Either reads the workspace's requests once and fills `customer_request_count`,
-    and neither is open to a guest.
+    and neither is open to a guest. `label_id` keeps the projects carrying any of
+    the named project labels, `none` standing for a project with no label.
     """
     wanted_status = None if status_filter is None else normalise_project_status(status_filter)
     if status_filter is not None and status_filter not in STATUS_VALUES:
@@ -171,6 +174,7 @@ def list_projects(
     if sort is not None and sort not in PROJECT_SORTS:
         raise unprocessable(f"Unknown project sort: {sort}")
     wanted_customers = customer_values(customer_id)
+    wanted_labels = label_values(label_id)
     unwanted_customers = customer_values(customer_id_not)
     filtered = bool(wanted_customers or unwanted_customers)
     require_customer_list_reader(context, filtered, sort)
@@ -195,6 +199,8 @@ def list_projects(
         if wanted_status is not None and row.status != wanted_status:
             continue
         if initiative_id is not None and row.initiative_id != initiative_id:
+            continue
+        if not label_match(wanted_labels, row.label_ids):
             continue
         if index is not None and not customer_match(
             wanted_customers, unwanted_customers, index.customer_ids("project", row.project_id)
@@ -224,6 +230,8 @@ def list_projects(
         f"projects:{context.workspace_id}:{narrowed}:{wanted_status or 'all'}:{initiative_id or 'all'}"
         f":{customers}:{sort or PROJECT_DEFAULT_SORT}"
     )
+    if wanted_labels:
+        scope = f"{scope}:labels={label_scope(wanted_labels)}"
     if is_blocked is not None or is_blocking is not None:
         scope = f"{scope}:{_flag_scope(is_blocked)}{_flag_scope(is_blocking)}"
     scope = digest_scope(scope)
@@ -280,6 +288,7 @@ def create_project(repositories: Repositories, context: AuthzContext, payload: P
         require_workspace_member(repositories, context, member_id)
     if payload.initiative_id is not None:
         require_initiative_target(repositories, context, payload.initiative_id)
+    require_project_labels(repositories, context.workspace_id, payload.label_ids)
 
     project_id = new_planning_id()
     project = Project(
@@ -298,6 +307,7 @@ def create_project(repositories: Repositories, context: AuthzContext, payload: P
         health=payload.health,
         priority=payload.priority,
         member_ids=list(payload.member_ids),
+        label_ids=list(payload.label_ids),
         update_interval_days=payload.update_interval_days,
         initiative_id=payload.initiative_id,
         completed_at=utc_now() if payload.status in CLOSED_STATUSES else None,
@@ -441,6 +451,12 @@ def update_project(
     for member_id in fields.get("member_ids") or []:
         if member_id not in existing.member_ids:
             require_workspace_member(repositories, context, member_id)
+    if "label_ids" in fields:
+        require_project_labels(
+            repositories,
+            context.workspace_id,
+            [label_id for label_id in fields["label_ids"] if label_id not in existing.label_ids],
+        )
     if "initiative_id" in fields and fields["initiative_id"] != existing.initiative_id:
         require_initiative_access(context)
         if fields["initiative_id"] is not None:

@@ -121,6 +121,7 @@ export interface ProjectViewFilter {
   is_blocking?: 'true' | 'false';
   customer_id?: string | string[];
   customer_id_not?: string | string[];
+  label_id?: string | string[];
 }
 
 /** A stored filter with the negation keys, every key the issue list takes. */
