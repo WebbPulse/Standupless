@@ -1247,3 +1247,37 @@ def test_a_backfill_starts_each_range_at_the_same_ref(repositories: Any, install
     backfill(repositories, WORKSPACE, TEAM, ReleaseBackfill(environment="staging", limit=2))
 
     assert github.compares[0] == (FIRST, SECOND)
+
+
+def test_a_deployment_leaves_an_issue_a_commit_body_only_mentions(
+    repositories: Any, installed: str, github: FakeGitHub
+) -> None:
+    """A key named in a commit's subject ships and moves, and one its body mentions in prose stays out."""
+    _pin(repositories)
+    done = _publishing_production(repositories)
+    shipped = seed_issue(repositories, WORKSPACE, TEAM, "01JB0000000000000000000IS1", "ABC", 1)
+    mentioned = seed_issue(repositories, WORKSPACE, TEAM, "01JB0000000000000000000IS3", "ABC", 2)
+    github.messages = {FIRST: "ABC-1: Cap entries at 120 (#12)\n\nThe API lowered the cap in ABC-2 so it fits."}
+
+    _consume(repositories, _delivery(FIRST))
+
+    [release] = _releases(repositories)
+    assert release.issue_ids == [shipped.issue_id]
+    assert repositories.issues.get(WORKSPACE, shipped.issue_id).status_id == done.status_id
+    assert repositories.issues.get(WORKSPACE, mentioned.issue_id).status_id == mentioned.status_id
+
+
+def test_a_deployment_still_ships_a_key_a_commit_body_fixes(
+    repositories: Any, installed: str, github: FakeGitHub
+) -> None:
+    """A closing word in a commit body is not a bare mention, so its issue ships and moves."""
+    _pin(repositories)
+    done = _publishing_production(repositories)
+    issue = seed_issue(repositories, WORKSPACE, TEAM, "01JB0000000000000000000IS1", "ABC", 1)
+    github.messages = {FIRST: "Tidy the cap\n\nFixes ABC-1"}
+
+    _consume(repositories, _delivery(FIRST))
+
+    [release] = _releases(repositories)
+    assert release.issue_ids == [issue.issue_id]
+    assert repositories.issues.get(WORKSPACE, issue.issue_id).status_id == done.status_id

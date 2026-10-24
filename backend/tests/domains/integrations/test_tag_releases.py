@@ -416,3 +416,24 @@ def test_the_repositories_route_sets_the_release_source_and_keeps_the_team(
     }
     cleared = client.patch(path, json={"release_source": {"kind": "deployments", "tag_pattern": "v*"}})
     assert cleared.json()["release_source"]["tag_pattern"] is None
+
+
+def test_a_tag_leaves_an_issue_a_commit_body_only_mentions(
+    repositories: Any, installed: str, github: FakeGitHub
+) -> None:
+    """A tag ships the key in its commit's subject and never moves one the body mentions in prose."""
+    _source(repositories, tag_pattern="v*")
+    mentioned = seed_issue(repositories, WORKSPACE, TEAM, FIRST_ISSUE, "ABC", 1)
+    second = seed_issue(repositories, WORKSPACE, TEAM, SECOND_ISSUE, "ABC", 2)
+    github.messages = {
+        FIRST: "Initial (#1)",
+        SECOND: "ABC-2: Cap entries (#2)\n\nThe API lowered the cap in ABC-1 so it fits.",
+    }
+    github.tags = [TagRef(name="v1.1.0", sha=SECOND), TagRef(name="v1.0.0", sha=FIRST)]
+
+    handle_create(repositories, WORKSPACE, _create("v1.1.0"))
+
+    [release] = _releases(repositories)
+    assert release.issue_ids == [second.issue_id]
+    assert _status_of(repositories, SECOND_ISSUE) == _statuses(repositories)["Done"].status_id
+    assert _status_of(repositories, FIRST_ISSUE) == mentioned.status_id
