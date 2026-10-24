@@ -51,7 +51,7 @@ const workspace = {
   role: 'owner',
 } as WorkspaceRead;
 
-/** Renders the global shortcuts on the given route, with the help when asked. */
+/** Renders the global shortcuts on a route, with the help when asked. */
 const renderShortcuts = async (path: string, help = false) => {
   const user = userEvent.setup();
   render(
