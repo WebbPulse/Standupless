@@ -55,6 +55,10 @@ import {
 } from '../../lib/queryKeys';
 import type { IssueRead, TeamRead } from '../../types/Api';
 import CommandPalette from '../command/CommandPalette';
+import RouteErrorBoundary, {
+  RouteErrorState,
+  type RouteErrorFallbackProps,
+} from '../routes/RouteErrorBoundary';
 import CreateIssueDialog, {
   type CreateIssuePreset,
 } from '../issues/CreateIssueDialog';
@@ -68,6 +72,7 @@ import CreatePlanningHost, {
 import DesktopInboxReporter from '../desktop/DesktopInboxReporter';
 import { Toaster } from '../ui/toast';
 import { PeekProvider } from './PeekPane';
+import WorkspaceShell from './WorkspaceShell';
 import { estimateOptionsOf } from '../../lib/validation';
 import { LOOKUP_POLL_MS } from '../../lib/polling';
 
@@ -172,6 +177,16 @@ const useWorkspaceSwitchCacheClear = (workspaceId: string): void => {
     if (left !== '') clearPolledQueryCache();
   }, [workspaceId]);
 };
+
+/**
+ * What a page that threw shows instead: the error inside the workspace frame,
+ * so the sidebar stays usable and leads somewhere that works.
+ */
+const WorkspaceRouteError: React.FC<RouteErrorFallbackProps> = (props) => (
+  <WorkspaceShell title="Something went wrong">
+    <RouteErrorState {...props} />
+  </WorkspaceShell>
+);
 
 /** Renders the overlays and the page beneath them, inside the team list. */
 const WorkspaceOverlays: React.FC = () => {
@@ -321,7 +336,9 @@ const WorkspaceOverlays: React.FC = () => {
               <MentionDirectoryProvider workspaceId={workspaceId}>
                 <PeekProvider>
                   <Toaster />
-                  <Outlet />
+                  <RouteErrorBoundary fallback={WorkspaceRouteError}>
+                    <Outlet />
+                  </RouteErrorBoundary>
 
                   {workspace !== null && (
                     <>

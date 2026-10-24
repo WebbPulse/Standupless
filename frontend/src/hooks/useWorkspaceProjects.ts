@@ -33,6 +33,8 @@ export interface WorkspaceProjects {
   isLoading: boolean;
   /** The key the read runs under, for a write to invalidate. */
   queryKey: QueryKey;
+  /** Reads the projects again now, for a retry after a failed read. */
+  refetch: () => void;
 }
 
 /**
@@ -114,14 +116,18 @@ export const useWorkspaceProjects = (
     [workspaceId, teamId, rollUp, narrowingKey]
   );
 
-  const { data, error, isLoading } = usePolledQuery(read, {
+  const { data, error, isLoading, refetch } = usePolledQuery(read, {
     intervalMs: POLL_MS,
     enabled: enabled && workspaceId !== '',
     queryKey,
     auth,
   });
 
-  return { projects: data ?? [], error, isLoading, queryKey };
+  const retry = useCallback(() => {
+    void refetch();
+  }, [refetch]);
+
+  return { projects: data ?? [], error, isLoading, queryKey, refetch: retry };
 };
 
 export default useWorkspaceProjects;
