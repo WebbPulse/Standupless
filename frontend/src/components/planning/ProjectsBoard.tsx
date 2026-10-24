@@ -49,6 +49,7 @@ import {
   HealthPicker,
   LeadPicker,
   MembersPicker,
+  ProjectLabelsPicker,
   ProjectStatusPicker,
   TeamKey,
 } from './ProjectPickers';
@@ -81,6 +82,7 @@ import {
 } from '../../lib/projectList';
 import { shortDateLabel } from '../../lib/propertyOptions';
 import type {
+  ProjectLabelRead,
   ProjectOpenIssues,
   ProjectRead,
   TeamRead,
@@ -120,6 +122,9 @@ const ONE_LANE = 'all';
 /** Lifts a card control above the link that covers the card. */
 const ON_CARD = 'relative z-10 flex shrink-0 items-center';
 
+/** The labels a board drawn without any are given, one array so memoised cards keep it. */
+const NO_PROJECT_LABELS: ProjectLabelRead[] = [];
+
 /** The stored key that hides a column. */
 const hiddenKey = (column: string): string => `hidden/${column}`;
 
@@ -144,6 +149,7 @@ interface BoardCardProps {
   slug: string;
   teams: TeamRead[];
   people: Assignable[];
+  projectLabels: ProjectLabelRead[];
   editable: boolean;
   dimmed: boolean;
   /** The picker the card menu asked for, drawn even when the card hides it. */
@@ -163,6 +169,7 @@ const BoardCard: React.FC<BoardCardProps> = ({
   slug,
   teams,
   people,
+  projectLabels,
   editable,
   dimmed,
   forced,
@@ -269,6 +276,20 @@ const BoardCard: React.FC<BoardCardProps> = ({
       {summary !== '' && (
         <p className="truncate text-xs text-text-faint">{summary}</p>
       )}
+      {has('labels') && (editable || (project.label_ids ?? []).length > 0) && (
+        <div className={cn(ON_CARD, 'min-w-0 flex-wrap self-start')}>
+          <ProjectLabelsPicker
+            inline
+            value={project.label_ids ?? []}
+            labels={projectLabels}
+            disabled={!editable}
+            className="flex-wrap"
+            onChange={(labelIds) => {
+              onChange({ label_ids: labelIds });
+            }}
+          />
+        </div>
+      )}
       <div className="-ml-1 flex min-w-0 flex-wrap items-center gap-x-1 gap-y-1 text-xs text-text-muted">
         {has('status') && (
           <span className={ON_CARD}>
@@ -346,6 +367,12 @@ const BoardCard: React.FC<BoardCardProps> = ({
             ))}
           </span>
         )}
+        {has('id') && (
+          <span className="px-0.5 font-mono whitespace-nowrap">
+            <span className="sr-only">ID </span>
+            {project.slug_id ?? project.project_id.slice(-8).toLowerCase()}
+          </span>
+        )}
         {has('issues') && (
           <span className="px-0.5 whitespace-nowrap tabular-nums">
             <span aria-hidden="true">{`${String(project.counts.done)}/${String(project.counts.total)}`}</span>
@@ -408,6 +435,8 @@ export interface ProjectsBoardProps {
   workspaceId: string;
   teams: TeamRead[];
   people: Assignable[];
+  /** The workspace's project labels, for the label chips and picker. */
+  projectLabels?: ProjectLabelRead[];
   workspaceRole: WorkspaceRole | undefined;
   onMove: (
     project: ProjectRead,
@@ -458,6 +487,7 @@ export const ProjectsBoard: React.FC<ProjectsBoardProps> = ({
   workspaceId,
   teams,
   people,
+  projectLabels = NO_PROJECT_LABELS,
   workspaceRole,
   onMove,
   createIn,
@@ -722,6 +752,7 @@ export const ProjectsBoard: React.FC<ProjectsBoardProps> = ({
               slug={slug}
               teams={teams}
               people={people}
+              projectLabels={projectLabels}
               editable={canEditProject(workspaceRole, project, teams)}
               dimmed={drag?.projectId === project.project_id}
               forced={forced?.projectId === project.project_id ? forced : null}

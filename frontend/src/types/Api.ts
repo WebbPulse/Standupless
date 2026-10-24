@@ -2358,9 +2358,44 @@ export interface ProjectRead {
   customer_request_count?: number | null;
   /** The summed revenue of the customers asking, set when the list was sorted by revenue. */
   customer_revenue?: number | null;
+  /** The project labels it carries, in the order they were set. */
+  label_ids?: string[];
+  /** The short project id: the lowercased tail of `project_id`. */
+  slug_id?: string;
   created_by: string;
   created_at: string;
   updated_at: string;
+}
+
+/** One project label: the workspace's one set of labels for projects. */
+export interface ProjectLabelRead {
+  id: string;
+  name: string;
+  color: string;
+  description: string | null;
+  /** How many projects the caller can see carry the label. */
+  project_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+/** The body the project label list answers with, in name order. */
+export interface ProjectLabelListRead {
+  labels: ProjectLabelRead[];
+}
+
+/** A new project label; names are unique ignoring case. */
+export interface ProjectLabelCreate {
+  name: string;
+  color: string;
+  description?: string | null;
+}
+
+/** The editable fields on a project label; an empty description clears it. */
+export interface ProjectLabelUpdate {
+  name?: string;
+  color?: string;
+  description?: string | null;
 }
 
 /** One dated milestone of a project, as the timeline marks it on the lane. */
@@ -2447,6 +2482,7 @@ export interface ProjectCreate {
   health?: ProjectHealth | null;
   priority?: IssuePriority;
   member_ids?: string[];
+  label_ids?: string[];
   update_interval_days?: ProjectUpdateInterval | null;
 }
 
@@ -2469,6 +2505,8 @@ export interface ProjectUpdate {
   health?: ProjectHealth | null;
   priority?: IssuePriority;
   member_ids?: string[];
+  /** Replaces the project labels; an empty list clears them. */
+  label_ids?: string[];
   /** A null returns the project to the workspace's cadence. */
   update_interval_days?: ProjectUpdateInterval | null;
   /** Moves the project into an initiative; a null takes it out of one. */

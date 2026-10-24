@@ -59,6 +59,7 @@ import {
 import {
   HealthPicker,
   LeadPicker,
+  ProjectLabelsPicker,
   ProjectStatusPicker,
   TeamKey,
 } from '../../components/planning/ProjectPickers';
@@ -89,6 +90,7 @@ import SubTeamToggle from '../../components/workspace/SubTeamToggle';
 import WorkspaceShell from '../../components/workspace/WorkspaceShell';
 import { useAuth } from '../../hooks/useAuth';
 import { useCustomers } from '../../hooks/useCustomers';
+import { useProjectLabels } from '../../hooks/useProjectLabels';
 import useCloseProjectPrompt from '../../hooks/useCloseProjectPrompt';
 import { useInitiatives } from '../../hooks/useInitiatives';
 import { useListKeyboardNav } from '../../hooks/useListKeyboardNav';
@@ -153,6 +155,7 @@ import { viewKey } from '../../lib/queryKeys';
 import { showErrorToast, showToast } from '../../lib/toast';
 import type {
   ProjectMilestoneMarkerRead,
+  ProjectLabelRead,
   ProjectRead,
   ProjectStatus,
   ProjectUpdate,
@@ -169,7 +172,7 @@ const GRID =
 /** A property the list draws in a column of its own rather than beside the name. */
 type GridColumn = Exclude<
   ProjectColumn,
-  'summary' | 'milestones' | 'dependencies'
+  'summary' | 'milestones' | 'dependencies' | 'labels'
 >;
 
 /** The shown properties that take a grid column, in drawing order. */
@@ -193,6 +196,7 @@ const COLUMN_WIDTHS: Record<GridColumn, string> = {
   updated: '5.5rem',
   completed: '5.5rem',
   progress: '4.5rem',
+  id: '5.5rem',
 };
 
 /**
@@ -229,6 +233,9 @@ const CLOSED_STATUSES: ReadonlySet<ProjectStatus> = new Set([
 /** The filter value that asks for projects with no lead. */
 const NO_LEAD = 'none';
 
+/** The filter value that asks for projects with no label. */
+const NO_LABEL = 'none';
+
 /** How each column's header cell sits over its column. */
 const HEADER_CLASSES: Record<GridColumn, string> = {
   health: 'hidden px-2 md:block',
@@ -244,6 +251,7 @@ const HEADER_CLASSES: Record<GridColumn, string> = {
   updated: 'hidden md:block',
   completed: 'hidden md:block',
   progress: 'text-right',
+  id: 'hidden md:block',
 };
 
 /** The short header text of each column, where the header names it. */
@@ -391,6 +399,8 @@ interface ProjectRowProps {
   workspaceId: string;
   teams: TeamRead[];
   people: Assignable[];
+  /** The workspace's project labels, for the label chips and picker. */
+  projectLabels: ProjectLabelRead[];
   /** Every loaded project by id, so the dependency flags can name their projects. */
   byId: ReadonlyMap<string, ProjectRead>;
   /** The columns shown beside the name, in drawing order. */
@@ -418,6 +428,7 @@ const ProjectRow: React.FC<ProjectRowProps> = ({
   workspaceId,
   teams,
   people,
+  projectLabels,
   byId,
   shown,
   workspaceRole,
@@ -483,6 +494,19 @@ const ProjectRow: React.FC<ProjectRowProps> = ({
           <ProjectDependencyMarkers project={project} byId={byId} />
         )}
         <UpdateDueBadge project={project} className="shrink-0" />
+        {has('labels') && (
+          <span className="pointer-events-auto relative z-10 hidden min-w-0 md:inline-flex">
+            <ProjectLabelsPicker
+              inline
+              value={project.label_ids ?? []}
+              labels={projectLabels}
+              disabled={!editable}
+              onChange={(labelIds) => {
+                void update({ label_ids: labelIds });
+              }}
+            />
+          </span>
+        )}
         {has('milestones') && (
           <NextMilestone markers={project.milestone_markers} />
         )}
@@ -626,6 +650,12 @@ const ProjectRow: React.FC<ProjectRowProps> = ({
           <span>{`${String(percent)}%`}</span>
         </span>
       )}
+      {has('id') && (
+        <span className="pointer-events-none hidden truncate font-mono text-xs text-text-muted md:block">
+          <span className="sr-only">ID </span>
+          {project.slug_id ?? project.project_id.slice(-8).toLowerCase()}
+        </span>
+      )}
       {lead !== undefined && (
         <span className="sr-only">{`Lead ${personLabel(lead)}`}</span>
       )}
@@ -651,7 +681,7 @@ type Saving = 'new' | 'details' | null;
 
 /** The filters the page keeps in the URL. */
 type FilterField =
-  'team' | 'status' | 'lead' | 'blocked' | 'blocking' | 'customer';
+  'team' | 'status' | 'lead' | 'blocked' | 'blocking' | 'customer' | 'label';
 
 /** Props for Projects. */
 export interface ProjectsProps {
@@ -706,6 +736,7 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading }) => {
     [statusText]
   );
   const leadFilter = params.get('lead') ?? baseOf('lead');
+  const labelFilter = params.get('label') ?? baseOf('label');
   const blockedFilter = flagParam(params.get('blocked') ?? baseOf('blocked'));
   const blockingFilter = flagParam(
     params.get('blocking') ?? baseOf('blocking')
@@ -766,6 +797,7 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading }) => {
     blocking: blockingFilter,
     rollUp: heldRollUp === null ? baseRollUp : heldRollUp !== '0',
     customer: isMember ? customerFilter : (base?.customer ?? ''),
+    label: labelFilter,
   });
   const changed =
     base !== undefined &&
@@ -791,6 +823,7 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading }) => {
       narrowing
     );
   const { customers } = useCustomers(workspaceId, isMember);
+  const { labels: projectLabels } = useProjectLabels(workspaceId);
   const teamIds = useMemo(() => teams.map((team) => team.id), [teams]);
   const projectsById = useMemo(
     () => new Map(projects.map((project) => [project.project_id, project])),
@@ -844,6 +877,13 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading }) => {
               ? project.lead_id === null
               : project.lead_id === leadFilter
         )
+        .filter((project) =>
+          labelFilter === ''
+            ? true
+            : labelFilter === NO_LABEL
+              ? (project.label_ids ?? []).length === 0
+              : (project.label_ids ?? []).includes(labelFilter)
+        )
         .filter(
           (project) =>
             flagMatches(
@@ -861,6 +901,7 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading }) => {
       projectsById,
       statusFilter,
       leadFilter,
+      labelFilter,
       blockedFilter,
       blockingFilter,
       closed,
@@ -1083,6 +1124,7 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading }) => {
     teamFilter !== '' ||
     statusFilter.length > 0 ||
     leadFilter !== '' ||
+    labelFilter !== '' ||
     blockedFilter !== '' ||
     blockingFilter !== '' ||
     customerFilter !== '';
@@ -1175,6 +1217,20 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading }) => {
         />
       ),
       keywords: [person.email],
+    })),
+  ];
+  const labelOptions: ComboboxOption[] = [
+    { value: NO_LABEL, label: 'No labels' },
+    ...projectLabels.map((label) => ({
+      value: label.id,
+      label: label.name,
+      icon: (
+        <span
+          aria-hidden="true"
+          className="h-2 w-2 shrink-0 rounded-full"
+          style={{ backgroundColor: label.color }}
+        />
+      ),
     })),
   ];
   const customerOptions: ComboboxOption[] = [
@@ -1317,6 +1373,14 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading }) => {
               setParam('lead', value === leadFilter ? '' : value);
             }}
           />
+          <FilterButton
+            field="Labels"
+            options={labelOptions}
+            selected={labelFilter === '' ? [] : [labelFilter]}
+            onSelect={(value) => {
+              setParam('label', value === labelFilter ? '' : value);
+            }}
+          />
           {isMember && (
             <FilterButton
               field="Customer"
@@ -1366,6 +1430,7 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading }) => {
                 writeParam(next, 'team', '');
                 writeParam(next, 'status', '');
                 writeParam(next, 'lead', '');
+                writeParam(next, 'label', '');
                 writeParam(next, 'blocked', '');
                 writeParam(next, 'blocking', '');
                 writeParam(next, 'customer', '');
@@ -1577,6 +1642,7 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading }) => {
                             workspaceId={workspaceId}
                             teams={teams}
                             people={people}
+                            projectLabels={projectLabels}
                             byId={projectsById}
                             shown={shownColumns}
                             workspaceRole={workspace?.role}
@@ -1701,6 +1767,7 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading }) => {
           workspaceId={workspaceId}
           teams={teams}
           people={people}
+          projectLabels={projectLabels}
           workspaceRole={workspace?.role}
           onMove={moveProject}
           ordering={ordering}

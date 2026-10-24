@@ -1,6 +1,6 @@
 /**
  * The pickers a project's own properties are edited with: status, health,
- * lead, members, teams, update cadence, the projects it waits on or holds up,
+ * lead, members, labels, teams, update cadence, the projects it waits on or holds up,
  * and its icon and colour. They draw the same `rail` and `chip` triggers as the issue property
  * pickers, so a project reads and edits the way an issue does, and like those
  * they are controlled and write nothing themselves.
@@ -11,6 +11,7 @@ import {
   LuBellRing,
   LuCheck,
   LuGoal,
+  LuTag,
   LuUserRound,
   LuUsers,
 } from 'react-icons/lu';
@@ -48,6 +49,7 @@ import type {
   InitiativeStatus,
   ProjectHealth,
   ProjectIconName,
+  ProjectLabelRead,
   ProjectRead,
   ProjectRelationType,
   ProjectStatus,
@@ -55,6 +57,7 @@ import type {
   TeamRead,
 } from '../../types/Api';
 import Avatar from '../ui/avatar';
+import { LabelChip } from '../ui/badge';
 import { Combobox, type ComboboxOption } from '../ui/combobox';
 import { Popover, type PopoverTriggerProps } from '../ui/popover';
 import ProjectHealthGlyph from './ProjectHealthGlyph';
@@ -843,6 +846,141 @@ export const MembersPicker: React.FC<MembersPickerProps> = ({
         options={options}
         selected={value}
         emptyMessage="Nobody matches"
+        onSelect={(picked) => {
+          onChange(
+            value.includes(picked)
+              ? value.filter((id) => id !== picked)
+              : [...value, picked]
+          );
+        }}
+      />
+    </Popover>
+  );
+};
+
+/** Props for ProjectLabelsPicker: the workspace's project labels and the chosen ones. */
+export interface ProjectLabelsPickerProps extends ProjectPickerBaseProps {
+  value: string[];
+  labels: ProjectLabelRead[];
+  onChange: (value: string[]) => void;
+  /**
+   * Draws the chosen labels as chips in place of the field trigger, as a list
+   * row or board card shows them; nothing is drawn when none is chosen and
+   * the picker is disabled.
+   */
+  inline?: boolean;
+}
+
+/** Picks a project's labels from the workspace's project labels, several at once. */
+export const ProjectLabelsPicker: React.FC<ProjectLabelsPickerProps> = ({
+  value,
+  labels,
+  onChange,
+  inline = false,
+  disabled = false,
+  variant = 'rail',
+  align = 'start',
+  className = '',
+}) => {
+  const byId = new Map(labels.map((label) => [label.id, label]));
+  const chosen = value
+    .map((id) => byId.get(id))
+    .filter((label): label is ProjectLabelRead => label !== undefined);
+  const options: ComboboxOption[] = labels.map((label) => ({
+    value: label.id,
+    label: label.name,
+    icon: (
+      <span
+        aria-hidden="true"
+        className="h-2 w-2 shrink-0 rounded-full"
+        style={{ backgroundColor: label.color }}
+      />
+    ),
+  }));
+  const first = chosen[0];
+  const text =
+    chosen.length === 0
+      ? variant === 'chip'
+        ? 'Labels'
+        : 'No labels'
+      : chosen.length === 1 && first !== undefined
+        ? first.name
+        : `${String(chosen.length)} labels`;
+  if (inline && disabled && chosen.length === 0) return null;
+  return (
+    <Popover
+      label="Labels"
+      align={align}
+      block={variant === 'rail' && !inline}
+      contentClassName="w-64"
+      trigger={(trigger) =>
+        inline ? (
+          <button
+            type="button"
+            disabled={disabled}
+            aria-label={`Labels: ${chosen.length === 0 ? 'No labels' : chosen.map((label) => label.name).join(', ')}`}
+            {...trigger}
+            onClick={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              trigger.onClick();
+            }}
+            className={cn(
+              'inline-flex min-w-0 items-center gap-1 rounded-sm hover:opacity-80 disabled:cursor-default disabled:hover:opacity-100',
+              className
+            )}
+          >
+            {chosen.length === 0 ? (
+              <span className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-dashed border-line text-text-faint">
+                <LuTag aria-hidden="true" className="h-3 w-3" />
+              </span>
+            ) : (
+              chosen.map((label) => (
+                <LabelChip
+                  key={label.id}
+                  color={label.color}
+                  name={label.name}
+                  reveal={false}
+                  className="max-w-32"
+                />
+              ))
+            )}
+          </button>
+        ) : (
+          <Trigger
+            trigger={trigger}
+            field="Labels"
+            icon={
+              chosen.length === 1 && first !== undefined ? (
+                <span
+                  aria-hidden="true"
+                  className="h-2 w-2 shrink-0 rounded-full"
+                  style={{ backgroundColor: first.color }}
+                />
+              ) : (
+                <LuTag className="h-3.5 w-3.5" />
+              )
+            }
+            text={text}
+            empty={chosen.length === 0}
+            variant={variant}
+            disabled={disabled}
+            className={className}
+          />
+        )
+      }
+    >
+      <Combobox
+        label="Labels"
+        placeholder="Add labels"
+        multiple
+        options={options}
+        selected={value}
+        emptyMessage={
+          labels.length === 0
+            ? 'No project labels yet. Add them in workspace settings.'
+            : 'No label matches'
+        }
         onSelect={(picked) => {
           onChange(
             value.includes(picked)
