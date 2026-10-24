@@ -80,3 +80,11 @@ export const TEMPLATE_GROUPS: Record<WorkflowScope, string> = {
   parent: 'Parent team',
   workspace: 'Workspace',
 };
+
+/** Whether a template is a form, which asks questions when an issue is filed from it. */
+export const isFormTemplate = (template: TemplateRead): boolean =>
+  (template.form_fields ?? []).length > 0;
+
+/** Whether a template is a form with a required question, which a schedule cannot answer. */
+export const needsAnswers = (template: TemplateRead): boolean =>
+  (template.form_fields ?? []).some((field) => field.required);

@@ -227,6 +227,68 @@ def test_issue_create_sends_me_for_the_server_to_resolve(runner: CliRunner, api:
     assert json.loads(result.stdout)["assignee_id"] == "u-me"
 
 
+FORM_TEMPLATE = {
+    "id": "tp-bug",
+    "name": "Bug report",
+    "title": "Bug: ",
+    "form_fields": [
+        {"key": "f1", "label": "Severity", "type": "select", "required": True, "options": [{"value": "High"}]},
+        {"key": "f2", "label": "Steps", "type": "long_text", "required": False, "options": []},
+        {"key": "f3", "label": "Reproduced", "type": "checkbox", "required": False, "options": []},
+    ],
+}
+
+
+def _templates(api: respx.MockRouter) -> None:
+    """A team that offers one form template."""
+    api.get(f"/api/workspaces/{WS}/teams/team-1/templates").respond(
+        json={"templates": [FORM_TEMPLATE], "default_template_id": None}
+    )
+
+
+def test_issue_create_sends_form_answers(runner: CliRunner, api: respx.MockRouter) -> None:
+    """Answers name a question by key or label, and a checkbox takes yes or no."""
+    _templates(api)
+    route = api.post(f"/api/workspaces/{WS}/issues").respond(json=make_issue(key="ENG-14"))
+    result = invoke(
+        runner,
+        "issue",
+        "create",
+        "--template",
+        "bug report",
+        "-A",
+        "severity=High",
+        "--answer",
+        "f2=Open the app",
+        "-A",
+        "Reproduced=yes",
+    )
+    assert result.exit_code == 0, result.output
+    sent = _json(route)
+    assert sent["template_id"] == "tp-bug"
+    assert sent["form_answers"] == {"f1": "High", "f2": "Open the app", "f3": True}
+
+
+def test_issue_create_names_the_required_answers_a_form_needs(runner: CliRunner, api: respx.MockRouter) -> None:
+    """A form left unanswered is refused before anything is sent, naming the question and the option."""
+    _templates(api)
+    route = api.post(f"/api/workspaces/{WS}/issues").respond(json=make_issue())
+    result = invoke(runner, "issue", "create", "--template", "Bug report")
+    assert result.exit_code != 0
+    assert "Severity" in result.stderr
+    assert "--answer" in result.stderr
+    assert not route.called
+
+
+def test_issue_create_refuses_answers_without_a_form(runner: CliRunner, api: respx.MockRouter) -> None:
+    """An answer with no template is refused rather than dropped."""
+    route = api.post(f"/api/workspaces/{WS}/issues").respond(json=make_issue())
+    result = invoke(runner, "issue", "create", "--title", "X", "-A", "f1=High")
+    assert result.exit_code != 0
+    assert "form template" in result.stderr
+    assert not route.called
+
+
 def test_issue_edit_sends_me_for_the_server_to_resolve(runner: CliRunner, api: respx.MockRouter) -> None:
     """An edit to `me` patches with `me` rather than looking the user up."""
     api.get(f"/api/workspaces/{WS}/issues/by-key/ENG-12").respond(json=make_issue())

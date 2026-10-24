@@ -28,7 +28,11 @@ import {
 } from 'react-icons/lu';
 import { errorMessage } from '../../lib/errors';
 import type { Assignable } from '../../lib/issuePeople';
-import { TEMPLATE_GROUPS } from '../../lib/issueTemplates';
+import {
+  isFormTemplate,
+  needsAnswers,
+  TEMPLATE_GROUPS,
+} from '../../lib/issueTemplates';
 import type { EstimateOptions } from '../../lib/validation';
 import type {
   CycleRead,
@@ -479,6 +483,8 @@ export const TemplateEditor: React.FC<TemplateEditorProps> = ({
   const inherited = templates.filter(
     (template) => scope === 'team' && template.scope !== 'team'
   );
+  const recurrable = (template: TemplateRead): boolean =>
+    onMakeRecurring !== undefined && !needsAnswers(template);
 
   const run = (write: Promise<unknown>): void => {
     setError(null);
@@ -601,12 +607,12 @@ export const TemplateEditor: React.FC<TemplateEditorProps> = ({
                     </div>
                   ) : (
                     <div className="flex items-center gap-0.5">
-                      {onMakeRecurring !== undefined && (
+                      {recurrable(template) && (
                         <IconButton
                           size="sm"
                           label={`Make ${template.name} recurring`}
                           onClick={() => {
-                            onMakeRecurring(template);
+                            onMakeRecurring?.(template);
                           }}
                         >
                           <LuRepeat className="h-3.5 w-3.5" />
@@ -701,14 +707,14 @@ export const TemplateEditor: React.FC<TemplateEditorProps> = ({
                 {template.id === defaultTemplateId && (
                   <Badge tone="accent">Default</Badge>
                 )}
-                {(template.form_fields ?? []).length > 0 && <Badge>Form</Badge>}
+                {isFormTemplate(template) && <Badge>Form</Badge>}
                 <Badge>{TEMPLATE_GROUPS[template.scope]}</Badge>
-                {canEdit && onMakeRecurring !== undefined && (
+                {canEdit && recurrable(template) && (
                   <IconButton
                     size="sm"
                     label={`Make ${template.name} recurring`}
                     onClick={() => {
-                      onMakeRecurring(template);
+                      onMakeRecurring?.(template);
                     }}
                   >
                     <LuRepeat className="h-3.5 w-3.5" />
