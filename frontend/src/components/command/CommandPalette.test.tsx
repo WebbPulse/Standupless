@@ -936,3 +936,28 @@ describe('the planning commands', () => {
     ).not.toBeInTheDocument();
   });
 });
+
+describe('the team preset commands', () => {
+  it('opens the current team on its active issues and its backlog', async () => {
+    const user = renderPalette({ path: '/w/mine/team/ENG' });
+
+    await user.keyboard('{Control>}k{/Control}');
+    await user.keyboard('active issues');
+    await user.click(
+      await screen.findByRole('option', { name: /Go to active issues/ })
+    );
+
+    expect(navigate).toHaveBeenCalledWith('/w/mine/team/ENG?scope=active');
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    });
+
+    await user.keyboard('{Control>}k{/Control}');
+    await user.keyboard('go to backlog');
+    await user.click(
+      await screen.findByRole('option', { name: /Go to backlog/ })
+    );
+
+    expect(navigate).toHaveBeenCalledWith('/w/mine/team/ENG?scope=backlog');
+  });
+});
