@@ -201,3 +201,175 @@ def test_a_favorite_on_a_team_the_guest_leaves_drops_out_but_is_kept(
     assert favorites(client, workspace) == []
     stored = repositories.views.favorite_items(workspace, GUEST)
     assert [(row.kind, row.target_id) for row in stored] == [("team", TEAM)]
+
+
+def folder(client: TestClient, workspace: str, name: str) -> "dict[str, Any]":
+    """Create one favorite folder through the route, failing loudly on a refusal."""
+    response = client.post(f"/api/workspaces/{workspace}/favorites/folders", json={"name": name})
+    assert response.status_code == 200, response.text
+    return response.json()
+
+
+def listing(client: TestClient, workspace: str) -> "dict[str, Any]":
+    """The caller's whole favorites listing, folders included."""
+    response = client.get(f"/api/workspaces/{workspace}/favorites")
+    assert response.status_code == 200, response.text
+    return response.json()
+
+
+def test_a_favorite_without_a_folder_stays_at_the_top_level(client: TestClient, workspace: str) -> None:
+    """Favorites starred before folders existed read with no folder and an empty folder list."""
+    sign_in(client, MEMBER)
+    star(client, workspace, kind="team", target_id=TEAM)
+
+    read = listing(client, workspace)
+
+    assert read["folders"] == []
+    assert [row["folder_id"] for row in read["favorites"]] == [None]
+
+
+def test_folders_are_created_in_order_and_are_the_callers_own(client: TestClient, workspace: str) -> None:
+    """A new folder goes below the others with its position, and another member never sees it."""
+    sign_in(client, MEMBER)
+
+    first = folder(client, workspace, "  Planning   board ")
+    second = folder(client, workspace, "Bugs")
+
+    assert (first["name"], first["position"]) == ("Planning board", 0)
+    assert second["position"] == 1
+    assert [row["folder_id"] for row in listing(client, workspace)["folders"]] == [
+        first["folder_id"],
+        second["folder_id"],
+    ]
+    sign_in(client, OWNER)
+    assert listing(client, workspace)["folders"] == []
+
+
+def test_a_blank_folder_name_is_refused(client: TestClient, workspace: str) -> None:
+    """A folder always has something to show in the sidebar."""
+    sign_in(client, MEMBER)
+
+    empty = client.post(f"/api/workspaces/{workspace}/favorites/folders", json={"name": ""})
+    blank = client.post(f"/api/workspaces/{workspace}/favorites/folders", json={"name": "   "})
+
+    assert (empty.status_code, blank.status_code) == (422, 422)
+
+
+def test_starring_into_a_folder_and_moving_between_folders(client: TestClient, workspace: str) -> None:
+    """An add files the favorite in the folder named, and starring it again with another folder moves it."""
+    sign_in(client, MEMBER)
+    bugs = folder(client, workspace, "Bugs")
+    later = folder(client, workspace, "Later")
+
+    added = star(client, workspace, kind="team", target_id=TEAM, folder_id=bugs["folder_id"])
+    moved = star(client, workspace, kind="team", target_id=TEAM, folder_id=later["folder_id"])
+    kept = star(client, workspace, kind="team", target_id=TEAM)
+
+    assert added.json()["folder_id"] == bugs["folder_id"]
+    assert moved.json()["folder_id"] == later["folder_id"]
+    assert kept.json()["folder_id"] == later["folder_id"]
+    assert [row["folder_id"] for row in listing(client, workspace)["favorites"]] == [later["folder_id"]]
+
+
+def test_starring_into_a_folder_the_caller_lacks_is_refused(client: TestClient, workspace: str) -> None:
+    """A folder id from nowhere is the same 404 as any other missing row, and nothing is starred."""
+    sign_in(client, MEMBER)
+
+    response = star(client, workspace, kind="team", target_id=TEAM, folder_id="01JB00000000000000000FOLDER")
+
+    assert response.status_code == 404
+    assert favorites(client, workspace) == []
+
+
+def test_reordering_moves_favorites_into_folders_and_orders_folders(client: TestClient, workspace: str) -> None:
+    """An entry naming a folder moves in, null moves out, one without a folder stays, and folders reorder."""
+    sign_in(client, MEMBER)
+    bugs = folder(client, workspace, "Bugs")
+    later = folder(client, workspace, "Later")
+    star(client, workspace, kind="team", target_id=TEAM, folder_id=bugs["folder_id"])
+    star(client, workspace, kind="team", target_id=OTHER_TEAM, folder_id=bugs["folder_id"])
+
+    response = client.put(
+        f"/api/workspaces/{workspace}/favorites/order",
+        json={
+            "items": [
+                {"kind": "team", "target_id": OTHER_TEAM, "folder_id": later["folder_id"]},
+                {"kind": "team", "target_id": TEAM},
+            ],
+            "folders": [later["folder_id"]],
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert [(row["target_id"], row["folder_id"]) for row in body["favorites"]] == [
+        (OTHER_TEAM, later["folder_id"]),
+        (TEAM, bugs["folder_id"]),
+    ]
+    assert [(row["folder_id"], row["position"]) for row in body["folders"]] == [
+        (later["folder_id"], 0),
+        (bugs["folder_id"], 1),
+    ]
+
+    out = client.put(
+        f"/api/workspaces/{workspace}/favorites/order",
+        json={"items": [{"kind": "team", "target_id": TEAM, "folder_id": None}]},
+    )
+
+    assert [(row["target_id"], row["folder_id"]) for row in out.json()["favorites"]] == [
+        (TEAM, None),
+        (OTHER_TEAM, later["folder_id"]),
+    ]
+    assert [row["folder_id"] for row in out.json()["folders"]] == [later["folder_id"], bugs["folder_id"]]
+
+
+def test_renaming_a_folder(client: TestClient, workspace: str) -> None:
+    """A rename keeps the folder's place, and a folder the caller lacks is a 404."""
+    sign_in(client, MEMBER)
+    folder(client, workspace, "First")
+    second = folder(client, workspace, "Second")
+
+    renamed = client.patch(
+        f"/api/workspaces/{workspace}/favorites/folders/{second['folder_id']}", json={"name": "Renamed"}
+    )
+    missing = client.patch(
+        f"/api/workspaces/{workspace}/favorites/folders/01JB0000000000000000NONE", json={"name": "X"}
+    )
+
+    assert renamed.status_code == 200, renamed.text
+    assert (renamed.json()["name"], renamed.json()["position"]) == ("Renamed", 1)
+    assert missing.status_code == 404
+    assert [row["name"] for row in listing(client, workspace)["folders"]] == ["First", "Renamed"]
+
+
+def test_deleting_a_folder_moves_its_favorites_to_the_top_level(
+    client: TestClient, workspace: str, repositories: Any
+) -> None:
+    """Nothing is unstarred: the folder's favorites keep their order at the top level."""
+    sign_in(client, MEMBER)
+    bugs = folder(client, workspace, "Bugs")
+    star(client, workspace, kind="team", target_id=TEAM, folder_id=bugs["folder_id"])
+    star(client, workspace, kind="team", target_id=OTHER_TEAM)
+    path = f"/api/workspaces/{workspace}/favorites/folders/{bugs['folder_id']}"
+
+    assert client.delete(path).status_code == 204
+    assert client.delete(path).status_code == 204
+
+    read = listing(client, workspace)
+    assert read["folders"] == []
+    assert [(row["target_id"], row["folder_id"]) for row in read["favorites"]] == [(TEAM, None), (OTHER_TEAM, None)]
+    stored = repositories.views.favorite_items(workspace, MEMBER)
+    assert [row.folder_id for row in stored] == [None, None]
+
+
+def test_an_empty_folder_survives_removing_every_favorite(client: TestClient, workspace: str) -> None:
+    """The row holds folders as well as favorites, so unstarring the last favorite keeps the folders."""
+    sign_in(client, MEMBER)
+    bugs = folder(client, workspace, "Bugs")
+    star(client, workspace, kind="team", target_id=TEAM, folder_id=bugs["folder_id"])
+
+    client.delete(f"/api/workspaces/{workspace}/favorites/team/{TEAM}")
+
+    read = listing(client, workspace)
+    assert read["favorites"] == []
+    assert [row["folder_id"] for row in read["folders"]] == [bugs["folder_id"]]
