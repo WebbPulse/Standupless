@@ -32,7 +32,7 @@ const stored = (
   filter: Record<string, unknown>,
   display: SavedViewDisplayRead['projects_display'] = null
 ): Pick<SavedViewDisplayRead, 'filter' | 'projects_display'> => ({
-  filter: filter as SavedViewDisplayRead['filter'],
+  filter,
   projects_display: display,
 });
 

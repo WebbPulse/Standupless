@@ -566,7 +566,7 @@ describe('a saved view of projects', () => {
           layout: 'board',
           group: 'none',
           order: 'name',
-        }),
+        }) as unknown,
       });
     });
   });

@@ -597,7 +597,9 @@ describe('Projects', () => {
           name: 'Planned board',
           entity: 'projects',
           filter: { status: ['planned'] },
-          projects_display: expect.objectContaining({ layout: 'board' }),
+          projects_display: expect.objectContaining({
+            layout: 'board',
+          }) as unknown,
         })
       );
     });

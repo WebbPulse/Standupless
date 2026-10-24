@@ -19,6 +19,7 @@ from app.common.api.dependencies.authz import Capability, check_capability
 from app.common.api.schemas.projects_display import PROJECTS_DISPLAY_FIELDS
 from app.common.api.schemas.views import (
     COMPLETED_WINDOWS,
+    VIEW_ENTITIES,
     VISIBLE_PROPERTIES,
     GroupByField,
     InboxReadRequest,
@@ -27,7 +28,6 @@ from app.common.api.schemas.views import (
     IssueReminderWrite,
     LayoutField,
     SortField,
-    VIEW_ENTITIES,
     ViewColorField,
     ViewCreate,
     ViewRead,
