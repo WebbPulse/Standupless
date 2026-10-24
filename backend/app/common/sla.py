@@ -37,6 +37,12 @@ FINISHED_CATEGORIES: frozenset[str] = frozenset({"completed", "cancelled"})
 COMPLETED_CATEGORY = "completed"
 """The status category whose arrival stamps an issue's `completed_at`."""
 
+STARTED_CATEGORY = "started"
+"""The status category whose first arrival stamps an issue's `started_at`."""
+
+CANCELLED_CATEGORY = "cancelled"
+"""The status category whose arrival stamps an issue's `cancelled_at`."""
+
 AT_RISK_SHARE = 0.25
 """The share of an SLA window left at which the issue counts as at risk."""
 
@@ -114,8 +120,9 @@ def apply_sla(repositories: Repositories, previous: Issue | None, updated: Issue
 
     `previous` is `None` for a new issue. Reads the team's rules and the status
     only when a watched field moved, so an edit to the title costs nothing. A
-    status or team move also restamps `completed_at` through `stamp_completion`,
-    and pauses or resumes the timer through `hold_sla`.
+    status or team move also restamps `started_at`, `completed_at` and
+    `cancelled_at` through `stamp_completion`, and pauses or resumes the timer
+    through `hold_sla`.
     """
     if previous is not None and all(getattr(previous, name) == getattr(updated, name) for name in WATCHED_FIELDS):
         return
@@ -200,17 +207,26 @@ def retime_column(
 
 
 def stamp_completion(issue: Issue, category: str, now: datetime | None = None) -> None:
-    """Keep `completed_at` in step with the status category an issue now sits in.
+    """Keep `started_at`, `completed_at` and `cancelled_at` in step with the status category an issue now sits in.
 
-    Set when the issue first lands in a completed status, kept while it stays
-    completed, so a move between two done columns or teams keeps the original
-    moment, and cleared when it reopens or is cancelled. Run from `apply_sla`
-    because every status write already passes through there.
+    `started_at` is set the first time the issue lands in a started status and
+    kept from then on, reopened or not. `completed_at` and `cancelled_at` are set
+    when the issue first lands in a completed or cancelled status, kept while it
+    stays there, so a move between two done columns or teams keeps the original
+    moment, and cleared when it leaves. Run from `apply_sla` because every status
+    write already passes through there.
     """
+    moment = now or utc_now()
+    if category == STARTED_CATEGORY and issue.started_at is None:
+        issue.started_at = moment
     if category != COMPLETED_CATEGORY:
         issue.completed_at = None
     elif issue.completed_at is None:
-        issue.completed_at = now or utc_now()
+        issue.completed_at = moment
+    if category != CANCELLED_CATEGORY:
+        issue.cancelled_at = None
+    elif issue.cancelled_at is None:
+        issue.cancelled_at = moment
 
 
 def _clear(issue: Issue) -> None:
