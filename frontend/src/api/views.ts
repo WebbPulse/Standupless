@@ -551,12 +551,13 @@ export const searchAll = async (
 
 /**
  * Open issues in the visible teams whose titles share terms with a draft
- * title, best match first. A title with no searchable word answers nothing.
+ * title, best match first, with `team_id`'s issues ranked ahead of the rest.
+ * A title with no searchable word answers nothing.
  */
 export const similarIssues = async (
   workspaceId: string,
   title: string,
-  query: { limit?: number; exclude_issue_id?: string } = {},
+  query: { limit?: number; exclude_issue_id?: string; team_id?: string } = {},
   signal?: AbortSignal
 ): Promise<SimilarIssueRead[]> => {
   const response = await apiClient.get<SimilarListRead>(

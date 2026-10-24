@@ -404,7 +404,7 @@ export const CreateIssueDialog: React.FC<CreateIssueDialogProps> = ({
   const [confirming, setConfirming] = useState(false);
   const [lastCreated, setLastCreated] = useState<IssueRead | null>(null);
   const [duplicateOf, setDuplicateOf] = useState<SimilarIssueRead | null>(null);
-  const similar = useSimilarIssues(workspaceId, title);
+  const similar = useSimilarIssues(workspaceId, title, activeTeamId);
   const shownSimilar =
     duplicateOf === null ||
     similar.some((issue) => issue.issue_id === duplicateOf.issue_id)

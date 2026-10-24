@@ -520,6 +520,7 @@ def similar(
     workspace_id: str = Path(..., min_length=1),
     title: str = Query(..., min_length=SEARCH_QUERY_MIN, max_length=SEARCH_QUERY_MAX),
     exclude_issue_id: Optional[str] = Query(default=None),
+    team_id: Optional[str] = Query(default=None),
     limit: int = Query(default=SIMILAR_DEFAULT_LIMIT, ge=1, le=SIMILAR_MAX_LIMIT),
     context: AuthzContext = Depends(require(Capability.WORKSPACE_READ)),
     repositories: Repositories = Depends(get_repositories),
@@ -528,8 +529,11 @@ def similar(
 
     A title with no searchable term answers an empty list rather than the 422
     search gives, because the dialog asks while the person is still typing.
+    `team_id` is the draft's team, whose matches rank first.
     """
-    hits = find_similar(repositories, context, title, limit=limit, exclude_issue_id=exclude_issue_id)
+    hits = find_similar(
+        repositories, context, title, limit=limit, exclude_issue_id=exclude_issue_id, team_id=team_id
+    )
     return SimilarListRead(results=[_similar_read(hit) for hit in hits])
 
 

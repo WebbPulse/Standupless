@@ -28,7 +28,10 @@ const listTeams = vi.fn<() => Promise<TeamRead[]>>();
 const listStatuses = vi.fn<(teamId: string) => Promise<StatusRead[]>>();
 const createLink =
   vi.fn<(issueId: string, body: LinkCreate) => Promise<unknown>>();
-const similarIssues = vi.fn<(title: string) => Promise<SimilarIssueRead[]>>();
+const similarIssues =
+  vi.fn<
+    (title: string, query?: { team_id?: string }) => Promise<SimilarIssueRead[]>
+  >();
 
 vi.mock('../../api/issues', () => ({
   createIssue: (_w: string, body: IssueCreate) => createIssue(body),
@@ -46,7 +49,8 @@ vi.mock('../../api/teams', () => ({
 }));
 
 vi.mock('../../api/views', () => ({
-  similarIssues: (_w: string, title: string) => similarIssues(title),
+  similarIssues: (_w: string, title: string, query?: { team_id?: string }) =>
+    similarIssues(title, query),
 }));
 
 vi.mock('../../api/templates', () => ({
@@ -428,7 +432,10 @@ describe('similar issues', () => {
       screen.getByRole('link', { name: 'Login redirect broken on Safari' })
     ).toHaveAttribute('href', '/w/mine/issues/ENG-7');
     expect(similarIssues).toHaveBeenCalledTimes(1);
-    expect(similarIssues).toHaveBeenCalledWith('Fix login redirect');
+    expect(similarIssues).toHaveBeenCalledWith(
+      'Fix login redirect',
+      expect.objectContaining({ team_id: 't-1' })
+    );
   });
 
   it('marks the new issue a duplicate of the chosen one on create', async () => {
