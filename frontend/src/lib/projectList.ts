@@ -638,11 +638,18 @@ export const withinLeadTeams = (
 export const groupValue = (group: ProjectGroup): string =>
   group.key.slice(group.kind.length + 1);
 
-/** The fields a move between board columns can change. */
+/** The fields a board move or a card edit can change. */
 export type ProjectMove = Partial<
   Pick<
     ProjectRead,
-    'status' | 'health' | 'priority' | 'initiative_id' | 'lead_id'
+    | 'status'
+    | 'health'
+    | 'priority'
+    | 'initiative_id'
+    | 'lead_id'
+    | 'start_date'
+    | 'target_date'
+    | 'member_ids'
   >
 >;
 
@@ -688,4 +695,25 @@ export const inGroup = (project: ProjectRead, group: ProjectGroup): boolean => {
     case 'none':
       return true;
   }
+};
+
+/**
+ * The change a drop into a board cell makes: every group of the cell the
+ * project is not yet in contributes its value, so a drop into a column and a
+ * swimlane can change both fields. Null when the drop changes nothing or a
+ * group the project would have to join is not one value it holds, such as a
+ * team.
+ */
+export const dropPatch = (
+  project: ProjectRead,
+  groups: readonly ProjectGroup[]
+): ProjectMove | null => {
+  let patch: ProjectMove = {};
+  for (const group of groups) {
+    if (inGroup(project, group)) continue;
+    const change = groupPatch(group);
+    if (change === null) return null;
+    patch = { ...patch, ...change };
+  }
+  return Object.keys(patch).length === 0 ? null : patch;
 };
