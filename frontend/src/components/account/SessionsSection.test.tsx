@@ -78,10 +78,15 @@ describe('SessionsSection', () => {
     renderSection();
     const rows = await screen.findAllByTestId('session-row');
     expect(rows).toHaveLength(3);
-    expect(within(rows[0]).getByText('Chrome on macOS')).toBeInTheDocument();
-    expect(within(rows[0]).getByText('This session')).toBeInTheDocument();
-    expect(within(rows[1]).getByText('Safari on iOS')).toBeInTheDocument();
-    expect(within(rows[2]).getByText('Firefox on Windows')).toBeInTheDocument();
+    const [here, phone, laptop] = rows as [
+      HTMLElement,
+      HTMLElement,
+      HTMLElement,
+    ];
+    expect(within(here).getByText('Chrome on macOS')).toBeInTheDocument();
+    expect(within(here).getByText('This session')).toBeInTheDocument();
+    expect(within(phone).getByText('Safari on iOS')).toBeInTheDocument();
+    expect(within(laptop).getByText('Firefox on Windows')).toBeInTheDocument();
   });
 
   it('signs out of every other session after the confirm step', async () => {
