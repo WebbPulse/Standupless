@@ -211,7 +211,7 @@ describe('collapsible sections in the rich editor', () => {
     const [section] = editor.getJSON().content ?? [];
     expect(section?.type).toBe('collapsibleSection');
     expect(section?.attrs?.['open']).toBe(false);
-    expect(section?.content?.map((child) => child.type)).toEqual([
+    expect(section?.content?.map((child: JSONContent) => child.type)).toEqual([
       'collapsibleSummary',
       'collapsibleBody',
     ]);
