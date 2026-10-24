@@ -46,7 +46,7 @@ from app.common.change_source import GITHUB
 from app.common.core.config import settings
 from app.common.db.dynamo.activity import build_activity
 from app.common.db.dynamo.base import utc_now
-from app.common.db.dynamo.comments import build_comment, new_comment_id
+from app.common.db.dynamo.comments import Comment, build_comment, new_comment_id
 from app.common.db.dynamo.github import (
     CommentSync,
     IssueBacklink,
@@ -514,7 +514,14 @@ def handle_comment_event(repositories: Repositories, workspace_id: str, body: Ma
     comment = body.get("comment")
     if not isinstance(github_issue, Mapping) or not isinstance(repository, Mapping) or not isinstance(comment, Mapping):
         return
-    if github_issue.get("pull_request") is not None or own_delivery(body):
+    from app.domains.integrations import thread_sync
+
+    if own_delivery(body):
+        thread_sync.note_own_comment(repositories, workspace_id, body)
+        return
+    if thread_sync.handle_inbound(repositories, workspace_id, body):
+        return
+    if github_issue.get("pull_request") is not None:
         return
     repository_id = str(repository.get("id", ""))
     config = repositories.github.team_sync_for_repository(workspace_id, repository_id)
@@ -826,12 +833,26 @@ def outbound_comment_body(repositories: Repositories, author_id: str, body: str)
 
 
 def push_comment(repositories: Repositories, job: Mapping[str, Any]) -> None:
-    """Post or update the GitHub copy of one Standupless comment."""
+    """Post or update the GitHub copies of one Standupless comment.
+
+    One job serves both mirrors: the two way issue sync, and the synced thread the
+    comment opens or belongs to, which `thread_sync` posts.
+    """
+    from app.domains.integrations import thread_sync
+
     workspace_id = str(job.get("workspace_id", ""))
     issue_id = str(job.get("issue_id", ""))
     comment = repositories.comments.get(workspace_id, issue_id, str(job.get("comment_id", "")))
-    if comment is None or comment.author_id.startswith(GITHUB_AUTHOR_PREFIX):
+    if comment is None or comment.author_id.startswith(GITHUB_AUTHOR_PREFIX) or comment.source == GITHUB:
         return
+    _push_issue_comment(repositories, comment)
+    thread_sync.push_thread_comment(repositories, comment)
+
+
+def _push_issue_comment(repositories: Repositories, comment: Comment) -> None:
+    """Post or update one comment's copy on the GitHub issue a two way sync mirrors."""
+    workspace_id = comment.workspace_id
+    issue_id = comment.issue_id
     writable = _writable(repositories, workspace_id, comment.team_id)
     if writable is None:
         return

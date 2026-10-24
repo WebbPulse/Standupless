@@ -768,6 +768,40 @@ class GitHubImportRequest(TypedDict):
     team_id: str
 
 
+class GithubThread(TypedDict):
+    comment_url: NotRequired[str]
+    full_name: str
+    kind: NotRequired[str]
+    number: int
+    private: NotRequired[bool]
+    repository_id: str
+    synced_at: NotRequired[str]
+    synced_by: str
+    target_url: NotRequired[str]
+
+
+class GithubThreadRead(TypedDict):
+    comment_id: str
+    github_thread: NotRequired[GithubThread | None]
+    issue_id: str
+
+
+class GithubThreadTargetRead(TypedDict):
+    full_name: str
+    kind: Literal["pull_request", "issue"]
+    number: int
+    private: bool
+    ref: str
+    repository_id: str
+    title: str
+    url: str
+
+
+class GithubThreadWrite(TypedDict, closed=True):
+    number: int
+    repository_id: str
+
+
 class HealthBreakdownRead(TypedDict):
     at_risk: NotRequired[int]
     none: NotRequired[int]
@@ -3130,6 +3164,7 @@ class CommentRead(TypedDict):
     comment_id: str
     created_at: str
     edited_at: NotRequired[str | None]
+    github_thread: NotRequired[GithubThread | None]
     issue_id: str
     mentions: NotRequired[list[str]]
     parent_comment_id: NotRequired[str | None]
