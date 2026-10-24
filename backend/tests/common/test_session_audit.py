@@ -28,7 +28,9 @@ from app.common.session_audit import (
     FAILURES_PER_WINDOW,
     AuditedLoginAttemptStore,
     AuditedRefreshTokenStore,
+    CapturedRequest,
     Revoker,
+    _request,
     login_attempt_store,
     refresh_token_store,
     revoked_by,
@@ -129,6 +131,8 @@ def test_a_sign_in_records_how_and_from_where(workspace: str, sessions: SessionS
     assert event.after["method"] == ["pwd", "otp"]
     assert event.after["device"] == "desktop"
     assert event.after["platform"] == "macOS"
+    assert event.after["browser"] == "Chrome"
+    assert event.target_label == "Chrome on macOS"
 
 
 def test_a_sign_in_lands_in_every_workspace_of_the_member(
@@ -230,6 +234,31 @@ def test_signing_out_everywhere_records_each_other_session(
 
     revoked = {event.target_id for event in rows(repositories, event="session.revoked")}
     assert revoked == {phone.family_id, laptop.family_id}
+
+
+def test_signing_out_other_sessions_records_each_with_its_reason(
+    workspace: str, sessions: SessionService, repositories: Any
+) -> None:
+    """The revoke-others route writes one row per ended session, naming why."""
+    kept = sessions.start_family(MEMBER, device="desktop", ip="203.0.113.7")
+    phone = sessions.start_family(MEMBER, device="mobile", ip="203.0.113.8")
+    laptop = sessions.start_family(MEMBER, device="desktop", ip="203.0.113.9")
+
+    token = _request.set(
+        CapturedRequest(path="/api/auth/sessions/revoke-others", ip="203.0.113.7", user_agent=CHROME_ON_MAC)
+    )
+    try:
+        sessions.revoke_all_for_user(MEMBER, except_family_id=kept.family_id)
+    finally:
+        _request.reset(token)
+
+    events = rows(repositories, event="session.revoked")
+    assert {event.target_id for event in events} == {phone.family_id, laptop.family_id}
+    for event in events:
+        assert event.actor_id == MEMBER
+        assert event.ip == "203.0.113.7"
+        assert event.after is not None
+        assert event.after["reason"] == "sign_out_others"
 
 
 def test_a_directory_revocation_lands_in_a_workspace_the_person_has_left(

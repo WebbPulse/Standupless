@@ -5,7 +5,8 @@ operation name, from a workspace held in memory in Linear's own node shapes.
 Connections page by `first` and an opaque `after` cursor, and nested connections
 page by `nested_page_size`, so pagination at both levels is exercised. A key not
 in `keys` is refused the way Linear refuses one, and `rate_limit_next` answers
-that many requests with HTTP 429 and a reset time before serving again.
+that many requests with HTTP 429 and a reset time before serving again. An
+operation in `rejected_operations` is refused as a schema mismatch.
 
 The module is standard library only apart from `transport`, which builds an
 `httpx` transport lazily, so the e2e group can run `serve` without the backend's
@@ -47,6 +48,8 @@ class FakeLinear:
     projects: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
     issues: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
     initiatives: list[dict[str, Any]] = field(default_factory=list)
+    project_relations: list[dict[str, Any]] = field(default_factory=list)
+    rejected_operations: set[str] = field(default_factory=set)
     nested_page_size: int = 50
     rate_limit_next: int = 0
     requests: list[Request] = field(default_factory=list)
@@ -76,6 +79,9 @@ class FakeLinear:
                 {"errors": [{"message": "Authentication required", "extensions": {"code": "AUTHENTICATION_ERROR"}}]},
             )
         handler = getattr(self, f"_op_{operation}", None)
+        if operation in self.rejected_operations:
+            message = f"Cannot query field on type Query in {operation}"
+            return 400, {}, {"errors": [{"message": message, "extensions": {"code": "GRAPHQL_VALIDATION_FAILED"}}]}
         if handler is None:
             return 400, {}, {"errors": [{"message": f"Unknown operation {operation}"}]}
         return 200, {}, {"data": handler(variables)}
@@ -238,6 +244,11 @@ class FakeLinear:
             for initiative in self.initiatives
         ]
         return {"initiatives": self._connection(nodes, variables.get("first"), variables.get("after"))}
+
+    def _op_ProjectRelations(self, variables: dict[str, Any]) -> dict[str, Any]:
+        """The workspace's project dependencies."""
+        relations = list(self.project_relations)
+        return {"projectRelations": self._connection(relations, variables.get("first"), variables.get("after"))}
 
 
 def ref(node: dict[str, Any]) -> dict[str, Any]:

@@ -2,13 +2,15 @@
  * The keyboard shortcut overlay `?` opens. It lists what the registry holds
  * right now, so a page's own shortcuts appear while that page is open and
  * disappear when it is not, plus the few keys handled outside the registry
- * (the palette and Escape), which are fixed. Bindings that share a heading
+ * (the palette and Escape), which are fixed, and in the desktop app the tab
+ * keys its shell handles. Bindings that share a heading
  * and a label, such as J and the down arrow, share one row.
  */
 
 import React, { useMemo } from 'react';
 import { displayKeys, useRegisteredShortcuts } from '../../hooks/useShortcuts';
 import Dialog from '../ui/dialog';
+import { desktopHasTabs } from '../../lib/desktop';
 import { modKeyLabel } from '../../lib/platform';
 
 /** Props for ShortcutHelp. */
@@ -49,6 +51,30 @@ const FIXED: { group: string; rows: HelpRow[] }[] = [
   },
 ];
 
+/** A fixed row with one chord binding. */
+const chordRow = (id: string, label: string, keys: string[]): HelpRow => ({
+  id,
+  label,
+  bindings: [{ keys, sequence: false }],
+});
+
+/** The tab keys the desktop app's shell handles, before the page sees them. */
+const desktopTabs = (): { group: string; rows: HelpRow[] } => {
+  const mod = modKeyLabel();
+  return {
+    group: 'Tabs',
+    rows: [
+      chordRow('tabs-new', 'New tab', [mod, 'T']),
+      chordRow('tabs-close', 'Close tab', [mod, 'W']),
+      chordRow('tabs-reopen', 'Reopen closed tab', [mod, 'Shift', 'T']),
+      chordRow('tabs-select', 'Go to tab 1 to 8', [mod, '1-8']),
+      chordRow('tabs-last', 'Go to the last tab', [mod, '9']),
+      chordRow('tabs-next', 'Next tab', ['Ctrl', 'Tab']),
+      chordRow('tabs-previous', 'Previous tab', ['Ctrl', 'Shift', 'Tab']),
+    ],
+  };
+};
+
 /** The order headings appear in; anything else follows alphabetically. */
 const ORDER = ['General', 'Navigation', 'Open', 'Issue', 'List', 'Board'];
 
@@ -80,7 +106,8 @@ export const ShortcutHelp: React.FC<ShortcutHelpProps> = ({
 
   const groups = useMemo(() => {
     const byGroup = new Map<string, HelpRow[]>();
-    for (const fixed of FIXED) {
+    const fixedGroups = desktopHasTabs() ? [...FIXED, desktopTabs()] : FIXED;
+    for (const fixed of fixedGroups) {
       byGroup.set(
         fixed.group,
         fixed.rows.map((row) => ({ ...row }))

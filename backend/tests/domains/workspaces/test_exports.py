@@ -29,10 +29,12 @@ from app.common.db.dynamo.planning import (
     Cycle,
     Project,
     ProjectMilestone,
+    ProjectRelation,
     ProjectUpdateRow,
     cycle_key,
     milestone_key,
     project_key,
+    project_relation_key,
     project_update_key,
 )
 from app.common.db.dynamo.releases import Release, release_key
@@ -169,6 +171,26 @@ def seed_everything(repositories: Any) -> None:
             created_by=OWNER,
         )
     )
+    follow_on = repositories.planning.create_project(
+        Project(
+            workspace_id=WORKSPACE,
+            planning_key=project_key("01JB0000000000000000PROJ02"),
+            project_id="01JB0000000000000000PROJ02",
+            team_ids=[TEAM],
+            name="Rollout",
+            created_by=OWNER,
+        )
+    )
+    repositories.planning.create_project_relation(
+        ProjectRelation(
+            workspace_id=WORKSPACE,
+            planning_key=project_relation_key(project.project_id, follow_on.project_id),
+            relation_id="01JB0000000000000000PREL01",
+            project_id=project.project_id,
+            target_project_id=follow_on.project_id,
+            created_by=OWNER,
+        )
+    )
     repositories.planning.create_milestone(
         ProjectMilestone(
             workspace_id=WORKSPACE,
@@ -300,6 +322,13 @@ def test_an_admin_exports_every_entity(client: TestClient, repositories: Any, wo
     issues = {row["key"]: row for row in rows(bundle, "issues")}
     assert issues["ABC-2"]["parent_id"] == issues["ABC-1"]["issue_id"]
     assert len(rows(bundle, "relations")) == 1
+    [dependency] = rows(bundle, "project_relations")
+    assert (dependency["project_id"], dependency["target_project_id"]) == (
+        "01JB0000000000000000PROJ01",
+        "01JB0000000000000000PROJ02",
+    )
+    assert dependency["relation_id"] == "01JB0000000000000000PREL01"
+    assert "planning_key" not in dependency
     assert {row["name"] for row in rows(bundle, "views")} == {"Team view", "Mine"}
     assert [(row["title"], row["body"]) for row in rows(bundle, "documents")] == [("Launch plan", "Ship it")]
     assert {row["email"] for row in rows(bundle, "members")} >= {"owner@example.com", "guest@example.com"}

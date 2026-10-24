@@ -21,6 +21,9 @@ yet, so a link page run twice links each issue once.
 
 A Linear import, kind `linear`, is the same job reading Linear's API instead
 of a stored file; `app.common.linear_import` holds its steps and its sealed key.
+A GitHub import, kind `github`, reads one repository's Issues through the
+installed GitHub App; its steps live with the App in the integrations domain and
+register themselves in `PAGE_RUNNERS`.
 A job may be cancelled while it runs: every step reads the job again before it
 saves its progress and keeps a cancel it finds.
 
@@ -36,7 +39,7 @@ import hashlib
 import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
-from typing import Any, Literal, Mapping, Optional
+from typing import Any, Callable, Literal, Mapping, Optional
 
 from fastapi import HTTPException
 from pydantic import BaseModel, Field
@@ -120,12 +123,15 @@ IMPORT_REPOSITORIES: tuple[str, ...] = (
 )
 """What the import job writes: issues, keys, activity, subscriptions, labels, the notice, and Linear's extras."""
 
-IMPORT_READ_REPOSITORIES: tuple[str, ...] = ("workspaces", "memberships", "users", "teams")
-"""What the import job only reads: the team, its members and their accounts."""
+IMPORT_READ_REPOSITORIES: tuple[str, ...] = ("workspaces", "memberships", "users", "teams", "github", "oauth_links")
+"""What the import job only reads: the team, its members, their accounts, and the GitHub App's rows."""
 
 ImportStatus = Literal["queued", "running", "completed", "failed", "cancelled"]
 
-ImportKind = Literal["csv", "linear"]
+ImportKind = Literal["csv", "linear", "github"]
+
+PAGE_RUNNERS: dict[str, Callable[[Any, "ImportJob"], "ImportJob"]] = {}
+"""The page runner of each import kind whose source lives in a domain, registered when its module loads."""
 
 FINISHED: frozenset[str] = frozenset({"completed", "failed", "cancelled"})
 
@@ -156,6 +162,7 @@ class ImportJob(BaseModel):
     preset: str
     mapping: dict[str, Optional[str]]
     linear_teams: list[LinearTeamMapping] = Field(default_factory=list)
+    github_repository_id: str = ""
     phase_index: int = 0
     after: Optional[str] = None
     counts: dict[str, int] = Field(default_factory=dict)
@@ -933,6 +940,11 @@ def run_page(repositories: Any, workspace_id: str, import_id: str, cursor: int) 
         from app.common.linear_import import run_linear_page
 
         return run_linear_page(repositories, job)
+    if job.kind != "csv":
+        runner = PAGE_RUNNERS.get(job.kind)
+        if runner is None:
+            return fail(repositories, job, ImportUnavailable(f"No runner for {job.kind} imports"))
+        return runner(repositories, job)
     parsed: ParsedCsv = parse_csv(_load_source(workspace_id, import_id))
     if job.links_parents and cursor >= len(parsed.rows):
         return _run_link_page(repositories, job, parsed, cursor)
@@ -984,8 +996,11 @@ def notify(repositories: Any, job: ImportJob) -> bool:
     completed = job.status == "completed"
     plural = "issue" if job.created_count == 1 else "issues"
     title = f"Imported {job.created_count} {plural} into {name}" if completed else f"The import into {name} failed"
-    if job.kind == "linear":
-        title = f"Imported {job.created_count} {plural} from Linear" if completed else "The import from Linear failed"
+    if job.kind in ("linear", "github"):
+        origin = "Linear" if job.kind == "linear" else job.file_name or "GitHub"
+        title = f"Imported {job.created_count} {plural} from {origin}"
+        if not completed:
+            title = f"The import from {origin} failed"
     notification = Notification(
         ws_user=inbox_partition(job.workspace_id, job.requested_by),
         notification_id=new_ulid(),

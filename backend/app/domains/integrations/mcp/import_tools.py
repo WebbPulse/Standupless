@@ -1,10 +1,12 @@
-"""The MCP tools for importing a Linear workspace and following or stopping an import.
+"""The MCP tools for importing a Linear workspace or a GitHub repository's Issues, and following or stopping an import.
 
-They run the same `app.common.issue_import` and `app.common.linear_import`
-functions as the import routes and check the same workspace admin capability, so
-an agent can move a team off Linear exactly as an admin can in the app. The
-Linear key an agent passes is used for that call, sealed while the job runs and
-deleted when it ends, and never comes back in an answer.
+They run the same `app.common.issue_import`, `app.common.linear_import` and
+`github_import` functions as the import routes and check the same workspace
+admin capability, so an agent can move a team off Linear or GitHub Issues
+exactly as an admin can in the app. The Linear key an agent passes is used for
+that call, sealed while the job runs and deleted when it ends, and never comes
+back in an answer. A GitHub import needs no key: it reads through the
+workspace's installed GitHub App.
 """
 
 from __future__ import annotations
@@ -15,6 +17,7 @@ from app.common import audit, issue_import, linear_import
 from app.common.api.dependencies.authz import Capability, check_capability
 from app.common.issue_rules import require_team_member
 from app.common.linear_api import LinearAuthFailed, LinearError
+from app.domains.integrations import github_import
 from app.domains.integrations.mcp.toolkit import NOT_VISIBLE, Tool, ToolCall, object_schema, string, team_id_ref
 from app.domains.integrations.mcp.transport import ToolError
 from app.domains.integrations.schemas.imports import IssueImportRead
@@ -97,6 +100,49 @@ def _import_linear_workspace(call: ToolCall) -> Any:
     return _job_json(job)
 
 
+def _list_github_import_repositories(call: ToolCall) -> Any:
+    """The repositories the installed GitHub App covers."""
+    check_capability(call.repositories, call.context, Capability.WORKSPACE_ADMIN)
+    rows = github_import.importable_repositories(call.repositories, call.context.workspace_id)
+    return {
+        "repositories": [
+            {
+                "repository_id": row.repository_id,
+                "full_name": row.full_name,
+                "private": row.private,
+                "team_id": row.team_id,
+            }
+            for row in rows
+        ]
+    }
+
+
+def _import_github_issues(call: ToolCall) -> Any:
+    """Queue an import of one repository's Issues into one team."""
+    check_capability(call.repositories, call.context, Capability.WORKSPACE_ADMIN)
+    repository_id = str(call.require("repository_id")).strip()
+    if not repository_id.isdigit():
+        raise ToolError("repository_id is the numeric id list_github_import_repositories answered")
+    team_id = team_id_ref(call, str(call.require("team_id")).strip())
+    require_team_member(call.repositories, call.context, team_id)
+    try:
+        job = github_import.start_github_import(call.repositories, call.context, team_id, repository_id)
+    except github_import.RepositoryNotAvailable as exc:
+        raise ToolError(str(exc)) from None
+    except (issue_import.ImportUnavailable, issue_import.ImportInProgress) as exc:
+        raise ToolError(str(exc)) from exc
+    audit.record(
+        call.repositories,
+        call.context,
+        "import.started",
+        target_type="import",
+        target_id=job.import_id,
+        target_label=job.file_name,
+        after={"preset": job.preset, "team_id": job.team_id, "repository_id": job.github_repository_id},
+    )
+    return _job_json(job)
+
+
 def _get_workspace_import(call: ToolCall) -> Any:
     """One import's progress, tallies and problems."""
     check_capability(call.repositories, call.context, Capability.WORKSPACE_ADMIN)
@@ -158,14 +204,44 @@ IMPORT_TOOLS: tuple[Tool, ...] = (
         handler=_import_linear_workspace,
     ),
     Tool(
+        name="list_github_import_repositories",
+        description=(
+            "The repositories the workspace's installed GitHub App covers, with their ids, full names and the team "
+            "each is pinned to, to choose what import_github_issues imports. Empty when the App is not installed "
+            "or is suspended. Needs workspace owner or admin."
+        ),
+        scopes=("settings:read", "admin"),
+        schema=object_schema({}),
+        handler=_list_github_import_repositories,
+    ),
+    Tool(
+        name="import_github_issues",
+        description=(
+            "Start an import of one GitHub repository's Issues, with labels, assignees and comments, into an "
+            "existing Standupless team, through the installed GitHub App. Pull requests are skipped. People are "
+            "matched by linked GitHub account, then email, then login. Running it again updates what an earlier "
+            "import wrote instead of duplicating it. Runs in the background; poll get_workspace_import. Needs "
+            "workspace owner or admin."
+        ),
+        scopes=("settings:write", "admin"),
+        schema=object_schema(
+            {
+                "repository_id": string("The repository_id list_github_import_repositories answered"),
+                "team_id": string("The Standupless team the issues go into: id, key such as ENG, or name"),
+            },
+            required=("repository_id", "team_id"),
+        ),
+        handler=_import_github_issues,
+    ),
+    Tool(
         name="get_workspace_import",
         description=(
-            "One import's status, phase, tallies and the problems it kept, for a Linear or CSV import. Needs "
+            "One import's status, phase, tallies and the problems it kept, for a Linear, GitHub or CSV import. Needs "
             "workspace owner or admin."
         ),
         scopes=("settings:read", "admin"),
         schema=object_schema(
-            {"import_id": string("The import_id import_linear_workspace answered")},
+            {"import_id": string("The import_id import_linear_workspace or import_github_issues answered")},
             required=("import_id",),
         ),
         handler=_get_workspace_import,
@@ -178,7 +254,7 @@ IMPORT_TOOLS: tuple[Tool, ...] = (
         ),
         scopes=("settings:write", "admin"),
         schema=object_schema(
-            {"import_id": string("The import_id import_linear_workspace answered")},
+            {"import_id": string("The import_id import_linear_workspace or import_github_issues answered")},
             required=("import_id",),
         ),
         handler=_cancel_workspace_import,

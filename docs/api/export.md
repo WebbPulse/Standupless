@@ -71,6 +71,7 @@ within each team.
 | `comments.ndjson` | Every comment on every issue |
 | `attachments.ndjson` | Attachment metadata. Files are listed, not inlined. |
 | `projects.ndjson` | Projects that include at least one included team |
+| `project_relations.ndjson` | Dependencies between those projects, one row per pair: `project_id` blocks `target_project_id`. A dependency whose other end is in no included team is left out. |
 | `milestones.ndjson` | Milestones of those projects |
 | `project_updates.ndjson` | Updates posted on those projects |
 | `cycles.ndjson` | Cycles of each included team |

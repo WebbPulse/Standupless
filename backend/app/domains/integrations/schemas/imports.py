@@ -13,6 +13,9 @@ from app.common.linear_import import phases
 
 ImportPreset = Literal["generic", "jira", "linear"]
 
+GITHUB_PHASES: list[tuple[str, Optional[int]]] = [("issues", None)]
+"""The one phase a GitHub import walks, its repository's issues a page at a time."""
+
 
 class IssueImportRequest(BaseModel):
     """The body both the dry run and the import take: a file, a team, a preset and any mapping changes."""
@@ -167,7 +170,10 @@ class IssueImportRead(BaseModel):
         description="A Linear import's tallies: issues, comments, labels, cycles, projects, milestones and more.",
     )
     linear_teams: list[LinearTeamMappingRead] = Field(default_factory=list)
-    phase: Optional[str] = Field(default=None, description="What a running Linear import is reading now.")
+    github_repository_id: Optional[str] = Field(
+        default=None, description="The repository a GitHub import reads; its full name is the file name."
+    )
+    phase: Optional[str] = Field(default=None, description="What a running Linear or GitHub import is reading now.")
     phase_index: int = 0
     phase_count: int = 0
 
@@ -177,7 +183,7 @@ class IssueImportRead(BaseModel):
 
         A list leaves the row problems out, since each job may hold hundreds.
         """
-        steps = phases(job) if job.kind == "linear" else []
+        steps = phases(job) if job.kind == "linear" else GITHUB_PHASES if job.kind == "github" else []
         current = steps[job.phase_index] if job.phase_index < len(steps) else None
         return cls(
             import_id=job.import_id,
@@ -205,6 +211,7 @@ class IssueImportRead(BaseModel):
             updated_count=job.updated_count,
             counts=dict(job.counts),
             linear_teams=[LinearTeamMappingRead(**mapping.model_dump()) for mapping in job.linear_teams],
+            github_repository_id=job.github_repository_id or None,
             phase=current[0] if current is not None else None,
             phase_index=min(job.phase_index, len(steps)),
             phase_count=len(steps),
@@ -249,3 +256,25 @@ class LinearImportRequest(BaseModel):
 
     api_key: str = Field(min_length=1, max_length=200, description="A Linear personal API key with read access.")
     teams: list[LinearTeamChoice] = Field(min_length=1, max_length=50)
+
+
+class GitHubImportRepositoryRead(BaseModel):
+    """One repository the workspace's installed GitHub App covers, to import the Issues of."""
+
+    repository_id: str
+    full_name: str
+    private: bool
+    team_id: Optional[str] = Field(default=None, description="The team the repository is pinned to, if any.")
+
+
+class GitHubImportRepositoryListRead(BaseModel):
+    """Every repository the installation covers, by name; empty when the App is not installed or is suspended."""
+
+    items: list[GitHubImportRepositoryRead]
+
+
+class GitHubImportRequest(BaseModel):
+    """A GitHub import: one repository the installation covers and the team its issues go into."""
+
+    repository_id: str = Field(min_length=1, max_length=32, pattern=r"^[0-9]+$")
+    team_id: str = Field(min_length=1, max_length=64)

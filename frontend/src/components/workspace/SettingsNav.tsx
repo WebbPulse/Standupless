@@ -26,7 +26,7 @@ export interface SettingsNavProps {
 /** The classes a tab carries, by whether it is the current page. */
 const tabClass = ({ isActive }: { isActive: boolean }): string =>
   cn(
-    'inline-flex h-8 items-center rounded-sm px-2.5 text-sm transition-colors duration-100',
+    'inline-flex h-8 items-center rounded-sm px-2.5 text-sm whitespace-nowrap transition-colors duration-100 pointer-coarse:h-10',
     isActive
       ? 'bg-raised font-medium text-text'
       : 'text-text-muted hover:text-text'
@@ -34,7 +34,10 @@ const tabClass = ({ isActive }: { isActive: boolean }): string =>
 
 /** Renders the links between the personal profile, preference, notification and security pages, then the workspace, security, team, workflow, label, template, billing, API key, integrations, connected app, MCP and CLI, agent profile, share link, export, import and audit log settings. */
 export const SettingsNav: React.FC<SettingsNavProps> = ({ workspace }) => (
-  <nav aria-label="Settings sections" className="flex flex-wrap gap-1">
+  <nav
+    aria-label="Settings sections"
+    className="phone-scroll-row flex flex-wrap gap-1"
+  >
     <NavLink
       to={`/w/${workspace.slug}/settings/account/profile`}
       className={tabClass}

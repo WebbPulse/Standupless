@@ -182,7 +182,7 @@ export const ShareButton: React.FC<ShareButtonProps> = ({
       trigger={(props) => (
         <Button {...props} variant="secondary" size="sm">
           <LuShare2 aria-hidden="true" className="h-3.5 w-3.5" />
-          Share
+          <span className="max-sm:sr-only">Share</span>
         </Button>
       )}
     >

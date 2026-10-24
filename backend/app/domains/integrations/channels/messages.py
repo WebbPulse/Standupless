@@ -29,6 +29,7 @@ EVENT_COLORS: dict[str, int] = {
     "comment_created": 0x8B949E,
     "project_update_posted": 0x5E6AD2,
     "project_update_due": 0xD29922,
+    "standup_digest": 0x5E6AD2,
     "test": 0x5E6AD2,
 }
 

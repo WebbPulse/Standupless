@@ -4,8 +4,8 @@ The properties held are that a team's digest is due once its local send time has
 passed on a day its cadence covers, in any timezone; that each team member gets
 one inbox row and one email per digest however many passes run, even after
 deleting the row; that an empty digest goes to nobody; that the `standup_digest`
-preference turns either channel off; and that the project update reminder also
-queues the channel announcement.
+preference turns either channel off; and that the project update reminder and
+a sent digest with content also queue their channel announcements.
 """
 
 from __future__ import annotations
@@ -21,6 +21,7 @@ from app.common.db.dynamo.inbox import NOTIFICATION_KINDS
 from app.common.db.dynamo.team_config import StandupSettings, default_standup_settings
 from app.common.email import reset_email_sender
 from app.common.project_cadence import CHANNEL_UPDATE_DUE_JOB, ProjectUpdateDue, queue_update_due_announcement
+from app.common.standup import CHANNEL_STANDUP_JOB, queue_standup_announcement
 from app.domains.views.consumers import standups
 from app.domains.views.consumers.digest import NOTIFY_DIGEST_SOURCE
 from app.domains.views.consumers.notify import handle_record
@@ -285,3 +286,87 @@ def test_a_due_reminder_queues_the_channel_announcement(monkeypatch: pytest.Monk
     assert envelope.payload["kind"] == CHANNEL_UPDATE_DUE_JOB
     assert envelope.payload["project_id"] == "P1"
     assert envelope.payload["due_at"] == "2026-10-06T00:00:00+00:00"
+
+
+def capture_announcements(monkeypatch: pytest.MonkeyPatch) -> list[tuple[Any, ...]]:
+    """Record each channel announcement the sweep queues instead of sending it."""
+    queued: list[tuple[Any, ...]] = []
+
+    def record(*args: Any) -> bool:
+        """Keep one queued announcement's arguments."""
+        queued.append(args)
+        return True
+
+    monkeypatch.setattr(standups, "queue_standup_announcement", record)
+    return queued
+
+
+def test_a_sent_digest_queues_the_channel_announcement_once(
+    repositories: Any, workspace: str, recorder: RecordingEmailSender, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A digest with content queues its team and date for the channels after it is marked, and only once."""
+    queued: list[tuple[Any, ...]] = capture_announcements(monkeypatch)
+    enable(repositories, workspace)
+    note(repositories, workspace)
+
+    summary = run_standups(repositories, AFTER_SEND)
+    run_standups(repositories, AFTER_SEND + timedelta(minutes=5))
+
+    assert summary.announced == 1
+    assert queued == [(workspace, TEAM, TUESDAY)]
+
+
+def test_an_empty_digest_queues_no_announcement(
+    repositories: Any, workspace: str, recorder: RecordingEmailSender, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Nothing is queued for a day with nothing to report."""
+    queued: list[tuple[Any, ...]] = capture_announcements(monkeypatch)
+    enable(repositories, workspace)
+
+    assert run_standups(repositories, AFTER_SEND).announced == 0
+    assert queued == []
+
+
+def test_a_failing_queue_still_delivers_and_marks_the_digest(
+    repositories: Any, workspace: str, recorder: RecordingEmailSender, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A queue that cannot be reached loses the channel post only."""
+
+    def unreachable(*args: Any) -> bool:
+        """Fail the way an unreachable queue does."""
+        raise RuntimeError("queue down")
+
+    monkeypatch.setattr(standups, "queue_standup_announcement", unreachable)
+    enable(repositories, workspace)
+    note(repositories, workspace)
+
+    summary = run_standups(repositories, AFTER_SEND)
+
+    assert (summary.sent, summary.announced) == (1, 0)
+    assert len(standup_rows(repositories, workspace, MEMBER)) == 1
+    assert repositories.inbox.standup_sent(workspace, TEAM, TUESDAY.isoformat())
+
+
+def test_the_standup_announcement_job_names_the_team_and_date(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The job carries the workspace, team and date, and nothing is queued without a dispatch queue."""
+    sent: list[tuple[str, Any]] = []
+
+    def send(url: str, envelope: Any) -> None:
+        """Keep one queued job."""
+        sent.append((url, envelope))
+
+    monkeypatch.setattr(settings, "WEBHOOK_DISPATCH_QUEUE_URL", "")
+    assert queue_standup_announcement("W1", TEAM, TUESDAY, send=send) is False
+
+    monkeypatch.setattr(settings, "WEBHOOK_DISPATCH_QUEUE_URL", "https://sqs.test/dispatch")
+    assert queue_standup_announcement("W1", TEAM, TUESDAY, send=send)
+
+    assert len(sent) == 1
+    url, envelope = sent[0]
+    assert url == "https://sqs.test/dispatch"
+    assert envelope.payload == {
+        "kind": CHANNEL_STANDUP_JOB,
+        "workspace_id": "W1",
+        "team_id": TEAM,
+        "date": "2026-10-06",
+    }

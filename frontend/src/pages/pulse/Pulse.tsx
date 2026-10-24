@@ -7,34 +7,26 @@
  * clears.
  */
 
-import React, { useEffect, useRef, useState } from 'react';
-import { LuActivity, LuFlag, LuGoal } from 'react-icons/lu';
-import { Link } from 'react-router-dom';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { LuActivity } from 'react-icons/lu';
+import { useNavigate } from 'react-router-dom';
 import { useQueryAuth } from '@webbpulse/auth/react';
 import { invalidateQueries, usePolledQuery } from '@webbpulse/api-client/react';
 import { listPulse, markPulseRead } from '../../api/pulse';
-import { HealthPill } from '../../components/planning/ProjectUpdateCard';
-import ProjectIcon from '../../components/planning/ProjectIcon';
 import { ErrorAlert } from '../../components/ui/alert';
-import Avatar from '../../components/ui/avatar';
 import Button from '../../components/ui/button';
 import EmptyState from '../../components/ui/empty-state';
-import Markdown from '../../components/ui/markdown';
-import RelativeTime from '../../components/ui/relative-time';
 import { SkeletonRows } from '../../components/ui/skeleton';
-import ViaSource from '../../components/ui/via-source';
 import WorkspaceShell from '../../components/workspace/WorkspaceShell';
+import { useListKeyboardNav } from '../../hooks/useListKeyboardNav';
 import { useWorkspace } from '../../hooks/useWorkspace';
 import { cn } from '../../lib/cn';
 import { errorMessage } from '../../lib/errors';
-import {
-  initiativePath,
-  projectUpdatesTabPath,
-  projectPath,
-} from '../../lib/paths';
-import { PROJECT_HEALTH_LABELS } from '../../lib/projectLook';
 import { pulseCountKey, pulseKey } from '../../lib/queryKeys';
+import { dayHeading, localDay } from '../../lib/relativeTime';
 import type { PulseItemRead, PulseScope } from '../../types/Api';
+import PulseEntry from './PulseEntry';
+import { entryHref } from './pulseDisplay';
 
 /** How often the first page is read again while the page is open. */
 const POLL_MS = 60000;
@@ -52,143 +44,30 @@ const EMPTY_MESSAGES: Record<PulseScope, string> = {
   recent: 'No project or initiative updates yet.',
 };
 
-/** Where an entry's title links: the updates tab for an update, else the page. */
-const entryHref = (slug: string, item: PulseItemRead): string => {
-  if (item.subject_type === 'initiative' && item.initiative_id !== null) {
-    const base = initiativePath(slug, item.initiative_id);
-    return item.event_type === 'initiative_update'
-      ? `${base}?tab=updates`
-      : base;
-  }
-  if (item.project_id === null) return '';
-  return item.event_type === 'project_update'
-    ? projectUpdatesTabPath(slug, item.project_id)
-    : projectPath(slug, item.project_id);
-};
-
-/** The name of what an entry is about. */
-const subjectName = (item: PulseItemRead): string =>
-  (item.subject_type === 'initiative'
-    ? item.initiative_name
-    : item.project_name) ?? 'Untitled';
-
-/** The sentence after the actor's name, saying what happened. */
-const describe = (item: PulseItemRead): string => {
-  switch (item.event_type) {
-    case 'project_update':
-    case 'initiative_update':
-      return 'posted an update';
-    case 'project_health':
-    case 'initiative_health':
-      return item.health === null
-        ? 'cleared the health'
-        : `set the health to ${PROJECT_HEALTH_LABELS[item.health].toLowerCase()}`;
-    case 'milestone_completed':
-      return `completed ${item.milestone_name ?? 'a milestone'}`;
-  }
-};
-
-/** One sentence saying who did what, for the line under the title and its label. */
-const summary = (item: PulseItemRead): string => {
-  if (item.actor_name !== '') return `${item.actor_name} ${describe(item)}`;
-  if (item.event_type === 'milestone_completed') {
-    return `${item.milestone_name ?? 'A milestone'} was completed`;
-  }
-  const sentence = describe(item);
-  return sentence.charAt(0).toUpperCase() + sentence.slice(1);
-};
-
-/** The mark beside what an entry is about: the project's own icon, or a goal. */
-const SubjectMark: React.FC<{ item: PulseItemRead }> = ({ item }) =>
-  item.subject_type === 'initiative' ? (
-    <span
-      aria-hidden="true"
-      className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-sm bg-raised text-text-muted"
-    >
-      <LuGoal className="h-3.5 w-3.5" />
-    </span>
-  ) : (
-    <ProjectIcon icon={item.project_icon} color={item.project_color} />
-  );
-
-/** Props for PulseEntry. */
-interface PulseEntryProps {
-  item: PulseItemRead;
-  slug: string;
+/** One day's run of entries, under the heading the feed shows for it. */
+interface DayGroup {
+  key: string;
+  heading: string;
+  entries: { item: PulseItemRead; index: number }[];
 }
 
-/** One feed entry: what it is about, who did what and when, and the update itself. */
-const PulseEntry: React.FC<PulseEntryProps> = ({ item, slug }) => {
-  const actor = item.actor_name === '' ? null : item.actor_name;
-  const href = entryHref(slug, item);
-  const name = subjectName(item);
-  const isUpdate =
-    item.event_type === 'project_update' ||
-    item.event_type === 'initiative_update';
-  return (
-    <article
-      aria-label={`${name}: ${summary(item)}`}
-      data-unread={item.unread ? 'true' : undefined}
-      className="relative border-b border-line/60 px-4 py-4 last:border-b-0"
-    >
-      {item.unread && (
-        <span
-          role="img"
-          aria-label="Unread"
-          className="absolute top-5 left-1 h-1.5 w-1.5 rounded-full bg-accent"
-        />
-      )}
-      <header className="flex min-w-0 items-center gap-2">
-        <SubjectMark item={item} />
-        {href === '' ? (
-          <span className="truncate text-sm font-medium text-text">{name}</span>
-        ) : (
-          <Link
-            to={href}
-            className="truncate text-sm font-medium text-text hover:underline focus-visible:outline-2 focus-visible:outline-accent"
-          >
-            {name}
-          </Link>
-        )}
-        {item.health !== null && <HealthPill health={item.health} />}
-      </header>
-      <div className="mt-2 flex min-w-0 items-center gap-2 text-xs text-text-muted">
-        {actor !== null ? (
-          <Avatar name={actor} size="xs" />
-        ) : (
-          <span
-            aria-hidden="true"
-            className="inline-flex h-4 w-4 shrink-0 items-center justify-center text-text-faint"
-          >
-            {item.event_type === 'milestone_completed' ? (
-              <LuFlag className="h-3 w-3" />
-            ) : (
-              <LuActivity className="h-3 w-3" />
-            )}
-          </span>
-        )}
-        <span className="min-w-0 truncate">
-          {actor !== null && (
-            <span className="font-medium text-text">{actor}</span>
-          )}
-          {actor !== null ? ` ${describe(item)}` : summary(item)}
-        </span>
-        <span aria-hidden="true">·</span>
-        <RelativeTime value={item.created_at} className="shrink-0" />
-        <ViaSource source={item.source} />
-        {item.edited_at !== null && (
-          <span className="text-text-faint">(edited)</span>
-        )}
-      </div>
-      {isUpdate && item.body !== null && item.body.trim() !== '' && (
-        <Markdown
-          source={item.body}
-          density="compact"
-          className="mt-3 text-sm text-text"
-        />
-      )}
-    </article>
-  );
+/** Splits a newest-first feed into runs of the same local day, keeping each entry's place in the whole list. */
+const groupByDay = (items: PulseItemRead[], now: Date): DayGroup[] => {
+  const groups: DayGroup[] = [];
+  items.forEach((item, index) => {
+    const key = localDay(item.created_at);
+    const last = groups.at(-1);
+    if (last !== undefined && last.key === key) {
+      last.entries.push({ item, index });
+      return;
+    }
+    groups.push({
+      key,
+      heading: dayHeading(item.created_at, now),
+      entries: [{ item, index }],
+    });
+  });
+  return groups;
 };
 
 /** Props for PulseFeed: the workspace and the scope it reads. */
@@ -244,6 +123,22 @@ const PulseFeed: React.FC<PulseFeedProps> = ({ workspaceId, slug, scope }) => {
     ...older.filter((item) => !seen.has(item.event_id)),
   ];
 
+  const navigate = useNavigate();
+  const activate = useCallback(
+    (index: number) => {
+      const item = items[index];
+      if (item === undefined) return;
+      const href = entryHref(slug, item);
+      if (href !== '') void navigate(href);
+    },
+    [items, navigate, slug]
+  );
+  const { activeIndex, setActiveIndex, registerItem } = useListKeyboardNav({
+    count: items.length,
+    onActivate: activate,
+    resetKey: scope,
+  });
+
   const loadMore = (): void => {
     if (nextCursor === null || loadingMore) return;
     setLoadingMore(true);
@@ -276,13 +171,37 @@ const PulseFeed: React.FC<PulseFeedProps> = ({ workspaceId, slug, scope }) => {
   }
   return (
     <div className="min-h-0 flex-1 overflow-y-auto">
-      <div className="mx-auto w-full max-w-3xl px-2 py-4 sm:px-4">
+      <div className="mx-auto w-full max-w-2xl px-4 pb-10 sm:px-6">
         <section
           aria-label={SCOPES.find((option) => option.id === scope)?.label}
-          className="rounded-lg border border-line bg-surface"
         >
-          {items.map((item) => (
-            <PulseEntry key={item.event_id} item={item} slug={slug} />
+          {groupByDay(items, new Date()).map((group) => (
+            <section
+              key={group.key}
+              aria-labelledby={`pulse-day-${group.key}`}
+              className="pb-2"
+            >
+              <h2
+                id={`pulse-day-${group.key}`}
+                className="sticky top-0 z-10 bg-bg/95 pt-6 pb-3 text-xs font-medium text-text-muted backdrop-blur-sm"
+              >
+                {group.heading}
+              </h2>
+              <div className="flex flex-col gap-3">
+                {group.entries.map(({ item, index }) => (
+                  <PulseEntry
+                    key={item.event_id}
+                    item={item}
+                    slug={slug}
+                    active={activeIndex === index}
+                    entryRef={registerItem(index)}
+                    onPointerEnter={() => {
+                      setActiveIndex(index);
+                    }}
+                  />
+                ))}
+              </div>
+            </section>
           ))}
         </section>
         {moreError !== null && (
@@ -293,7 +212,7 @@ const PulseFeed: React.FC<PulseFeedProps> = ({ workspaceId, slug, scope }) => {
           </div>
         )}
         {nextCursor !== null && (
-          <div className="mt-3 flex justify-center">
+          <div className="mt-4 flex justify-center">
             <Button
               variant="ghost"
               size="sm"

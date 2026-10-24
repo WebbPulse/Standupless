@@ -1,6 +1,7 @@
 /**
  * Tests for the Pulse page: entries newest first with their unread dot and
- * links, the read marker moved on view, the For me and Recent switch, the empty
+ * links, grouped under day headings, moved through with j/k and opened with
+ * Enter, the read marker moved on view, the For me and Recent switch, the empty
  * states and older pages on request.
  */
 
@@ -122,6 +123,7 @@ const renderPage = () =>
     <MemoryRouter initialEntries={['/w/mine/pulse']}>
       <Routes>
         <Route path="/w/:slug/pulse" element={<Pulse />} />
+        <Route path="/w/:slug/projects/:id" element={<p>Project page</p>} />
       </Routes>
     </MemoryRouter>
   );
@@ -262,6 +264,53 @@ describe('the Pulse page', () => {
     expect(
       screen.queryByRole('button', { name: 'Show older' })
     ).not.toBeInTheDocument();
+  });
+
+  it('groups entries under a heading for each day', async () => {
+    const now = new Date();
+    const yesterday = new Date(now);
+    yesterday.setDate(now.getDate() - 1);
+    listPulse.mockResolvedValue(
+      pageOf([
+        entry({ event_id: 'ev-3', created_at: now.toISOString() }),
+        entry({ event_id: 'ev-2', created_at: yesterday.toISOString() }),
+        entry({ event_id: 'ev-1', created_at: yesterday.toISOString() }),
+      ])
+    );
+    renderPage();
+
+    const today = await screen.findByRole('region', { name: 'Today' });
+    expect(within(today).getAllByRole('article')).toHaveLength(1);
+    const before = screen.getByRole('region', { name: 'Yesterday' });
+    expect(within(before).getAllByRole('article')).toHaveLength(2);
+  });
+
+  it('moves through entries with j and k and opens one with Enter', async () => {
+    const user = userEvent.setup();
+    listPulse.mockResolvedValue(
+      pageOf([
+        entry({ event_id: 'ev-2', body: 'Second' }),
+        entry({
+          event_id: 'ev-1',
+          event_type: 'project_health',
+          project_id: 'p-2',
+          body: null,
+        }),
+      ])
+    );
+    renderPage();
+
+    const entries = await screen.findAllByRole('article');
+    await user.keyboard('j');
+    expect(entries[0]).toHaveAttribute('aria-current', 'true');
+    await user.keyboard('j');
+    expect(entries[1]).toHaveAttribute('aria-current', 'true');
+    expect(entries[0]).not.toHaveAttribute('aria-current');
+    await user.keyboard('k');
+    await user.keyboard('j');
+    await user.keyboard('{Enter}');
+
+    expect(await screen.findByText('Project page')).toBeInTheDocument();
   });
 
   it('says when the feed cannot be read', async () => {

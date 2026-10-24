@@ -85,6 +85,7 @@ ENTITY_FILES: tuple[str, ...] = (
     "comments",
     "attachments",
     "projects",
+    "project_relations",
     "milestones",
     "project_updates",
     "cycles",
@@ -605,11 +606,13 @@ def _issue(repositories: Any, writer: _Writer, issue: Any, relation_ids: set[str
 
 
 def _projects(repositories: Any, job: ExportJob, writer: _Writer, visible_ids: set[str]) -> None:
-    """Every project in a visible team, with its milestones and updates."""
+    """Every project in a visible team, with its milestones and updates, then the dependencies between them."""
     workspace_id = job.workspace_id
+    project_ids: set[str] = set()
     for project in repositories.planning.list_projects(workspace_id, max_items=100_000):
         if not any(team_id in visible_ids for team_id in project.team_ids):
             continue
+        project_ids.add(project.project_id)
         writer.write("projects", _dump(project))
         for milestone in repositories.planning.list_milestones(workspace_id, project.project_id, max_items=100_000):
             writer.write("milestones", _dump(milestone))
@@ -620,6 +623,9 @@ def _projects(repositories: Any, job: ExportJob, writer: _Writer, visible_ids: s
         ):
             writer.write("project_updates", _dump(update))
         _documents(repositories, writer, workspace_id, "project", project.project_id)
+    for relation in repositories.planning.list_project_relations(workspace_id, max_items=100_000):
+        if relation.project_id in project_ids and relation.target_project_id in project_ids:
+            writer.write("project_relations", _dump(relation))
 
 
 def _initiative_documents(repositories: Any, job: ExportJob, writer: _Writer) -> None:

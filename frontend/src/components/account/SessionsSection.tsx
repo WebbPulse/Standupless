@@ -1,20 +1,23 @@
 /**
- * The signed in person's live sessions, most recently active first, with the
- * one in this browser marked and every other one revocable. Revoking ends that
- * sign-in at its next refresh. The current session is ended by signing out,
- * so it has no revoke button. Each row names the app or browser the session
- * runs in, the address it was last seen from and, when that moved, where it
- * signed in. An MCP session links to Connected apps, where its grant is ended.
+ * The signed in person's live sessions, this one first and the rest most
+ * recently active first, each other one revocable alone or all at once behind
+ * a confirm step. Revoking ends that sign-in at its next refresh. The current
+ * session is ended by signing out, so it has no revoke button. Each row names
+ * the app, or the browser and operating system, the session runs in, the
+ * address it was last seen from and, when that moved, where it signed in. An
+ * MCP session links to Connected apps, where its grant is ended.
  */
 
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import type { AccountSession } from '@webbpulse/auth';
+import { useSessionsPanel } from '@webbpulse/auth/panels';
 import { Link } from 'react-router-dom';
 import {
   LuMonitor,
   LuSmartphone,
   LuBot,
   LuGlobe,
+  LuLogOut,
   LuPlug,
 } from 'react-icons/lu';
 import { listMyConnectedApps } from '../../api/connectedApps';
@@ -24,11 +27,11 @@ import {
 } from '../../api/identityClient';
 import { sessionLabel } from '../../lib/account';
 import { signInMethodLabel } from '../../lib/amr';
-import { errorMessage } from '../../lib/errors';
-import { showErrorToast, showToast } from '../../lib/toast';
+import { showToast } from '../../lib/toast';
 import { ErrorAlert } from '../ui/alert';
 import Badge from '../ui/badge';
 import Button from '../ui/button';
+import Dialog from '../ui/dialog';
 import RelativeTime from '../ui/relative-time';
 import Spinner from '../ui/spinner';
 
@@ -134,74 +137,117 @@ const useConnectedAppNames = (
   return names;
 };
 
+/** The confirm step before every other session is signed out. */
+const SignOutOthersDialog: React.FC<{
+  count: number;
+  busy: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+}> = ({ count, busy, onCancel, onConfirm }) => (
+  <Dialog
+    open
+    size="sm"
+    title="Sign out of all other sessions?"
+    description={
+      count === 1
+        ? 'This signs out the other device signed in to your account. This session stays signed in.'
+        : `This signs out the ${count} other devices signed in to your account. This session stays signed in.`
+    }
+    onClose={onCancel}
+  >
+    <div className="flex justify-end gap-2">
+      <Button variant="secondary" onClick={onCancel} disabled={busy}>
+        Cancel
+      </Button>
+      <Button variant="danger" onClick={onConfirm} disabled={busy}>
+        Sign out other sessions
+      </Button>
+    </div>
+  </Dialog>
+);
+
 /** The list, mounted only once a client exists. */
 const SessionList: React.FC<{
   client: IdentityClient;
   connectedAppsHref: string | undefined;
 }> = ({ client, connectedAppsHref }) => {
-  const [sessions, setSessions] = useState<AccountSession[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  const appNames = useConnectedAppNames(sessions);
-
-  const load = useCallback(async (): Promise<void> => {
-    try {
-      const outcome = await client.listSessions();
-      setSessions(outcome.sessions);
-      setError(null);
-    } catch (failure) {
-      setError(errorMessage(failure, 'Could not load your sessions.'));
-    }
-  }, [client]);
+  const panel = useSessionsPanel({
+    client,
+    messages: {
+      removed: 'Session revoked.',
+      revokedOthers: (count) =>
+        count === 1
+          ? 'Signed out of 1 other session.'
+          : `Signed out of ${count} other sessions.`,
+      failed: 'Could not reach the server. Try again.',
+    },
+  });
+  const [confirming, setConfirming] = useState(false);
+  const appNames = useConnectedAppNames(panel.items);
+  const { notice, dismiss } = panel;
 
   useEffect(() => {
-    void load();
-  }, [load]);
+    if (notice === null) return;
+    showToast(notice);
+    dismiss();
+  }, [notice, dismiss]);
 
-  const revoke = async (session: AccountSession): Promise<void> => {
-    setBusy(true);
-    try {
-      const outcome = await client.revokeSession(session.id);
-      if (outcome.ok || outcome.reason === 'not-found') {
-        showToast('Session revoked.');
-      } else {
-        showErrorToast(outcome.message);
-      }
-      await load();
-    } catch (failure) {
-      showErrorToast(errorMessage(failure, 'Could not revoke that session.'));
-    } finally {
-      setBusy(false);
-    }
+  if (panel.unavailable) return null;
+
+  const rows =
+    panel.current !== null ? [panel.current, ...panel.others] : panel.others;
+
+  const signOutOthers = async (): Promise<void> => {
+    await panel.revokeOthers();
+    setConfirming(false);
   };
 
   return (
     <section className="space-y-4" aria-labelledby="sessions-title">
-      <div className="space-y-1">
-        <h2 id="sessions-title" className="text-base font-semibold">
-          Sessions
-        </h2>
-        <p className="text-sm text-text-muted">
-          Devices signed in to your account. Revoke any you do not recognise.
-        </p>
+      <div className="flex items-start justify-between gap-4">
+        <div className="space-y-1">
+          <h2 id="sessions-title" className="text-base font-semibold">
+            Sessions
+          </h2>
+          <p className="text-sm text-text-muted">
+            Devices signed in to your account. Revoke any you do not recognise.
+          </p>
+        </div>
+        {panel.others.length > 0 && (
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => setConfirming(true)}
+            disabled={panel.busy}
+          >
+            <LuLogOut className="h-3.5 w-3.5" aria-hidden="true" />
+            Sign out of all other sessions
+          </Button>
+        )}
       </div>
-      <ErrorAlert message={error} />
-      {sessions === null && error === null && (
-        <Spinner label="Loading sessions" />
-      )}
-      {sessions !== null && sessions.length > 0 && (
+      <ErrorAlert message={panel.error} />
+      {panel.loading && <Spinner label="Loading sessions" />}
+      {rows.length > 0 && (
         <ul className="divide-y divide-line rounded-md border border-line">
-          {sessions.map((session) => (
+          {rows.map((session) => (
             <SessionRow
               key={session.id}
               session={session}
               appName={appNames[session.clientId] ?? ''}
               connectedAppsHref={connectedAppsHref}
-              busy={busy}
-              onRevoke={() => void revoke(session)}
+              busy={panel.busy}
+              onRevoke={() => void panel.revoke(session.id)}
             />
           ))}
         </ul>
+      )}
+      {confirming && (
+        <SignOutOthersDialog
+          count={panel.others.length}
+          busy={panel.busy}
+          onCancel={() => setConfirming(false)}
+          onConfirm={() => void signOutOthers()}
+        />
       )}
     </section>
   );

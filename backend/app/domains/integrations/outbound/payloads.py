@@ -196,6 +196,11 @@ class Links:
         prefix = quote(self.team_prefix(team_id), safe="")
         return f"{self._base()}/team/{prefix}/cycles/{quote(cycle_id, safe='')}"
 
+    def standup(self, team_id: str, day: str) -> str:
+        """The team's standup page on one digest date."""
+        prefix = quote(self.team_prefix(team_id), safe="")
+        return f"{self._base()}/team/{prefix}/standup?date={quote(day, safe='')}"
+
     def team_settings(self, team_id: str) -> str:
         """The team settings page, where its labels are managed."""
         return f"{self._base()}/team/{quote(self.team_prefix(team_id), safe='')}/settings"
