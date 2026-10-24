@@ -38,6 +38,7 @@ const failure = (status: number): ApiError =>
     statusText: 'Refused',
     body: { message: 'Refused' },
     url: '/api/workspaces/ws-1/issues/ENG-1',
+    method: 'GET',
   });
 
 beforeEach(() => {
