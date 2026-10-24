@@ -28,6 +28,7 @@ import {
   useCommandPalette,
 } from '../../hooks/useCommandPalette';
 import { CreateIssueContext } from '../../hooks/useCreateIssue';
+import { useHasIssueDraft } from '../../lib/issueDraft';
 import type {
   CreateIssueOptions,
   CreateIssueState,
@@ -232,6 +233,8 @@ const WorkspaceOverlays: React.FC = () => {
     [writable, routePrefix]
   );
 
+  const hasDraft = useHasIssueDraft(workspaceId, user?.id);
+
   const closeCreateIssue = useCallback(() => {
     setRequest(null);
   }, []);
@@ -243,8 +246,9 @@ const WorkspaceOverlays: React.FC = () => {
       isOpen: request !== null,
       canCreate: writable.length > 0,
       request,
+      hasDraft,
     }),
-    [openCreateIssue, closeCreateIssue, request, writable.length]
+    [openCreateIssue, closeCreateIssue, request, writable.length, hasDraft]
   );
 
   const mayCreateTeam = canCreateTeam(role);

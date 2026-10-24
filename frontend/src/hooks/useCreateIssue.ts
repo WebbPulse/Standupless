@@ -13,6 +13,10 @@
  * dialog as its starting draft. A team change in the dialog drops them, since
  * each is scoped to the team it was chosen in. `templateId` names the template
  * the draft starts from in place of the team's default.
+ *
+ * {@link CreateIssueState.hasDraft} says whether the viewer has a draft saved
+ * in this workspace, so the new issue button can show that pressing it brings
+ * the draft back.
  */
 
 import { createContext, useContext } from 'react';
@@ -46,6 +50,8 @@ export interface CreateIssueState {
   canCreate: boolean;
   /** The options the open dialog was asked for, with the team resolved. */
   request: (CreateIssueOptions & { teamId: string }) | null;
+  /** Whether a closed dialog left a draft to restore. */
+  hasDraft?: boolean;
 }
 
 /** The dialog state the workspace layout provides, or null outside one. */
@@ -58,6 +64,7 @@ const UNAVAILABLE: CreateIssueState = {
   isOpen: false,
   canCreate: false,
   request: null,
+  hasDraft: false,
 };
 
 /** The workspace's create issue dialog. */
