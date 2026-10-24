@@ -335,7 +335,7 @@ class ShortcutTeamChoice(BaseModel):
 
 
 class ShortcutImportRequest(BaseModel):
-    """A Shortcut import or its preview: the token, sealed while the job runs and deleted after, and the team mapping."""
+    """A Shortcut import or its preview: the token, sealed while the job runs and deleted after, and the teams."""
 
     api_token: str = Field(min_length=1, max_length=200, description="A Shortcut API token from Settings, API Tokens.")
     teams: list[ShortcutTeamChoice] = Field(min_length=1, max_length=50)

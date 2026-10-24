@@ -377,7 +377,7 @@ def test_an_import_carries_comments_links_and_planning(
 def test_two_teams_import_into_their_own_teams_and_share_what_names_both(
     client: TestClient, repositories: Any, workspace: str, bucket: str, shortcut: FakeShortcut
 ) -> None:
-    """Each Shortcut team lands in its own team, an iteration naming no team goes to both, and a shared epic spans both."""
+    """Each Shortcut team lands in its own team, a teamless iteration goes to both, and a shared epic spans both."""
     shortcut.epics[0]["group_ids"] = [TEAM_ID, OTHER_TEAM_ID]
     body = {
         "api_token": FAKE_TOKEN,

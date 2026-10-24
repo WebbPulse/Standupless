@@ -483,8 +483,8 @@ IMPORT_TOOLS: tuple[Tool, ...] = (
     Tool(
         name="get_workspace_import",
         description=(
-            "One import's status, phase, tallies and the problems it kept, for a Linear, Shortcut, GitHub or CSV import. Needs "
-            "workspace owner or admin."
+            "One import's status, phase, tallies and the problems it kept, for a Linear, Shortcut, GitHub or CSV "
+            "import. Needs workspace owner or admin."
         ),
         scopes=("settings:read", "admin"),
         schema=object_schema(
