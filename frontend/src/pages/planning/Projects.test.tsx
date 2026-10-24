@@ -11,7 +11,9 @@
  * columns, reverses the groups, groups again inside each group, keeps only
  * the projects a filtered team leads, and drops empty board columns, and the
  * blocked and blocking filters narrow the rows. Save as view stores the filters and the
- * arrangement as a view of projects and opens it.
+ * arrangement as a view of projects and opens it. The page opens with the
+ * team's or the workspace's default for everyone, which only an admin of
+ * that scope sets or clears from the Display menu.
  */
 
 import {
@@ -30,11 +32,18 @@ import type {
   ProjectListRead,
   ProjectRead,
   ProjectUpdate,
+  ProjectsDisplayPreference,
   TeamRead,
   WorkspaceRead,
   WorkspaceRole,
 } from '../../types/Api';
 import type { SavedViewDisplayRead } from '../../api/views';
+import type {
+  TeamDisplayDefaultsRead,
+  TeamDisplayDefaultsUpdate,
+  WorkspaceDisplayDefaultsRead,
+} from '../../api/teams';
+import { DEFAULT_PROJECTS_DISPLAY } from '../../lib/projectList';
 import Projects from './Projects';
 
 const listProjects =
@@ -83,8 +92,29 @@ vi.mock('../../api/planning', () => ({
     updateProject(id, patch),
 }));
 
+const getDisplayDefaults = vi.fn<() => Promise<TeamDisplayDefaultsRead>>();
+const updateDisplayDefaults =
+  vi.fn<
+    (teamId: string, body: TeamDisplayDefaultsUpdate) => Promise<unknown>
+  >();
+const getWorkspaceDisplayDefaults =
+  vi.fn<() => Promise<WorkspaceDisplayDefaultsRead>>();
+const updateWorkspaceDisplayDefaults =
+  vi.fn<(display: ProjectsDisplayPreference | null) => Promise<unknown>>();
+
 vi.mock('../../api/teams', () => ({
   listTeams: () => listTeams(),
+  getDisplayDefaults: () => getDisplayDefaults(),
+  updateDisplayDefaults: (
+    _w: string,
+    teamId: string,
+    body: TeamDisplayDefaultsUpdate
+  ) => updateDisplayDefaults(teamId, body),
+  getWorkspaceDisplayDefaults: () => getWorkspaceDisplayDefaults(),
+  updateWorkspaceDisplayDefaults: (
+    _w: string,
+    display: ProjectsDisplayPreference | null
+  ) => updateWorkspaceDisplayDefaults(display),
   listTeamMembers: () => Promise.resolve([]),
   listStatuses: () => Promise.resolve([]),
   listLabels: () => Promise.resolve([]),
@@ -188,6 +218,40 @@ const roleless = (team: TeamRead): TeamRead => {
   return rest;
 };
 
+/** The built-in arrangement as the display defaults routes answer it. */
+const BUILT_IN =
+  DEFAULT_PROJECTS_DISPLAY as unknown as ProjectsDisplayPreference;
+
+/** The board, as an admin saved it for everyone. */
+const BOARD = {
+  ...BUILT_IN,
+  layout: 'board',
+} as ProjectsDisplayPreference;
+
+/** A team's display defaults, with the projects page default given. */
+const teamDefaults = (
+  own: ProjectsDisplayPreference | null,
+  effective: ProjectsDisplayPreference = own ?? BUILT_IN
+): TeamDisplayDefaultsRead => ({
+  team_id: 'team-1',
+  list_display: null,
+  board_display: null,
+  projects_display: own,
+  effective_projects_display: effective,
+  updated_by: null,
+  updated_at: null,
+});
+
+/** The workspace's display defaults, with the projects page default given. */
+const workspaceDefaults = (
+  own: ProjectsDisplayPreference | null
+): WorkspaceDisplayDefaultsRead => ({
+  projects_display: own,
+  effective_projects_display: own ?? BUILT_IN,
+  updated_by: null,
+  updated_at: null,
+});
+
 const renderPage = (entry = '/w/mine/projects') =>
   render(
     <MemoryRouter initialEntries={[entry]}>
@@ -208,6 +272,78 @@ describe('Projects', () => {
       projects: [launch, rebrand],
       next_cursor: null,
     });
+    getDisplayDefaults.mockResolvedValue(teamDefaults(null));
+    getWorkspaceDisplayDefaults.mockResolvedValue(workspaceDefaults(null));
+    updateDisplayDefaults.mockResolvedValue({});
+    updateWorkspaceDisplayDefaults.mockResolvedValue({});
+  });
+
+  it('opens with the workspace default for everyone', async () => {
+    getWorkspaceDisplayDefaults.mockResolvedValue(workspaceDefaults(BOARD));
+    renderPage();
+
+    expect(
+      await screen.findByRole('list', { name: 'Backlog projects' })
+    ).toBeInTheDocument();
+  });
+
+  it('opens a team page with the default its team falls back to', async () => {
+    getDisplayDefaults.mockResolvedValue(teamDefaults(null, BOARD));
+    renderPage('/w/mine/projects?team=ENG');
+
+    expect(
+      await screen.findByRole('list', { name: 'Backlog projects' })
+    ).toBeInTheDocument();
+    expect(getWorkspaceDisplayDefaults).not.toHaveBeenCalled();
+  });
+
+  it('lets a workspace admin set the default for everyone', async () => {
+    const user = userEvent.setup();
+    renderPage();
+
+    await screen.findByRole('link', { name: 'Launch' });
+    await user.click(screen.getByRole('button', { name: 'Display' }));
+    await user.click(
+      await screen.findByRole('button', { name: 'Set default for everyone' })
+    );
+
+    await waitFor(() => {
+      expect(updateWorkspaceDisplayDefaults).toHaveBeenCalledWith(
+        expect.objectContaining({ layout: 'list', group: 'status' })
+      );
+    });
+  });
+
+  it('lets a team admin clear the team default', async () => {
+    getDisplayDefaults.mockResolvedValue(teamDefaults(BOARD));
+    const user = userEvent.setup();
+    renderPage('/w/mine/projects?team=ENG');
+
+    await screen.findByRole('list', { name: 'Backlog projects' });
+    await user.click(screen.getByRole('button', { name: 'Display' }));
+    await user.click(
+      await screen.findByRole('button', { name: 'Clear default' })
+    );
+
+    await waitFor(() => {
+      expect(updateDisplayDefaults).toHaveBeenCalledWith('team-1', {
+        projects_display: null,
+      });
+    });
+  });
+
+  it('offers a member no default for everyone', async () => {
+    useWorkspaceMock.mockReturnValue(resolved('member'));
+    const user = userEvent.setup();
+    renderPage();
+
+    await screen.findByRole('link', { name: 'Launch' });
+    await user.click(screen.getByRole('button', { name: 'Display' }));
+
+    expect(
+      screen.queryByRole('button', { name: 'Set default for everyone' })
+    ).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Clear default' })).toBeNull();
   });
 
   it('reads the whole workspace in one cursor walk', async () => {
