@@ -1,4 +1,4 @@
-"""Recount every blocker so each carries how many issues it blocks.
+"""Recount every blocker so each carries how many open issues it blocks.
 
 Link writes and the rollup consumer keep `blocking_count` from the release that
 added it, but a link written before then left the blocker at zero. This runs the

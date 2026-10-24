@@ -14,6 +14,7 @@ locals {
       "/api/workspaces/{workspace_id}/statuses",
       "/api/workspaces/{workspace_id}/labels",
       "/api/workspaces/{workspace_id}/templates",
+      "/api/workspaces/{workspace_id}/display-defaults",
     ]
     issues = ["/api/workspaces/{workspace_id}/issues"]
     views = [
@@ -41,6 +42,7 @@ locals {
     planning = [
       "/api/workspaces/{workspace_id}/cycles",
       "/api/workspaces/{workspace_id}/projects",
+      "/api/workspaces/{workspace_id}/project-labels",
       "/api/workspaces/{workspace_id}/initiatives",
       "/api/workspaces/{workspace_id}/roadmap",
       "/api/workspaces/{workspace_id}/pulse",
@@ -253,7 +255,7 @@ locals {
 module "api" {
   source = "terraform.webbpulse.com/WebbPulse/platform-modules/aws//modules/http-api"
 
-  version = "~> 2.44"
+  version = "~> 2.45"
 
   name        = "${local.prefix}-api"
   description = "Standupless ${var.environment} API (Lambda proxy)"

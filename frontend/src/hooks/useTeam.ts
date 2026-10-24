@@ -19,11 +19,13 @@ export interface UseTeamResult {
   /** True once the list has arrived and holds no team with that prefix. */
   notFound: boolean;
   error: unknown;
+  /** Reads the team list again. */
+  refetch: () => Promise<void>;
 }
 
 /** Resolves one team from a key prefix, and hands back the whole list with it. */
 export const useTeam = (keyPrefix: string | undefined): UseTeamResult => {
-  const { data, error, isLoading, workspaceId } = useTeams();
+  const { data, error, isLoading, workspaceId, refetch } = useTeams();
 
   const teams = data ?? [];
   const team =
@@ -38,6 +40,7 @@ export const useTeam = (keyPrefix: string | undefined): UseTeamResult => {
     isLoading: isLoading || data === null,
     notFound: data !== null && keyPrefix !== undefined && team === null,
     error,
+    refetch,
   };
 };
 

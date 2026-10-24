@@ -32,6 +32,8 @@ ActivityRead = TypedDict(
             "subscriber_added",
             "subscriber_removed",
             "mentioned",
+            "thread_resolved",
+            "thread_unresolved",
         ],
         "release_id": NotRequired[str | None],
         "source": NotRequired[Literal["web", "mcp", "cli", "api", "github", "system"] | None],
@@ -141,6 +143,51 @@ class ArchiveSettingsRead(TypedDict):
 
 class ArchiveSettingsUpdate(TypedDict):
     period_months: NotRequired[Literal[1, 3, 6, 9, 12] | None]
+
+
+class AsanaProjectChoice(TypedDict):
+    create_project: NotRequired[bool]
+    project_gid: str
+    status_field_gid: NotRequired[str | None]
+    statuses: NotRequired[dict[str, str]]
+    team_id: str
+
+
+class AsanaProjectMappingRead(TypedDict):
+    create_project: bool
+    name: str
+    project_gid: str
+    status_field_gid: NotRequired[str | None]
+    status_field_name: NotRequired[str | None]
+    statuses: NotRequired[dict[str, str]]
+    team_id: str
+
+
+class AsanaProjectRead(TypedDict):
+    archived: bool
+    completed: bool
+    gid: str
+    name: str
+    team_name: NotRequired[str | None]
+    url: NotRequired[str | None]
+    workspace_gid: str
+    workspace_name: str
+
+
+class AsanaStatusFieldRead(TypedDict):
+    gid: str
+    name: str
+    options: list[str]
+
+
+class AsanaStatusPlanRead(TypedDict):
+    source: str
+    status_id: str
+    status_name: str
+
+
+class AsanaTokenRequest(TypedDict):
+    token: str
 
 
 class AttachmentRead(TypedDict):
@@ -1083,7 +1130,7 @@ class IssueImportRequest(TypedDict):
     csv: str
     file_name: NotRequired[str]
     mapping: NotRequired[dict[str, str | None] | None]
-    preset: NotRequired[Literal["generic", "jira", "linear"]]
+    preset: NotRequired[Literal["generic", "jira", "linear", "asana", "shortcut", "pivotal", "trello"]]
     team_id: str
 
 
@@ -1141,6 +1188,47 @@ class IssueUpdate(TypedDict):
     start_date: NotRequired[str | None]
     status_id: NotRequired[str | None]
     title: NotRequired[str | None]
+
+
+class JiraCredentialsRequest(TypedDict):
+    email: str
+    site_url: str
+    token: str
+
+
+class JiraProjectChoice(TypedDict):
+    epics_as: NotRequired[Literal["projects", "parents"]]
+    jql: NotRequired[str | None]
+    project_key: NotRequired[str | None]
+    statuses: NotRequired[dict[str, str]]
+    team_id: str
+
+
+class JiraProjectMappingRead(TypedDict):
+    epics_as: str
+    jql: NotRequired[str | None]
+    name: str
+    project_key: NotRequired[str | None]
+    site_url: str
+    statuses: NotRequired[dict[str, str]]
+    team_id: str
+
+
+class JiraProjectRead(TypedDict):
+    archived: bool
+    id: str
+    key: str
+    name: str
+    project_type: NotRequired[str | None]
+    team_managed: bool
+    url: NotRequired[str | None]
+
+
+class JiraStatusPlanRead(TypedDict):
+    category: NotRequired[str | None]
+    source: str
+    status_id: str
+    status_name: str
 
 
 class JoinableWorkspaceRead(TypedDict):
@@ -1367,6 +1455,23 @@ class ProgressRead(TypedDict):
     total: NotRequired[int]
 
 
+ProjectActivityRead = TypedDict(
+    "ProjectActivityRead",
+    {
+        "activity_id": str,
+        "actor_id": str,
+        "created_at": str,
+        "field": NotRequired[str | None],
+        "from": NotRequired[Any],
+        "kind": Literal["created", "field_changed", "milestone_added", "milestone_removed", "milestone_changed"],
+        "milestone_id": NotRequired[str | None],
+        "project_id": str,
+        "source": NotRequired[Literal["web", "mcp", "cli", "api", "github", "system"] | None],
+        "to": NotRequired[Any],
+    },
+)
+
+
 class ProjectBlueprint(TypedDict):
     color: NotRequired[str | None]
     description: NotRequired[str | None]
@@ -1407,6 +1512,7 @@ class ProjectCreate(TypedDict):
         | None
     ]
     initiative_id: NotRequired[str | None]
+    label_ids: NotRequired[list[str]]
     lead_id: NotRequired[str | None]
     member_ids: NotRequired[list[str]]
     name: str
@@ -1420,6 +1526,28 @@ class ProjectCreate(TypedDict):
     update_interval_days: NotRequired[int | None]
 
 
+class ProjectLabelCreate(TypedDict):
+    color: str
+    description: NotRequired[str | None]
+    name: str
+
+
+class ProjectLabelRead(TypedDict):
+    color: str
+    created_at: str
+    description: NotRequired[str | None]
+    id: str
+    name: str
+    project_count: NotRequired[int]
+    updated_at: str
+
+
+class ProjectLabelUpdate(TypedDict):
+    color: NotRequired[str | None]
+    description: NotRequired[str | None]
+    name: NotRequired[str | None]
+
+
 class ProjectMilestoneMarkerRead(TypedDict):
     completed: bool
     milestone_id: str
@@ -1430,6 +1558,12 @@ class ProjectMilestoneMarkerRead(TypedDict):
 class ProjectOpenIssues(TypedDict):
     action: Literal["keep", "move", "cancel"]
     project_id: NotRequired[str | None]
+
+
+class ProjectProjectionRead(TypedDict):
+    days_past_target: NotRequired[int | None]
+    expected_date: NotRequired[str | None]
+    rate_per_day: float
 
 
 class ProjectRelationCreate(TypedDict):
@@ -1506,11 +1640,13 @@ class ProjectUpdate(TypedDict):
         | None
     ]
     initiative_id: NotRequired[str | None]
+    label_ids: NotRequired[list[str] | None]
     lead_id: NotRequired[str | None]
     member_ids: NotRequired[list[str] | None]
     name: NotRequired[str | None]
     open_issues: NotRequired[ProjectOpenIssues | None]
     priority: NotRequired[Literal["none", "urgent", "high", "medium", "low"] | None]
+    sort_order: NotRequired[str | None]
     start_date: NotRequired[str | None]
     status: NotRequired[Literal["backlog", "planned", "in_progress", "paused", "completed", "canceled"] | None]
     target_date: NotRequired[str | None]
@@ -1552,7 +1688,9 @@ class ProjectsDisplay(TypedDict):
     group: NotRequired[Literal["status", "health", "priority", "initiative", "lead", "team", "none"]]
     layout: NotRequired[Literal["list", "board", "timeline"]]
     lead_team: NotRequired[Literal["all", "lead"]]
-    order: NotRequired[Literal["target", "start", "name", "priority", "progress", "created", "updated", "customers"]]
+    order: NotRequired[
+        Literal["target", "start", "name", "priority", "progress", "created", "updated", "customers", "manual"]
+    ]
     rows: NotRequired[Literal["status", "health", "priority", "initiative", "lead", "team", "none"]]
     zoom: NotRequired[Literal["week", "month", "quarter", "year"]]
 
@@ -2010,6 +2148,21 @@ class SharedTarget(TypedDict):
     workspace_name: str
 
 
+class ShortcutTeamChoice(TypedDict):
+    shortcut_team_id: str
+    team_id: str
+
+
+class ShortcutTeamRead(TypedDict):
+    id: str
+    key: str
+    name: str
+
+
+class ShortcutTokenRequest(TypedDict):
+    api_token: str
+
+
 class SimilarIssueRead(TypedDict):
     issue_id: str
     key: str
@@ -2081,6 +2234,13 @@ class SlackLinkRead(TypedDict):
     problem: NotRequired[str | None]
     slack_team_name: NotRequired[str | None]
     slack_user_id: NotRequired[str | None]
+
+
+class SourceTeamMappingRead(TypedDict):
+    key: str
+    name: str
+    source_id: str
+    team_id: str
 
 
 class SsoConnectionRead(TypedDict):
@@ -2395,7 +2555,9 @@ class TeamCreate(TypedDict):
 
 class TeamDisplayDefaultsRead(TypedDict):
     board_display: NotRequired[DisplayOptionsBody | None]
+    effective_projects_display: NotRequired[ProjectsDisplay]
     list_display: NotRequired[DisplayOptionsBody | None]
+    projects_display: NotRequired[ProjectsDisplay | None]
     team_id: str
     updated_at: NotRequired[str | None]
     updated_by: NotRequired[str | None]
@@ -2404,6 +2566,7 @@ class TeamDisplayDefaultsRead(TypedDict):
 class TeamDisplayDefaultsUpdate(TypedDict):
     board_display: NotRequired[DisplayOptionsBody | None]
     list_display: NotRequired[DisplayOptionsBody | None]
+    projects_display: NotRequired[ProjectsDisplay | None]
 
 
 class TeamMemberRead(TypedDict):
@@ -2499,6 +2662,11 @@ class TemplateSettingsUpdate(TypedDict):
     default_project_template_id: NotRequired[str | None]
     default_template_id: NotRequired[str | None]
     default_update_template_id: NotRequired[str | None]
+
+
+class ThreadResolution(TypedDict):
+    resolved_at: NotRequired[str]
+    resolved_by: str
 
 
 class TransitionCreate(TypedDict, closed=True):
@@ -2640,6 +2808,7 @@ class UserRead(TypedDict):
     name_display: NotRequired[Literal["username", "full_name"]]
     notification_preferences: dict[str, NotificationChannels]
     projects_display: NotRequired[ProjectsDisplay]
+    projects_display_saved: NotRequired[bool]
     pulse_digest: NotRequired[Literal["off", "daily", "weekly"]]
     timezone: NotRequired[str | None]
     two_factor: NotRequired[bool]
@@ -2989,6 +3158,17 @@ class WorkspaceDeletionRequest(TypedDict):
     confirm_name: str
 
 
+class WorkspaceDisplayDefaultsRead(TypedDict):
+    effective_projects_display: NotRequired[ProjectsDisplay]
+    projects_display: NotRequired[ProjectsDisplay | None]
+    updated_at: NotRequired[str | None]
+    updated_by: NotRequired[str | None]
+
+
+class WorkspaceDisplayDefaultsUpdate(TypedDict):
+    projects_display: NotRequired[ProjectsDisplay | None]
+
+
 class WorkspaceExportCreate(TypedDict):
     include_emails: NotRequired[bool]
 
@@ -3143,6 +3323,29 @@ class ApprovedDomainListRead(TypedDict):
     domains: list[ApprovedDomainRead]
 
 
+class AsanaImportRequest(TypedDict):
+    projects: list[AsanaProjectChoice]
+    token: str
+
+
+class AsanaProjectListRead(TypedDict):
+    items: list[AsanaProjectRead]
+
+
+class AsanaProjectPreviewRead(TypedDict):
+    completed_count: int
+    create_project: bool
+    name: str
+    project_gid: str
+    sections: list[str]
+    status_field_gid: NotRequired[str | None]
+    status_field_name: NotRequired[str | None]
+    status_fields: list[AsanaStatusFieldRead]
+    statuses: list[AsanaStatusPlanRead]
+    task_count: int
+    team_id: str
+
+
 class AttachmentListRead(TypedDict):
     attachments: list[AttachmentRead]
     next_cursor: NotRequired[str | None]
@@ -3184,6 +3387,7 @@ class CommentRead(TypedDict):
     parent_comment_id: NotRequired[str | None]
     reactions: NotRequired[list[ReactionGroupRead]]
     reply_count: NotRequired[int]
+    resolution: NotRequired[ThreadResolution | None]
     source: NotRequired[Literal["web", "mcp", "cli", "api", "github", "system"] | None]
     team_id: str
     workspace_id: str
@@ -3412,6 +3616,7 @@ class IssueImportPreviewRead(TypedDict):
 
 
 class IssueImportRead(TypedDict):
+    asana_projects: NotRequired[list[AsanaProjectMappingRead]]
     counts: NotRequired[dict[str, int]]
     created_at: str
     created_count: int
@@ -3420,7 +3625,8 @@ class IssueImportRead(TypedDict):
     finished_at: NotRequired[str | None]
     github_repository_id: NotRequired[str | None]
     import_id: str
-    kind: NotRequired[Literal["csv", "linear", "github"]]
+    jira_projects: NotRequired[list[JiraProjectMappingRead]]
+    kind: NotRequired[Literal["csv", "linear", "github", "shortcut", "asana", "jira"]]
     labels_created: int
     linear_teams: NotRequired[list[LinearTeamMappingRead]]
     linked_count: NotRequired[int]
@@ -3434,6 +3640,7 @@ class IssueImportRead(TypedDict):
     processed_rows: int
     requested_by: str
     skipped_count: int
+    source_teams: NotRequired[list[SourceTeamMappingRead]]
     started_at: NotRequired[str | None]
     status: Literal["queued", "running", "completed", "failed", "cancelled"]
     team_id: str
@@ -3491,6 +3698,31 @@ class IssueSyncListRead(TypedDict):
     synced_at: NotRequired[str | None]
 
 
+class JiraImportRequest(TypedDict):
+    email: str
+    projects: list[JiraProjectChoice]
+    site_url: str
+    token: str
+
+
+class JiraProjectListRead(TypedDict):
+    items: list[JiraProjectRead]
+    site_url: str
+
+
+class JiraProjectPreviewRead(TypedDict):
+    done_count: int
+    epics_as: str
+    estimate_field: NotRequired[str | None]
+    issue_count: int
+    jql: NotRequired[str | None]
+    name: str
+    project_key: NotRequired[str | None]
+    sprint_field: NotRequired[str | None]
+    statuses: list[JiraStatusPlanRead]
+    team_id: str
+
+
 class JoinableWorkspaceListRead(TypedDict):
     workspaces: list[JoinableWorkspaceRead]
 
@@ -3539,6 +3771,26 @@ class MilestoneListRead(TypedDict):
     next_cursor: NotRequired[str | None]
 
 
+class ProjectActivityListRead(TypedDict):
+    activity: list[ProjectActivityRead]
+    next_cursor: NotRequired[str | None]
+
+
+class ProjectHistoryRead(TypedDict):
+    days: list[CycleHistoryPoint]
+    measure: Literal["points", "issues"]
+    project_id: str
+    projection: NotRequired[ProjectProjectionRead | None]
+    recorded_since: NotRequired[str | None]
+    start_date: NotRequired[str | None]
+    target_date: NotRequired[str | None]
+    today: str
+
+
+class ProjectLabelListRead(TypedDict):
+    labels: list[ProjectLabelRead]
+
+
 class ProjectRead(TypedDict):
     blocked_by_project_ids: NotRequired[list[str]]
     blocking_project_ids: NotRequired[list[str]]
@@ -3553,6 +3805,7 @@ class ProjectRead(TypedDict):
     health: NotRequired[Literal["on_track", "at_risk", "off_track"] | None]
     icon: NotRequired[str | None]
     initiative_id: NotRequired[str | None]
+    label_ids: NotRequired[list[str]]
     last_update_at: NotRequired[str | None]
     lead_id: NotRequired[str | None]
     measure: NotRequired[Literal["points", "issues"]]
@@ -3566,6 +3819,8 @@ class ProjectRead(TypedDict):
     progress: NotRequired[CountsRead]
     project_id: str
     skipped_template_issues: NotRequired[list[SkippedTemplateIssueRead] | None]
+    slug_id: NotRequired[str]
+    sort_order: NotRequired[str | None]
     start_date: NotRequired[str | None]
     status: Literal["backlog", "planned", "in_progress", "paused", "completed", "canceled"]
     status_counts: NotRequired[dict[str, int]]
@@ -3717,6 +3972,29 @@ class SharedViewPage(TypedDict):
     next_cursor: NotRequired[str | None]
 
 
+class ShortcutImportRequest(TypedDict):
+    api_token: str
+    teams: list[ShortcutTeamChoice]
+
+
+class ShortcutPreviewTeamRead(TypedDict):
+    epics: int
+    iterations: int
+    matched_owners: int
+    name: str
+    new_labels: list[str]
+    shortcut_team_id: str
+    statuses: list[StatusMappingRead]
+    stories: int
+    stories_capped: bool
+    team_id: str
+    unmatched_owners: int
+
+
+class ShortcutTeamListRead(TypedDict):
+    items: list[ShortcutTeamRead]
+
+
 class StandupPerson(TypedDict):
     blocked: NotRequired[list[StandupItem]]
     commented: NotRequired[list[StandupItem]]
@@ -3821,6 +4099,10 @@ class WorkspaceListRead(TypedDict):
     workspaces: list[WorkspaceRead]
 
 
+class AsanaImportPreviewRead(TypedDict):
+    projects: list[AsanaProjectPreviewRead]
+
+
 class CommentListRead(TypedDict):
     comments: list[CommentRead]
     next_cursor: NotRequired[str | None]
@@ -3879,6 +4161,11 @@ class IssueReleaseListRead(TypedDict):
     releases: list[IssueReleaseRead]
 
 
+class JiraImportPreviewRead(TypedDict):
+    projects: list[JiraProjectPreviewRead]
+    site_url: str
+
+
 class LinkListRead(TypedDict):
     links: list[LinkRead]
 
@@ -3891,6 +4178,10 @@ class ProjectListRead(TypedDict):
 class ReleaseListRead(TypedDict):
     next_cursor: NotRequired[str | None]
     releases: list[ReleaseRead]
+
+
+class ShortcutImportPreviewRead(TypedDict):
+    teams: list[ShortcutPreviewTeamRead]
 
 
 class StandupDigest(TypedDict):

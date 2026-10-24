@@ -59,6 +59,7 @@ import {
 import {
   HealthPicker,
   LeadPicker,
+  ProjectLabelsPicker,
   ProjectStatusPicker,
   TeamKey,
 } from '../../components/planning/ProjectPickers';
@@ -85,10 +86,12 @@ import EmptyState from '../../components/ui/empty-state';
 import FavoriteButton from '../../components/ui/FavoriteButton';
 import { Popover } from '../../components/ui/popover';
 import { SkeletonRows } from '../../components/ui/skeleton';
+import { useTruncationTooltip } from '../../components/ui/truncated-text';
 import SubTeamToggle from '../../components/workspace/SubTeamToggle';
 import WorkspaceShell from '../../components/workspace/WorkspaceShell';
 import { useAuth } from '../../hooks/useAuth';
 import { useCustomers } from '../../hooks/useCustomers';
+import { useProjectLabels } from '../../hooks/useProjectLabels';
 import useCloseProjectPrompt from '../../hooks/useCloseProjectPrompt';
 import { useInitiatives } from '../../hooks/useInitiatives';
 import { useListKeyboardNav } from '../../hooks/useListKeyboardNav';
@@ -96,6 +99,7 @@ import { usePlanningTeamLists } from '../../hooks/usePlanningTeamLists';
 import { useShortcut } from '../../hooks/useShortcuts';
 import { useProjectMoves } from '../../hooks/useProjectMoves';
 import { useProjectsDisplay } from '../../hooks/useProjectsDisplay';
+import { useProjectsDisplayDefault } from '../../hooks/useProjectsDisplayDefault';
 import { useTeam } from '../../hooks/useTeam';
 import { useTimelineShortcuts } from '../../hooks/useTimelineShortcuts';
 import { useWorkspace } from '../../hooks/useWorkspace';
@@ -103,6 +107,7 @@ import { useWorkspaceProjects } from '../../hooks/useWorkspaceProjects';
 import { ROLL_UP_PARAM, useSubTeamRollUp } from '../../hooks/useSubTeamRollUp';
 import { canWriteIssues } from '../../lib/capabilities';
 import { cn } from '../../lib/cn';
+import { slotIndex } from '../../lib/dropSlot';
 import { errorMessage } from '../../lib/errors';
 import { sharedChange, viewVisibility } from '../../lib/issueView';
 import {
@@ -118,15 +123,16 @@ import {
 } from '../../lib/planningDisplay';
 import { PROJECT_STATUS_ORDER, canEditProject } from '../../lib/planningModel';
 import {
-  INLINE_PROJECT_COLUMNS,
   PROJECTS_DISPLAY_FIELDS,
   PROJECT_COLUMN_LABELS,
   columnList,
   columnValue,
   directedGroups,
   effectiveRows,
+  groupPatch,
   groupProjects,
   groupValue,
+  manualPlacements,
   sortProjects,
   withinClosedWindow,
   withinLeadTeams,
@@ -135,6 +141,7 @@ import {
   type ProjectColumn,
   type ProjectGroup,
   type ProjectGrouping,
+  type ProjectMove,
 } from '../../lib/projectList';
 import { shortDateLabel } from '../../lib/propertyOptions';
 import {
@@ -148,62 +155,25 @@ import { viewKey } from '../../lib/queryKeys';
 import { showErrorToast, showToast } from '../../lib/toast';
 import type {
   ProjectMilestoneMarkerRead,
+  ProjectLabelRead,
   ProjectRead,
   ProjectStatus,
   ProjectUpdate,
   TeamRead,
   WorkspaceRole,
 } from '../../types/Api';
+import {
+  COLUMN_TIERS,
+  PROJECT_GRID,
+  PROJECT_LIST_CONTAINER,
+  TIER_BLOCK,
+  TIER_FLEX,
+  gridColumns,
+  projectGridTracks,
+  type GridColumn,
+} from '../../lib/projectListLayout';
 import { teamTree } from '../../lib/teamOrder';
 import type { TimelineZoom } from '../../lib/timeline';
-
-/** The grid every header and row lines up on, its tracks set by gridTracks. */
-const GRID =
-  'grid grid-cols-[var(--project-columns-narrow)] items-center gap-3 md:grid-cols-[var(--project-columns)]';
-
-/** A property the list draws in a column of its own rather than beside the name. */
-type GridColumn = Exclude<
-  ProjectColumn,
-  'summary' | 'milestones' | 'dependencies'
->;
-
-/** The shown properties that take a grid column, in drawing order. */
-const gridColumns = (shown: readonly ProjectColumn[]): GridColumn[] =>
-  shown.filter(
-    (column): column is GridColumn => !INLINE_PROJECT_COLUMNS.has(column)
-  );
-
-/** How wide each list column runs beside the name. */
-const COLUMN_WIDTHS: Record<GridColumn, string> = {
-  health: '7rem',
-  priority: '2rem',
-  status: '8.5rem',
-  lead: '2rem',
-  members: '4.5rem',
-  start: '6rem',
-  target: '6rem',
-  teams: '6rem',
-  issues: '4rem',
-  created: '5.5rem',
-  updated: '5.5rem',
-  completed: '5.5rem',
-  progress: '4.5rem',
-};
-
-/**
- * The grid tracks for the shown columns: every one beside the name on wide
- * screens, and only progress on narrow ones, so a hidden column leaves no gap.
- */
-const gridTracks = (shown: readonly ProjectColumn[]): React.CSSProperties =>
-  ({
-    '--project-columns': [
-      'minmax(0,1fr)',
-      ...gridColumns(shown).map((column) => COLUMN_WIDTHS[column]),
-    ].join(' '),
-    '--project-columns-narrow': shown.includes('progress')
-      ? 'minmax(0,1fr) 3.5rem'
-      : 'minmax(0,1fr)',
-  }) as React.CSSProperties;
 
 /** The yes and no choices of the blocked and blocking filters. */
 const FLAG_OPTIONS: ComboboxOption[] = [
@@ -224,21 +194,25 @@ const CLOSED_STATUSES: ReadonlySet<ProjectStatus> = new Set([
 /** The filter value that asks for projects with no lead. */
 const NO_LEAD = 'none';
 
+/** The filter value that asks for projects with no label. */
+const NO_LABEL = 'none';
+
 /** How each column's header cell sits over its column. */
 const HEADER_CLASSES: Record<GridColumn, string> = {
-  health: 'hidden px-2 md:block',
-  priority: 'hidden text-center md:block',
-  status: 'hidden px-2 md:block',
-  lead: 'hidden text-center md:block',
-  members: 'hidden md:block',
-  start: 'hidden px-2 md:block',
-  target: 'hidden px-2 md:block',
-  teams: 'hidden md:block',
-  issues: 'hidden text-right md:block',
-  created: 'hidden md:block',
-  updated: 'hidden md:block',
-  completed: 'hidden md:block',
+  health: cn(TIER_BLOCK[COLUMN_TIERS.health], 'px-2'),
+  priority: cn(TIER_BLOCK[COLUMN_TIERS.priority], 'text-center'),
+  status: cn(TIER_BLOCK[COLUMN_TIERS.status], 'px-2'),
+  lead: cn(TIER_BLOCK[COLUMN_TIERS.lead], 'text-center'),
+  members: TIER_BLOCK[COLUMN_TIERS.members],
+  start: cn(TIER_BLOCK[COLUMN_TIERS.start], 'px-2'),
+  target: cn(TIER_BLOCK[COLUMN_TIERS.target], 'px-2'),
+  teams: TIER_BLOCK[COLUMN_TIERS.teams],
+  issues: cn(TIER_BLOCK[COLUMN_TIERS.issues], 'text-right'),
+  created: TIER_BLOCK[COLUMN_TIERS.created],
+  updated: TIER_BLOCK[COLUMN_TIERS.updated],
+  completed: TIER_BLOCK[COLUMN_TIERS.completed],
   progress: 'text-right',
+  id: TIER_BLOCK[COLUMN_TIERS.id],
 };
 
 /** The short header text of each column, where the header names it. */
@@ -264,7 +238,7 @@ const NextMilestone: React.FC<{
   return (
     <span
       title={`${String(done)} of ${String(markers.length)} milestones done`}
-      className="hidden max-w-40 min-w-0 shrink-0 items-center gap-1 text-xs text-text-muted lg:flex"
+      className="hidden max-w-40 min-w-0 shrink-[100] items-center gap-1 text-xs text-text-muted @min-[60rem]:flex"
     >
       <LuDiamond aria-hidden="true" className="h-3 w-3 shrink-0" />
       <span className="truncate">
@@ -285,7 +259,12 @@ const MemberAvatars: React.FC<{
     .map((id) => people.find((person) => person.user_id === id))
     .filter((person): person is Assignable => person !== undefined);
   return (
-    <span className="pointer-events-none hidden min-w-0 items-center md:flex">
+    <span
+      className={cn(
+        'pointer-events-none min-w-0 items-center',
+        TIER_FLEX[COLUMN_TIERS.members]
+      )}
+    >
       {members.slice(0, 3).map((person) => (
         <span key={person.user_id} className="-ml-1 first:ml-0">
           <Avatar
@@ -386,6 +365,8 @@ interface ProjectRowProps {
   workspaceId: string;
   teams: TeamRead[];
   people: Assignable[];
+  /** The workspace's project labels, for the label chips and picker. */
+  projectLabels: ProjectLabelRead[];
   /** Every loaded project by id, so the dependency flags can name their projects. */
   byId: ReadonlyMap<string, ProjectRead>;
   /** The columns shown beside the name, in drawing order. */
@@ -395,12 +376,17 @@ interface ProjectRowProps {
   rowRef: (node: HTMLElement | null) => void;
   onPointerEnter: () => void;
   refreshKey: ReturnType<typeof useWorkspaceProjects>['queryKey'];
+  /** Whether the row is the one being dragged, drawn faded. */
+  dragging?: boolean;
+  /** Starts dragging the row to reorder it, or undefined where it cannot move. */
+  onDragStart?: ((event: React.DragEvent) => void) | undefined;
+  onDragEnd?: (() => void) | undefined;
 }
 
 /**
  * One project as a table row. The whole row opens the project; the health,
  * priority, status, lead and date cells sit above that link and edit in
- * place, optimistically.
+ * place, optimistically. An editable row drags to reorder within its group.
  */
 const ProjectRow: React.FC<ProjectRowProps> = ({
   project: server,
@@ -408,6 +394,7 @@ const ProjectRow: React.FC<ProjectRowProps> = ({
   workspaceId,
   teams,
   people,
+  projectLabels,
   byId,
   shown,
   workspaceRole,
@@ -415,6 +402,9 @@ const ProjectRow: React.FC<ProjectRowProps> = ({
   rowRef,
   onPointerEnter,
   refreshKey,
+  dragging = false,
+  onDragStart,
+  onDragEnd,
 }) => {
   const { value, update } = useOptimisticRecord<ProjectRead, ProjectUpdate>(
     server,
@@ -439,44 +429,70 @@ const ProjectRow: React.FC<ProjectRowProps> = ({
   const lead = people.find((person) => person.user_id === project.lead_id);
   const href = projectPath(slug, project.project_id);
   const has = (column: ProjectColumn): boolean => shown.includes(column);
+  const nameTip = useTruncationTooltip<HTMLSpanElement>();
 
   return (
     <li
       ref={rowRef}
+      data-project-id={project.project_id}
+      draggable={editable && onDragStart !== undefined}
+      onDragStart={onDragStart}
+      onDragEnd={onDragEnd}
       onPointerEnter={onPointerEnter}
-      style={gridTracks(shown)}
+      style={projectGridTracks(shown)}
       className={cn(
-        GRID,
+        PROJECT_GRID,
         'relative h-11 border-b border-line px-4 text-sm transition-colors duration-100 hover:bg-surface has-[a:active]:bg-raised lg:px-6',
-        isActive && 'bg-surface'
+        isActive && 'bg-surface',
+        dragging && 'opacity-40'
       )}
     >
       <Link
         to={href}
+        draggable={false}
         aria-label={project.name}
         data-hover="parent"
+        {...nameTip.handlers}
         className="absolute inset-0 focus-visible:ring-1 focus-visible:ring-accent focus-visible:outline-none focus-visible:ring-inset"
       />
       <div className="pointer-events-none flex min-w-0 items-center gap-2.5">
         <ProjectIcon icon={project.icon} color={project.color} />
-        <span className="truncate font-medium text-text">{project.name}</span>
+        <span
+          ref={nameTip.ref}
+          className="min-w-0 shrink truncate font-medium text-text"
+        >
+          {project.name}
+        </span>
         {has('dependencies') && (
           <ProjectDependencyMarkers project={project} byId={byId} />
         )}
         <UpdateDueBadge project={project} className="shrink-0" />
+        {has('labels') && (
+          <span className="pointer-events-auto relative z-10 hidden min-w-0 shrink-[100] @min-[40rem]:inline-flex">
+            <ProjectLabelsPicker
+              inline
+              value={project.label_ids ?? []}
+              labels={projectLabels}
+              disabled={!editable}
+              onChange={(labelIds) => {
+                void update({ label_ids: labelIds });
+              }}
+            />
+          </span>
+        )}
         {has('milestones') && (
           <NextMilestone markers={project.milestone_markers} />
         )}
         {has('summary') &&
           project.description !== null &&
           project.description !== '' && (
-            <span className="hidden min-w-0 truncate text-xs text-text-faint xl:block">
+            <span className="hidden min-w-0 shrink-[1000] truncate text-xs text-text-faint @min-[72rem]:block">
               {project.description.split('\n')[0]}
             </span>
           )}
       </div>
       {has('health') && (
-        <div className="relative z-10 hidden md:block">
+        <div className={cn('relative z-10', TIER_BLOCK[COLUMN_TIERS.health])}>
           <HealthPicker
             variant="rail"
             value={project.health}
@@ -488,7 +504,12 @@ const ProjectRow: React.FC<ProjectRowProps> = ({
         </div>
       )}
       {has('priority') && (
-        <div className="relative z-10 hidden min-w-0 justify-center md:flex">
+        <div
+          className={cn(
+            'relative z-10 min-w-0 justify-center',
+            TIER_FLEX[COLUMN_TIERS.priority]
+          )}
+        >
           <PriorityPicker
             variant="icon"
             value={project.priority}
@@ -500,7 +521,7 @@ const ProjectRow: React.FC<ProjectRowProps> = ({
         </div>
       )}
       {has('status') && (
-        <div className="relative z-10 hidden md:block">
+        <div className={cn('relative z-10', TIER_BLOCK[COLUMN_TIERS.status])}>
           <ProjectStatusPicker
             variant="rail"
             value={project.status}
@@ -511,7 +532,12 @@ const ProjectRow: React.FC<ProjectRowProps> = ({
         </div>
       )}
       {has('lead') && (
-        <div className="relative z-10 hidden min-w-0 justify-center md:flex">
+        <div
+          className={cn(
+            'relative z-10 min-w-0 justify-center',
+            TIER_FLEX[COLUMN_TIERS.lead]
+          )}
+        >
           <LeadPicker
             variant="icon"
             value={project.lead_id}
@@ -527,7 +553,12 @@ const ProjectRow: React.FC<ProjectRowProps> = ({
         <MemberAvatars memberIds={project.member_ids} people={people} />
       )}
       {has('start') && (
-        <div className="relative z-10 hidden min-w-0 tabular-nums md:block">
+        <div
+          className={cn(
+            'relative z-10 min-w-0 tabular-nums',
+            TIER_BLOCK[COLUMN_TIERS.start]
+          )}
+        >
           <DatePicker
             variant="rail"
             field="Start date"
@@ -545,7 +576,12 @@ const ProjectRow: React.FC<ProjectRowProps> = ({
         </div>
       )}
       {has('target') && (
-        <div className="relative z-10 hidden min-w-0 tabular-nums md:block">
+        <div
+          className={cn(
+            'relative z-10 min-w-0 tabular-nums',
+            TIER_BLOCK[COLUMN_TIERS.target]
+          )}
+        >
           <DatePicker
             variant="rail"
             field="Target date"
@@ -563,7 +599,12 @@ const ProjectRow: React.FC<ProjectRowProps> = ({
         </div>
       )}
       {has('teams') && (
-        <span className="pointer-events-none hidden min-w-0 items-center gap-1 md:flex">
+        <span
+          className={cn(
+            'pointer-events-none min-w-0 items-center gap-1',
+            TIER_FLEX[COLUMN_TIERS.teams]
+          )}
+        >
           {projectTeams.slice(0, 3).map((team) => (
             <TeamKey key={team.id} keyPrefix={team.key_prefix} />
           ))}
@@ -578,7 +619,12 @@ const ProjectRow: React.FC<ProjectRowProps> = ({
         </span>
       )}
       {has('issues') && (
-        <span className="pointer-events-none hidden justify-end text-xs text-text-muted tabular-nums md:flex">
+        <span
+          className={cn(
+            'pointer-events-none justify-end text-xs text-text-muted tabular-nums',
+            TIER_FLEX[COLUMN_TIERS.issues]
+          )}
+        >
           <span aria-hidden="true">{`${String(project.counts.done)}/${String(project.counts.total)}`}</span>
           <span className="sr-only">{`${String(project.counts.done)} of ${String(project.counts.total)} issues done`}</span>
         </span>
@@ -588,7 +634,10 @@ const ProjectRow: React.FC<ProjectRowProps> = ({
           has(column) && (
             <span
               key={column}
-              className="pointer-events-none hidden truncate text-xs text-text-muted tabular-nums md:block"
+              className={cn(
+                'pointer-events-none truncate text-xs text-text-muted tabular-nums',
+                TIER_BLOCK[COLUMN_TIERS[column]]
+              )}
             >
               <span className="sr-only">{`${PROJECT_COLUMN_LABELS[column]} `}</span>
               {timestampLabel(
@@ -607,20 +656,44 @@ const ProjectRow: React.FC<ProjectRowProps> = ({
           <span>{`${String(percent)}%`}</span>
         </span>
       )}
+      {has('id') && (
+        <span
+          className={cn(
+            'pointer-events-none truncate font-mono text-xs text-text-muted',
+            TIER_BLOCK[COLUMN_TIERS.id]
+          )}
+        >
+          <span className="sr-only">ID </span>
+          {project.slug_id ?? project.project_id.slice(-8).toLowerCase()}
+        </span>
+      )}
       {lead !== undefined && (
         <span className="sr-only">{`Lead ${personLabel(lead)}`}</span>
       )}
+      {nameTip.tip}
       {closePrompt.dialog}
     </li>
   );
 };
+
+/** A list row being dragged, and the group or sub-group it reorders within. */
+interface ListDrag {
+  projectId: string;
+  list: string;
+}
+
+/** A new project being written: the fields its column set and the teams it starts on. */
+interface Creating {
+  preset: ProjectMove;
+  teamIds?: string[];
+}
 
 /** Which dialog is open over the page, saving a new view or editing the open one. */
 type Saving = 'new' | 'details' | null;
 
 /** The filters the page keeps in the URL. */
 type FilterField =
-  'team' | 'status' | 'lead' | 'blocked' | 'blocking' | 'customer';
+  'team' | 'status' | 'lead' | 'blocked' | 'blocking' | 'customer' | 'label';
 
 /** Props for Projects. */
 export interface ProjectsProps {
@@ -675,6 +748,7 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading }) => {
     [statusText]
   );
   const leadFilter = params.get('lead') ?? baseOf('lead');
+  const labelFilter = params.get('label') ?? baseOf('label');
   const blockedFilter = flagParam(params.get('blocked') ?? baseOf('blocked'));
   const blockingFilter = flagParam(
     params.get('blocking') ?? baseOf('blocking')
@@ -683,11 +757,20 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading }) => {
   const customerFilter = isMember
     ? (params.get('customer') ?? baseOf('customer'))
     : '';
+  const filteredTeam = teams.find((team) => team.key_prefix === teamFilter);
+  const { fallback: displayDefault, actionsFor: defaultActionsFor } =
+    useProjectsDisplayDefault({
+      workspaceId,
+      workspaceRole: workspace?.role,
+      team: filteredTeam,
+      workspacePage: teamFilter === '',
+      enabled: base === undefined,
+    });
   const {
     display,
     change: changeDisplay,
     reset,
-  } = useProjectsDisplay(base?.display);
+  } = useProjectsDisplay(base?.display, displayDefault);
   const {
     layout,
     group: grouping,
@@ -697,12 +780,11 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading }) => {
     zoom,
   } = display;
   const subGrouping =
-    layout === 'list' ? effectiveRows(grouping, display.rows) : 'none';
+    layout === 'timeline' ? 'none' : effectiveRows(grouping, display.rows);
   const shownColumns = useMemo(
     () => columnList(display.columns),
     [display.columns]
   );
-  const filteredTeam = teams.find((team) => team.key_prefix === teamFilter);
   const baseRollUp = base?.rollUp ?? true;
   const {
     subTeams,
@@ -727,6 +809,7 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading }) => {
     blocking: blockingFilter,
     rollUp: heldRollUp === null ? baseRollUp : heldRollUp !== '0',
     customer: isMember ? customerFilter : (base?.customer ?? ''),
+    label: labelFilter,
   });
   const changed =
     base !== undefined &&
@@ -752,6 +835,7 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading }) => {
       narrowing
     );
   const { customers } = useCustomers(workspaceId, isMember);
+  const { labels: projectLabels } = useProjectLabels(workspaceId);
   const teamIds = useMemo(() => teams.map((team) => team.id), [teams]);
   const projectsById = useMemo(
     () => new Map(projects.map((project) => [project.project_id, project])),
@@ -773,8 +857,10 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading }) => {
   const [now] = useState(() => new Date());
   const timeline = useRef<ProjectTimelineHandle | null>(null);
 
-  const [creating, setCreating] = useState<ProjectStatus | null>(null);
+  const [creating, setCreating] = useState<Creating | null>(null);
   const [folded, setFolded] = useState<string[]>([]);
+  const [listDrag, setListDrag] = useState<ListDrag | null>(null);
+  const [listSlot, setListSlot] = useState<number | null>(null);
   const toggleFolded = (key: string): void => {
     setFolded((held) =>
       held.includes(key)
@@ -803,6 +889,13 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading }) => {
               ? project.lead_id === null
               : project.lead_id === leadFilter
         )
+        .filter((project) =>
+          labelFilter === ''
+            ? true
+            : labelFilter === NO_LABEL
+              ? (project.label_ids ?? []).length === 0
+              : (project.label_ids ?? []).includes(labelFilter)
+        )
         .filter(
           (project) =>
             flagMatches(
@@ -820,6 +913,7 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading }) => {
       projectsById,
       statusFilter,
       leadFilter,
+      labelFilter,
       blockedFilter,
       blockingFilter,
       closed,
@@ -830,6 +924,27 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading }) => {
   );
 
   const sorted = useMemo(() => sortProjects(rows, ordering), [rows, ordering]);
+
+  const endListDrag = (): void => {
+    setListDrag(null);
+    setListSlot(null);
+  };
+
+  const dropInList = (items: ProjectRead[], index: number): void => {
+    const moving = listDrag;
+    endListDrag();
+    if (moving === null) return;
+    const placements = manualPlacements(items, moving.projectId, index);
+    if (placements === null || placements.length === 0) return;
+    for (const placement of placements) {
+      const project = rows.find(
+        (row) => row.project_id === placement.projectId
+      );
+      if (project !== undefined)
+        moveProject(project, { sort_order: placement.sort_order });
+    }
+    if (ordering !== 'manual') changeDisplay({ order: 'manual' });
+  };
   const groups = useMemo(
     () =>
       directedGroups(
@@ -868,6 +983,13 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading }) => {
       statusFilter,
       closed,
     ]
+  );
+  const lanes = useMemo(
+    () =>
+      layout !== 'board' || subGrouping === 'none'
+        ? undefined
+        : groupProjects(sorted, subGrouping, people, teams, { initiatives }),
+    [layout, subGrouping, sorted, people, teams, initiatives]
   );
   const isOpen = useCallback(
     (group: ProjectGroup) =>
@@ -1014,6 +1136,7 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading }) => {
     teamFilter !== '' ||
     statusFilter.length > 0 ||
     leadFilter !== '' ||
+    labelFilter !== '' ||
     blockedFilter !== '' ||
     blockingFilter !== '' ||
     customerFilter !== '';
@@ -1025,7 +1148,7 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading }) => {
     enabled: canCreate && creating === null,
     handler: (event) => {
       event?.preventDefault();
-      setCreating('planned');
+      setCreating({ preset: { status: 'planned' } });
     },
   });
 
@@ -1106,6 +1229,20 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading }) => {
         />
       ),
       keywords: [person.email],
+    })),
+  ];
+  const labelOptions: ComboboxOption[] = [
+    { value: NO_LABEL, label: 'No labels' },
+    ...projectLabels.map((label) => ({
+      value: label.id,
+      label: label.name,
+      icon: (
+        <span
+          aria-hidden="true"
+          className="h-2 w-2 shrink-0 rounded-full"
+          style={{ backgroundColor: label.color }}
+        />
+      ),
     })),
   ];
   const customerOptions: ComboboxOption[] = [
@@ -1218,7 +1355,7 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading }) => {
               variant="primary"
               size="sm"
               onClick={() => {
-                setCreating('planned');
+                setCreating({ preset: { status: 'planned' } });
               }}
             >
               <LuPlus aria-hidden="true" />
@@ -1246,6 +1383,14 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading }) => {
             selected={leadFilter === '' ? [] : [leadFilter]}
             onSelect={(value) => {
               setParam('lead', value === leadFilter ? '' : value);
+            }}
+          />
+          <FilterButton
+            field="Labels"
+            options={labelOptions}
+            selected={labelFilter === '' ? [] : [labelFilter]}
+            onSelect={(value) => {
+              setParam('label', value === labelFilter ? '' : value);
             }}
           />
           {isMember && (
@@ -1297,6 +1442,7 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading }) => {
                 writeParam(next, 'team', '');
                 writeParam(next, 'status', '');
                 writeParam(next, 'lead', '');
+                writeParam(next, 'label', '');
                 writeParam(next, 'blocked', '');
                 writeParam(next, 'blocking', '');
                 writeParam(next, 'customer', '');
@@ -1322,7 +1468,7 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading }) => {
               onDirectionChange={(value) => {
                 changeDisplay({ direction: value });
               }}
-              {...(layout === 'list'
+              {...(layout !== 'timeline'
                 ? {
                     rows: display.rows,
                     onRowsChange: (value: ProjectGrouping) => {
@@ -1363,6 +1509,7 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading }) => {
                   }
                 : {})}
               onReset={reset}
+              defaultActions={defaultActionsFor(display)}
               customerOrdering={isMember}
             />
             {layout === 'timeline' && (
@@ -1395,12 +1542,17 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading }) => {
         </div>
       )}
       {layout === 'list' ? (
-        <div className="min-h-0 flex-1 overflow-y-auto">
+        <div
+          className={cn(
+            PROJECT_LIST_CONTAINER,
+            'min-h-0 flex-1 overflow-y-auto'
+          )}
+        >
           <div
             role="presentation"
-            style={gridTracks(shownColumns)}
+            style={projectGridTracks(shownColumns)}
             className={cn(
-              GRID,
+              PROJECT_GRID,
               'sticky top-0 z-20 h-8 border-b border-line bg-bg px-4 text-2xs font-medium tracking-wide text-text-faint uppercase lg:px-6'
             )}
           >
@@ -1412,7 +1564,7 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading }) => {
                     {PROJECT_COLUMN_LABELS.priority}
                   </span>
                 ) : column === 'progress' ? (
-                  <span className="hidden md:inline">
+                  <span className="hidden @min-[40rem]:inline">
                     {PROJECT_COLUMN_LABELS.progress}
                   </span>
                 ) : (
@@ -1441,33 +1593,103 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading }) => {
                   : null;
               const list = (
                 items: ProjectRead[],
-                start: number
-              ): React.ReactElement => (
-                <ul>
-                  {items.map((project, index) => {
-                    const position = start + index;
-                    return (
-                      <ProjectRow
-                        key={project.project_id}
-                        project={project}
-                        slug={slug}
-                        workspaceId={workspaceId}
-                        teams={teams}
-                        people={people}
-                        byId={projectsById}
-                        shown={shownColumns}
-                        workspaceRole={workspace?.role}
-                        isActive={position === activeIndex}
-                        rowRef={registerItem(position)}
-                        onPointerEnter={() => {
-                          setActiveIndex(position);
-                        }}
-                        refreshKey={queryKey}
-                      />
-                    );
-                  })}
-                </ul>
-              );
+                start: number,
+                key: string
+              ): React.ReactElement => {
+                const dragging =
+                  listDrag?.list === key ? listDrag.projectId : null;
+                const others = items.filter(
+                  (project) => project.project_id !== dragging
+                );
+                const marker =
+                  dragging === null || listSlot === null
+                    ? undefined
+                    : (others[listSlot]?.project_id ?? null);
+                const placeholder = (
+                  <li
+                    key="drop-placeholder"
+                    aria-hidden="true"
+                    className="h-11 border-b border-dashed border-accent bg-accent-soft/40"
+                  />
+                );
+                return (
+                  <ul
+                    onDragOver={(event) => {
+                      if (dragging === null) return;
+                      event.preventDefault();
+                      event.dataTransfer.dropEffect = 'move';
+                      const next = slotIndex(
+                        event.currentTarget,
+                        dragging,
+                        event.clientY
+                      );
+                      if (next !== listSlot) setListSlot(next);
+                    }}
+                    onDragLeave={(event) => {
+                      if (
+                        dragging !== null &&
+                        !event.currentTarget.contains(
+                          event.relatedTarget as Node
+                        )
+                      )
+                        setListSlot(null);
+                    }}
+                    onDrop={(event) => {
+                      if (dragging === null) return;
+                      event.preventDefault();
+                      dropInList(
+                        items,
+                        listSlot ??
+                          slotIndex(
+                            event.currentTarget,
+                            dragging,
+                            event.clientY
+                          )
+                      );
+                    }}
+                  >
+                    {items.map((project, index) => {
+                      const position = start + index;
+                      return (
+                        <React.Fragment key={project.project_id}>
+                          {marker === project.project_id && placeholder}
+                          <ProjectRow
+                            project={project}
+                            slug={slug}
+                            workspaceId={workspaceId}
+                            teams={teams}
+                            people={people}
+                            projectLabels={projectLabels}
+                            byId={projectsById}
+                            shown={shownColumns}
+                            workspaceRole={workspace?.role}
+                            isActive={position === activeIndex}
+                            rowRef={registerItem(position)}
+                            onPointerEnter={() => {
+                              setActiveIndex(position);
+                            }}
+                            refreshKey={queryKey}
+                            dragging={dragging === project.project_id}
+                            onDragStart={(event) => {
+                              event.dataTransfer.effectAllowed = 'move';
+                              event.dataTransfer.setData(
+                                'text/plain',
+                                project.name
+                              );
+                              setListDrag({
+                                projectId: project.project_id,
+                                list: key,
+                              });
+                            }}
+                            onDragEnd={endListDrag}
+                          />
+                        </React.Fragment>
+                      );
+                    })}
+                    {marker === null && placeholder}
+                  </ul>
+                );
+              };
               return (
                 <section key={group.key} aria-label={group.label}>
                   {group.kind !== 'none' && (
@@ -1500,7 +1722,7 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading }) => {
                           size="sm"
                           className="opacity-0 group-hover/header:opacity-100 focus-visible:opacity-100 pointer-coarse:opacity-100"
                           onClick={() => {
-                            setCreating(status);
+                            setCreating({ preset: { status } });
                           }}
                         >
                           <LuPlus className="h-3.5 w-3.5" />
@@ -1510,7 +1732,7 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading }) => {
                   )}
                   {open &&
                     (subs === null
-                      ? list(group.rows, starts.get(group.key) ?? 0)
+                      ? list(group.rows, starts.get(group.key) ?? 0, group.key)
                       : subs.map(({ sub, fold }) => {
                           const subOpen = !folded.includes(fold);
                           return (
@@ -1539,7 +1761,8 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading }) => {
                                   {String(sub.rows.length)}
                                 </span>
                               </button>
-                              {subOpen && list(sub.rows, starts.get(fold) ?? 0)}
+                              {subOpen &&
+                                list(sub.rows, starts.get(fold) ?? 0, fold)}
                             </section>
                           );
                         }))}
@@ -1553,19 +1776,35 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading }) => {
       ) : layout === 'board' ? (
         <ProjectsBoard
           columns={columns}
+          lanes={lanes}
+          grouping={grouping}
           projects={rows}
           shown={shownColumns}
           slug={slug}
           workspaceId={workspaceId}
           teams={teams}
           people={people}
+          projectLabels={projectLabels}
           workspaceRole={workspace?.role}
           onMove={moveProject}
+          ordering={ordering}
+          onOrderingChange={(value) => {
+            changeDisplay({ order: value });
+          }}
           createIn={(column) => {
-            if (!canCreate || column.kind !== 'status') return undefined;
-            const status = groupValue(column) as ProjectStatus;
+            if (!canCreate) return undefined;
+            if (column.kind === 'team') {
+              const teamId = groupValue(column);
+              if (!writableTeams.some((team) => team.id === teamId))
+                return undefined;
+              return () => {
+                setCreating({ preset: {}, teamIds: [teamId] });
+              };
+            }
+            const preset = groupPatch(column);
+            if (preset === null) return undefined;
             return () => {
-              setCreating(status);
+              setCreating({ preset });
             };
           }}
         />
@@ -1601,8 +1840,9 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading }) => {
         <CreateProjectDialog
           workspaceId={workspaceId}
           teams={writableTeams}
-          initialTeamIds={initialTeamIds}
-          initialStatus={creating}
+          initialTeamIds={creating.teamIds ?? initialTeamIds}
+          initialStatus={creating.preset.status ?? 'planned'}
+          preset={creating.preset}
           onClose={() => {
             setCreating(null);
           }}

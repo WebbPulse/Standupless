@@ -1,10 +1,14 @@
 /**
- * The issue import. An admin picks where the work comes from: a Linear
- * workspace read through Linear's API, a GitHub repository's Issues read
- * through the installed GitHub App, or a CSV export. For a CSV they pick
- * the tracker it came from, a target team and the file, check what every row
- * would become, adjust the column mapping, and start a job that writes the
- * issues in the background.
+ * The issue import, led by an import assistant laid out like Linear's: one row
+ * per provider, each opening its own flow. Linear and Shortcut read a
+ * workspace through their APIs, Asana reads projects through Asana's API with
+ * a pasted token, Jira reads projects through the Jira Cloud API with an
+ * account email and API token, and GitHub reads a repository's Issues through
+ * the installed App. The file row takes any tracker's CSV export or a Trello
+ * board's JSON. For a file the admin picks the tracker it
+ * came from, a target team and the file, checks what every row would become,
+ * adjusts the column mapping, and starts a job that writes the issues in the
+ * background.
  *
  * The dry run runs again on every mapping change, so the summary always
  * describes the mapping the start button would send. The job list polls
@@ -13,12 +17,7 @@
  */
 
 import React, { useState } from 'react';
-import {
-  LuFileSpreadsheet,
-  LuGithub,
-  LuKeyRound,
-  LuUpload,
-} from 'react-icons/lu';
+import { LuChevronLeft, LuChevronRight, LuUpload } from 'react-icons/lu';
 import { useQueryAuth } from '@webbpulse/auth/react';
 import {
   invalidateQueries,
@@ -31,11 +30,11 @@ import {
   previewIssueImport,
   startIssueImport,
 } from '../../api/imports';
-import { cn } from '../../lib/cn';
 import { useTeamsFor } from '../../hooks/useTeams';
 import { errorMessage } from '../../lib/errors';
 import { workspaceImportsKey } from '../../lib/queryKeys';
 import type {
+  AsanaImportCount,
   GitHubImportCount,
   ImportField,
   ImportPreset,
@@ -43,6 +42,7 @@ import type {
   IssueImportPreviewRead,
   IssueImportRead,
   IssueImportRequest,
+  JiraImportCount,
   LinearImportCount,
   RowProblemRead,
   TeamRead,
@@ -52,11 +52,16 @@ import { ErrorAlert } from '../ui/alert';
 import Badge, { type BadgeTone } from '../ui/badge';
 import Button from '../ui/button';
 import Label from '../ui/label';
+import TextLink from '../ui/link';
 import RelativeTime from '../ui/relative-time';
 import { Select, SelectField } from '../ui/select';
 import Spinner from '../ui/spinner';
+import AsanaImportForm from './AsanaImportForm';
 import GitHubImportForm from './GitHubImportForm';
+import ImportProviderIcon, { type ImportProvider } from './ImportProviderIcon';
+import JiraImportForm from './JiraImportForm';
 import LinearImportForm from './LinearImportForm';
+import ShortcutImportForm from './ShortcutImportForm';
 
 /** Props for WorkspaceImportSection: the workspace issues are imported into. */
 export interface WorkspaceImportSectionProps {
@@ -69,40 +74,68 @@ const ACTIVE_POLL_MS = 3000;
 /** How often the list is read once every job has settled. */
 const IDLE_POLL_MS = 60000;
 
-/** Where an import reads from: Linear through its API, GitHub through the App, or a CSV file. */
-type Source = 'linear' | 'github' | 'csv';
+/** Where an import reads from: Linear, Shortcut, Asana or Jira through its API, GitHub through the App, or a file. */
+type Source = 'linear' | 'shortcut' | 'asana' | 'jira' | 'github' | 'csv';
 
-/** The sources the picker offers, in order, with the line under each. */
-const SOURCES: {
-  value: Source;
+/** One row of the import assistant: what it is called, the flow it opens and the preset a file flow starts on. */
+interface ProviderRow {
+  value: ImportProvider;
   title: string;
   detail: string;
-  icon: React.ReactNode;
-}[] = [
+  source: Source;
+  preset?: ImportPreset;
+  comingSoon?: boolean;
+}
+
+/** The import assistant's rows, in the order Linear lists them, with the file row last. */
+const PROVIDERS: ProviderRow[] = [
+  {
+    value: 'asana',
+    title: 'Asana',
+    detail: 'Projects, tasks and comments through the Asana API',
+    source: 'asana',
+  },
+  {
+    value: 'shortcut',
+    title: 'Shortcut',
+    detail: 'Teams, stories, epics and iterations through the Shortcut API',
+    source: 'shortcut',
+  },
+  {
+    value: 'github',
+    title: 'GitHub',
+    detail: "One repository's issues through the installed GitHub App",
+    source: 'github',
+  },
+  {
+    value: 'jira',
+    title: 'Jira',
+    detail: 'Projects, issues, sprints and comments through the Jira API',
+    source: 'jira',
+  },
   {
     value: 'linear',
     title: 'Linear',
     detail: 'Teams, issues, cycles and projects through the Linear API',
-    icon: <LuKeyRound aria-hidden="true" className="h-4 w-4" />,
+    source: 'linear',
   },
   {
-    value: 'github',
-    title: 'GitHub Issues',
-    detail: "One repository's issues through the installed GitHub App",
-    icon: <LuGithub aria-hidden="true" className="h-4 w-4" />,
-  },
-  {
-    value: 'csv',
-    title: 'CSV file',
-    detail: 'An export from Jira, Linear or any other tracker',
-    icon: <LuFileSpreadsheet aria-hidden="true" className="h-4 w-4" />,
+    value: 'file',
+    title: 'CSV or file',
+    detail: 'Pivotal Tracker, a Trello board or any other CSV export',
+    source: 'csv',
+    preset: 'generic',
   },
 ];
 
 /** The trackers a file can come from, in the order the picker offers them. */
 const PRESETS: { value: ImportPreset; label: string }[] = [
+  { value: 'asana', label: 'Asana' },
   { value: 'jira', label: 'Jira' },
   { value: 'linear', label: 'Linear' },
+  { value: 'pivotal', label: 'Pivotal Tracker' },
+  { value: 'shortcut', label: 'Shortcut' },
+  { value: 'trello', label: 'Trello board (JSON)' },
   { value: 'generic', label: 'Other CSV' },
 ];
 
@@ -119,6 +152,7 @@ const FIELDS: { field: ImportField; label: string }[] = [
   { field: 'source_key', label: 'Source key' },
   { field: 'created_at', label: 'Created' },
   { field: 'parent', label: 'Parent' },
+  { field: 'completed', label: 'Completed' },
 ];
 
 /** The select value that means a field reads no column. */
@@ -164,6 +198,63 @@ const LINEAR_TALLIES: { name: LinearImportCount; noun: string }[] = [
   { name: 'project_relations', noun: 'project dependency link' },
 ];
 
+/** How each step of a Shortcut import reads while it runs. */
+const SHORTCUT_PHASE_LABELS: Record<string, string> = {
+  iterations: 'Reading iterations',
+  epics: 'Reading epics',
+  stories: 'Reading stories',
+};
+
+/** How many steps each Shortcut team takes, matching the server's phase list. */
+const SHORTCUT_TEAM_PHASES = 3;
+
+/** The tallies a finished Shortcut import lists, in order, with the noun each counts. */
+const SHORTCUT_TALLIES: { name: LinearImportCount; noun: string }[] = [
+  { name: 'comments', noun: 'comment' },
+  { name: 'labels', noun: 'new label' },
+  { name: 'sub_issues', noun: 'sub-issue link' },
+  { name: 'relations', noun: 'relation' },
+  { name: 'cycles', noun: 'cycle' },
+  { name: 'projects', noun: 'project' },
+];
+
+/** How each step of an Asana import reads while it runs. */
+const ASANA_PHASE_LABELS: Record<string, string> = {
+  project: 'Reading the project',
+  tasks: 'Reading tasks',
+};
+
+/** How many steps each Asana project takes, matching the server's phase list. */
+const ASANA_PROJECT_PHASES = 2;
+
+/** The tallies a finished Asana import lists, in order, with the noun each counts. */
+const ASANA_TALLIES: { name: AsanaImportCount; noun: string }[] = [
+  { name: 'comments', noun: 'comment' },
+  { name: 'labels', noun: 'new label' },
+  { name: 'sub_issues', noun: 'sub-issue link' },
+  { name: 'projects', noun: 'project' },
+];
+
+/** How each step of a Jira import reads while it runs. */
+const JIRA_PHASE_LABELS: Record<string, string> = {
+  epics: 'Reading epics',
+  issues: 'Reading issues',
+  links: 'Linking issues',
+};
+
+/** How many steps each Jira project takes, matching the server's phase list. */
+const JIRA_PROJECT_PHASES = 3;
+
+/** The tallies a finished Jira import lists, in order, with the noun each counts. */
+const JIRA_TALLIES: { name: JiraImportCount; noun: string }[] = [
+  { name: 'comments', noun: 'comment' },
+  { name: 'labels', noun: 'new label' },
+  { name: 'projects', noun: 'project' },
+  { name: 'cycles', noun: 'cycle' },
+  { name: 'sub_issues', noun: 'sub-issue link' },
+  { name: 'relations', noun: 'relation' },
+];
+
 /** The tallies a finished GitHub import lists after its issue counts, in order. */
 const GITHUB_TALLIES: { name: GitHubImportCount; noun: string }[] = [
   { name: 'comments', noun: 'comment' },
@@ -193,6 +284,27 @@ const readFile = (file: File): Promise<string> =>
     reader.readAsText(file);
   });
 
+/**
+ * A Trello board export without its activity log. The import reads only the
+ * board's lists, cards, labels, members and checklists, and the `actions`
+ * array is most of an export's size, so dropping it keeps a board under the
+ * upload limit. Anything that is not a JSON object is returned unchanged.
+ */
+const withoutTrelloActions = (text: string): string => {
+  if (!text.trimStart().startsWith('{')) return text;
+  try {
+    const parsed: unknown = JSON.parse(text);
+    if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed))
+      return text;
+    if (!('actions' in parsed)) return text;
+    const board: Record<string, unknown> = { ...parsed };
+    delete board['actions'];
+    return JSON.stringify(board);
+  } catch {
+    return text;
+  }
+};
+
 /** Says how many of a thing there are, with the plural when it needs one. */
 const count = (n: number, noun: string): string =>
   `${n} ${noun}${n === 1 ? '' : 's'}`;
@@ -221,6 +333,92 @@ const linearOutcome = (job: IssueImportRead): string => {
   const updated = job.updated_count ?? counts.issues_updated ?? 0;
   if (updated > 0) parts.push(`${updated} updated`);
   for (const { name, noun } of LINEAR_TALLIES) {
+    const n = counts[name] ?? 0;
+    if (n > 0) parts.push(count(n, noun));
+  }
+  return parts.join(', ');
+};
+
+/** The line under a running Shortcut job that says which step it is on. */
+const shortcutProgress = (job: IssueImportRead): string => {
+  if (job.status === 'queued') return 'Waiting to start';
+  const index = job.phase_index ?? 0;
+  const total = job.phase_count ?? 0;
+  const teams = job.source_teams ?? [];
+  const team =
+    index < teams.length * SHORTCUT_TEAM_PHASES
+      ? teams[Math.floor(index / SHORTCUT_TEAM_PHASES)]
+      : undefined;
+  const step = SHORTCUT_PHASE_LABELS[job.phase ?? ''] ?? 'Importing';
+  const parts = [team === undefined ? step : `${step} in ${team.name}`];
+  if (total > 0) parts.push(`step ${Math.min(index + 1, total)} of ${total}`);
+  parts.push(`${count(job.created_count, 'issue')} so far`);
+  return parts.join(', ');
+};
+
+/** The line under a finished Shortcut job that lists what it brought over. */
+const shortcutOutcome = (job: IssueImportRead): string => {
+  const counts = job.counts ?? {};
+  const parts = [`${count(job.created_count, 'issue')} created`];
+  const updated = job.updated_count ?? counts.issues_updated ?? 0;
+  if (updated > 0) parts.push(`${updated} updated`);
+  for (const { name, noun } of SHORTCUT_TALLIES) {
+    const n = counts[name] ?? 0;
+    if (n > 0) parts.push(count(n, noun));
+  }
+  return parts.join(', ');
+};
+
+/** The line under a running Asana job that says which project and step it is on. */
+const asanaProgress = (job: IssueImportRead): string => {
+  if (job.status === 'queued') return 'Waiting to start';
+  const index = job.phase_index ?? 0;
+  const total = job.phase_count ?? 0;
+  const project = (job.asana_projects ?? [])[
+    Math.floor(index / ASANA_PROJECT_PHASES)
+  ];
+  const step = ASANA_PHASE_LABELS[job.phase ?? ''] ?? 'Importing';
+  const parts = [project === undefined ? step : `${step} in ${project.name}`];
+  if (total > 0) parts.push(`step ${Math.min(index + 1, total)} of ${total}`);
+  parts.push(`${count(job.created_count, 'issue')} so far`);
+  return parts.join(', ');
+};
+
+/** The line under a finished Asana job that lists what it brought over. */
+const asanaOutcome = (job: IssueImportRead): string => {
+  const counts = job.counts ?? {};
+  const parts = [`${count(job.created_count, 'issue')} created`];
+  const updated = job.updated_count ?? counts.issues_updated ?? 0;
+  if (updated > 0) parts.push(`${updated} updated`);
+  for (const { name, noun } of ASANA_TALLIES) {
+    const n = counts[name] ?? 0;
+    if (n > 0) parts.push(count(n, noun));
+  }
+  return parts.join(', ');
+};
+
+/** The line under a running Jira job that says which project and step it is on. */
+const jiraProgress = (job: IssueImportRead): string => {
+  if (job.status === 'queued') return 'Waiting to start';
+  const index = job.phase_index ?? 0;
+  const total = job.phase_count ?? 0;
+  const project = (job.jira_projects ?? [])[
+    Math.floor(index / JIRA_PROJECT_PHASES)
+  ];
+  const step = JIRA_PHASE_LABELS[job.phase ?? ''] ?? 'Importing';
+  const parts = [project === undefined ? step : `${step} in ${project.name}`];
+  if (total > 0) parts.push(`step ${Math.min(index + 1, total)} of ${total}`);
+  parts.push(`${count(job.created_count, 'issue')} so far`);
+  return parts.join(', ');
+};
+
+/** The line under a finished Jira job that lists what it brought over. */
+const jiraOutcome = (job: IssueImportRead): string => {
+  const counts = job.counts ?? {};
+  const parts = [`${count(job.created_count, 'issue')} created`];
+  const updated = job.updated_count ?? counts.issues_updated ?? 0;
+  if (updated > 0) parts.push(`${updated} updated`);
+  for (const { name, noun } of JIRA_TALLIES) {
     const n = counts[name] ?? 0;
     if (n > 0) parts.push(count(n, noun));
   }
@@ -259,6 +457,18 @@ const jobSummary = (job: IssueImportRead): string => {
     if (job.status === 'completed') return linearOutcome(job);
     if (job.status !== 'failed') return linearProgress(job);
   }
+  if (job.kind === 'shortcut') {
+    if (job.status === 'completed') return shortcutOutcome(job);
+    if (job.status !== 'failed') return shortcutProgress(job);
+  }
+  if (job.kind === 'asana') {
+    if (job.status === 'completed') return asanaOutcome(job);
+    if (job.status !== 'failed') return asanaProgress(job);
+  }
+  if (job.kind === 'jira') {
+    if (job.status === 'completed') return jiraOutcome(job);
+    if (job.status !== 'failed') return jiraProgress(job);
+  }
   if (job.kind === 'github') {
     if (job.status === 'completed') return githubOutcome(job);
     if (job.status !== 'failed') return githubProgress(job);
@@ -278,7 +488,7 @@ const jobSummary = (job: IssueImportRead): string => {
   return `${job.processed_rows} of ${job.total_rows} rows`;
 };
 
-/** What a job row is called: the file or repository it read, or the Linear teams and where they went. */
+/** What a job row is called: the file or repository it read, or the Linear, Shortcut or Asana teams and projects and where they went. */
 const jobTitle = (job: IssueImportRead, teams: TeamRead[]): string => {
   if (job.kind === 'linear') {
     const mapped = (job.linear_teams ?? []).map((row) => {
@@ -288,6 +498,27 @@ const jobTitle = (job: IssueImportRead, teams: TeamRead[]): string => {
         : `${row.linear_key} into ${target.name}`;
     });
     return mapped.length === 0 ? 'Linear' : `Linear ${mapped.join(', ')}`;
+  }
+  if (job.kind === 'shortcut') {
+    const mapped = (job.source_teams ?? []).map((row) => {
+      const target = teams.find((t) => t.id === row.team_id);
+      return target === undefined
+        ? row.name
+        : `${row.name} into ${target.name}`;
+    });
+    return mapped.length === 0 ? 'Shortcut' : `Shortcut ${mapped.join(', ')}`;
+  }
+  if (job.kind === 'asana') {
+    const names = (job.asana_projects ?? []).map((row) => row.name);
+    const into = teams.find((t) => t.id === job.asana_projects?.[0]?.team_id);
+    const title = names.length === 0 ? 'Asana' : `Asana ${names.join(', ')}`;
+    return into === undefined ? title : `${title} into ${into.name}`;
+  }
+  if (job.kind === 'jira') {
+    const names = (job.jira_projects ?? []).map((row) => row.name);
+    const into = teams.find((t) => t.id === job.jira_projects?.[0]?.team_id);
+    const title = names.length === 0 ? 'Jira' : `Jira ${names.join(', ')}`;
+    return into === undefined ? title : `${title} into ${into.name}`;
   }
   const target = teams.find((t) => t.id === job.team_id);
   if (job.kind === 'github') {
@@ -436,7 +667,8 @@ export const WorkspaceImportSection: React.FC<WorkspaceImportSectionProps> = ({
   const [previewError, setPreviewError] = useState<unknown>(null);
   const [polling, setPolling] = useState(false);
   const [fileKey, setFileKey] = useState(0);
-  const [source, setSource] = useState<Source>('linear');
+  const [provider, setProvider] = useState<ProviderRow | null>(null);
+  const source = provider?.source ?? null;
 
   const teamList = teams.data ?? [];
   const chosenTeam = teamId || (teamList[0]?.id ?? '');
@@ -514,7 +746,7 @@ export const WorkspaceImportSection: React.FC<WorkspaceImportSectionProps> = ({
     }
     void readFile(picked)
       .then((text) => {
-        setFile({ name: picked.name, text });
+        setFile({ name: picked.name, text: withoutTrelloActions(text) });
       })
       .catch(setPreviewError);
   };
@@ -539,6 +771,16 @@ export const WorkspaceImportSection: React.FC<WorkspaceImportSectionProps> = ({
       .catch(() => undefined);
   };
 
+  const openProvider = (row: ProviderRow): void => {
+    setProvider(row);
+    if (row.preset !== undefined) setPreset(row.preset);
+    setFile(null);
+    setFileKey((key) => key + 1);
+    reset();
+  };
+
+  const trello = preset === 'trello';
+
   const canStart =
     file !== null &&
     preview !== null &&
@@ -552,55 +794,115 @@ export const WorkspaceImportSection: React.FC<WorkspaceImportSectionProps> = ({
       <div className="space-y-1">
         <h2 className="text-base font-semibold">Import issues</h2>
         <p className="text-sm text-text-muted">
-          Bring work over from Linear through its API, from a GitHub
-          repository's Issues through the GitHub App, or from a CSV export of
-          Jira, Linear or any other tracker. Every issue gets a new key, and its
-          old key is kept as its source reference, so importing again updates
-          instead of duplicating. Statuses match by name or type, people by
-          email, and labels the team lacks are created. Imported issues send no
-          notifications, syncs or webhooks.
+          Bring work over from another tracker. Every issue gets a new key, and
+          its old key is kept as its source reference, so importing again
+          updates instead of duplicating. Statuses match by name or type, people
+          by email, and labels the team lacks are created. Imported issues send
+          no notifications, syncs or webhooks.
         </p>
       </div>
 
-      <div
-        role="radiogroup"
-        aria-label="Import from"
-        className="grid gap-2 sm:grid-cols-3"
-      >
-        {SOURCES.map((option) => {
-          const active = source === option.value;
-          return (
-            <button
-              key={option.value}
-              type="button"
-              role="radio"
-              aria-checked={active}
-              onClick={() => {
-                setSource(option.value);
-              }}
-              className={cn(
-                'flex items-start gap-3 rounded-md border px-3 py-2.5 text-left transition-colors',
-                active
-                  ? 'border-accent bg-accent-soft'
-                  : 'border-line hover:bg-raised'
-              )}
-            >
-              <span className="mt-0.5 text-text-muted">{option.icon}</span>
-              <span className="min-w-0 space-y-0.5">
-                <span className="block text-sm font-medium text-text">
-                  {option.title}
-                </span>
-                <span className="block text-xs text-text-faint">
-                  {option.detail}
-                </span>
-              </span>
-            </button>
-          );
-        })}
-      </div>
+      {provider === null ? (
+        <div className="space-y-1">
+          <h3 className="text-xs font-medium text-text-muted">
+            Import assistant
+          </h3>
+          <ul
+            aria-label="Import assistant"
+            className="rounded-md border border-line"
+          >
+            {PROVIDERS.map((row) => (
+              <li
+                key={row.value}
+                className="border-b border-line last:border-b-0"
+              >
+                <button
+                  type="button"
+                  onClick={() => {
+                    openProvider(row);
+                  }}
+                  className="flex min-h-row w-full items-center gap-3 px-3 py-2.5 text-left transition-colors hover:bg-raised"
+                >
+                  <span className="text-text-muted">
+                    <ImportProviderIcon provider={row.value} />
+                  </span>
+                  <span className="min-w-0 flex-1 space-y-0.5">
+                    <span className="block text-sm font-medium text-text">
+                      {row.title}
+                    </span>
+                    <span className="block text-xs text-text-faint">
+                      {row.detail}
+                    </span>
+                  </span>
+                  <LuChevronRight
+                    aria-hidden="true"
+                    className="h-4 w-4 shrink-0 text-text-faint"
+                  />
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              setProvider(null);
+              reset();
+            }}
+          >
+            <LuChevronLeft aria-hidden="true" className="h-3.5 w-3.5" />
+            All import sources
+          </Button>
+          <div className="flex items-center gap-2">
+            <span className="text-text-muted">
+              <ImportProviderIcon provider={provider.value} />
+            </span>
+            <h3 className="text-sm font-semibold text-text">
+              {provider.value === 'file'
+                ? 'Import a file'
+                : `Import from ${provider.title}`}
+            </h3>
+          </div>
+          {provider.comingSoon === true && (
+            <p className="rounded-md border border-line bg-raised px-3 py-2 text-xs text-text-muted">
+              {`Connect via API (coming soon). Until then, export from ${provider.title} as CSV and import the file here; its columns are mapped for you.`}
+            </p>
+          )}
+        </div>
+      )}
 
-      {source === 'linear' ? (
+      {source === null ? null : source === 'linear' ? (
         <LinearImportForm
+          workspaceId={workspace.id}
+          teams={teamList}
+          importing={importing}
+          onStarted={() => {
+            invalidateQueries(queryKey);
+          }}
+        />
+      ) : source === 'shortcut' ? (
+        <ShortcutImportForm
+          workspaceId={workspace.id}
+          teams={teamList}
+          importing={importing}
+          onStarted={() => {
+            invalidateQueries(queryKey);
+          }}
+        />
+      ) : source === 'asana' ? (
+        <AsanaImportForm
+          workspaceId={workspace.id}
+          teams={teamList}
+          importing={importing}
+          onStarted={() => {
+            invalidateQueries(queryKey);
+          }}
+        />
+      ) : source === 'jira' ? (
+        <JiraImportForm
           workspaceId={workspace.id}
           teams={teamList}
           importing={importing}
@@ -655,17 +957,21 @@ export const WorkspaceImportSection: React.FC<WorkspaceImportSectionProps> = ({
           </div>
 
           <div className="space-y-1">
-            <Label htmlFor="import-file">CSV file</Label>
+            <Label htmlFor="import-file">
+              {trello ? 'Board JSON' : 'CSV file'}
+            </Label>
             <input
               key={fileKey}
               id="import-file"
               type="file"
-              accept=".csv,text/csv"
+              accept={trello ? '.json,application/json' : '.csv,text/csv'}
               onChange={onFile}
               className="block w-full text-sm text-text-muted file:mr-3 file:h-8 file:cursor-pointer file:rounded-sm file:border file:border-line file:bg-raised file:px-2.5 file:text-sm file:text-text"
             />
             <p className="text-xs text-text-faint">
-              Up to 5000 rows and 4 MB, header row first.
+              {trello
+                ? "Export it from the board's menu under Print, export and share. Cards, lists, labels, members and checklists are read; the activity log is left out before upload."
+                : 'Up to 5000 rows and 4 MB, header row first.'}
             </p>
           </div>
 
@@ -814,6 +1120,17 @@ export const WorkspaceImportSection: React.FC<WorkspaceImportSectionProps> = ({
             })}
           </ul>
         )}
+      </div>
+
+      <div className="space-y-1 border-t border-line pt-6">
+        <h2 className="text-base font-semibold">Export</h2>
+        <p className="text-sm text-text-muted">
+          Download a copy of this workspace's data from the{' '}
+          <TextLink to={`/w/${workspace.slug}/settings/export`}>
+            export settings
+          </TextLink>
+          .
+        </p>
       </div>
     </section>
   );

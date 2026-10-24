@@ -17,6 +17,8 @@ from pydantic import ValidationError
 
 from app.common.api.dependencies.authz import AuthzContext
 from app.common.api.dependencies.repositories import Repositories
+from app.common.api.schemas.planning import project_slug_id
+from app.common.api.schemas.projects_display import PROJECTS_COLUMNS, PROJECTS_DISPLAY_FIELDS
 from app.common.db.dynamo.issues import Issue
 from app.common.db.dynamo.teams import Team, TeamRepository
 from app.common.issue_keys import current
@@ -151,6 +153,23 @@ def nullable_enum(values: tuple[str, ...], description: str) -> dict[str, Any]:
     return {"type": ["string", "null"], "enum": [*values, None], "description": description}
 
 
+def projects_display_schema(description: str, *, clearable: bool = False) -> dict[str, Any]:
+    """A projects page arrangement, each field one of the page's choices, null allowed when it clears."""
+    return {
+        "type": ["object", "null"] if clearable else "object",
+        "properties": {
+            **{field: {"type": "string", "enum": list(choices)} for field, choices in PROJECTS_DISPLAY_FIELDS.items()},
+            "columns": {
+                "type": "array",
+                "items": {"type": "string", "enum": list(PROJECTS_COLUMNS)},
+                "description": "The properties shown beside the name; an empty list shows the name alone",
+            },
+        },
+        "additionalProperties": False,
+        "description": description,
+    }
+
+
 def string_list(description: str) -> dict[str, Any]:
     """A list of strings, such as label or team ids."""
     return {"type": "array", "items": {"type": "string"}, "description": description}
@@ -247,7 +266,7 @@ def ambiguous(kind: str, reference: str) -> ToolError:
 
 
 def project_id_ref(call: ToolCall, value: Any) -> str:
-    """A project id from an id or a name unique among the projects the caller can see.
+    """A project id from an id, a name or a short id unique among the projects the caller can see.
 
     Only projects on a visible team are matched by name, so a name cannot probe for
     a project outside the caller's reach. An id is passed through for the write or
@@ -266,6 +285,12 @@ def project_id_ref(call: ToolCall, value: Any) -> str:
         for row in call.repositories.planning.list_projects(workspace_id)
         if row.name.casefold() == folded and visible_project_teams(row, visible)
     ]
+    if not named:
+        named = [
+            row
+            for row in call.repositories.planning.list_projects(workspace_id)
+            if project_slug_id(row.project_id) == folded and visible_project_teams(row, visible)
+        ]
     if len(named) > 1:
         raise ambiguous("project", reference)
     if not named:

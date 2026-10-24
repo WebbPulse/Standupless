@@ -1,0 +1,4 @@
+Id,Title,Labels,Iteration,Iteration Start,Iteration End,Type,Estimate,Priority,Current State,Created at,Accepted at,Deadline,Requested By,Description,URL,Owned By,Owned By,Comment,Task,Task Status
+180000001,Sign up with email,"onboarding, web",12,"Sep 1, 2026","Sep 8, 2026",feature,2,p1 - High,started,"Sep 1, 2026",,"Oct 12, 2026",Olive Owner,A form and a confirmation mail.,https://www.pivotaltracker.com/story/show/180000001,Mel Member,Ada Admin,,,
+180000002,Confirm the address,onboarding,12,"Sep 1, 2026","Sep 8, 2026",chore,,p3 - Low,accepted,"Sep 2, 2026","Sep 6, 2026",,Olive Owner,,https://www.pivotaltracker.com/story/show/180000002,,,,,
+180000003,Rate limit sign ups,,,,,feature,1,,unscheduled,"Sep 3, 2026",,,Olive Owner,,https://www.pivotaltracker.com/story/show/180000003,,,,,

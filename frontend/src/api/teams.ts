@@ -36,6 +36,7 @@ import type {
   TeamOrderUpdate,
   TeamRead,
   TeamUpdate,
+  ProjectsDisplayPreference,
   StatusCreate,
   StatusListRead,
   StatusRead,
@@ -98,6 +99,10 @@ export interface TeamDisplayDefaultsRead {
   team_id: string;
   list_display: TeamDisplayOptions | null;
   board_display: TeamDisplayOptions | null;
+  /** The team's own projects page default, null when it set none. */
+  projects_display?: ProjectsDisplayPreference | null;
+  /** What the team's projects page opens with: the team default, else the workspace's, else the built-in. */
+  effective_projects_display?: ProjectsDisplayPreference;
   updated_by: string | null;
   updated_at: string | null;
 }
@@ -106,7 +111,22 @@ export interface TeamDisplayDefaultsRead {
 export interface TeamDisplayDefaultsUpdate {
   list_display?: TeamDisplayOptions | null;
   board_display?: TeamDisplayOptions | null;
+  projects_display?: ProjectsDisplayPreference | null;
 }
+
+/** The workspace's own projects page default, as its display defaults route answers it. */
+export interface WorkspaceDisplayDefaultsRead {
+  /** Null when no admin set one. */
+  projects_display: ProjectsDisplayPreference | null;
+  /** What the workspace projects page opens with for someone who never arranged it. */
+  effective_projects_display: ProjectsDisplayPreference;
+  updated_by: string | null;
+  updated_at: string | null;
+}
+
+/** The route the workspace's display defaults are read and changed at. */
+export const workspaceDisplayDefaultsPath = (workspaceId: string): string =>
+  `/workspaces/${workspaceId}/display-defaults`;
 
 /** The route a team's display defaults are read and changed at. */
 export const displayDefaultsPath = (
@@ -580,6 +600,30 @@ export const updateDisplayDefaults = async (
   const response = await apiClient.patch<TeamDisplayDefaultsRead>(
     displayDefaultsPath(workspaceId, teamId),
     body
+  );
+  return response.data;
+};
+
+/** Reads what the workspace projects page opens with for someone who never arranged it. */
+export const getWorkspaceDisplayDefaults = async (
+  workspaceId: string,
+  signal?: AbortSignal
+): Promise<WorkspaceDisplayDefaultsRead> => {
+  const response = await apiClient.get<WorkspaceDisplayDefaultsRead>(
+    workspaceDisplayDefaultsPath(workspaceId),
+    signalOptions(signal)
+  );
+  return response.data;
+};
+
+/** Sets or clears the workspace projects page default, null clearing it. Workspace admin only. */
+export const updateWorkspaceDisplayDefaults = async (
+  workspaceId: string,
+  projectsDisplay: ProjectsDisplayPreference | null
+): Promise<WorkspaceDisplayDefaultsRead> => {
+  const response = await apiClient.patch<WorkspaceDisplayDefaultsRead>(
+    workspaceDisplayDefaultsPath(workspaceId),
+    { projects_display: projectsDisplay }
   );
   return response.data;
 };

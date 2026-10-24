@@ -20,6 +20,9 @@ yet show the change that triggered it. Every non-archived issue whose `project_i
 is the project counts, whatever team holds it. Writing the same numbers twice is
 harmless, so this path needs no claim, and any drift heals on the next record.
 
+A project recount that moves the project's buckets also writes the day's project
+snapshot, which is the project's progress history.
+
 A cycle's counters also carry estimate points and unestimated issue counts beside
 the issue counts, and the carry-over a cycle close recorded. After every move of a cycle's counters the
 consumer writes the day's snapshot of them, which is the cycle's scope history:
@@ -184,6 +187,7 @@ def recount_project(
     record: Mapping[str, Any],
     *,
     write: bool = True,
+    day: str | None = None,
 ) -> int:
     """Write one project's and each of its milestones' counts from its issues, returning rows written.
 
@@ -197,6 +201,10 @@ def recount_project(
     project spanning teams sums each team's sizes, and every row records how many
     of the project's teams estimate, which is what makes its progress read in
     points rather than issues.
+
+    When the project's own buckets moved, the day's snapshot is written too, so
+    the progress graph has a history without a scheduled job. `day` is the
+    day the change happened on, today when the caller names none.
 
     With `write` off nothing is written or posted, and the answer is how many
     rows would have been.
@@ -244,17 +252,53 @@ def recount_project(
     for milestone_id, counts in milestone_counts.items():
         wanted[milestone_key(project_id, milestone_id)] = (counts, milestone_statuses[milestone_id])
     written = 0
+    landed: set[str] = set()
     for planning_key, (counts, statuses) in wanted.items():
         if stored.get(planning_key) == counts and stored_statuses.get(planning_key) == statuses:
             continue
         if not write or repositories.planning.set_counts(workspace_id, planning_key, counts, statuses):
             written += 1
+            landed.add(planning_key)
     if not write:
         return written
+    if project_key(project_id) in landed and stored[project_key(project_id)] != project_counts:
+        snapshot_project(
+            repositories,
+            workspace_id,
+            project_id,
+            project_counts,
+            stored[project_key(project_id)],
+            day if day is not None else datetime.now(timezone.utc).date().isoformat(),
+        )
     for milestone in milestones:
         before = stored[milestone_key(project_id, milestone.milestone_id)]
         post_milestone_completion(repositories, milestone, before, milestone_counts[milestone.milestone_id])
     return written
+
+
+def snapshot_project(
+    repositories: Repositories,
+    workspace_id: str,
+    project_id: str,
+    counts: Mapping[str, int],
+    opening: Mapping[str, int],
+    day: str,
+) -> bool:
+    """Record one project's recounted buckets as its snapshot for the day.
+
+    Never raises: the counts have already been written, and the next recount of
+    the day writes the snapshot again, so a failure is logged and dropped.
+    """
+    try:
+        return repositories.planning.write_project_snapshot(
+            workspace_id, project_id, day, counts=dict(counts), opening=dict(opening)
+        )
+    except Exception:
+        _log.exception(
+            "Writing a project snapshot failed; the day keeps its earlier value.",
+            extra={"event": "planning.rollup.project_snapshot_failed", "workspace_id": workspace_id},
+        )
+        return False
 
 
 def cycle_counts(repositories: Repositories, workspace_id: str, cycle: Cycle) -> dict[str, int]:
@@ -567,8 +611,9 @@ def handle_record(repositories: Repositories, record: Mapping[str, Any]) -> None
         return
 
     recounted = 0
+    day = record_day(record)
     for project_id in sorted(projects_to_recount(record)):
-        recounted += recount_project(repositories, workspace_id, project_id, record)
+        recounted += recount_project(repositories, workspace_id, project_id, record, day=day)
     if recounted:
         _log.info(
             "Recounted project counts.",
@@ -612,7 +657,6 @@ def handle_record(repositories: Repositories, record: Mapping[str, Any]) -> None
         repositories.idempotency.release(workspace_id, IDEMPOTENCY_SCOPE, event_id)
         raise
 
-    day = record_day(record)
     for planning_key, after in moved_cycles:
         snapshot_cycle(repositories, workspace_id, planning_key, moves[planning_key], after, day)
 

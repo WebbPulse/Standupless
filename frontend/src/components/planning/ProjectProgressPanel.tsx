@@ -1,13 +1,19 @@
 /**
  * The side panel of a project's overview: how far along it is as scope,
  * started and completed, a graph of those over the project's days, a bar per
- * workflow stage, and each milestone's progress. The API keeps no history of
- * a project's scope, so the graph is read off the issues as they are now and
- * gives way to the numbers alone when they cannot all be read.
+ * workflow stage, and each milestone's progress. The graph draws the history
+ * the rollup recorded, with today and the target date marked and a dashed
+ * projection of the recent completion rate, plus a line saying where that
+ * lands against the target. A project with no recorded history yet falls back
+ * to a graph read off the issues as they are now, and gives way to the
+ * numbers alone when they cannot all be read.
  *
  * Scope, started, completed, the percentage and the graph read in estimate
  * points when a team on the project estimates, each issue weighed on its own
  * team's scale, and in issues otherwise, with the unit named beside the scope.
+ * A toggle beside the heading switches them between the two, remembered per
+ * viewer and project, with Points disabled when no team on the project
+ * estimates. The projection follows the measure shown.
  *
  * The stage list shows each workflow status on its own, from the loaded issues
  * or the project's stored per-status counts, and falls back to one row per
@@ -17,7 +23,7 @@
  * project's own account of how it is going, with a way through to the rest.
  */
 
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { LuDiamond } from 'react-icons/lu';
 import { cn } from '../../lib/cn';
 import {
@@ -36,7 +42,16 @@ import {
   daysBetween,
   pointWeigher,
   projectGraphRange,
+  projectHistoryGraph,
+  projectionIn,
+  projectionNote,
+  type PlanningMeasure,
+  type ProjectHistoryGraph,
 } from '../../lib/planningModel';
+import {
+  readProjectMeasure,
+  rememberProjectMeasure,
+} from '../../lib/projectMeasure';
 import { shortDateLabel } from '../../lib/propertyOptions';
 import { PROJECT_HEALTH_LABELS } from '../../lib/projectLook';
 import { statusLook } from '../../lib/statusAppearance';
@@ -44,6 +59,7 @@ import { dayValue, todayNumber } from '../../lib/timeline';
 import type {
   IssueRead,
   MilestoneRead,
+  ProjectHistoryRead,
   ProjectRead,
   ProjectUpdateRead,
   StatusCategory,
@@ -54,6 +70,7 @@ import { StatusIcon } from '../ui/StatusIcon';
 import Markdown from '../ui/markdown';
 import RelativeTime from '../ui/relative-time';
 import BurnUpChart from './BurnUpChart';
+import MeasureToggle from './MeasureToggle';
 import ProjectHealthGlyph from './ProjectHealthGlyph';
 import ProgressRing from './ProgressRing';
 
@@ -76,6 +93,8 @@ export interface ProjectProgressPanelProps {
   latestAuthor?: string;
   /** Opens the updates tab. */
   onOpenUpdates?: () => void;
+  /** The recorded progress history, drawn in place of the issue-based graph once it has days. */
+  history?: ProjectHistoryRead | null;
 }
 
 /** A small uppercase heading for one block of the panel. */
@@ -161,6 +180,10 @@ const tallyByStatus = (
   return tally;
 };
 
+/** Why Points cannot be chosen on a project whose teams do not estimate. */
+export const NO_POINTS_REASON =
+  'No team on this project uses estimates, so progress reads in issues.';
+
 /** The default for a panel given no teams, stable so memoised sums keep. */
 const NO_TEAMS: readonly TeamRead[] = [];
 
@@ -177,14 +200,34 @@ export const ProjectProgressPanel: React.FC<ProjectProgressPanelProps> = ({
   latestUpdate = null,
   latestAuthor = 'Unknown',
   onOpenUpdates,
+  history = null,
 }) => {
   const readable = complete && statuses.length > 0;
-  const measure = progressMeasureOf(project);
+  const natural = progressMeasureOf(project);
+  const pointsReadable = natural === 'points';
+  const [choice, setChoice] = useState<{
+    projectId: string;
+    measure: PlanningMeasure | null;
+  }>(() => ({
+    projectId: project.project_id,
+    measure: readProjectMeasure(project.project_id),
+  }));
+  const picked =
+    choice.projectId === project.project_id
+      ? choice.measure
+      : readProjectMeasure(project.project_id);
+  const measure: PlanningMeasure = pointsReadable
+    ? (picked ?? natural)
+    : 'issues';
+  const choose = (next: PlanningMeasure): void => {
+    setChoice({ projectId: project.project_id, measure: next });
+    rememberProjectMeasure(project.project_id, next);
+  };
   const weigh = useMemo(
     () => (measure === 'points' ? pointWeigher(teams) : countEach),
     [measure, teams]
   );
-  const stored = progressOf(project);
+  const stored = measure === 'points' ? progressOf(project) : project.counts;
   const breakdown: Record<StatusCategory, number> = useMemo(
     () =>
       readable
@@ -225,7 +268,22 @@ export const ProjectProgressPanel: React.FC<ProjectProgressPanelProps> = ({
     },
   ];
 
-  const graph = useMemo(() => {
+  const recorded = useMemo(
+    () => (history === null ? null : projectHistoryGraph(history, measure)),
+    [history, measure]
+  );
+  const note = useMemo(
+    () =>
+      recorded === null || history === null
+        ? null
+        : projectionNote(projectionIn(history, measure), (day) =>
+            shortDateLabel(day)
+          ),
+    [recorded, history, measure]
+  );
+
+  const graph = useMemo((): ProjectHistoryGraph | null => {
+    if (recorded !== null) return recorded;
     if (!readable || issues.length === 0) return null;
     const range = projectGraphRange(project, issues, today);
     if (range === null) return null;
@@ -238,8 +296,13 @@ export const ProjectProgressPanel: React.FC<ProjectProgressPanelProps> = ({
       weigh
     );
     if (points.every((point) => point.scope === 0)) return null;
-    return { points, days: daysBetween(range.start, range.end) };
-  }, [readable, issues, statuses, project, today, weigh]);
+    return {
+      points,
+      days: daysBetween(range.start, range.end),
+      forecast: null,
+      targetDate: null,
+    };
+  }, [recorded, readable, issues, statuses, project, today, weigh]);
 
   const { stages, perStatus } = useMemo(() => {
     const rows = statusRows(
@@ -307,6 +370,14 @@ export const ProjectProgressPanel: React.FC<ProjectProgressPanelProps> = ({
       <section aria-labelledby="project-progress" className="space-y-3">
         <div className="flex items-center gap-2">
           <PanelHeading id="project-progress">Progress</PanelHeading>
+          <MeasureToggle
+            value={measure}
+            onChange={choose}
+            label="Progress measure"
+            unavailable={
+              pointsReadable ? undefined : { points: NO_POINTS_REASON }
+            }
+          />
           <span className="ml-auto flex items-center gap-1.5 text-xs text-text-muted tabular-nums">
             <ProgressRing percent={percent} />
             {`${String(percent)}%`}
@@ -345,8 +416,22 @@ export const ProjectProgressPanel: React.FC<ProjectProgressPanelProps> = ({
               points={graph.points}
               days={graph.days}
               unit={measure}
+              forecast={graph.forecast}
+              targetDate={graph.targetDate}
+              showPace={recorded === null}
             />
           </div>
+        )}
+        {note !== null && (
+          <p
+            data-testid="project-projection"
+            className={cn(
+              'text-xs',
+              note.late ? 'text-warning' : 'text-text-muted'
+            )}
+          >
+            {note.text}
+          </p>
         )}
         {perStatus && stageTotal > 0 && (
           <div

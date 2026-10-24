@@ -181,11 +181,15 @@ def key_key(workspace_id: str, import_id: str) -> str:
     return f"{job_prefix(workspace_id)}{import_id}/{KEY_FILE}"
 
 
-def seal_key(workspace_id: str, import_id: str, api_key: str) -> None:
-    """Seal one import's key and keep it beside the job, the only copy that outlives the request."""
+def seal_key(workspace_id: str, import_id: str, api_key: str, *, purpose: str = SEAL_PURPOSE) -> None:
+    """Seal one import's key and keep it beside the job, the only copy that outlives the request.
+
+    Another API importer passes its own `purpose`, so a token sealed for one
+    source never opens as another's.
+    """
     from app.common.issue_import import _s3, bucket
 
-    sealed = _cipher().seal(api_key.encode(), user_id=_bound_to(workspace_id, import_id), purpose=SEAL_PURPOSE)
+    sealed = _cipher().seal(api_key.encode(), user_id=_bound_to(workspace_id, import_id), purpose=purpose)
     body = {
         "ciphertext": sealed.ciphertext,
         "nonce": sealed.nonce,
@@ -200,7 +204,7 @@ def seal_key(workspace_id: str, import_id: str, api_key: str) -> None:
     )
 
 
-def open_key(workspace_id: str, import_id: str) -> str:
+def open_key(workspace_id: str, import_id: str, *, purpose: str = SEAL_PURPOSE) -> str:
     """The plaintext key of one running import, raising `KeyGone` when it was deleted or will not open."""
     from botocore.exceptions import ClientError
     from webbpulse.identity.crypto import EnvelopeDecryptionFailed, SealedSecret
@@ -216,7 +220,7 @@ def open_key(workspace_id: str, import_id: str) -> str:
             wrapped_key=stored["wrapped_key"],
             scheme=stored["scheme"],
         )
-        plaintext = _cipher().open(sealed, user_id=_bound_to(workspace_id, import_id), purpose=SEAL_PURPOSE)
+        plaintext = _cipher().open(sealed, user_id=_bound_to(workspace_id, import_id), purpose=purpose)
     except (ClientError, EnvelopeDecryptionFailed, KeyError, ValueError, TypeError):
         raise KeyGone() from None
     return bytes(plaintext).decode()

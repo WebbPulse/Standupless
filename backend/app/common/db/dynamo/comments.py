@@ -59,13 +59,26 @@ class GithubThread(BaseModel):
     comment_url: str = ""
 
 
+class ThreadResolution(BaseModel):
+    """Who marked a root comment's thread resolved, and when.
+
+    Held on the root because the root is the thread: a reader collapses the
+    thread from the row it already has, and a reply that reopens it clears one
+    attribute on one row.
+    """
+
+    resolved_by: str
+    resolved_at: datetime = Field(default_factory=utc_now)
+
+
 class Comment(BaseModel):
     """One comment on an issue.
 
     `parent_comment_id` is one level deep by contract: a reply cannot itself be
     replied to, which is what keeps `reply_count` a count of direct replies rather
     than a tree walk. `github_thread` is set on a root comment whose thread is
-    mirrored to a GitHub pull request or issue.
+    mirrored to a GitHub pull request or issue, and `resolution` on a root
+    whose thread was marked resolved.
     """
 
     ws_issue: str
@@ -83,6 +96,7 @@ class Comment(BaseModel):
     edited_at: datetime | None = None
     import_batch_id: str | None = None
     github_thread: GithubThread | None = None
+    resolution: ThreadResolution | None = None
 
 
 def build_comment(
@@ -129,6 +143,8 @@ def as_comment_item(comment: Comment) -> dict[str, Any]:
         item.pop("import_batch_id", None)
     if item.get("github_thread") is None:
         item.pop("github_thread", None)
+    if item.get("resolution") is None:
+        item.pop("resolution", None)
     return item
 
 
@@ -222,6 +238,41 @@ class CommentRepository:
                     update_expression="SET #thread = :thread",
                     expression_names={"#thread": "github_thread"},
                     expression_values={":thread": thread.model_dump(mode="json")},
+                    condition=condition,
+                    return_values="ALL_NEW",
+                )
+        except ConditionFailed:
+            return None
+        return as_comment(item) if item is not None else None
+
+    def set_resolution(
+        self, workspace_id: str, issue_id: str, comment_id: str, resolution: ThreadResolution | None
+    ) -> Comment | None:
+        """Mark a root comment's thread resolved, or clear the mark, answering the stored comment.
+
+        Conditioned on the comment being a root, the same way the GitHub thread
+        mark is, so a reply cannot carry a resolution. Not an edit, so `edited_at`
+        is left alone. Answers `None` when the comment is gone or is a reply.
+        """
+        key = {"ws_issue": ws_issue(workspace_id, issue_id), "comment_id": comment_id}
+        condition = Attr("comment_id").exists() & (
+            Attr("parent_comment_id").not_exists() | Attr("parent_comment_id").attribute_type("NULL")
+        )
+        try:
+            if resolution is None:
+                item = self._repository.update(
+                    key,
+                    update_expression="REMOVE #resolution",
+                    expression_names={"#resolution": "resolution"},
+                    condition=condition,
+                    return_values="ALL_NEW",
+                )
+            else:
+                item = self._repository.update(
+                    key,
+                    update_expression="SET #resolution = :resolution",
+                    expression_names={"#resolution": "resolution"},
+                    expression_values={":resolution": resolution.model_dump(mode="json")},
                     condition=condition,
                     return_values="ALL_NEW",
                 )

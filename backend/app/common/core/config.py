@@ -330,6 +330,21 @@ class Settings(BaseServiceSettings):
             "the local stack and the tests point it elsewhere, at a fake Linear server."
         ),
     )
+    SHORTCUT_API_URL: str = Field(
+        default="https://api.app.shortcut.com/api/v3",
+        description=(
+            "The base of Shortcut's REST API, which the Shortcut importer reads a workspace through. "
+            "Only the tests point it elsewhere, at a fake Shortcut server."
+        ),
+    )
+
+    ASANA_API_URL: str = Field(
+        default="https://app.asana.com/api/1.0",
+        description=(
+            "Asana's REST API base, which the Asana importer reads projects through. Only the "
+            "local stack and the tests point it elsewhere, at a fake Asana server."
+        ),
+    )
 
     BILLING_ENABLED: bool = Field(
         default=False,

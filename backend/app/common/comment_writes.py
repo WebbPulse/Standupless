@@ -20,6 +20,7 @@ from app.common.db.dynamo.comments import Comment, as_comment, build_comment
 from app.common.issue_mentions import record_issue_mentions
 from app.common.issue_rules import load_visible_issue, not_found, require_team_member, unprocessable
 from app.common.mentions import mentioned_user_ids
+from app.common.thread_resolution import reopen_on_reply
 
 
 def conflict(message: str) -> HTTPException:
@@ -74,10 +75,14 @@ def create_comment(
     Every named attachment must already be on this issue. The lookup is keyed by
     the issue's own partition, so an id from another issue or workspace is refused
     the same way as one that never existed.
+
+    A reply to a resolved thread reopens it, so new discussion is never hidden
+    under a collapsed thread.
     """
     issue = load_visible_issue(repositories, context, issue_id)
     require_team_member(repositories, context, issue.team_id)
 
+    parent: Optional[Comment] = None
     if parent_comment_id:
         parent = repositories.comments.get(context.workspace_id, issue_id, parent_comment_id)
         if parent is None:
@@ -107,6 +112,9 @@ def create_comment(
         created = repositories.comments.create(comment)
     except ConditionFailed as exc:
         raise conflict("That comment already exists") from exc
+
+    if parent is not None:
+        reopen_on_reply(repositories, parent, context.user_id, source=context.source)
 
     subscriptions = repositories.subscriptions
     subscriptions.subscribe(context.workspace_id, issue_id, issue.team_id, context.user_id, "commenter")

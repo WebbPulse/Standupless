@@ -1,6 +1,6 @@
 module "ses" {
   source  = "terraform.webbpulse.com/WebbPulse/platform-modules/aws//modules/ses-identity"
-  version = "~> 2.39"
+  version = "~> 2.45"
 
   configuration_set_name = "standupless-transactional"
 
@@ -9,6 +9,10 @@ module "ses" {
   mail_from_domain = local.custom_domain ? "bounce.${local.domain_name}" : null
 
   dkim_records_zone_id     = local.custom_domain ? module.staging_dns.zone_id : null
+  create_dkim_records      = local.custom_domain
+  dkim_record_ttl          = 60
+  dmarc_record             = local.custom_domain ? "v=DMARC1; p=none;" : null
+  dmarc_record_ttl         = 60
   create_mail_from_records = local.custom_domain
 
   verified_recipients = local.ses_verified_recipients
@@ -55,4 +59,14 @@ moved {
 moved {
   from = aws_route53_record.ses_mail_from_spf[0]
   to   = module.ses.aws_route53_record.mail_from_spf[0]
+}
+
+moved {
+  from = aws_route53_record.ses_dkim
+  to   = module.ses.aws_route53_record.dkim
+}
+
+moved {
+  from = aws_route53_record.dmarc
+  to   = module.ses.aws_route53_record.dmarc
 }

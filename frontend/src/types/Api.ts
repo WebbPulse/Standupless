@@ -35,6 +35,8 @@ export interface UserRead {
   font_size?: FontSize;
   /** How the projects page is laid out, grouped, ordered and windowed. */
   projects_display?: ProjectsDisplayPreference;
+  /** Whether the person arranged the projects page, so their own arrangement wins over the defaults. */
+  projects_display_saved?: boolean;
   /** Whether a connected app that took every scope gets scopes added later at its next refresh. */
   auto_grant_new_scopes?: boolean;
 }
@@ -52,7 +54,8 @@ export interface ProjectsDisplayPreference {
     | 'progress'
     | 'created'
     | 'updated'
-    | 'customers';
+    | 'customers'
+    | 'manual';
   closed: 'all' | 'fortnight' | 'month' | 'none';
   /** Whether groups run in their own order or reversed. */
   direction?: 'asc' | 'desc';
@@ -133,8 +136,8 @@ export interface UserPreferencesUpdate {
   week_start?: WeekStart;
   name_display?: NameDisplay;
   font_size?: FontSize;
-  /** Replaces the saved projects page arrangement whole. */
-  projects_display?: ProjectsDisplayPreference;
+  /** Replaces the saved projects page arrangement whole, null forgets it. */
+  projects_display?: ProjectsDisplayPreference | null;
   auto_grant_new_scopes?: boolean;
 }
 
@@ -756,7 +759,9 @@ export type ActivityKind =
   | 'unarchived'
   | 'subscriber_added'
   | 'subscriber_removed'
-  | 'mentioned';
+  | 'mentioned'
+  | 'thread_resolved'
+  | 'thread_unresolved';
 
 /**
  * Direct sub-issue counts, maintained by the rollup consumer rather than the
@@ -830,8 +835,8 @@ export interface IssueRead {
    */
   blocked_by_open_count?: number;
   /**
-   * How many issues this one blocks while its own status is open, zero once it
-   * is completed or cancelled. Optional so older fixtures still type.
+   * How many open issues this one blocks while its own status is open, zero
+   * once it is completed or cancelled. Optional so older fixtures still type.
    */
   blocking_count?: number;
   /**
@@ -1365,8 +1370,19 @@ export interface CommentRead {
   source?: ChangeSource | null;
   /** Where a root comment's thread is mirrored on GitHub, when it is. */
   github_thread?: GithubThread | null;
+  /** Who resolved a root comment's thread and when, while it is resolved. */
+  resolution?: ThreadResolution | null;
   created_at: string;
   edited_at: string | null;
+}
+
+/**
+ * A resolved thread's mark, held on its root comment. Any team member may set
+ * or clear it, and a reply to the thread clears it.
+ */
+export interface ThreadResolution {
+  resolved_by: string;
+  resolved_at: string;
 }
 
 /**
@@ -2014,6 +2030,34 @@ export interface CycleHistoryRead {
   days: CycleHistoryPoint[];
 }
 
+/**
+ * Where the recent completion rate takes a project's remaining scope.
+ * `rate_per_day` is in the project's measure. `expected_date` is null when
+ * nothing was completed recently or the finish is out of sight, and
+ * `days_past_target` is negative when the finish lands before the target.
+ */
+export interface ProjectProjectionRead {
+  rate_per_day: number;
+  expected_date: string | null;
+  days_past_target: number | null;
+}
+
+/**
+ * A project's daily history from the day its series opens to today, recorded
+ * by the rollup as the project's issues move. `recorded_since` is null while
+ * nothing has been recorded, and `days` then holds today alone.
+ */
+export interface ProjectHistoryRead {
+  project_id: string;
+  start_date: string | null;
+  target_date: string | null;
+  today: string;
+  measure: 'points' | 'issues';
+  recorded_since: string | null;
+  days: CycleHistoryPoint[];
+  projection: ProjectProjectionRead | null;
+}
+
 /** One closed cycle's delivered work, read as it stood on its last day. */
 export interface VelocityCycleRead {
   cycle_id: string;
@@ -2296,6 +2340,8 @@ export interface ProjectRead {
   update_due_state?: ProjectUpdateDueState | null;
   /** The initiative the project belongs to, or null outside any. */
   initiative_id?: string | null;
+  /** The manual position, a base 62 fractional key; null on a project never placed. */
+  sort_order?: string | null;
   /** Issues still open in the project, answered by a patch that leaves it completed or canceled. */
   open_issue_count?: number | null;
   /** When the project last became completed or canceled, null while it is open. */
@@ -2312,9 +2358,44 @@ export interface ProjectRead {
   customer_request_count?: number | null;
   /** The summed revenue of the customers asking, set when the list was sorted by revenue. */
   customer_revenue?: number | null;
+  /** The project labels it carries, in the order they were set. */
+  label_ids?: string[];
+  /** The short project id: the lowercased tail of `project_id`. */
+  slug_id?: string;
   created_by: string;
   created_at: string;
   updated_at: string;
+}
+
+/** One project label: the workspace's one set of labels for projects. */
+export interface ProjectLabelRead {
+  id: string;
+  name: string;
+  color: string;
+  description: string | null;
+  /** How many projects the caller can see carry the label. */
+  project_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+/** The body the project label list answers with, in name order. */
+export interface ProjectLabelListRead {
+  labels: ProjectLabelRead[];
+}
+
+/** A new project label; names are unique ignoring case. */
+export interface ProjectLabelCreate {
+  name: string;
+  color: string;
+  description?: string | null;
+}
+
+/** The editable fields on a project label; an empty description clears it. */
+export interface ProjectLabelUpdate {
+  name?: string;
+  color?: string;
+  description?: string | null;
 }
 
 /** One dated milestone of a project, as the timeline marks it on the lane. */
@@ -2401,6 +2482,7 @@ export interface ProjectCreate {
   health?: ProjectHealth | null;
   priority?: IssuePriority;
   member_ids?: string[];
+  label_ids?: string[];
   update_interval_days?: ProjectUpdateInterval | null;
 }
 
@@ -2423,10 +2505,14 @@ export interface ProjectUpdate {
   health?: ProjectHealth | null;
   priority?: IssuePriority;
   member_ids?: string[];
+  /** Replaces the project labels; an empty list clears them. */
+  label_ids?: string[];
   /** A null returns the project to the workspace's cadence. */
   update_interval_days?: ProjectUpdateInterval | null;
   /** Moves the project into an initiative; a null takes it out of one. */
   initiative_id?: string | null;
+  /** The manual position, a base 62 fractional key shared by every viewer. */
+  sort_order?: string;
   /** What to do with the open issues, taken only by a patch that completes or cancels the project. */
   open_issues?: ProjectOpenIssues;
 }
@@ -2507,6 +2593,38 @@ export interface ProjectUpdateRead extends StatusUpdateRead {
 /** One page of a project's updates, newest first. */
 export interface ProjectUpdateListRead {
   updates: ProjectUpdateRead[];
+  next_cursor: string | null;
+}
+
+/** What one project activity row records. */
+export type ProjectActivityKind =
+  | 'created'
+  | 'field_changed'
+  | 'milestone_added'
+  | 'milestone_removed'
+  | 'milestone_changed';
+
+/**
+ * One recorded change to a project: a property a patch moved, with its old and
+ * new value, or a milestone added, renamed, redated or removed, named in `to`
+ * or, once removed, in `from`.
+ */
+export interface ProjectActivityRead {
+  activity_id: string;
+  project_id: string;
+  actor_id: string;
+  kind: ProjectActivityKind;
+  field: string | null;
+  from: unknown;
+  to: unknown;
+  milestone_id: string | null;
+  source?: ChangeSource | null;
+  created_at: string;
+}
+
+/** One page of a project's activity, newest first. */
+export interface ProjectActivityListRead {
+  activity: ProjectActivityRead[];
   next_cursor: string | null;
 }
 
@@ -4054,7 +4172,8 @@ export interface WorkspaceExportListRead {
 }
 
 /** The tracker an import file came from, which picks the default column mapping. */
-export type ImportPreset = 'generic' | 'jira' | 'linear';
+export type ImportPreset =
+  'generic' | 'jira' | 'linear' | 'asana' | 'shortcut' | 'pivotal' | 'trello';
 
 /** The issue fields a CSV column can map to. */
 export type ImportField =
@@ -4068,7 +4187,8 @@ export type ImportField =
   | 'due_date'
   | 'source_key'
   | 'created_at'
-  | 'parent';
+  | 'parent'
+  | 'completed';
 
 /** The body both the dry run and the import take. A null mapping value unmaps that field. */
 export interface IssueImportRequest {
@@ -4128,8 +4248,9 @@ export interface IssueImportPreviewRead {
 export type ImportStatus =
   'queued' | 'running' | 'completed' | 'failed' | 'cancelled';
 
-/** What an import reads: an uploaded CSV, a Linear workspace through its API, or a GitHub repository's Issues. */
-export type ImportKind = 'csv' | 'linear' | 'github';
+/** What an import reads: an uploaded CSV, a Linear, Shortcut, Asana or Jira workspace through its API, or a GitHub repository's Issues. */
+export type ImportKind =
+  'csv' | 'linear' | 'shortcut' | 'asana' | 'jira' | 'github';
 
 /** The tallies a Linear import keeps, by name. */
 export type LinearImportCount =
@@ -4155,10 +4276,63 @@ export type GitHubImportCount =
   | 'already_synced'
   | 'pull_requests_skipped';
 
+/** The tallies an Asana import keeps, by name. */
+export type AsanaImportCount =
+  | 'issues_created'
+  | 'issues_updated'
+  | 'comments'
+  | 'labels'
+  | 'projects'
+  | 'sub_issues';
+
+/** The tallies a Jira import keeps, by name. */
+export type JiraImportCount =
+  | 'issues_created'
+  | 'issues_updated'
+  | 'comments'
+  | 'labels'
+  | 'projects'
+  | 'cycles'
+  | 'sub_issues'
+  | 'relations';
+
+/** How a Jira import writes epics: as Standupless projects, or as parent issues. */
+export type JiraEpicsAs = 'projects' | 'parents';
+
+/** One Jira project or JQL filter a Jira import reads, the team it writes into, and how it maps. */
+export interface JiraProjectMappingRead {
+  site_url: string;
+  project_key?: string | null;
+  jql?: string | null;
+  name: string;
+  team_id: string;
+  epics_as: JiraEpicsAs;
+  statuses?: Record<string, string>;
+}
+
+/** One Asana project an Asana import reads, the team it writes into, and how its tasks map. */
+export interface AsanaProjectMappingRead {
+  project_gid: string;
+  name: string;
+  team_id: string;
+  create_project: boolean;
+  status_field_gid?: string | null;
+  status_field_name?: string | null;
+  statuses?: Record<string, string>;
+}
+
 /** One Linear team a Linear import reads and the Standupless team it writes into. */
 export interface LinearTeamMappingRead {
   linear_team_id: string;
   linear_key: string;
+  name: string;
+  team_id: string;
+}
+
+/** One team of the tool an API import reads, such as a Shortcut team, and the Standupless team it writes into. */
+export interface SourceTeamMappingRead {
+  source_id: string;
+  key: string;
   name: string;
   team_id: string;
 }
@@ -4189,8 +4363,20 @@ export interface IssueImportRead {
   kind?: ImportKind;
   /** How many issues a Linear import found already imported and updated. */
   updated_count?: number;
-  counts?: Partial<Record<LinearImportCount | GitHubImportCount, number>>;
+  counts?: Partial<
+    Record<
+      | LinearImportCount
+      | AsanaImportCount
+      | JiraImportCount
+      | GitHubImportCount,
+      number
+    >
+  >;
   linear_teams?: LinearTeamMappingRead[];
+  /** The teams a Shortcut import reads, in the order it reads them. */
+  source_teams?: SourceTeamMappingRead[];
+  asana_projects?: AsanaProjectMappingRead[];
+  jira_projects?: JiraProjectMappingRead[];
   /** The repository a GitHub import reads; its full name is the file name. */
   github_repository_id?: string | null;
   /** What a running Linear or GitHub import is reading now. */
@@ -4226,6 +4412,188 @@ export interface LinearTeamChoice {
 export interface LinearImportRequest {
   api_key: string;
   teams: LinearTeamChoice[];
+}
+
+/** One team a Shortcut API token can read. */
+export interface ShortcutTeamRead {
+  id: string;
+  /** The team's mention name in Shortcut. */
+  key: string;
+  name: string;
+}
+
+/** Every team a Shortcut API token can read that is not archived. */
+export interface ShortcutTeamListRead {
+  items: ShortcutTeamRead[];
+}
+
+/** One Shortcut team to import and the Standupless team it goes into. */
+export interface ShortcutTeamChoice {
+  shortcut_team_id: string;
+  team_id: string;
+}
+
+/** The body a Shortcut import or its preview starts with. The token is used for the job only. */
+export interface ShortcutImportRequest {
+  api_token: string;
+  teams: ShortcutTeamChoice[];
+}
+
+/** What importing one Shortcut team would bring over. */
+export interface ShortcutPreviewTeamRead {
+  shortcut_team_id: string;
+  name: string;
+  team_id: string;
+  stories: number;
+  /** Whether the team holds more stories than the preview counts. */
+  stories_capped: boolean;
+  epics: number;
+  iterations: number;
+  statuses: StatusMappingRead[];
+  new_labels: string[];
+  matched_owners: number;
+  unmatched_owners: number;
+}
+
+/** What a Shortcut import would do, team by team, computed without writing anything. */
+export interface ShortcutImportPreviewRead {
+  teams: ShortcutPreviewTeamRead[];
+}
+
+/** One project an Asana personal access token can read. */
+export interface AsanaProjectRead {
+  gid: string;
+  name: string;
+  workspace_gid: string;
+  workspace_name: string;
+  team_name?: string | null;
+  archived: boolean;
+  completed: boolean;
+  url?: string | null;
+}
+
+/** Every project an Asana token can read across its Asana workspaces. */
+export interface AsanaProjectListRead {
+  items: AsanaProjectRead[];
+}
+
+/** One Asana project to import, the team it goes into, and how its tasks map. */
+export interface AsanaProjectChoice {
+  project_gid: string;
+  team_id: string;
+  create_project?: boolean;
+  /** A single choice custom field whose options set the status instead of the section. */
+  status_field_gid?: string | null;
+  /** Section or option name to the id of the team status it lands in. */
+  statuses?: Record<string, string>;
+}
+
+/** The body an Asana import or its preview takes. The token is used for the job only. */
+export interface AsanaImportRequest {
+  token: string;
+  projects: AsanaProjectChoice[];
+}
+
+/** Where one section or option of an Asana project lands. */
+export interface AsanaStatusPlanRead {
+  source: string;
+  status_id: string;
+  status_name: string;
+}
+
+/** One single choice custom field that could set the status instead of the section. */
+export interface AsanaStatusFieldRead {
+  gid: string;
+  name: string;
+  options: string[];
+}
+
+/** What importing one Asana project would do. */
+export interface AsanaProjectPreviewRead {
+  project_gid: string;
+  name: string;
+  team_id: string;
+  create_project: boolean;
+  status_field_gid?: string | null;
+  status_field_name?: string | null;
+  task_count: number;
+  completed_count: number;
+  sections: string[];
+  status_fields: AsanaStatusFieldRead[];
+  statuses: AsanaStatusPlanRead[];
+}
+
+/** What an Asana import would do, project by project, writing nothing. */
+export interface AsanaImportPreviewRead {
+  projects: AsanaProjectPreviewRead[];
+}
+
+/** The Jira Cloud site and account an import signs in with. The token is used for the job only. */
+export interface JiraCredentials {
+  site_url: string;
+  email: string;
+  token: string;
+}
+
+/** One project a Jira Cloud account can browse. */
+export interface JiraProjectRead {
+  id: string;
+  key: string;
+  name: string;
+  project_type?: string | null;
+  team_managed: boolean;
+  archived: boolean;
+  url?: string | null;
+}
+
+/** Every project a Jira Cloud account can browse, with the site they are on. */
+export interface JiraProjectListRead {
+  site_url: string;
+  items: JiraProjectRead[];
+}
+
+/** One Jira project or JQL filter to import, the team it goes into, and how its issues map. */
+export interface JiraProjectChoice {
+  project_key?: string | null;
+  /** A JQL filter narrowing the project, or naming the issues on its own. */
+  jql?: string | null;
+  team_id: string;
+  epics_as?: JiraEpicsAs;
+  /** Jira status name to the id of the team status it lands in. */
+  statuses?: Record<string, string>;
+}
+
+/** The body a Jira import or its preview takes. */
+export interface JiraImportRequest extends JiraCredentials {
+  projects: JiraProjectChoice[];
+}
+
+/** Where one Jira status lands. */
+export interface JiraStatusPlanRead {
+  source: string;
+  category?: string | null;
+  status_id: string;
+  status_name: string;
+}
+
+/** What importing one Jira project or filter would do. */
+export interface JiraProjectPreviewRead {
+  project_key?: string | null;
+  jql?: string | null;
+  name: string;
+  team_id: string;
+  epics_as: JiraEpicsAs;
+  issue_count: number;
+  done_count: number;
+  estimate_field?: string | null;
+  sprint_field?: string | null;
+  statuses: JiraStatusPlanRead[];
+}
+
+/** What a Jira import would do, choice by choice, writing nothing. */
+export interface JiraImportPreviewRead {
+  site_url: string;
+  projects: JiraProjectPreviewRead[];
 }
 
 /** One repository the workspace's installed GitHub App covers, to import the Issues of. */

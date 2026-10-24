@@ -1,8 +1,10 @@
-# Issue import from CSV
+# Issue import from a file
 
-A workspace owner or admin can import issues into one team from a CSV file.
-Presets map exports from Jira and Linear without any setup, and the generic
-preset maps any file that uses common column names. A dry run shows what every
+A workspace owner or admin can import issues into one team from a CSV file or a
+Trello board's JSON export. Presets map exports from Jira, Linear, Asana,
+Shortcut and Pivotal Tracker without any setup, the `trello` preset reads a
+board export, and the generic preset maps any file that uses common column
+names. A dry run shows what every
 row would become before anything is written. The import itself runs as an async
 job a page at a time. Parsing and mapping are deterministic, with no model calls.
 
@@ -11,7 +13,17 @@ job a page at a time. Parsing and mapping are deterministic, with no model calls
 | Surface | How |
 | --- | --- |
 | API | `POST /api/workspaces/{workspace_id}/imports/preview`, `POST /api/workspaces/{workspace_id}/imports`, `GET /api/workspaces/{workspace_id}/imports`, `GET /api/workspaces/{workspace_id}/imports/{import_id}` |
-| UI | Workspace settings, Import tab |
+| MCP | `preview_issue_import`, `import_issues_from_file`, `get_workspace_import`, `cancel_workspace_import` |
+| UI | Workspace settings, Import tab, Import assistant |
+
+The Import assistant lists one row per source. Linear, Shortcut, Asana, Jira
+and GitHub open their API imports. The Shortcut CSV preset stays in the file
+import. "CSV or file" opens the file import with
+every preset, Trello included.
+
+The MCP tools take `team_id` (an id, key or name), `preset`, `file` (the file's
+text, the same as the `csv` field below), `file_name` and `mapping`, and answer
+what the routes answer.
 
 Every route needs the workspace admin capability. Anyone else gets 403. The
 caller must also be able to write in the target team, so a private team the
@@ -29,15 +41,19 @@ Both `POST` routes take the same body:
 }
 ```
 
-- `preset` is `generic`, `jira` or `linear`.
+- `preset` is `generic`, `jira`, `linear`, `asana`, `shortcut`, `pivotal` or
+  `trello`.
 - `csv` is the whole file as text, header row first, at most 4 MB and 5000 data
-  rows.
+  rows. With `trello` it is the board's JSON export instead, which is turned
+  into rows first (see below). The UI drops the board's `actions` history
+  before it uploads, since the import never reads it.
 - `mapping` is optional. It overrides the preset's mapping per field. A value is
   a header name from the file, and `null` unmaps the field.
 
 A file that cannot be imported answers 422 from either route. That covers an
 empty file, no header row, too many rows, a mapping that names a missing column
-or an unknown field, and no column mapped to the title.
+or an unknown field, no column mapped to the title, and with `trello` a file
+that is not a board export.
 
 ### Dry run
 
@@ -95,6 +111,29 @@ import id.
 | `source_key` | ID, Key, Issue Key, Identifier | Issue key | ID |
 | `created_at` | Created, Created At | Created | Created |
 | `parent` | Parent, Parent Key, Parent Issue, Parent ID | Parent, Parent id | Parent issue |
+| `completed` | Completed At, Completed | | |
+
+| Field | Asana | Shortcut | Pivotal Tracker |
+| --- | --- | --- | --- |
+| `title` | Name | name | Title |
+| `description` | Notes | description | Description |
+| `status` | Section/Column | state | Current State |
+| `priority` | | priority | Priority |
+| `assignee` | Assignee Email, Assignee | owners | Owned By |
+| `labels` | Tags | labels | Labels |
+| `estimate` | Story Points, Points, Estimate | estimate | Estimate |
+| `due_date` | Due Date | due_date | Deadline |
+| `source_key` | Task ID | id | Id |
+| `created_at` | Created At | created_at | Created at |
+| `parent` | Parent task | parent_story_id | |
+| `completed` | Completed At | completed_at, is_completed | Accepted at |
+
+`completed` marks a row finished: any value but an empty cell or an explicit
+`false`, `no` or `0` puts the issue in the team's first completed status, unless
+its status already maps to a completed or cancelled one. Asana has no status
+column of its own, so its section is read as the status. Asana custom fields
+export as their own columns, so a points field named `Story Points` maps by
+itself.
 
 Headers match without case. A preset falls back to the generic names for any
 field its own names miss. A field mapped to a header that appears more than
@@ -105,20 +144,24 @@ once, such as Jira's repeated `Labels` columns, reads every column of that name.
 - **Keys.** Every imported issue gets a new key in the target team. The source
   key is kept in the issue's `external_ref`.
 - **Status.** Matched to a team status by name, without case. Failing that, a
-  common workflow name such as `To Do`, `In Review`, `Resolved` or `Won't Do`
+  common workflow name such as `To Do`, `In Review`, `Resolved`, `Won't Do`,
+  or Pivotal's `unscheduled`, `delivered` and `accepted`,
   maps to the first team status of its category. Anything else lands in the
   team's default status with a warning.
 - **Priority.** Jira words (`Highest` to `Lowest`, `Blocker`, `Critical`),
-  Linear's numbers 0 to 4, and `P0` to `P4` map to the five priorities. An
+  Linear's numbers 0 to 4, `P0` to `P4`, and Pivotal's `p1 - High` shapes map
+  to the five priorities. An
   unknown word is `none` with a warning.
 - **Assignee.** Matched to a workspace member by email, then by display name
-  when exactly one member has it. A member who cannot be assigned in the team,
+  when exactly one member has it. A cell that lists several people, such as
+  Shortcut's owners, uses the first email in it. A member who cannot be assigned in the team,
   or no match, leaves the issue unassigned with a warning.
 - **Labels.** Split on commas. A name the team lacks is created on the team.
 - **Estimate.** Must be on the team's estimate scale, or it is dropped with a
   warning. `3.0` reads as `3`.
-- **Dates.** ISO 8601, Jira's `12/Oct/26 3:45 PM`, US `MM/DD/YYYY` and
-  JavaScript date strings are read, in UTC. A created date in the future is
+- **Dates.** ISO 8601, Jira's `12/Oct/26 3:45 PM`, US `MM/DD/YYYY`,
+  Shortcut's `2026/10/12 14:05:00`, Pivotal's `Oct 12, 2026` and JavaScript
+  date strings are read, in UTC. A created date in the future is
   capped at the import time.
 - **Description.** Cut to the issue body limit with a warning when longer.
 - **Parent.** Names another row of the same file by its source key, by a
@@ -128,6 +171,29 @@ once, such as Jira's repeated `Labels` columns, reads every column of that name.
   sub-issue in the file, a loop, or a row naming itself is left without a
   parent. A parent that is missing from the file, ambiguous or skipped is a
   warning on the child, which still imports at the top level.
+
+## Trello boards
+
+A Trello board exports from the board menu as JSON. With the `trello` preset
+that JSON is turned into rows before the dry run, and the converted CSV is what
+the job stores as `source.csv`, so from there it takes the same mapping,
+preview and paging as any file.
+
+- Each open card on an open list is a row. Archived cards and cards on archived
+  lists are left out. Rows follow the board's list order, then card order.
+- The card's list name is its status, mapped by name and then by category as
+  above, so a list called `Doing` lands in a started status.
+- Labels are the card's label names, or the colour of an unnamed label.
+- The assignee is the card's first member, by email where the export carries
+  it, else by full name.
+- A due date marked complete marks the card completed.
+- Each checklist item becomes a sub-issue of its card, in the card's list,
+  completed when ticked and assigned to the item's member.
+- The created date is read from the card id, which starts with a timestamp.
+
+The converted columns are `Card ID`, `Name`, `Description`, `List`, `Members`,
+`Labels`, `Due`, `Created`, `Parent` and `Completed`, which the preview shows as
+the file's headers and the mapping can override.
 
 ## Paging, retries and the bulk guard
 
@@ -155,7 +221,8 @@ issue.
 ## Storage and infrastructure
 
 The job and its source file live in the attachments bucket under
-`imports/{workspace_id}/{import_id}/`, as `job.json` and `source.csv`. A
+`imports/{workspace_id}/{import_id}/`, as `job.json` and `source.csv` (for a
+Trello board, the CSV it was converted to). A
 lifecycle rule on `imports/` deletes both after 7 days. The API queues pages on
 the issue import SQS queue, and the `integrations-import-consumer` function
 runs them. The queue and consumer exist when the `issue_import_enabled`
@@ -228,6 +295,203 @@ the import, and stored beside the job as `key.json`. It is opened in memory for
 each step and deleted when the job completes, fails or is cancelled. It never
 appears in the job, an answer, a log, an audit event or imported data. A key
 left behind by a lost job goes with the 7 day lifecycle rule on `imports/`.
+
+## Import from Shortcut's API
+
+A workspace owner or admin can import straight from a Shortcut workspace. They
+paste a Shortcut API token, pick the Shortcut teams to bring over, map each one
+to a new or existing Standupless team, preview the import and start it. The UI
+creates new teams before the preview, because the preview reads the statuses
+and labels of each target team.
+
+| Surface | How |
+| --- | --- |
+| API | `POST /api/workspaces/{workspace_id}/imports/shortcut/teams`, `POST /api/workspaces/{workspace_id}/imports/shortcut/preview`, `POST /api/workspaces/{workspace_id}/imports/shortcut`, cancel, and the `GET` routes above |
+| MCP | `list_shortcut_teams`, `preview_shortcut_import`, `import_shortcut_workspace`, `get_workspace_import`, `cancel_workspace_import` |
+| UI | Workspace settings, Import tab, source Shortcut |
+
+`POST .../imports/shortcut/teams` takes `{"api_token": "..."}` and answers the
+teams the token can read that are not archived, with `key` being the team's
+mention name. A token Shortcut refuses answers 400 with code
+`SHORTCUT_TOKEN_REFUSED`, and Shortcut not answering is 502 with
+`SHORTCUT_UNAVAILABLE`. The preview and start routes take the token and
+`teams`, a list of `{"shortcut_team_id", "team_id"}`. The preview answers, per
+team, the story count (up to 1000, with `stories_capped`), epics, iterations,
+the status each workflow state lands in, new labels, and how many story owners
+match a member. The start answers 202 with the job, which has `kind`
+`shortcut` and `source_teams`. An unknown, archived or repeated Shortcut team
+answers 422, and a second import while one runs answers 409.
+
+Per mapped team the job reads iterations, then epics, then the team's stories
+25 at a time, each read in full. A 429 is waited out, honouring `Retry-After`,
+at most 60 seconds per wait and 5 attempts per request.
+
+- Stories become issues, iterations cycles and epics projects. An iteration or
+  epic that names no team goes into every mapped team.
+- A workflow state maps to the team status with the same name, else the first
+  status of its type's category, else the team default. No status is created.
+- Labels and the story type (Feature, Bug, Chore) become team labels. Owners
+  match members by email, the first match being the assignee. Estimates and
+  deadlines carry over. Priority is not mapped.
+- Tasks become a checklist in the description. Sub-task stories become
+  sub-issues, and the `blocks`, `duplicates` and `relates to` story links become
+  relations, written from whichever end is imported second.
+- A comment by someone who is not a member keeps a `shortcut:<name>` placeholder
+  author. No account or invite is created.
+
+Row ids derive from the workspace and the Shortcut id, and each issue keeps
+`sc-<id>` and its Shortcut URL in `external_ref`, so a rerun updates rows
+instead of duplicating them. The token is sealed beside the job as `key.json`
+under its own purpose, exactly as a Linear key is, and deleted when the job
+completes, fails or is cancelled. It never appears in the job, an answer, a
+log, an audit event or imported data.
+
+## Import from Asana's API
+
+A workspace owner or admin can import Asana projects straight from Asana, with
+no export file. They paste an Asana personal access token, pick the Asana
+projects to bring over and the existing Standupless team each one goes into,
+preview where the tasks land, then start the import. There is no Asana OAuth
+app yet; the token is the only way in.
+
+| Surface | How |
+| --- | --- |
+| API | `POST /api/workspaces/{workspace_id}/imports/asana/projects`, `POST /api/workspaces/{workspace_id}/imports/asana/preview`, `POST /api/workspaces/{workspace_id}/imports/asana`, `POST /api/workspaces/{workspace_id}/imports/{import_id}/cancel`, and the `GET` routes above |
+| MCP | `list_asana_projects`, `preview_asana_import`, `import_asana_workspace`, `get_workspace_import`, `cancel_workspace_import` |
+| UI | Workspace settings, Import tab, source Asana, Connect via API |
+
+`POST .../imports/asana/projects` takes `{"token": "..."}` and answers every
+project the token can read across its Asana workspaces. A token Asana refuses
+answers 400 with code `ASANA_TOKEN_REFUSED`, and Asana not answering is 502
+with `ASANA_UNAVAILABLE`. The preview and the import take the token and
+`projects`, a list of `{"project_gid", "team_id", "create_project",
+"status_field_gid", "statuses"}`. The preview answers, per project, its task
+counts, its sections, the single choice fields that could set the status
+instead, and the team status each section or option lands in, writing nothing.
+The import answers 202 with the job, which has `kind` `asana`. A project the
+token cannot read, one chosen twice, a status field that is not a single
+choice field of the project, or a mapped status the team lacks answers 422,
+and a second import while one runs answers 409.
+
+### What is read
+
+Per chosen project, two phases: `project`, which writes the Asana project as a
+Standupless project when `create_project` is true, then `tasks`, which reads
+the project's top level tasks 20 at a time, each with its comments and
+subtasks. Lists are paged with Asana's `offset`, 100 records a call. A 429 is
+waited out for its `Retry-After`, at most 60 seconds per wait and 5 attempts
+per request, and a 5xx is retried the same way.
+
+### How values map
+
+- The status comes from the task's section in the project, or from the option
+  of the chosen single choice field. `statuses` maps any section or option name
+  to a team status id; anything unmapped lands in the team status with the same
+  name, else the status whose category the name means, such as `Doing` for
+  started, else the team default. A completed task always lands in a completed
+  status.
+- A single choice field named Priority sets the priority.
+- Tags become team labels, created when missing, with Asana's tag colour.
+- Assignee, creator and project owner are matched to members by email. A
+  comment by someone who is not a member keeps an `asana:<name>` placeholder
+  author. No account or invite is created.
+- Subtasks become sub-issues of the top level task. Subtasks of subtasks are
+  flattened onto the same top level task, three levels deep at most.
+- Due and start dates, the description and comments come across. A Standupless
+  project gets the Asana project's name, notes, owner, dates and whether it is
+  complete.
+
+Every row gets an id derived from the workspace and the Asana gid, and each
+issue keeps the gid and the task's URL in `external_ref`, so running the import
+again updates what the earlier run wrote. A task an earlier import wrote into a
+different team is left there with a warning.
+
+### The token
+
+The token is sealed beside the job like a Linear key, under its own purpose so
+it never opens as one, and deleted when the job completes, fails or is
+cancelled. It never appears in the job, an answer, a log, an audit event or
+imported data.
+
+
+## Import from Jira's API
+
+A workspace owner or admin can import Jira Cloud projects straight from Jira,
+with no export file. They enter the Jira site, the Atlassian account email and
+an API token, pick Jira projects or write a JQL filter, choose the existing
+Standupless team each one goes into and whether epics become projects or
+parent issues, preview where the issues land, then start the import.
+
+| Surface | How |
+| --- | --- |
+| API | `POST /api/workspaces/{workspace_id}/imports/jira/projects`, `POST /api/workspaces/{workspace_id}/imports/jira/preview`, `POST /api/workspaces/{workspace_id}/imports/jira`, `POST /api/workspaces/{workspace_id}/imports/{import_id}/cancel`, and the `GET` routes above |
+| MCP | `list_jira_projects`, `preview_jira_import`, `import_jira_workspace`, `get_workspace_import`, `cancel_workspace_import` |
+| UI | Workspace settings, Import tab, source Jira, Connect via API |
+
+Every route takes `{"site_url", "email", "token"}`. The site must be a Jira
+Cloud site, `https://<site>.atlassian.net`, given with or without the scheme;
+anything else answers 422 before a request is sent, so the credentials cannot
+be pointed at another host. `POST .../imports/jira/projects` answers every
+project the account can browse. Credentials Jira refuses answer 400 with code
+`JIRA_CREDENTIALS_REFUSED`, and Jira not answering is 502 with
+`JIRA_UNAVAILABLE`. The preview and the import also take `projects`, a list of
+`{"project_key", "jql", "team_id", "epics_as", "statuses"}`: a project key, a
+JQL filter, or both, which narrows the project to the filter. `epics_as` is
+`projects` (the default) or `parents`. The preview answers, per choice, its
+issue and done counts, the story point and sprint fields it found, and the team
+status each Jira status lands in, writing nothing. The import answers 202 with
+the job, which has `kind` `jira`. A project the account cannot browse, one
+chosen twice, a JQL filter Jira refuses, or a mapped status the team lacks
+answers 422, and a second import while one runs answers 409.
+
+### What is read
+
+Per choice, three phases: `epics`, which writes each epic as a Standupless
+project when `epics_as` is `projects`, then `issues`, which reads the issues
+20 at a time in id order, each with its comments, then `links`, which writes
+sub-issue parents and issue links once every issue exists. Searches use Jira's
+enhanced JQL search, paged by issue id, and comments are paged 100 at a time.
+A 429 is waited out for its `Retry-After`, at most 60 seconds per wait and 5
+attempts per request, and a 5xx is retried the same way.
+
+### How values map
+
+- `statuses` maps any Jira status name to a team status id. Anything unmapped
+  lands in the team status with the same name, else the first team status in
+  the Jira status category: To Do to unstarted, In Progress to started and
+  Done to completed.
+- Jira priorities Highest, High, Medium, Low and Lowest become urgent, high,
+  medium, low and low.
+- The issue type and the Jira labels become team labels, created when missing.
+- Epics become projects with the epic's summary, description, assignee as
+  lead, due date and status, and the issues under an epic join its project.
+  With `parents`, an epic is an issue its children hang off instead.
+- Sub-tasks become sub-issues. A parent that cannot be one here, such as a
+  sub-task's parent that has a parent of its own, is left off with a warning.
+- The newest sprint with dates becomes a team cycle with its name, dates and
+  goal. A sprint with no dates yet is left out with a warning.
+- Story points become the estimate when the team's scale has that value.
+- Blocks and Duplicate links become `blocks` and `duplicate_of` relations read
+  from the outward side, and every other link type becomes `relates_to`. A link
+  to an issue outside the import is skipped.
+- Assignee, reporter and comment author are matched to members by email. A
+  person who is not a member, or who hides their email, keeps a `jira:<name>`
+  placeholder comment author and leaves the issue unassigned. No account or
+  invite is created.
+- Descriptions and comments convert from Atlassian Document Format to markdown.
+  Attachments stay in Jira and become a placeholder naming the file.
+
+Every row gets an id derived from the workspace and the Jira id, and each issue
+keeps the Jira key and the issue's URL in `external_ref`, so running the import
+again updates what the earlier run wrote. An issue an earlier import wrote into
+a different team is left there with a warning.
+
+### The credentials
+
+The email and token are sealed beside the job like a Linear key, under their
+own purpose so they never open as one, and deleted when the job completes,
+fails or is cancelled. They are never stored after the job, and the token never
+appears in the job, an answer, a log, an audit event or imported data.
 
 
 ## Import from GitHub Issues

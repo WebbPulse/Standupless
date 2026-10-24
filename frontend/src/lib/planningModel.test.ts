@@ -5,7 +5,9 @@
 
 import { describe, expect, it } from 'vitest';
 import type {
+  CycleHistoryPoint,
   IssueRead,
+  ProjectHistoryRead,
   ProjectRead,
   StatusRead,
   TeamRead,
@@ -27,6 +29,10 @@ import {
   countEach,
   issueWeight,
   pointWeigher,
+  projectHistoryGraph,
+  projectProjection,
+  projectionIn,
+  projectionNote,
 } from './planningModel';
 
 const statuses: StatusRead[] = [
@@ -438,5 +444,254 @@ describe('weighted progress', () => {
     expect(points.map((point) => point.scope)).toEqual([12, 12]);
     expect(points.map((point) => point.started)).toEqual([0, 8]);
     expect(points.map((point) => point.completed)).toEqual([0, 5]);
+  });
+});
+
+/** One recorded project day in issues, points mirroring the counts. */
+const recordedDay = (
+  date: string,
+  scope: number,
+  completed: number
+): CycleHistoryPoint => ({
+  date,
+  scope,
+  started: completed,
+  completed,
+  scope_points: scope * 2,
+  started_points: completed * 2,
+  completed_points: completed * 2,
+});
+
+/** A project history ending today, 2026-03-05, with a projection. */
+const recorded = (
+  overrides: Partial<ProjectHistoryRead> = {}
+): ProjectHistoryRead => ({
+  project_id: 'prj-1',
+  start_date: '2026-03-01',
+  target_date: '2026-03-09',
+  today: '2026-03-05',
+  measure: 'issues',
+  recorded_since: '2026-03-02',
+  days: [1, 2, 3, 4, 5].map((day) =>
+    recordedDay(`2026-03-0${String(day)}`, 10, day - 1)
+  ),
+  projection: {
+    rate_per_day: 1,
+    expected_date: '2026-03-11',
+    days_past_target: 2,
+  },
+  ...overrides,
+});
+
+describe('projectHistoryGraph', () => {
+  it('falls back while nothing is recorded or the scope was always empty', () => {
+    expect(projectHistoryGraph(recorded({ recorded_since: null }))).toBeNull();
+    expect(
+      projectHistoryGraph(recorded({ days: [recordedDay('2026-03-05', 0, 0)] }))
+    ).toBeNull();
+  });
+
+  it('runs to the projected finish past the target and marks the target', () => {
+    const graph = projectHistoryGraph(recorded());
+
+    expect(graph?.points).toHaveLength(5);
+    expect(graph?.days[0]).toBe('2026-03-01');
+    expect(graph?.days[graph.days.length - 1]).toBe('2026-03-11');
+    expect(graph?.targetDate).toBe('2026-03-09');
+    expect(graph?.forecast).toEqual({ date: '2026-03-11', value: 10 });
+  });
+
+  it('runs to the target when the finish lands before it', () => {
+    const graph = projectHistoryGraph(
+      recorded({
+        target_date: '2026-03-20',
+        projection: {
+          rate_per_day: 2,
+          expected_date: '2026-03-08',
+          days_past_target: -12,
+        },
+      })
+    );
+
+    expect(graph?.days[graph.days.length - 1]).toBe('2026-03-20');
+    expect(graph?.forecast).toEqual({ date: '2026-03-08', value: 10 });
+  });
+
+  it('projects to the target without a finish in sight, capped at scope', () => {
+    const graph = projectHistoryGraph(
+      recorded({
+        projection: {
+          rate_per_day: 0.5,
+          expected_date: null,
+          days_past_target: null,
+        },
+      })
+    );
+
+    expect(graph?.forecast).toEqual({ date: '2026-03-09', value: 6 });
+  });
+
+  it('draws no forecast for a stalled project and reads points in points', () => {
+    const graph = projectHistoryGraph(
+      recorded({
+        measure: 'points',
+        target_date: null,
+        projection: {
+          rate_per_day: 0,
+          expected_date: null,
+          days_past_target: null,
+        },
+      })
+    );
+
+    expect(graph?.forecast).toBeNull();
+    expect(graph?.targetDate).toBeNull();
+    expect(graph?.days[graph.days.length - 1]).toBe('2026-03-05');
+    expect(graph?.points[4]?.completed).toBe(8);
+  });
+
+  it('leaves out a finish further away than the horizon', () => {
+    const graph = projectHistoryGraph(
+      recorded({
+        target_date: null,
+        projection: {
+          rate_per_day: 0.01,
+          expected_date: '2027-12-01',
+          days_past_target: null,
+        },
+      })
+    );
+
+    expect(graph?.days[graph.days.length - 1]).toBe('2026-03-05');
+    expect(graph?.forecast).toBeNull();
+  });
+});
+
+describe('projectProjection', () => {
+  it('reads the recent completion rate in the measure asked for', () => {
+    const history = recorded();
+
+    expect(
+      projectProjection(history.days, 'points', '2026-03-09', '2026-03-05')
+    ).toEqual({
+      rate_per_day: 2,
+      expected_date: '2026-03-11',
+      days_past_target: 2,
+    });
+  });
+
+  it('needs three days and remaining scope', () => {
+    const history = recorded();
+
+    expect(
+      projectProjection(history.days.slice(0, 2), 'issues', null, '2026-03-02')
+    ).toBeNull();
+    expect(
+      projectProjection(
+        [1, 2, 3].map((day) => recordedDay(`2026-03-0${String(day)}`, 4, 4)),
+        'issues',
+        null,
+        '2026-03-03'
+      )
+    ).toBeNull();
+  });
+
+  it('reads a stall as no rate', () => {
+    expect(
+      projectProjection(
+        [1, 2, 3].map((day) => recordedDay(`2026-03-0${String(day)}`, 4, 1)),
+        'points',
+        null,
+        '2026-03-03'
+      )
+    ).toEqual({ rate_per_day: 0, expected_date: null, days_past_target: null });
+  });
+});
+
+describe('projectionIn', () => {
+  it("keeps the server's projection in the project's own measure", () => {
+    const history = recorded();
+
+    expect(projectionIn(history, 'issues')).toBe(history.projection);
+  });
+
+  it('reads the other measure off the recorded days', () => {
+    const history = recorded({
+      projection: {
+        rate_per_day: 9,
+        expected_date: '2026-03-06',
+        days_past_target: -3,
+      },
+    });
+
+    expect(projectionIn(history, 'points')?.rate_per_day).toBe(2);
+  });
+
+  it("draws the graph in the measure chosen over the project's own", () => {
+    const graph = projectHistoryGraph(recorded(), 'points');
+
+    expect(graph?.points[4]).toEqual({
+      date: '2026-03-05',
+      scope: 20,
+      started: 8,
+      completed: 8,
+    });
+    expect(graph?.forecast).toEqual({ date: '2026-03-11', value: 20 });
+  });
+});
+
+describe('projectionNote', () => {
+  const day = (value: string): string => value;
+
+  it('says how far the finish lands from the target', () => {
+    expect(
+      projectionNote(
+        { rate_per_day: 1, expected_date: '2026-03-11', days_past_target: 2 },
+        day
+      )
+    ).toEqual({
+      text: 'Projected to finish 2026-03-11, 2 days after the target.',
+      late: true,
+    });
+    expect(
+      projectionNote(
+        { rate_per_day: 1, expected_date: '2026-03-08', days_past_target: -1 },
+        day
+      )?.text
+    ).toBe('Projected to finish 2026-03-08, 1 day before the target.');
+    expect(
+      projectionNote(
+        { rate_per_day: 1, expected_date: '2026-03-09', days_past_target: 0 },
+        day
+      )?.text
+    ).toBe('Projected to finish 2026-03-09, on the target date.');
+    expect(
+      projectionNote(
+        {
+          rate_per_day: 1,
+          expected_date: '2026-03-09',
+          days_past_target: null,
+        },
+        day
+      )?.text
+    ).toBe('Projected to finish 2026-03-09.');
+  });
+
+  it('explains a missing finish and reads nothing without a projection', () => {
+    expect(
+      projectionNote(
+        { rate_per_day: 0, expected_date: null, days_past_target: null },
+        day
+      )?.text
+    ).toBe(
+      'No work was completed in the last two weeks, so there is no projected finish yet.'
+    );
+    expect(
+      projectionNote(
+        { rate_per_day: 0.01, expected_date: null, days_past_target: null },
+        day
+      )?.late
+    ).toBe(true);
+    expect(projectionNote(null, day)).toBeNull();
   });
 });

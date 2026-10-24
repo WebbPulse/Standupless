@@ -5,7 +5,8 @@
  * milestones are added, renamed, reordered and open their issues, and that
  * deleting is offered only to an admin and returns to the list. The updates
  * tab opens from `?tab=updates`, lists updates under their anchors, posts,
- * edits and deletes them, and a quiet live project nudges for one.
+ * edits and deletes them, and a quiet live project nudges for one. The
+ * overview's activity interleaves property changes with the updates.
  */
 
 import type { Editor } from '@tiptap/core';
@@ -17,6 +18,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { WorkspaceContextType } from '../../contexts/WorkspaceContextDefinition';
 import type {
   MilestoneRead,
+  ProjectActivityListRead,
   ProjectRead,
   ProjectUpdateListRead,
   ProjectUpdateRead,
@@ -43,6 +45,8 @@ const updateMilestone =
 const deleteMilestone = vi.fn<(id: string) => Promise<void>>();
 const listProjectUpdates =
   vi.fn<(query: unknown) => Promise<ProjectUpdateListRead>>();
+const listProjectActivity =
+  vi.fn<(query: unknown) => Promise<ProjectActivityListRead>>();
 const createProjectUpdate =
   vi.fn<(body: unknown) => Promise<ProjectUpdateRead>>();
 const updateProjectUpdate =
@@ -75,6 +79,15 @@ vi.mock('../../hooks/useAuth', () => ({
     logout: vi.fn(),
     checkAuthStatus: vi.fn(),
   }),
+}));
+
+vi.mock('../../api/projectLabels', () => ({
+  projectLabelsPath: (workspaceId: string) =>
+    `/workspaces/${workspaceId}/project-labels`,
+  listProjectLabels: () => Promise.resolve([]),
+  createProjectLabel: vi.fn(),
+  updateProjectLabel: vi.fn(),
+  deleteProjectLabel: vi.fn(),
 }));
 
 vi.mock('../../api/customers', () => ({
@@ -112,6 +125,19 @@ vi.mock('../../api/planning', () => ({
   deleteMilestone: (_w: string, _p: string, id: string) => deleteMilestone(id),
   listProjectUpdates: (_w: string, _p: string, query: unknown) =>
     listProjectUpdates(query),
+  listProjectActivity: (_w: string, _p: string, query: unknown) =>
+    listProjectActivity(query),
+  getProjectHistory: () =>
+    Promise.resolve({
+      project_id: 'prj-1',
+      start_date: null,
+      target_date: null,
+      today: '2026-03-01',
+      measure: 'issues',
+      recorded_since: null,
+      days: [],
+      projection: null,
+    }),
   createProjectUpdate: (_w: string, _p: string, body: unknown) =>
     createProjectUpdate(body),
   updateProjectUpdate: (_w: string, _p: string, id: string, body: unknown) =>
@@ -325,6 +351,7 @@ describe('ProjectDetail', () => {
     listIssues.mockResolvedValue({ issues: [], next_cursor: null });
     listMilestones.mockResolvedValue([]);
     listProjectUpdates.mockResolvedValue({ updates: [], next_cursor: null });
+    listProjectActivity.mockResolvedValue({ activity: [], next_cursor: null });
     listTeamMembers.mockResolvedValue([ada]);
     getFollow.mockResolvedValue({ following: true, explicit: false });
   });
@@ -518,6 +545,23 @@ describe('ProjectDetail', () => {
     ).not.toBeInTheDocument();
 
     getProject.mockResolvedValue(launch);
+    await user.click(retry);
+
+    expect(await screen.findByText('Getting it out')).toBeInTheDocument();
+  });
+
+  it('offers a retry instead of an endless skeleton when the teams fail', async () => {
+    const user = userEvent.setup();
+    listTeams.mockRejectedValue(new Error('Network down'));
+    renderPage();
+
+    const retry = await screen.findByRole('button', { name: 'Retry' });
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'Could not load the teams.'
+    );
+    expect(screen.queryByLabelText('Loading project')).not.toBeInTheDocument();
+
+    listTeams.mockResolvedValue([engine]);
     await user.click(retry);
 
     expect(await screen.findByText('Getting it out')).toBeInTheDocument();
@@ -853,6 +897,64 @@ describe('ProjectDetail', () => {
     await screen.findByText('Getting it out');
     expect(screen.queryByText('No updates yet')).toBeNull();
     expect(screen.queryByText('No update in 2 weeks')).toBeNull();
+  });
+
+  it('shows the project activity on the overview beside the updates', async () => {
+    const user = userEvent.setup();
+    listProjectUpdates.mockResolvedValue({
+      updates: [
+        projectUpdate('upd-1', 'Kicked off', {
+          created_at: '2026-09-26T00:00:00Z',
+        }),
+      ],
+      next_cursor: null,
+    });
+    listProjectActivity.mockResolvedValue({
+      activity: [
+        {
+          activity_id: 'act-2',
+          project_id: 'prj-1',
+          actor_id: 'user-1',
+          kind: 'field_changed',
+          field: 'status',
+          from: 'backlog',
+          to: 'in_progress',
+          milestone_id: null,
+          created_at: '2026-09-27T00:00:00Z',
+        },
+        {
+          activity_id: 'act-1',
+          project_id: 'prj-1',
+          actor_id: 'user-1',
+          kind: 'created',
+          field: null,
+          from: null,
+          to: null,
+          milestone_id: null,
+          created_at: '2026-09-20T00:00:00Z',
+        },
+      ],
+      next_cursor: null,
+    });
+    renderPage();
+
+    const section = (
+      await screen.findByRole('heading', { name: 'Activity' })
+    ).closest('section') as HTMLElement;
+    const rows = await within(section).findAllByRole('listitem');
+    expect(rows).toHaveLength(3);
+    expect(rows[0]).toHaveTextContent(/changed the status from/);
+    expect(rows[1]).toHaveTextContent(/posted an update/);
+    expect(rows[2]).toHaveTextContent(/created the project/);
+    expect(listProjectActivity).toHaveBeenCalledWith({ limit: 20 });
+
+    await user.click(
+      within(section).getByRole('button', { name: 'posted an update' })
+    );
+    expect(screen.getByRole('tab', { name: 'Updates' })).toHaveAttribute(
+      'aria-selected',
+      'true'
+    );
   });
 
   it('shows the latest update in the progress panel', async () => {

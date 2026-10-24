@@ -1,5 +1,6 @@
 /**
- * Moves made on the projects board, shown before the polled read catches up.
+ * Moves and card edits made on the projects board, shown before the polled
+ * read catches up.
  * A move lays its change over the project at once, so the card lands in its
  * new column the moment it is dropped; the stored project replaces it when
  * the write answers, and a newer read replaces that. A failed write takes the
@@ -79,7 +80,7 @@ export const useProjectMoves = (
           showErrorToast(
             errorMessage(
               failure,
-              'Could not move that project. It has been undone.'
+              'Could not update that project. It has been undone.'
             )
           );
         });

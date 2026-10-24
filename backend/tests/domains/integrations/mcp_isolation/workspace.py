@@ -17,10 +17,20 @@ FOREIGN_IMPORT_ID = "01JB0000000000000000IMPRT9"
 
 ISOLATION_LINEAR_KEY = "lin_api_isolation_fake_0000000000000000"
 
+ISOLATION_SHORTCUT_TOKEN = "00000000-0000-4000-8000-0000000150a7"
+ISOLATION_ASANA_TOKEN = "2/isolation/fake:0000000000000000"
+
+ISOLATION_JIRA_SIGNIN = {
+    "site_url": "https://isolation-example.atlassian.net",
+    "email": "isolation@example.com",
+    "token": "fake-jira-isolation-token-0000",
+}
+
 ANSWERS_AT_HOME: frozenset[str] = frozenset(
     {
         "get_workspace",
         "update_workspace",
+        "update_workspace_display_defaults",
         "list_workspace_members",
         "list_invites",
         "invite_member",
@@ -56,6 +66,7 @@ def arguments(foreign: dict[str, str], home_issue: str) -> dict[str, dict[str, A
     return {
         "get_workspace": {},
         "update_workspace": {"name": "Isolation rename"},
+        "update_workspace_display_defaults": {"projects_display": {"layout": "board"}},
         "list_workspace_members": {},
         "list_invites": {},
         "invite_member": {"email": "isolation@example.com", "role": "member"},
@@ -73,6 +84,35 @@ def arguments(foreign: dict[str, str], home_issue: str) -> dict[str, dict[str, A
         "import_linear_workspace": {
             "api_key": ISOLATION_LINEAR_KEY,
             "teams": [{"linear_team_id": "team-isolation", "team_id": foreign["team_id"]}],
+        },
+        "list_asana_projects": {"token": ISOLATION_ASANA_TOKEN},
+        "preview_asana_import": {
+            "token": ISOLATION_ASANA_TOKEN,
+            "projects": [{"project_gid": "1200000000000001", "team_id": foreign["team_id"]}],
+        },
+        "import_asana_workspace": {
+            "token": ISOLATION_ASANA_TOKEN,
+            "projects": [{"project_gid": "1200000000000001", "team_id": foreign["team_id"]}],
+        },
+        "list_jira_projects": ISOLATION_JIRA_SIGNIN,
+        "preview_jira_import": {
+            **ISOLATION_JIRA_SIGNIN,
+            "projects": [{"project_key": "ISO", "team_id": foreign["team_id"]}],
+        },
+        "import_jira_workspace": {
+            **ISOLATION_JIRA_SIGNIN,
+            "projects": [{"project_key": "ISO", "team_id": foreign["team_id"]}],
+        },
+        "preview_issue_import": {"team_id": foreign["team_id"], "preset": "generic", "file": "Title\nIsolation\n"},
+        "import_issues_from_file": {"team_id": foreign["team_id"], "preset": "generic", "file": "Title\nIsolation\n"},
+        "list_shortcut_teams": {"api_token": ISOLATION_SHORTCUT_TOKEN},
+        "preview_shortcut_import": {
+            "api_token": ISOLATION_SHORTCUT_TOKEN,
+            "teams": [{"shortcut_team_id": "team-isolation", "team_id": foreign["team_id"]}],
+        },
+        "import_shortcut_workspace": {
+            "api_token": ISOLATION_SHORTCUT_TOKEN,
+            "teams": [{"shortcut_team_id": "team-isolation", "team_id": foreign["team_id"]}],
         },
         "list_github_import_repositories": {},
         "import_github_issues": {"repository_id": "424242", "team_id": foreign["team_id"]},

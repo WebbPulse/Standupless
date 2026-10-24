@@ -17,6 +17,10 @@ A rename made on GitHub arrives as a `label` delivery and is queued as a
 It renames the matching team label, or overrides an inherited label's name in
 the team, so every issue keeps carrying it. The issue sync snapshots are moved
 to the new name with it, so the next issue push does not put the old name back.
+
+A repository label renamed either way is renamed on every pull request that
+carries it, so the names the pull request label mirror applied move with it,
+and the App keeps owning them.
 """
 
 from __future__ import annotations
@@ -206,8 +210,12 @@ def _sync_one(
             extra={"event": "integrations.label_sync.refused"},
         )
         return
-    if target.team_id and row is not None and row.name != name:
-        rename_in_snapshots(repositories, target.workspace_id, target.team_id, row.name, name)
+    if row is not None and row.name != name:
+        from app.domains.integrations.pr_labels import rename_applied
+
+        if target.team_id:
+            rename_in_snapshots(repositories, target.workspace_id, target.team_id, row.name, name)
+        rename_applied(repositories, target.workspace_id, target.repository_id, row.name, name)
     updated = LabelSync(
         workspace_id=target.workspace_id,
         github_key=label_sync_key(target.repository_id, label.label_id),
@@ -351,4 +359,7 @@ def apply_rename(repositories: Repositories, job: Mapping[str, Any]) -> None:
     if row is not None:
         repositories.github.save_label_sync(row.model_copy(update={"name": new}))
     rename_in_snapshots(repositories, workspace_id, config.team_id, old, new)
+    from app.domains.integrations.pr_labels import rename_applied
+
+    rename_applied(repositories, workspace_id, repository_id, old, new)
     _log.info("Carried a GitHub label rename.", extra={"event": "integrations.label_sync.renamed"})

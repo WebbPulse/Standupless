@@ -105,6 +105,18 @@
     "auth": "workspace:read",
     "domain": "discussion",
     "method": "DELETE",
+    "path": "/api/workspaces/{workspace_id}/issues/{issue_id}/comments/{comment_id}/resolution"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "discussion",
+    "method": "PUT",
+    "path": "/api/workspaces/{workspace_id}/issues/{issue_id}/comments/{comment_id}/resolution"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "discussion",
+    "method": "DELETE",
     "path": "/api/workspaces/{workspace_id}/reactions"
   },
   {
@@ -387,6 +399,24 @@
     "auth": "workspace:admin",
     "domain": "integrations",
     "method": "POST",
+    "path": "/api/workspaces/{workspace_id}/imports/asana"
+  },
+  {
+    "auth": "workspace:admin",
+    "domain": "integrations",
+    "method": "POST",
+    "path": "/api/workspaces/{workspace_id}/imports/asana/preview"
+  },
+  {
+    "auth": "workspace:admin",
+    "domain": "integrations",
+    "method": "POST",
+    "path": "/api/workspaces/{workspace_id}/imports/asana/projects"
+  },
+  {
+    "auth": "workspace:admin",
+    "domain": "integrations",
+    "method": "POST",
     "path": "/api/workspaces/{workspace_id}/imports/github"
   },
   {
@@ -394,6 +424,24 @@
     "domain": "integrations",
     "method": "GET",
     "path": "/api/workspaces/{workspace_id}/imports/github/repositories"
+  },
+  {
+    "auth": "workspace:admin",
+    "domain": "integrations",
+    "method": "POST",
+    "path": "/api/workspaces/{workspace_id}/imports/jira"
+  },
+  {
+    "auth": "workspace:admin",
+    "domain": "integrations",
+    "method": "POST",
+    "path": "/api/workspaces/{workspace_id}/imports/jira/preview"
+  },
+  {
+    "auth": "workspace:admin",
+    "domain": "integrations",
+    "method": "POST",
+    "path": "/api/workspaces/{workspace_id}/imports/jira/projects"
   },
   {
     "auth": "workspace:admin",
@@ -412,6 +460,24 @@
     "domain": "integrations",
     "method": "POST",
     "path": "/api/workspaces/{workspace_id}/imports/preview"
+  },
+  {
+    "auth": "workspace:admin",
+    "domain": "integrations",
+    "method": "POST",
+    "path": "/api/workspaces/{workspace_id}/imports/shortcut"
+  },
+  {
+    "auth": "workspace:admin",
+    "domain": "integrations",
+    "method": "POST",
+    "path": "/api/workspaces/{workspace_id}/imports/shortcut/preview"
+  },
+  {
+    "auth": "workspace:admin",
+    "domain": "integrations",
+    "method": "POST",
+    "path": "/api/workspaces/{workspace_id}/imports/shortcut/teams"
   },
   {
     "auth": "workspace:admin",
@@ -1203,6 +1269,30 @@
     "auth": "workspace:read",
     "domain": "planning",
     "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/project-labels"
+  },
+  {
+    "auth": "workspace:admin",
+    "domain": "planning",
+    "method": "POST",
+    "path": "/api/workspaces/{workspace_id}/project-labels"
+  },
+  {
+    "auth": "workspace:admin",
+    "domain": "planning",
+    "method": "DELETE",
+    "path": "/api/workspaces/{workspace_id}/project-labels/{label_id}"
+  },
+  {
+    "auth": "workspace:admin",
+    "domain": "planning",
+    "method": "PATCH",
+    "path": "/api/workspaces/{workspace_id}/project-labels/{label_id}"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "planning",
+    "method": "GET",
     "path": "/api/workspaces/{workspace_id}/projects"
   },
   {
@@ -1228,6 +1318,12 @@
     "domain": "planning",
     "method": "PATCH",
     "path": "/api/workspaces/{workspace_id}/projects/{project_id}"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "planning",
+    "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/projects/{project_id}/activity"
   },
   {
     "auth": "workspace:read",
@@ -1276,6 +1372,12 @@
     "domain": "planning",
     "method": "PUT",
     "path": "/api/workspaces/{workspace_id}/projects/{project_id}/follow"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "planning",
+    "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/projects/{project_id}/history"
   },
   {
     "auth": "workspace:read",
@@ -1372,6 +1474,18 @@
     "domain": "planning",
     "method": "POST",
     "path": "/events"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "teams",
+    "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/display-defaults"
+  },
+  {
+    "auth": "workspace:admin",
+    "domain": "teams",
+    "method": "PATCH",
+    "path": "/api/workspaces/{workspace_id}/display-defaults"
   },
   {
     "auth": "workspace:read",

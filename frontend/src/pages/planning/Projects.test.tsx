@@ -11,7 +11,13 @@
  * columns, reverses the groups, groups again inside each group, keeps only
  * the projects a filtered team leads, and drops empty board columns, and the
  * blocked and blocking filters narrow the rows. Save as view stores the filters and the
- * arrangement as a view of projects and opens it.
+ * arrangement as a view of projects and opens it. A board card edits its
+ * properties in place and from its context menu, a column header menu hides,
+ * collapses and isolates its column, and a drop into a swimlane changes both
+ * the column and the lane field. The page opens with the team's or the
+ * workspace's default for everyone, which only an admin of that scope sets or
+ * clears from the Display menu. Columns join the list in priority order as it
+ * widens, and a row whose name is cut off reveals it in a tooltip.
  */
 
 import {
@@ -30,11 +36,18 @@ import type {
   ProjectListRead,
   ProjectRead,
   ProjectUpdate,
+  ProjectsDisplayPreference,
   TeamRead,
   WorkspaceRead,
   WorkspaceRole,
 } from '../../types/Api';
 import type { SavedViewDisplayRead } from '../../api/views';
+import type {
+  TeamDisplayDefaultsRead,
+  TeamDisplayDefaultsUpdate,
+  WorkspaceDisplayDefaultsRead,
+} from '../../api/teams';
+import { DEFAULT_PROJECTS_DISPLAY } from '../../lib/projectList';
 import Projects from './Projects';
 
 const listProjects =
@@ -51,6 +64,15 @@ const createProject = vi.fn<(body: ProjectCreate) => Promise<ProjectRead>>();
 const listTeams = vi.fn<() => Promise<TeamRead[]>>();
 const createView =
   vi.fn<(body: Record<string, unknown>) => Promise<SavedViewDisplayRead>>();
+
+vi.mock('../../api/projectLabels', () => ({
+  projectLabelsPath: (workspaceId: string) =>
+    `/workspaces/${workspaceId}/project-labels`,
+  listProjectLabels: () => Promise.resolve([]),
+  createProjectLabel: vi.fn(),
+  updateProjectLabel: vi.fn(),
+  deleteProjectLabel: vi.fn(),
+}));
 
 vi.mock('../../api/views', async () => {
   const actual =
@@ -83,8 +105,29 @@ vi.mock('../../api/planning', () => ({
     updateProject(id, patch),
 }));
 
+const getDisplayDefaults = vi.fn<() => Promise<TeamDisplayDefaultsRead>>();
+const updateDisplayDefaults =
+  vi.fn<
+    (teamId: string, body: TeamDisplayDefaultsUpdate) => Promise<unknown>
+  >();
+const getWorkspaceDisplayDefaults =
+  vi.fn<() => Promise<WorkspaceDisplayDefaultsRead>>();
+const updateWorkspaceDisplayDefaults =
+  vi.fn<(display: ProjectsDisplayPreference | null) => Promise<unknown>>();
+
 vi.mock('../../api/teams', () => ({
   listTeams: () => listTeams(),
+  getDisplayDefaults: () => getDisplayDefaults(),
+  updateDisplayDefaults: (
+    _w: string,
+    teamId: string,
+    body: TeamDisplayDefaultsUpdate
+  ) => updateDisplayDefaults(teamId, body),
+  getWorkspaceDisplayDefaults: () => getWorkspaceDisplayDefaults(),
+  updateWorkspaceDisplayDefaults: (
+    _w: string,
+    display: ProjectsDisplayPreference | null
+  ) => updateWorkspaceDisplayDefaults(display),
   listTeamMembers: () => Promise.resolve([]),
   listStatuses: () => Promise.resolve([]),
   listLabels: () => Promise.resolve([]),
@@ -188,6 +231,40 @@ const roleless = (team: TeamRead): TeamRead => {
   return rest;
 };
 
+/** The built-in arrangement as the display defaults routes answer it. */
+const BUILT_IN =
+  DEFAULT_PROJECTS_DISPLAY as unknown as ProjectsDisplayPreference;
+
+/** The board, as an admin saved it for everyone. */
+const BOARD = {
+  ...BUILT_IN,
+  layout: 'board',
+} as ProjectsDisplayPreference;
+
+/** A team's display defaults, with the projects page default given. */
+const teamDefaults = (
+  own: ProjectsDisplayPreference | null,
+  effective: ProjectsDisplayPreference = own ?? BUILT_IN
+): TeamDisplayDefaultsRead => ({
+  team_id: 'team-1',
+  list_display: null,
+  board_display: null,
+  projects_display: own,
+  effective_projects_display: effective,
+  updated_by: null,
+  updated_at: null,
+});
+
+/** The workspace's display defaults, with the projects page default given. */
+const workspaceDefaults = (
+  own: ProjectsDisplayPreference | null
+): WorkspaceDisplayDefaultsRead => ({
+  projects_display: own,
+  effective_projects_display: own ?? BUILT_IN,
+  updated_by: null,
+  updated_at: null,
+});
+
 const renderPage = (entry = '/w/mine/projects') =>
   render(
     <MemoryRouter initialEntries={[entry]}>
@@ -208,6 +285,78 @@ describe('Projects', () => {
       projects: [launch, rebrand],
       next_cursor: null,
     });
+    getDisplayDefaults.mockResolvedValue(teamDefaults(null));
+    getWorkspaceDisplayDefaults.mockResolvedValue(workspaceDefaults(null));
+    updateDisplayDefaults.mockResolvedValue({});
+    updateWorkspaceDisplayDefaults.mockResolvedValue({});
+  });
+
+  it('opens with the workspace default for everyone', async () => {
+    getWorkspaceDisplayDefaults.mockResolvedValue(workspaceDefaults(BOARD));
+    renderPage();
+
+    expect(
+      await screen.findByRole('list', { name: 'Backlog projects' })
+    ).toBeInTheDocument();
+  });
+
+  it('opens a team page with the default its team falls back to', async () => {
+    getDisplayDefaults.mockResolvedValue(teamDefaults(null, BOARD));
+    renderPage('/w/mine/projects?team=ENG');
+
+    expect(
+      await screen.findByRole('list', { name: 'Backlog projects' })
+    ).toBeInTheDocument();
+    expect(getWorkspaceDisplayDefaults).not.toHaveBeenCalled();
+  });
+
+  it('lets a workspace admin set the default for everyone', async () => {
+    const user = userEvent.setup();
+    renderPage();
+
+    await screen.findByRole('link', { name: 'Launch' });
+    await user.click(screen.getByRole('button', { name: 'Display' }));
+    await user.click(
+      await screen.findByRole('button', { name: 'Set default for everyone' })
+    );
+
+    await waitFor(() => {
+      expect(updateWorkspaceDisplayDefaults).toHaveBeenCalledWith(
+        expect.objectContaining({ layout: 'list', group: 'status' })
+      );
+    });
+  });
+
+  it('lets a team admin clear the team default', async () => {
+    getDisplayDefaults.mockResolvedValue(teamDefaults(BOARD));
+    const user = userEvent.setup();
+    renderPage('/w/mine/projects?team=ENG');
+
+    await screen.findByRole('list', { name: 'Backlog projects' });
+    await user.click(screen.getByRole('button', { name: 'Display' }));
+    await user.click(
+      await screen.findByRole('button', { name: 'Clear default' })
+    );
+
+    await waitFor(() => {
+      expect(updateDisplayDefaults).toHaveBeenCalledWith('team-1', {
+        projects_display: null,
+      });
+    });
+  });
+
+  it('offers a member no default for everyone', async () => {
+    useWorkspaceMock.mockReturnValue(resolved('member'));
+    const user = userEvent.setup();
+    renderPage();
+
+    await screen.findByRole('link', { name: 'Launch' });
+    await user.click(screen.getByRole('button', { name: 'Display' }));
+
+    expect(
+      screen.queryByRole('button', { name: 'Set default for everyone' })
+    ).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Clear default' })).toBeNull();
   });
 
   it('reads the whole workspace in one cursor walk', async () => {
@@ -451,6 +600,57 @@ describe('Projects', () => {
     expect(mark).toHaveAttribute('data-color', '#10b981');
   });
 
+  it('hides the lower value columns first as the list narrows', async () => {
+    renderPage('/w/mine/projects?columns=status,start,created,progress');
+
+    await screen.findByRole('link', { name: 'Launch' });
+    const header = screen.getByText('Name').parentElement;
+    if (header === null) throw new Error('no header');
+    expect(within(header).getByText('Status')).toHaveClass(
+      'hidden',
+      '@min-[40rem]:block'
+    );
+    expect(within(header).getByText('Start')).toHaveClass(
+      'hidden',
+      '@min-[72rem]:block'
+    );
+    expect(within(header).getByText('Created')).toHaveClass(
+      'hidden',
+      '@min-[96rem]:block'
+    );
+    expect(header.style.getPropertyValue('--project-columns-md')).toBe(
+      'minmax(16rem,1fr) 8.5rem 4.5rem'
+    );
+  });
+
+  it('shows the full name in a tooltip when the row cuts it off', async () => {
+    renderPage();
+
+    const link = await screen.findByRole('link', { name: 'Launch' });
+    const row = link.closest('li');
+    if (row === null) throw new Error('no row');
+    const name = within(row).getByText('Launch', { selector: 'span' });
+    Object.defineProperty(name, 'scrollWidth', {
+      configurable: true,
+      value: 400,
+    });
+    Object.defineProperty(name, 'clientWidth', {
+      configurable: true,
+      value: 120,
+    });
+    name.getBoundingClientRect = () => new DOMRect(0, 0, 120, 20);
+
+    fireEvent.mouseMove(link, { clientX: 10, clientY: 10 });
+
+    await waitFor(() => {
+      expect(
+        screen
+          .queryAllByRole('tooltip', { hidden: true })
+          .map((tip) => tip.textContent)
+      ).toContain('Launch');
+    });
+  });
+
   it('links a row to its project page', async () => {
     renderPage();
 
@@ -641,6 +841,137 @@ describe('Projects', () => {
       await screen.findByRole('button', { name: 'Complete project' })
     ).toBeInTheDocument();
     expect(updateProject).not.toHaveBeenCalled();
+  });
+
+  it('edits a card property in place from its picker', async () => {
+    const user = userEvent.setup();
+    updateProject.mockResolvedValue({
+      ...launch,
+      priority: 'high',
+      updated_at: '2026-09-19T00:00:00Z',
+    });
+    renderPage('/w/mine/projects?layout=board');
+
+    const link = await screen.findByRole('link', { name: 'Launch' });
+    const card = link.closest('li');
+    if (card === null) throw new Error('no card');
+    await user.click(within(card).getByRole('button', { name: /^Priority: / }));
+    await user.click(await screen.findByRole('option', { name: /^High/ }));
+
+    await waitFor(() => {
+      expect(updateProject).toHaveBeenCalledWith('prj-1', {
+        priority: 'high',
+      });
+    });
+  });
+
+  it('opens a hidden property picker from the card menu', async () => {
+    const user = userEvent.setup();
+    renderPage('/w/mine/projects?layout=board');
+
+    const link = await screen.findByRole('link', { name: 'Launch' });
+    const card = link.closest('li');
+    if (card === null) throw new Error('no card');
+    expect(
+      within(card).queryByRole('button', { name: /^Members: / })
+    ).toBeNull();
+    fireEvent.contextMenu(card);
+    const menu = screen.getByRole('menu', { name: 'Launch actions' });
+    expect(
+      within(menu).getByRole('menuitem', { name: 'Open project' })
+    ).toBeInTheDocument();
+    await user.click(
+      within(menu).getByRole('menuitem', { name: 'Change members' })
+    );
+
+    await waitFor(() => {
+      expect(
+        within(card).getByRole('button', { name: /^Members: / })
+      ).toHaveAttribute('aria-expanded', 'true');
+    });
+  });
+
+  it('hides, restores and collapses a column from its header menu', async () => {
+    const user = userEvent.setup();
+    renderPage('/w/mine/projects?layout=board');
+
+    await screen.findByRole('list', { name: 'Paused projects' });
+    await user.click(
+      screen.getByRole('button', { name: 'Paused column options' })
+    );
+    await user.click(screen.getByRole('menuitem', { name: 'Hide column' }));
+
+    expect(screen.queryByRole('list', { name: 'Paused projects' })).toBeNull();
+    const rail = screen.getByRole('complementary', { name: 'Hidden columns' });
+    await user.click(within(rail).getByRole('button', { name: 'Show Paused' }));
+    expect(
+      screen.getByRole('list', { name: 'Paused projects' })
+    ).toBeInTheDocument();
+
+    await user.click(
+      screen.getByRole('button', { name: 'Paused column options' })
+    );
+    await user.click(screen.getByRole('menuitem', { name: 'Collapse column' }));
+    expect(
+      screen.getByRole('group', { name: 'Paused projects' })
+    ).toBeInTheDocument();
+    await user.click(
+      screen.getByRole('button', { name: 'Expand Paused column' })
+    );
+    expect(
+      screen.getByRole('list', { name: 'Paused projects' })
+    ).toBeInTheDocument();
+  });
+
+  it('shows only one column from its header menu', async () => {
+    const user = userEvent.setup();
+    renderPage('/w/mine/projects?layout=board');
+
+    await screen.findByRole('list', { name: 'Planned projects' });
+    await user.click(
+      screen.getByRole('button', { name: 'Planned column options' })
+    );
+    await user.click(
+      screen.getByRole('menuitem', { name: 'Show only this column' })
+    );
+
+    expect(
+      screen.getByRole('list', { name: 'Planned projects' })
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole('list', { name: 'In progress projects' })
+    ).toBeNull();
+  });
+
+  it('draws swimlanes and changes both fields on a drop into a lane', async () => {
+    listProjects.mockResolvedValue({
+      projects: [launch, { ...rebrand, priority: 'high' }],
+      next_cursor: null,
+    });
+    updateProject.mockResolvedValue({
+      ...launch,
+      status: 'paused',
+      priority: 'high',
+      updated_at: '2026-09-19T00:00:00Z',
+    });
+    renderPage('/w/mine/projects?layout=board&rows=priority');
+
+    const link = await screen.findByRole('link', { name: 'Launch' });
+    expect(screen.getByRole('region', { name: 'High' })).toBeInTheDocument();
+    const card = link.closest('li');
+    if (card === null) throw new Error('no card');
+    const data = { setData: vi.fn(), effectAllowed: '', dropEffect: '' };
+    fireEvent.dragStart(card, { dataTransfer: data });
+    const cell = screen.getByRole('list', { name: 'Paused, High projects' });
+    fireEvent.dragOver(cell, { dataTransfer: data });
+    fireEvent.drop(cell, { dataTransfer: data });
+
+    await waitFor(() => {
+      expect(updateProject).toHaveBeenCalledWith('prj-1', {
+        status: 'paused',
+        priority: 'high',
+      });
+    });
   });
 
   it('draws the timeline layout from the URL', async () => {

@@ -4,15 +4,18 @@
  * have not, lists each milestone's share done as a way into its issues, and
  * leads with the latest update when there is one, and splits the stage list
  * per status. Progress reads in estimate points when a team on the project
- * estimates and in issues otherwise.
+ * estimates and in issues otherwise, and a toggle switches the numbers, the
+ * graph and the projection between the two, remembered per project.
  */
 
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { PROJECT_MEASURE_STORAGE_PREFIX } from '../../lib/projectMeasure';
 import type {
   IssueRead,
   MilestoneRead,
+  ProjectHistoryRead,
   ProjectRead,
   ProjectUpdateRead,
   StatusRead,
@@ -102,6 +105,39 @@ const stat = (label: string): HTMLElement => {
   if (cell === null) throw new Error(`No stat named ${label}`);
   return cell;
 };
+
+const estimating: TeamRead = {
+  id: 'team-1',
+  workspace_id: 'ws-1',
+  name: 'Engineering',
+  key_prefix: 'ENG',
+  description: null,
+  estimate_scale: 'tshirt',
+  created_at: '2026-09-01T00:00:00Z',
+  updated_at: '2026-09-01T00:00:00Z',
+};
+
+const pointedProject: ProjectRead = {
+  ...project,
+  measure: 'points',
+  progress: { todo: 5, in_progress: 0, done: 3, cancelled: 0, total: 8 },
+};
+
+const sizedIssues = (): IssueRead[] => [
+  { ...issue('1', 'todo'), estimate: 'L' },
+  { ...issue('2', 'done'), estimate: 'M' },
+  issue('3', 'todo'),
+];
+
+const measureButton = (name: 'Issues' | 'Points'): HTMLElement =>
+  within(screen.getByRole('group', { name: 'Progress measure' })).getByRole(
+    'button',
+    { name }
+  );
+
+beforeEach(() => {
+  localStorage.clear();
+});
 
 describe('ProjectProgressPanel', () => {
   it('draws the graph once every issue is read', () => {
@@ -397,5 +433,217 @@ describe('ProjectProgressPanel', () => {
     );
 
     expect(stat('Scope')).toHaveTextContent('2points');
+  });
+
+  it('draws the recorded history with its projection against the target', () => {
+    const history: ProjectHistoryRead = {
+      project_id: 'prj-1',
+      start_date: '2026-09-22',
+      target_date: '2026-10-01',
+      today: '2026-09-26',
+      measure: 'issues',
+      recorded_since: '2026-09-23',
+      days: [22, 23, 24, 25, 26].map((day) => ({
+        date: `2026-09-${String(day)}`,
+        scope: 6,
+        started: day - 22,
+        completed: day - 22,
+        scope_points: 0,
+        started_points: 0,
+        completed_points: 0,
+      })),
+      projection: {
+        rate_per_day: 1,
+        expected_date: '2026-09-28',
+        days_past_target: -3,
+      },
+    };
+    render(
+      <ProjectProgressPanel
+        project={project}
+        issues={[]}
+        statuses={statuses}
+        complete={false}
+        milestones={[]}
+        onOpenMilestone={vi.fn()}
+        today="2026-09-26"
+        history={history}
+      />
+    );
+
+    expect(screen.getByTestId('project-progress-graph')).toBeInTheDocument();
+    expect(
+      screen.getByRole('img', {
+        name: /Scope 6, started 4, completed 4 issues as of 2026-09-26/,
+      })
+    ).toBeInTheDocument();
+    expect(screen.getByTestId('burn-up-forecast')).toBeInTheDocument();
+    expect(screen.getByTestId('burn-up-target')).toBeInTheDocument();
+    expect(screen.getByTestId('project-projection')).toHaveTextContent(
+      /3 days before the target\.$/
+    );
+  });
+
+  it('falls back to the issues while the history has nothing recorded', () => {
+    render(
+      <ProjectProgressPanel
+        project={project}
+        issues={[issue('1', 'todo'), issue('2', 'done')]}
+        statuses={statuses}
+        complete
+        milestones={[]}
+        onOpenMilestone={vi.fn()}
+        today="2026-09-26"
+        history={{
+          project_id: 'prj-1',
+          start_date: '2026-09-26',
+          target_date: '2026-10-01',
+          today: '2026-09-26',
+          measure: 'issues',
+          recorded_since: null,
+          days: [],
+          projection: null,
+        }}
+      />
+    );
+
+    expect(screen.getByTestId('project-progress-graph')).toBeInTheDocument();
+    expect(screen.queryByTestId('burn-up-forecast')).toBeNull();
+    expect(screen.queryByTestId('project-projection')).toBeNull();
+  });
+
+  it('switches the numbers and the graph between points and issues', async () => {
+    render(
+      <ProjectProgressPanel
+        project={pointedProject}
+        teams={[estimating]}
+        issues={sizedIssues()}
+        statuses={statuses}
+        complete
+        milestones={[]}
+        onOpenMilestone={vi.fn()}
+        today="2026-09-26"
+      />
+    );
+
+    expect(measureButton('Points')).toHaveAttribute('aria-pressed', 'true');
+    expect(stat('Scope')).toHaveTextContent('8points');
+
+    await userEvent.click(measureButton('Issues'));
+
+    expect(measureButton('Issues')).toHaveAttribute('aria-pressed', 'true');
+    expect(stat('Scope')).toHaveTextContent('3issues');
+    expect(stat('Completed')).toHaveTextContent('133%');
+    expect(
+      screen.getByRole('img', {
+        name: /Scope 3, started 1, completed 1 issues as of 2026-09-26/,
+      })
+    ).toBeInTheDocument();
+    expect(localStorage.getItem(`${PROJECT_MEASURE_STORAGE_PREFIX}prj-1`)).toBe(
+      'issues'
+    );
+  });
+
+  it('opens on the measure last chosen for the project', () => {
+    localStorage.setItem(`${PROJECT_MEASURE_STORAGE_PREFIX}prj-1`, 'issues');
+    render(
+      <ProjectProgressPanel
+        project={pointedProject}
+        teams={[estimating]}
+        issues={[]}
+        statuses={statuses}
+        complete={false}
+        milestones={[]}
+        onOpenMilestone={vi.fn()}
+      />
+    );
+
+    expect(measureButton('Issues')).toHaveAttribute('aria-pressed', 'true');
+    expect(stat('Scope')).toHaveTextContent('2issues');
+  });
+
+  it('disables Points and says why when no team estimates', async () => {
+    localStorage.setItem(`${PROJECT_MEASURE_STORAGE_PREFIX}prj-1`, 'points');
+    render(
+      <ProjectProgressPanel
+        project={project}
+        issues={[issue('1', 'todo'), issue('2', 'done')]}
+        statuses={statuses}
+        complete
+        milestones={[]}
+        onOpenMilestone={vi.fn()}
+        today="2026-09-26"
+      />
+    );
+
+    const points = measureButton('Points');
+    expect(points).toHaveAttribute('aria-disabled', 'true');
+    expect(points).toHaveAccessibleDescription(
+      'No team on this project uses estimates, so progress reads in issues.'
+    );
+    expect(measureButton('Issues')).toHaveAttribute('aria-pressed', 'true');
+
+    await userEvent.click(points);
+
+    expect(points).toHaveAttribute('aria-pressed', 'false');
+    expect(stat('Scope')).toHaveTextContent('2issues');
+  });
+
+  it('reads the recorded history and its projection in the measure shown', async () => {
+    const history: ProjectHistoryRead = {
+      project_id: 'prj-1',
+      start_date: '2026-09-22',
+      target_date: '2026-10-01',
+      today: '2026-09-26',
+      measure: 'points',
+      recorded_since: '2026-09-23',
+      days: [22, 23, 24, 25, 26].map((day) => ({
+        date: `2026-09-${String(day)}`,
+        scope: 6,
+        started: Math.floor((day - 22) / 2),
+        completed: Math.floor((day - 22) / 2),
+        scope_points: 12,
+        started_points: (day - 22) * 2,
+        completed_points: (day - 22) * 2,
+      })),
+      projection: {
+        rate_per_day: 2,
+        expected_date: '2026-09-28',
+        days_past_target: -3,
+      },
+    };
+    render(
+      <ProjectProgressPanel
+        project={pointedProject}
+        teams={[estimating]}
+        issues={[]}
+        statuses={statuses}
+        complete={false}
+        milestones={[]}
+        onOpenMilestone={vi.fn()}
+        today="2026-09-26"
+        history={history}
+      />
+    );
+
+    expect(
+      screen.getByRole('img', {
+        name: /Scope 12, started 8, completed 8 points as of 2026-09-26/,
+      })
+    ).toBeInTheDocument();
+    expect(screen.getByTestId('project-projection')).toHaveTextContent(
+      /3 days before the target\.$/
+    );
+
+    await userEvent.click(measureButton('Issues'));
+
+    expect(
+      screen.getByRole('img', {
+        name: /Scope 6, started 2, completed 2 issues as of 2026-09-26/,
+      })
+    ).toBeInTheDocument();
+    expect(screen.getByTestId('project-projection')).toHaveTextContent(
+      /after the target\.$/
+    );
   });
 });

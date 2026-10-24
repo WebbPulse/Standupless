@@ -13,6 +13,10 @@
  * projects and documents the writer can see, and issue keys and links to
  * projects and documents are drawn as chips while editing.
  *
+ * Selecting text floats a compact formatting toolbar over it, and typing `/`
+ * at the start of a line or after a space opens an insert menu of blocks, both
+ * writing only what the Markdown shortcuts already write.
+ *
  * Changes commit when focus leaves the surface or on Ctrl or Cmd Enter, and
  * Escape puts back the last committed text. Text input made only of control
  * characters is dropped, so a stray carriage return trailing Ctrl or Cmd
@@ -48,6 +52,7 @@ import {
 } from '../../lib/issuePeople';
 import { isTeamKey } from '../../lib/issueDisplay';
 import { isSafeUrl } from '../../lib/markdown';
+import { UPLOAD_CONTENT_TYPES } from '../../lib/uploads';
 import { isContentPath, resolveMediaUrl } from '../../lib/media';
 import { useMedia } from '../../lib/mediaContext';
 import { matchPeople, mentionHandle, mentionQuery } from '../../lib/mentions';
@@ -61,6 +66,8 @@ import {
 } from '../../lib/references';
 import Avatar from '../ui/avatar';
 import type { MarkdownDensity } from '../ui/markdown';
+import { formattingToolbarKey, type FormatContext } from './formatting';
+import { FormattingToolbar } from './FormattingToolbar';
 import { markdownExtensions, referenceChipsKey } from './markdownExtensions';
 import { readMarkdown, writeMarkdown } from './markdownCodec';
 import {
@@ -69,6 +76,13 @@ import {
   type UploadFile,
 } from './mediaNodes';
 import { ReferenceMenu } from './ReferenceMenu';
+import {
+  filterSlashCommands,
+  slashQuery,
+  type SlashCommand,
+  type SlashContext,
+} from './slashCommands';
+import { SlashMenu } from './SlashMenu';
 import './richMarkdown.css';
 
 /** What a parent can do to the editor from outside. */
@@ -147,6 +161,9 @@ interface MentionDraft {
 
 /** The `#` reference being typed, where it sits, and where its list opens. */
 type ReferenceDraft = MentionDraft;
+
+/** The `/` insert query being typed, where it sits, and where its menu opens. */
+type SlashDraft = MentionDraft;
 
 /** Where a suggestion list opens and the text it would replace. */
 interface CaretQuery {
@@ -262,6 +279,48 @@ export const RichMarkdownEditor: React.FC<RichMarkdownEditorProps> = ({
   lookup.current = { workspace, teams };
   const { keyboardFocused, focusProps } = useKeyboardFocus();
 
+  const filePicker = useRef<HTMLInputElement>(null);
+  const [slash, setSlash] = useState<SlashDraft | null>(null);
+  const [slashHighlight, setSlashHighlight] = useState(0);
+  const slashDismissed = useRef<number | null>(null);
+  const canMention = mentionPeople !== undefined;
+  const canUpload = uploadFile !== undefined;
+  const slashContext = useMemo<SlashContext>(
+    () => ({
+      mentions: canMention,
+      ...(canUpload
+        ? {
+            pickFiles: () => {
+              filePicker.current?.click();
+            },
+          }
+        : {}),
+    }),
+    [canMention, canUpload]
+  );
+  const slashMatches = useMemo(
+    () =>
+      slash === null ? [] : filterSlashCommands(slash.query, slashContext),
+    [slash, slashContext]
+  );
+  const shownSlashHighlight = Math.min(
+    slashHighlight,
+    Math.max(0, slashMatches.length - 1)
+  );
+  const slashState = useRef({
+    slash,
+    matches: slashMatches,
+    highlight: shownSlashHighlight,
+  });
+  slashState.current = {
+    slash,
+    matches: slashMatches,
+    highlight: shownSlashHighlight,
+  };
+  const chooseSlashRef = useRef<(command: SlashCommand) => void>(
+    () => undefined
+  );
+
   const extensions = useMemo(
     () =>
       markdownExtensions({
@@ -301,6 +360,31 @@ export const RichMarkdownEditor: React.FC<RichMarkdownEditorProps> = ({
         },
         handleKeyDown: (_view, event) => {
           const mod = event.metaKey || event.ctrlKey;
+          const inserting = slashState.current;
+          if (inserting.slash !== null && inserting.matches.length > 0) {
+            const count = inserting.matches.length;
+            if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+              event.preventDefault();
+              const step = event.key === 'ArrowDown' ? 1 : -1;
+              setSlashHighlight((inserting.highlight + step + count) % count);
+              return true;
+            }
+            if ((event.key === 'Enter' && !mod) || event.key === 'Tab') {
+              const command = inserting.matches[inserting.highlight];
+              if (command !== undefined) {
+                event.preventDefault();
+                chooseSlashRef.current(command);
+                return true;
+              }
+            }
+            if (event.key === 'Escape') {
+              event.preventDefault();
+              event.stopPropagation();
+              slashDismissed.current = inserting.slash.from;
+              setSlash(null);
+              return true;
+            }
+          }
           const picking = referenceState.current;
           if (picking.reference !== null) {
             const count = picking.items.length;
@@ -446,6 +530,7 @@ export const RichMarkdownEditor: React.FC<RichMarkdownEditorProps> = ({
         if (next !== null && surface.current?.contains(next) === true) return;
         setMention(null);
         setReference(null);
+        setSlash(null);
         handlers.current.onFocusChange?.(false);
         commitRef.current();
       },
@@ -468,6 +553,7 @@ export const RichMarkdownEditor: React.FC<RichMarkdownEditorProps> = ({
     ) {
       setMention(null);
       setReference(null);
+      setSlash(null);
       return;
     }
     const before = $from.parent.textBetween(
@@ -493,6 +579,7 @@ export const RichMarkdownEditor: React.FC<RichMarkdownEditorProps> = ({
         : referenceQuery(before, before.length, lookup.current.teams ?? []);
     if (typedReference !== null) {
       setMention(null);
+      setSlash(null);
       if (referenceState.current.reference?.query !== typedReference.query) {
         setReferenceHighlight(0);
       }
@@ -500,6 +587,21 @@ export const RichMarkdownEditor: React.FC<RichMarkdownEditorProps> = ({
       return;
     }
     setReference(null);
+    const typedSlash = slashQuery(before);
+    if (typedSlash === null) {
+      slashDismissed.current = null;
+    } else {
+      const opened = place(typedSlash, 256);
+      if (slashDismissed.current !== opened.from) {
+        setMention(null);
+        if (slashState.current.slash?.query !== typedSlash.query) {
+          setSlashHighlight(0);
+        }
+        setSlash(opened);
+        return;
+      }
+    }
+    setSlash(null);
     if (mentionPeople === undefined) return;
     const typed = mentionQuery(before, before.length);
     if (typed === null) {
@@ -536,6 +638,13 @@ export const RichMarkdownEditor: React.FC<RichMarkdownEditorProps> = ({
         .run();
     }
     setReference(null);
+  };
+
+  chooseSlashRef.current = (command: SlashCommand): void => {
+    const open = slashState.current.slash;
+    if (open === null) return;
+    setSlash(null);
+    command.run(editor, { from: open.from, to: open.to }, slashContext);
   };
 
   chooseRef.current = (person: Assignable): void => {
@@ -592,6 +701,7 @@ export const RichMarkdownEditor: React.FC<RichMarkdownEditorProps> = ({
   openLinkRef.current = (): void => {
     const box = surface.current?.getBoundingClientRect();
     if (box === undefined) return;
+    editor.view.dispatch(editor.state.tr.setMeta(formattingToolbarKey, 'hide'));
     const caret = editor.view.coordsAtPos(editor.state.selection.from);
     setLinkDraft({
       href: currentHref(editor),
@@ -643,6 +753,7 @@ export const RichMarkdownEditor: React.FC<RichMarkdownEditorProps> = ({
         adopt(editor, markdown);
         setMention(null);
         setReference(null);
+        setSlash(null);
         handlers.current.onChange?.(
           readMarkdown(editor),
           hasUploadsInFlight(editor)
@@ -655,6 +766,15 @@ export const RichMarkdownEditor: React.FC<RichMarkdownEditorProps> = ({
       },
     }),
     [editor, adopt]
+  );
+
+  const formatContext = useMemo<FormatContext>(
+    () => ({
+      openLink: () => {
+        openLinkRef.current();
+      },
+    }),
+    []
   );
 
   const applyLink = (): void => {
@@ -732,6 +852,38 @@ export const RichMarkdownEditor: React.FC<RichMarkdownEditorProps> = ({
       onClick={followLink}
     >
       <EditorContent editor={editor} />
+      {editable && (
+        <FormattingToolbar editor={editor} context={formatContext} />
+      )}
+      {slash !== null && slashMatches.length > 0 && (
+        <SlashMenu
+          commands={slashMatches}
+          highlight={shownSlashHighlight}
+          top={slash.top}
+          left={slash.left}
+          onChoose={(command) => {
+            chooseSlashRef.current(command);
+          }}
+          onHighlight={setSlashHighlight}
+        />
+      )}
+      {editable && canUpload && (
+        <input
+          ref={filePicker}
+          type="file"
+          multiple
+          hidden
+          accept={UPLOAD_CONTENT_TYPES.join(',')}
+          aria-label="Upload an image or attachment"
+          onChange={(event) => {
+            const upload = handlers.current.uploadFile;
+            const files = Array.from(event.target.files ?? []);
+            event.target.value = '';
+            if (upload === undefined || files.length === 0) return;
+            insertUploads(editor, files, upload);
+          }}
+        />
+      )}
       {mention !== null && matches.length > 0 && (
         <ul
           role="listbox"

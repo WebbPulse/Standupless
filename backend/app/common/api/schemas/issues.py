@@ -44,6 +44,8 @@ ActivityKindField = Literal[
     "subscriber_added",
     "subscriber_removed",
     "mentioned",
+    "thread_resolved",
+    "thread_unresolved",
 ]
 
 SortField = Literal[

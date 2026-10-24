@@ -1,6 +1,6 @@
 module "staging_dns" {
   source  = "terraform.webbpulse.com/WebbPulse/platform-modules/aws//modules/staging-dns"
-  version = "~> 2.27"
+  version = "~> 2.45"
 
   providers = {
     aws        = aws
@@ -21,26 +21,6 @@ resource "aws_route53_record" "spf" {
   type    = "TXT"
   ttl     = 300
   records = ["v=spf1 include:amazonses.com ~all"]
-}
-
-resource "aws_route53_record" "ses_dkim" {
-  count = local.custom_domain ? 3 : 0
-
-  zone_id = module.staging_dns.zone_id
-  name    = "${module.ses.dkim_tokens[count.index]}._domainkey.${local.domain_name}"
-  type    = "CNAME"
-  ttl     = 60
-  records = ["${module.ses.dkim_tokens[count.index]}.dkim.amazonses.com"]
-}
-
-resource "aws_route53_record" "dmarc" {
-  count = local.custom_domain ? 1 : 0
-
-  zone_id = module.staging_dns.zone_id
-  name    = "_dmarc.${local.domain_name}"
-  type    = "TXT"
-  ttl     = 60
-  records = ["v=DMARC1; p=none;"]
 }
 
 import {

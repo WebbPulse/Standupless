@@ -5,9 +5,11 @@
  * property on the selection or the focused issue, Cmd or Ctrl+Shift+P sets
  * or removes their parent issue, i assigns them to the
  * viewer or back off them, the palette and the row menu duplicate one issue
- * or convert it into a project, # archives or restores them, and Cmd or
- * Ctrl+Delete deletes them after a confirmation. On a board j and k stay in
- * the focused column, h and l or the side arrows cross to the next column
+ * or convert it into a project, M then B, X, R or D marks one issue as
+ * blocked by, blocking, related to or a duplicate of another, Cmd or
+ * Ctrl+Shift+. copies one issue's git branch name, # archives or restores
+ * them, and Cmd or Ctrl+Delete deletes them after a confirmation. On a
+ * board j and k stay in the focused column, h and l or the side arrows cross to the next column
  * holding a card, and labels move to Shift+L. In a list that nests
  * sub-issues, the right arrow unfolds a parent or steps into its first
  * sub-issue and the left arrow folds it or steps back out to the parent. A right
@@ -68,8 +70,10 @@ import {
   withLayout,
 } from '../../../lib/issueView';
 import {
+  COPY_BRANCH_KEYS,
   COPY_ISSUE_ID_KEYS,
   COPY_ISSUE_URL_KEYS,
+  copyBranchName,
   copyText,
   issueUrl,
 } from '../../../lib/copyIssue';
@@ -87,7 +91,7 @@ import { showToast } from '../../../lib/toast';
 import { foldedParentKey, parentRefOf, treeRows } from '../../../lib/issueTree';
 import { issuePath } from '../../../lib/paths';
 import type { EstimateOptions } from '../../../lib/validation';
-import type { EstimateScale } from '../../../types/Api';
+import type { EstimateScale, LinkType } from '../../../types/Api';
 import { ErrorAlert } from '../../ui/alert';
 import { Kbd } from '../../ui/badge';
 import { Button } from '../../ui/button';
@@ -100,7 +104,9 @@ import { IssueViewEnvContext, type IssueViewEnv } from './IssueViewContext';
 import IssueRowMenu from './IssueRowMenu';
 import ListRows, { type IssueSection } from './ListRows';
 import PropertyCommand from './PropertyCommand';
+import AddRelationDialog from '../AddRelationDialog';
 import ConvertToProjectDialog from '../ConvertToProjectDialog';
+import { RELATION_COMMANDS } from '../RelationGlyphs';
 import SetParentDialog, { SET_PARENT_KEYS } from '../SetParentDialog';
 import {
   ARCHIVE_ISSUE_KEYS,
@@ -164,6 +170,12 @@ interface OpenMenu {
   x: number;
   y: number;
   ids: string[];
+}
+
+/** The relation dialog open on one issue, starting on a relation. */
+interface OpenRelation {
+  id: string;
+  type: LinkType;
 }
 
 /** Where an issue sits in the list's sub-issue tree. */
@@ -230,6 +242,7 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
   const [command, setCommand] = useState<OpenCommand | null>(null);
   const [parenting, setParenting] = useState<string[] | null>(null);
   const [converting, setConverting] = useState<string | null>(null);
+  const [relating, setRelating] = useState<OpenRelation | null>(null);
   const [menu, setMenu] = useState<OpenMenu | null>(null);
   const [deleting, setDeleting] = useState<OrderedIssueRead[] | null>(null);
   const scrollOnFocus = useRef(false);
@@ -845,6 +858,16 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
     },
   });
   useShortcut({
+    keys: COPY_BRANCH_KEYS,
+    label: 'Copy git branch name',
+    scope: 'issue',
+    enabled: single !== undefined,
+    handler: (event) => {
+      event?.preventDefault();
+      if (single !== undefined) copyBranchName(single.key, single.title);
+    },
+  });
+  useShortcut({
     keys: ARCHIVE_ISSUE_KEYS,
     label: allArchived(targets) ? 'Restore issue' : 'Archive issue',
     scope: 'issue',
@@ -1045,6 +1068,7 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
   const commandIssues = command === null ? [] : resolve(command.ids);
   const parentIssues = parenting === null ? [] : resolve(parenting);
   const [convertIssue] = converting === null ? [] : resolve([converting]);
+  const [relationIssue] = relating === null ? [] : resolve([relating.id]);
   const menuIssues = menu === null ? [] : resolve(menu.ids);
   const menuSingle = menuIssues.length === 1 ? menuIssues[0] : undefined;
   const openInNewTab = desktopOpenInNewTab();
@@ -1138,6 +1162,19 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
 
   return (
     <IssueViewEnvContext.Provider value={env}>
+      {RELATION_COMMANDS.map((relation) => (
+        <PropertyShortcut
+          key={relation.type}
+          keys={relation.keys}
+          label={`${relation.label}…`}
+          enabled={canCommand && single !== undefined && workspaceId !== ''}
+          onRun={() => {
+            if (single !== undefined) {
+              setRelating({ id: single.id, type: relation.type });
+            }
+          }}
+        />
+      ))}
       {PROPERTIES.map(({ property, label }) => (
         <PropertyShortcut
           key={property}
@@ -1193,6 +1230,20 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
           onConverted={(result) => {
             invalidateQueries(queryKey);
             void navigate(convertedPath(slug, result));
+          }}
+        />
+      )}
+      {relating !== null && relationIssue !== undefined && (
+        <AddRelationDialog
+          workspaceId={workspaceId}
+          issueId={relationIssue.id}
+          open
+          initialType={relating.type}
+          onClose={() => {
+            setRelating(null);
+          }}
+          onLinked={() => {
+            invalidateQueries(queryKey);
           }}
         />
       )}
@@ -1257,12 +1308,26 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
                 }
               : undefined
           }
+          onRelation={
+            menuSingle !== undefined && workspaceId !== ''
+              ? (type) => {
+                  setRelating({ id: menuSingle.id, type });
+                }
+              : undefined
+          }
           onCopyId={() => {
             copyIds(menuIssues);
           }}
           onCopyUrl={() => {
             copyUrls(menuIssues);
           }}
+          onCopyBranch={
+            menuSingle === undefined
+              ? undefined
+              : () => {
+                  copyBranchName(menuSingle.key, menuSingle.title);
+                }
+          }
           onOpen={
             menuSingle === undefined
               ? undefined

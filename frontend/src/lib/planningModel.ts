@@ -7,6 +7,8 @@
 import type {
   CycleHistoryPoint,
   IssueRead,
+  ProjectHistoryRead,
+  ProjectProjectionRead,
   ProjectRead,
   ProjectStatus,
   StatusCategory,
@@ -301,6 +303,200 @@ export const projectionLabel = (
   if (projected >= scope) return 'On pace to finish the scope';
   const unit = measure === 'points' ? 'points' : 'issues';
   return `On pace for ${String(Math.round(projected))} of ${String(scope)} ${unit}`;
+};
+
+/** How far past today a projected finish may stretch a project's graph. */
+export const FORECAST_HORIZON_DAYS = 180;
+
+/** The `YYYY-MM-DD` day `offset` days from `day`. */
+const shiftDay = (day: string, offset: number): string =>
+  new Date(Date.parse(`${day}T00:00:00Z`) + offset * 86400000)
+    .toISOString()
+    .slice(0, 10);
+
+/** The whole days from `from` to `to`, negative when `to` comes first. */
+const dayGap = (from: string, to: string): number =>
+  Math.round(
+    (Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86400000
+  );
+
+/** Where a projection line ends: a day of the graph and the completed work by then. */
+export interface ProjectForecast {
+  date: string;
+  value: number;
+}
+
+/** How many recent days a project's completion rate is read over. */
+export const PROJECTION_WINDOW_DAYS = 14;
+
+/** The furthest ahead a projected finish is named, in days. */
+export const MAX_PROJECTION_DAYS = 3650;
+
+/**
+ * Where the recent completion rate lands a project's remaining scope in one
+ * measure, read off its recorded days the way the server reads it in the
+ * project's own measure. `null` when the series is too short, the scope is
+ * empty or the scope is already complete.
+ */
+export const projectProjection = (
+  days: readonly CycleHistoryPoint[],
+  measure: PlanningMeasure,
+  targetDate: string | null,
+  today: string
+): ProjectProjectionRead | null => {
+  if (days.length < MIN_PROJECTION_DAYS) return null;
+  const series = historySeries([...days], measure);
+  const last = series[series.length - 1];
+  if (last === undefined) return null;
+  const remaining = last.scope - last.completed;
+  if (last.scope <= 0 || remaining <= 0) return null;
+  const window = series.slice(-(PROJECTION_WINDOW_DAYS + 1));
+  const opened = window[0]?.completed ?? 0;
+  const rate = (last.completed - opened) / (window.length - 1);
+  if (rate <= 0) {
+    return { rate_per_day: 0, expected_date: null, days_past_target: null };
+  }
+  const rounded = Math.round(rate * 100) / 100;
+  const needed = Math.ceil(remaining / rate);
+  if (needed > MAX_PROJECTION_DAYS) {
+    return {
+      rate_per_day: rounded,
+      expected_date: null,
+      days_past_target: null,
+    };
+  }
+  const expected = shiftDay(today, needed);
+  return {
+    rate_per_day: rounded,
+    expected_date: expected,
+    days_past_target:
+      targetDate === null || targetDate === ''
+        ? null
+        : dayGap(targetDate, expected),
+  };
+};
+
+/**
+ * A project history's projection in one measure: the server's own when it
+ * is the project's measure, and read off the recorded days otherwise.
+ */
+export const projectionIn = (
+  history: ProjectHistoryRead,
+  measure: PlanningMeasure
+): ProjectProjectionRead | null =>
+  measure === history.measure
+    ? history.projection
+    : projectProjection(
+        history.days,
+        measure,
+        history.target_date,
+        history.today
+      );
+
+/** A project's recorded progress graph, ready for the burn-up chart. */
+export interface ProjectHistoryGraph {
+  points: BurnUpPoint[];
+  days: string[];
+  forecast: ProjectForecast | null;
+  /** The target date when it falls on a day the graph draws. */
+  targetDate: string | null;
+}
+
+/**
+ * The graph a project's recorded history draws, or `null` when there is no
+ * history yet or its scope has been empty every day, so the panel falls back
+ * to reading the issues. The days run from the first recorded day to today,
+ * stretched to the target date and to the projected finish when either lies
+ * within {@link FORECAST_HORIZON_DAYS} of today. The forecast extends the
+ * recent completion rate from today to the projected finish, or to the last
+ * day drawn when the finish lies past it, capped at the current scope.
+ * It reads in `measure`, the project's own unless the viewer chose the other.
+ */
+export const projectHistoryGraph = (
+  history: ProjectHistoryRead,
+  measure: PlanningMeasure = history.measure
+): ProjectHistoryGraph | null => {
+  if (history.recorded_since === null) return null;
+  const projection = projectionIn(history, measure);
+  const points = historySeries(history.days, measure);
+  const first = points[0];
+  const last = points[points.length - 1];
+  if (first === undefined || last === undefined) return null;
+  if (points.every((point) => point.scope === 0)) return null;
+  const horizon = shiftDay(last.date, FORECAST_HORIZON_DAYS);
+  const target = history.target_date;
+  const expected = projection?.expected_date ?? null;
+  let end = last.date;
+  if (target !== null && target > end && target <= horizon) end = target;
+  if (expected !== null && expected > end && expected <= horizon) {
+    end = expected;
+  }
+  const rate = projection?.rate_per_day ?? 0;
+  let forecast: ProjectForecast | null = null;
+  if (rate > 0 && end > last.date) {
+    const date = expected !== null && expected <= end ? expected : end;
+    const reached = last.completed + rate * dayGap(last.date, date);
+    forecast = {
+      date,
+      value: Math.min(last.scope, Math.round(reached * 10) / 10),
+    };
+  }
+  return {
+    points,
+    days: daysBetween(first.date, end),
+    forecast,
+    targetDate:
+      target !== null && target >= first.date && target <= end ? target : null,
+  };
+};
+
+/** The words a projection reads as, and whether they say the project runs late. */
+export interface ProjectionNote {
+  text: string;
+  late: boolean;
+}
+
+/** `n` days, singular for one. */
+const dayCount = (value: number): string =>
+  `${String(value)} ${value === 1 ? 'day' : 'days'}`;
+
+/**
+ * How a project's projected finish reads beside its graph: the expected date
+ * and how far it lands from the target, or why there is no date to name.
+ * `null` when there is no projection at all.
+ */
+export const projectionNote = (
+  projection: ProjectProjectionRead | null,
+  formatDay: (day: string) => string
+): ProjectionNote | null => {
+  if (projection === null) return null;
+  if (projection.rate_per_day <= 0) {
+    return {
+      text: 'No work was completed in the last two weeks, so there is no projected finish yet.',
+      late: false,
+    };
+  }
+  if (projection.expected_date === null) {
+    return {
+      text: 'At the recent pace the remaining scope is more than ten years from done.',
+      late: true,
+    };
+  }
+  const finish = `Projected to finish ${formatDay(projection.expected_date)}`;
+  const past = projection.days_past_target;
+  if (past === null) return { text: `${finish}.`, late: false };
+  if (past === 0)
+    return { text: `${finish}, on the target date.`, late: false };
+  if (past > 0) {
+    return {
+      text: `${finish}, ${dayCount(past)} after the target.`,
+      late: true,
+    };
+  }
+  return {
+    text: `${finish}, ${dayCount(-past)} before the target.`,
+    late: false,
+  };
 };
 
 /**

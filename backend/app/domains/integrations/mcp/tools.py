@@ -18,6 +18,7 @@ import json
 from typing import Any
 
 from app.domains.integrations.mcp.agent_profile_tools import AGENT_PROFILE_TOOLS
+from app.domains.integrations.mcp.asana_import_tools import ASANA_IMPORT_TOOLS
 from app.domains.integrations.mcp.audit_tools import AUDIT_TOOLS
 from app.domains.integrations.mcp.channel_tools import CHANNEL_TOOLS
 from app.domains.integrations.mcp.customer_tools import CUSTOMER_TOOLS
@@ -28,7 +29,9 @@ from app.domains.integrations.mcp.favorite_tools import FAVORITE_TOOLS
 from app.domains.integrations.mcp.import_tools import IMPORT_TOOLS
 from app.domains.integrations.mcp.initiative_tools import INITIATIVE_TOOLS
 from app.domains.integrations.mcp.issue_tools import ISSUE_TOOLS
+from app.domains.integrations.mcp.jira_import_tools import JIRA_IMPORT_TOOLS
 from app.domains.integrations.mcp.planning_tools import PLANNING_TOOLS
+from app.domains.integrations.mcp.project_label_tools import PROJECT_LABEL_TOOLS
 from app.domains.integrations.mcp.pulse_tools import PULSE_TOOLS
 from app.domains.integrations.mcp.recurring_tools import RECURRING_TOOLS
 from app.domains.integrations.mcp.release_tools import RELEASE_TOOLS
@@ -56,6 +59,7 @@ TOOLS: tuple[Tool, ...] = (
     *CHANNEL_TOOLS,
     *STANDUP_TOOLS,
     *PLANNING_TOOLS,
+    *PROJECT_LABEL_TOOLS,
     *INITIATIVE_TOOLS,
     *PULSE_TOOLS,
     *DOCUMENT_TOOLS,
@@ -67,6 +71,8 @@ TOOLS: tuple[Tool, ...] = (
     *WORKSPACE_TOOLS,
     *EXPORT_TOOLS,
     *IMPORT_TOOLS,
+    *ASANA_IMPORT_TOOLS,
+    *JIRA_IMPORT_TOOLS,
     *AUDIT_TOOLS,
     *TRIAGE_TOOLS,
     *AGENT_PROFILE_TOOLS,

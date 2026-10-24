@@ -2,8 +2,9 @@
 
 The job and its source file live side by side in the attachments bucket under
 `imports/<workspace_id>/<import_id>/`: `job.json` is the job's state and
-`source.csv` is the file as uploaded. Keeping the job as an object beside its
-file needs no table, and the bucket's lifecycle rule on `imports/` retires both.
+`source.csv` is the file as uploaded, or for a Trello board the CSV it converts
+to. Keeping the job as an object beside its file needs no table, and the
+bucket's lifecycle rule on `imports/` retires both.
 
 A job walks the file in pages of `PAGE_SIZE` rows. Each page is one queue
 message carrying the cursor it starts at, and a message whose cursor is not the
@@ -23,7 +24,14 @@ A Linear import, kind `linear`, is the same job reading Linear's API instead
 of a stored file; `app.common.linear_import` holds its steps and its sealed key.
 A GitHub import, kind `github`, reads one repository's Issues through the
 installed GitHub App; its steps live with the App in the integrations domain and
-register themselves in `PAGE_RUNNERS`.
+register themselves in `PAGE_RUNNERS`. A Shortcut import, kind `shortcut`, reads
+Shortcut's REST API with a pasted token that is sealed beside the job the way a
+Linear key is; it also lives in the integrations domain and registers itself.
+An Asana import, kind `asana`, reads
+chosen Asana projects through Asana's REST API with a pasted personal access
+token sealed beside the job the way a Linear key is, and registers itself too.
+A Jira import, kind `jira`, reads chosen Jira Cloud projects or JQL filters
+through Jira's REST API with an account email and API token sealed the same way.
 A job may be cancelled while it runs: every step reads the job again before it
 saves its progress and keeps a cancel it finds.
 
@@ -61,6 +69,7 @@ from app.common.csv_import import (
 )
 from app.common.db.dynamo.base import utc_now
 from app.common.linear_import import LinearTeamMapping
+from app.common.trello_import import prepare_source
 
 _log = logging.getLogger(__name__)
 
@@ -128,7 +137,10 @@ IMPORT_READ_REPOSITORIES: tuple[str, ...] = ("workspaces", "memberships", "users
 
 ImportStatus = Literal["queued", "running", "completed", "failed", "cancelled"]
 
-ImportKind = Literal["csv", "linear", "github"]
+ImportKind = Literal["csv", "linear", "github", "shortcut", "asana", "jira"]
+
+SEALED_KEY_KINDS: frozenset[str] = frozenset({"linear", "shortcut", "asana", "jira"})
+"""The import kinds that keep a sealed token beside the job, deleted when the job fails or is cancelled."""
 
 PAGE_RUNNERS: dict[str, Callable[[Any, "ImportJob"], "ImportJob"]] = {}
 """The page runner of each import kind whose source lives in a domain, registered when its module loads."""
@@ -152,6 +164,42 @@ class ImportNotFound(Exception):
     """No import with that id exists in the workspace."""
 
 
+class SourceTeamMapping(BaseModel):
+    """One team of the source tool an API import reads and the Standupless team it writes into."""
+
+    source_id: str
+    key: str = ""
+    name: str = ""
+    team_id: str
+
+
+class AsanaProjectMapping(BaseModel):
+    """One Asana project an Asana import reads, the team it writes into, and how its tasks map."""
+
+    project_gid: str
+    name: str = ""
+    team_id: str
+    create_project: bool = True
+    status_field_gid: str = ""
+    status_field_name: str = ""
+    statuses: dict[str, str] = Field(default_factory=dict)
+    created_at: str = ""
+
+
+class JiraProjectMapping(BaseModel):
+    """One Jira project or JQL filter a Jira import reads, the team it writes into, and how its issues map."""
+
+    site_url: str
+    project_key: str = ""
+    jql: str = ""
+    name: str = ""
+    team_id: str
+    epics_as: Literal["projects", "parents"] = "projects"
+    statuses: dict[str, str] = Field(default_factory=dict)
+    estimate_fields: list[str] = Field(default_factory=list)
+    sprint_field: str = ""
+
+
 class ImportJob(BaseModel):
     """One import: who asked, into which team, how the file maps, and how far it has got."""
 
@@ -163,6 +211,9 @@ class ImportJob(BaseModel):
     mapping: dict[str, Optional[str]]
     linear_teams: list[LinearTeamMapping] = Field(default_factory=list)
     github_repository_id: str = ""
+    source_teams: list[SourceTeamMapping] = Field(default_factory=list)
+    asana_projects: list[AsanaProjectMapping] = Field(default_factory=list)
+    jira_projects: list[JiraProjectMapping] = Field(default_factory=list)
     phase_index: int = 0
     after: Optional[str] = None
     counts: dict[str, int] = Field(default_factory=dict)
@@ -438,6 +489,8 @@ def resolve_row(repositories: Any, lookup: TeamLookup, workspace_id: str, raw: R
             problems.append(
                 RowProblem(row=line, field="status", message=f"Unknown status {raw.status!r}, put in {status.name}")
             )
+    if raw.completed and status.category not in ("completed", "cancelled"):
+        status = lookup.status_by_category.get("completed", status)
 
     assignee_id: Optional[str] = None
     if raw.assignee:
@@ -498,7 +551,7 @@ def preview_import(
     overrides: Optional[Mapping[str, Optional[str]]] = None,
 ) -> Preview:
     """Read a whole file against one team and say what an import would do, writing nothing."""
-    parsed = parse_csv(text)
+    parsed = parse_csv(prepare_source(preset, text))
     mapping = resolve_mapping(parsed.headers, preset, overrides)
     lookup = load_lookup(repositories, workspace_id, team_id)
     raws = read_rows(parsed, mapping)
@@ -557,6 +610,7 @@ def start_import(
     if not queue_url and settings.is_production:
         raise ImportUnavailable("Issue imports are not configured for this environment")
     require_team_member(repositories, context, team_id)
+    text = prepare_source(preset, text)
     parsed = parse_csv(text)
     mapping = resolve_mapping(parsed.headers, preset, overrides)
     now = utc_now()
@@ -633,8 +687,8 @@ def handle_page(repositories: Any, workspace_id: str, import_id: str, cursor: in
 
 
 def fail(repositories: Any, job: ImportJob, exc: BaseException) -> ImportJob:
-    """Mark a job failed, delete a Linear job's key, and tell the requester, unless it was cancelled."""
-    if job.kind == "linear":
+    """Mark a job failed, delete a sealed token it kept, and tell the requester, unless it was cancelled."""
+    if job.kind in SEALED_KEY_KINDS:
         from app.common.linear_import import delete_key
 
         delete_key(job.workspace_id, job.import_id)
@@ -851,7 +905,7 @@ def _cancelled(job: ImportJob) -> ImportJob | None:
 
 
 def cancel_import(workspace_id: str, import_id: str) -> ImportJob:
-    """Stop one import: mark it cancelled and delete a Linear import's key, leaving what it wrote.
+    """Stop one import: mark it cancelled and delete a sealed token it kept, leaving what it wrote.
 
     A job that already finished is answered as it is. Raises `ImportNotFound`
     when the workspace has no such import.
@@ -862,7 +916,7 @@ def cancel_import(workspace_id: str, import_id: str) -> ImportJob:
     if job.status in FINISHED:
         return job
     cancelled = save_job(job.model_copy(update={"status": "cancelled", "finished_at": utc_now()}))
-    if job.kind == "linear":
+    if job.kind in SEALED_KEY_KINDS:
         from app.common.linear_import import delete_key
 
         delete_key(workspace_id, import_id)
@@ -996,8 +1050,8 @@ def notify(repositories: Any, job: ImportJob) -> bool:
     completed = job.status == "completed"
     plural = "issue" if job.created_count == 1 else "issues"
     title = f"Imported {job.created_count} {plural} into {name}" if completed else f"The import into {name} failed"
-    if job.kind in ("linear", "github"):
-        origin = "Linear" if job.kind == "linear" else job.file_name or "GitHub"
+    if job.kind != "csv":
+        origin = job.file_name or ("GitHub" if job.kind == "github" else job.kind.title())
         title = f"Imported {job.created_count} {plural} from {origin}"
         if not completed:
             title = f"The import from {origin} failed"

@@ -134,13 +134,8 @@ import AddRelationDialog from './AddRelationDialog';
 import IssueBody from './IssueBody';
 import IssuePageCommands from './IssuePageCommands';
 import IssuePropertiesPanel from './IssuePropertiesPanel';
-import {
-  BlockedIcon,
-  BlockingIcon,
-  DuplicateGlyph,
-  RelatedGlyph,
-  type RelationGlyphProps,
-} from './RelationGlyphs';
+import { RelationMarkers } from './BlockedMarker';
+import { RELATION_COMMANDS } from './RelationGlyphs';
 import IssueSubscribeButton from './IssueSubscribeButton';
 import RemindMeDialog from './RemindMeDialog';
 import FavoriteButton from '../ui/FavoriteButton';
@@ -168,45 +163,8 @@ const TEAM_LINK_CLASS = `${LINK_CLASS} truncate font-normal`;
 const KEYS = {
   addLink: 'mod+l',
   addSubIssue: 'mod+shift+o',
-  blockedBy: 'm b',
-  blocking: 'm x',
-  related: 'm r',
-  duplicate: 'm d',
   archive: ARCHIVE_ISSUE_KEYS,
 } as const;
-
-/** The "Mark as" commands, in menu order, with the relation each starts on. */
-const RELATION_COMMANDS: {
-  keys: string;
-  label: string;
-  type: LinkType;
-  icon: React.FC<RelationGlyphProps>;
-}[] = [
-  {
-    keys: KEYS.blockedBy,
-    label: 'Mark as blocked by',
-    type: 'blocked_by',
-    icon: BlockedIcon,
-  },
-  {
-    keys: KEYS.blocking,
-    label: 'Mark as blocking',
-    type: 'blocks',
-    icon: BlockingIcon,
-  },
-  {
-    keys: KEYS.related,
-    label: 'Mark as related to',
-    type: 'relates_to',
-    icon: RelatedGlyph,
-  },
-  {
-    keys: KEYS.duplicate,
-    label: 'Mark as duplicate of',
-    type: 'duplicate_of',
-    icon: DuplicateGlyph,
-  },
-];
 
 /** Binds one issue command to its keys, which also lists it in the palette. */
 const IssueCommand: React.FC<{
@@ -589,6 +547,7 @@ export const IssueView: React.FC<IssueViewProps> = ({
         </>
       )}
       <span className="font-mono text-text-muted">{shownKey}</span>
+      {issue !== null && <RelationMarkers issue={issue} />}
     </span>
   );
 

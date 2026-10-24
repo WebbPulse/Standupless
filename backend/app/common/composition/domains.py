@@ -309,10 +309,12 @@ def _integrations_routers() -> "Sequence[RouterSpec]":
     would have to know every team.
     """
     from app.domains.integrations.endpoints import (
+        asana_imports,
         channels,
         discord,
         imports,
         install,
+        jira_imports,
         links,
         release_backfill,
         reviews,
@@ -338,6 +340,8 @@ def _integrations_routers() -> "Sequence[RouterSpec]":
         (standup.router, "/workspaces", ("integrations",)),
         (release_backfill.router, "/workspaces", ("integrations",)),
         (imports.router, "/workspaces", ("integrations",)),
+        (asana_imports.router, "/workspaces", ("integrations",)),
+        (jira_imports.router, "/workspaces", ("integrations",)),
     ]
 
 
@@ -424,6 +428,7 @@ def _planning_routers() -> "Sequence[RouterSpec]":
         documents,
         initiatives,
         milestones,
+        project_labels,
         project_updates,
         projects,
         pulse,
@@ -433,6 +438,7 @@ def _planning_routers() -> "Sequence[RouterSpec]":
     return [
         (cycles.router, "/workspaces", ("planning",)),
         (projects.router, "/workspaces", ("planning",)),
+        (project_labels.router, "/workspaces", ("planning",)),
         (milestones.router, "/workspaces", ("planning",)),
         (project_updates.router, "/workspaces", ("planning",)),
         (documents.router, "/workspaces", ("planning",)),

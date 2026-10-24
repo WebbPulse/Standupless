@@ -15,7 +15,9 @@ ProjectsLayoutField = Literal["list", "board", "timeline"]
 
 ProjectsGroupField = Literal["status", "health", "priority", "initiative", "lead", "team", "none"]
 
-ProjectsOrderField = Literal["target", "start", "name", "priority", "progress", "created", "updated", "customers"]
+ProjectsOrderField = Literal[
+    "target", "start", "name", "priority", "progress", "created", "updated", "customers", "manual"
+]
 
 ProjectsClosedField = Literal["all", "fortnight", "month", "none"]
 
@@ -31,6 +33,7 @@ PROJECTS_COLUMNS: tuple[str, ...] = (
     "summary",
     "milestones",
     "dependencies",
+    "labels",
     "health",
     "priority",
     "status",
@@ -44,6 +47,7 @@ PROJECTS_COLUMNS: tuple[str, ...] = (
     "updated",
     "completed",
     "progress",
+    "id",
 )
 """Every property the projects list and board can show beside the name, in the order they draw them."""
 

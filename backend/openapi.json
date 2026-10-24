@@ -132,7 +132,9 @@
               "unarchived",
               "subscriber_added",
               "subscriber_removed",
-              "mentioned"
+              "mentioned",
+              "thread_resolved",
+              "thread_unresolved"
             ],
             "title": "Kind",
             "type": "string"
@@ -869,6 +871,390 @@
           }
         },
         "title": "ArchiveSettingsUpdate",
+        "type": "object"
+      },
+      "AsanaImportPreviewRead": {
+        "description": "What an Asana import would do, project by project, read from Asana without writing anything.",
+        "properties": {
+          "projects": {
+            "items": {
+              "$ref": "#/components/schemas/AsanaProjectPreviewRead"
+            },
+            "title": "Projects",
+            "type": "array"
+          }
+        },
+        "required": [
+          "projects"
+        ],
+        "title": "AsanaImportPreviewRead",
+        "type": "object"
+      },
+      "AsanaImportRequest": {
+        "description": "An Asana import or its preview: the token, sealed while the job runs and deleted after, and the projects.",
+        "properties": {
+          "projects": {
+            "items": {
+              "$ref": "#/components/schemas/AsanaProjectChoice"
+            },
+            "maxItems": 50,
+            "minItems": 1,
+            "title": "Projects",
+            "type": "array"
+          },
+          "token": {
+            "description": "An Asana personal access token. Used for this request or import only and never stored after it.",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "token",
+          "projects"
+        ],
+        "title": "AsanaImportRequest",
+        "type": "object"
+      },
+      "AsanaProjectChoice": {
+        "description": "One Asana project to import, the Standupless team it goes into, and how its tasks map.",
+        "properties": {
+          "create_project": {
+            "default": true,
+            "description": "Also write the Asana project as a Standupless project.",
+            "title": "Create Project",
+            "type": "boolean"
+          },
+          "project_gid": {
+            "pattern": "^[0-9]{1,32}$",
+            "title": "Project Gid",
+            "type": "string"
+          },
+          "status_field_gid": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9]{1,32}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A single choice custom field whose options set the status, instead of the task's section.",
+            "title": "Status Field Gid"
+          },
+          "statuses": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Section or option name to the id of the team status it lands in. Anything unmapped lands in the status of the same name, else the status its name means, else the team's default.",
+            "maxProperties": 200,
+            "title": "Statuses",
+            "type": "object"
+          },
+          "team_id": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Team Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "project_gid",
+          "team_id"
+        ],
+        "title": "AsanaProjectChoice",
+        "type": "object"
+      },
+      "AsanaProjectListRead": {
+        "description": "Every project the token can read across its Asana workspaces.",
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AsanaProjectRead"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "AsanaProjectListRead",
+        "type": "object"
+      },
+      "AsanaProjectMappingRead": {
+        "description": "One Asana project an Asana import reads, the Standupless team it writes into, and how its tasks map.",
+        "properties": {
+          "create_project": {
+            "title": "Create Project",
+            "type": "boolean"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "project_gid": {
+            "title": "Project Gid",
+            "type": "string"
+          },
+          "status_field_gid": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status Field Gid"
+          },
+          "status_field_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status Field Name"
+          },
+          "statuses": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Statuses",
+            "type": "object"
+          },
+          "team_id": {
+            "title": "Team Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "project_gid",
+          "name",
+          "team_id",
+          "create_project"
+        ],
+        "title": "AsanaProjectMappingRead",
+        "type": "object"
+      },
+      "AsanaProjectPreviewRead": {
+        "description": "What importing one Asana project would do.",
+        "properties": {
+          "completed_count": {
+            "title": "Completed Count",
+            "type": "integer"
+          },
+          "create_project": {
+            "title": "Create Project",
+            "type": "boolean"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "project_gid": {
+            "title": "Project Gid",
+            "type": "string"
+          },
+          "sections": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Sections",
+            "type": "array"
+          },
+          "status_field_gid": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status Field Gid"
+          },
+          "status_field_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status Field Name"
+          },
+          "status_fields": {
+            "items": {
+              "$ref": "#/components/schemas/AsanaStatusFieldRead"
+            },
+            "title": "Status Fields",
+            "type": "array"
+          },
+          "statuses": {
+            "items": {
+              "$ref": "#/components/schemas/AsanaStatusPlanRead"
+            },
+            "title": "Statuses",
+            "type": "array"
+          },
+          "task_count": {
+            "description": "How many tasks the project holds, as Asana counts them.",
+            "title": "Task Count",
+            "type": "integer"
+          },
+          "team_id": {
+            "title": "Team Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "project_gid",
+          "name",
+          "team_id",
+          "create_project",
+          "task_count",
+          "completed_count",
+          "sections",
+          "status_fields",
+          "statuses"
+        ],
+        "title": "AsanaProjectPreviewRead",
+        "type": "object"
+      },
+      "AsanaProjectRead": {
+        "description": "One project the token can read in Asana.",
+        "properties": {
+          "archived": {
+            "title": "Archived",
+            "type": "boolean"
+          },
+          "completed": {
+            "title": "Completed",
+            "type": "boolean"
+          },
+          "gid": {
+            "title": "Gid",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "team_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Team Name"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
+          },
+          "workspace_gid": {
+            "title": "Workspace Gid",
+            "type": "string"
+          },
+          "workspace_name": {
+            "title": "Workspace Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "gid",
+          "name",
+          "workspace_gid",
+          "workspace_name",
+          "archived",
+          "completed"
+        ],
+        "title": "AsanaProjectRead",
+        "type": "object"
+      },
+      "AsanaStatusFieldRead": {
+        "description": "One single choice custom field of a project that could set the status instead of the section.",
+        "properties": {
+          "gid": {
+            "title": "Gid",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "options": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Options",
+            "type": "array"
+          }
+        },
+        "required": [
+          "gid",
+          "name",
+          "options"
+        ],
+        "title": "AsanaStatusFieldRead",
+        "type": "object"
+      },
+      "AsanaStatusPlanRead": {
+        "description": "Where one section or option of a project lands.",
+        "properties": {
+          "source": {
+            "title": "Source",
+            "type": "string"
+          },
+          "status_id": {
+            "title": "Status Id",
+            "type": "string"
+          },
+          "status_name": {
+            "title": "Status Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source",
+          "status_id",
+          "status_name"
+        ],
+        "title": "AsanaStatusPlanRead",
+        "type": "object"
+      },
+      "AsanaTokenRequest": {
+        "description": "An Asana personal access token, used for this request only and never stored.",
+        "properties": {
+          "token": {
+            "description": "An Asana personal access token. Used for this request or import only and never stored after it.",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "token"
+        ],
+        "title": "AsanaTokenRequest",
         "type": "object"
       },
       "AttachmentListRead": {
@@ -2170,7 +2556,7 @@
         "type": "object"
       },
       "CommentRead": {
-        "description": "One comment as the API returns it.\n\n`github_thread` is set on a root comment whose thread is synced to a GitHub\npull request or issue.",
+        "description": "One comment as the API returns it.\n\n`github_thread` is set on a root comment whose thread is synced to a GitHub\npull request or issue, and `resolution` on a root whose thread is resolved,\nwhich a reader collapses to one line.",
         "properties": {
           "attachments": {
             "items": {
@@ -2254,6 +2640,16 @@
             "default": 0,
             "title": "Reply Count",
             "type": "integer"
+          },
+          "resolution": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ThreadResolution"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "source": {
             "anyOf": [
@@ -7889,6 +8285,13 @@
       "IssueImportRead": {
         "description": "One import job and how far it has got.",
         "properties": {
+          "asana_projects": {
+            "items": {
+              "$ref": "#/components/schemas/AsanaProjectMappingRead"
+            },
+            "title": "Asana Projects",
+            "type": "array"
+          },
           "counts": {
             "additionalProperties": {
               "type": "integer"
@@ -7949,12 +8352,22 @@
             "title": "Import Id",
             "type": "string"
           },
+          "jira_projects": {
+            "items": {
+              "$ref": "#/components/schemas/JiraProjectMappingRead"
+            },
+            "title": "Jira Projects",
+            "type": "array"
+          },
           "kind": {
             "default": "csv",
             "enum": [
               "csv",
               "linear",
-              "github"
+              "github",
+              "shortcut",
+              "asana",
+              "jira"
             ],
             "title": "Kind",
             "type": "string"
@@ -7985,7 +8398,7 @@
                 "type": "null"
               }
             ],
-            "description": "What a running Linear or GitHub import is reading now.",
+            "description": "What a running Linear, GitHub, Shortcut, Asana or Jira import is reading now.",
             "title": "Phase"
           },
           "phase_count": {
@@ -8028,6 +8441,14 @@
           "skipped_count": {
             "title": "Skipped Count",
             "type": "integer"
+          },
+          "source_teams": {
+            "description": "The teams a Shortcut import reads and the teams each writes into.",
+            "items": {
+              "$ref": "#/components/schemas/SourceTeamMappingRead"
+            },
+            "title": "Source Teams",
+            "type": "array"
           },
           "started_at": {
             "anyOf": [
@@ -8102,7 +8523,7 @@
         "description": "The body both the dry run and the import take: a file, a team, a preset and any mapping changes.",
         "properties": {
           "csv": {
-            "description": "The whole CSV file as text, header row first.",
+            "description": "The whole CSV file as text, header row first. With the trello preset, the board's JSON export instead.",
             "maxLength": 4194304,
             "minLength": 1,
             "title": "Csv",
@@ -8133,7 +8554,7 @@
                 "type": "null"
               }
             ],
-            "description": "Overrides of the preset's mapping, field to header name; null unmaps a field. Fields are title, description, status, priority, assignee, labels, estimate, due_date, source_key, created_at and parent. A parent column names another row of the file by its source key or its title.",
+            "description": "Overrides of the preset's mapping, field to header name; null unmaps a field. Fields are title, description, status, priority, assignee, labels, estimate, due_date, source_key, created_at, parent and completed. A parent column names another row of the file by its source key or its title, and a non-empty completed column puts the row in a completed status.",
             "title": "Mapping"
           },
           "preset": {
@@ -8141,7 +8562,11 @@
             "enum": [
               "generic",
               "jira",
-              "linear"
+              "linear",
+              "asana",
+              "shortcut",
+              "pivotal",
+              "trello"
             ],
             "title": "Preset",
             "type": "string"
@@ -8868,6 +9293,425 @@
           }
         },
         "title": "IssueUpdate",
+        "type": "object"
+      },
+      "JiraCredentialsRequest": {
+        "description": "A Jira site and the account email and API token to read it with, used for this request only.",
+        "properties": {
+          "email": {
+            "description": "The email of the Atlassian account the API token belongs to. Used for this request or import only.",
+            "maxLength": 320,
+            "minLength": 3,
+            "title": "Email",
+            "type": "string"
+          },
+          "site_url": {
+            "description": "The Jira Cloud site, such as https://your-team.atlassian.net.",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Site Url",
+            "type": "string"
+          },
+          "token": {
+            "description": "An Atlassian API token. Used for this request or import only and never stored after it.",
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "site_url",
+          "email",
+          "token"
+        ],
+        "title": "JiraCredentialsRequest",
+        "type": "object"
+      },
+      "JiraImportPreviewRead": {
+        "description": "What a Jira import would do, project by project, read from Jira without writing anything.",
+        "properties": {
+          "projects": {
+            "items": {
+              "$ref": "#/components/schemas/JiraProjectPreviewRead"
+            },
+            "title": "Projects",
+            "type": "array"
+          },
+          "site_url": {
+            "title": "Site Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "site_url",
+          "projects"
+        ],
+        "title": "JiraImportPreviewRead",
+        "type": "object"
+      },
+      "JiraImportRequest": {
+        "description": "A Jira import or its preview: the site, the credentials, sealed while the job runs, and the projects.",
+        "properties": {
+          "email": {
+            "description": "The email of the Atlassian account the API token belongs to. Used for this request or import only.",
+            "maxLength": 320,
+            "minLength": 3,
+            "title": "Email",
+            "type": "string"
+          },
+          "projects": {
+            "items": {
+              "$ref": "#/components/schemas/JiraProjectChoice"
+            },
+            "maxItems": 50,
+            "minItems": 1,
+            "title": "Projects",
+            "type": "array"
+          },
+          "site_url": {
+            "description": "The Jira Cloud site, such as https://your-team.atlassian.net.",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Site Url",
+            "type": "string"
+          },
+          "token": {
+            "description": "An Atlassian API token. Used for this request or import only and never stored after it.",
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "site_url",
+          "email",
+          "token",
+          "projects"
+        ],
+        "title": "JiraImportRequest",
+        "type": "object"
+      },
+      "JiraProjectChoice": {
+        "description": "One Jira project or JQL filter to import, the Standupless team it goes into, and how its issues map.",
+        "properties": {
+          "epics_as": {
+            "default": "projects",
+            "description": "Whether each epic becomes a Standupless project, or an issue its children are sub-issues of.",
+            "enum": [
+              "projects",
+              "parents"
+            ],
+            "title": "Epics As",
+            "type": "string"
+          },
+          "jql": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A JQL filter, alone or narrowing the project. Any ORDER BY is dropped.",
+            "title": "Jql"
+          },
+          "project_key": {
+            "anyOf": [
+              {
+                "pattern": "^[A-Za-z][A-Za-z0-9_]{0,49}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Key"
+          },
+          "statuses": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Jira status name to the id of the team status it lands in. Anything unmapped lands in the status of the same name, else the one its Jira status category means, else the team's default.",
+            "maxProperties": 200,
+            "title": "Statuses",
+            "type": "object"
+          },
+          "team_id": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Team Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "team_id"
+        ],
+        "title": "JiraProjectChoice",
+        "type": "object"
+      },
+      "JiraProjectListRead": {
+        "description": "Every project the account can browse on the Jira site.",
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/JiraProjectRead"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "site_url": {
+            "title": "Site Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "site_url",
+          "items"
+        ],
+        "title": "JiraProjectListRead",
+        "type": "object"
+      },
+      "JiraProjectMappingRead": {
+        "description": "One Jira project or JQL filter a Jira import reads, the Standupless team it writes into, and how it maps.",
+        "properties": {
+          "epics_as": {
+            "title": "Epics As",
+            "type": "string"
+          },
+          "jql": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Jql"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "project_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Key"
+          },
+          "site_url": {
+            "title": "Site Url",
+            "type": "string"
+          },
+          "statuses": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Statuses",
+            "type": "object"
+          },
+          "team_id": {
+            "title": "Team Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "site_url",
+          "name",
+          "team_id",
+          "epics_as"
+        ],
+        "title": "JiraProjectMappingRead",
+        "type": "object"
+      },
+      "JiraProjectPreviewRead": {
+        "description": "What importing one Jira project or filter would do.",
+        "properties": {
+          "done_count": {
+            "title": "Done Count",
+            "type": "integer"
+          },
+          "epics_as": {
+            "title": "Epics As",
+            "type": "string"
+          },
+          "estimate_field": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The story point field estimates come from.",
+            "title": "Estimate Field"
+          },
+          "issue_count": {
+            "description": "How many issues the project or filter holds, as Jira counts them.",
+            "title": "Issue Count",
+            "type": "integer"
+          },
+          "jql": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Jql"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "project_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Key"
+          },
+          "sprint_field": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The sprint field cycles come from.",
+            "title": "Sprint Field"
+          },
+          "statuses": {
+            "items": {
+              "$ref": "#/components/schemas/JiraStatusPlanRead"
+            },
+            "title": "Statuses",
+            "type": "array"
+          },
+          "team_id": {
+            "title": "Team Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "team_id",
+          "epics_as",
+          "issue_count",
+          "done_count",
+          "statuses"
+        ],
+        "title": "JiraProjectPreviewRead",
+        "type": "object"
+      },
+      "JiraProjectRead": {
+        "description": "One project the account can browse on the Jira site.",
+        "properties": {
+          "archived": {
+            "title": "Archived",
+            "type": "boolean"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "project_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Type"
+          },
+          "team_managed": {
+            "title": "Team Managed",
+            "type": "boolean"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
+          }
+        },
+        "required": [
+          "id",
+          "key",
+          "name",
+          "team_managed",
+          "archived"
+        ],
+        "title": "JiraProjectRead",
+        "type": "object"
+      },
+      "JiraStatusPlanRead": {
+        "description": "Where one Jira status lands.",
+        "properties": {
+          "category": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Jira's status category: new, indeterminate or done.",
+            "title": "Category"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          },
+          "status_id": {
+            "title": "Status Id",
+            "type": "string"
+          },
+          "status_name": {
+            "title": "Status Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source",
+          "status_id",
+          "status_name"
+        ],
+        "title": "JiraStatusPlanRead",
         "type": "object"
       },
       "JoinableWorkspaceListRead": {
@@ -10424,6 +11268,122 @@
         "title": "ProgressRead",
         "type": "object"
       },
+      "ProjectActivityListRead": {
+        "properties": {
+          "activity": {
+            "items": {
+              "$ref": "#/components/schemas/ProjectActivityRead"
+            },
+            "title": "Activity",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "required": [
+          "activity"
+        ],
+        "title": "ProjectActivityListRead",
+        "type": "object"
+      },
+      "ProjectActivityRead": {
+        "description": "One recorded change to a project as the API returns it.\n\n`from` and `to` are the wire names the issue activity uses, aliased off the\nstored `from_value` and `to_value` because `from` is a Python keyword. A\nmilestone row carries the milestone's id and names it in `to`, or in `from`\nonce removed.",
+        "properties": {
+          "activity_id": {
+            "title": "Activity Id",
+            "type": "string"
+          },
+          "actor_id": {
+            "title": "Actor Id",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "field": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Field"
+          },
+          "from": {
+            "title": "From"
+          },
+          "kind": {
+            "enum": [
+              "created",
+              "field_changed",
+              "milestone_added",
+              "milestone_removed",
+              "milestone_changed"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "milestone_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Milestone Id"
+          },
+          "project_id": {
+            "title": "Project Id",
+            "type": "string"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "enum": [
+                  "web",
+                  "mcp",
+                  "cli",
+                  "api",
+                  "github",
+                  "system"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source"
+          },
+          "to": {
+            "title": "To"
+          }
+        },
+        "required": [
+          "activity_id",
+          "project_id",
+          "actor_id",
+          "kind",
+          "created_at"
+        ],
+        "title": "ProjectActivityRead",
+        "type": "object"
+      },
       "ProjectBlueprint": {
         "description": "What a project template fills: the project's fields, its milestones and its issues.\n\nDates are offsets in days from the day the project is created, so a template\nnever goes stale.",
         "properties": {
@@ -10622,6 +11582,14 @@
             ],
             "title": "Initiative Id"
           },
+          "label_ids": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 50,
+            "title": "Label Ids",
+            "type": "array"
+          },
           "lead_id": {
             "anyOf": [
               {
@@ -10752,6 +11720,231 @@
         "title": "ProjectCreate",
         "type": "object"
       },
+      "ProjectHistoryRead": {
+        "description": "A project's daily scope, started and completed figures, from the day its series opens to today.\n\n`recorded_since` is the first day the snapshots recorded, None while the\nproject has no history yet and `days` holds today alone.",
+        "properties": {
+          "days": {
+            "items": {
+              "$ref": "#/components/schemas/CycleHistoryPoint"
+            },
+            "title": "Days",
+            "type": "array"
+          },
+          "measure": {
+            "enum": [
+              "points",
+              "issues"
+            ],
+            "title": "Measure",
+            "type": "string"
+          },
+          "project_id": {
+            "title": "Project Id",
+            "type": "string"
+          },
+          "projection": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProjectProjectionRead"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "recorded_since": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recorded Since"
+          },
+          "start_date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start Date"
+          },
+          "target_date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Date"
+          },
+          "today": {
+            "title": "Today",
+            "type": "string"
+          }
+        },
+        "required": [
+          "project_id",
+          "today",
+          "measure",
+          "days"
+        ],
+        "title": "ProjectHistoryRead",
+        "type": "object"
+      },
+      "ProjectLabelCreate": {
+        "description": "The body a project label create takes.",
+        "properties": {
+          "color": {
+            "title": "Color",
+            "type": "string"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "name": {
+            "maxLength": 60,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "color"
+        ],
+        "title": "ProjectLabelCreate",
+        "type": "object"
+      },
+      "ProjectLabelListRead": {
+        "description": "The body the project labels list route answers with, by name.",
+        "properties": {
+          "labels": {
+            "items": {
+              "$ref": "#/components/schemas/ProjectLabelRead"
+            },
+            "title": "Labels",
+            "type": "array"
+          }
+        },
+        "required": [
+          "labels"
+        ],
+        "title": "ProjectLabelListRead",
+        "type": "object"
+      },
+      "ProjectLabelRead": {
+        "description": "One project label as the API returns it, with how many projects carry it.",
+        "properties": {
+          "color": {
+            "title": "Color",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "project_count": {
+            "default": 0,
+            "description": "Projects of the workspace that carry the label",
+            "title": "Project Count",
+            "type": "integer"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "color",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "ProjectLabelRead",
+        "type": "object"
+      },
+      "ProjectLabelUpdate": {
+        "description": "The body a project label patch takes; an omitted field keeps its value, a null or empty description clears it.",
+        "properties": {
+          "color": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Color"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "maxLength": 60,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          }
+        },
+        "title": "ProjectLabelUpdate",
+        "type": "object"
+      },
       "ProjectListRead": {
         "properties": {
           "next_cursor": {
@@ -10838,6 +12031,42 @@
           "action"
         ],
         "title": "ProjectOpenIssues",
+        "type": "object"
+      },
+      "ProjectProjectionRead": {
+        "description": "Where the recent completion rate takes a project's remaining scope.\n\n`rate_per_day` is in the project's `measure`. `expected_date` is None when\nnothing was completed over the window or the finish is out of sight, and\n`days_past_target` is negative when the finish lands before the target date.",
+        "properties": {
+          "days_past_target": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Days Past Target"
+          },
+          "expected_date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Date"
+          },
+          "rate_per_day": {
+            "title": "Rate Per Day",
+            "type": "number"
+          }
+        },
+        "required": [
+          "rate_per_day"
+        ],
+        "title": "ProjectProjectionRead",
         "type": "object"
       },
       "ProjectRead": {
@@ -10968,6 +12197,14 @@
             ],
             "title": "Initiative Id"
           },
+          "label_ids": {
+            "description": "The workspace project labels the project carries",
+            "items": {
+              "type": "string"
+            },
+            "title": "Label Ids",
+            "type": "array"
+          },
           "last_update_at": {
             "anyOf": [
               {
@@ -11081,6 +12318,24 @@
             ],
             "description": "Template issues left out, answered by a create from a project template, empty when none were",
             "title": "Skipped Template Issues"
+          },
+          "slug_id": {
+            "default": "",
+            "description": "The project's short id, the last eight characters of its id",
+            "title": "Slug Id",
+            "type": "string"
+          },
+          "sort_order": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The manual position, a base 62 fractional key; null on a project never placed, which sorts last",
+            "title": "Sort Order"
           },
           "start_date": {
             "anyOf": [
@@ -11442,7 +12697,7 @@
         "type": "object"
       },
       "ProjectUpdate": {
-        "description": "The body a project patch takes.\n\n`team_ids` replaces the teams the caller can see; teams the caller cannot see\nare kept as they are, so a guest's edit never drops a team it was never\nshown. `team_id` is the single-team spelling an older client sends; it moves\nnothing and must name one of the project's teams, or the patch is a 404.\nA null `update_interval_days` returns the project to the workspace's cadence,\nand a null `initiative_id` takes the project out of its initiative.\n`open_issues` says what happens to the issues still open in a project the\npatch leaves completed or canceled; without it they stay where they are.",
+        "description": "The body a project patch takes.\n\n`team_ids` replaces the teams the caller can see; teams the caller cannot see\nare kept as they are, so a guest's edit never drops a team it was never\nshown. `team_id` is the single-team spelling an older client sends; it moves\nnothing and must name one of the project's teams, or the patch is a 404.\nA null `update_interval_days` returns the project to the workspace's cadence,\nand a null `initiative_id` takes the project out of its initiative.\n`open_issues` says what happens to the issues still open in a project the\npatch leaves completed or canceled; without it they stay where they are.\n`sort_order` is the project's manual position, a base 62 fractional key\nshared by every viewer, so a drag rewrites only the project moved.",
         "properties": {
           "color": {
             "anyOf": [
@@ -11523,6 +12778,21 @@
             ],
             "title": "Initiative Id"
           },
+          "label_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 50,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label Ids"
+          },
           "lead_id": {
             "anyOf": [
               {
@@ -11590,6 +12860,17 @@
               }
             ],
             "title": "Priority"
+          },
+          "sort_order": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sort Order"
           },
           "start_date": {
             "anyOf": [
@@ -11949,7 +13230,8 @@
               "progress",
               "created",
               "updated",
-              "customers"
+              "customers",
+              "manual"
             ],
             "title": "Order",
             "type": "string"
@@ -15654,6 +16936,205 @@
         "title": "SharedViewPage",
         "type": "object"
       },
+      "ShortcutImportPreviewRead": {
+        "description": "What a Shortcut import would do, team by team, computed without writing anything.",
+        "properties": {
+          "teams": {
+            "items": {
+              "$ref": "#/components/schemas/ShortcutPreviewTeamRead"
+            },
+            "title": "Teams",
+            "type": "array"
+          }
+        },
+        "required": [
+          "teams"
+        ],
+        "title": "ShortcutImportPreviewRead",
+        "type": "object"
+      },
+      "ShortcutImportRequest": {
+        "description": "A Shortcut import or its preview: the token, sealed while the job runs and deleted after, and the teams.",
+        "properties": {
+          "api_token": {
+            "description": "A Shortcut API token from Settings, API Tokens.",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Api Token",
+            "type": "string"
+          },
+          "teams": {
+            "items": {
+              "$ref": "#/components/schemas/ShortcutTeamChoice"
+            },
+            "maxItems": 50,
+            "minItems": 1,
+            "title": "Teams",
+            "type": "array"
+          }
+        },
+        "required": [
+          "api_token",
+          "teams"
+        ],
+        "title": "ShortcutImportRequest",
+        "type": "object"
+      },
+      "ShortcutPreviewTeamRead": {
+        "description": "What importing one Shortcut team would bring over.",
+        "properties": {
+          "epics": {
+            "title": "Epics",
+            "type": "integer"
+          },
+          "iterations": {
+            "title": "Iterations",
+            "type": "integer"
+          },
+          "matched_owners": {
+            "description": "Story owners who match a member by email.",
+            "title": "Matched Owners",
+            "type": "integer"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "new_labels": {
+            "items": {
+              "type": "string"
+            },
+            "title": "New Labels",
+            "type": "array"
+          },
+          "shortcut_team_id": {
+            "title": "Shortcut Team Id",
+            "type": "string"
+          },
+          "statuses": {
+            "items": {
+              "$ref": "#/components/schemas/StatusMappingRead"
+            },
+            "title": "Statuses",
+            "type": "array"
+          },
+          "stories": {
+            "title": "Stories",
+            "type": "integer"
+          },
+          "stories_capped": {
+            "description": "Whether the team holds more stories than the preview counts.",
+            "title": "Stories Capped",
+            "type": "boolean"
+          },
+          "team_id": {
+            "title": "Team Id",
+            "type": "string"
+          },
+          "unmatched_owners": {
+            "description": "Story owners who match no member, whose stories are left unassigned.",
+            "title": "Unmatched Owners",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "shortcut_team_id",
+          "name",
+          "team_id",
+          "stories",
+          "stories_capped",
+          "epics",
+          "iterations",
+          "statuses",
+          "new_labels",
+          "matched_owners",
+          "unmatched_owners"
+        ],
+        "title": "ShortcutPreviewTeamRead",
+        "type": "object"
+      },
+      "ShortcutTeamChoice": {
+        "description": "One Shortcut team to import and the Standupless team it goes into.",
+        "properties": {
+          "shortcut_team_id": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Shortcut Team Id",
+            "type": "string"
+          },
+          "team_id": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Team Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "shortcut_team_id",
+          "team_id"
+        ],
+        "title": "ShortcutTeamChoice",
+        "type": "object"
+      },
+      "ShortcutTeamListRead": {
+        "description": "Every team the token can read in Shortcut that is not archived.",
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ShortcutTeamRead"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "ShortcutTeamListRead",
+        "type": "object"
+      },
+      "ShortcutTeamRead": {
+        "description": "One team the token can read in Shortcut.",
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "key": {
+            "description": "The team's mention name in Shortcut.",
+            "title": "Key",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "key",
+          "name"
+        ],
+        "title": "ShortcutTeamRead",
+        "type": "object"
+      },
+      "ShortcutTokenRequest": {
+        "description": "A Shortcut API token, used for this request only and never stored.",
+        "properties": {
+          "api_token": {
+            "description": "A Shortcut API token from Settings, API Tokens.",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Api Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "api_token"
+        ],
+        "title": "ShortcutTokenRequest",
+        "type": "object"
+      },
       "SimilarIssueRead": {
         "description": "One possible duplicate of a draft title: enough to render a row and open it.",
         "properties": {
@@ -16119,6 +17600,35 @@
           "available"
         ],
         "title": "SlackLinkRead",
+        "type": "object"
+      },
+      "SourceTeamMappingRead": {
+        "description": "One team of the source tool an API import reads, such as a Shortcut team, and the team it writes into.",
+        "properties": {
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "source_id": {
+            "title": "Source Id",
+            "type": "string"
+          },
+          "team_id": {
+            "title": "Team Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source_id",
+          "key",
+          "name",
+          "team_id"
+        ],
+        "title": "SourceTeamMappingRead",
         "type": "object"
       },
       "SsoConnectionRead": {
@@ -17546,7 +19056,7 @@
         "type": "object"
       },
       "TeamDisplayDefaultsRead": {
-        "description": "A team's display defaults as the API returns them, null for a page on its built-in default.",
+        "description": "A team's display defaults as the API returns them, null for a page on its built-in default.\n\n`projects_display` is the team's own projects default, null when it set none.\n`effective_projects_display` is what a member who never arranged the projects\npage opens it with on this team: the team default, else the workspace\ndefault, else the built-in arrangement.",
         "properties": {
           "board_display": {
             "anyOf": [
@@ -17558,10 +19068,23 @@
               }
             ]
           },
+          "effective_projects_display": {
+            "$ref": "#/components/schemas/ProjectsDisplay"
+          },
           "list_display": {
             "anyOf": [
               {
                 "$ref": "#/components/schemas/DisplayOptionsBody"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "projects_display": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProjectsDisplay"
               },
               {
                 "type": "null"
@@ -17603,7 +19126,7 @@
         "type": "object"
       },
       "TeamDisplayDefaultsUpdate": {
-        "description": "The body a team's display defaults patch takes.\n\n`list_display` sets what the team's issue list opens with and `board_display`\nwhat its board opens with. A page left out keeps its saved default, and null\nclears it back to the built-in one. Each page's options are replaced whole.",
+        "description": "The body a team's display defaults patch takes.\n\n`list_display` sets what the team's issue list opens with, `board_display`\nwhat its board opens with and `projects_display` how the team's projects\npage is arranged. A page left out keeps its saved default, and null clears\nit back to the built-in one, or for projects to the workspace default. Each\npage's options are replaced whole.",
         "properties": {
           "board_display": {
             "anyOf": [
@@ -17619,6 +19142,16 @@
             "anyOf": [
               {
                 "$ref": "#/components/schemas/DisplayOptionsBody"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "projects_display": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProjectsDisplay"
               },
               {
                 "type": "null"
@@ -18883,6 +20416,25 @@
         "title": "TemplateUpdate",
         "type": "object"
       },
+      "ThreadResolution": {
+        "description": "Who marked a root comment's thread resolved, and when.\n\nHeld on the root because the root is the thread: a reader collapses the\nthread from the row it already has, and a reply that reopens it clears one\nattribute on one row.",
+        "properties": {
+          "resolved_at": {
+            "format": "date-time",
+            "title": "Resolved At",
+            "type": "string"
+          },
+          "resolved_by": {
+            "title": "Resolved By",
+            "type": "string"
+          }
+        },
+        "required": [
+          "resolved_by"
+        ],
+        "title": "ThreadResolution",
+        "type": "object"
+      },
       "TransitionCreate": {
         "additionalProperties": false,
         "description": "Add a rule for a trigger and target branch pattern that has none.",
@@ -19326,7 +20878,7 @@
         "type": "object"
       },
       "UserPreferencesUpdate": {
-        "description": "The preferences a person may change on their own account.\n\nEvery field is optional, so the global email switch, one kind's channels and\nthe timezone can each be changed without restating the others. `timezone` is\nthe IANA zone due date reminders are judged in, which the browser captures on\nsign in and the person can change. `pulse_digest` is how often the Pulse\ndigest email comes, `off` by default. `home_view`, `week_start`,\n`name_display` and `font_size` are the interface preferences the account\nPreferences page sets, kept on the row so they follow the person to every\ndevice. `projects_display` replaces how the projects list is arranged as a\nwhole. `auto_grant_new_scopes` lets scopes the product adds later reach the\nconnected apps that were given every scope. Deliberately not a settings\ndomain of its own: a few values on the row the product already owns are cheaper\nthan a table and a second read on every notification.",
+        "description": "The preferences a person may change on their own account.\n\nEvery field is optional, so the global email switch, one kind's channels and\nthe timezone can each be changed without restating the others. `timezone` is\nthe IANA zone due date reminders are judged in, which the browser captures on\nsign in and the person can change. `pulse_digest` is how often the Pulse\ndigest email comes, `off` by default. `home_view`, `week_start`,\n`name_display` and `font_size` are the interface preferences the account\nPreferences page sets, kept on the row so they follow the person to every\ndevice. `projects_display` replaces how the projects list is arranged as a\nwhole, and null forgets the arrangement, so the page opens with the team's or\nthe workspace's default again. `auto_grant_new_scopes` lets scopes the product adds later reach the\nconnected apps that were given every scope. Deliberately not a settings\ndomain of its own: a few values on the row the product already owns are cheaper\nthan a table and a second read on every notification.",
         "properties": {
           "auto_grant_new_scopes": {
             "anyOf": [
@@ -19525,7 +21077,7 @@
         "type": "object"
       },
       "UserRead": {
-        "description": "The caller's own account, in the shape the frontend's `UserRead` expects.",
+        "description": "The caller's own account, in the shape the frontend's `UserRead` expects.\n\n`projects_display` is the person's projects arrangement, the built-in one\nwhen they never arranged the page, and `projects_display_saved` says whether\nthey did. A person who has not opens the page with their team's or the\nworkspace's default instead.",
         "properties": {
           "auto_grant_new_scopes": {
             "default": false,
@@ -19609,6 +21161,11 @@
           },
           "projects_display": {
             "$ref": "#/components/schemas/ProjectsDisplay"
+          },
+          "projects_display_saved": {
+            "default": false,
+            "title": "Projects Display Saved",
+            "type": "boolean"
           },
           "pulse_digest": {
             "default": "off",
@@ -21260,6 +22817,66 @@
           "confirm_name"
         ],
         "title": "WorkspaceDeletionRequest",
+        "type": "object"
+      },
+      "WorkspaceDisplayDefaultsRead": {
+        "description": "The workspace display defaults as the API returns them.\n\n`projects_display` is null when no admin saved one, and\n`effective_projects_display` is what the workspace projects page opens with\nfor a member who never arranged it.",
+        "properties": {
+          "effective_projects_display": {
+            "$ref": "#/components/schemas/ProjectsDisplay"
+          },
+          "projects_display": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProjectsDisplay"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          },
+          "updated_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated By"
+          }
+        },
+        "title": "WorkspaceDisplayDefaultsRead",
+        "type": "object"
+      },
+      "WorkspaceDisplayDefaultsUpdate": {
+        "description": "The body the workspace display defaults patch takes.\n\n`projects_display` replaces how the projects page is arranged for every\nmember who never arranged it and whose team set no default, and null clears\nit back to the built-in arrangement. Left out, it keeps its saved default.",
+        "properties": {
+          "projects_display": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProjectsDisplay"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "title": "WorkspaceDisplayDefaultsUpdate",
         "type": "object"
       },
       "WorkspaceExportCreate": {
@@ -28433,6 +30050,112 @@
         ]
       }
     },
+    "/api/workspaces/{workspace_id}/display-defaults": {
+      "get": {
+        "description": "What the projects page opens with for a member who never arranged it and whose team set no default.",
+        "operationId": "read_workspace_display_defaults_api_workspaces__workspace_id__display_defaults_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkspaceDisplayDefaultsRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Read Workspace Display Defaults",
+        "tags": [
+          "teams"
+        ]
+      },
+      "patch": {
+        "description": "Set or clear the projects arrangement every member opens with until they arrange it themselves.\n\nA workspace admin's call. A team default, where one is set, wins on that\nteam's projects page, and a member's own arrangement wins over both.",
+        "operationId": "update_workspace_display_defaults_api_workspaces__workspace_id__display_defaults_patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkspaceDisplayDefaultsUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkspaceDisplayDefaultsRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Update Workspace Display Defaults",
+        "tags": [
+          "teams"
+        ]
+      }
+    },
     "/api/workspaces/{workspace_id}/documents": {
       "get": {
         "description": "Every document the caller can read, most recently edited first, for the command palette.",
@@ -30008,6 +31731,183 @@
         ]
       }
     },
+    "/api/workspaces/{workspace_id}/imports/asana": {
+      "post": {
+        "description": "Queue an import of Asana projects into Standupless teams, refusing a second while one is running.",
+        "operationId": "start_asana_import_api_workspaces__workspace_id__imports_asana_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AsanaImportRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IssueImportRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Start Asana Import",
+        "tags": [
+          "integrations"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/imports/asana/preview": {
+      "post": {
+        "description": "What importing the chosen Asana projects would do, read from Asana and writing nothing.",
+        "operationId": "preview_asana_import_api_workspaces__workspace_id__imports_asana_preview_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AsanaImportRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AsanaImportPreviewRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Preview Asana Import",
+        "tags": [
+          "integrations"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/imports/asana/projects": {
+      "post": {
+        "description": "The Asana projects a personal access token can read, to choose from; the token is not kept.",
+        "operationId": "list_asana_projects_api_workspaces__workspace_id__imports_asana_projects_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AsanaTokenRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AsanaProjectListRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "List Asana Projects",
+        "tags": [
+          "integrations"
+        ]
+      }
+    },
     "/api/workspaces/{workspace_id}/imports/github": {
       "post": {
         "description": "Queue an import of one repository's Issues into one team, refusing a second while one is running.",
@@ -30111,6 +32011,183 @@
           }
         ],
         "summary": "List Github Import Repositories",
+        "tags": [
+          "integrations"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/imports/jira": {
+      "post": {
+        "description": "Queue an import of Jira projects into Standupless teams, refusing a second while one is running.",
+        "operationId": "start_jira_import_api_workspaces__workspace_id__imports_jira_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/JiraImportRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IssueImportRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Start Jira Import",
+        "tags": [
+          "integrations"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/imports/jira/preview": {
+      "post": {
+        "description": "What importing the chosen Jira projects would do, read from Jira and writing nothing.",
+        "operationId": "preview_jira_import_api_workspaces__workspace_id__imports_jira_preview_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/JiraImportRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JiraImportPreviewRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Preview Jira Import",
+        "tags": [
+          "integrations"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/imports/jira/projects": {
+      "post": {
+        "description": "The Jira projects an account can browse on a site, to choose from; the credentials are not kept.",
+        "operationId": "list_jira_projects_api_workspaces__workspace_id__imports_jira_projects_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/JiraCredentialsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JiraProjectListRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "List Jira Projects",
         "tags": [
           "integrations"
         ]
@@ -30288,6 +32365,183 @@
           }
         ],
         "summary": "Preview Issue Import",
+        "tags": [
+          "integrations"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/imports/shortcut": {
+      "post": {
+        "description": "Queue an import of Shortcut teams into Standupless teams, refusing a second while one is running.",
+        "operationId": "start_shortcut_import_api_workspaces__workspace_id__imports_shortcut_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ShortcutImportRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IssueImportRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Start Shortcut Import",
+        "tags": [
+          "integrations"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/imports/shortcut/preview": {
+      "post": {
+        "description": "What importing the chosen Shortcut teams would bring over, team by team, writing nothing.",
+        "operationId": "preview_shortcut_import_api_workspaces__workspace_id__imports_shortcut_preview_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ShortcutImportRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ShortcutImportPreviewRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Preview Shortcut Import",
+        "tags": [
+          "integrations"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/imports/shortcut/teams": {
+      "post": {
+        "description": "The Shortcut teams an API token can read, to choose from; the token is not kept.",
+        "operationId": "list_shortcut_teams_api_workspaces__workspace_id__imports_shortcut_teams_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ShortcutTokenRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ShortcutTeamListRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "List Shortcut Teams",
         "tags": [
           "integrations"
         ]
@@ -35285,6 +37539,142 @@
         ]
       }
     },
+    "/api/workspaces/{workspace_id}/issues/{issue_id}/comments/{comment_id}/resolution": {
+      "delete": {
+        "description": "Unresolve one thread, whoever resolved it, answering its root comment.\n\nUnresolving an open thread changes nothing. A reply to a resolved thread\nreopens it the same way, without this call.",
+        "operationId": "delete_thread_resolution_api_workspaces__workspace_id__issues__issue_id__comments__comment_id__resolution_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "issue_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Issue Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "comment_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Comment Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommentRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Delete Thread Resolution",
+        "tags": [
+          "discussion"
+        ]
+      },
+      "put": {
+        "description": "Resolve one thread, answering its root comment with the resolution set.\n\nAny team member may resolve. A reply is a 409, because only a thread's root\ncarries the state, and resolving a resolved thread changes nothing. The\nthread's comments stay where they are; a reader collapses them.",
+        "operationId": "put_thread_resolution_api_workspaces__workspace_id__issues__issue_id__comments__comment_id__resolution_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "issue_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Issue Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "comment_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Comment Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommentRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Put Thread Resolution",
+        "tags": [
+          "discussion"
+        ]
+      }
+    },
     "/api/workspaces/{workspace_id}/issues/{issue_id}/convert-to-project": {
       "post": {
         "description": "Turn an issue into a project on its team, moving its sub-issues into the project and closing it.\n\nThe project takes the issue's title, description, priority, assignee as lead\nand dates. The issue is pointed at the project, which is the link back, and\nmoved to the team's first completed status, or cancelled when the team has no\ncompleted one.",
@@ -37315,9 +39705,232 @@
         ]
       }
     },
+    "/api/workspaces/{workspace_id}/project-labels": {
+      "get": {
+        "description": "Every project label by name, each with how many projects the caller can see carry it.",
+        "operationId": "list_labels_api_workspaces__workspace_id__project_labels_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectLabelListRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "List Labels",
+        "tags": [
+          "planning"
+        ]
+      },
+      "post": {
+        "description": "Add a project label, as a workspace admin; a taken name answers 409.",
+        "operationId": "add_label_api_workspaces__workspace_id__project_labels_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProjectLabelCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectLabelRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Add Label",
+        "tags": [
+          "planning"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/project-labels/{label_id}": {
+      "delete": {
+        "description": "Delete a project label and take it off every project, as a workspace admin.",
+        "operationId": "remove_label_api_workspaces__workspace_id__project_labels__label_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "label_id",
+            "required": true,
+            "schema": {
+              "title": "Label Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Remove Label",
+        "tags": [
+          "planning"
+        ]
+      },
+      "patch": {
+        "description": "Rename, recolour or redescribe a project label, as a workspace admin.",
+        "operationId": "edit_label_api_workspaces__workspace_id__project_labels__label_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "label_id",
+            "required": true,
+            "schema": {
+              "title": "Label Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProjectLabelUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectLabelRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Edit Label",
+        "tags": [
+          "planning"
+        ]
+      }
+    },
     "/api/workspaces/{workspace_id}/projects": {
       "get": {
-        "description": "One page of the workspace's projects the caller can see, by target date, undated last.\n\nA project is listed when the caller can see at least one of its teams, and\n`team_id` narrows to the projects that team is on and `initiative_id` to the\nones in that initiative. The rows are read whole and paged over the filtered\norder, so a page is never left short by projects the caller cannot see.\nUndated projects sort last, because an absent target is a project nobody has\ncommitted to yet. `include_sub_teams` with `team_id` also lists the projects\nof the team's sub-teams the caller may read, so a private sub-team stays out\nfor outsiders. `is_blocked` keeps the projects an open blocker holds up and\n`is_blocking` the open projects holding another up, each false for the rest.\n\n`customer_id` keeps the projects any named customer asked for and\n`customer_id_not` drops them, `none` standing for no customer request.\n`sort=customer_requests_desc` puts the most requested projects first and\n`customer_revenue_desc` the highest summed customer revenue, target date\nbreaking ties; both fill `customer_request_count`. Guests may use neither.",
+        "description": "One page of the workspace's projects the caller can see, by target date, undated last.\n\nA project is listed when the caller can see at least one of its teams, and\n`team_id` narrows to the projects that team is on and `initiative_id` to the\nones in that initiative. The rows are read whole and paged over the filtered\norder, so a page is never left short by projects the caller cannot see.\nUndated projects sort last, because an absent target is a project nobody has\ncommitted to yet. `include_sub_teams` with `team_id` also lists the projects\nof the team's sub-teams the caller may read, so a private sub-team stays out\nfor outsiders. `is_blocked` keeps the projects an open blocker holds up and\n`is_blocking` the open projects holding another up, each false for the rest.\n\n`customer_id` keeps the projects any named customer asked for and\n`customer_id_not` drops them, `none` standing for no customer request.\n`sort=customer_requests_desc` puts the most requested projects first and\n`customer_revenue_desc` the highest summed customer revenue, target date\nbreaking ties; both fill `customer_request_count`. Guests may use neither.\n`label_id` keeps the projects carrying any named project label, `none`\nstanding for a project with none.",
         "operationId": "list_projects_api_workspaces__workspace_id__projects_get",
         "parameters": [
           {
@@ -37505,6 +40118,25 @@
                 }
               ],
               "title": "Sort"
+            }
+          },
+          {
+            "in": "query",
+            "name": "label_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Label Id"
             }
           }
         ],
@@ -37798,6 +40430,92 @@
           }
         ],
         "summary": "Update Project",
+        "tags": [
+          "planning"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/projects/{project_id}/activity": {
+      "get": {
+        "description": "One page of a project's property and milestone changes, newest first.",
+        "operationId": "list_activity_api_workspaces__workspace_id__projects__project_id__activity_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectActivityListRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "List Activity",
         "tags": [
           "planning"
         ]
@@ -38274,6 +40992,80 @@
           }
         ],
         "summary": "Follow Project",
+        "tags": [
+          "planning"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/projects/{project_id}/history": {
+      "get": {
+        "description": "A project's daily scope, started and completed figures, and its projected finish.\n\nRead from the daily snapshots the rollup writes, one query on the project's\nown prefix, so no read of the `issues` table. Today always reads the live\ncounts. The projection extends the recent completion rate over the remaining\nscope, in the project's measure, and says how far its finish lands from the\ntarget date.",
+        "operationId": "read_project_history_api_workspaces__workspace_id__projects__project_id__history_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "team_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Team Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectHistoryRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Read Project History",
         "tags": [
           "planning"
         ]
@@ -41864,7 +44656,7 @@
     },
     "/api/workspaces/{workspace_id}/teams/{team_id}/display-defaults": {
       "get": {
-        "description": "What the team's issue list and board open with for a member who has not changed them.",
+        "description": "What the team's issue list, board and projects page open with for a member who has not changed them.",
         "operationId": "read_display_defaults_api_workspaces__workspace_id__teams__team_id__display_defaults_get",
         "parameters": [
           {

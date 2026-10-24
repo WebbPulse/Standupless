@@ -55,11 +55,13 @@ import {
   InitiativePicker,
   LeadPicker,
   MembersPicker,
+  ProjectLabelsPicker,
   ProjectLookPicker,
   ProjectStatusPicker,
   TeamsPicker,
 } from '../../components/planning/ProjectPickers';
 import ProjectPropertyKeys from '../../components/planning/ProjectPropertyKeys';
+import ProjectActivityFeed from '../../components/planning/ProjectActivityFeed';
 import ProjectProgressPanel from '../../components/planning/ProjectProgressPanel';
 import ProjectUpdatesFeed from '../../components/planning/ProjectUpdatesFeed';
 import UpdateDueBadge from '../../components/planning/UpdateDueBadge';
@@ -72,6 +74,7 @@ import Menu, { MenuItem } from '../../components/ui/menu';
 import { SkeletonRows } from '../../components/ui/skeleton';
 import WorkspaceShell from '../../components/workspace/WorkspaceShell';
 import useCloseProjectPrompt from '../../hooks/useCloseProjectPrompt';
+import { useProjectLabels } from '../../hooks/useProjectLabels';
 import useCreateDocumentCommand from '../../hooks/useCreateDocumentCommand';
 import { useCreatePlannedIssue } from '../../hooks/useCreatePlannedIssue';
 import useDocumentTemplates from '../../hooks/useDocumentTemplates';
@@ -79,6 +82,7 @@ import { useInitiatives } from '../../hooks/useInitiatives';
 import { usePlanningIssues } from '../../hooks/usePlanningIssues';
 import { usePlanningTeamLists } from '../../hooks/usePlanningTeamLists';
 import { useProjectDependencies } from '../../hooks/useProjectDependencies';
+import { useProjectHistory } from '../../hooks/useProjectHistory';
 import { useProjectMilestones } from '../../hooks/useProjectMilestones';
 import { useProjectUpdates } from '../../hooks/useProjectUpdates';
 import { useShortcut } from '../../hooks/useShortcuts';
@@ -177,6 +181,7 @@ export const ProjectDetail: React.FC = () => {
     workspaceId,
     isLoading: isResolving,
     error: teamsError,
+    refetch: refetchTeams,
   } = useTeam(undefined);
   const projectId = id ?? '';
   const tab = tabFrom(params.get('tab'));
@@ -221,6 +226,7 @@ export const ProjectDetail: React.FC = () => {
   });
 
   const closePrompt = useCloseProjectPrompt({ workspaceId, project, update });
+  const projectLabels = useProjectLabels(workspaceId);
 
   const serverTeamIds = project?.team_ids;
   const teamIds = useMemo(() => serverTeamIds ?? [], [serverTeamIds]);
@@ -240,6 +246,7 @@ export const ProjectDetail: React.FC = () => {
   );
 
   const updates = useProjectUpdates(workspaceId, projectId, project !== null);
+  const history = useProjectHistory(workspaceId, projectId, project !== null);
   const dependencies = useProjectDependencies(workspaceId, project);
   const { projects: workspaceProjects } = useWorkspaceProjects(
     workspaceId,
@@ -357,14 +364,22 @@ export const ProjectDetail: React.FC = () => {
     </span>
   );
 
+  if (isResolving && teamsError !== null && teamsError !== undefined) {
+    return (
+      <WorkspaceShell title="Project" leading={crumbs}>
+        <LoadError
+          message={errorMessage(teamsError, 'Could not load the teams.')}
+          onRetry={() => {
+            void refetchTeams();
+          }}
+        />
+      </WorkspaceShell>
+    );
+  }
+
   if (isResolving || (isLoading && project === null)) {
     return (
       <WorkspaceShell title="Project" leading={crumbs}>
-        {teamsError !== null && (
-          <ErrorAlert
-            message={errorMessage(teamsError, 'Could not load the teams.')}
-          />
-        )}
         <SkeletonRows label="Loading project" />
       </WorkspaceShell>
     );
@@ -470,6 +485,15 @@ export const ProjectDetail: React.FC = () => {
         disabled={!canEdit}
         onChange={(memberIds) => {
           void update({ member_ids: memberIds });
+        }}
+      />
+      <ProjectLabelsPicker
+        variant="chip"
+        value={project.label_ids ?? []}
+        labels={projectLabels.labels}
+        disabled={!canEdit}
+        onChange={(labelIds) => {
+          void update({ label_ids: labelIds });
         }}
       />
       <span className="inline-flex items-center gap-1">
@@ -768,6 +792,21 @@ export const ProjectDetail: React.FC = () => {
                     : `${String(project.counts.total)} issues across ${String(projectTeams.length)} ${projectTeams.length === 1 ? 'team' : 'teams'}.`}
                 </p>
               </section>
+              <ProjectActivityFeed
+                workspaceId={workspaceId}
+                projectId={projectId}
+                people={people}
+                teams={teams}
+                initiatives={initiatives}
+                milestones={milestones.milestones}
+                projectLabels={projectLabels.labels}
+                updates={updates.updates}
+                updatesHaveMore={updates.hasMore}
+                onLoadMoreUpdates={updates.loadMore}
+                onOpenUpdates={() => {
+                  setTab('updates');
+                }}
+              />
             </div>
             <ProjectProgressPanel
               project={project}
@@ -778,6 +817,7 @@ export const ProjectDetail: React.FC = () => {
               milestones={milestones.milestones}
               onOpenMilestone={openMilestoneIssues}
               latestUpdate={updates.latest}
+              history={history}
               {...(latestAuthor === undefined ? {} : { latestAuthor })}
               onOpenUpdates={() => {
                 setTab('updates');

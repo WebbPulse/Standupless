@@ -8,7 +8,8 @@ secret leaving the test.
 No test here reaches GitHub. `github_api` is patched at the boundary, which is the
 only place an outbound call is made, so a test that starts making one fails rather
 than silently talking to the internet. Linear is held off the same way: every
-Linear client a test builds answers 401 unless the test points it at the fake.
+Linear client a test builds answers 401 unless the test points it at the fake, and
+every Asana and Jira client the same.
 """
 
 from __future__ import annotations
@@ -373,4 +374,63 @@ def no_linear(monkeypatch: pytest.MonkeyPatch) -> None:
         linear_import,
         "client_factory",
         lambda api_key: LinearClient(api_key=api_key, transport=httpx.MockTransport(refused)),
+    )
+
+
+@pytest.fixture(autouse=True)
+def no_shortcut(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Build every Shortcut client on a transport that refuses every token, so no test reaches Shortcut."""
+    import httpx
+
+    from app.domains.integrations import shortcut_import
+    from app.domains.integrations.shortcut_api import ShortcutClient
+
+    def refused(request: httpx.Request) -> httpx.Response:
+        """Answer as Shortcut does for a token it does not know."""
+        return httpx.Response(401, json={"message": "Unauthorized"})
+
+    monkeypatch.setattr(
+        shortcut_import,
+        "client_factory",
+        lambda token: ShortcutClient(token=token, transport=httpx.MockTransport(refused), sleep=lambda seconds: None),
+    )
+
+
+@pytest.fixture(autouse=True)
+def no_asana(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Build every Asana client on a transport that refuses every token, so no test reaches Asana."""
+    import httpx
+
+    from app.domains.integrations import asana_import
+    from app.domains.integrations.asana_api import AsanaClient
+
+    def refused(request: httpx.Request) -> httpx.Response:
+        """Answer as Asana does for a token it does not know."""
+        return httpx.Response(401, json={"errors": [{"message": "Not Authorized"}]})
+
+    monkeypatch.setattr(
+        asana_import,
+        "client_factory",
+        lambda token: AsanaClient(token=token, transport=httpx.MockTransport(refused)),
+    )
+
+
+@pytest.fixture(autouse=True)
+def no_jira(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Build every Jira client on a transport that refuses every credential, so no test reaches Jira."""
+    import httpx
+
+    from app.domains.integrations import jira_import
+    from app.domains.integrations.jira_api import JiraClient
+
+    def refused(request: httpx.Request) -> httpx.Response:
+        """Answer as Jira does for credentials it does not know."""
+        return httpx.Response(401, json={"errorMessages": ["Client must be authenticated to access this resource."]})
+
+    monkeypatch.setattr(
+        jira_import,
+        "client_factory",
+        lambda site, email, token: JiraClient(
+            url=site, email=email, token=token, transport=httpx.MockTransport(refused)
+        ),
     )

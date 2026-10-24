@@ -21,6 +21,7 @@ import type {
   MilestoneRead,
   MilestoneUpdate,
   ProjectCreate,
+  ProjectHistoryRead,
   ProjectListQuery,
   ProjectListRead,
   ProjectRead,
@@ -30,6 +31,7 @@ import type {
   ProjectUpdate,
   ProjectUpdateCreate,
   ProjectUpdateEdit,
+  ProjectActivityListRead,
   ProjectUpdateListQuery,
   ProjectUpdateListRead,
   ProjectUpdateRead,
@@ -79,6 +81,12 @@ export const projectUpdatesPath = (
   workspaceId: string,
   projectId: string
 ): string => `${projectPath(workspaceId, projectId)}/updates`;
+
+/** The route a project's activity feed is read through. */
+export const projectActivityPath = (
+  workspaceId: string,
+  projectId: string
+): string => `${projectPath(workspaceId, projectId)}/activity`;
 
 /** The route one project update is edited and deleted through. */
 export const projectUpdatePath = (
@@ -404,6 +412,45 @@ export const deleteMilestone = async (
   await apiClient.delete<void>(
     milestonePath(workspaceId, projectId, milestoneId)
   );
+};
+
+/**
+ * Reads a project's daily progress history and its projected finish. With
+ * nothing recorded yet `recorded_since` is null and `days` holds today alone.
+ */
+export const getProjectHistory = async (
+  workspaceId: string,
+  projectId: string,
+  signal?: AbortSignal
+): Promise<ProjectHistoryRead> => {
+  const response = await apiClient.get<ProjectHistoryRead>(
+    `${projectPath(workspaceId, projectId)}/history`,
+    listOptions({}, signal)
+  );
+  const body = response.data;
+  return {
+    ...body,
+    days: Array.isArray(body?.days) ? body.days : [],
+    projection: body?.projection ?? null,
+  };
+};
+
+/** Lists one project's recorded changes, newest first, a cursor page at a time. */
+export const listProjectActivity = async (
+  workspaceId: string,
+  projectId: string,
+  query: ProjectUpdateListQuery = {},
+  signal?: AbortSignal
+): Promise<ProjectActivityListRead> => {
+  const response = await apiClient.get<ProjectActivityListRead>(
+    projectActivityPath(workspaceId, projectId),
+    listOptions({ ...query }, signal)
+  );
+  const body = response.data;
+  return {
+    activity: Array.isArray(body?.activity) ? body.activity : [],
+    next_cursor: body?.next_cursor ?? null,
+  };
 };
 
 /** Lists one project's updates, newest first, a cursor page at a time. */

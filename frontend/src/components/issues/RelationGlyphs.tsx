@@ -10,7 +10,7 @@
  */
 
 import React from 'react';
-import type { LinkTypeRead } from '../../types/Api';
+import type { LinkType, LinkTypeRead } from '../../types/Api';
 import { cn } from '../../lib/cn';
 
 /** Props every relation glyph takes: any SVG attribute plus a class. */
@@ -98,10 +98,10 @@ export const DuplicateGlyph: React.FC<RelationGlyphProps> = (props) => (
 );
 
 /** The colour class of the blocked glyph. */
-export const BLOCKED_TONE = 'text-warning';
+export const BLOCKED_TONE = 'text-danger';
 
 /** The colour class of the blocking glyph. */
-export const BLOCKING_TONE = 'text-danger';
+export const BLOCKING_TONE = 'text-warning';
 
 /** The blocked flag in its theme colour, for a menu or command icon slot. */
 export const BlockedIcon: React.FC<RelationGlyphProps> = ({
@@ -142,3 +142,42 @@ export const RelationGlyph: React.FC<RelationGlyphForProps> = ({
   const Glyph = entry.glyph;
   return <Glyph className={cn(entry.tone, className)} />;
 };
+
+/** One "Mark as" command: its keys, its label and the relation it starts on. */
+export interface RelationCommand {
+  keys: string;
+  label: string;
+  type: LinkType;
+  icon: React.FC<RelationGlyphProps>;
+}
+
+/**
+ * The "Mark as" commands in menu order, shared by the issue page and the
+ * issue list so a row in focus takes the same keys the page does.
+ */
+export const RELATION_COMMANDS: readonly RelationCommand[] = [
+  {
+    keys: 'm b',
+    label: 'Mark as blocked by',
+    type: 'blocked_by',
+    icon: BlockedIcon,
+  },
+  {
+    keys: 'm x',
+    label: 'Mark as blocking',
+    type: 'blocks',
+    icon: BlockingIcon,
+  },
+  {
+    keys: 'm r',
+    label: 'Mark as related to',
+    type: 'relates_to',
+    icon: RelatedGlyph,
+  },
+  {
+    keys: 'm d',
+    label: 'Mark as duplicate of',
+    type: 'duplicate_of',
+    icon: DuplicateGlyph,
+  },
+];

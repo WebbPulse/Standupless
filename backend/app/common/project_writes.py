@@ -13,7 +13,7 @@ from typing import Any, Optional, get_args
 from fastapi import HTTPException, status
 from webbpulse.dynamodb import ConditionFailed
 
-from app.common import pulse
+from app.common import project_activity, pulse
 from app.common.api.dependencies.authz import AuthzContext, require_scopes_present
 from app.common.api.dependencies.repositories import Repositories
 from app.common.api.pagination import decode_offset_cursor, digest_scope, encode_offset_cursor
@@ -39,6 +39,7 @@ from app.common.db.dynamo.planning import Project, new_planning_id, normalise_pr
 from app.common.initiative_writes import require_initiative_access, require_initiative_target
 from app.common.issue_rules import COMPLETED_CATEGORIES, require_team_member
 from app.common.issue_writes import apply_patch, store_patch
+from app.common.order_keys import order_key_first
 from app.common.planning_rules import (
     check_project_dates,
     load_readable_project,
@@ -53,12 +54,21 @@ from app.common.planning_rules import (
     visible_team_ids,
 )
 from app.common.project_cadence import workspace_interval
+from app.common.project_labels import label_match, label_scope, label_values, require_project_labels
 from app.common.project_relations import Dependencies, dependency_map, fill_one, with_dependencies
 from app.common.project_templates import add_template_rows, fill_project, find_project_template
 from app.common.relation_effects import cancelled_status, categories_for
 from app.common.sub_teams import listed_teams
 
-NOT_NULLABLE = ("name", "status", "team_ids", "priority", "member_ids")
+NOT_NULLABLE = (
+    "name",
+    "status",
+    "team_ids",
+    "priority",
+    "member_ids",
+    "label_ids",
+    "sort_order",
+)
 """Patch fields that may be omitted but never cleared, because every project has one."""
 
 STATUS_VALUES = ("backlog", "planned", "in_progress", "paused", "completed", "canceled", "done")
@@ -139,6 +149,7 @@ def list_projects(
     customer_id: Optional[list[str]] = None,
     customer_id_not: Optional[list[str]] = None,
     sort: Optional[str] = None,
+    label_id: Optional[list[str]] = None,
 ) -> tuple[list[ProjectRead], Optional[str]]:
     """One page of the workspace's projects the caller can see, and the next cursor.
 
@@ -157,7 +168,8 @@ def list_projects(
     `customer_requests_desc` or `customer_revenue_desc` orders by request count or
     the asking customers' summed revenue, highest first, target date breaking ties.
     Either reads the workspace's requests once and fills `customer_request_count`,
-    and neither is open to a guest.
+    and neither is open to a guest. `label_id` keeps the projects carrying any of
+    the named project labels, `none` standing for a project with no label.
     """
     wanted_status = None if status_filter is None else normalise_project_status(status_filter)
     if status_filter is not None and status_filter not in STATUS_VALUES:
@@ -171,6 +183,7 @@ def list_projects(
     if sort is not None and sort not in PROJECT_SORTS:
         raise unprocessable(f"Unknown project sort: {sort}")
     wanted_customers = customer_values(customer_id)
+    wanted_labels = label_values(label_id)
     unwanted_customers = customer_values(customer_id_not)
     filtered = bool(wanted_customers or unwanted_customers)
     require_customer_list_reader(context, filtered, sort)
@@ -195,6 +208,8 @@ def list_projects(
         if wanted_status is not None and row.status != wanted_status:
             continue
         if initiative_id is not None and row.initiative_id != initiative_id:
+            continue
+        if not label_match(wanted_labels, row.label_ids):
             continue
         if index is not None and not customer_match(
             wanted_customers, unwanted_customers, index.customer_ids("project", row.project_id)
@@ -224,6 +239,8 @@ def list_projects(
         f"projects:{context.workspace_id}:{narrowed}:{wanted_status or 'all'}:{initiative_id or 'all'}"
         f":{customers}:{sort or PROJECT_DEFAULT_SORT}"
     )
+    if wanted_labels:
+        scope = f"{scope}:labels={label_scope(wanted_labels)}"
     if is_blocked is not None or is_blocking is not None:
         scope = f"{scope}:{_flag_scope(is_blocked)}{_flag_scope(is_blocking)}"
     scope = digest_scope(scope)
@@ -265,7 +282,9 @@ def create_project(repositories: Repositories, context: AuthzContext, payload: P
     team appears in that team's planning. A named project template fills the
     fields left out before anything is checked, and its milestones and issues
     are added once the project exists, its dates counted from today. Any
-    template issue left out is named in `skipped_template_issues`.
+    template issue left out is named in `skipped_template_issues`. The new
+    project takes a manual position ahead of every placed one, so it opens the
+    manual ordering.
     """
     teams = payload.teams
     require_team_changes(repositories, context, teams)
@@ -280,7 +299,9 @@ def create_project(repositories: Repositories, context: AuthzContext, payload: P
         require_workspace_member(repositories, context, member_id)
     if payload.initiative_id is not None:
         require_initiative_target(repositories, context, payload.initiative_id)
+    require_project_labels(repositories, context.workspace_id, payload.label_ids)
 
+    first = order_key_first(row.sort_order for row in repositories.planning.list_projects(context.workspace_id))
     project_id = new_planning_id()
     project = Project(
         workspace_id=context.workspace_id,
@@ -298,9 +319,11 @@ def create_project(repositories: Repositories, context: AuthzContext, payload: P
         health=payload.health,
         priority=payload.priority,
         member_ids=list(payload.member_ids),
+        label_ids=list(payload.label_ids),
         update_interval_days=payload.update_interval_days,
         initiative_id=payload.initiative_id,
         completed_at=utc_now() if payload.status in CLOSED_STATUSES else None,
+        sort_order=first,
         created_by=context.user_id,
     )
     try:
@@ -310,6 +333,7 @@ def create_project(repositories: Repositories, context: AuthzContext, payload: P
             status_code=status.HTTP_409_CONFLICT,
             detail={"error_code": "CONFLICT", "message": "That project already exists"},
         ) from exc
+    project_activity.record_project_created(repositories, context, created)
     body = ProjectRead.from_row(
         created, teams, default_interval_days=workspace_interval(repositories.workspaces, context.workspace_id)
     )
@@ -440,6 +464,12 @@ def update_project(
     for member_id in fields.get("member_ids") or []:
         if member_id not in existing.member_ids:
             require_workspace_member(repositories, context, member_id)
+    if "label_ids" in fields:
+        require_project_labels(
+            repositories,
+            context.workspace_id,
+            [label_id for label_id in fields["label_ids"] if label_id not in existing.label_ids],
+        )
     if "initiative_id" in fields and fields["initiative_id"] != existing.initiative_id:
         require_initiative_access(context)
         if fields["initiative_id"] is not None:
@@ -465,6 +495,7 @@ def update_project(
         stored = repositories.planning.replace_project(updated)
     except ConditionFailed as exc:
         raise not_found() from exc
+    project_activity.record_project_changes(repositories, context, existing, stored)
     if "health" in fields:
         pulse.record_health_change(
             repositories,
@@ -488,7 +519,7 @@ def update_project(
 def delete_project(
     repositories: Repositories, context: AuthzContext, project_id: str, team_id: Optional[str] = None
 ) -> None:
-    """Delete a project with its milestones, updates, documents and dependencies.
+    """Delete a project with its milestones, updates, history, documents and dependencies.
 
     Every issue that pointed at it stays in place.
 
@@ -499,6 +530,8 @@ def delete_project(
     require_project_admin(repositories, context, project)
     repositories.planning.delete_project_milestones(context.workspace_id, project_id)
     repositories.planning.delete_project_updates(context.workspace_id, project_id)
+    repositories.planning.delete_project_activity(context.workspace_id, project_id)
+    repositories.planning.delete_project_history(context.workspace_id, project_id)
     repositories.planning.delete_project_relations_for(context.workspace_id, project_id)
     repositories.documents.delete_for_parent(context.workspace_id, "project", project_id)
     repositories.planning.delete(context.workspace_id, project_key(project_id))

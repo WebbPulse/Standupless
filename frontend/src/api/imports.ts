@@ -3,12 +3,19 @@
  * against a team to see what every row would become, then starts a job that
  * writes the issues a page at a time and polls it until it finishes. A Linear
  * import reads a Linear workspace through its API with a pasted key instead,
- * which the server keeps only while the job runs. A GitHub import reads one
- * repository's Issues through the workspace's installed GitHub App.
+ * which the server keeps only while the job runs, and an Asana import does the
+ * same with a pasted personal access token, and a Jira import with a Jira
+ * Cloud site, account email and API token. A GitHub import reads one
+ * repository's Issues through the workspace's installed GitHub App. A Shortcut
+ * import reads a Shortcut workspace with a pasted API token the same way.
  */
 
 import apiClient from './client';
 import type {
+  AsanaImportPreviewRead,
+  AsanaImportRequest,
+  AsanaProjectListRead,
+  AsanaProjectRead,
   GitHubImportRepositoryListRead,
   GitHubImportRepositoryRead,
   GitHubImportRequest,
@@ -16,9 +23,17 @@ import type {
   IssueImportPreviewRead,
   IssueImportRead,
   IssueImportRequest,
+  JiraCredentials,
+  JiraImportPreviewRead,
+  JiraImportRequest,
+  JiraProjectListRead,
   LinearImportRequest,
   LinearTeamListRead,
   LinearTeamRead,
+  ShortcutImportPreviewRead,
+  ShortcutImportRequest,
+  ShortcutTeamListRead,
+  ShortcutTeamRead,
 } from '../types/Api';
 
 /** The route a workspace's imports are started and listed on. */
@@ -107,6 +122,120 @@ export const startLinearImport = async (
 ): Promise<IssueImportRead> => {
   const response = await apiClient.post<IssueImportRead>(
     `${issueImportsPath(workspaceId)}/linear`,
+    body
+  );
+  return response.data;
+};
+
+/** Answers the Shortcut teams an API token can read. The token is not kept. */
+export const listShortcutTeams = async (
+  workspaceId: string,
+  apiToken: string
+): Promise<ShortcutTeamRead[]> => {
+  const response = await apiClient.post<Partial<ShortcutTeamListRead>>(
+    `${issueImportsPath(workspaceId)}/shortcut/teams`,
+    { api_token: apiToken }
+  );
+  const items = response.data?.items;
+  return Array.isArray(items) ? items : [];
+};
+
+/** Answers the Asana projects a personal access token can read. The token is not kept. */
+export const listAsanaProjects = async (
+  workspaceId: string,
+  token: string
+): Promise<AsanaProjectRead[]> => {
+  const response = await apiClient.post<Partial<AsanaProjectListRead>>(
+    `${issueImportsPath(workspaceId)}/asana/projects`,
+    { token }
+  );
+  const items = response.data?.items;
+  return Array.isArray(items) ? items : [];
+};
+
+/** Answers what a Shortcut import would bring over, writing nothing. The token is not kept. */
+export const previewShortcutImport = async (
+  workspaceId: string,
+  body: ShortcutImportRequest
+): Promise<ShortcutImportPreviewRead> => {
+  const response = await apiClient.post<ShortcutImportPreviewRead>(
+    `${issueImportsPath(workspaceId)}/shortcut/preview`,
+    body
+  );
+  return response.data;
+};
+
+/** Reads the chosen Asana projects and answers what importing them would do, writing nothing. */
+export const previewAsanaImport = async (
+  workspaceId: string,
+  body: AsanaImportRequest
+): Promise<AsanaImportPreviewRead> => {
+  const response = await apiClient.post<AsanaImportPreviewRead>(
+    `${issueImportsPath(workspaceId)}/asana/preview`,
+    body
+  );
+  return response.data;
+};
+
+/** Starts a Shortcut import. Refused with 409 while another is running in the workspace. */
+export const startShortcutImport = async (
+  workspaceId: string,
+  body: ShortcutImportRequest
+): Promise<IssueImportRead> => {
+  const response = await apiClient.post<IssueImportRead>(
+    `${issueImportsPath(workspaceId)}/shortcut`,
+    body
+  );
+  return response.data;
+};
+
+/** Starts an Asana import. Refused with 409 while another is running in the workspace. */
+export const startAsanaImport = async (
+  workspaceId: string,
+  body: AsanaImportRequest
+): Promise<IssueImportRead> => {
+  const response = await apiClient.post<IssueImportRead>(
+    `${issueImportsPath(workspaceId)}/asana`,
+    body
+  );
+  return response.data;
+};
+
+/** Answers the Jira projects an account can browse. The credentials are not kept. */
+export const listJiraProjects = async (
+  workspaceId: string,
+  credentials: JiraCredentials
+): Promise<JiraProjectListRead> => {
+  const response = await apiClient.post<Partial<JiraProjectListRead>>(
+    `${issueImportsPath(workspaceId)}/jira/projects`,
+    credentials
+  );
+  const items = response.data?.items;
+  return {
+    site_url: response.data?.site_url ?? credentials.site_url,
+    items: Array.isArray(items) ? items : [],
+  };
+};
+
+/** Reads the chosen Jira projects or filters and answers what importing them would do, writing nothing. */
+export const previewJiraImport = async (
+  workspaceId: string,
+  body: JiraImportRequest
+): Promise<JiraImportPreviewRead> => {
+  const response = await apiClient.post<JiraImportPreviewRead>(
+    `${issueImportsPath(workspaceId)}/jira/preview`,
+    body
+  );
+  return response.data;
+};
+
+/** Starts a Jira import. Refused with 409 while another is running in the workspace. */
+export const startJiraImport = async (
+  workspaceId: string,
+  body: JiraImportRequest
+): Promise<IssueImportRead> => {
+  const response = await apiClient.post<IssueImportRead>(
+    `${issueImportsPath(workspaceId)}/jira`,
     body
   );
   return response.data;

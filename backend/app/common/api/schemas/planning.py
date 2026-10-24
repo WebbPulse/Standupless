@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import re
 from datetime import date, datetime
-from typing import Literal, Optional
+from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 from webbpulse.http import cursor_page
@@ -25,6 +25,7 @@ from app.common.db.dynamo.planning import (
     InitiativeUpdateRow,
     ProgressMeasure,
     Project,
+    ProjectActivityRow,
     ProjectMilestone,
     ProjectUpdateRow,
     PulseEvent,
@@ -79,6 +80,8 @@ ProjectIconField = Literal[
 """The glyphs a project may wear, a fixed set so a client never meets one it cannot draw."""
 
 MEMBERS_MAX = 50
+
+PROJECT_LABELS_MAX = 50
 
 NAME_MAX = 80
 
@@ -209,6 +212,30 @@ def _check_member_ids(value: Optional[list[str]]) -> Optional[list[str]]:
         if candidate not in seen:
             seen.append(candidate)
     return seen
+
+
+def _check_label_ids(value: Optional[list[str]]) -> Optional[list[str]]:
+    """Hold a project label list to distinct, non-blank ids, keeping the caller's order."""
+    if value is None:
+        return None
+    seen: list[str] = []
+    for label_id in value:
+        candidate = label_id.strip()
+        if not candidate:
+            raise ValueError("label_ids must not contain a blank id")
+        if candidate not in seen:
+            seen.append(candidate)
+    return seen
+
+
+def project_slug_id(project_id: str) -> str:
+    """The short id a project reads by, the last eight characters of its id in lower case.
+
+    Derived rather than stored, so every project has one without a backfill. A
+    ULID's tail is its random part, so two projects of a workspace sharing one is
+    vanishingly rare, and a lookup by slug id refuses an ambiguous match.
+    """
+    return project_id[-8:].lower()
 
 
 def _legacy_status(value: object) -> object:
@@ -412,6 +439,36 @@ class CycleHistoryRead(BaseModel):
     days: list[CycleHistoryPoint]
 
 
+class ProjectProjectionRead(BaseModel):
+    """Where the recent completion rate takes a project's remaining scope.
+
+    `rate_per_day` is in the project's `measure`. `expected_date` is None when
+    nothing was completed over the window or the finish is out of sight, and
+    `days_past_target` is negative when the finish lands before the target date.
+    """
+
+    rate_per_day: float
+    expected_date: Optional[str] = None
+    days_past_target: Optional[int] = None
+
+
+class ProjectHistoryRead(BaseModel):
+    """A project's daily scope, started and completed figures, from the day its series opens to today.
+
+    `recorded_since` is the first day the snapshots recorded, None while the
+    project has no history yet and `days` holds today alone.
+    """
+
+    project_id: str
+    start_date: Optional[str] = None
+    target_date: Optional[str] = None
+    today: str
+    measure: ProgressMeasureField
+    recorded_since: Optional[str] = None
+    days: list[CycleHistoryPoint]
+    projection: Optional[ProjectProjectionRead] = None
+
+
 class VelocityCycleRead(BaseModel):
     """One completed cycle's delivered work, frozen at its end date."""
 
@@ -480,6 +537,7 @@ class ProjectCreate(BaseModel):
     health: Optional[ProjectHealthField] = None
     priority: ProjectPriorityField = "none"
     member_ids: list[str] = Field(default_factory=list, max_length=MEMBERS_MAX)
+    label_ids: list[str] = Field(default_factory=list, max_length=PROJECT_LABELS_MAX)
     update_interval_days: Optional[int] = None
     initiative_id: Optional[str] = Field(default=None, min_length=1)
 
@@ -524,6 +582,12 @@ class ProjectCreate(BaseModel):
     def check_member_ids(cls, value: Optional[list[str]]) -> Optional[list[str]]:
         """Hold the member list to distinct, non-blank ids."""
         return _check_member_ids(value)
+
+    @field_validator("label_ids")
+    @classmethod
+    def check_label_ids(cls, value: Optional[list[str]]) -> Optional[list[str]]:
+        """Hold the project label list to distinct, non-blank ids."""
+        return _check_label_ids(value)
 
     @field_validator("status", mode="before")
     @classmethod
@@ -583,6 +647,8 @@ class ProjectUpdate(BaseModel):
     and a null `initiative_id` takes the project out of its initiative.
     `open_issues` says what happens to the issues still open in a project the
     patch leaves completed or canceled; without it they stay where they are.
+    `sort_order` is the project's manual position, a base 62 fractional key
+    shared by every viewer, so a drag rewrites only the project moved.
     """
 
     team_id: Optional[str] = Field(default=None, min_length=1)
@@ -598,8 +664,10 @@ class ProjectUpdate(BaseModel):
     health: Optional[ProjectHealthField] = None
     priority: Optional[ProjectPriorityField] = None
     member_ids: Optional[list[str]] = Field(default=None, max_length=MEMBERS_MAX)
+    label_ids: Optional[list[str]] = Field(default=None, max_length=PROJECT_LABELS_MAX)
     update_interval_days: Optional[int] = None
     initiative_id: Optional[str] = Field(default=None, min_length=1)
+    sort_order: Optional[str] = None
     open_issues: Optional[ProjectOpenIssues] = None
 
     @field_validator("update_interval_days")
@@ -644,11 +712,23 @@ class ProjectUpdate(BaseModel):
         """Hold the member list to distinct, non-blank ids."""
         return _check_member_ids(value)
 
+    @field_validator("label_ids")
+    @classmethod
+    def check_label_ids(cls, value: Optional[list[str]]) -> Optional[list[str]]:
+        """Hold the project label list to distinct, non-blank ids."""
+        return _check_label_ids(value)
+
     @field_validator("status", mode="before")
     @classmethod
     def check_status(cls, value: object) -> object:
         """Accept an earlier status name as the status it now is."""
         return _legacy_status(value)
+
+    @field_validator("sort_order")
+    @classmethod
+    def check_sort_order(cls, value: Optional[str]) -> Optional[str]:
+        """Hold a manual position to the base 62 alphabet and its length cap."""
+        return _check_sort_order(value)
 
 
 class SkippedTemplateIssueRead(BaseModel):
@@ -688,6 +768,7 @@ class ProjectRead(BaseModel):
     """
 
     project_id: str
+    slug_id: str = Field(default="", description="The project's short id, the last eight characters of its id")
     workspace_id: str
     team_id: str
     team_ids: list[str]
@@ -702,6 +783,7 @@ class ProjectRead(BaseModel):
     health: Optional[ProjectHealthField] = None
     priority: ProjectPriorityField = "none"
     member_ids: list[str] = Field(default_factory=list)
+    label_ids: list[str] = Field(default_factory=list, description="The workspace project labels the project carries")
     counts: CountsRead
     points: CountsRead = Field(default_factory=CountsRead)
     measure: ProgressMeasureField = Field(
@@ -719,6 +801,10 @@ class ProjectRead(BaseModel):
     next_update_due_at: Optional[datetime] = None
     update_due_state: Optional[UpdateDueState] = None
     initiative_id: Optional[str] = None
+    sort_order: Optional[str] = Field(
+        default=None,
+        description="The manual position, a base 62 fractional key; null on a project never placed, which sorts last",
+    )
     open_issue_count: Optional[int] = Field(
         default=None,
         description="Issues still open in the project, answered by a patch that leaves it completed or canceled",
@@ -771,6 +857,7 @@ class ProjectRead(BaseModel):
         teams = visible_team_ids if visible_team_ids is not None else list(project.team_ids)
         return cls(
             project_id=project.project_id,
+            slug_id=project_slug_id(project.project_id),
             workspace_id=project.workspace_id,
             team_id=teams[0],
             team_ids=teams,
@@ -785,6 +872,7 @@ class ProjectRead(BaseModel):
             health=project.health,  # pyright: ignore[reportArgumentType]
             priority=project.priority,  # pyright: ignore[reportArgumentType]
             member_ids=list(project.member_ids),
+            label_ids=list(project.label_ids),
             counts=CountsRead.from_counts(project.counts),
             points=CountsRead.from_counts(project.points),
             measure=project.measure,
@@ -796,6 +884,7 @@ class ProjectRead(BaseModel):
             next_update_due_at=next_update_due_at(project, default_interval_days),
             update_due_state=update_due_state(project, default_interval_days, now),
             initiative_id=project.initiative_id,
+            sort_order=project.sort_order,
             completed_at=project.completed_at,
             created_by=project.created_by,
             created_at=project.created_at,
@@ -918,6 +1007,56 @@ class ProjectUpdateRead(BaseModel):
 
 ProjectUpdateListRead = cursor_page(ProjectUpdateRead, "updates", model_name="ProjectUpdateListRead")
 """The body the project update feed answers with, items under `updates`, newest first."""
+
+ProjectActivityKindField = Literal[
+    "created", "field_changed", "milestone_added", "milestone_removed", "milestone_changed"
+]
+
+PROJECT_ACTIVITY_DEFAULT_LIMIT = 50
+"""How many activity rows one page of a project's feed holds when the caller names no limit."""
+
+
+class ProjectActivityRead(BaseModel):
+    """One recorded change to a project as the API returns it.
+
+    `from` and `to` are the wire names the issue activity uses, aliased off the
+    stored `from_value` and `to_value` because `from` is a Python keyword. A
+    milestone row carries the milestone's id and names it in `to`, or in `from`
+    once removed.
+    """
+
+    activity_id: str
+    project_id: str
+    actor_id: str
+    kind: ProjectActivityKindField
+    field: Optional[str] = None
+    from_: Any = Field(default=None, alias="from")
+    to: Any = None
+    milestone_id: Optional[str] = None
+    source: Optional[ChangeSource] = None
+    created_at: datetime
+
+    model_config = {"populate_by_name": True}
+
+    @classmethod
+    def from_row(cls, row: ProjectActivityRow) -> "ProjectActivityRead":
+        """Build the response shape from a stored project activity row."""
+        return cls(
+            activity_id=row.activity_id,
+            project_id=row.project_id,
+            actor_id=row.actor_id,
+            kind=row.event,  # pyright: ignore[reportArgumentType]
+            field=row.field,
+            **{"from": row.from_value},
+            to=row.to_value,
+            milestone_id=row.milestone_id,
+            source=row.source,  # pyright: ignore[reportArgumentType]
+            created_at=row.created_at,
+        )
+
+
+ProjectActivityListRead = cursor_page(ProjectActivityRead, "activity", model_name="ProjectActivityListRead")
+"""The body the project activity feed answers with, items under `activity`, newest first."""
 
 
 class MilestoneCreate(BaseModel):

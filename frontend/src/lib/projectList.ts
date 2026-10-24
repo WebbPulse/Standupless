@@ -4,6 +4,7 @@
  * so the roadmap can group its lanes the same way.
  */
 
+import { orderBetween } from '../api/issues';
 import { progressPercent, PROJECT_STATUS_LABELS } from './planningDisplay';
 import { PROJECT_STATUS_ORDER } from './planningModel';
 import { personLabel, type Assignable } from './issuePeople';
@@ -32,6 +33,7 @@ export const PROJECT_LAYOUT_LABELS: Record<ProjectLayout, string> = {
 
 /** What the projects list can order by. */
 export type ProjectOrdering =
+  | 'manual'
   | 'target'
   | 'start'
   | 'name'
@@ -43,6 +45,7 @@ export type ProjectOrdering =
 
 /** The orderings in the order the display menu offers them. */
 export const PROJECT_ORDERINGS: ProjectOrdering[] = [
+  'manual',
   'target',
   'start',
   'name',
@@ -60,6 +63,7 @@ export const CUSTOMER_PROJECT_ORDERINGS: ReadonlySet<ProjectOrdering> = new Set(
 
 /** How each ordering reads in the display menu. */
 export const PROJECT_ORDERING_LABELS: Record<ProjectOrdering, string> = {
+  manual: 'Manual',
   target: 'Target date',
   start: 'Start date',
   name: 'Name',
@@ -138,13 +142,16 @@ export type ProjectColumn =
   | 'created'
   | 'updated'
   | 'completed'
-  | 'progress';
+  | 'progress'
+  | 'labels'
+  | 'id';
 
 /** The properties in the order the list draws them, matching the server. */
 export const PROJECT_COLUMNS: ProjectColumn[] = [
   'summary',
   'milestones',
   'dependencies',
+  'labels',
   'health',
   'priority',
   'status',
@@ -158,15 +165,18 @@ export const PROJECT_COLUMNS: ProjectColumn[] = [
   'updated',
   'completed',
   'progress',
+  'id',
 ];
 
 /** The properties in the order the display menu offers them as chips. */
 export const PROJECT_COLUMN_CHIPS: ProjectColumn[] = [
   'milestones',
   'summary',
+  'id',
   'priority',
   'status',
   'health',
+  'labels',
   'teams',
   'lead',
   'members',
@@ -185,6 +195,7 @@ export const INLINE_PROJECT_COLUMNS: ReadonlySet<ProjectColumn> = new Set([
   'summary',
   'milestones',
   'dependencies',
+  'labels',
 ]);
 
 /** How each property reads in the display menu and the list header. */
@@ -205,6 +216,8 @@ export const PROJECT_COLUMN_LABELS: Record<ProjectColumn, string> = {
   updated: 'Updated',
   completed: 'Completed',
   progress: 'Progress',
+  labels: 'Labels',
+  id: 'ID',
 };
 
 /** The properties a person who never chose sees, matching the server. */
@@ -402,10 +415,26 @@ const byDate = (a: string | null, b: string | null): number => {
 };
 
 /**
- * Sorts projects by an ordering. Dates run soonest first with undated rows
- * last, priority runs urgent first with no priority last, progress and
- * timestamps run highest and newest first, and every tie falls back to the
- * name so the order is stable.
+ * Compares two projects in the shared manual order: placed projects by their
+ * key, then projects never placed, newest first, the way new ones arrive.
+ */
+const byManual = (left: ProjectRead, right: ProjectRead): number => {
+  const leftKey = left.sort_order ?? null;
+  const rightKey = right.sort_order ?? null;
+  if (leftKey !== null && rightKey !== null) {
+    if (leftKey === rightKey) return 0;
+    return leftKey < rightKey ? -1 : 1;
+  }
+  if (leftKey !== null) return -1;
+  if (rightKey !== null) return 1;
+  return right.created_at.localeCompare(left.created_at);
+};
+
+/**
+ * Sorts projects by an ordering. Manual runs by the stored rank, dates run
+ * soonest first with undated rows last, priority runs urgent first with no
+ * priority last, progress and timestamps run highest and newest first, and
+ * every tie falls back to the name so the order is stable.
  */
 export const sortProjects = (
   projects: ProjectRead[],
@@ -413,6 +442,8 @@ export const sortProjects = (
 ): ProjectRead[] => {
   const compare = (left: ProjectRead, right: ProjectRead): number => {
     switch (ordering) {
+      case 'manual':
+        return byManual(left, right);
       case 'target':
         return byDate(left.target_date, right.target_date);
       case 'start':
@@ -638,13 +669,21 @@ export const withinLeadTeams = (
 export const groupValue = (group: ProjectGroup): string =>
   group.key.slice(group.kind.length + 1);
 
-/** The fields a move between board columns can change. */
+/** The fields a board move, a reorder or a card edit can change. */
 export type ProjectMove = Partial<
   Pick<
     ProjectRead,
-    'status' | 'health' | 'priority' | 'initiative_id' | 'lead_id'
+    | 'status'
+    | 'health'
+    | 'priority'
+    | 'initiative_id'
+    | 'lead_id'
+    | 'start_date'
+    | 'target_date'
+    | 'member_ids'
+    | 'label_ids'
   >
->;
+> & { sort_order?: string };
 
 /**
  * The change that moves a project into a group on the board, or null when
@@ -687,5 +726,94 @@ export const inGroup = (project: ProjectRead, group: ProjectGroup): boolean => {
       return project.team_ids.includes(value);
     case 'none':
       return true;
+  }
+};
+
+/**
+ * The change a drop into a board cell makes: every group of the cell the
+ * project is not yet in contributes its value, so a drop into a column and a
+ * swimlane can change both fields. Null when the drop changes nothing or a
+ * group the project would have to join is not one value it holds, such as a
+ * team.
+ */
+export const dropPatch = (
+  project: ProjectRead,
+  groups: readonly ProjectGroup[]
+): ProjectMove | null => {
+  let patch: ProjectMove = {};
+  for (const group of groups) {
+    if (inGroup(project, group)) continue;
+    const change = groupPatch(group);
+    if (change === null) return null;
+    patch = { ...patch, ...change };
+  }
+  return Object.keys(patch).length === 0 ? null : patch;
+};
+
+/**
+ * The change a drop into a board cell makes, telling a drop that changes no
+ * field, an empty change, from one the cell refuses, null, because a group
+ * the project would have to join is not one value it holds, such as a team.
+ */
+export const cellChange = (
+  project: ProjectRead,
+  groups: readonly ProjectGroup[]
+): ProjectMove | null => {
+  if (groups.every((group) => inGroup(project, group))) return {};
+  return dropPatch(project, groups);
+};
+
+/** One project's new manual position. */
+export interface ProjectPlacement {
+  projectId: string;
+  sort_order: string;
+}
+
+/**
+ * The manual positions that drop a project at `index` among the other rows
+ * of one list or cell, given in the order they are shown. The project lands
+ * just after the row shown above the drop point, or first when there is
+ * none, so the drop reads right once the rows run in manual order. One key is
+ * written when every row ahead of it is placed; otherwise the unplaced rows
+ * up to it are placed too, in manual order, since unplaced rows sort last.
+ * Null when no key fits.
+ */
+export const manualPlacements = (
+  rows: readonly ProjectRead[],
+  movingId: string,
+  index: number
+): ProjectPlacement[] | null => {
+  const shown = rows.filter((project) => project.project_id !== movingId);
+  const moving = rows.find((project) => project.project_id === movingId);
+  if (moving === undefined) return null;
+  const above =
+    index > 0 ? shown[Math.min(index, shown.length) - 1] : undefined;
+  const manual = [...shown].sort(
+    (left, right) =>
+      byManual(left, right) || left.name.localeCompare(right.name)
+  );
+  const at = above === undefined ? 0 : manual.indexOf(above) + 1;
+  const moved = [...manual.slice(0, at), moving, ...manual.slice(at)];
+  const keyOf = (project: ProjectRead | undefined): string | null =>
+    project?.sort_order ?? null;
+  try {
+    const firstLoose = moved
+      .slice(0, at)
+      .findIndex((project) => keyOf(project) === null);
+    if (firstLoose < 0) {
+      const key = orderBetween(keyOf(moved[at - 1]), keyOf(moved[at + 1]));
+      return key === keyOf(moving)
+        ? []
+        : [{ projectId: movingId, sort_order: key }];
+    }
+    let bound = keyOf(moved[firstLoose - 1]);
+    const placements: ProjectPlacement[] = [];
+    for (const project of moved.slice(firstLoose, at + 1)) {
+      bound = orderBetween(bound, undefined);
+      placements.push({ projectId: project.project_id, sort_order: bound });
+    }
+    return placements;
+  } catch {
+    return null;
   }
 };
