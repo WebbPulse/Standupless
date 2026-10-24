@@ -2412,7 +2412,9 @@ class TeamCreate(TypedDict):
 
 class TeamDisplayDefaultsRead(TypedDict):
     board_display: NotRequired[DisplayOptionsBody | None]
+    effective_projects_display: NotRequired[ProjectsDisplay]
     list_display: NotRequired[DisplayOptionsBody | None]
+    projects_display: NotRequired[ProjectsDisplay | None]
     team_id: str
     updated_at: NotRequired[str | None]
     updated_by: NotRequired[str | None]
@@ -2421,6 +2423,7 @@ class TeamDisplayDefaultsRead(TypedDict):
 class TeamDisplayDefaultsUpdate(TypedDict):
     board_display: NotRequired[DisplayOptionsBody | None]
     list_display: NotRequired[DisplayOptionsBody | None]
+    projects_display: NotRequired[ProjectsDisplay | None]
 
 
 class TeamMemberRead(TypedDict):
@@ -2657,6 +2660,7 @@ class UserRead(TypedDict):
     name_display: NotRequired[Literal["username", "full_name"]]
     notification_preferences: dict[str, NotificationChannels]
     projects_display: NotRequired[ProjectsDisplay]
+    projects_display_saved: NotRequired[bool]
     pulse_digest: NotRequired[Literal["off", "daily", "weekly"]]
     timezone: NotRequired[str | None]
     two_factor: NotRequired[bool]
@@ -3004,6 +3008,17 @@ class WorkspaceCreate(TypedDict):
 
 class WorkspaceDeletionRequest(TypedDict):
     confirm_name: str
+
+
+class WorkspaceDisplayDefaultsRead(TypedDict):
+    effective_projects_display: NotRequired[ProjectsDisplay]
+    projects_display: NotRequired[ProjectsDisplay | None]
+    updated_at: NotRequired[str | None]
+    updated_by: NotRequired[str | None]
+
+
+class WorkspaceDisplayDefaultsUpdate(TypedDict):
+    projects_display: NotRequired[ProjectsDisplay | None]
 
 
 class WorkspaceExportCreate(TypedDict):

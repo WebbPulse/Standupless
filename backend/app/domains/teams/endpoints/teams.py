@@ -248,10 +248,11 @@ def read_display_defaults(
     context: Annotated[AuthzContext, Depends(require(Capability.TEAM_READ))],
     repositories: Annotated[Repositories, Depends(get_repositories)],
 ) -> TeamDisplayDefaultsRead:
-    """What the team's issue list and board open with for a member who has not changed them."""
+    """What the team's issue list, board and projects page open with for a member who has not changed them."""
     team = _load(repositories, context)
     return TeamDisplayDefaultsRead.from_row(
-        team_writes.display_defaults(repositories, context.workspace_id, team.team_id)
+        team_writes.display_defaults(repositories, context.workspace_id, team.team_id),
+        team_writes.workspace_display_defaults(repositories, context.workspace_id),
     )
 
 
@@ -270,7 +271,9 @@ def update_display_defaults(
     saved = team_writes.update_display_defaults(
         repositories, context.workspace_id, team.team_id, context.user_id, payload
     )
-    return TeamDisplayDefaultsRead.from_row(saved)
+    return TeamDisplayDefaultsRead.from_row(
+        saved, team_writes.workspace_display_defaults(repositories, context.workspace_id)
+    )
 
 
 @router.get("/{workspace_id}/teams/{team_id}/auto-close-settings", response_model=AutoCloseSettingsRead)
