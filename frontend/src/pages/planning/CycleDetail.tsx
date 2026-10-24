@@ -1,10 +1,13 @@
 /**
  * One cycle. The header names the cycle, its state, dates and days left, and
- * its goal. A side panel holds scope against what is started and completed,
- * the burn-up over the cycle's days and a breakdown of the issues by
- * assignee, label and project, and the cycle's issues fill the rest as the
- * same dense list a team's issues use, with its filters, display options and
- * inline editing. On a narrow screen the panel stacks above the list.
+ * its goal. While the cycle is upcoming or running, a member edits the name,
+ * goal and dates in place, each save shown at once and undone with a notice
+ * should the write fail; a completed or cancelled cycle reads only. A side
+ * panel holds scope against what is started and completed, the burn-up over
+ * the cycle's days and a breakdown of the issues by assignee, label and
+ * project, and the cycle's issues fill the rest as the same dense list a
+ * team's issues use, with its filters, display options and inline editing.
+ * On a narrow screen the panel stacks above the list.
  *
  * The burn-up reads the cycle's recorded daily history, in issues or in
  * estimate points, with a projection once a few days are in. While that
@@ -21,7 +24,8 @@ import { useQueryAuth } from '@webbpulse/auth/react';
 import { invalidateQueries, usePolledQuery } from '@webbpulse/api-client/react';
 import { LuChevronRight, LuPlus } from 'react-icons/lu';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
-import { getCycle, getCycleHistory } from '../../api/planning';
+import { getCycle, getCycleHistory, updateCycle } from '../../api/planning';
+import { DatePicker } from '../../components/issues/PropertyPickers';
 import DisplayMenu from '../../components/issues/view/DisplayMenu';
 import {
   FilterButton,
@@ -30,6 +34,7 @@ import {
 } from '../../components/issues/view/FilterBar';
 import IssueListView from '../../components/issues/view/IssueListView';
 import CycleProgressPanel from '../../components/planning/CycleProgressPanel';
+import EditableText from '../../components/planning/EditableText';
 import ProgressRing from '../../components/planning/ProgressRing';
 import { ErrorAlert } from '../../components/ui/alert';
 import Badge from '../../components/ui/badge';
@@ -57,6 +62,7 @@ import {
   readRolledUpCycles,
 } from '../../lib/cycleRollUp';
 import { errorMessage } from '../../lib/errors';
+import { useOptimisticRecord } from '../../lib/optimistic';
 import {
   GROUP_FIELDS,
   defaultViewState,
@@ -70,6 +76,7 @@ import {
   type ViewState,
 } from '../../lib/issueView';
 import { teamCyclesPath } from '../../lib/paths';
+import { cyclesKey } from '../../lib/queryKeys';
 import {
   CYCLE_STATUS_LABELS,
   completionPercent,
@@ -84,9 +91,16 @@ import {
 } from '../../lib/planningModel';
 import { shortDateLabel } from '../../lib/propertyOptions';
 import { dayValue, todayNumber } from '../../lib/timeline';
-import { estimateOptionsOf } from '../../lib/validation';
+import { showErrorToast } from '../../lib/toast';
+import { estimateOptionsOf, validateCycleDates } from '../../lib/validation';
 import FavoriteButton from '../../components/ui/FavoriteButton';
-import type { CycleHistoryRead, CycleRead } from '../../types/Api';
+import type { CycleHistoryRead, CycleRead, CycleUpdate } from '../../types/Api';
+
+/** The fields the cycle page edits in place. */
+type CyclePatch = Pick<
+  CycleUpdate,
+  'name' | 'goal' | 'start_date' | 'end_date'
+>;
 
 /** How often the cycle re-reads. */
 const POLL_MS = 30000;
@@ -140,17 +154,33 @@ const CarryOverLine: React.FC<CarryOverLineProps> = ({ cycle, measure }) => {
   );
 };
 
-/** Props for CycleHeader: the cycle the header describes. */
+/** Props for CycleHeader: the cycle the header describes and how to edit it. */
 interface CycleHeaderProps {
   cycle: CycleRead;
   measure: PlanningMeasure;
+  canEdit: boolean;
+  onUpdate: (patch: CyclePatch) => void;
 }
+
+/**
+ * The name a cycle reads by once its own name is cleared: its number, or the
+ * week it starts, the same readable name an automatic cycle carries.
+ */
+const fallbackCycleName = (cycle: CycleRead): string =>
+  cycleTitle({ ...cycle, name: '' });
 
 /**
  * The cycle's title, state, dates and goal. A cycle left with its generated
  * name reads as its number, and a named cycle keeps its number beside it.
+ * When the caller may edit, the name and goal edit in place and each date
+ * opens a picker that refuses an end before the start.
  */
-const CycleHeader: React.FC<CycleHeaderProps> = ({ cycle, measure }) => {
+const CycleHeader: React.FC<CycleHeaderProps> = ({
+  cycle,
+  measure,
+  canEdit,
+  onUpdate,
+}) => {
   const title = cycleTitle(cycle);
   const percent = completionPercent(cycle.counts);
   const isCurrent = cycle.status === 'active';
@@ -158,15 +188,45 @@ const CycleHeader: React.FC<CycleHeaderProps> = ({ cycle, measure }) => {
     cycle.number !== undefined && cycle.number !== null
       ? `Cycle ${String(cycle.number)}`
       : null;
+  const pickDate = (
+    field: 'start_date' | 'end_date',
+    picked: string | null
+  ): void => {
+    if (picked === null || picked === cycle[field]) return;
+    const start = field === 'start_date' ? picked : cycle.start_date;
+    const end = field === 'end_date' ? picked : cycle.end_date;
+    const refusal = validateCycleDates(start, end);
+    if (refusal !== null) {
+      showErrorToast(refusal);
+      return;
+    }
+    onUpdate(
+      field === 'start_date' ? { start_date: picked } : { end_date: picked }
+    );
+  };
   return (
     <header className="space-y-2 border-b border-line px-4 py-4 lg:col-start-1 lg:row-start-1 lg:px-6">
       <div className="flex min-w-0 items-center gap-2.5">
         <ProgressRing percent={percent} />
         <h2
-          className="min-w-0 truncate text-lg font-semibold text-text"
+          className="min-w-0 flex-1 truncate text-lg font-semibold text-text"
           data-testid="cycle-title"
         >
-          {title}
+          {canEdit ? (
+            <EditableText
+              label="Cycle name"
+              placeholder={fallbackCycleName(cycle)}
+              value={title}
+              disabled={false}
+              className="truncate text-lg font-semibold"
+              onSave={(name) => {
+                const next = name === '' ? fallbackCycleName(cycle) : name;
+                if (next !== title) onUpdate({ name: next });
+              }}
+            />
+          ) : (
+            title
+          )}
         </h2>
         {numbered !== null && numbered !== title && (
           <span className="shrink-0 text-sm text-text-faint tabular-nums">
@@ -178,14 +238,58 @@ const CycleHeader: React.FC<CycleHeaderProps> = ({ cycle, measure }) => {
         <Badge tone={isCurrent ? 'accent' : 'neutral'}>
           {isCurrent ? 'Current' : CYCLE_STATUS_LABELS[cycle.status]}
         </Badge>
-        <span className="tabular-nums" data-testid="cycle-dates">
-          {`${shortDateLabel(cycle.start_date)} to ${shortDateLabel(cycle.end_date)}`}
-        </span>
+        {canEdit ? (
+          <span className="flex items-center gap-1.5" data-testid="cycle-dates">
+            <DatePicker
+              variant="chip"
+              field="Start date"
+              value={cycle.start_date}
+              max={cycle.end_date}
+              clearable={false}
+              validate={(picked) => validateCycleDates(picked, cycle.end_date)}
+              onChange={(picked) => {
+                pickDate('start_date', picked);
+              }}
+            />
+            <span aria-hidden="true">to</span>
+            <DatePicker
+              variant="chip"
+              field="End date"
+              value={cycle.end_date}
+              min={cycle.start_date}
+              clearable={false}
+              validate={(picked) =>
+                validateCycleDates(cycle.start_date, picked)
+              }
+              onChange={(picked) => {
+                pickDate('end_date', picked);
+              }}
+            />
+          </span>
+        ) : (
+          <span className="tabular-nums" data-testid="cycle-dates">
+            {`${shortDateLabel(cycle.start_date)} to ${shortDateLabel(cycle.end_date)}`}
+          </span>
+        )}
         {isCurrent && <span>{daysRemainingLabel(cycle.end_date)}</span>}
         <span className="tabular-nums">{`${String(percent)}% complete`}</span>
       </div>
-      {cycle.goal !== null && cycle.goal !== '' && (
-        <p className="text-sm text-text-muted">{cycle.goal}</p>
+      {canEdit ? (
+        <EditableText
+          label="Cycle goal"
+          placeholder="Add a cycle goal"
+          value={cycle.goal ?? ''}
+          disabled={false}
+          className="text-sm text-text-muted"
+          onSave={(goal) => {
+            onUpdate({ goal: goal === '' ? null : goal });
+          }}
+        />
+      ) : (
+        cycle.goal !== null &&
+        cycle.goal !== '' && (
+          <p className="text-sm text-text-muted">{cycle.goal}</p>
+        )
       )}
       <CarryOverLine cycle={cycle} measure={measure} />
     </header>
@@ -223,7 +327,21 @@ export const CycleDetail: React.FC = () => {
     queryKey: ['cycle', workspaceId, teamId, id],
     auth,
   });
-  const own: CycleRead | undefined = data ?? undefined;
+  const { value: optimistic, update } = useOptimisticRecord<
+    CycleRead,
+    CyclePatch
+  >(data ?? null, {
+    write: (patch) =>
+      updateCycle(workspaceId, id, { team_id: teamId, ...patch }),
+    isSame: (left, right) => left.cycle_id === right.cycle_id,
+    invalidate: [
+      ['cycle', workspaceId, teamId, id],
+      cyclesKey(workspaceId, teamId, ''),
+    ],
+    failureMessage: (failure) =>
+      errorMessage(failure, 'Could not update the cycle. It has been undone.'),
+  });
+  const own: CycleRead | undefined = optimistic ?? undefined;
 
   const { subTeams, rollUp, toggle } = useSubTeamRollUp(team);
   const subTeamIds = useMemo(
@@ -503,6 +621,11 @@ export const CycleDetail: React.FC = () => {
   }
 
   const canEdit = canWriteIssues(workspace?.role, team.role);
+  const canEditCycle =
+    canEdit && cycle.status !== 'completed' && cycle.status !== 'cancelled';
+  const editCycle = (patch: CyclePatch): void => {
+    void update(patch);
+  };
 
   return (
     <WorkspaceShell
@@ -542,7 +665,12 @@ export const CycleDetail: React.FC = () => {
       }
     >
       <div className="min-h-0 flex-1 overflow-y-auto lg:grid lg:grid-cols-[minmax(0,1fr)_20rem] lg:grid-rows-[auto_minmax(0,1fr)] lg:overflow-hidden">
-        <CycleHeader cycle={cycle} measure={measure} />
+        <CycleHeader
+          cycle={cycle}
+          measure={measure}
+          canEdit={canEditCycle}
+          onUpdate={editCycle}
+        />
         <div className="border-b border-line px-4 py-4 lg:col-start-2 lg:row-span-2 lg:row-start-1 lg:overflow-y-auto lg:border-b-0 lg:border-l lg:px-5">
           <CycleProgressPanel
             cycle={cycle}

@@ -6,12 +6,14 @@
  * and capacity guidance read under the current cycle, with the velocity chart
  * at a fixed height and small text whatever the width. A parent team's list
  * rolls up its sub-teams' cycles on the same dates until the toggle narrows
- * it to the team alone.
+ * it to the team alone. J and K move a highlight through the current cycle
+ * and the open groups' rows, skipping a folded group, and Enter opens the
+ * highlighted cycle.
  */
 
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { WorkspaceContextType } from '../../contexts/WorkspaceContextDefinition';
 import type {
@@ -574,5 +576,90 @@ describe('rolling up sub-teams', () => {
 
     await screen.findByRole('region', { name: 'Current cycle' });
     expect(screen.queryByTestId('sub-team-roll-up')).toBeNull();
+  });
+});
+
+/** Shows where Enter took the page. */
+const Landed = () => <p data-testid="detail">{useLocation().pathname}</p>;
+
+/** The page with a cycle route beside it, so opening a cycle can be seen. */
+const renderNavigable = () =>
+  render(
+    <MemoryRouter initialEntries={['/w/mine/team/ENG/cycles']}>
+      <Routes>
+        <Route path="/w/:slug/team/:keyPrefix/cycles" element={<Cycles />} />
+        <Route
+          path="/w/:slug/team/:keyPrefix/cycles/:cycleId"
+          element={<Landed />}
+        />
+      </Routes>
+    </MemoryRouter>
+  );
+
+describe('keyboard', () => {
+  const closed: CycleRead = {
+    ...upcoming,
+    cycle_id: 'cyc-0',
+    name: 'Sprint 0',
+    status: 'completed',
+  };
+
+  beforeEach(() => {
+    listCycles.mockResolvedValue({
+      cycles: [closed, cycle, upcoming],
+      next_cursor: null,
+    });
+  });
+
+  it('moves the highlight from the current cycle to the upcoming rows', async () => {
+    const user = userEvent.setup();
+    renderNavigable();
+    const card = await screen.findByRole('region', { name: 'Current cycle' });
+
+    await user.keyboard('j');
+    expect(card).toHaveAttribute('aria-current', 'true');
+
+    await user.keyboard('j');
+    expect(card).not.toHaveAttribute('aria-current');
+    expect(
+      screen.getByRole('link', { name: 'Sprint 2' }).closest('li')
+    ).toHaveAttribute('aria-current', 'true');
+
+    await user.keyboard('j');
+    expect(
+      screen.getByRole('link', { name: 'Sprint 2' }).closest('li')
+    ).toHaveAttribute('aria-current', 'true');
+
+    await user.keyboard('k');
+    expect(card).toHaveAttribute('aria-current', 'true');
+
+    await user.keyboard('{Escape}');
+    expect(card).not.toHaveAttribute('aria-current');
+  });
+
+  it('opens the highlighted cycle on Enter', async () => {
+    const user = userEvent.setup();
+    renderNavigable();
+    await screen.findByRole('region', { name: 'Current cycle' });
+
+    await user.keyboard('jj{Enter}');
+
+    expect(await screen.findByTestId('detail')).toHaveTextContent(
+      '/w/mine/team/ENG/cycles/cyc-2'
+    );
+  });
+
+  it('reaches a past cycle only once its group is open', async () => {
+    const user = userEvent.setup();
+    renderNavigable();
+    await screen.findByRole('region', { name: 'Current cycle' });
+
+    await user.click(screen.getByRole('button', { name: /Past/ }));
+    await user.click(document.body);
+    await user.keyboard('jjj{Enter}');
+
+    expect(await screen.findByTestId('detail')).toHaveTextContent(
+      '/w/mine/team/ENG/cycles/cyc-0'
+    );
   });
 });

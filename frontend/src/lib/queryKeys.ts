@@ -344,6 +344,12 @@ export const cyclesKey = (
   status: string
 ): QueryKey => ['cycles', workspaceId, teamId, status];
 
+/** A team's automatic cycle schedule. */
+export const cycleSettingsKey = (
+  workspaceId: string,
+  teamId: string
+): QueryKey => ['cycle-settings', workspaceId, teamId];
+
 /** One team's project list, which varies on the status filter applied. */
 export const projectsKey = (
   workspaceId: string,

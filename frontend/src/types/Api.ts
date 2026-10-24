@@ -1889,6 +1889,21 @@ export interface InboxReadResult {
 }
 
 /**
+ * Which of the caller's rows a bulk delete removes: read rows only, or every
+ * row, with snoozed rows only when asked, optionally narrowed to some kinds.
+ */
+export interface InboxClearWrite {
+  read_only?: boolean;
+  include_snoozed?: boolean;
+  kinds?: string[];
+}
+
+/** How many rows a bulk delete removed. */
+export interface InboxClearResult {
+  deleted: number;
+}
+
+/**
  * A cycle's status, derived by the server from its dates and its cancellation
  * flag. Nothing writes it, so it is absent from every request shape.
  */

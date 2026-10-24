@@ -38,6 +38,7 @@ import {
   LuBuilding2,
   LuChevronRight,
   LuChevronsUpDown,
+  LuCircleDot,
   LuEllipsis,
   LuGitPullRequest,
   LuGoal,
@@ -61,6 +62,7 @@ import { setTeamOrder } from '../../api/teams';
 import { useAuth } from '../../hooks/useAuth';
 import { useCreateIssue } from '../../hooks/useCreateIssue';
 import { useCreateTeam } from '../../hooks/useCreateTeam';
+import { useCyclesOn } from '../../hooks/useCyclesOn';
 import { cn } from '../../lib/cn';
 import { useTriageSummary } from '../../hooks/useSidebarData';
 import {
@@ -79,6 +81,7 @@ import {
   searchPath,
   teamArchivePath,
   teamBoardPath,
+  teamCurrentCyclePath,
   teamCyclesPath,
   teamPath,
   teamProjectsPath,
@@ -145,9 +148,13 @@ const itemClass = ({ isActive }: { isActive: boolean }): string =>
   );
 
 /** The look of a row inside a team section, indented under the team. */
-const subItemClass = ({ isActive }: { isActive: boolean }): string =>
+const subItemClass = (
+  { isActive }: { isActive: boolean },
+  indent = 'pl-7'
+): string =>
   cn(
-    'flex h-7 items-center gap-2 rounded-sm pr-2 pl-7 text-sm transition-colors duration-100 pointer-coarse:h-11',
+    'flex h-7 items-center gap-2 rounded-sm pr-2 text-sm transition-colors duration-100 pointer-coarse:h-11',
+    indent,
     FOCUS,
     isActive ? 'bg-raised font-medium text-text' : cn('text-text-muted', HOVER)
   );
@@ -220,6 +227,8 @@ const toggleId = (teamId: string): string => `team-toggle-${teamId}`;
 /** Props for TeamSection: one team and whether its surfaces are showing. */
 interface TeamSectionProps {
   slug: string;
+  /** The workspace the team belongs to, for the reads the section makes. */
+  workspaceId: string;
   team: TeamRead;
   /** Whether the team shows nested under its parent team. */
   nested: boolean;
@@ -257,6 +266,7 @@ interface TeamSectionProps {
  */
 const TeamSection: React.FC<TeamSectionProps> = ({
   slug,
+  workspaceId,
   team,
   nested,
   isOpen,
@@ -278,6 +288,7 @@ const TeamSection: React.FC<TeamSectionProps> = ({
   onCreateSubTeam,
 }) => {
   const panelId = `team-nav-${team.id}`;
+  const cyclesOn = useCyclesOn(workspaceId, team.id, isOpen);
   const home = teamPath(slug, team.key_prefix);
   const issuesActive =
     pathname === home || pathname === teamBoardPath(slug, team.key_prefix);
@@ -461,6 +472,16 @@ const TeamSection: React.FC<TeamSectionProps> = ({
           <LuRefreshCcw className={SUB_ICON} aria-hidden="true" />
           Cycles
         </NavLink>
+        {cyclesOn && (
+          <NavLink
+            to={teamCurrentCyclePath(slug, team.key_prefix)}
+            className={({ isActive }) => subItemClass({ isActive }, 'pl-12')}
+            onClick={onNavigate}
+          >
+            <LuCircleDot className={SUB_ICON} aria-hidden="true" />
+            Current cycle
+          </NavLink>
+        )}
         <NavLink
           to={teamReleasesPath(slug, team.key_prefix)}
           className={subItemClass}
@@ -866,6 +887,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ workspace, onNavigate }) => {
                 <TeamSection
                   key={team.id}
                   slug={slug}
+                  workspaceId={workspace.id}
                   team={team}
                   nested={isNested(team, rows)}
                   isOpen={isOpen(team)}

@@ -79,7 +79,7 @@ locals {
 module "identity" {
   source = "terraform.webbpulse.com/WebbPulse/platform-modules/aws//modules/identity"
 
-  version = "~> 2.28"
+  version = "~> 2.44"
 
   name_prefix        = local.prefix
   issuer             = local.identity_issuer

@@ -1,4 +1,4 @@
-"""Inbox routes: list, unread count, mark read, mark unread, snooze and delete, and issue reminders.
+"""Inbox routes: list, unread count, mark read, mark unread, snooze, delete and clear, and issue reminders.
 
 The inbox is per user by construction. The partition key is built from the
 authorization context and never from a parameter, so there is no route by which one
@@ -29,6 +29,7 @@ from webbpulse.http import CursorPage
 from app.common.api.dependencies.authz import AuthzContext, Capability, require
 from app.common.api.dependencies.repositories import Repositories, get_repositories
 from app.common.inbox import INBOX_KINDS, list_notifications
+from app.common.inbox import clear_notifications as clear_rows
 from app.common.inbox import delete_notification as delete_row
 from app.common.inbox import mark_read as mark_rows_read
 from app.common.inbox import mark_unread as mark_rows_unread
@@ -37,6 +38,8 @@ from app.common.issue_reminders import cancel_reminder, list_reminders, set_remi
 from app.domains.views.schemas.view import (
     INBOX_DEFAULT_LIMIT,
     INBOX_MAX_LIMIT,
+    InboxClearRequest,
+    InboxClearResult,
     InboxCountRead,
     InboxListRead,
     InboxReadRequest,
@@ -149,6 +152,22 @@ def snooze(
     snooze can neither return before the request lands nor outlive the row.
     """
     return InboxReadResult(updated=snooze_rows(repositories, context, payload))
+
+
+@router.post("/{workspace_id}/inbox/clear", response_model=InboxClearResult)
+def clear_inbox(
+    payload: InboxClearRequest,
+    workspace_id: str = Path(..., min_length=1),
+    context: AuthzContext = Depends(require(Capability.WORKSPACE_READ)),
+    repositories: Repositories = Depends(get_repositories),
+) -> InboxClearResult:
+    """Delete the caller's own notifications in bulk: the read ones, or all of them.
+
+    Only the caller's own partition is read, so nothing in anyone else's inbox can
+    match. `kinds` narrows it as the list's filter does, and a row still snoozed
+    goes only when a full clear sends `include_snoozed`.
+    """
+    return InboxClearResult(deleted=clear_rows(repositories, context, payload))
 
 
 @router.get("/{workspace_id}/inbox/reminders", response_model=IssueReminderListRead)

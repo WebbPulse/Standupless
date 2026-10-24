@@ -1,8 +1,9 @@
 /**
  * The shortcuts that work anywhere in a workspace: `C` to create an issue,
- * `G` then a letter to go somewhere, `O` then a letter to open a favorite,
- * project, cycle, team or view from a picker, `/` to search, Ctrl+Z to undo the last
- * issue change and `?` for the list of every shortcut. Registered through the
+ * `G` then a letter to go somewhere, the team's current cycle among them,
+ * `O` then a letter to open a favorite, project, cycle, team or view from a
+ * picker, `/` to search, Ctrl+Z to undo the last issue change and `?` for the
+ * list of every shortcut. Registered through the
  * same registry as any page's own shortcuts, so the help overlay and the
  * command palette list them without a second source of truth.
  */
@@ -29,6 +30,7 @@ import {
   roadmapPath,
   routeTeamPrefix,
   searchPath,
+  teamCurrentCyclePath,
   teamCyclesPath,
   teamPath,
   teamTriagePath,
@@ -138,6 +140,15 @@ export const GlobalShortcuts: React.FC<GlobalShortcutsProps> = ({
     group: NAVIGATION,
     handler: go(
       team === undefined ? '' : teamCyclesPath(slug, team.key_prefix)
+    ),
+    enabled: team !== undefined,
+  });
+  useShortcut({
+    keys: 'g a',
+    label: 'Go to current cycle',
+    group: NAVIGATION,
+    handler: go(
+      team === undefined ? '' : teamCurrentCyclePath(slug, team.key_prefix)
     ),
     enabled: team !== undefined,
   });

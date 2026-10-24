@@ -19,7 +19,13 @@ from webbpulse.dynamodb import encode_start_key
 from app.common.api.dependencies.authz import AuthzContext
 from app.common.api.dependencies.repositories import Repositories
 from app.common.api.pagination import resume_key
-from app.common.api.schemas.views import InboxReadRequest, InboxSnoozeRequest, InboxUnreadRequest, NotificationRead
+from app.common.api.schemas.views import (
+    InboxClearRequest,
+    InboxReadRequest,
+    InboxSnoozeRequest,
+    InboxUnreadRequest,
+    NotificationRead,
+)
 from app.common.db.dynamo.base import utc_now
 from app.common.db.dynamo.inbox import SNOOZE_MAX, Notification, NotificationKind
 from app.common.issue_keys import display_key
@@ -135,6 +141,24 @@ def snooze(repositories: Repositories, context: AuthzContext, payload: InboxSnoo
     if payload.until > now + SNOOZE_MAX:
         raise unprocessable("until must be within 90 days")
     return repositories.inbox.snooze(context.workspace_id, context.user_id, payload.notification_ids, payload.until)
+
+
+def clear_notifications(repositories: Repositories, context: AuthzContext, payload: InboxClearRequest) -> int:
+    """Delete the caller's own notifications in bulk, the read ones or all, answering how many went.
+
+    `kinds` narrows it the way the list's filter does, and a snoozed row is only
+    taken by a full clear that asks for snoozed rows too.
+    """
+    unknown = sorted(set(payload.kinds) - set(INBOX_KINDS))
+    if unknown:
+        raise unprocessable(f"Unknown notification kind: {', '.join(unknown)}")
+    return repositories.inbox.delete_matching(
+        context.workspace_id,
+        context.user_id,
+        read_only=payload.read_only,
+        include_snoozed=payload.include_snoozed,
+        kinds=tuple(dict.fromkeys(payload.kinds)),
+    )
 
 
 def delete_notification(repositories: Repositories, context: AuthzContext, notification_id: str) -> None:

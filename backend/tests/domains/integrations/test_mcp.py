@@ -139,6 +139,7 @@ def test_the_contract_fixes_the_tool_set() -> None:
         "delete_label",
         "delete_milestone",
         "delete_notification",
+        "delete_all_notifications",
         "delete_project",
         "delete_project_relation",
         "delete_project_update",
@@ -170,6 +171,9 @@ def test_the_contract_fixes_the_tool_set() -> None:
         "leave_team",
         "list_channels",
         "list_comments",
+        "list_github_thread_targets",
+        "sync_comment_thread",
+        "unsync_comment_thread",
         "list_cycles",
         "list_github_transitions",
         "list_audit_events",
@@ -314,7 +318,7 @@ def test_the_contract_fixes_the_tool_set() -> None:
         "save_agent_profile",
         "delete_agent_profile",
     }
-    assert len(TOOLS) == 200
+    assert len(TOOLS) == 204
 
 
 def test_a_notification_gets_no_body(client: TestClient, workspace: str, repositories: Any) -> None:

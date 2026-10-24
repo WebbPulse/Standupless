@@ -265,20 +265,57 @@ def queue_pr_labels(repositories: Repositories, record: Mapping[str, Any]) -> in
 
 
 def queue_comment_sync(repositories: Repositories, record: Mapping[str, Any]) -> bool:
-    """Queue a GitHub sync job for a new comment or an edited body."""
+    """Queue a GitHub sync job for a new comment, an edited body, or a thread newly synced.
+
+    One job serves the two way issue sync and a synced thread alike. A change to
+    only the link of a thread's opening comment queues nothing, since that is the
+    App's own post landing.
+    """
     from app.domains.integrations.issue_sync import enqueue_comment_sync
 
     if record.get("eventName") not in ("INSERT", "MODIFY"):
         return False
     new_image = deserialize_image(record, "NewImage")
     old_image = deserialize_image(record, "OldImage")
-    if not new_image or (old_image and old_image.get("body") == new_image.get("body")):
+    if not new_image:
         return False
+    body_changed = not old_image or old_image.get("body") != new_image.get("body")
     workspace_id = str(new_image.get("workspace_id", ""))
-    if not _team_writes_back(repositories, workspace_id, str(new_image.get("team_id", ""))):
+    issue_id = str(new_image.get("issue_id", ""))
+    wanted = body_changed and _team_writes_back(repositories, workspace_id, str(new_image.get("team_id", "")))
+    if not wanted:
+        wanted = _thread_changed(repositories, old_image, new_image, body_changed)
+    if not wanted:
         return False
-    enqueue_comment_sync(workspace_id, str(new_image.get("issue_id", "")), str(new_image.get("comment_id", "")))
+    enqueue_comment_sync(workspace_id, issue_id, str(new_image.get("comment_id", "")))
     return True
+
+
+def _thread_identity(image: Mapping[str, Any] | None) -> tuple[str, int, str] | None:
+    """Which synced thread a comment image names, ignoring the link of its opening comment."""
+    thread = (image or {}).get("github_thread")
+    if not isinstance(thread, Mapping):
+        return None
+    return str(thread.get("repository_id", "")), int(thread.get("number") or 0), str(thread.get("synced_at", ""))
+
+
+def _thread_changed(
+    repositories: Repositories,
+    old_image: Mapping[str, Any] | None,
+    new_image: Mapping[str, Any],
+    body_changed: bool,
+) -> bool:
+    """Whether a comment record has something for a synced thread to post."""
+    identity = _thread_identity(new_image)
+    if identity is not None:
+        return body_changed or identity != _thread_identity(old_image)
+    parent_id = str(new_image.get("parent_comment_id") or "")
+    if not body_changed or not parent_id or str(new_image.get("source") or "") == "github":
+        return False
+    parent = repositories.comments.get(
+        str(new_image.get("workspace_id", "")), str(new_image.get("issue_id", "")), parent_id
+    )
+    return parent is not None and parent.github_thread is not None
 
 
 def queue_label_sync(repositories: Repositories, record: Mapping[str, Any]) -> int:

@@ -1,4 +1,4 @@
-"""Inbox routes: listing, the unread badge, marking read and deleting.
+"""Inbox routes: listing, the unread badge, marking read, deleting and clearing.
 
 The property worth holding is that the partition is built from the authorization
 context and never from a parameter, so there is no route by which one member reads
@@ -209,6 +209,87 @@ def test_deleting_another_members_notification_is_not_found(
 
     assert response.status_code == 404
     assert repositories.inbox.get(workspace, OWNER, "01N000000000000000000THEIR") is not None
+
+
+def test_clearing_read_notifications_keeps_the_unread_and_snoozed_ones(
+    client: TestClient, workspace: str, repositories: Any
+) -> None:
+    """`read_only` takes the read rows alone, so nothing still waiting is lost."""
+    put_notification(repositories, MEMBER, "01N0000000000000000000A000", unread=False)
+    put_notification(repositories, MEMBER, "01N0000000000000000000B000", unread=True)
+    put_notification(repositories, MEMBER, "01N0000000000000000000C000", unread=True)
+    repositories.inbox.snooze(
+        workspace, MEMBER, ["01N0000000000000000000C000"], datetime.now(timezone.utc) + timedelta(hours=1)
+    )
+
+    sign_in(client, MEMBER)
+    response = client.post(f"/api/workspaces/{workspace}/inbox/clear", json={"read_only": True})
+
+    assert response.status_code == 200
+    assert response.json()["deleted"] == 1
+    assert repositories.inbox.get(workspace, MEMBER, "01N0000000000000000000A000") is None
+    assert repositories.inbox.get(workspace, MEMBER, "01N0000000000000000000B000") is not None
+    assert repositories.inbox.get(workspace, MEMBER, "01N0000000000000000000C000") is not None
+    assert client.get(f"/api/workspaces/{workspace}/inbox/count").json()["unread"] == 1
+
+
+def test_clearing_everything_leaves_snoozed_rows_unless_asked(
+    client: TestClient, workspace: str, repositories: Any
+) -> None:
+    """A full clear takes read and unread rows, and snoozed ones only with `include_snoozed`."""
+    put_notification(repositories, MEMBER, "01N0000000000000000000A000", unread=False)
+    put_notification(repositories, MEMBER, "01N0000000000000000000B000", unread=True)
+    put_notification(repositories, MEMBER, "01N0000000000000000000C000", unread=True)
+    repositories.inbox.snooze(
+        workspace, MEMBER, ["01N0000000000000000000C000"], datetime.now(timezone.utc) + timedelta(hours=1)
+    )
+
+    sign_in(client, MEMBER)
+    first = client.post(f"/api/workspaces/{workspace}/inbox/clear", json={})
+
+    assert first.json()["deleted"] == 2
+    assert repositories.inbox.get(workspace, MEMBER, "01N0000000000000000000C000") is not None
+
+    second = client.post(f"/api/workspaces/{workspace}/inbox/clear", json={"include_snoozed": True})
+
+    assert second.json()["deleted"] == 1
+    assert repositories.inbox.get(workspace, MEMBER, "01N0000000000000000000C000") is None
+    assert client.get(f"/api/workspaces/{workspace}/inbox/count").json()["unread"] == 0
+
+
+def test_clearing_keeps_to_the_kinds_named(client: TestClient, workspace: str, repositories: Any) -> None:
+    """`kinds` narrows the clear the way the list's filter does."""
+    put_notification(repositories, MEMBER, "01N0000000000000000000A000", kind="assigned")
+    put_notification(repositories, MEMBER, "01N0000000000000000000B000", kind="mentioned")
+
+    sign_in(client, MEMBER)
+    response = client.post(f"/api/workspaces/{workspace}/inbox/clear", json={"kinds": ["mentioned"]})
+
+    assert response.json()["deleted"] == 1
+    assert _ids(client.get(f"/api/workspaces/{workspace}/inbox")) == ["01N0000000000000000000A000"]
+
+
+def test_clearing_never_reaches_another_members_inbox(client: TestClient, workspace: str, repositories: Any) -> None:
+    """Only the caller's own partition is read, so another member's rows survive a full clear."""
+    put_notification(repositories, MEMBER, "01N0000000000000000000MINE", unread=False)
+    put_notification(repositories, OWNER, "01N000000000000000000THEIR", unread=False)
+    put_notification(repositories, OWNER, "01N000000000000000000THUNR", unread=True)
+
+    sign_in(client, MEMBER)
+    response = client.post(f"/api/workspaces/{workspace}/inbox/clear", json={"include_snoozed": True})
+
+    assert response.json()["deleted"] == 1
+    assert repositories.inbox.get(workspace, OWNER, "01N000000000000000000THEIR") is not None
+    assert repositories.inbox.get(workspace, OWNER, "01N000000000000000000THUNR") is not None
+
+
+def test_clearing_refuses_an_unknown_kind_and_a_non_member(client: TestClient, workspace: str) -> None:
+    """An unknown kind is a 422, and no workspace membership is a 404."""
+    sign_in(client, MEMBER)
+    assert client.post(f"/api/workspaces/{workspace}/inbox/clear", json={"kinds": ["nonsense"]}).status_code == 422
+
+    sign_in(client, "01JB000000000000000000OUTS")
+    assert client.post(f"/api/workspaces/{workspace}/inbox/clear", json={}).status_code == 404
 
 
 def test_a_non_member_cannot_read_an_inbox(client: TestClient, workspace: str) -> None:
