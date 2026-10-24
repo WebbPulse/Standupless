@@ -306,4 +306,29 @@ describe('DatePicker', () => {
     await user.click(screen.getByRole('option', { name: /Clear date/ }));
     expect(onChange).toHaveBeenCalledWith(null);
   });
+
+  it('leads with a typed date and applies it on Enter', async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    render(<DatePicker field="Due date" value={null} onChange={onChange} />);
+    await user.click(screen.getByRole('button', { name: /Due date/ }));
+    await user.keyboard('2999-01-05');
+    const options = screen.getAllByRole('option');
+    expect(options[0]).toHaveTextContent(/2999/);
+    await user.keyboard('{Enter}');
+    expect(onChange).toHaveBeenCalledWith('2999-01-05');
+  });
+
+  it('keeps the presets for text that is not a date', async () => {
+    const user = userEvent.setup();
+    render(<DatePicker field="Due date" value={null} onChange={vi.fn()} />);
+    await user.click(screen.getByRole('button', { name: /Due date/ }));
+    await user.keyboard('end');
+    expect(
+      screen.getByRole('option', { name: /End of this week/ })
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('option', { name: /End of this month/ })
+    ).toBeInTheDocument();
+  });
 });
