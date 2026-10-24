@@ -5,7 +5,8 @@
  * import reads a Linear workspace through its API with a pasted key instead,
  * which the server keeps only while the job runs, and an Asana import does the
  * same with a pasted personal access token. A GitHub import reads one
- * repository's Issues through the workspace's installed GitHub App.
+ * repository's Issues through the workspace's installed GitHub App. A Shortcut
+ * import reads a Shortcut workspace with a pasted API token the same way.
  */
 
 import apiClient from './client';
@@ -24,6 +25,10 @@ import type {
   LinearImportRequest,
   LinearTeamListRead,
   LinearTeamRead,
+  ShortcutImportPreviewRead,
+  ShortcutImportRequest,
+  ShortcutTeamListRead,
+  ShortcutTeamRead,
 } from '../types/Api';
 
 /** The route a workspace's imports are started and listed on. */
@@ -117,6 +122,19 @@ export const startLinearImport = async (
   return response.data;
 };
 
+/** Answers the Shortcut teams an API token can read. The token is not kept. */
+export const listShortcutTeams = async (
+  workspaceId: string,
+  apiToken: string
+): Promise<ShortcutTeamRead[]> => {
+  const response = await apiClient.post<Partial<ShortcutTeamListRead>>(
+    `${issueImportsPath(workspaceId)}/shortcut/teams`,
+    { api_token: apiToken }
+  );
+  const items = response.data?.items;
+  return Array.isArray(items) ? items : [];
+};
+
 /** Answers the Asana projects a personal access token can read. The token is not kept. */
 export const listAsanaProjects = async (
   workspaceId: string,
@@ -130,6 +148,18 @@ export const listAsanaProjects = async (
   return Array.isArray(items) ? items : [];
 };
 
+/** Answers what a Shortcut import would bring over, writing nothing. The token is not kept. */
+export const previewShortcutImport = async (
+  workspaceId: string,
+  body: ShortcutImportRequest
+): Promise<ShortcutImportPreviewRead> => {
+  const response = await apiClient.post<ShortcutImportPreviewRead>(
+    `${issueImportsPath(workspaceId)}/shortcut/preview`,
+    body
+  );
+  return response.data;
+};
+
 /** Reads the chosen Asana projects and answers what importing them would do, writing nothing. */
 export const previewAsanaImport = async (
   workspaceId: string,
@@ -137,6 +167,18 @@ export const previewAsanaImport = async (
 ): Promise<AsanaImportPreviewRead> => {
   const response = await apiClient.post<AsanaImportPreviewRead>(
     `${issueImportsPath(workspaceId)}/asana/preview`,
+    body
+  );
+  return response.data;
+};
+
+/** Starts a Shortcut import. Refused with 409 while another is running in the workspace. */
+export const startShortcutImport = async (
+  workspaceId: string,
+  body: ShortcutImportRequest
+): Promise<IssueImportRead> => {
+  const response = await apiClient.post<IssueImportRead>(
+    `${issueImportsPath(workspaceId)}/shortcut`,
     body
   );
   return response.data;

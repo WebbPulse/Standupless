@@ -15,6 +15,11 @@ audit row. Any import can be cancelled; what it already wrote stays.
 A GitHub import reads one repository's Issues through the workspace's installed
 GitHub App, so it needs no key: the admin picks a repository the installation
 covers and the team the issues go into.
+
+A Shortcut import reads Shortcut's REST API with an API token the admin pastes,
+handled exactly as a Linear key is: checked against Shortcut first, sealed beside
+the job until it ends, and never in a response, a log or the audit row. Its
+preview reads the chosen teams and answers what would come over without writing.
 """
 
 from __future__ import annotations
@@ -29,7 +34,7 @@ from app.common.api.dependencies.repositories import Repositories, get_repositor
 from app.common.csv_import import CsvRejected
 from app.common.issue_rules import require_team_member, unprocessable
 from app.common.linear_api import LinearAuthFailed, LinearError
-from app.domains.integrations import github_import
+from app.domains.integrations import github_import, shortcut_import
 from app.domains.integrations.schemas.imports import (
     GitHubImportRepositoryListRead,
     GitHubImportRepositoryRead,
@@ -42,7 +47,14 @@ from app.domains.integrations.schemas.imports import (
     LinearKeyRequest,
     LinearTeamListRead,
     LinearTeamRead,
+    ShortcutImportPreviewRead,
+    ShortcutImportRequest,
+    ShortcutPreviewTeamRead,
+    ShortcutTeamListRead,
+    ShortcutTeamRead,
+    ShortcutTokenRequest,
 )
+from app.domains.integrations.shortcut_api import ShortcutAuthFailed, ShortcutError
 
 router = APIRouter()
 
@@ -70,6 +82,22 @@ def linear_refusal(exc: LinearError) -> HTTPException:
     return HTTPException(
         status_code=status.HTTP_502_BAD_GATEWAY,
         detail={"error_code": "LINEAR_UNAVAILABLE", "message": "Linear did not answer, try again shortly."},
+    )
+
+
+def shortcut_refusal(exc: ShortcutError) -> HTTPException:
+    """The answer to a Shortcut call that failed: 400 for a refused token, 502 for anything else."""
+    if isinstance(exc, ShortcutAuthFailed):
+        return HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "error_code": "SHORTCUT_TOKEN_REFUSED",
+                "message": "Shortcut refused the API token. Check it is current and has not been revoked.",
+            },
+        )
+    return HTTPException(
+        status_code=status.HTTP_502_BAD_GATEWAY,
+        detail={"error_code": "SHORTCUT_UNAVAILABLE", "message": "Shortcut did not answer, try again shortly."},
     )
 
 
@@ -216,6 +244,91 @@ def start_linear_import(
         after={
             "preset": job.preset,
             "teams": [{"linear_key": mapping.linear_key, "team_id": mapping.team_id} for mapping in mappings],
+        },
+    )
+    return IssueImportRead.from_job(job)
+
+
+@router.post("/{workspace_id}/imports/shortcut/teams", response_model=ShortcutTeamListRead)
+def list_shortcut_teams(
+    body: ShortcutTokenRequest,
+    context: Annotated[AuthzContext, Depends(require(Capability.WORKSPACE_ADMIN))],
+) -> ShortcutTeamListRead:
+    """The Shortcut teams an API token can read, to choose from; the token is not kept."""
+    try:
+        teams = shortcut_import.read_teams(body.api_token.strip())
+    except ShortcutError as exc:
+        raise shortcut_refusal(exc) from None
+    return ShortcutTeamListRead(
+        items=[ShortcutTeamRead(id=team["id"], key=team["key"], name=team["name"]) for team in teams]
+    )
+
+
+def _shortcut_mappings(
+    body: ShortcutImportRequest, context: AuthzContext, repositories: Repositories
+) -> list[shortcut_import.SourceTeamMapping]:
+    """The checked team mapping of a Shortcut import or preview, refusing a team the caller or token cannot use."""
+    for choice in body.teams:
+        require_team_member(repositories, context, choice.team_id)
+    choices = [(choice.shortcut_team_id, choice.team_id) for choice in body.teams]
+    try:
+        return shortcut_import.team_mappings(body.api_token.strip(), choices)
+    except ShortcutError as exc:
+        raise shortcut_refusal(exc) from None
+    except shortcut_import.UnknownShortcutTeam:
+        raise unprocessable("A chosen Shortcut team is not readable with this token, or was chosen twice") from None
+
+
+@router.post("/{workspace_id}/imports/shortcut/preview", response_model=ShortcutImportPreviewRead)
+def preview_shortcut_import(
+    body: ShortcutImportRequest,
+    context: Annotated[AuthzContext, Depends(require(Capability.WORKSPACE_ADMIN))],
+    repositories: Annotated[Repositories, Depends(get_repositories)],
+) -> ShortcutImportPreviewRead:
+    """What importing the chosen Shortcut teams would bring over, team by team, writing nothing."""
+    mappings = _shortcut_mappings(body, context, repositories)
+    try:
+        teams = shortcut_import.preview(repositories, context.workspace_id, body.api_token.strip(), mappings)
+    except ShortcutError as exc:
+        raise shortcut_refusal(exc) from None
+    return ShortcutImportPreviewRead(teams=[ShortcutPreviewTeamRead(**team) for team in teams])
+
+
+@router.post(
+    "/{workspace_id}/imports/shortcut",
+    response_model=IssueImportRead,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+def start_shortcut_import(
+    body: ShortcutImportRequest,
+    context: Annotated[AuthzContext, Depends(require(Capability.WORKSPACE_ADMIN))],
+    repositories: Annotated[Repositories, Depends(get_repositories)],
+) -> IssueImportRead:
+    """Queue an import of Shortcut teams into Standupless teams, refusing a second while one is running."""
+    mappings = _shortcut_mappings(body, context, repositories)
+    try:
+        job = shortcut_import.start_shortcut_import(repositories, context, body.api_token.strip(), mappings)
+    except ShortcutError as exc:
+        raise shortcut_refusal(exc) from None
+    except issue_import.ImportUnavailable as exc:
+        raise _unavailable(exc) from exc
+    except issue_import.ImportInProgress as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"error_code": "CONFLICT", "message": str(exc)},
+        ) from exc
+    audit.record(
+        repositories,
+        context,
+        "import.started",
+        target_type="import",
+        target_id=job.import_id,
+        target_label="Shortcut",
+        after={
+            "preset": job.preset,
+            "teams": [
+                {"shortcut_team": mapping.key or mapping.source_id, "team_id": mapping.team_id} for mapping in mappings
+            ],
         },
     )
     return IssueImportRead.from_job(job)
