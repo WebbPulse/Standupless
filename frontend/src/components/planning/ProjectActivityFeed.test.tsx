@@ -24,7 +24,7 @@ const people = [
     email: 'ada@example.com',
     display_name: 'Ada',
     avatar_url: null,
-    full_name: null,
+    full_name: '',
   },
 ];
 

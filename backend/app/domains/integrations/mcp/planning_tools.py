@@ -53,9 +53,9 @@ from app.common.planning_rules import (
     require_team_member,
     require_team_reader,
 )
+from app.common.project_activity import activity_page
 from app.common.project_cadence import INTERVAL_OPTIONS, workspace_interval
 from app.common.project_relations import create_relation, delete_relation, fill_one, list_relations
-from app.common.project_activity import activity_page
 from app.common.project_updates import (
     create_project_update,
     delete_project_update,

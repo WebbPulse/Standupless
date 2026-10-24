@@ -14,14 +14,14 @@ const lookups: ProjectActivityLookups = {
       email: 'ada@example.com',
       display_name: 'Ada',
       avatar_url: null,
-      full_name: null,
+      full_name: '',
     },
     {
       user_id: 'user-2',
       email: 'grace@example.com',
       display_name: 'Grace',
       avatar_url: null,
-      full_name: null,
+      full_name: '',
     },
   ],
   teams: [
