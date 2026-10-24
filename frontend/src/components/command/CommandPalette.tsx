@@ -153,7 +153,11 @@ import {
 } from '../../lib/searchTerms';
 import { teamTree } from '../../lib/teamOrder';
 import type { Theme } from '../../lib/theme';
-import { currentOrFirstTeam, settingsLanding } from '../../lib/workspaceNav';
+import {
+  currentOrFirstTeam,
+  routeTeam,
+  settingsLanding,
+} from '../../lib/workspaceNav';
 import type { CycleRead, TeamRead, WorkspaceRead } from '../../types/Api';
 import { LOOKUP_POLL_MS } from '../../lib/polling';
 
@@ -353,6 +357,7 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
   const routePrefix = routeTeamPrefix(location.pathname, location.search);
   const issueKey = routeIssueKey(location.pathname);
   const team = currentOrFirstTeam(teams, routePrefix);
+  const insideTeam = routeTeam(teams, routePrefix) !== undefined;
 
   const deferred = useDeferredValue(term).trim();
   const isKey = page === 'root' && isIssueKey(deferred);
@@ -742,6 +747,7 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
         id: 'nav-team-views',
         label: `${team.name} views`,
         keywords: 'views saved filters go to views',
+        ...(insideTeam ? { hint: 'G then V' } : {}),
         icon: <LuLayers className={ICON} />,
         to: teamViewsPath(slug, team.key_prefix),
       });
@@ -764,7 +770,7 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
       {
         id: 'nav-views',
         label: 'Views',
-        hint: 'G then V',
+        ...(insideTeam ? {} : { hint: 'G then V' }),
         icon: <LuLayers className={ICON} />,
         to: viewsPath(slug),
       },
@@ -837,7 +843,7 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
       }))
     );
     return built;
-  }, [slug, team, teams, workspace]);
+  }, [insideTeam, slug, team, teams, workspace]);
 
   const teamSettings = useMemo<Command[]>(
     () =>
