@@ -10,7 +10,9 @@
  * read. Notifications about one issue fold into one row that opens and marks
  * them all, and the Filter and Display menus shape the list query. The
  * actions menu deletes every read row or every row after a confirmation,
- * sending the current filter along.
+ * sending the current filter along. Removing and snoozing offer Undo: a
+ * removal is held until its window lapses or the page goes, and undoing a
+ * snooze unsnoozes and keeps read rows read.
  */
 
 import {
@@ -23,7 +25,7 @@ import {
 } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import ShortcutProvider from '../../components/shortcuts/ShortcutProvider';
 import type { WorkspaceContextType } from '../../contexts/WorkspaceContextDefinition';
 import type {
@@ -32,6 +34,12 @@ import type {
   WorkspaceRead,
 } from '../../types/Api';
 import { fromLocalInput, toLocalInput } from '../../lib/reminders';
+import {
+  clearUndo,
+  currentUndo,
+  undoLast,
+  UNDO_TOAST_MS,
+} from '../../lib/undo';
 import BoundKeys from '../../test/BoundKeys';
 import { keysBound } from '../../test/shortcuts';
 import Inbox from './Inbox';
@@ -189,7 +197,12 @@ const twoRows = () => ({
   next_cursor: null,
 });
 
+afterEach(() => {
+  vi.useRealTimers();
+});
+
 beforeEach(() => {
+  clearUndo();
   listInbox.mockReset();
   markRead.mockReset();
   markAllRead.mockReset();
@@ -453,17 +466,36 @@ describe('inbox', () => {
     );
   });
 
-  it('removes a notification', async () => {
+  it('removes a notification, holding the delete until the page is left', async () => {
     const user = userEvent.setup();
-    renderPage();
+    const { unmount } = renderPage();
 
     await user.click(
       await screen.findByRole('button', { name: 'Remove ENG-1' })
     );
 
-    await waitFor(() => {
-      expect(deleteNotification).toHaveBeenCalledWith('n-1');
+    expect(screen.queryByText('Cache the token')).not.toBeInTheDocument();
+    expect(currentUndo().at(-1)?.message).toBe('Removed ENG-1');
+    expect(deleteNotification).not.toHaveBeenCalled();
+    unmount();
+    expect(deleteNotification).toHaveBeenCalledWith('n-1');
+  });
+
+  it('puts a removed notification back on undo without deleting it', async () => {
+    const user = userEvent.setup();
+    const { unmount } = renderPage();
+
+    await user.click(
+      await screen.findByRole('button', { name: 'Remove ENG-1' })
+    );
+    expect(screen.queryByText('Cache the token')).not.toBeInTheDocument();
+    await act(async () => {
+      await undoLast('ws-1');
     });
+
+    expect(await screen.findByText('Cache the token')).toBeInTheDocument();
+    unmount();
+    expect(deleteNotification).not.toHaveBeenCalled();
   });
 
   it('says so when the inbox is empty', async () => {
@@ -820,16 +852,47 @@ describe('inbox', () => {
     ).not.toBeInTheDocument();
   });
 
-  it('removes the selected row with backspace', async () => {
+  it('removes the selected row with backspace once the undo window lapses', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
     renderPage('/w/mine/inbox?n=n-1');
 
     await screen.findByLabelText('Peek iss-1');
     await keysBound('backspace');
     press('Backspace');
 
+    expect(deleteNotification).not.toHaveBeenCalled();
+    act(() => {
+      vi.advanceTimersByTime(UNDO_TOAST_MS);
+    });
     await waitFor(() => {
       expect(deleteNotification).toHaveBeenCalledWith('n-1');
     });
+  });
+
+  it('unsnoozes on undo and keeps a read row read', async () => {
+    const user = userEvent.setup();
+    listInbox.mockResolvedValue({
+      notifications: [notification({ unread: false })],
+      next_cursor: null,
+    });
+    renderPage('/w/mine/inbox?n=n-1');
+
+    await screen.findByLabelText('Peek iss-1');
+    await keysBound('h');
+    press('h');
+    await user.click(
+      await screen.findByRole('button', { name: /Tomorrow morning/ })
+    );
+    await waitFor(() => {
+      expect(snoozeNotifications).toHaveBeenCalled();
+    });
+    expect(currentUndo().at(-1)?.message).toBe('Snoozed ENG-1');
+    await act(async () => {
+      await undoLast('ws-1');
+    });
+
+    expect(markUnread).toHaveBeenCalledWith({ notification_ids: ['n-1'] });
+    expect(markRead).toHaveBeenCalledWith({ notification_ids: ['n-1'] });
   });
 
   it('names the project on a project update row and links to its updates', async () => {
