@@ -30,10 +30,10 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any, AsyncIterator, Mapping
 
+from fastapi import Request
 from webbpulse.identity import DynamoLoginAttemptStore, DynamoRefreshTokenStore
 
 if TYPE_CHECKING:  # pragma: no cover
-    from fastapi import Request
     from webbpulse.identity import LoginAttempt, RefreshTokenRecord
 
 _log = logging.getLogger(__name__)
@@ -90,7 +90,7 @@ def revoked_by(revoker: Revoker) -> Iterator[None]:
         _revoker.reset(token)
 
 
-async def capture_request(request: "Request") -> AsyncIterator[None]:
+async def capture_request(request: Request) -> AsyncIterator[None]:
     """A route dependency that keeps the request's path, address and user agent for the stores."""
     from app.common.api.dependencies.authz import client_ip_of
 
