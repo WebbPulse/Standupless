@@ -2405,6 +2405,12 @@ export interface ProjectMilestoneMarkerRead {
   target_date: string;
   /** Every issue in the milestone is finished, and it holds at least one. */
   completed: boolean;
+  /** The milestone's issue counts. */
+  counts?: RollupCounts;
+  /** The unit `progress` reads in: points when a team on it estimates, otherwise issues. */
+  measure?: 'points' | 'issues';
+  /** The buckets scope and completion are measured by, in `measure`. */
+  progress?: RollupCounts;
 }
 
 /** One template issue a project created from a template left out, and why. */

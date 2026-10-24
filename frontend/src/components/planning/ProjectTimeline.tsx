@@ -38,6 +38,7 @@ import { useTimelineLinks } from '../../hooks/useTimelineLinks';
 import ProjectGroupGlyph from './ProjectGroupGlyph';
 import { TeamKey } from './ProjectPickers';
 import ProjectHealthGlyph from './ProjectHealthGlyph';
+import MilestoneGlyph from './MilestoneGlyph';
 import ProjectIcon from './ProjectIcon';
 import Avatar from '../ui/avatar';
 import Button, { IconButton } from '../ui/button';
@@ -54,6 +55,7 @@ import { useOptimisticRecord } from '../../lib/optimistic';
 import { projectMilestonePath, projectPath } from '../../lib/paths';
 import { healthLabel } from '../../lib/projectLook';
 import {
+  milestoneProgress,
   PROJECT_STATUS_LABELS,
   progressPercent,
 } from '../../lib/planningDisplay';
@@ -541,31 +543,38 @@ const TimelineRow: React.FC<TimelineRowProps> = ({
             )}
           </>
         )}
-        {marks.map((mark) => (
-          <Link
-            key={mark.milestoneId}
-            to={projectMilestonePath(
-              slug,
-              project.project_id,
-              mark.milestoneId
-            )}
-            aria-label={`Milestone ${mark.name}, ${mark.date}`}
-            title={`${mark.name} · ${mark.date}`}
-            data-milestone={mark.milestoneId}
-            data-completed={mark.completed ? 'true' : 'false'}
-            onPointerDown={(event) => {
-              event.stopPropagation();
-            }}
-            onClick={(event) => {
-              event.stopPropagation();
-            }}
-            className={cn(
-              'pointer-events-auto absolute top-5 z-20 h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rotate-45 rounded-[1px] border border-text-muted transition-transform duration-100 hover:scale-125 focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none',
-              mark.completed ? 'bg-text-muted' : 'bg-bg'
-            )}
-            style={{ left: mark.x }}
-          />
-        ))}
+        {marks.map((mark) => {
+          const { state, label } = milestoneProgress(mark);
+          return (
+            <Link
+              key={mark.milestoneId}
+              to={projectMilestonePath(
+                slug,
+                project.project_id,
+                mark.milestoneId
+              )}
+              aria-label={label}
+              title={`${label} · ${mark.date}`}
+              data-milestone={mark.milestoneId}
+              data-completed={state === 'complete' ? 'true' : 'false'}
+              onPointerDown={(event) => {
+                event.stopPropagation();
+              }}
+              onClick={(event) => {
+                event.stopPropagation();
+              }}
+              className="pointer-events-auto absolute top-5 z-20 inline-flex -translate-x-1/2 -translate-y-1/2 rounded-xs bg-bg transition-transform duration-100 hover:scale-125 focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
+              style={{ left: mark.x }}
+            >
+              <MilestoneGlyph
+                milestone={mark}
+                size={12}
+                decorative
+                title={`${label} · ${mark.date}`}
+              />
+            </Link>
+          );
+        })}
       </div>
     </li>
   );

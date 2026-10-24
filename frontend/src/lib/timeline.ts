@@ -4,6 +4,8 @@
  * a drag moves a bar by whole days, whatever the viewer's time zone.
  */
 
+import type { RollupCounts } from '../types/Api';
+import type { ProgressMeasure } from './planningDisplay';
 import { weekStartDay } from './preferences';
 
 /** One day in milliseconds. */
@@ -290,6 +292,9 @@ export interface MilestoneMark {
   name: string;
   date: string;
   completed: boolean;
+  counts?: RollupCounts;
+  measure?: ProgressMeasure;
+  progress?: RollupCounts;
   x: number;
 }
 
@@ -304,6 +309,9 @@ export const milestoneMarks = (
     name: string;
     target_date: string;
     completed: boolean;
+    counts?: RollupCounts;
+    measure?: ProgressMeasure;
+    progress?: RollupCounts;
   }[],
   range: TimelineRange,
   pxPerDay: number
@@ -317,6 +325,9 @@ export const milestoneMarks = (
         name: marker.name,
         date: marker.target_date,
         completed: marker.completed,
+        ...(marker.counts === undefined ? {} : { counts: marker.counts }),
+        ...(marker.measure === undefined ? {} : { measure: marker.measure }),
+        ...(marker.progress === undefined ? {} : { progress: marker.progress }),
         x: (day - range.start + 0.5) * pxPerDay,
       },
     ];

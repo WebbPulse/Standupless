@@ -30,6 +30,7 @@ import { IconButton } from '../../ui/button';
 import { PriorityGlyph } from '../../ui/glyphs';
 import { StatusIcon } from '../../ui/StatusIcon';
 import { TruncatedText, useTruncationTooltip } from '../../ui/truncated-text';
+import MilestoneGlyph from '../../planning/MilestoneGlyph';
 import ProgressRing from '../../planning/ProgressRing';
 import { RelationMarkers } from '../BlockedMarker';
 import {
@@ -89,6 +90,9 @@ export const GroupGlyph: React.FC<{ group: IssueGroup }> = ({ group }) => {
         }
       />
     );
+  }
+  if (group.field === 'milestone' && group.milestone !== undefined) {
+    return <MilestoneGlyph milestone={group.milestone} decorative />;
   }
   if (
     group.field === 'milestone' ||
