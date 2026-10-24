@@ -398,3 +398,38 @@ def test_moves_forward_orders_by_category_then_position(current: Any, target: An
 def test_a_closed_pull_request_is_not_forward_only() -> None:
     """Abandoning a pull request may send its issues back, so only open, ready and merge are held."""
     assert linking.FORWARD_ONLY_TRIGGERS == frozenset({"pr_opened", "pr_ready_for_review", "pr_merged"})
+
+
+@pytest.mark.parametrize(
+    ("message", "number"),
+    [
+        ("ABC-1 Add a thing (#474)", 474),
+        ("ABC-1 Add a thing (#474)\n\nRefs ABC-1", 474),
+        ("Merge pull request #12 from WebbPulse/abc-1-work\n\nABC-1 work", 12),
+        ("ABC-1 Add a thing", None),
+        ("Mentions (#5) in the middle of a title", None),
+        ("", None),
+    ],
+)
+def test_a_commit_names_the_pull_request_it_came_from(message: str, number: int | None) -> None:
+    """A squash title's trailing `(#N)` and a merge commit's `#N` lead back to the pull request."""
+    assert linking.cited_pull_number(message) == number
+
+
+@pytest.mark.parametrize(
+    ("magic_word", "moves_status", "holds_on_merge", "closes"),
+    [
+        ("fixes", True, True, True),
+        (None, True, False, True),
+        (None, True, True, False),
+        (None, False, False, False),
+        (None, True, None, None),
+    ],
+)
+def test_a_merged_link_says_whether_it_closed_its_issue(
+    magic_word: str | None, moves_status: bool, holds_on_merge: bool | None, closes: bool | None
+) -> None:
+    """A closing word closes, a held key does not, and a row from before the hold cannot say."""
+    link = SimpleNamespace(magic_word=magic_word, moves_status=moves_status, holds_on_merge=holds_on_merge)
+
+    assert linking.link_closes(link) == closes

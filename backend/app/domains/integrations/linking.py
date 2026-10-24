@@ -169,6 +169,42 @@ def extract(
     ]
 
 
+_PULL_CITATION = re.compile(r"^Merge pull request #(\d+)\b|\(#(\d+)\)\s*$")
+"""How a commit's first line names the pull request it came from, as a squash or a merge commit writes it."""
+
+
+def cited_pull_number(message: str) -> int | None:
+    """The pull request a commit message says it came from, or `None` when it names none.
+
+    A squash merge ends its title with `(#123)` and a merge commit opens with
+    `Merge pull request #123`, which is how a promotion's commits lead back to the
+    pull requests that shipped them to staging.
+    """
+    lines = message.strip().splitlines()
+    if not lines:
+        return None
+    match = _PULL_CITATION.search(lines[0].strip())
+    if match is None:
+        return None
+    return int(match.group(1) or match.group(2))
+
+
+def link_closes(link: Any) -> bool | None:
+    """Whether a merged pull request's link closed its issue, or `None` when the row cannot say.
+
+    A closing word closes. Otherwise a key that moved the issue closes through the
+    team's merge rules unless the pull request named it after `Refs`, which is how
+    partial work says it does not finish the issue. A row written before the hold
+    was stored carries no answer, so the caller falls back to the commit text.
+    """
+    if getattr(link, "magic_word", None):
+        return True
+    holds = getattr(link, "holds_on_merge", None)
+    if holds is None:
+        return None
+    return bool(getattr(link, "moves_status", True)) and not holds
+
+
 def trigger_for(action: str, *, merged: bool, draft: bool) -> str | None:
     """Which transition trigger a pull request event fires, or `None` for neither.
 

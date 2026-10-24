@@ -31,6 +31,7 @@ from app.common.core.config import settings
 from app.common.db.dynamo.activity import build_activity
 from app.common.db.dynamo.base import utc_now
 from app.common.db.dynamo.github import IssueLink, PullRequestState, link_key, source_millis
+from app.common.issue_key_search import find_keys
 from app.common.issue_move import find_issue_by_number
 from app.common.sla import apply_sla
 from app.domains.integrations import linking, pr_labels, pr_status
@@ -405,13 +406,29 @@ def _handle_pull_request(
 
     tracked = _record_pull_request(repositories, workspace_id, body, node_id, pr_updated_ms, create=True)
     pr_summary = pr_status.summary(tracked)
+    promoted_holds: dict[str, bool] = {}
+    if trigger == "pr_merged" and commit_messages:
+        direct = linking.extract(prefixes, branch=branch, title=title, body=pr_body)
+        promoted_holds = _promoted_holds(
+            repositories,
+            workspace_id,
+            prefixes,
+            issues,
+            found,
+            direct_keys={row.key for row in direct},
+            commit_messages=commit_messages,
+            repository_id=repository_id,
+            repository_full_name=str(repository.get("full_name", "")),
+            node_id=node_id,
+        )
     stale = False
     for key, issue in issues.items():
         match = next(row for row in found if row.key == key)
         link_id = f"{node_id}#{issue.issue_id}"
         previous = repositories.github.get_link(workspace_id, link_id)
         issue_trigger = trigger if match.moves_status else None
-        if issue_trigger == "pr_merged" and match.holds_on_merge:
+        holds = promoted_holds.get(key, match.holds_on_merge)
+        if issue_trigger == "pr_merged" and holds:
             issue_trigger = None
         newly_moving = previous is None or not previous.moves_status
         if match.moves_status and newly_moving and issue_trigger is None:
@@ -437,6 +454,7 @@ def _handle_pull_request(
                 author_login=author,
                 magic_word=match.magic_word,
                 moves_status=match.moves_status,
+                holds_on_merge=holds,
                 applied_status_id=previous.applied_status_id if previous is not None else None,
                 comment_id=previous.comment_id if previous is not None else None,
                 check_run_id=previous.check_run_id if previous is not None else None,
@@ -479,6 +497,84 @@ def _handle_pull_request(
     pr_labels.after_delivery(repositories, workspace_id, body, node_id, pr_updated_ms, link_ids)
     refresh_for_pr(repositories, workspace_id, node_id)
     return True
+
+
+def _promoted_holds(
+    repositories: Repositories,
+    workspace_id: str,
+    prefixes: Mapping[str, Any],
+    issues: Mapping[str, Any],
+    found: Sequence[linking.FoundKey],
+    *,
+    direct_keys: set[str],
+    commit_messages: Sequence[str],
+    repository_id: str,
+    repository_full_name: str,
+    node_id: str,
+) -> dict[str, bool]:
+    """Whether each key a merge found only in its commits holds, judged by the pull requests that shipped it.
+
+    A promotion names the work it ships through the commits it carries, and a
+    squash commit's title repeats the key of a pull request that may only have said
+    `Refs`. So a commit that cites a merged pull request of this repository linking
+    the issue counts as that link closed it: a closing word or a moving key that
+    was not held. A commit citing no such link, or a link written before the hold
+    was stored, falls back to what its text says. A key held by every commit naming
+    it stays put; a key the promotion itself names in its branch, title or body is
+    left to the text, as before. Answers only for the keys it judged.
+    """
+    holds: dict[str, bool] = {}
+    by_ident = {(row.team_id, row.number): row for row in found}
+    naming: dict[str, list[str]] = {}
+    for message in commit_messages:
+        for row in find_keys(message, prefixes):
+            match = by_ident.get((row.team_id, row.number))
+            if match is not None and match.key not in direct_keys and match.key in issues:
+                naming.setdefault(match.key, []).append(message)
+    for key, messages in naming.items():
+        match = next(row for row in found if row.key == key)
+        merged = _merged_links_by_number(
+            repositories, workspace_id, issues[key].issue_id, repository_id, repository_full_name, node_id
+        )
+        judged: list[bool] = []
+        unjudged = False
+        for message in messages:
+            number = linking.cited_pull_number(message)
+            link = merged.get(number) if number is not None else None
+            verdict = linking.link_closes(link) if link is not None else None
+            if verdict is None:
+                unjudged = True
+            else:
+                judged.append(verdict)
+        if not judged:
+            continue
+        closes = any(judged) or (unjudged and not match.holds_on_merge)
+        holds[key] = not closes
+    return holds
+
+
+def _merged_links_by_number(
+    repositories: Repositories,
+    workspace_id: str,
+    issue_id: str,
+    repository_id: str,
+    repository_full_name: str,
+    node_id: str,
+) -> dict[int, IssueLink]:
+    """The issue's links to merged pull requests of this repository, other than this one, by number."""
+    page = repositories.github.list_links_for_issue(workspace_id, issue_id, limit=200)
+    merged: dict[int, IssueLink] = {}
+    for item in page.items:
+        link = IssueLink.model_validate(dict(item))
+        if link.detached or link.pr_state != "merged" or link.link_id.startswith(f"{node_id}#"):
+            continue
+        if link.repository_id:
+            same = link.repository_id == repository_id
+        else:
+            same = link.repository_full_name == repository_full_name
+        if same:
+            merged[link.pr_number] = link
+    return merged
 
 
 def _record_pull_request(
