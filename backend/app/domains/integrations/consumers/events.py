@@ -212,8 +212,14 @@ def handle_record(repositories: Repositories, record: Mapping[str, Any]) -> None
 
     repository = body.get("repository")
     if event in NAMED_REPOSITORY_EVENTS and isinstance(repository, Mapping):
-        from app.domains.integrations.installs import refresh_repository_names, refresh_repository_visibility
+        from app.domains.integrations.installs import (
+            adopt_delivered_repository,
+            refresh_repository_names,
+            refresh_repository_visibility,
+        )
 
+        if not (event == "repository" and body.get("action") == "deleted"):
+            adopt_delivered_repository(repositories, workspace_id, installation_id, repository)
         refresh_repository_names(repositories, workspace_id, repository)
         refresh_repository_visibility(repositories, workspace_id, repository)
     if event == "repository":
