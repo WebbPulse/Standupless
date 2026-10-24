@@ -1382,6 +1382,8 @@ export interface IssueGroup {
   person?: string;
   /** The milestone's rolled up progress as a whole percent, for its header. */
   progress?: number;
+  /** The milestone itself, for a milestone group's progress glyph. */
+  milestone?: MilestoneRead;
   issues: OrderedIssueRead[];
 }
 
@@ -1708,6 +1710,7 @@ const groupShells = (
             field,
             label: milestone.name,
             progress: progressPercent(milestone),
+            milestone,
           })),
         { key: NONE, field, label: 'No milestone' },
       ];
