@@ -17,7 +17,7 @@ from __future__ import annotations
 import json
 import logging
 import re
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from typing import Any, Iterable, Mapping, Sequence
 from urllib.parse import quote
 
@@ -29,6 +29,7 @@ from app.common.composition.consumers import CONSUMERS
 from app.common.core.config import settings
 from app.common.db.dynamo.github import IssueLink
 from app.common.project_cadence import CHANNEL_UPDATE_DUE_JOB
+from app.common.standup import CHANNEL_STANDUP_JOB
 from app.domains.integrations import github_issues
 from app.domains.integrations.outbound.delivery import ATTEMPT_JOB, run_attempt
 
@@ -150,6 +151,8 @@ def handle_record(repositories: Repositories, record: Mapping[str, Any]) -> None
         run_channel_attempt(repositories, job)
     elif kind == CHANNEL_UPDATE_DUE_JOB:
         _announce_update_due(repositories, job)
+    elif kind == CHANNEL_STANDUP_JOB:
+        _announce_standup(repositories, job)
     elif kind == LEGACY_DELIVER_JOB:
         _log.info(
             "Dropped a webhook job queued in the retired shape.",
@@ -199,6 +202,30 @@ def _announce_update_due(repositories: Repositories, job: Mapping[str, Any]) -> 
         seed=f"project_update_due#{project_id}#{due_at.isoformat()}",
         due_at=due_at,
     )
+
+
+def _announce_standup(repositories: Repositories, job: Mapping[str, Any]) -> None:
+    """Post one sent standup digest, queued by the views digest sweep, to the team channels.
+
+    The seed is the team and digest date, so a job delivered twice lands on the
+    same delivery rows and posts once. A job missing either is dropped.
+    """
+    from app.domains.integrations.channels.events import announce_standup_digest
+
+    workspace_id = str(job.get("workspace_id", ""))
+    team_id = str(job.get("team_id", ""))
+    day: date | None
+    try:
+        day = date.fromisoformat(str(job.get("date", "")))
+    except ValueError:
+        day = None
+    if not workspace_id or not team_id or day is None:
+        _log.warning(
+            "Dropped a standup digest job missing its fields.",
+            extra={"event": "integrations.dispatch.standup_malformed"},
+        )
+        return
+    announce_standup_digest(repositories, workspace_id, team_id, day)
 
 
 def _write_back(repositories: Repositories, job: Mapping[str, Any]) -> None:

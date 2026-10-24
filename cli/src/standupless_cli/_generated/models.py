@@ -270,6 +270,7 @@ class ChannelCreate(TypedDict, closed=True):
             "comment_created",
             "project_update_posted",
             "project_update_due",
+            "standup_digest",
         ]
     ]
     label: NotRequired[str]
@@ -295,6 +296,7 @@ class ChannelRead(TypedDict):
             "comment_created",
             "project_update_posted",
             "project_update_due",
+            "standup_digest",
         ]
     ]
     label: str
@@ -328,6 +330,7 @@ class ChannelUpdate(TypedDict, closed=True):
                 "comment_created",
                 "project_update_posted",
                 "project_update_due",
+                "standup_digest",
             ]
         ]
         | None
@@ -2850,6 +2853,7 @@ class WorkspaceChannelCreate(TypedDict, closed=True):
             "comment_created",
             "project_update_posted",
             "project_update_due",
+            "standup_digest",
         ]
     ]
     label: NotRequired[str]
@@ -2871,6 +2875,7 @@ class WorkspaceChannelUpdate(TypedDict, closed=True):
                 "comment_created",
                 "project_update_posted",
                 "project_update_due",
+                "standup_digest",
             ]
         ]
         | None

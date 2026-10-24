@@ -13,14 +13,15 @@ webhook endpoints are, so a workspace with no channels costs one Query per batch
 Nothing is sent for a workspace being deleted or a team being deleted.
 
 `project_update_due` is in the filter so a destination can opt in today. The
-reminder job that decides an update is due calls `announce_project_update_due`.
+reminder job that decides an update is due calls `announce_project_update_due`,
+and the digest sweep that sends a standup has `announce_standup_digest` post it.
 """
 
 from __future__ import annotations
 
 import time
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any, Callable, Mapping
 
 from webbpulse.events import deserialize_image
@@ -30,6 +31,7 @@ from app.common.core.config import settings
 from app.common.db.dynamo.channels import ChannelDestination
 from app.common.db.dynamo.planning import PROJECT_UPDATE
 from app.common.issue_keys import display_key
+from app.common.standup import StandupDigest, StandupWindowError, build_digest
 from app.common.team_privacy import destination_can_carry
 from app.domains.integrations.channels.delivery import Enqueue, schedule
 from app.domains.integrations.channels.messages import HEALTH_COLORS, ChannelMessage, excerpt
@@ -42,6 +44,20 @@ CACHE_SECONDS = 5.0
 CACHE_SIZE = 1024
 
 HEALTH_NAMES = {"on_track": "On track", "at_risk": "At risk", "off_track": "Off track"}
+
+STANDUP_SECTIONS: tuple[tuple[str, str], ...] = (
+    ("completed", "Completed"),
+    ("started", "Started"),
+    ("commented", "Commented"),
+    ("blocked", "Blocked"),
+    ("overdue", "Overdue"),
+    ("due_soon", "Due soon"),
+    ("project_updates", "Project updates"),
+)
+"""The digest sections a channel post counts, in the order the standup page shows them."""
+
+STANDUP_PEOPLE_LIMIT = 10
+"""How many people a channel post lists by name before folding the rest into a count."""
 
 type Candidate = tuple[str, ChannelMessage]
 
@@ -358,6 +374,74 @@ def announce_project_update_due(
         [("project_update_due", message)],
         seed=seed,
         at=due_at,
+        destinations=destinations,
+        send=send,
+    )
+
+
+def standup_message(digest: StandupDigest, url: str, at: datetime) -> ChannelMessage | None:
+    """A compact post for one digest: section totals and a line per person, or `None` when it is empty."""
+    people = [person for person in digest.people if not person.is_empty]
+    if not people:
+        return None
+    totals = [(label, sum(len(getattr(person, section)) for person in people)) for section, label in STANDUP_SECTIONS]
+    lines: list[str] = []
+    for person in people[:STANDUP_PEOPLE_LIMIT]:
+        counts = [f"{len(getattr(person, section))} {label.lower()}" for section, label in STANDUP_SECTIONS]
+        parts = [part for part in counts if not part.startswith("0 ")]
+        if person.note:
+            parts.append("left a note")
+        lines.append(f"{person.display_name or 'Unassigned'}: {', '.join(parts)}")
+    if len(people) > STANDUP_PEOPLE_LIMIT:
+        lines.append(f"and {len(people) - STANDUP_PEOPLE_LIMIT} more")
+    shown = date.fromisoformat(digest.date)
+    cadence = "Weekly" if digest.cadence == "weekly" else "Daily"
+    return ChannelMessage(
+        event="standup_digest",
+        subject=f"{digest.team_name} standup",
+        url=url,
+        summary=f"{cadence} standup for {shown:%a %b} {shown.day}, {shown.year}.",
+        key=digest.team_key,
+        detail=excerpt("\n".join(lines)),
+        at=at,
+        fields=tuple((label, str(count)) for label, count in totals if count),
+    )
+
+
+def announce_standup_digest(
+    repositories: Repositories,
+    workspace_id: str,
+    team_id: str,
+    day: date,
+    *,
+    send: Enqueue | None = None,
+) -> int:
+    """Post one team's sent standup digest to its channels that want it, returning how many were scheduled.
+
+    For the digest sweep's queued job, once per team and date. The digest is
+    rebuilt here, only once a channel wants it, and an empty one posts nothing.
+    The seed is the team and date, so a job delivered twice lands on the same
+    delivery rows and posts once.
+    """
+    teams = (team_id,)
+    destinations = [row for row in _enabled(repositories, workspace_id, teams, None) if "standup_digest" in row.events]
+    if not destinations:
+        return 0
+    try:
+        digest = build_digest(repositories, workspace_id, team_id, day)
+    except (LookupError, StandupWindowError):
+        return 0
+    url = Links(repositories, workspace_id).standup(team_id, digest.date)
+    message = standup_message(digest, url, digest.window_end)
+    if message is None:
+        return 0
+    return deliver(
+        repositories,
+        workspace_id,
+        teams,
+        [("standup_digest", message)],
+        seed=f"standup_digest#{team_id}#{digest.date}",
+        at=digest.window_end,
         destinations=destinations,
         send=send,
     )
