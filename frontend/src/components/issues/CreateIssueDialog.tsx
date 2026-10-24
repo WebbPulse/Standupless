@@ -2,8 +2,9 @@
  * The new issue dialog. The title and description come first because they
  * are what a person arrives with, and every other property sits in a row of
  * chips underneath that can be left alone: the server allocates the key and
- * defaults the status to the lowest position backlog one, so filing something
- * never waits on deciding where it belongs.
+ * defaults the status to the lowest position backlog one, or to Triage while
+ * the team has triage on, so filing something never waits on deciding where
+ * it belongs.
  *
  * The keyboard carries the whole flow. Cmd or Ctrl and Enter files the issue,
  * Escape closes, and typed text is guarded so a stray Escape does not throw a
@@ -446,7 +447,9 @@ export const CreateIssueDialog: React.FC<CreateIssueDialogProps> = ({
   const triageOn = useTriageOn(activeTeamId);
   const landsInTriage =
     triageOn &&
-    (workspace?.role === 'guest' || activeTeam?.is_member === false);
+    (workspace?.role === 'guest' ||
+      activeTeam?.is_member === false ||
+      draft.parent === null);
 
   const titleError = validateTitle(title);
   const dateError = validateDateRange(

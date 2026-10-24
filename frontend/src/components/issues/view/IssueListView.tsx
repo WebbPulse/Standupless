@@ -83,7 +83,7 @@ import {
 } from '../../../lib/issueConversion';
 import { rememberTrail } from '../../../lib/issueTrail';
 import { showToast } from '../../../lib/toast';
-import { foldedParentKey, treeRows } from '../../../lib/issueTree';
+import { foldedParentKey, parentRefOf, treeRows } from '../../../lib/issueTree';
 import { issuePath } from '../../../lib/paths';
 import type { EstimateOptions } from '../../../lib/validation';
 import type { EstimateScale } from '../../../types/Api';
@@ -253,6 +253,14 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
   const byId = useMemo(
     () => new Map(sorted.map((issue) => [issue.id, issue])),
     [sorted]
+  );
+  const loadedById = useMemo(
+    () => new Map(collection.issues.map((issue) => [issue.id, issue])),
+    [collection.issues]
+  );
+  const parentOf = useCallback(
+    (issue: OrderedIssueRead) => parentRefOf(issue, loadedById),
+    [loadedById]
   );
 
   const sections = useMemo<IssueSection[]>(() => {
@@ -1002,6 +1010,7 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
       onOpen: rememberOrder,
       filterFor,
       milestones,
+      parentOf,
     }),
     [
       slug,
@@ -1024,6 +1033,7 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
       rememberOrder,
       filterFor,
       milestones,
+      parentOf,
     ]
   );
 

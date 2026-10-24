@@ -1,8 +1,9 @@
 """A team's triage inbox, through the issue routes.
 
-These pin who lands in triage, that a waiting issue stays off the list and the
-board until it is worked, and that accept, decline, duplicate and snooze each move
-it out the way the inbox promises.
+These pin who lands in triage, which with triage on is every new issue that
+names no status, that a waiting issue stays off the list and the board until it
+is worked, and that accept, decline, duplicate and snooze each move it out the
+way the inbox promises.
 """
 
 from __future__ import annotations
@@ -15,6 +16,7 @@ from fastapi.testclient import TestClient
 
 from app.common.db.dynamo.base import utc_now
 from app.common.db.dynamo.team_config import default_triage_settings
+from app.common.db.dynamo.team_templates import IssueTemplate, template_key
 from tests.domains.helpers import ADMIN, GUEST, MEMBER, OWNER, add_team_member, sign_in
 from tests.domains.issues.conftest import OTHER_TEAM, TEAM, WORKSPACE, create_issue
 
@@ -83,22 +85,86 @@ def test_guests_and_people_outside_the_team_land_in_triage(client: TestClient, t
     assert _waiting(client) == [from_member["id"], from_guest["id"]]
 
 
-def test_team_members_skip_triage_unless_they_ask(client: TestClient, triage: str) -> None:
-    """An explicit member files straight in, and `triage: true` sends it to the inbox."""
+def test_a_team_members_issue_with_no_status_lands_in_triage(client: TestClient, triage: str) -> None:
+    """An explicit member's new issue waits in the inbox when it names no status."""
     sign_in(client, OWNER)
-    direct = create_issue(client, WORKSPACE, title="Direct")
+    filed = create_issue(client, WORKSPACE, title="Filed")
     asked = create_issue(client, WORKSPACE, title="Asked", triage=True)
 
+    assert filed["in_triage"] is True
+    assert asked["in_triage"] is True
+    assert set(_waiting(client)) == {filed["id"], asked["id"]}
+
+
+def test_a_named_status_skips_triage_for_a_member(client: TestClient, triage: str, statuses: "dict[str, Any]") -> None:
+    """A member who names a real status files straight into it."""
+    sign_in(client, OWNER)
+    direct = create_issue(client, WORKSPACE, status_id=statuses["started"].status_id)
+
     assert direct["in_triage"] is False
+    assert direct["status_id"] == statuses["started"].status_id
+
+
+def test_a_named_status_does_not_let_a_guest_skip_triage(
+    client: TestClient, triage: str, statuses: "dict[str, Any]"
+) -> None:
+    """A guest's issue waits in the inbox whatever status it names."""
+    sign_in(client, GUEST)
+    filed = create_issue(client, WORKSPACE, status_id=statuses["started"].status_id)
+
+    assert filed["in_triage"] is True
+
+
+def test_a_members_sub_issue_skips_triage(client: TestClient, triage: str, statuses: "dict[str, Any]") -> None:
+    """A sub-issue from a member keeps filing straight in, and may still ask for triage."""
+    sign_in(client, OWNER)
+    parent = create_issue(client, WORKSPACE, status_id=statuses["started"].status_id)
+    child = create_issue(client, WORKSPACE, title="Child", parent_id=parent["id"])
+    asked = create_issue(client, WORKSPACE, title="Asked", parent_id=parent["id"], triage=True)
+
+    assert child["in_triage"] is False
     assert asked["in_triage"] is True
 
 
-def test_a_waiting_issue_is_off_the_list_and_the_board(client: TestClient, triage: str, repositories: Any) -> None:
+def _template(repositories: Any, template_id: str, name: str, status_id: "str | None" = None) -> None:
+    """Store one team template straight in the table."""
+    repositories.team_config.create_template(
+        IssueTemplate(
+            workspace_id=WORKSPACE,
+            config_key=template_key(TEAM, template_id),
+            template_id=template_id,
+            team_id=TEAM,
+            name=name,
+            title=name,
+            status_id=status_id,
+        )
+    )
+
+
+def test_a_template_without_a_status_lands_in_triage(
+    client: TestClient, triage: str, repositories: Any, statuses: "dict[str, Any]"
+) -> None:
+    """A template that sets no status leaves a member's issue in triage, and one that sets a status files into it."""
+    _template(repositories, "01JB000000000000000000BARE", "Bare")
+    _template(repositories, "01JB00000000000000000PLACE", "Placed", statuses["started"].status_id)
+    sign_in(client, OWNER)
+
+    from_bare = create_issue(client, WORKSPACE, title="", template_id="01JB000000000000000000BARE")
+    from_placed = create_issue(client, WORKSPACE, title="", template_id="01JB00000000000000000PLACE")
+
+    assert from_bare["in_triage"] is True
+    assert from_placed["in_triage"] is False
+    assert from_placed["status_id"] == statuses["started"].status_id
+
+
+def test_a_waiting_issue_is_off_the_list_and_the_board(
+    client: TestClient, triage: str, repositories: Any, statuses: "dict[str, Any]"
+) -> None:
     """The list leaves it out unless asked, and no status column holds it."""
     sign_in(client, MEMBER)
     waiting = create_issue(client, WORKSPACE)
     sign_in(client, OWNER)
-    kept = create_issue(client, WORKSPACE)
+    kept = create_issue(client, WORKSPACE, status_id=statuses["backlog"].status_id)
 
     assert _listed(client) == {kept["id"]}
     assert _listed(client, include_triage="true") == {kept["id"], waiting["id"]}
@@ -161,7 +227,7 @@ def test_duplicate_links_and_closes_it(
 ) -> None:
     """Marking as duplicate links the two and closes the waiting one."""
     sign_in(client, OWNER)
-    original = create_issue(client, WORKSPACE, title="Original")
+    original = create_issue(client, WORKSPACE, title="Original", status_id=statuses["backlog"].status_id)
     sign_in(client, MEMBER)
     waiting = create_issue(client, WORKSPACE, title="Again")
     sign_in(client, OWNER)
@@ -250,10 +316,10 @@ def test_guests_cannot_work_triage(client: TestClient, triage: str, statuses: "d
     assert moved.json()["in_triage"] is True
 
 
-def test_an_issue_not_in_triage_is_refused(client: TestClient, triage: str) -> None:
+def test_an_issue_not_in_triage_is_refused(client: TestClient, triage: str, statuses: "dict[str, Any]") -> None:
     """The actions only work issues still waiting."""
     sign_in(client, OWNER)
-    issue = create_issue(client, WORKSPACE)
+    issue = create_issue(client, WORKSPACE, status_id=statuses["backlog"].status_id)
 
     assert client.post(f"{BASE}/{issue['id']}/triage/accept").status_code == 422
 

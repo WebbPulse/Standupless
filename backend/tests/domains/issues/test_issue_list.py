@@ -86,6 +86,24 @@ def test_filters_narrow_by_status_priority_label_and_parent(
     assert _ids(client.get(base, params={"status_id": statuses["started"].status_id}).json()) == [started["id"]]
 
 
+def test_a_sub_issue_names_its_parent_on_the_page_or_off_it(client: TestClient, workspace: str, statuses: Any) -> None:
+    """The parent key and title ride on a sub-issue whether or not the parent is listed beside it."""
+    sign_in(client, OWNER)
+    parent = create_issue(client, workspace, title="Parent work")
+    child = create_issue(client, workspace, title="Child step", parent_id=parent["id"])
+    base = f"/api/workspaces/{workspace}/issues"
+
+    together = {row["id"]: row for row in client.get(base).json()["issues"]}
+    apart = client.get(base, params={"parent_id": parent["id"]}).json()["issues"]
+
+    assert (together[child["id"]]["parent_key"], together[child["id"]]["parent_title"]) == (
+        parent["key"],
+        "Parent work",
+    )
+    assert together[parent["id"]]["parent_key"] is None
+    assert [(row["parent_key"], row["parent_title"]) for row in apart] == [(parent["key"], "Parent work")]
+
+
 def test_the_query_matches_a_key_or_a_title_prefix(client: TestClient, workspace: str, statuses: Any) -> None:
     """`q` is a key or a title prefix, case insensitive, per the contract."""
     sign_in(client, OWNER)

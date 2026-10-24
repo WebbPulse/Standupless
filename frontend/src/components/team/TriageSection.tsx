@@ -1,8 +1,7 @@
 /**
- * A team's triage switch. While it is on, issues filed by guests, integrations
- * and people outside the team wait in the team's triage inbox instead of
- * landing in its lists and board, until a member accepts, declines, marks as
- * duplicate or snoozes them.
+ * A team's triage switch. While it is on, every new issue filed without a
+ * status waits in the team's triage inbox instead of landing in its lists and
+ * board, until a member accepts, declines, marks as duplicate or snoozes it.
  *
  * The setting is one choice, so it saves as soon as it is flipped. Turning it
  * on needs a plan with triage, so on a plan without it the switch only turns
@@ -85,10 +84,9 @@ export const TriageSection: React.FC<TriageSectionProps> = ({
       <div className="space-y-1">
         <h3 className="text-base font-semibold">Triage</h3>
         <p className="text-sm text-text-muted">
-          Issues filed by guests, integrations and people outside the team wait
-          in a triage inbox until a member accepts, declines, marks them as a
-          duplicate or snoozes them. Team members can still file straight into
-          the team.
+          New issues wait in a triage inbox until a member accepts, declines,
+          marks them as a duplicate or snoozes them. This includes issues filed
+          by team members, who can pick a status when filing to skip it.
         </p>
       </div>
 

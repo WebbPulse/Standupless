@@ -339,6 +339,8 @@ class IssueRead(BaseModel):
     start_date: Optional[str] = None
     due_date: Optional[str] = None
     parent_id: Optional[str] = None
+    parent_key: Optional[str] = None
+    parent_title: Optional[str] = None
     cycle_id: Optional[str] = None
     project_id: Optional[str] = None
     project_milestone_id: Optional[str] = None
@@ -362,8 +364,13 @@ class IssueRead(BaseModel):
     external_ref: Optional[str] = None
 
     @classmethod
-    def from_row(cls, issue: Issue) -> "IssueRead":
-        """Build the response shape from a stored issue row."""
+    def from_row(cls, issue: Issue, parent: Optional[Issue] = None) -> "IssueRead":
+        """Build the response shape from a stored issue row.
+
+        `parent` fills `parent_key` and `parent_title`, which only the list routes
+        look up, so a sub-issue shown apart from its parent can still name it.
+        """
+        named = parent if parent is not None and parent.issue_id == issue.parent_id else None
         return cls(
             id=issue.issue_id,
             workspace_id=issue.workspace_id,
@@ -380,6 +387,8 @@ class IssueRead(BaseModel):
             start_date=issue.start_date,
             due_date=issue.due_date,
             parent_id=issue.parent_id,
+            parent_key=named.key if named is not None else None,
+            parent_title=named.title if named is not None else None,
             cycle_id=issue.cycle_id,
             project_id=issue.project_id,
             project_milestone_id=issue.project_milestone_id,

@@ -27,9 +27,27 @@ def standard_plan(repositories: Any, workspace: str) -> None:
     repositories.workspaces.set_billing(WORKSPACE, plan="standard")
 
 
-def _file(client: TestClient, secret: str, title: str) -> dict[str, Any]:
+def _file(client: TestClient, secret: str, title: str, **fields: Any) -> dict[str, Any]:
     """File one issue on `TEAM` through the create tool."""
-    return answer(tool(client, secret, "create_issue", {"team_id": "ABC", "title": title}))
+    return answer(tool(client, secret, "create_issue", {"team_id": "ABC", "title": title, **fields}))
+
+
+def test_a_team_members_new_issue_follows_the_switch(client: TestClient, repositories: Any, workspace: str) -> None:
+    """A team member's issue with no status lands in triage while it is on and in the first status while off."""
+    add_team_member(repositories, WORKSPACE, TEAM, OWNER, "admin")
+    owner = mint_for(repositories, OWNER, SCOPES)
+
+    before = _file(client, owner, "Before")
+    answer(tool(client, owner, "update_team_triage_settings", {"team_id": "ABC", "enabled": True}))
+    during = _file(client, owner, "During")
+    placed = _file(client, owner, "Placed", status_id="Todo")
+    answer(tool(client, owner, "update_team_triage_settings", {"team_id": "ABC", "enabled": False}))
+    after = _file(client, owner, "After")
+
+    assert before["in_triage"] is False and before["status_id"] != "triage"
+    assert during["in_triage"] is True and during["status_id"] == "triage"
+    assert placed["in_triage"] is False and placed["status"] == "Todo"
+    assert after["in_triage"] is False and after["status"] == before["status"]
 
 
 def test_the_switch_routes_outside_issues_into_triage(client: TestClient, repositories: Any, workspace: str) -> None:
@@ -128,7 +146,7 @@ def test_triage_reads_and_writes_as_a_status(client: TestClient, repositories: A
     answer(tool(client, owner, "update_team_triage_settings", {"team_id": "ABC", "enabled": True}))
 
     filed = answer(tool(client, owner, "create_issue", {"team_id": "ABC", "title": "Filed", "status_id": "triage"}))
-    kept = _file(client, owner, "Kept")
+    kept = _file(client, owner, "Kept", status_id="Todo")
     sent = answer(tool(client, owner, "update_issue", {"issue_id": kept["issue_key"], "status_id": "Triage"}))
     read = answer(tool(client, owner, "get_issue", {"issue_id": filed["issue_key"]}))
     listed = answer(tool(client, owner, "list_issues", {"team_id": "ABC", "status_id": "triage"}))
