@@ -16,6 +16,8 @@ import type { IssueListFilters, IssueListSort } from './issues';
 import type {
   BoardQuery,
   BoardRead,
+  InboxClearResult,
+  InboxClearWrite,
   InboxCountRead,
   InboxReadResult,
   InboxReadWrite,
@@ -359,6 +361,10 @@ export const inboxReadPath = (workspaceId: string): string =>
 export const inboxUnreadPath = (workspaceId: string): string =>
   `${inboxPath(workspaceId)}/unread`;
 
+/** The route the caller's rows are deleted in bulk on. */
+export const inboxClearPath = (workspaceId: string): string =>
+  `${inboxPath(workspaceId)}/clear`;
+
 /** The route rows are snoozed on. */
 export const inboxSnoozePath = (workspaceId: string): string =>
   `${inboxPath(workspaceId)}/snooze`;
@@ -668,6 +674,21 @@ export const markRead = async (
 /** Marks every row read in one call. */
 export const markAllRead = async (workspaceId: string): Promise<number> =>
   markRead(workspaceId, { all: true });
+
+/**
+ * Deletes the caller's rows in bulk, read ones only or all of them, and
+ * reports how many went.
+ */
+export const clearInbox = async (
+  workspaceId: string,
+  body: InboxClearWrite
+): Promise<number> => {
+  const response = await apiClient.post<InboxClearResult>(
+    inboxClearPath(workspaceId),
+    body
+  );
+  return response.data?.deleted ?? 0;
+};
 
 /**
  * Marks rows unread again, which also ends any snooze on them. Ids already

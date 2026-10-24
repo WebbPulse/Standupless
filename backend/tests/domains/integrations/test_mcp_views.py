@@ -273,6 +273,26 @@ def test_delete_notification(client: TestClient, repositories: Any, inbox: tuple
     assert TOOLS_BY_NAME["delete_notification"].descriptor()["annotations"]["destructiveHint"] is True
 
 
+def test_delete_all_notifications(client: TestClient, repositories: Any, inbox: tuple[str, str]) -> None:
+    """The bulk delete takes the read rows or all of them, and only from the caller's own inbox."""
+    secret = mint_for(repositories, MEMBER, INBOX)
+    answer(tool(client, secret, "mark_notification_read", {"notification_ids": [inbox[0]]}))
+
+    read = answer(tool(client, secret, "delete_all_notifications", {"read_only": True}))
+    after_read = answer(tool(client, secret, "list_notifications", {}))
+    everything = answer(tool(client, secret, "delete_all_notifications", {}))
+    after_all = answer(tool(client, secret, "list_notifications", {}))
+    unknown = refusal(tool(client, secret, "delete_all_notifications", {"kinds": ["nonsense"]}))
+
+    assert read["deleted"] == 1
+    assert [row["notification_id"] for row in after_read["notifications"]] == [inbox[1]]
+    assert everything["deleted"] == 1
+    assert after_all["notifications"] == []
+    assert "Unknown notification kind" in unknown
+    assert repositories.inbox.get(WORKSPACE, OWNER, THEIRS) is not None
+    assert TOOLS_BY_NAME["delete_all_notifications"].descriptor()["annotations"]["destructiveHint"] is True
+
+
 def test_mark_tools_leave_another_workspaces_notification_alone(
     client: TestClient, repositories: Any, inbox: tuple[str, str]
 ) -> None:
@@ -286,6 +306,7 @@ def test_mark_tools_leave_another_workspaces_notification_alone(
         tool(client, secret, "snooze_notification", {"notification_ids": [FOREIGN_NOTIFICATION], "until": until})
     )
     answer(tool(client, secret, "mark_all_notifications_read", {}))
+    answer(tool(client, secret, "delete_all_notifications", {"include_snoozed": True}))
 
     stored = repositories.inbox.get(OTHER_WORKSPACE, OWNER, FOREIGN_NOTIFICATION)
     assert (read["updated"], snoozed["updated"]) == (0, 0)

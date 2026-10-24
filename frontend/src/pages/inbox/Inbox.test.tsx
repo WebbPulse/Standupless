@@ -7,10 +7,12 @@
  * removes and Shift R marks everything read, and Show snoozed with its
  * unsnooze. Opening a row while read rows are hidden keeps it open once it is
  * read. Notifications about one issue fold into one row that opens and marks
- * them all, and the Filter and Display menus shape the list query.
+ * them all, and the Filter and Display menus shape the list query. The
+ * actions menu deletes every read row or every row after a confirmation,
+ * sending the current filter along.
  */
 
-import { act, render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -29,6 +31,7 @@ const listInbox = vi.fn<(query: unknown) => Promise<NotificationListRead>>();
 const markRead = vi.fn<(body: unknown) => Promise<number>>();
 const markAllRead = vi.fn<() => Promise<number>>();
 const deleteNotification = vi.fn<(id: string) => Promise<void>>();
+const clearInbox = vi.fn<(body: unknown) => Promise<number>>();
 const markUnread = vi.fn<(body: unknown) => Promise<number>>();
 const snoozeNotifications =
   vi.fn<
@@ -56,6 +59,7 @@ vi.mock('../../api/views', async () => {
     markRead: (_w: string, body: unknown) => markRead(body),
     markAllRead: () => markAllRead(),
     deleteNotification: (_w: string, id: string) => deleteNotification(id),
+    clearInbox: (_w: string, body: unknown) => clearInbox(body),
     markUnread: (_w: string, body: unknown) => markUnread(body),
     snoozeNotifications: (
       _w: string,
@@ -181,6 +185,7 @@ beforeEach(() => {
   markRead.mockReset();
   markAllRead.mockReset();
   deleteNotification.mockReset();
+  clearInbox.mockReset();
   markUnread.mockReset();
   snoozeNotifications.mockReset();
   useWorkspaceMock.mockReset();
@@ -192,6 +197,7 @@ beforeEach(() => {
   markRead.mockResolvedValue(1);
   markAllRead.mockResolvedValue(3);
   deleteNotification.mockResolvedValue(undefined);
+  clearInbox.mockResolvedValue(2);
   markUnread.mockResolvedValue(1);
   snoozeNotifications.mockResolvedValue(1);
 });
@@ -260,12 +266,82 @@ describe('inbox', () => {
     renderPage();
 
     await screen.findByText('Cache the token');
-    await user.click(screen.getByRole('button', { name: 'Mark all read' }));
+    await user.click(screen.getByRole('button', { name: 'Inbox actions' }));
+    await user.click(screen.getByRole('menuitem', { name: 'Mark all read' }));
 
     await waitFor(() => {
       expect(markAllRead).toHaveBeenCalled();
     });
     expect(markRead).not.toHaveBeenCalled();
+  });
+
+  it('deletes every read row after a confirmation', async () => {
+    const user = userEvent.setup();
+    renderPage();
+
+    await screen.findByText('Cache the token');
+    await user.click(screen.getByRole('button', { name: 'Inbox actions' }));
+    await user.click(
+      screen.getByRole('menuitem', { name: 'Delete all read notifications' })
+    );
+    expect(clearInbox).not.toHaveBeenCalled();
+    const dialog = await screen.findByRole('dialog', {
+      name: 'Delete all read notifications',
+    });
+    listInbox.mockResolvedValue({ notifications: [], next_cursor: null });
+    await user.click(within(dialog).getByRole('button', { name: 'Delete' }));
+
+    await waitFor(() => {
+      expect(clearInbox).toHaveBeenCalledWith({ read_only: true });
+    });
+    await waitFor(() => {
+      expect(screen.queryByText('Cache the token')).not.toBeInTheDocument();
+    });
+  });
+
+  it('deletes every row under the current filter after a confirmation', async () => {
+    const user = userEvent.setup();
+    renderPage();
+
+    await screen.findByText('Cache the token');
+    await user.click(screen.getByRole('button', { name: /^Filter/ }));
+    await user.click(screen.getByRole('checkbox', { name: 'Comments' }));
+    await user.click(screen.getByRole('button', { name: 'Display' }));
+    await user.click(screen.getByRole('checkbox', { name: 'Show snoozed' }));
+    await user.click(screen.getByRole('button', { name: 'Inbox actions' }));
+    await user.click(
+      screen.getByRole('menuitem', { name: 'Delete all notifications' })
+    );
+    const dialog = await screen.findByRole('dialog', {
+      name: 'Delete all notifications',
+    });
+    await user.click(within(dialog).getByRole('button', { name: 'Delete' }));
+
+    await waitFor(() => {
+      expect(clearInbox).toHaveBeenCalledWith({
+        read_only: false,
+        include_snoozed: true,
+        kinds: ['commented'],
+      });
+    });
+  });
+
+  it('deletes nothing when the confirmation is cancelled', async () => {
+    const user = userEvent.setup();
+    renderPage();
+
+    await screen.findByText('Cache the token');
+    await user.click(screen.getByRole('button', { name: 'Inbox actions' }));
+    await user.click(
+      screen.getByRole('menuitem', { name: 'Delete all notifications' })
+    );
+    const dialog = await screen.findByRole('dialog', {
+      name: 'Delete all notifications',
+    });
+    await user.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+
+    expect(clearInbox).not.toHaveBeenCalled();
+    expect(screen.getByText('Cache the token')).toBeInTheDocument();
   });
 
   it('selects a row, marks it read and shows its issue beside the list', async () => {

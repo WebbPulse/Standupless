@@ -5569,6 +5569,43 @@
         "title": "ImportRowRead",
         "type": "object"
       },
+      "InboxClearRequest": {
+        "description": "The body a bulk delete takes: which of the caller's notifications to remove.\n\n`read_only` keeps to rows already read. Without it every row goes except those\nstill snoozed, unless `include_snoozed` takes them too. `kinds` keeps to those\nnotification kinds, matching the list's filter.",
+        "properties": {
+          "include_snoozed": {
+            "default": false,
+            "title": "Include Snoozed",
+            "type": "boolean"
+          },
+          "kinds": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 50,
+            "title": "Kinds",
+            "type": "array"
+          },
+          "read_only": {
+            "default": false,
+            "title": "Read Only",
+            "type": "boolean"
+          }
+        },
+        "title": "InboxClearRequest",
+        "type": "object"
+      },
+      "InboxClearResult": {
+        "description": "How many notifications a bulk delete removed.",
+        "properties": {
+          "deleted": {
+            "default": 0,
+            "title": "Deleted",
+            "type": "integer"
+          }
+        },
+        "title": "InboxClearResult",
+        "type": "object"
+      },
       "InboxCountRead": {
         "description": "The unread badge, counted from the sparse index and capped.",
         "properties": {
@@ -29954,6 +29991,65 @@
           }
         ],
         "summary": "List Inbox",
+        "tags": [
+          "views"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/inbox/clear": {
+      "post": {
+        "description": "Delete the caller's own notifications in bulk: the read ones, or all of them.\n\nOnly the caller's own partition is read, so nothing in anyone else's inbox can\nmatch. `kinds` narrows it as the list's filter does, and a row still snoozed\ngoes only when a full clear sends `include_snoozed`.",
+        "operationId": "clear_inbox_api_workspaces__workspace_id__inbox_clear_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InboxClearRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InboxClearResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Clear Inbox",
         "tags": [
           "views"
         ]

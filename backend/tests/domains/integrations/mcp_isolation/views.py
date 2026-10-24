@@ -2,7 +2,7 @@
 
 The inbox mark tools take ids but answer how many rows they changed, as the inbox
 routes do, so a foreign id answers zero from the key's own inbox rather than a
-refusal. They are listed in `ANSWERS_AT_HOME`, and `test_mcp_views` holds that the
+refusal. The bulk delete takes no id at all and answers from the key's own inbox. They are listed in `ANSWERS_AT_HOME`, and `test_mcp_views` holds that the
 foreign row they named is left untouched.
 """
 
@@ -24,6 +24,7 @@ ANSWERS_AT_HOME: frozenset[str] = frozenset(
         "mark_notification_unread",
         "mark_all_notifications_read",
         "snooze_notification",
+        "delete_all_notifications",
     }
 )
 
@@ -69,6 +70,7 @@ def arguments(foreign: dict[str, str], home_issue: str) -> dict[str, dict[str, A
         "mark_all_notifications_read": {},
         "snooze_notification": {"notification_ids": [notification], "until": until},
         "delete_notification": {"notification_id": notification},
+        "delete_all_notifications": {},
         "set_issue_reminder": {"issue_id": foreign["issue_id"], "remind_at": until},
         "list_issue_reminders": {"issue_id": foreign["issue_id"]},
         "cancel_issue_reminder": {"issue_id": foreign["issue_id"]},
