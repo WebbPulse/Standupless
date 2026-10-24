@@ -27,6 +27,7 @@ import type {
   IssueSyncRead,
   SlackChannelRead,
   SlackConnectionRead,
+  SlackLinkRead,
   TeamSyncRead,
   TeamSyncWrite,
   TransitionCreate,
@@ -116,6 +117,10 @@ export const slackConnectionPath = (workspaceId: string): string =>
 /** The route that mints the Slack App install link. */
 export const slackInstallUrlPath = (workspaceId: string): string =>
   `${slackConnectionPath(workspaceId)}/install-url`;
+
+/** The route the caller's own Slack direct message link is read, made and removed on. */
+export const slackLinkPath = (workspaceId: string): string =>
+  `${slackConnectionPath(workspaceId)}/me`;
 
 /** The route listing the Slack channels a team, or the workspace, can pick for the bot to post to. */
 export const slackChannelsPath = (
@@ -668,6 +673,37 @@ export const deleteSlackConnection = async (
   workspaceId: string
 ): Promise<void> => {
   await apiClient.delete(slackConnectionPath(workspaceId));
+};
+
+/** Whether the caller's personal notifications reach their Slack direct messages in this workspace. */
+export const getSlackLink = async (
+  workspaceId: string,
+  signal?: AbortSignal
+): Promise<SlackLinkRead> => {
+  const response = await apiClient.get<SlackLinkRead>(
+    slackLinkPath(workspaceId),
+    signalOptions(signal)
+  );
+  return response.data;
+};
+
+/**
+ * Links the caller to the Slack account holding their confirmed email in the
+ * installed Slack workspace, replacing an earlier or broken link.
+ */
+export const linkSlack = async (
+  workspaceId: string
+): Promise<SlackLinkRead> => {
+  const response = await apiClient.put<SlackLinkRead>(
+    slackLinkPath(workspaceId),
+    {}
+  );
+  return response.data;
+};
+
+/** Stops the caller's Slack direct messages in this workspace. */
+export const unlinkSlack = async (workspaceId: string): Promise<void> => {
+  await apiClient.delete(slackLinkPath(workspaceId));
 };
 
 /** Lists the Slack channels the installed bot can post to, for the channel picker. */

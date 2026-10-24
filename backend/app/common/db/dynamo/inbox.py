@@ -23,8 +23,14 @@ from pydantic import BaseModel, Field
 from webbpulse.dynamodb import ConditionFailed, Page, Repository
 
 from app.common.db.dynamo.base import as_item, build_repository, delete_partition, utc_now
+from app.common.db.dynamo.chat_routes import ChatRouteStore
 from app.common.db.dynamo.issue_reminders import IssueReminderStore
-from app.common.db.dynamo.notify_digests import DigestStore
+from app.common.db.dynamo.notify_digests import (
+    CHAT_DIGEST_WINDOW,
+    CHAT_DUE_PARTITION,
+    CHAT_ENTRY_PREFIX,
+    DigestStore,
+)
 from app.common.db.dynamo.tables import INBOX
 
 NotificationKind = Literal[
@@ -233,9 +239,10 @@ class Notification(BaseModel):
 class InboxRepository:
     """Reads and writes `inbox` rows for exactly one recipient at a time.
 
-    `digests` holds the pending notification emails and `reminders` the issue
-    reminders members set for themselves, both sharing this table under
-    partitions no inbox can name.
+    `digests` holds the pending notification emails, `chat_digests` the pending
+    chat direct messages, `chat_routes` the chat accounts members linked and
+    `reminders` the issue reminders members set for themselves, all sharing this
+    table under partitions no inbox can name.
     """
 
     def __init__(self, repository: Repository | None = None) -> None:
@@ -243,10 +250,18 @@ class InboxRepository:
         self._repository = build_repository(INBOX, repository)
         self.digests = DigestStore(self._repository)
         self.reminders = IssueReminderStore(self._repository)
+        self.chat_digests = DigestStore(
+            self._repository,
+            prefix=CHAT_ENTRY_PREFIX,
+            due_partition=CHAT_DUE_PARTITION,
+            window=CHAT_DIGEST_WINDOW,
+        )
+        self.chat_routes = ChatRouteStore(self._repository)
 
     def delete_all(self, workspace_id: str, user_id: str) -> int:
-        """Delete one person's whole inbox in one workspace, reminders included, for the purges."""
+        """Delete one person's whole inbox in one workspace, reminders and chat routes included, for the purges."""
         self.reminders.delete_all(workspace_id, user_id)
+        self.chat_routes.delete_all(workspace_id, user_id)
         return delete_partition(self._repository, INBOX, inbox_partition(workspace_id, user_id))
 
     def get(self, workspace_id: str, user_id: str, notification_id: str) -> Notification | None:

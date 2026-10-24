@@ -19,10 +19,10 @@ from app.domains.integrations.chat.people import WORKSPACE_ROLES, NotLinked, mem
 from app.domains.integrations.slack import install
 from app.domains.integrations.slack.api import SlackError
 
-__all__ = ["WORKSPACE_ROLES", "NotLinked", "context_for"]
+__all__ = ["WORKSPACE_ROLES", "NotLinked", "context_for", "email_of"]
 
 
-def _email_of(profile: Mapping[str, Any]) -> str:
+def email_of(profile: Mapping[str, Any]) -> str:
     """The confirmed email Slack holds for a person, or an empty string."""
     user = profile.get("user") or {}
     if not isinstance(user, Mapping):
@@ -44,4 +44,4 @@ def context_for(repositories: Repositories, installation: SlackInstallation, sla
         profile = install.call(installation, "users.info", {"user": slack_user_id})
     except (SlackError, install.BotUnavailable) as error:
         raise NotLinked("Slack did not describe the user") from error
-    return member_context(repositories, installation.workspace_id, _email_of(profile))
+    return member_context(repositories, installation.workspace_id, email_of(profile))

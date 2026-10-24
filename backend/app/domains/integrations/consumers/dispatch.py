@@ -25,6 +25,7 @@ from fastapi import APIRouter
 from webbpulse.events import register_stream_consumer
 
 from app.common.api.dependencies.repositories import Repositories
+from app.common.chat_digests import CHAT_DIGEST_JOB
 from app.common.composition.consumers import CONSUMERS
 from app.common.core.config import settings
 from app.common.db.dynamo.github import IssueLink
@@ -150,6 +151,10 @@ def handle_record(repositories: Repositories, record: Mapping[str, Any]) -> None
         run_channel_attempt(repositories, job)
     elif kind == CHANNEL_UPDATE_DUE_JOB:
         _announce_update_due(repositories, job)
+    elif kind == CHAT_DIGEST_JOB:
+        from app.domains.integrations.chat.direct import send_digest
+
+        send_digest(repositories, job)
     elif kind == LEGACY_DELIVER_JOB:
         _log.info(
             "Dropped a webhook job queued in the retired shape.",

@@ -41,16 +41,28 @@ _ENTRY_PREFIX = "digest#"
 _EPOCH_WIDTH = 12
 
 
-def window_start(moment: datetime) -> int:
-    """The epoch second the fixed five minute window holding `moment` opens at."""
+CHAT_DIGEST_WINDOW = timedelta(minutes=2)
+"""How long chat direct messages to one recipient are gathered before one message goes out.
+
+Shorter than the email window because a chat message is expected sooner, while
+still turning a burst of edits into one message.
+"""
+
+CHAT_DUE_PARTITION = "chatdigest#due"
+
+CHAT_ENTRY_PREFIX = "chatdigest#"
+
+
+def window_start(moment: datetime, width: timedelta = DIGEST_WINDOW) -> int:
+    """The epoch second the fixed window of `width` holding `moment` opens at."""
     seconds = int(moment.timestamp())
-    width = int(DIGEST_WINDOW.total_seconds())
-    return seconds - seconds % width
+    span = int(width.total_seconds())
+    return seconds - seconds % span
 
 
-def window_partition(workspace_id: str, recipient_id: str, window: int) -> str:
+def window_partition(workspace_id: str, recipient_id: str, window: int, prefix: str = _ENTRY_PREFIX) -> str:
     """The partition one recipient's entries for one window are written to."""
-    return f"{_ENTRY_PREFIX}{workspace_id}#{recipient_id}#{window}"
+    return f"{prefix}{workspace_id}#{recipient_id}#{window}"
 
 
 def _expiry(moment: datetime) -> int:
@@ -96,11 +108,26 @@ class DueDigest(BaseModel):
 
 
 class DigestStore:
-    """Writes pending digest entries and hands due windows to the flush."""
+    """Writes pending digest entries and hands due windows to the flush.
 
-    def __init__(self, repository: Repository) -> None:
-        """Share the `inbox` table's package repository."""
+    The email digest uses the defaults. The chat direct message digest builds a
+    second store over its own partitions and a shorter window, so the two flushes
+    never claim each other's windows.
+    """
+
+    def __init__(
+        self,
+        repository: Repository,
+        *,
+        prefix: str = _ENTRY_PREFIX,
+        due_partition: str = DUE_PARTITION,
+        window: timedelta = DIGEST_WINDOW,
+    ) -> None:
+        """Share the `inbox` table's package repository under one set of partitions."""
         self._repository = repository
+        self._prefix = prefix
+        self._due_partition = due_partition
+        self._window = window
 
     def add(self, entry: DigestEntry, now: datetime | None = None) -> int:
         """Hold one entry in its recipient's open window, answering that window.
@@ -110,16 +137,16 @@ class DigestStore:
         only when it is not already there, so a busy window costs one marker.
         """
         moment = now or datetime.now(timezone.utc)
-        window = window_start(moment)
-        partition = window_partition(entry.workspace_id, entry.recipient_id, window)
+        window = window_start(moment, self._window)
+        partition = window_partition(entry.workspace_id, entry.recipient_id, window, self._prefix)
         self._repository.put(as_item(entry, ws_user=partition, expires_at=_expiry(moment)))
 
-        due_at = window + int(DIGEST_WINDOW.total_seconds())
+        due_at = window + int(self._window.total_seconds())
         marker = f"{due_at:0{_EPOCH_WIDTH}d}#{entry.workspace_id}#{entry.recipient_id}#{window}"
         try:
             self._repository.put(
                 {
-                    "ws_user": DUE_PARTITION,
+                    "ws_user": self._due_partition,
                     "notification_id": marker,
                     "workspace_id": entry.workspace_id,
                     "recipient_id": entry.recipient_id,
@@ -136,7 +163,7 @@ class DigestStore:
         """The oldest windows that closed at or before `cutoff`, at most `limit` of them."""
         bound = f"{int(cutoff.timestamp()):0{_EPOCH_WIDTH}d}~"
         page = self._repository.query(
-            Key("ws_user").eq(DUE_PARTITION) & Key("notification_id").lte(bound),
+            Key("ws_user").eq(self._due_partition) & Key("notification_id").lte(bound),
             limit=limit,
             consistent=True,
         )
@@ -158,7 +185,7 @@ class DigestStore:
         """
         try:
             self._repository.delete(
-                {"ws_user": DUE_PARTITION, "notification_id": due.marker},
+                {"ws_user": self._due_partition, "notification_id": due.marker},
                 condition=Attr("notification_id").exists(),
             )
         except ConditionFailed:
@@ -169,7 +196,7 @@ class DigestStore:
         """Put a claimed window back, so a flush that failed before sending is retried."""
         self._repository.put(
             {
-                "ws_user": DUE_PARTITION,
+                "ws_user": self._due_partition,
                 "notification_id": due.marker,
                 "workspace_id": due.workspace_id,
                 "recipient_id": due.recipient_id,
@@ -180,13 +207,13 @@ class DigestStore:
 
     def entries(self, due: DueDigest) -> list[DigestEntry]:
         """Every entry held in one window, oldest first."""
-        partition = window_partition(due.workspace_id, due.recipient_id, due.window)
+        partition = window_partition(due.workspace_id, due.recipient_id, due.window, self._prefix)
         items: Iterable[Any] = self._repository.iter_query(Key("ws_user").eq(partition), consistent=True)
         return [DigestEntry.model_validate(dict(item)) for item in items]
 
     def clear(self, due: DueDigest, entries: Iterable[DigestEntry]) -> int:
         """Delete the entries a flush mailed, so a late entry in the same window is mailed alone."""
-        partition = window_partition(due.workspace_id, due.recipient_id, due.window)
+        partition = window_partition(due.workspace_id, due.recipient_id, due.window, self._prefix)
         return self._repository.delete_many(
             [{"ws_user": partition, "notification_id": entry.notification_id} for entry in entries]
         )

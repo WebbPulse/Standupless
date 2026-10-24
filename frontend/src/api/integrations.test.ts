@@ -26,11 +26,13 @@ import {
   getInstallUrl,
   getInstallation,
   getSlackConnection,
+  getSlackLink,
   getSlackInstallUrl,
   installUrlPath,
   installationPath,
   issueLinksPath,
   linkRepository,
+  linkSlack,
   listChannels,
   listIssueLinks,
   listRepositories,
@@ -48,7 +50,9 @@ import {
   slackChannelsPath,
   slackConnectionPath,
   slackInstallUrlPath,
+  slackLinkPath,
   testChannel,
+  unlinkSlack,
   transitionPath,
   transitionsPath,
   updateChannel,
@@ -68,6 +72,7 @@ import type {
   GithubRepositoryRead,
   SlackChannelRead,
   SlackConnectionRead,
+  SlackLinkRead,
   TransitionRead,
   WebhookDeliveryRead,
   WebhookEndpointRead,
@@ -354,6 +359,28 @@ describe('the Slack App', () => {
     expect(get).toHaveBeenCalledWith(slackChannelsPath(WS, TEAM), undefined);
     get.mockResolvedValueOnce({ data: null });
     await expect(listSlackChannels(WS, TEAM)).resolves.toEqual([]);
+  });
+
+  it("reads, makes and removes the caller's own direct message link", async () => {
+    expect(slackLinkPath(WS)).toBe('/workspaces/ws-mine/slack/me');
+    const link: SlackLinkRead = {
+      configured: true,
+      available: true,
+      linked: true,
+      slack_user_id: 'U0123',
+      slack_team_name: 'Acme',
+      linked_at: '2026-10-23T00:00:00Z',
+      problem: null,
+    };
+    get.mockResolvedValue({ data: link });
+    await expect(getSlackLink(WS)).resolves.toEqual(link);
+    expect(get).toHaveBeenCalledWith(slackLinkPath(WS), undefined);
+    put.mockResolvedValue({ data: link });
+    await expect(linkSlack(WS)).resolves.toEqual(link);
+    expect(put).toHaveBeenCalledWith(slackLinkPath(WS), {}, undefined);
+    del.mockResolvedValue({ data: null });
+    await unlinkSlack(WS);
+    expect(del).toHaveBeenCalledWith(slackLinkPath(WS), undefined);
   });
 });
 

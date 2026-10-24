@@ -41,6 +41,11 @@ def test_a_manifest_points_at_its_own_environment(name: str, host: str, command:
     assert [(row["command"], row["url"]) for row in features["slash_commands"]] == [(command, f"{api}/commands")]
     assert [(row["type"], row["callback_id"]) for row in features["shortcuts"]] == [("message", SHORTCUT_CALLBACK)]
     assert features["unfurl_domains"] == [host]
+    assert features["app_home"] == {
+        "home_tab_enabled": False,
+        "messages_tab_enabled": True,
+        "messages_tab_read_only_enabled": True,
+    }
     assert settings["event_subscriptions"]["request_url"] == f"{api}/events"
     assert sorted(settings["event_subscriptions"]["bot_events"]) == ["app_uninstalled", "link_shared", "tokens_revoked"]
     assert settings["interactivity"] == {"is_enabled": True, "request_url": f"{api}/interactions"}

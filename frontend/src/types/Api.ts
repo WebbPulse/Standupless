@@ -107,6 +107,8 @@ export interface WorkspaceDeletionRequest {
 export interface NotificationChannels {
   in_app: boolean;
   email: boolean;
+  /** Whether the kind also reaches a linked Slack or Discord account as a direct message. */
+  chat?: boolean;
 }
 
 /** A partial preferences change: only the switches sent are applied. */
@@ -3643,6 +3645,20 @@ export interface SlackConnectionRead {
   slack_team_name?: string | null;
   installed_by?: string | null;
   installed_at?: string | null;
+}
+
+/** Whether the caller's personal notifications reach their own Slack direct messages. */
+export interface SlackLinkRead {
+  /** Whether this environment has a Slack App at all. */
+  configured: boolean;
+  /** Whether this workspace installed the Slack App, so a link can be made. */
+  available: boolean;
+  linked: boolean;
+  slack_user_id?: string | null;
+  slack_team_name?: string | null;
+  linked_at?: string | null;
+  /** Why a linked account stopped receiving messages, or null while it works. */
+  problem?: string | null;
 }
 
 /** One Slack channel the installed bot can post to. */

@@ -2453,6 +2453,21 @@ class TestSlackApp:
         assert removed.status_code == 404, removed.text[:400]
 
     @WRITES
+    def test_the_personal_link_answers_before_an_install(self, api: Any, workspace: "dict[str, Any]") -> None:
+        """A member's own Slack link reads as unlinked, cannot be made without an App, and has nothing to remove."""
+        mine = f"/api/workspaces/{workspace['id']}/slack/me"
+        read = api.get(mine)
+        assert read.status_code == 200, read.text[:400]
+        assert read.json()["linked"] is False, read.json()
+        assert read.json()["available"] is False, read.json()
+
+        linked = api.put(mine)
+        assert linked.status_code == (404 if read.json()["configured"] else 409), linked.text[:400]
+
+        unlinked = api.delete(mine)
+        assert unlinked.status_code == 404, unlinked.text[:400]
+
+    @WRITES
     def test_workspace_channels_answer_before_an_install(
         self, api: Any, workspace: "dict[str, Any]", team: "dict[str, Any]"
     ) -> None:
