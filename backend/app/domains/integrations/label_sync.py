@@ -55,6 +55,24 @@ def enqueue_label_sync(workspace_id: str, team_id: str) -> None:
     _enqueue(LABEL_SYNC_JOB, {"kind": LABEL_SYNC_JOB, "workspace_id": workspace_id, "team_id": team_id}, workspace_id)
 
 
+def queue_after_link(workspace_id: str, team_id: str) -> bool:
+    """Queue the first reconcile for a team that just linked, answering whether it was queued.
+
+    A queue that refuses the job does not fail the link: the next label change
+    queues a reconcile again, and that one brings the repository up to date.
+    """
+    from botocore.exceptions import BotoCoreError, ClientError
+
+    try:
+        enqueue_label_sync(workspace_id, team_id)
+    except (BotoCoreError, ClientError):
+        _log.warning(
+            "Could not queue a label sync for a new link.", extra={"event": "integrations.label_sync.queue_failed"}
+        )
+        return False
+    return True
+
+
 def definition_changed(old_image: Mapping[str, Any] | None, new_image: Mapping[str, Any] | None) -> bool:
     """Whether a label or label override row moved a field the repository's labels reflect."""
     if not old_image or not new_image:
