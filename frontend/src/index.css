@@ -571,6 +571,22 @@
   }
 }
 
+@utility phone-scroll-row {
+  @media (max-width: 639.98px) {
+    flex-wrap: nowrap;
+    width: calc(100% + 2rem);
+    max-width: none;
+    margin-inline: -1rem;
+    padding-inline: 1rem;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scrollbar-width: none;
+    & > * {
+      flex-shrink: 0;
+    }
+  }
+}
+
 @utility scrollbar-thin {
   scrollbar-width: thin;
   scrollbar-color: var(--line-strong) transparent;
@@ -611,5 +627,69 @@ input[type='checkbox']:not([role='switch']):indeterminate {
   }
   to {
     opacity: 1;
+  }
+}
+
+@keyframes sheet-in {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+
+[data-sheet-backdrop] {
+  display: none;
+}
+
+@media (max-width: 639.98px) {
+  [data-sheet-backdrop] {
+    position: fixed;
+    inset: 0;
+    z-index: 59;
+    display: block;
+    background-color: rgb(0 0 0 / 0.45);
+    animation: backdrop-in 160ms ease-out;
+  }
+
+  [data-sheet-panel] {
+    top: auto !important;
+    right: 0 !important;
+    bottom: var(--sheet-bottom, 0px) !important;
+    left: 0 !important;
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: none !important;
+    max-height: var(--sheet-max-height, 85dvh);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    border-width: 1px 0 0;
+    border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+    padding-top: 20px;
+    padding-bottom: calc(
+      var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)) + 8px
+    );
+    animation: sheet-in 200ms ease-out;
+  }
+
+  [data-sheet-panel]::before {
+    content: '';
+    position: absolute;
+    top: 8px;
+    left: 50%;
+    width: 36px;
+    height: 4px;
+    margin-left: -18px;
+    border-radius: 9999px;
+    background-color: var(--line-strong);
+  }
+
+  [data-sheet-panel] [role='menuitem'] {
+    min-height: 44px;
+  }
+
+  body:has([data-sheet-panel]) {
+    overflow: hidden;
   }
 }

@@ -735,8 +735,8 @@ export const IssueViewPage: React.FC<IssueViewPageProps> = ({
     ) : null;
 
   const toolbar = (
-    <div className="flex w-full flex-col gap-2">
-      <div className="flex w-full flex-wrap items-center gap-2">
+    <div className="flex w-full min-w-0 flex-col gap-2">
+      <div className="phone-scroll-row flex w-full flex-wrap items-center gap-2">
         {tabs}
         <FilterButton
           filters={state.filters}
@@ -842,7 +842,7 @@ export const IssueViewPage: React.FC<IssueViewPageProps> = ({
         }}
       >
         <LuPlus aria-hidden="true" className="h-3.5 w-3.5" />
-        New issue
+        <span className="max-sm:sr-only">New issue</span>
       </Button>
     ) : null;
 

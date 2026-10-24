@@ -2,7 +2,9 @@
  * A modal dialog with no library behind it: a backdrop, a titled panel, focus
  * moved to the first control in the body on open (never the Close button, so
  * its tooltip does not pop on a keyboard open) and returned on close, and
- * Escape or a backdrop click to close.
+ * Escape or a backdrop click to close. At phone widths the panel rises from
+ * the bottom edge as a sheet, scrolling inside the backdrop when it is taller
+ * than the screen.
  */
 
 import React, { useEffect, useId, useRef } from 'react';
@@ -90,7 +92,7 @@ export const Dialog: React.FC<DialogProps> = ({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto overscroll-contain bg-black/40 px-2 pt-[max(0.75rem,env(safe-area-inset-top))] pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:px-4 sm:py-[10vh] dark:bg-black/60"
+      className="fixed inset-0 z-50 flex flex-col items-stretch overflow-y-auto overscroll-contain bg-black/40 pt-[max(2.5rem,env(safe-area-inset-top))] sm:flex-row sm:items-start sm:justify-center sm:px-4 sm:py-[10vh] dark:bg-black/60"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) onClose();
       }}
@@ -102,8 +104,9 @@ export const Dialog: React.FC<DialogProps> = ({
         aria-labelledby={titleId}
         tabIndex={-1}
         className={cn(
-          'w-full rounded-lg border border-line bg-overlay shadow-overlay outline-none',
-          SIZES[size]
+          'mt-auto w-full rounded-t-xl border-t border-line bg-overlay pb-[env(safe-area-inset-bottom)] shadow-overlay outline-none sm:mt-0 sm:rounded-lg sm:border sm:pb-0',
+          SIZES[size],
+          'max-sm:max-w-none'
         )}
       >
         <div

@@ -283,7 +283,7 @@ const TreeDisclosure: React.FC<{
         aria-label={`${place.expanded ? 'Collapse' : 'Expand'} sub-issues of ${issueKey}`}
         title={place.expanded ? 'Collapse sub-issues' : 'Expand sub-issues'}
         onClick={place.onToggle}
-        className="relative z-10 flex h-5 w-5 items-center justify-center rounded-sm text-text-muted transition-colors duration-100 hover:bg-line hover:text-text focus-visible:outline-2 focus-visible:outline-accent"
+        className="relative z-10 flex h-5 w-5 items-center justify-center rounded-sm text-text-muted transition-colors duration-100 hover:bg-line hover:text-text focus-visible:outline-2 focus-visible:outline-accent pointer-coarse:before:absolute pointer-coarse:before:-inset-3"
       >
         <LuChevronRight
           aria-hidden="true"
@@ -335,7 +335,7 @@ export const IssueListRow: React.FC<IssueListRowProps> = ({ issue, tree }) => {
         env.openMenu(issue, event.clientX, event.clientY);
       }}
       className={cn(
-        'group/row relative flex h-row items-center gap-2 border-b border-line/60 pr-3 pl-2 text-sm lg:pr-5 pointer-coarse:pl-4',
+        'group/row relative flex h-row items-center gap-2 border-b border-line/60 pr-3 pl-2 text-sm lg:pr-5 pointer-coarse:pl-4 max-sm:pl-3',
         isSelected
           ? 'bg-accent-soft'
           : isFocused || isPeeked
@@ -345,7 +345,15 @@ export const IssueListRow: React.FC<IssueListRowProps> = ({ issue, tree }) => {
           'before:absolute before:inset-y-0 before:left-0 before:w-0.5 before:bg-accent'
       )}
     >
-      <span data-slot="select" className="flex shrink-0 items-center">
+      <span
+        data-slot="select"
+        className={cn(
+          'flex shrink-0 items-center',
+          !selecting &&
+            (tree === undefined || tree.childCount === 0) &&
+            'max-sm:hidden'
+        )}
+      >
         <span
           className={cn(
             'relative z-10 flex w-5 shrink-0 justify-center',
@@ -377,7 +385,7 @@ export const IssueListRow: React.FC<IssueListRowProps> = ({ issue, tree }) => {
       {shows('id') && (
         <span
           data-slot="key"
-          className="shrink-0 truncate font-mono text-xs text-text-faint"
+          className="shrink-0 truncate font-mono text-xs text-text-faint max-sm:w-auto!"
           style={{ width: `calc(var(${KEY_WIDTH_VAR}, 8) * 1ch)` }}
         >
           {issue.key}

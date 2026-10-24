@@ -888,14 +888,14 @@ export const CreateIssueDialog: React.FC<CreateIssueDialogProps> = ({
     >
       <form
         aria-label="New issue"
-        className="-mt-8 space-y-3"
+        className="-mt-8 space-y-3 pointer-coarse:-mt-12"
         onKeyDown={onKeyDown}
         onSubmit={(event) => {
           event.preventDefault();
           submit();
         }}
       >
-        <div className="flex h-7 items-center gap-2 pr-9 text-sm">
+        <div className="flex h-7 min-w-0 items-center gap-2 pr-9 text-sm pointer-coarse:h-11 pointer-coarse:pr-12">
           <TeamSwitcher
             teams={writable}
             value={activeTeamId}
@@ -918,12 +918,12 @@ export const CreateIssueDialog: React.FC<CreateIssueDialogProps> = ({
           <span aria-hidden="true" className="text-text-faint">
             /
           </span>
-          <span className="text-text-muted">
+          <span className="min-w-0 truncate whitespace-nowrap text-text-muted">
             {draft.parent === null
               ? 'New issue'
               : `New sub-issue of ${draft.parent.key}`}
           </span>
-          <span className="ml-auto flex items-center gap-1">
+          <span className="ml-auto flex shrink-0 items-center gap-1">
             {templates.length > 0 && (
               <TemplatePicker
                 templates={templates}
@@ -937,6 +937,7 @@ export const CreateIssueDialog: React.FC<CreateIssueDialogProps> = ({
             <IconButton
               label={expanded ? 'Collapse' : 'Expand'}
               size="sm"
+              className="max-sm:hidden"
               aria-pressed={expanded}
               onClick={() => {
                 setExpanded((open) => !open);
@@ -1269,7 +1270,7 @@ export const CreateIssueDialog: React.FC<CreateIssueDialogProps> = ({
             </div>
           </div>
         ) : (
-          <div className="flex items-center justify-between gap-3 border-t border-line pt-3">
+          <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-t border-line pt-3 max-sm:sticky max-sm:bottom-0 max-sm:z-10 max-sm:-mx-4 max-sm:-mb-4 max-sm:bg-overlay max-sm:px-4 max-sm:pb-3">
             <div className="flex items-center gap-1">
               <input
                 ref={filePicker}
@@ -1305,8 +1306,8 @@ export const CreateIssueDialog: React.FC<CreateIssueDialogProps> = ({
                 </Button>
               )}
             </div>
-            <div className="flex items-center gap-3">
-              <label className="inline-flex cursor-pointer items-center gap-2 text-xs text-text-muted select-none">
+            <div className="ml-auto flex items-center gap-3">
+              <label className="inline-flex cursor-pointer items-center gap-2 text-xs whitespace-nowrap text-text-muted select-none pointer-coarse:min-h-11">
                 <button
                   type="button"
                   role="switch"
