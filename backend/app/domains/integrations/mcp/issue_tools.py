@@ -52,6 +52,7 @@ from app.common.issue_rules import TRIAGE_STATUS_ID, TRIAGE_STATUS_NAME, require
 from app.common.issue_subscribers import list_subscribers, subscribe, unsubscribe
 from app.common.issue_writes import bulk_update_issues, create_issue, list_issues, update_issue, walk_page
 from app.common.similar_issues import find_similar
+from app.common.thread_resolution import resolve_thread, unresolve_thread
 from app.domains.integrations import pr_status, thread_sync
 from app.domains.integrations.mcp.team_tools import boolean
 from app.domains.integrations.mcp.template_tools import template_ref
@@ -651,6 +652,7 @@ def _comment_json(comment: Comment) -> dict[str, Any]:
         "created_at": comment.created_at.isoformat(),
         "edited_at": comment.edited_at.isoformat() if comment.edited_at else None,
         "github_thread": comment.github_thread.model_dump(mode="json") if comment.github_thread else None,
+        "resolution": comment.resolution.model_dump(mode="json") if comment.resolution else None,
     }
 
 
@@ -706,6 +708,22 @@ def _unsync_comment_thread(call: ToolCall) -> Any:
         call.repositories, call.context, issue.issue_id, str(call.require("comment_id"))
     )
     return thread_sync.thread_read(comment)
+
+
+def _resolve_comment_thread(call: ToolCall) -> Any:
+    """Resolve a top level comment's thread through the route's path."""
+    issue = issue_ref(call, call.require("issue_id"))
+    return _comment_json(
+        resolve_thread(call.repositories, call.context, issue.issue_id, str(call.require("comment_id")))
+    )
+
+
+def _unresolve_comment_thread(call: ToolCall) -> Any:
+    """Unresolve a top level comment's thread through the route's path."""
+    issue = issue_ref(call, call.require("issue_id"))
+    return _comment_json(
+        unresolve_thread(call.repositories, call.context, issue.issue_id, str(call.require("comment_id")))
+    )
 
 
 def _list_github_thread_targets(call: ToolCall) -> Any:
@@ -1355,6 +1373,29 @@ ISSUE_TOOLS: tuple[Tool, ...] = (
             required=("issue_id", "comment_id"),
         ),
         handler=_unsync_comment_thread,
+    ),
+    Tool(
+        name="resolve_comment_thread",
+        description=(
+            "Resolve a top level comment's thread, which collapses it to one line in the issue's activity. "
+            "Any team member may resolve; a reply to the thread reopens it. Idempotent."
+        ),
+        scopes=("comments:write",),
+        schema=object_schema(
+            {"issue_id": string(ISSUE_REF), "comment_id": string("The top level comment whose thread to resolve")},
+            required=("issue_id", "comment_id"),
+        ),
+        handler=_resolve_comment_thread,
+    ),
+    Tool(
+        name="unresolve_comment_thread",
+        description="Reopen a resolved comment thread, whoever resolved it. Idempotent.",
+        scopes=("comments:write",),
+        schema=object_schema(
+            {"issue_id": string(ISSUE_REF), "comment_id": string("The top level comment whose thread to reopen")},
+            required=("issue_id", "comment_id"),
+        ),
+        handler=_unresolve_comment_thread,
     ),
     Tool(
         name="list_issue_relations",

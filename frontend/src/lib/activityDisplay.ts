@@ -37,6 +37,7 @@ export type ActivityIcon =
   | 'relation'
   | 'child'
   | 'team'
+  | 'thread'
   | 'other';
 
 /** A commit a push linked to the issue. */
@@ -566,6 +567,14 @@ export const describeActivity = (
           ? 'mentioned this in a comment on'
           : 'mentioned this in',
         ...issueReference(entry.to, context),
+      ]);
+    case 'thread_resolved':
+      return describe('thread', ['resolved a comment thread']);
+    case 'thread_unresolved':
+      return describe('thread', [
+        entry.field === 'reply'
+          ? 'reopened a comment thread by replying'
+          : 'reopened a comment thread',
       ]);
     default:
       return describe('other', [humanizeName(String(entry.kind))]);
