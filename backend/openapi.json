@@ -36306,7 +36306,7 @@
     },
     "/api/workspaces/{workspace_id}/search/similar": {
       "get": {
-        "description": "Open issues whose titles share terms with a draft title, for the create dialog.\n\nA title with no searchable term answers an empty list rather than the 422\nsearch gives, because the dialog asks while the person is still typing.",
+        "description": "Open issues whose titles share terms with a draft title, for the create dialog.\n\nA title with no searchable term answers an empty list rather than the 422\nsearch gives, because the dialog asks while the person is still typing.\n`team_id` is the draft's team, whose matches rank first.",
         "operationId": "similar_api_workspaces__workspace_id__search_similar_get",
         "parameters": [
           {
@@ -36344,6 +36344,22 @@
                 }
               ],
               "title": "Exclude Issue Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "team_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Team Id"
             }
           },
           {

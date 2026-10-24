@@ -33,11 +33,13 @@ export const isSearchableTitle = (title: string): boolean =>
  * The possible duplicates of a title, re-read one pause after it last
  * changed. A title with no searchable word shows none and sends no request,
  * and the last answer stays up while a newer pause is pending, so the strip
- * does not flicker on every keystroke.
+ * does not flicker on every keystroke. Matches in `teamId`, the draft's team,
+ * rank first.
  */
 export const useSimilarIssues = (
   workspaceId: string,
-  title: string
+  title: string,
+  teamId?: string
 ): SimilarIssueRead[] => {
   const [results, setResults] = useState<SimilarIssueRead[]>([]);
   const trimmed = title.trim();
@@ -50,7 +52,9 @@ export const useSimilarIssues = (
       similarIssues(
         workspaceId,
         trimmed.slice(0, 128),
-        { limit: SIMILAR_LIMIT },
+        teamId
+          ? { limit: SIMILAR_LIMIT, team_id: teamId }
+          : { limit: SIMILAR_LIMIT },
         controller.signal
       )
         .then((found) => {
@@ -64,7 +68,7 @@ export const useSimilarIssues = (
       globalThis.clearTimeout(timer);
       controller.abort();
     };
-  }, [workspaceId, trimmed, searchable]);
+  }, [workspaceId, trimmed, searchable, teamId]);
 
   return searchable ? results : [];
 };
