@@ -8352,13 +8352,21 @@
             "title": "Import Id",
             "type": "string"
           },
+          "jira_projects": {
+            "items": {
+              "$ref": "#/components/schemas/JiraProjectMappingRead"
+            },
+            "title": "Jira Projects",
+            "type": "array"
+          },
           "kind": {
             "default": "csv",
             "enum": [
               "csv",
               "linear",
               "github",
-              "asana"
+              "asana",
+              "jira"
             ],
             "title": "Kind",
             "type": "string"
@@ -9276,6 +9284,425 @@
           }
         },
         "title": "IssueUpdate",
+        "type": "object"
+      },
+      "JiraCredentialsRequest": {
+        "description": "A Jira site and the account email and API token to read it with, used for this request only.",
+        "properties": {
+          "email": {
+            "description": "The email of the Atlassian account the API token belongs to. Used for this request or import only.",
+            "maxLength": 320,
+            "minLength": 3,
+            "title": "Email",
+            "type": "string"
+          },
+          "site_url": {
+            "description": "The Jira Cloud site, such as https://your-team.atlassian.net.",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Site Url",
+            "type": "string"
+          },
+          "token": {
+            "description": "An Atlassian API token. Used for this request or import only and never stored after it.",
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "site_url",
+          "email",
+          "token"
+        ],
+        "title": "JiraCredentialsRequest",
+        "type": "object"
+      },
+      "JiraImportPreviewRead": {
+        "description": "What a Jira import would do, project by project, read from Jira without writing anything.",
+        "properties": {
+          "projects": {
+            "items": {
+              "$ref": "#/components/schemas/JiraProjectPreviewRead"
+            },
+            "title": "Projects",
+            "type": "array"
+          },
+          "site_url": {
+            "title": "Site Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "site_url",
+          "projects"
+        ],
+        "title": "JiraImportPreviewRead",
+        "type": "object"
+      },
+      "JiraImportRequest": {
+        "description": "A Jira import or its preview: the site, the credentials, sealed while the job runs, and the projects.",
+        "properties": {
+          "email": {
+            "description": "The email of the Atlassian account the API token belongs to. Used for this request or import only.",
+            "maxLength": 320,
+            "minLength": 3,
+            "title": "Email",
+            "type": "string"
+          },
+          "projects": {
+            "items": {
+              "$ref": "#/components/schemas/JiraProjectChoice"
+            },
+            "maxItems": 50,
+            "minItems": 1,
+            "title": "Projects",
+            "type": "array"
+          },
+          "site_url": {
+            "description": "The Jira Cloud site, such as https://your-team.atlassian.net.",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Site Url",
+            "type": "string"
+          },
+          "token": {
+            "description": "An Atlassian API token. Used for this request or import only and never stored after it.",
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "site_url",
+          "email",
+          "token",
+          "projects"
+        ],
+        "title": "JiraImportRequest",
+        "type": "object"
+      },
+      "JiraProjectChoice": {
+        "description": "One Jira project or JQL filter to import, the Standupless team it goes into, and how its issues map.",
+        "properties": {
+          "epics_as": {
+            "default": "projects",
+            "description": "Whether each epic becomes a Standupless project, or an issue its children are sub-issues of.",
+            "enum": [
+              "projects",
+              "parents"
+            ],
+            "title": "Epics As",
+            "type": "string"
+          },
+          "jql": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A JQL filter, alone or narrowing the project. Any ORDER BY is dropped.",
+            "title": "Jql"
+          },
+          "project_key": {
+            "anyOf": [
+              {
+                "pattern": "^[A-Za-z][A-Za-z0-9_]{0,49}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Key"
+          },
+          "statuses": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Jira status name to the id of the team status it lands in. Anything unmapped lands in the status of the same name, else the one its Jira status category means, else the team's default.",
+            "maxProperties": 200,
+            "title": "Statuses",
+            "type": "object"
+          },
+          "team_id": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Team Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "team_id"
+        ],
+        "title": "JiraProjectChoice",
+        "type": "object"
+      },
+      "JiraProjectListRead": {
+        "description": "Every project the account can browse on the Jira site.",
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/JiraProjectRead"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "site_url": {
+            "title": "Site Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "site_url",
+          "items"
+        ],
+        "title": "JiraProjectListRead",
+        "type": "object"
+      },
+      "JiraProjectMappingRead": {
+        "description": "One Jira project or JQL filter a Jira import reads, the Standupless team it writes into, and how it maps.",
+        "properties": {
+          "epics_as": {
+            "title": "Epics As",
+            "type": "string"
+          },
+          "jql": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Jql"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "project_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Key"
+          },
+          "site_url": {
+            "title": "Site Url",
+            "type": "string"
+          },
+          "statuses": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Statuses",
+            "type": "object"
+          },
+          "team_id": {
+            "title": "Team Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "site_url",
+          "name",
+          "team_id",
+          "epics_as"
+        ],
+        "title": "JiraProjectMappingRead",
+        "type": "object"
+      },
+      "JiraProjectPreviewRead": {
+        "description": "What importing one Jira project or filter would do.",
+        "properties": {
+          "done_count": {
+            "title": "Done Count",
+            "type": "integer"
+          },
+          "epics_as": {
+            "title": "Epics As",
+            "type": "string"
+          },
+          "estimate_field": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The story point field estimates come from.",
+            "title": "Estimate Field"
+          },
+          "issue_count": {
+            "description": "How many issues the project or filter holds, as Jira counts them.",
+            "title": "Issue Count",
+            "type": "integer"
+          },
+          "jql": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Jql"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "project_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Key"
+          },
+          "sprint_field": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The sprint field cycles come from.",
+            "title": "Sprint Field"
+          },
+          "statuses": {
+            "items": {
+              "$ref": "#/components/schemas/JiraStatusPlanRead"
+            },
+            "title": "Statuses",
+            "type": "array"
+          },
+          "team_id": {
+            "title": "Team Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "team_id",
+          "epics_as",
+          "issue_count",
+          "done_count",
+          "statuses"
+        ],
+        "title": "JiraProjectPreviewRead",
+        "type": "object"
+      },
+      "JiraProjectRead": {
+        "description": "One project the account can browse on the Jira site.",
+        "properties": {
+          "archived": {
+            "title": "Archived",
+            "type": "boolean"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "project_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Type"
+          },
+          "team_managed": {
+            "title": "Team Managed",
+            "type": "boolean"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
+          }
+        },
+        "required": [
+          "id",
+          "key",
+          "name",
+          "team_managed",
+          "archived"
+        ],
+        "title": "JiraProjectRead",
+        "type": "object"
+      },
+      "JiraStatusPlanRead": {
+        "description": "Where one Jira status lands.",
+        "properties": {
+          "category": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Jira's status category: new, indeterminate or done.",
+            "title": "Category"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          },
+          "status_id": {
+            "title": "Status Id",
+            "type": "string"
+          },
+          "status_name": {
+            "title": "Status Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source",
+          "status_id",
+          "status_name"
+        ],
+        "title": "JiraStatusPlanRead",
         "type": "object"
       },
       "JoinableWorkspaceListRead": {
@@ -31025,6 +31452,183 @@
           }
         ],
         "summary": "List Github Import Repositories",
+        "tags": [
+          "integrations"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/imports/jira": {
+      "post": {
+        "description": "Queue an import of Jira projects into Standupless teams, refusing a second while one is running.",
+        "operationId": "start_jira_import_api_workspaces__workspace_id__imports_jira_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/JiraImportRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IssueImportRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Start Jira Import",
+        "tags": [
+          "integrations"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/imports/jira/preview": {
+      "post": {
+        "description": "What importing the chosen Jira projects would do, read from Jira and writing nothing.",
+        "operationId": "preview_jira_import_api_workspaces__workspace_id__imports_jira_preview_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/JiraImportRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JiraImportPreviewRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Preview Jira Import",
+        "tags": [
+          "integrations"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/imports/jira/projects": {
+      "post": {
+        "description": "The Jira projects an account can browse on a site, to choose from; the credentials are not kept.",
+        "operationId": "list_jira_projects_api_workspaces__workspace_id__imports_jira_projects_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/JiraCredentialsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JiraProjectListRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "List Jira Projects",
         "tags": [
           "integrations"
         ]

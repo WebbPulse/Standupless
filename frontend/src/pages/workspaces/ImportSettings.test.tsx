@@ -1,13 +1,15 @@
 /**
  * The issue import page. It opens on the import assistant, one row per
- * provider; Shortcut and Jira open the file flow with their preset
- * chosen and a note that their API import is coming, and the page links to
+ * provider; Shortcut opens the file flow with its preset chosen and a note
+ * that its API import is coming, and the page links to
  * the export below. For a CSV an admin picks a source, a team and a file,
  * dry runs it and sees the row problems, remaps a column, which runs the dry
  * run again with the change, and starts the import with the same body. For
  * Linear they paste a key, load its teams, map each and start, and the key is
  * cleared once the job is queued. For Asana they paste a token, tick projects,
  * pick a team, preview where each section lands, override one and start. For
+ * Jira they enter the site, email and token, tick a project, preview where each
+ * status lands, override one and start, and the token is cleared. For
  * GitHub they pick a repository the App
  * covers and a team and start, or are told why they cannot when the App is
  * missing or suspended. A running job can be cancelled. Anyone below admin is
@@ -30,6 +32,10 @@ import type {
   IssueImportPreviewRead,
   IssueImportRead,
   IssueImportRequest,
+  JiraCredentials,
+  JiraImportPreviewRead,
+  JiraImportRequest,
+  JiraProjectListRead,
   LinearImportRequest,
   LinearTeamRead,
   StatusRead,
@@ -53,6 +59,12 @@ const previewAsanaImport =
   vi.fn<(body: AsanaImportRequest) => Promise<AsanaImportPreviewRead>>();
 const startAsanaImport =
   vi.fn<(body: AsanaImportRequest) => Promise<IssueImportRead>>();
+const listJiraProjects =
+  vi.fn<(credentials: JiraCredentials) => Promise<JiraProjectListRead>>();
+const previewJiraImport =
+  vi.fn<(body: JiraImportRequest) => Promise<JiraImportPreviewRead>>();
+const startJiraImport =
+  vi.fn<(body: JiraImportRequest) => Promise<IssueImportRead>>();
 const listStatuses = vi.fn<(teamId: string) => Promise<StatusRead[]>>();
 const cancelIssueImport =
   vi.fn<(importId: string) => Promise<IssueImportRead>>();
@@ -90,6 +102,12 @@ vi.mock('../../api/imports', () => ({
     previewAsanaImport(body),
   startAsanaImport: (_workspaceId: string, body: AsanaImportRequest) =>
     startAsanaImport(body),
+  listJiraProjects: (_workspaceId: string, credentials: JiraCredentials) =>
+    listJiraProjects(credentials),
+  previewJiraImport: (_workspaceId: string, body: JiraImportRequest) =>
+    previewJiraImport(body),
+  startJiraImport: (_workspaceId: string, body: JiraImportRequest) =>
+    startJiraImport(body),
   cancelIssueImport: (_workspaceId: string, importId: string) =>
     cancelIssueImport(importId),
   listGitHubImportRepositories: () => listGitHubImportRepositories(),
@@ -259,9 +277,9 @@ const chooseProvider = async (
   await user.click(screen.getByRole('button', { name }));
 };
 
-/** Opens the Jira row, which lands on the file flow with the Jira preset. */
+/** Opens the Shortcut row, which lands on the file flow with the Shortcut preset. */
 const chooseCsv = async (user: ReturnType<typeof userEvent.setup>) => {
-  await chooseProvider(user, /^Jira/);
+  await chooseProvider(user, /^Shortcut/);
 };
 
 /** Opens the GitHub row of the import assistant. */
@@ -269,7 +287,7 @@ const chooseGitHub = async (user: ReturnType<typeof userEvent.setup>) => {
   await chooseProvider(user, /^GitHub/);
 };
 
-/** Opens the Jira file flow unless it is open, picks the fixture file, then dry runs it. */
+/** Opens the Shortcut file flow unless it is open, picks the fixture file, then dry runs it. */
 const pickAndCheck = async (user: ReturnType<typeof userEvent.setup>) => {
   if (screen.queryByRole('list', { name: 'Import assistant' }) !== null) {
     await chooseCsv(user);
@@ -354,6 +372,63 @@ beforeEach(() => {
   startAsanaImport.mockResolvedValue(
     job({ kind: 'asana', status: 'queued', file_name: 'Asana' })
   );
+  listJiraProjects.mockReset();
+  previewJiraImport.mockReset();
+  startJiraImport.mockReset();
+  listJiraProjects.mockResolvedValue({
+    site_url: 'https://acme-example.atlassian.net',
+    items: [
+      {
+        id: '10000',
+        key: 'PAY',
+        name: 'Payments',
+        project_type: 'software',
+        team_managed: false,
+        archived: false,
+      },
+      {
+        id: '10001',
+        key: 'OLD',
+        name: 'Legacy support',
+        project_type: 'service_desk',
+        team_managed: false,
+        archived: true,
+      },
+    ],
+  });
+  previewJiraImport.mockResolvedValue({
+    site_url: 'https://acme-example.atlassian.net',
+    projects: [
+      {
+        project_key: 'PAY',
+        jql: null,
+        name: 'Payments',
+        team_id: 'team-1',
+        epics_as: 'projects',
+        issue_count: 4,
+        done_count: 1,
+        estimate_field: 'Story point estimate',
+        sprint_field: 'Sprint',
+        statuses: [
+          {
+            source: 'To Do',
+            category: 'new',
+            status_id: 'st-backlog',
+            status_name: 'Backlog',
+          },
+          {
+            source: 'In Review',
+            category: 'indeterminate',
+            status_id: 'st-backlog',
+            status_name: 'Backlog',
+          },
+        ],
+      },
+    ],
+  });
+  startJiraImport.mockResolvedValue(
+    job({ kind: 'jira', status: 'queued', file_name: 'Jira' })
+  );
   listStatuses.mockResolvedValue([
     {
       id: 'st-backlog',
@@ -415,10 +490,7 @@ describe('the issue import page', () => {
     ).toHaveAttribute('href', '/w/engineering/settings/export');
   });
 
-  it.each([
-    [/^Shortcut/, 'shortcut', 'Shortcut'],
-    [/^Jira/, 'jira', 'Jira'],
-  ])(
+  it.each([[/^Shortcut/, 'shortcut', 'Shortcut']])(
     'opens the file flow with the preset chosen for %s',
     async (row, preset, title) => {
       const user = userEvent.setup();
@@ -548,7 +620,7 @@ describe('the issue import page', () => {
     await waitFor(() => {
       expect(startIssueImport).toHaveBeenCalledWith({
         team_id: 'team-1',
-        preset: 'jira',
+        preset: 'shortcut',
         csv: CSV,
         file_name: 'jira.csv',
         mapping: null,
@@ -701,6 +773,108 @@ describe('the issue import page', () => {
     expect(
       screen.getByText(
         /5 issues created, 3 comments, 2 new labels, 2 sub-issue links, 1 project/
+      )
+    ).toBeInTheDocument();
+  });
+
+  it('previews a Jira project, takes a status override and clears the token', async () => {
+    const user = userEvent.setup();
+    renderPage();
+    await chooseProvider(user, /^Jira/);
+    expect(screen.queryByText(/coming soon/)).not.toBeInTheDocument();
+
+    await user.type(
+      screen.getByLabelText('Jira site'),
+      'acme-example.atlassian.net'
+    );
+    await user.type(
+      screen.getByLabelText('Atlassian account email'),
+      'admin@example.com'
+    );
+    await user.type(
+      screen.getByLabelText('Jira API token'),
+      'jira-example-token'
+    );
+    await user.click(screen.getByRole('button', { name: 'Load projects' }));
+
+    const payments = await screen.findByRole('checkbox', {
+      name: /Payments/,
+    });
+    expect(payments).not.toBeChecked();
+    expect(listJiraProjects).toHaveBeenCalledWith({
+      site_url: 'acme-example.atlassian.net',
+      email: 'admin@example.com',
+      token: 'jira-example-token',
+    });
+    expect(
+      screen.getByRole('checkbox', { name: /Legacy support/ })
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'Preview import' })
+    ).toBeDisabled();
+
+    await user.click(payments);
+    await user.click(screen.getByRole('button', { name: 'Preview import' }));
+    const override = await screen.findByLabelText('Status for In Review');
+    expect(override).toHaveValue('st-backlog');
+    expect(screen.getByText('4 issues, 1 done')).toBeInTheDocument();
+    expect(listStatuses).toHaveBeenCalledWith('team-1');
+    const choice = {
+      project_key: 'PAY',
+      jql: null,
+      team_id: 'team-1',
+      epics_as: 'projects',
+    };
+    expect(previewJiraImport).toHaveBeenCalledWith({
+      site_url: 'https://acme-example.atlassian.net',
+      email: 'admin@example.com',
+      token: 'jira-example-token',
+      projects: [{ ...choice, statuses: {} }],
+    });
+
+    await user.selectOptions(override, 'st-progress');
+    await user.click(screen.getByRole('button', { name: 'Import 1 project' }));
+
+    await waitFor(() => {
+      expect(startJiraImport).toHaveBeenCalledWith({
+        site_url: 'https://acme-example.atlassian.net',
+        email: 'admin@example.com',
+        token: 'jira-example-token',
+        projects: [{ ...choice, statuses: { 'In Review': 'st-progress' } }],
+      });
+    });
+    await waitFor(() => {
+      expect(screen.getByLabelText('Jira API token')).toHaveValue('');
+    });
+  });
+
+  it('lists what a finished Jira import brought over', async () => {
+    listIssueImports.mockResolvedValue([
+      job({
+        kind: 'jira',
+        file_name: 'Jira',
+        created_count: 4,
+        updated_count: 0,
+        counts: { comments: 2, labels: 3, cycles: 1, relations: 2 },
+        jira_projects: [
+          {
+            site_url: 'https://acme-example.atlassian.net',
+            project_key: 'PAY',
+            name: 'Payments',
+            team_id: 'team-1',
+            epics_as: 'projects',
+          },
+        ],
+      }),
+    ]);
+    renderPage();
+
+    expect(
+      await screen.findByText('Jira Payments into Platform')
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        /4 issues created, 2 comments, 3 new labels, 1 cycle, 2 relations/
       )
     ).toBeInTheDocument();
   });

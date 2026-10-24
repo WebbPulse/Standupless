@@ -2,9 +2,10 @@
  * The issue import, led by an import assistant laid out like Linear's: one row
  * per provider, each opening its own flow. Linear reads a workspace through
  * Linear's API, Asana reads projects through Asana's API with a pasted token,
- * and GitHub reads a repository's Issues through the installed App. Shortcut
- * and Jira open the file flow with their export preset
- * chosen until their API importers land, and the file row takes any CSV
+ * Jira reads projects through the Jira Cloud API with an account email and
+ * API token, and GitHub reads a repository's Issues through the installed App.
+ * Shortcut opens the file flow with its export preset chosen until its API
+ * importer lands, and the file row takes any CSV
  * export or a Trello board's JSON. For a file the admin picks the tracker it
  * came from, a target team and the file, checks what every row would become,
  * adjusts the column mapping, and starts a job that writes the issues in the
@@ -42,6 +43,7 @@ import type {
   IssueImportPreviewRead,
   IssueImportRead,
   IssueImportRequest,
+  JiraImportCount,
   LinearImportCount,
   RowProblemRead,
   TeamRead,
@@ -58,6 +60,7 @@ import Spinner from '../ui/spinner';
 import AsanaImportForm from './AsanaImportForm';
 import GitHubImportForm from './GitHubImportForm';
 import ImportProviderIcon, { type ImportProvider } from './ImportProviderIcon';
+import JiraImportForm from './JiraImportForm';
 import LinearImportForm from './LinearImportForm';
 
 /** Props for WorkspaceImportSection: the workspace issues are imported into. */
@@ -71,8 +74,8 @@ const ACTIVE_POLL_MS = 3000;
 /** How often the list is read once every job has settled. */
 const IDLE_POLL_MS = 60000;
 
-/** Where an import reads from: Linear or Asana through its API, GitHub through the App, or a file. */
-type Source = 'linear' | 'asana' | 'github' | 'csv';
+/** Where an import reads from: Linear, Asana or Jira through its API, GitHub through the App, or a file. */
+type Source = 'linear' | 'asana' | 'jira' | 'github' | 'csv';
 
 /** One row of the import assistant: what it is called, the flow it opens and the preset a file flow starts on. */
 interface ProviderRow {
@@ -109,10 +112,8 @@ const PROVIDERS: ProviderRow[] = [
   {
     value: 'jira',
     title: 'Jira',
-    detail: 'Issues exported as CSV',
-    source: 'csv',
-    preset: 'jira',
-    comingSoon: true,
+    detail: 'Projects, issues, sprints and comments through the Jira API',
+    source: 'jira',
   },
   {
     value: 'linear',
@@ -214,6 +215,26 @@ const ASANA_TALLIES: { name: AsanaImportCount; noun: string }[] = [
   { name: 'labels', noun: 'new label' },
   { name: 'sub_issues', noun: 'sub-issue link' },
   { name: 'projects', noun: 'project' },
+];
+
+/** How each step of a Jira import reads while it runs. */
+const JIRA_PHASE_LABELS: Record<string, string> = {
+  epics: 'Reading epics',
+  issues: 'Reading issues',
+  links: 'Linking issues',
+};
+
+/** How many steps each Jira project takes, matching the server's phase list. */
+const JIRA_PROJECT_PHASES = 3;
+
+/** The tallies a finished Jira import lists, in order, with the noun each counts. */
+const JIRA_TALLIES: { name: JiraImportCount; noun: string }[] = [
+  { name: 'comments', noun: 'comment' },
+  { name: 'labels', noun: 'new label' },
+  { name: 'projects', noun: 'project' },
+  { name: 'cycles', noun: 'cycle' },
+  { name: 'sub_issues', noun: 'sub-issue link' },
+  { name: 'relations', noun: 'relation' },
 ];
 
 /** The tallies a finished GitHub import lists after its issue counts, in order. */
@@ -328,6 +349,34 @@ const asanaOutcome = (job: IssueImportRead): string => {
   return parts.join(', ');
 };
 
+/** The line under a running Jira job that says which project and step it is on. */
+const jiraProgress = (job: IssueImportRead): string => {
+  if (job.status === 'queued') return 'Waiting to start';
+  const index = job.phase_index ?? 0;
+  const total = job.phase_count ?? 0;
+  const project = (job.jira_projects ?? [])[
+    Math.floor(index / JIRA_PROJECT_PHASES)
+  ];
+  const step = JIRA_PHASE_LABELS[job.phase ?? ''] ?? 'Importing';
+  const parts = [project === undefined ? step : `${step} in ${project.name}`];
+  if (total > 0) parts.push(`step ${Math.min(index + 1, total)} of ${total}`);
+  parts.push(`${count(job.created_count, 'issue')} so far`);
+  return parts.join(', ');
+};
+
+/** The line under a finished Jira job that lists what it brought over. */
+const jiraOutcome = (job: IssueImportRead): string => {
+  const counts = job.counts ?? {};
+  const parts = [`${count(job.created_count, 'issue')} created`];
+  const updated = job.updated_count ?? counts.issues_updated ?? 0;
+  if (updated > 0) parts.push(`${updated} updated`);
+  for (const { name, noun } of JIRA_TALLIES) {
+    const n = counts[name] ?? 0;
+    if (n > 0) parts.push(count(n, noun));
+  }
+  return parts.join(', ');
+};
+
 /** The line under a running GitHub job that says how far it got. */
 const githubProgress = (job: IssueImportRead): string => {
   if (job.status === 'queued') return 'Waiting to start';
@@ -364,6 +413,10 @@ const jobSummary = (job: IssueImportRead): string => {
     if (job.status === 'completed') return asanaOutcome(job);
     if (job.status !== 'failed') return asanaProgress(job);
   }
+  if (job.kind === 'jira') {
+    if (job.status === 'completed') return jiraOutcome(job);
+    if (job.status !== 'failed') return jiraProgress(job);
+  }
   if (job.kind === 'github') {
     if (job.status === 'completed') return githubOutcome(job);
     if (job.status !== 'failed') return githubProgress(job);
@@ -398,6 +451,12 @@ const jobTitle = (job: IssueImportRead, teams: TeamRead[]): string => {
     const names = (job.asana_projects ?? []).map((row) => row.name);
     const into = teams.find((t) => t.id === job.asana_projects?.[0]?.team_id);
     const title = names.length === 0 ? 'Asana' : `Asana ${names.join(', ')}`;
+    return into === undefined ? title : `${title} into ${into.name}`;
+  }
+  if (job.kind === 'jira') {
+    const names = (job.jira_projects ?? []).map((row) => row.name);
+    const into = teams.find((t) => t.id === job.jira_projects?.[0]?.team_id);
+    const title = names.length === 0 ? 'Jira' : `Jira ${names.join(', ')}`;
     return into === undefined ? title : `${title} into ${into.name}`;
   }
   const target = teams.find((t) => t.id === job.team_id);
@@ -765,6 +824,15 @@ export const WorkspaceImportSection: React.FC<WorkspaceImportSectionProps> = ({
         />
       ) : source === 'asana' ? (
         <AsanaImportForm
+          workspaceId={workspace.id}
+          teams={teamList}
+          importing={importing}
+          onStarted={() => {
+            invalidateQueries(queryKey);
+          }}
+        />
+      ) : source === 'jira' ? (
+        <JiraImportForm
           workspaceId={workspace.id}
           teams={teamList}
           importing={importing}
