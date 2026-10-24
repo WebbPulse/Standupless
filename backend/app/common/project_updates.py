@@ -43,6 +43,7 @@ from app.common.planning_rules import (
     team_role,
     unprocessable,
 )
+from app.common.project_update_threads import summarise_updates
 
 
 def cursor_scope(workspace_id: str, project_id: str) -> str:
@@ -104,7 +105,7 @@ def list_project_updates(
         start_key=_start_key(cursor, context.workspace_id, project.project_id),
     )
     return (
-        [_read(repositories, context, teams, row) for row in rows],
+        summarise_updates(repositories, context, [_read(repositories, context, teams, row) for row in rows]),
         encode_start_key(last_key, scope=cursor_scope(context.workspace_id, project.project_id)),
     )
 
@@ -174,7 +175,7 @@ def update_project_update(
         if name in fields and fields[name] is None:
             raise unprocessable(f"{name} must not be null")
     if not fields:
-        return _read(repositories, context, teams, existing)
+        return summarise_updates(repositories, context, [_read(repositories, context, teams, existing)])[0]
     now = utc_now()
     edited = existing.model_copy(update={**fields, "updated_at": now, "edited_at": now})
     try:
@@ -188,19 +189,21 @@ def update_project_update(
     pulse.revise_update(
         repositories, context.workspace_id, stored.update_id, body=stored.body, health=stored.health, edited_at=now
     )
-    return _read(repositories, context, teams, stored)
+    return summarise_updates(repositories, context, [_read(repositories, context, teams, stored)])[0]
 
 
 def delete_project_update(repositories: Repositories, context: AuthzContext, project_id: str, update_id: str) -> None:
     """Delete an update; removing the newest one falls the project back to the one before it.
 
     With no update left the project keeps the health it last reported, as a
-    health set by hand would stay, and only `last_update_at` is cleared.
+    health set by hand would stay, and only `last_update_at` is cleared. The
+    update's replies and reactions go with it.
     """
     _, _, existing = _load_editable(repositories, context, project_id, update_id)
     was_latest = _is_latest(repositories, existing)
     if not repositories.planning.delete(context.workspace_id, existing.planning_key):
         raise not_found()
+    repositories.planning.update_threads.delete_thread(context.workspace_id, existing.project_id, existing.update_id)
     pulse.remove_update(repositories, context.workspace_id, existing.update_id)
     if not was_latest:
         return

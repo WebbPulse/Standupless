@@ -375,6 +375,13 @@ export const projectUpdatesKey = (
   projectId: string
 ): QueryKey => ['projectUpdates', workspaceId, projectId];
 
+/** The key for one project update's replies. */
+export const projectUpdateCommentsKey = (
+  workspaceId: string,
+  projectId: string,
+  updateId: string
+): QueryKey => ['projectUpdateComments', workspaceId, projectId, updateId];
+
 /**
  * One project's activity feed, nested under the project's own key so every
  * write that re-reads the project re-reads what it recorded too.

@@ -40,6 +40,7 @@ NotificationKind = Literal[
     "status_changed",
     "subscribed",
     "project_update",
+    "project_update_comment",
     "project_update_due",
     "initiative_update_due",
     "due_soon",
@@ -58,6 +59,7 @@ NOTIFICATION_KINDS: tuple[str, ...] = (
     "status_changed",
     "subscribed",
     "project_update",
+    "project_update_comment",
     "project_update_due",
     "initiative_update_due",
     "due_soon",
@@ -68,6 +70,9 @@ NOTIFICATION_KINDS: tuple[str, ...] = (
     "review_requested",
     "reminder",
 )
+
+PROJECT_UPDATE_REPLIED = "project_update_comment"
+"""The kind a reply on a project update takes, reaching the update's author, earlier repliers and anyone mentioned."""
 
 ISSUE_REMINDER = "reminder"
 """The kind a reminder a member set on an issue for themselves takes when it comes due."""

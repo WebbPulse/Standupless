@@ -13,19 +13,13 @@ drift.
 
 from __future__ import annotations
 
-from typing import Iterable
-
 from fastapi import HTTPException, status
 
-from app.common.account_deletion import DELETED_USER_NAME
 from app.common.api.dependencies.authz import IMPLIED_TEAM_ROLE, AuthzContext
 from app.common.api.dependencies.repositories import Repositories
 from app.common.core.config import settings
 from app.common.db.dynamo.comments import Comment
 from app.common.db.dynamo.issues import Issue
-from app.common.db.dynamo.reactions import USER_IDS_CAP, Reaction
-from app.common.icons import icon_url
-from app.domains.discussion.schemas.discussion import AuthorRead, ReactionGroupRead
 
 NOT_FOUND = {"error_code": "NOT_FOUND", "message": "Resource not found"}
 
@@ -132,101 +126,6 @@ def is_team_admin(repositories: Repositories, context: AuthzContext, team_id: st
     if context.is_workspace_admin:
         return True
     return team_role(repositories, context, team_id) == "admin"
-
-
-GITHUB_AUTHOR_PREFIX = "github:"
-"""The author id prefix of a comment synced from an unlinked GitHub account."""
-
-LINEAR_AUTHOR_PREFIX = "linear:"
-"""The author id prefix of a comment imported from Linear whose author matched no member."""
-
-SHORTCUT_AUTHOR_PREFIX = "shortcut:"
-"""The author id prefix of a comment imported from Shortcut whose author matched no member."""
-
-ASANA_AUTHOR_PREFIX = "asana:"
-"""The author id prefix of a comment imported from Asana whose author matched no member."""
-
-JIRA_AUTHOR_PREFIX = "jira:"
-"""The author id prefix of a comment imported from Jira whose author matched no member."""
-
-PLACEHOLDER_AUTHORS: tuple[tuple[str, str], ...] = (
-    (GITHUB_AUTHOR_PREFIX, "GitHub"),
-    (LINEAR_AUTHOR_PREFIX, "Linear"),
-    (SHORTCUT_AUTHOR_PREFIX, "Shortcut"),
-    (ASANA_AUTHOR_PREFIX, "Asana"),
-    (JIRA_AUTHOR_PREFIX, "Jira"),
-)
-"""Each placeholder author prefix and the source named after the placeholder's name."""
-
-
-def authors_for(repositories: Repositories, user_ids: Iterable[str]) -> dict[str, AuthorRead]:
-    """The author block for each named user, in one batched read.
-
-    Joined per page rather than denormalised onto every comment row, so a display
-    name change shows up without rewriting a thread. A user who is gone still
-    renders, carrying their id and the deleted user name, rather than 404ing the
-    list they appear in.
-
-    A comment synced from GitHub by someone with no linked account is authored as
-    `github:<login>` and renders under that login, without a user lookup. A
-    comment imported from Linear, Shortcut, Asana or Jira by someone who is not
-    a member is authored as `linear:<name>`, `shortcut:<name>`, `asana:<name>`
-    or `jira:<name>` and renders the same way.
-    """
-    wanted = [user_id for user_id in dict.fromkeys(user_ids) if user_id]
-    if not wanted:
-        return {}
-    resolved: dict[str, AuthorRead] = {}
-    for user_id in wanted:
-        for prefix, origin in PLACEHOLDER_AUTHORS:
-            if user_id.startswith(prefix):
-                resolved[user_id] = AuthorRead(
-                    user_id=user_id, display_name=f"{user_id.removeprefix(prefix)} ({origin})"
-                )
-                break
-    wanted = [user_id for user_id in wanted if user_id not in resolved]
-    users = repositories.users.get_many(wanted) if wanted else {}
-    for user_id in wanted:
-        user = users.get(user_id)
-        if user is None:
-            resolved[user_id] = AuthorRead(user_id=user_id, display_name=DELETED_USER_NAME)
-            continue
-        resolved[user_id] = AuthorRead(
-            user_id=user_id,
-            display_name=user.display_name,
-            email=str(user.email),
-            avatar_url=icon_url(user.icon_key),
-        )
-    return resolved
-
-
-def group_reactions(rows: list[Reaction], caller_id: str) -> list[ReactionGroupRead]:
-    """One target's reactions as groups, in the key order they were read in.
-
-    A group with a count of zero is never produced, because a group exists only
-    where a row does. `reacted` is resolved here rather than by the frontend so the
-    caller's own reaction renders as pressed without a second read.
-    """
-    order: list[str] = []
-    grouped: dict[str, list[str]] = {}
-    for row in rows:
-        if row.emoji not in grouped:
-            grouped[row.emoji] = []
-            order.append(row.emoji)
-        grouped[row.emoji].append(row.user_id)
-
-    groups: list[ReactionGroupRead] = []
-    for emoji in order:
-        user_ids = grouped[emoji]
-        groups.append(
-            ReactionGroupRead(
-                emoji=emoji,
-                count=len(user_ids),
-                user_ids=user_ids[:USER_IDS_CAP],
-                reacted=caller_id in user_ids,
-            )
-        )
-    return groups
 
 
 def attachments_bucket() -> str:

@@ -429,6 +429,7 @@ const NOTIFICATION_VERBS: Partial<Record<NotificationRead['kind'], string>> = {
   status_changed: 'changed status',
   subscribed: 'subscribed you',
   project_update: 'posted an update',
+  project_update_comment: 'replied to an update',
   project_update_due: 'Update due',
   initiative_update_due: 'Initiative update due',
   due_soon: 'Due soon',

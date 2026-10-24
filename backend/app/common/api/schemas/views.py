@@ -107,6 +107,7 @@ NotificationKindField = Literal[
     "status_changed",
     "subscribed",
     "project_update",
+    "project_update_comment",
     "project_update_due",
     "initiative_update_due",
     "due_soon",
@@ -599,7 +600,8 @@ class NotificationRead(BaseModel):
     """One inbox row as the API returns it.
 
     A `project_update` notification names its project and update and leaves the
-    issue fields empty. A `standup_digest` carries the team key in `issue_key`,
+    issue fields empty, and a `project_update_comment` one also names the reply in
+    `comment_id`. A `standup_digest` carries the team key in `issue_key`,
     the team name in `issue_title` and the digest date in `standup_date`. A
     `review_requested` notification carries the pull request's `owner/repo#number`
     in `issue_key`, its title in `issue_title` and its GitHub address in `url`.

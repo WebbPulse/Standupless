@@ -3,21 +3,43 @@
  * and the text as Markdown. The author and a workspace admin edit it in place
  * or delete it from a menu, which is what the server's `can_edit` says.
  *
+ * A project update also carries its thread, as Linear's do: a reaction bar
+ * with counts, the reader's own reactions pressed, and a reply toggle naming
+ * how many replies there are, which opens the replies and a reply box under
+ * the update. An initiative update has no thread, so it shows neither.
+ *
  * The card carries the element id `update-<id>`, so a link from an email, a
  * webhook or the inbox that ends in that hash scrolls straight to it.
  */
 
 import React, { useState } from 'react';
-import { LuCopy, LuEllipsis, LuPencil, LuTrash2 } from 'react-icons/lu';
+import { invalidateQueries } from '@webbpulse/api-client/react';
+import {
+  LuCopy,
+  LuEllipsis,
+  LuMessageSquare,
+  LuPencil,
+  LuTrash2,
+} from 'react-icons/lu';
+import {
+  addProjectUpdateReaction,
+  removeProjectUpdateReaction,
+} from '../../api/projectUpdateThreads';
 import { errorMessage } from '../../lib/errors';
 import { personLabel, type Assignable } from '../../lib/issuePeople';
 import { PROJECT_HEALTH_LABELS } from '../../lib/projectLook';
+import { projectUpdatesKey } from '../../lib/queryKeys';
+import { replyCountLabel } from '../../lib/threadResolution';
 import { showErrorToast, showToast } from '../../lib/toast';
+import { toggleReactionGroup } from '../../lib/updateThreads';
 import type {
   ProjectHealth,
   ProjectUpdateEdit,
+  ProjectUpdateRead,
+  ReactionGroup,
   StatusUpdateRead,
 } from '../../types/Api';
+import ReactionGroups from '../discussion/ReactionGroups';
 import Avatar from '../ui/avatar';
 import Button, { IconButton } from '../ui/button';
 import Dialog from '../ui/dialog';
@@ -27,6 +49,7 @@ import RelativeTime from '../ui/relative-time';
 import ViaSource from '../ui/via-source';
 import ProjectHealthGlyph from './ProjectHealthGlyph';
 import ProjectUpdateEditor from './ProjectUpdateEditor';
+import ProjectUpdateThread from './ProjectUpdateThread';
 
 /** The element id an update renders under, so a hash can scroll to it. */
 const anchorOf = (updateId: string): string => `update-${updateId}`;
@@ -62,6 +85,102 @@ export interface ProjectUpdateCardProps {
 
 /** The author id prefix of an update imported from Linear whose author is not a member. */
 const LINEAR_AUTHOR_PREFIX = 'linear:';
+
+/** Whether an update is a project's, which is what carries a thread. */
+const isProjectUpdate = (
+  update: StatusUpdateRead
+): update is ProjectUpdateRead =>
+  typeof (update as Partial<ProjectUpdateRead>).project_id === 'string';
+
+/** Props for UpdateThreadFooter. */
+interface UpdateThreadFooterProps {
+  update: ProjectUpdateRead;
+  people: Assignable[];
+}
+
+/** A project update's reaction bar and reply toggle, and its thread when open. */
+const UpdateThreadFooter: React.FC<UpdateThreadFooterProps> = ({
+  update,
+  people,
+}) => {
+  const [open, setOpen] = useState(false);
+  const [toggled, setToggled] = useState<{
+    base: ReactionGroup[] | undefined;
+    groups: ReactionGroup[];
+  } | null>(null);
+  const [reactionError, setReactionError] = useState<unknown>(null);
+  const { workspace_id: workspaceId, project_id: projectId } = update;
+  const reactions =
+    toggled !== null && toggled.base === update.reactions
+      ? toggled.groups
+      : (update.reactions ?? []);
+
+  const toggle = async (emoji: string, reacted: boolean): Promise<void> => {
+    setReactionError(null);
+    setToggled({
+      base: update.reactions,
+      groups: toggleReactionGroup(reactions, emoji, reacted),
+    });
+    try {
+      if (reacted) {
+        await removeProjectUpdateReaction(
+          workspaceId,
+          projectId,
+          update.update_id,
+          { emoji }
+        );
+      } else {
+        await addProjectUpdateReaction(
+          workspaceId,
+          projectId,
+          update.update_id,
+          { emoji }
+        );
+      }
+    } catch (failure: unknown) {
+      setToggled(null);
+      setReactionError(failure);
+    } finally {
+      invalidateQueries([projectUpdatesKey(workspaceId, projectId)]);
+    }
+  };
+
+  const count = update.comment_count ?? 0;
+  const label = replyCountLabel(count) || 'Reply';
+
+  return (
+    <div className="mt-2 space-y-3 pl-7">
+      <div className="flex flex-wrap items-center gap-1">
+        <ReactionGroups
+          reactions={reactions}
+          canReact
+          onToggle={toggle}
+          error={reactionError}
+        />
+        <button
+          type="button"
+          aria-expanded={open}
+          onClick={() => {
+            setOpen((was) => !was);
+          }}
+          className="inline-flex h-6 items-center gap-1 rounded-full px-2 text-xs text-text-muted transition-colors duration-100 hover:bg-raised hover:text-text focus-visible:ring-1 focus-visible:ring-accent focus-visible:outline-none"
+        >
+          <LuMessageSquare aria-hidden="true" className="h-3.5 w-3.5" />
+          {open && count > 0 ? 'Hide replies' : label}
+        </button>
+      </div>
+      {open && (
+        <ProjectUpdateThread
+          workspaceId={workspaceId}
+          projectId={projectId}
+          updateId={update.update_id}
+          people={people}
+          autoFocus={count === 0}
+        />
+      )}
+    </div>
+  );
+};
 
 /** One update, with edit and delete for the people allowed to. */
 export const ProjectUpdateCard: React.FC<ProjectUpdateCardProps> = ({
@@ -189,6 +308,10 @@ export const ProjectUpdateCard: React.FC<ProjectUpdateCardProps> = ({
           <Markdown source={update.body} density="compact" />
         )}
       </div>
+
+      {isProjectUpdate(update) && (
+        <UpdateThreadFooter update={update} people={people} />
+      )}
 
       {confirming && (
         <Dialog
