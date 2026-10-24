@@ -46,5 +46,4 @@ export const viewsLanding = (
 export const currentOrFirstTeam = (
   teams: readonly TeamRead[],
   prefix: string | null
-): TeamRead | undefined =>
-  routeTeam(teams, prefix) ?? teams[0];
+): TeamRead | undefined => routeTeam(teams, prefix) ?? teams[0];
