@@ -1,8 +1,9 @@
 /**
  * The team page. Covers resolving the key prefix, the grouped list it opens
  * on, filters and display carried in the URL, the keyboard walk and bulk
- * edit, peeking, creating from the page and saving what is on screen as a
- * view. The settings sections have their own route and tests.
+ * edit, peeking, creating from the page, saving what is on screen as a
+ * view, and the team default display an admin keeps for everyone. The
+ * settings sections have their own route and tests.
  */
 
 import {
@@ -18,6 +19,7 @@ import type { ReactNode } from 'react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { OrderedIssueRead } from '../../api/issues';
+import type { TeamDisplayDefaultsRead } from '../../api/teams';
 import ShortcutProvider from '../../components/shortcuts/ShortcutProvider';
 import { PeekPane, PeekProvider } from '../../components/workspace/PeekPane';
 import type { WorkspaceContextType } from '../../contexts/WorkspaceContextDefinition';
@@ -55,6 +57,9 @@ const bulkUpdateIssues =
     }) => Promise<{ issues: OrderedIssueRead[] }>
   >();
 const createView = vi.fn<(body: Record<string, unknown>) => Promise<unknown>>();
+const getDisplayDefaults = vi.fn<() => Promise<TeamDisplayDefaultsRead>>();
+const updateDisplayDefaults =
+  vi.fn<(body: Record<string, unknown>) => Promise<TeamDisplayDefaultsRead>>();
 
 vi.mock('../../hooks/useAuth', () => ({
   useAuth: () => ({
@@ -92,6 +97,12 @@ vi.mock('../../api/teams', () => ({
   listLabels: () => listLabels(),
   listTeamMembers: () => listTeamMembers(),
   createLabel: vi.fn(),
+  getDisplayDefaults: () => getDisplayDefaults(),
+  updateDisplayDefaults: (
+    _w: string,
+    _t: string,
+    body: Record<string, unknown>
+  ) => updateDisplayDefaults(body),
 }));
 
 vi.mock('../../api/planning', () => ({
@@ -213,6 +224,15 @@ const resolved = (role: WorkspaceRole): WorkspaceContextType => {
 
 const openCreate = vi.fn();
 
+/** A team that never set a default display. */
+const noDefaults: TeamDisplayDefaultsRead = {
+  team_id: 'team-1',
+  list_display: null,
+  board_display: null,
+  updated_by: null,
+  updated_at: null,
+};
+
 /** A create dialog state that records what the page asked for. */
 const creator: CreateIssueState = {
   open: openCreate,
@@ -254,14 +274,16 @@ const renderPage = (path = '/w/mine/team/ENG', extra?: ReactNode) =>
  * Waits for the page to show the team's name. The sidebar reads the same
  * cached team list, so the name is looked for outside the sidebar.
  */
-const findTeamName = async (name: string): Promise<HTMLElement> => {
-  const shown = await screen.findAllByText(name);
-  const onPage = shown.find(
-    (element) => element.closest('[data-testid="sidebar-frame"]') === null
-  );
-  expect(onPage).toBeDefined();
-  return onPage as HTMLElement;
-};
+const findTeamName = (name: string): Promise<HTMLElement> =>
+  waitFor(() => {
+    const onPage = screen
+      .getAllByText(name)
+      .find(
+        (element) => element.closest('[data-testid="sidebar-frame"]') === null
+      );
+    expect(onPage).toBeDefined();
+    return onPage as HTMLElement;
+  });
 
 /** Presses a key on the document, as the shortcut layer hears it. */
 const press = (key: string, init: KeyboardEventInit = {}) => {
@@ -303,9 +325,13 @@ beforeEach(() => {
     bulkUpdateIssues,
     createView,
     openCreate,
+    getDisplayDefaults,
+    updateDisplayDefaults,
   ]) {
     spy.mockReset();
   }
+  getDisplayDefaults.mockResolvedValue(noDefaults);
+  updateDisplayDefaults.mockResolvedValue(noDefaults);
   useWorkspaceMock.mockReset();
   useWorkspaceMock.mockReturnValue(resolved('owner'));
   listTeams.mockResolvedValue([team]);
@@ -598,5 +624,70 @@ describe('creating and saving', () => {
     expect(
       screen.getByRole('button', { name: 'Save as view' })
     ).toBeInTheDocument();
+  });
+});
+
+describe('the team default display', () => {
+  it('opens over the grouping the team saved', async () => {
+    getDisplayDefaults.mockResolvedValue({
+      ...noDefaults,
+      list_display: { group_by: 'priority' },
+    });
+    renderPage();
+
+    expect(
+      await screen.findByRole('region', { name: 'High' })
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole('region', { name: 'Todo' })
+    ).not.toBeInTheDocument();
+  });
+
+  it('lets an admin keep the display on screen as the team default', async () => {
+    const user = userEvent.setup();
+    renderPage('/w/mine/team/ENG?group=priority&done=week');
+
+    await screen.findByRole('region', { name: 'High' });
+    await user.click(screen.getByRole('button', { name: 'Display' }));
+    await user.click(
+      await screen.findByRole('button', { name: 'Save as team default' })
+    );
+
+    await waitFor(() => {
+      expect(updateDisplayDefaults).toHaveBeenCalledWith({
+        list_display: expect.objectContaining({
+          group_by: 'priority',
+          sub_group_by: 'none',
+          completed_window: 'past_week',
+        }) as unknown,
+      });
+    });
+  });
+
+  it('offers a member only the way back to the team default', async () => {
+    const user = userEvent.setup();
+    useWorkspaceMock.mockReturnValue(resolved('member'));
+    listTeams.mockResolvedValue([{ ...team, role: 'member' }]);
+    getDisplayDefaults.mockResolvedValue({
+      ...noDefaults,
+      list_display: { group_by: 'priority' },
+    });
+    renderPage('/w/mine/team/ENG?group=status');
+
+    await screen.findByRole('region', { name: 'Todo' });
+    await user.click(screen.getByRole('button', { name: 'Display' }));
+    await user.click(
+      await screen.findByRole('button', { name: 'Reset to default' })
+    );
+
+    expect(
+      await screen.findByRole('region', { name: 'High' })
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'Save as team default' })
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'Clear team default' })
+    ).not.toBeInTheDocument();
   });
 });

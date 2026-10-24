@@ -24,6 +24,8 @@ class FoundKey:
     named a retired one, so a link row and a write-back comment show the key the
     issue carries today. `moves_status` is false for a key the pull request only
     mentions in passing, which links the issue without moving its status.
+    `holds_on_merge` is true for a key named only after a non-closing word such as
+    `Refs`, which moves as the pull request opens but stays put when it merges.
     """
 
     team_id: str
@@ -31,6 +33,7 @@ class FoundKey:
     number: int
     magic_word: str | None
     moves_status: bool = True
+    holds_on_merge: bool = False
 
 
 def key_pattern(prefix: str) -> re.Pattern[str]:

@@ -9,7 +9,8 @@ transport maps to tool errors.
 
 from __future__ import annotations
 
-from typing import Any, Callable, Optional
+from dataclasses import dataclass, field
+from typing import Any, Callable, Collection, Mapping, Optional
 
 from boto3.dynamodb.conditions import Attr
 from fastapi import HTTPException, status
@@ -29,6 +30,7 @@ from app.common.db.dynamo.issues import (
     issue_key,
     new_issue_id,
 )
+from app.common.db.dynamo.planning import Project
 from app.common.db.dynamo.team_config import STATUS_CATEGORIES, Label
 from app.common.estimates import estimate_points, is_unestimated
 from app.common.filter_resolution import resolve_issue_filter
@@ -36,6 +38,7 @@ from app.common.issue_archive import archive_issue, unarchive_issue
 from app.common.issue_filters import ME, NONE, IssueFilter, estimate_value
 from app.common.issue_keyed_reads import keyed_rows
 from app.common.issue_keys import current_all
+from app.common.issue_mentions import record_issue_mentions
 from app.common.issue_rules import (
     TRIAGE_STATUS_ID,
     changed_fields,
@@ -374,15 +377,34 @@ def resolve_me(context: AuthzContext, user_id: Optional[str]) -> Optional[str]:
     return context.user_id
 
 
-def create_issue(repositories: Repositories, context: AuthzContext, payload: IssueCreate) -> Issue:
+@dataclass(frozen=True)
+class FreshRows:
+    """Rows the same request wrote moments ago, which an eventually consistent read may not see yet.
+
+    A caller that has just written a project, its milestones or a parent issue
+    names them here, so `create_issue` checks against the rows as written rather
+    than reading them back. `milestones` maps a project id to its milestone ids,
+    and `issues` maps an issue id to the issue.
+    """
+
+    project: Optional[Project] = None
+    milestones: Mapping[str, Collection[str]] = field(default_factory=dict)
+    issues: Mapping[str, Issue] = field(default_factory=dict)
+
+
+def create_issue(
+    repositories: Repositories, context: AuthzContext, payload: IssueCreate, *, fresh: Optional[FreshRows] = None
+) -> Issue:
     """Create an issue, allocating its key from the team's counter.
 
     A named template fills the fields the payload leaves out before anything is
     validated, so a template's rows are held to the same checks as typed ones.
     The counter is allocated after every validation has passed, because a number
     is consumed whether or not the write lands and the contract accepts gaps but not
-    wasted ones.
+    wasted ones. `fresh` names rows this request has just written, so a project,
+    milestone or parent created a moment ago is not refused for read lag.
     """
+    fresh = fresh or FreshRows()
     require_team_member(repositories, context, payload.team_id)
     team = repositories.teams.get(context.workspace_id, payload.team_id)
     if team is None:
@@ -406,16 +428,27 @@ def create_issue(repositories: Repositories, context: AuthzContext, payload: Iss
         repositories, context.workspace_id, payload.team_id, resolve_me(context, payload.assignee_id)
     )
     issue_id = new_issue_id()
-    parent_id = check_parent(repositories, context.workspace_id, payload.team_id, issue_id, payload.parent_id)
+    parent_id = check_parent(
+        repositories, context.workspace_id, payload.team_id, issue_id, payload.parent_id, known=fresh.issues
+    )
 
     cycle_id = resolve_cycle(repositories, context.workspace_id, payload.team_id, payload.cycle_id)
-    project_id = check_project(repositories, context.workspace_id, payload.team_id, payload.project_id)
+    project_id = check_project(
+        repositories, context.workspace_id, payload.team_id, payload.project_id, known=fresh.project
+    )
     project_milestone_id = check_project_milestone(
-        repositories, context.workspace_id, project_id, payload.project_milestone_id
+        repositories, context.workspace_id, project_id, payload.project_milestone_id, known=fresh.milestones
     )
 
     mentions = mentioned_user_ids(repositories, context.workspace_id, payload.body)
-    in_triage = lands_in_triage(repositories, context, payload.team_id, requested_triage)
+    in_triage = lands_in_triage(
+        repositories,
+        context,
+        payload.team_id,
+        requested_triage,
+        status_named=bool(status_ref),
+        has_parent=parent_id is not None,
+    )
     number = repositories.counters.allocate_issue_number(context.workspace_id, payload.team_id)
     issue = Issue(
         workspace_id=context.workspace_id,
@@ -488,6 +521,7 @@ def create_issue(repositories: Repositories, context: AuthzContext, payload: Iss
             ]
         )
     subscribe_touched(repositories, created, None)
+    record_issue_mentions(repositories, context, created, None, created.body, place="description")
     return created
 
 
@@ -636,6 +670,8 @@ def store_patch(
                 context.source,
             )
         )
+    if issue.body != stored.body:
+        record_issue_mentions(repositories, context, stored, issue.body, stored.body, place="description")
     return stored
 
 

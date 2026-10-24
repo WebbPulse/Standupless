@@ -57,6 +57,12 @@
         }
       } catch (error) {}
       try {
+        var fontSize = localStorage.getItem('standupless-font-size');
+        if (fontSize === 'small' || fontSize === 'large') {
+          document.documentElement.setAttribute('data-font-size', fontSize);
+        }
+      } catch (error) {}
+      try {
         var match = /^\/w\/([^/]+)/.exec(window.location.pathname);
         var accents = match
           ? JSON.parse(localStorage.getItem('standupless-accent') || '{}')

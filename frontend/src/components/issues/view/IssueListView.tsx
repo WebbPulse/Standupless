@@ -13,6 +13,8 @@
  * sub-issue and the left arrow folds it or steps back out to the parent. A right
  * click on a row or a card opens the same commands as a menu. Opening an
  * issue remembers the view's order, so the issue page can step through it.
+ * In a manually ordered view, Alt+Up and Alt+Down move the focused issue a
+ * place within its group, or its board column, and save the order a drag would.
  * The keys go through the workspace
  * shortcut registry, so they stand down in text fields and dialogs, show in
  * the help overlay, and the property ones are offered as actions in the
@@ -36,6 +38,7 @@ import {
   type CreateIssueOptions,
 } from '../../../hooks/useCreateIssue';
 import type { IssueCollection } from '../../../hooks/useIssueCollection';
+import { useMilestoneContext } from '../../../hooks/useMilestoneContext';
 import { useStoredSet } from '../../../hooks/useStoredSet';
 import { COLLECTION_LIMIT } from '../../../hooks/useIssueCollection';
 import {
@@ -52,6 +55,7 @@ import {
   filterValuesFor,
   groupIssues,
   hiddenColumnKey,
+  manualMoveKeys,
   narrowFilters,
   parentsIn,
   shownIssues,
@@ -78,7 +82,8 @@ import {
   runDuplicate,
 } from '../../../lib/issueConversion';
 import { rememberTrail } from '../../../lib/issueTrail';
-import { foldedParentKey, treeRows } from '../../../lib/issueTree';
+import { showToast } from '../../../lib/toast';
+import { foldedParentKey, parentRefOf, treeRows } from '../../../lib/issueTree';
 import { issuePath } from '../../../lib/paths';
 import type { EstimateOptions } from '../../../lib/validation';
 import type { EstimateScale } from '../../../types/Api';
@@ -228,15 +233,11 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
   const [deleting, setDeleting] = useState<OrderedIssueRead[] | null>(null);
   const scrollOnFocus = useRef(false);
 
-  const { showSubIssues, showCompleted } = state;
+  const { showSubIssues, completed } = state;
   const sorted = useMemo(
     () =>
       sortIssues(
-        shownIssues(
-          collection.issues,
-          { showSubIssues, showCompleted },
-          context
-        ),
+        shownIssues(collection.issues, { showSubIssues, completed }, context),
         state.ordering,
         { reverse: state.reverse, context }
       ),
@@ -245,13 +246,21 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
       state.ordering,
       state.reverse,
       showSubIssues,
-      showCompleted,
+      completed,
       context,
     ]
   );
   const byId = useMemo(
     () => new Map(sorted.map((issue) => [issue.id, issue])),
     [sorted]
+  );
+  const loadedById = useMemo(
+    () => new Map(collection.issues.map((issue) => [issue.id, issue])),
+    [collection.issues]
+  );
+  const parentOf = useCallback(
+    (issue: OrderedIssueRead) => parentRefOf(issue, loadedById),
+    [loadedById]
   );
 
   const sections = useMemo<IssueSection[]>(() => {
@@ -472,6 +481,53 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
     if (next !== undefined) focusOn(next, false);
   };
 
+  const siblingsOf = (id: string): OrderedIssueRead[] => {
+    const issuesOf = (ids: readonly string[]): OrderedIssueRead[] =>
+      ids.flatMap((each) => {
+        const issue = byId.get(each);
+        return issue === undefined ? [] : [issue];
+      });
+    if (board !== null) {
+      const cell = board.flat().find((column) => column.includes(id));
+      return cell === undefined ? [] : issuesOf(cell);
+    }
+    const parentId = tree.get(id)?.parentId ?? null;
+    const among = (issues: OrderedIssueRead[]): OrderedIssueRead[] =>
+      issues.filter(
+        (issue) => (tree.get(issue.id)?.parentId ?? null) === parentId
+      );
+    for (const { group, subs } of sections) {
+      if (collapsed.has(group.key)) continue;
+      if (subs === null) {
+        if (group.issues.some((issue) => issue.id === id))
+          return among(group.issues);
+        continue;
+      }
+      for (const sub of subs) {
+        if (collapsed.has(`${group.key}/${sub.key}`)) continue;
+        if (sub.issues.some((issue) => issue.id === id))
+          return among(sub.issues);
+      }
+    }
+    return [];
+  };
+
+  const reorder = (step: 1 | -1): void => {
+    if (focused === null) return;
+    if (state.ordering !== 'manual') {
+      showToast('Switch ordering to Manual to move issues', 'info');
+      return;
+    }
+    const placements = manualMoveKeys(
+      siblingsOf(focused),
+      focused,
+      step,
+      state.reverse
+    );
+    if (placements === null) return;
+    for (const { id, sort_order } of placements) update([id], { sort_order });
+  };
+
   const focusedNode = focused === null ? undefined : tree.get(focused);
   const onTree =
     board === null &&
@@ -551,6 +607,25 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
     enabled: hasRows,
     handler: (event) => {
       move(-1, event?.shiftKey === true);
+    },
+  });
+  const canReorder = canEdit && focused !== null;
+  useShortcut({
+    keys: 'alt+arrowup',
+    label: 'Move issue up',
+    group: 'List',
+    enabled: canReorder,
+    handler: () => {
+      reorder(-1);
+    },
+  });
+  useShortcut({
+    keys: 'alt+arrowdown',
+    label: 'Move issue down',
+    group: 'List',
+    enabled: canReorder,
+    handler: () => {
+      reorder(1);
     },
   });
   const onBoard = board !== null && hasRows;
@@ -907,6 +982,11 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
     [filterFields, context, onStateChange, state]
   );
 
+  const named = useMilestoneContext(
+    context,
+    state.visible.includes('milestone')
+  );
+  const milestones = named.milestones;
   const env = useMemo<IssueViewEnv>(
     () => ({
       slug,
@@ -929,6 +1009,8 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
       openMenu,
       onOpen: rememberOrder,
       filterFor,
+      milestones,
+      parentOf,
     }),
     [
       slug,
@@ -950,6 +1032,8 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
       openMenu,
       rememberOrder,
       filterFor,
+      milestones,
+      parentOf,
     ]
   );
 

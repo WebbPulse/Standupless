@@ -2,12 +2,15 @@
  * Renders Markdown written in a description or a comment as React elements,
  * from the tree {@link parseMarkdown} builds. Nothing is set as HTML, so a
  * comment cannot inject markup, and a link opens in a new tab without handing
- * the new page a reference back to this one. Embedded images and videos, and
+ * the new page a reference back to this one. An issue key renders as a chip
+ * with the issue's status and title, and a link to a project or document of
+ * the workspace as a chip with its name. Embedded images and videos, and
  * links to attached files, load through the page's media tokens.
  */
 
 import React, { useMemo } from 'react';
 import { useMentionLabel } from '../../contexts/MentionDirectoryContextDefinition';
+import { useLinkedReference } from '../../hooks/useLinkedReference';
 import { cn } from '../../lib/cn';
 import { isContentPath } from '../../lib/media';
 import {
@@ -16,6 +19,8 @@ import {
   type InlineNode,
 } from '../../lib/markdown';
 import { AttachmentLink, MediaEmbed } from '../media/MediaEmbed';
+import IssueChip from './IssueChip';
+import ReferenceChip from './ReferenceChip';
 
 /**
  * How tightly a body sets. `comfortable` suits a description read as a
@@ -45,6 +50,30 @@ const Mention: React.FC<{ handle: string }> = ({ handle }) => {
     <span className="rounded-xs bg-accent-soft px-0.5 font-medium text-accent">
       @{label}
     </span>
+  );
+};
+
+/**
+ * A link, drawn as a chip when it points at a project or document of the open
+ * workspace and as an ordinary link opening a new tab otherwise.
+ */
+const MarkdownLink: React.FC<{ href: string; children: React.ReactNode }> = ({
+  href,
+  children,
+}) => {
+  const target = useLinkedReference(href);
+  if (target !== null) {
+    return <ReferenceChip href={href}>{children}</ReferenceChip>;
+  }
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="text-accent underline-offset-2 hover:underline"
+    >
+      {children}
+    </a>
   );
 };
 
@@ -99,18 +128,14 @@ const renderInline = (nodes: InlineNode[], prefix: string): React.ReactNode[] =>
           );
         }
         return (
-          <a
-            key={key}
-            href={node.href}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-accent underline-offset-2 hover:underline"
-          >
+          <MarkdownLink key={key} href={node.href}>
             {renderInline(node.children, key)}
-          </a>
+          </MarkdownLink>
         );
       case 'mention':
         return <Mention key={key} handle={node.handle} />;
+      case 'issue':
+        return <IssueChip key={key} issueKeyText={node.key} />;
     }
   });
 

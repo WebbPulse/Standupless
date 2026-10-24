@@ -988,7 +988,7 @@ def _links_step(
 ) -> StepResult:
     """Link one page of a Linear team's issues to their parents and related issues, now every issue is written."""
     from app.common.issue_rules import check_parent
-    from app.common.relation_effects import blocked_side, recount_blocked
+    from app.common.relation_effects import blocked_side, recount_blocked, recount_relations
 
     result = StepResult()
     page = _page(client, ISSUE_LINKS_QUERY, ("team", "issues"), {"team": mapping.linear_team_id}, job.after)
@@ -1021,6 +1021,8 @@ def _links_step(
             blocked = blocked_side(link)
             if blocked is not None:
                 recount_blocked(repositories, job.workspace_id, blocked)
+            recount_relations(repositories, job.workspace_id, issue_id)
+            recount_relations(repositories, job.workspace_id, target_id)
             result.add("relations")
     result.next_after = page.end_cursor if page.has_next else None
     return result

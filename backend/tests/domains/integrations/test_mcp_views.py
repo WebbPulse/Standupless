@@ -366,3 +366,34 @@ def test_list_issues_takes_match_and_nested_groups(client: TestClient, repositor
     assert {row["issue_id"] for row in either["issues"]} == {urgent.issue_id, low.issue_id}
     assert {row["issue_id"] for row in grouped["issues"]} == {urgent.issue_id, low.issue_id}
     assert "levels deep" in deep
+
+
+def test_a_project_view_is_saved_listed_and_rearranged(client: TestClient, repositories: Any, workspace: str) -> None:
+    """A project view keeps its filter, a patch moves only the named arrangement fields, and list_views narrows."""
+    secret = mint_for(repositories, MEMBER, VIEWS)
+
+    created = answer(
+        tool(
+            client,
+            secret,
+            "create_view",
+            {
+                "name": "Roadmap",
+                "entity": "projects",
+                "filter": {"status": ["planned", "in_progress"], "sub_teams": True},
+                "projects_display": {"layout": "timeline", "zoom": "quarter"},
+            },
+        )
+    )
+    answer(tool(client, secret, "create_view", {"name": "Bugs"}))
+    moved = answer(tool(client, secret, "update_view", {"view_id": "Roadmap", "projects_display": {"group": "lead"}}))
+    listed = answer(tool(client, secret, "list_views", {"entity": "projects"}))
+    bad = refusal(tool(client, secret, "create_view", {"name": "Nope", "entity": "projects", "filter": {"q": "x"}}))
+
+    assert created["entity"] == "projects"
+    assert created["filter"] == {"status": ["planned", "in_progress"], "sub_teams": "true"}
+    assert (created["projects_display"]["layout"], created["projects_display"]["zoom"]) == ("timeline", "quarter")
+    assert (moved["projects_display"]["group"], moved["projects_display"]["layout"]) == ("lead", "timeline")
+    assert [(row["name"], row["entity"]) for row in listed["views"]] == [("Roadmap", "projects")]
+    assert listed["views"][0]["projects_display"]["group"] == "lead"
+    assert "q" in bad

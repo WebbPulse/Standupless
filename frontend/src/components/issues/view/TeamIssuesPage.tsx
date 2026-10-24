@@ -9,17 +9,31 @@
  * caller can see, as Linear does, with a toggle in the toolbar to show the
  * team's own issues alone. Turning the roll-up off is kept in the URL as
  * `subteams=0`, so a link to the narrower list stays narrow.
+ *
+ * The list and the board open over the team's default display when its
+ * admins have set one, and over the built-in display otherwise. A team admin
+ * keeps or clears that default from the display menu; the archive always
+ * opens over the built-in list.
  */
 
-import React, { useMemo } from 'react';
+import React, { useCallback, useMemo } from 'react';
+import { useQueryAuth } from '@webbpulse/auth/react';
+import { usePolledQuery } from '@webbpulse/api-client/react';
 import { useParams } from 'react-router-dom';
+import {
+  getDisplayDefaults,
+  updateDisplayDefaults,
+  type TeamDisplayDefaultsUpdate,
+} from '../../../api/teams';
 import { useSubTeamRollUp } from '../../../hooks/useSubTeamRollUp';
 import { useTeam } from '../../../hooks/useTeam';
 import { useWorkspace } from '../../../hooks/useWorkspace';
-import { canWriteIssues } from '../../../lib/capabilities';
+import { canWriteIssues, isTeamAdmin } from '../../../lib/capabilities';
 import { errorMessage } from '../../../lib/errors';
 import type { ViewLayout } from '../../../api/views';
-import { defaultViewState } from '../../../lib/issueView';
+import { defaultViewState, type ViewState } from '../../../lib/issueView';
+import { LOOKUP_POLL_MS } from '../../../lib/polling';
+import { stateToTeamDisplay, teamDefaultState } from '../../../lib/teamDisplay';
 import { ErrorAlert } from '../../ui/alert';
 import EmptyState from '../../ui/empty-state';
 import FavoriteButton from '../../ui/FavoriteButton';
@@ -28,12 +42,16 @@ import SubTeamToggle from '../../workspace/SubTeamToggle';
 import TeamTabs from '../../workspace/TeamTabs';
 import TeamTitle from '../../workspace/TeamTitle';
 import WorkspaceShell from '../../workspace/WorkspaceShell';
-import IssueViewPage from './IssueViewPage';
+import IssueViewPage, { type TeamDefaultControl } from './IssueViewPage';
 
-const BASES = {
-  list: defaultViewState('list'),
-  board: defaultViewState('board'),
-} as const;
+/** The built-in display the archive opens over. */
+const ARCHIVE_BASE = defaultViewState('list');
+
+/** The field of a team's display defaults that holds one layout's page. */
+const PAGE_FIELD = {
+  list: 'list_display',
+  board: 'board_display',
+} as const satisfies Record<ViewLayout, keyof TeamDisplayDefaultsUpdate>;
 
 /** Props for TeamIssuesPage. */
 export interface TeamIssuesPageProps {
@@ -68,6 +86,45 @@ export const TeamIssuesPage: React.FC<TeamIssuesPageProps> = ({
             ...(rollUp ? { include_sub_teams: true } : {}),
           },
     [team, archive, rollUp]
+  );
+  const auth = useQueryAuth();
+  const teamId = team?.id ?? '';
+  const defaults = usePolledQuery(
+    ({ signal }) => getDisplayDefaults(workspaceId, teamId, signal),
+    {
+      intervalMs: LOOKUP_POLL_MS,
+      enabled: workspaceId !== '' && teamId !== '' && !archive,
+      queryKey: ['team-display-defaults', workspaceId, teamId],
+      auth,
+    }
+  );
+  const field = PAGE_FIELD[layout];
+  const stored = defaults.data?.[field];
+  const base = useMemo(
+    () => teamDefaultState(layout, stored),
+    [layout, stored]
+  );
+  const refetchDefaults = defaults.refetch;
+  const writeDefault = useCallback(
+    async (state: ViewState | null) => {
+      await updateDisplayDefaults(workspaceId, teamId, {
+        [field]: state === null ? null : stateToTeamDisplay(state),
+      });
+      await refetchDefaults();
+    },
+    [workspaceId, teamId, field, refetchDefaults]
+  );
+  const admin = team !== null && isTeamAdmin(workspace?.role, team.role);
+  const teamDefault = useMemo<TeamDefaultControl | undefined>(
+    () =>
+      admin
+        ? {
+            isSet: stored !== null && stored !== undefined,
+            save: (state) => writeDefault(state),
+            clear: () => writeDefault(null),
+          }
+        : undefined,
+    [admin, stored, writeDefault]
   );
 
   if (notFound || (!isLoading && team === null)) {
@@ -111,12 +168,20 @@ export const TeamIssuesPage: React.FC<TeamIssuesPageProps> = ({
         scopeKey={`team-archive:${team.id}`}
         scope={scope}
         teams={teams}
-        base={BASES.list}
+        base={ARCHIVE_BASE}
         canEdit={canWriteIssues(workspace?.role, team.role)}
         homeTeam={team}
         archive
         emptyMessage={`No archived issues in ${team.name}.`}
       />
+    );
+  }
+
+  if (defaults.isLoading && defaults.data === null) {
+    return (
+      <WorkspaceShell>
+        <Spinner label="Loading team" />
+      </WorkspaceShell>
     );
   }
 
@@ -151,7 +216,8 @@ export const TeamIssuesPage: React.FC<TeamIssuesPageProps> = ({
       scopeKey={rollUp ? `team:${team.id}:sub-teams` : `team:${team.id}`}
       scope={scope}
       teams={teams}
-      base={BASES[layout]}
+      base={base}
+      teamDefault={teamDefault}
       canEdit={canWriteIssues(workspace?.role, team.role)}
       homeTeam={team}
       emptyMessage={`No issues in ${team.name} match.`}

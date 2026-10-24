@@ -131,7 +131,8 @@
               "archived",
               "unarchived",
               "subscriber_added",
-              "subscriber_removed"
+              "subscriber_removed",
+              "mentioned"
             ],
             "title": "Kind",
             "type": "string"
@@ -3326,6 +3327,200 @@
         "title": "DiscordInstallUrlRead",
         "type": "object"
       },
+      "DisplayOptionsBody": {
+        "description": "The display options one team page opens with, each null where the page keeps its built-in default.\n\nHeld to the saved view's own choices, so a team default is always one a view\ncould save: a sub grouping needs a grouping and must differ from it. Either\ngrouping may be `none`, which a page reads as no grouping rather than as its\nbuilt-in one.",
+        "properties": {
+          "completed_window": {
+            "anyOf": [
+              {
+                "enum": [
+                  "all",
+                  "past_week",
+                  "past_month",
+                  "none"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed Window"
+          },
+          "group_by": {
+            "anyOf": [
+              {
+                "enum": [
+                  "status",
+                  "assignee",
+                  "priority",
+                  "label",
+                  "milestone",
+                  "project",
+                  "cycle",
+                  "parent",
+                  "team",
+                  "sla"
+                ],
+                "type": "string"
+              },
+              {
+                "const": "none",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Group By"
+          },
+          "layout": {
+            "anyOf": [
+              {
+                "enum": [
+                  "list",
+                  "board"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Layout"
+          },
+          "ordering": {
+            "anyOf": [
+              {
+                "enum": [
+                  "updated_desc",
+                  "created_desc",
+                  "key_asc",
+                  "priority_desc",
+                  "due_asc",
+                  "sla_asc",
+                  "manual",
+                  "status_asc",
+                  "start_asc",
+                  "estimate_desc"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ordering"
+          },
+          "ordering_reversed": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ordering Reversed"
+          },
+          "show_archived": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Show Archived"
+          },
+          "show_empty_groups": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Show Empty Groups"
+          },
+          "show_sub_issues": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Show Sub Issues"
+          },
+          "sub_group_by": {
+            "anyOf": [
+              {
+                "enum": [
+                  "status",
+                  "assignee",
+                  "priority",
+                  "label",
+                  "milestone",
+                  "project",
+                  "cycle",
+                  "parent",
+                  "team",
+                  "sla"
+                ],
+                "type": "string"
+              },
+              {
+                "const": "none",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sub Group By"
+          },
+          "visible_properties": {
+            "anyOf": [
+              {
+                "items": {
+                  "enum": [
+                    "id",
+                    "status",
+                    "priority",
+                    "assignee",
+                    "labels",
+                    "estimate",
+                    "start_date",
+                    "due_date",
+                    "project",
+                    "cycle",
+                    "parent",
+                    "sub_issues",
+                    "pull_requests",
+                    "milestone",
+                    "links",
+                    "created_at",
+                    "updated_at"
+                  ],
+                  "type": "string"
+                },
+                "maxItems": 17,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Visible Properties"
+          }
+        },
+        "title": "DisplayOptionsBody",
+        "type": "object"
+      },
       "DocumentCreate": {
         "description": "The body a document create takes; the parent comes from the path.",
         "properties": {
@@ -3722,6 +3917,107 @@
           "expires_at"
         ],
         "title": "DownloadRead",
+        "type": "object"
+      },
+      "DraftListRead": {
+        "description": "The caller's drafts, newest saved first.",
+        "properties": {
+          "drafts": {
+            "items": {
+              "$ref": "#/components/schemas/DraftRead"
+            },
+            "title": "Drafts",
+            "type": "array"
+          }
+        },
+        "required": [
+          "drafts"
+        ],
+        "title": "DraftListRead",
+        "type": "object"
+      },
+      "DraftRead": {
+        "description": "One of the caller's drafts, with the issue it sits on as a listing names it.\n\n`parent_comment_id` is the root comment a reply draft answers, or null for a\ndraft on the issue itself. `issue_key` and `issue_title` are read at answer\ntime, so a moved or renamed issue never shows a stale one.",
+        "properties": {
+          "body": {
+            "title": "Body",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "issue_id": {
+            "title": "Issue Id",
+            "type": "string"
+          },
+          "issue_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Issue Key"
+          },
+          "issue_title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Issue Title"
+          },
+          "parent_comment_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Comment Id"
+          },
+          "team_id": {
+            "title": "Team Id",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "issue_id",
+          "team_id",
+          "body",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "DraftRead",
+        "type": "object"
+      },
+      "DraftWrite": {
+        "description": "The body a draft save takes, which replaces whatever the thread's draft held.",
+        "properties": {
+          "body": {
+            "minLength": 1,
+            "title": "Body",
+            "type": "string"
+          }
+        },
+        "required": [
+          "body"
+        ],
+        "title": "DraftWrite",
         "type": "object"
       },
       "ErrorResponse": {
@@ -4747,6 +5043,19 @@
             ],
             "title": "Owner Id"
           },
+          "parent_initiative_id": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The initiative this one sits under as a sub-initiative",
+            "title": "Parent Initiative Id"
+          },
           "status": {
             "default": "planned",
             "enum": [
@@ -4813,9 +5122,86 @@
         "title": "InitiativeListRead",
         "type": "object"
       },
-      "InitiativeRead": {
-        "description": "One initiative as the API returns it, rolled up from the projects the caller can see.\n\n`project_ids`, `counts`, `points` and `project_health` count only the\nprojects visible to this caller, so the rollup never reveals work on a team\nthey cannot read.",
+      "InitiativeProgressPointRead": {
+        "description": "One day of an initiative's progress graph, in the series' measure.",
         "properties": {
+          "completed": {
+            "title": "Completed",
+            "type": "number"
+          },
+          "date": {
+            "title": "Date",
+            "type": "string"
+          },
+          "scope": {
+            "title": "Scope",
+            "type": "number"
+          },
+          "started": {
+            "title": "Started",
+            "type": "number"
+          }
+        },
+        "required": [
+          "date",
+          "scope",
+          "started",
+          "completed"
+        ],
+        "title": "InitiativeProgressPointRead",
+        "type": "object"
+      },
+      "InitiativeProgressRead": {
+        "description": "An initiative's scope, started and completed work per day, across its whole subtree.\n\nDerived from the visible issues' own dates, the way a project's graph is,\nso it needs no stored history. `days` runs from `start_date` through today\nand `end_date` is where the graph's axis ends, the target date when it is\nstill ahead.",
+        "properties": {
+          "days": {
+            "items": {
+              "$ref": "#/components/schemas/InitiativeProgressPointRead"
+            },
+            "title": "Days",
+            "type": "array"
+          },
+          "end_date": {
+            "title": "End Date",
+            "type": "string"
+          },
+          "initiative_id": {
+            "title": "Initiative Id",
+            "type": "string"
+          },
+          "measure": {
+            "default": "issues",
+            "enum": [
+              "points",
+              "issues"
+            ],
+            "title": "Measure",
+            "type": "string"
+          },
+          "start_date": {
+            "title": "Start Date",
+            "type": "string"
+          }
+        },
+        "required": [
+          "initiative_id",
+          "start_date",
+          "end_date"
+        ],
+        "title": "InitiativeProgressRead",
+        "type": "object"
+      },
+      "InitiativeRead": {
+        "description": "One initiative as the API returns it, rolled up from the projects the caller can see.\n\n`project_ids` are the projects held directly, and `rollup_project_ids` adds\nevery sub-initiative's below it. `counts`, `points`, `progress` and\n`project_health` roll up that whole subtree, and count only the projects\nvisible to this caller, so the rollup never reveals work on a team they\ncannot read.",
+        "properties": {
+          "ancestors": {
+            "description": "The chain of parent initiatives, root first",
+            "items": {
+              "$ref": "#/components/schemas/InitiativeRefRead"
+            },
+            "title": "Ancestors",
+            "type": "array"
+          },
           "counts": {
             "$ref": "#/components/schemas/CountsRead"
           },
@@ -4908,6 +5294,17 @@
             ],
             "title": "Owner Id"
           },
+          "parent_initiative_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Initiative Id"
+          },
           "points": {
             "$ref": "#/components/schemas/CountsRead"
           },
@@ -4917,6 +5314,7 @@
           },
           "project_count": {
             "default": 0,
+            "description": "How many projects the rollup covers",
             "title": "Project Count",
             "type": "integer"
           },
@@ -4924,10 +5322,19 @@
             "$ref": "#/components/schemas/HealthBreakdownRead"
           },
           "project_ids": {
+            "description": "The visible projects held directly",
             "items": {
               "type": "string"
             },
             "title": "Project Ids",
+            "type": "array"
+          },
+          "rollup_project_ids": {
+            "description": "The visible projects of this initiative and every sub-initiative below it",
+            "items": {
+              "type": "string"
+            },
+            "title": "Rollup Project Ids",
             "type": "array"
           },
           "status": {
@@ -4946,6 +5353,14 @@
             "description": "Issues per status id across the visible projects, beside `counts`",
             "title": "Status Counts",
             "type": "object"
+          },
+          "sub_initiative_ids": {
+            "description": "The initiatives directly below this one",
+            "items": {
+              "type": "string"
+            },
+            "title": "Sub Initiative Ids",
+            "type": "array"
           },
           "target_date": {
             "anyOf": [
@@ -5006,8 +5421,27 @@
         "title": "InitiativeRead",
         "type": "object"
       },
+      "InitiativeRefRead": {
+        "description": "An initiative named by id and name, enough to draw a breadcrumb or a link.",
+        "properties": {
+          "initiative_id": {
+            "title": "Initiative Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "initiative_id",
+          "name"
+        ],
+        "title": "InitiativeRefRead",
+        "type": "object"
+      },
       "InitiativeUpdate": {
-        "description": "The body an initiative patch takes; null clears the description, owner, health, date or cadence.",
+        "description": "The body an initiative patch takes; null clears the description, owner, health, date, cadence or parent.",
         "properties": {
           "description": {
             "anyOf": [
@@ -5060,6 +5494,19 @@
               }
             ],
             "title": "Owner Id"
+          },
+          "parent_initiative_id": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The initiative to nest this one under; null makes it top level",
+            "title": "Parent Initiative Id"
           },
           "status": {
             "anyOf": [
@@ -5711,6 +6158,109 @@
           "created_at"
         ],
         "title": "InviteRead",
+        "type": "object"
+      },
+      "IssueBlueprint": {
+        "description": "One issue a project template adds.\n\n`key` names it inside the template, so `parent_key` can make it a sub-issue\nof an issue listed before it and `milestone_key` can tie it to a milestone.",
+        "properties": {
+          "assignee_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Assignee Id"
+          },
+          "body": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Body"
+          },
+          "estimate": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Estimate"
+          },
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "label_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Label Ids",
+            "type": "array"
+          },
+          "milestone_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Milestone Key"
+          },
+          "parent_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Key"
+          },
+          "priority": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Priority"
+          },
+          "status_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status Id"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "title"
+        ],
+        "title": "IssueBlueprint",
         "type": "object"
       },
       "IssueBulkPatch": {
@@ -6742,6 +7292,76 @@
         "title": "IssueReleaseRead",
         "type": "object"
       },
+      "IssueReminderListRead": {
+        "description": "The caller's pending reminders, soonest first.",
+        "properties": {
+          "reminders": {
+            "items": {
+              "$ref": "#/components/schemas/IssueReminderRead"
+            },
+            "title": "Reminders",
+            "type": "array"
+          }
+        },
+        "title": "IssueReminderListRead",
+        "type": "object"
+      },
+      "IssueReminderRead": {
+        "description": "One pending reminder of the caller's, with the issue it is about as it reads now.",
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "issue_id": {
+            "title": "Issue Id",
+            "type": "string"
+          },
+          "issue_key": {
+            "title": "Issue Key",
+            "type": "string"
+          },
+          "issue_title": {
+            "title": "Issue Title",
+            "type": "string"
+          },
+          "remind_at": {
+            "format": "date-time",
+            "title": "Remind At",
+            "type": "string"
+          },
+          "team_id": {
+            "title": "Team Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "issue_id",
+          "issue_key",
+          "issue_title",
+          "team_id",
+          "remind_at",
+          "created_at"
+        ],
+        "title": "IssueReminderRead",
+        "type": "object"
+      },
+      "IssueReminderWrite": {
+        "description": "The body setting a reminder takes: the moment the caller wants to hear about the issue again.\n\n`remind_at` must carry a timezone, so the moment is the one the caller picked\non their own clock rather than one the server guessed.",
+        "properties": {
+          "remind_at": {
+            "format": "date-time",
+            "title": "Remind At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "remind_at"
+        ],
+        "title": "IssueReminderWrite",
+        "type": "object"
+      },
       "IssueSyncListRead": {
         "description": "The issue list route's body: a page, plus the cursor a polling client resumes from.\n\n`synced_at` is the cursor to send back as `updated_since`. A delta read answers\nthe changed issues that match under `issues`, the ids to drop from the cached\nlist under `removed_ids`, and `resync_required` when the client must read the\nlist in full instead. A full read carries `synced_at` alone, so every existing\ncaller reads the same body it always did.",
         "properties": {
@@ -6836,6 +7456,126 @@
           "synced_at"
         ],
         "title": "IssueSyncRead",
+        "type": "object"
+      },
+      "IssueTemplateItem": {
+        "description": "One issue a project template adds.\n\n`parent_key` makes it a sub-issue of an issue listed before it, and\n`milestone_key` ties it to one of the template's milestones.",
+        "properties": {
+          "assignee_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Assignee Id"
+          },
+          "body": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Body"
+          },
+          "estimate": {
+            "anyOf": [
+              {
+                "maxLength": 16,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Estimate"
+          },
+          "key": {
+            "anyOf": [
+              {
+                "maxLength": 40,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Key"
+          },
+          "label_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Label Ids",
+            "type": "array"
+          },
+          "milestone_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Milestone Key"
+          },
+          "parent_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Key"
+          },
+          "priority": {
+            "anyOf": [
+              {
+                "enum": [
+                  "none",
+                  "urgent",
+                  "high",
+                  "medium",
+                  "low"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Priority"
+          },
+          "status_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status Id"
+          },
+          "title": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title"
+        ],
+        "title": "IssueTemplateItem",
         "type": "object"
       },
       "IssueUpdate": {
@@ -7737,6 +8477,47 @@
         "title": "MemberUpdate",
         "type": "object"
       },
+      "MilestoneBlueprint": {
+        "description": "One milestone a project template adds, its target date as days after the creation date.",
+        "properties": {
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "target_offset_days": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Offset Days"
+          }
+        },
+        "required": [
+          "key",
+          "name"
+        ],
+        "title": "MilestoneBlueprint",
+        "type": "object"
+      },
       "MilestoneCreate": {
         "description": "The body `POST /api/workspaces/{workspace_id}/projects/{project_id}/milestones` takes.\n\n`sort_order` is optional: left out, the milestone is placed after the last one.",
         "properties": {
@@ -7913,6 +8694,58 @@
           "updated_at"
         ],
         "title": "MilestoneRead",
+        "type": "object"
+      },
+      "MilestoneTemplate": {
+        "description": "One milestone a project template adds; `target_offset_days` counts from the creation day.",
+        "properties": {
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "key": {
+            "anyOf": [
+              {
+                "maxLength": 40,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Key"
+          },
+          "name": {
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "target_offset_days": {
+            "anyOf": [
+              {
+                "maximum": 3650.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Offset Days"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "MilestoneTemplate",
         "type": "object"
       },
       "MilestoneUpdate": {
@@ -8380,8 +9213,124 @@
         "title": "ProgressRead",
         "type": "object"
       },
+      "ProjectBlueprint": {
+        "description": "What a project template fills: the project's fields, its milestones and its issues.\n\nDates are offsets in days from the day the project is created, so a template\nnever goes stale.",
+        "properties": {
+          "color": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Color"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "icon": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Icon"
+          },
+          "issues": {
+            "items": {
+              "$ref": "#/components/schemas/IssueBlueprint"
+            },
+            "title": "Issues",
+            "type": "array"
+          },
+          "lead_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lead Id"
+          },
+          "member_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Member Ids",
+            "type": "array"
+          },
+          "milestones": {
+            "items": {
+              "$ref": "#/components/schemas/MilestoneBlueprint"
+            },
+            "title": "Milestones",
+            "type": "array"
+          },
+          "priority": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Priority"
+          },
+          "start_offset_days": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start Offset Days"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
+          },
+          "target_offset_days": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Offset Days"
+          }
+        },
+        "title": "ProjectBlueprint",
+        "type": "object"
+      },
       "ProjectCreate": {
-        "description": "The body `POST /api/workspaces/{workspace_id}/projects` takes.\n\n`team_ids` is the project's teams, at least one. `team_id` is the single-team\nspelling an older client sends; given alone it is read as a one-team list, and\ngiven beside `team_ids` it must be one of them.",
+        "description": "The body `POST /api/workspaces/{workspace_id}/projects` takes.\n\n`team_ids` is the project's teams, at least one. `team_id` is the single-team\nspelling an older client sends; given alone it is read as a one-team list, and\ngiven beside `team_ids` it must be one of them. `template_id` names a project\ntemplate one of the teams offers: it fills the fields left out and adds its\nmilestones and issues.",
         "properties": {
           "color": {
             "anyOf": [
@@ -8562,6 +9511,18 @@
             ],
             "title": "Team Ids"
           },
+          "template_id": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Template Id"
+          },
           "update_interval_days": {
             "anyOf": [
               {
@@ -8651,6 +9612,19 @@
               }
             ],
             "title": "Color"
+          },
+          "completed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "When the project last became completed or canceled, null while it is open",
+            "title": "Completed At"
           },
           "counts": {
             "$ref": "#/components/schemas/CountsRead"
@@ -8804,6 +9778,21 @@
             "title": "Project Id",
             "type": "string"
           },
+          "skipped_template_issues": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/SkippedTemplateIssueRead"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Template issues left out, answered by a create from a project template, empty when none were",
+            "title": "Skipped Template Issues"
+          },
           "start_date": {
             "anyOf": [
               {
@@ -8906,6 +9895,162 @@
           "updated_at"
         ],
         "title": "ProjectRead",
+        "type": "object"
+      },
+      "ProjectTemplateFields": {
+        "description": "What a project template fills, every field optional.\n\nThe two offsets are days from the creation day to the start and target dates.\nMilestones and issues without a key are given one, `m1` and `i1` onwards,\nso the keys stay unique and every reference names a row of the template.",
+        "properties": {
+          "color": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Color"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "icon": {
+            "anyOf": [
+              {
+                "enum": [
+                  "box",
+                  "rocket",
+                  "target",
+                  "flag",
+                  "zap",
+                  "star",
+                  "bug",
+                  "book",
+                  "code",
+                  "globe",
+                  "heart",
+                  "layers",
+                  "shield",
+                  "sparkles",
+                  "users",
+                  "wrench"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Icon"
+          },
+          "issues": {
+            "items": {
+              "$ref": "#/components/schemas/IssueTemplateItem"
+            },
+            "maxItems": 50,
+            "title": "Issues",
+            "type": "array"
+          },
+          "lead_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lead Id"
+          },
+          "member_ids": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 50,
+            "title": "Member Ids",
+            "type": "array"
+          },
+          "milestones": {
+            "items": {
+              "$ref": "#/components/schemas/MilestoneTemplate"
+            },
+            "maxItems": 25,
+            "title": "Milestones",
+            "type": "array"
+          },
+          "priority": {
+            "anyOf": [
+              {
+                "enum": [
+                  "none",
+                  "urgent",
+                  "high",
+                  "medium",
+                  "low"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Priority"
+          },
+          "start_offset_days": {
+            "anyOf": [
+              {
+                "maximum": 3650.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start Offset Days"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "enum": [
+                  "backlog",
+                  "planned",
+                  "in_progress",
+                  "paused",
+                  "completed",
+                  "canceled"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
+          },
+          "target_offset_days": {
+            "anyOf": [
+              {
+                "maximum": 3650.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Offset Days"
+          }
+        },
+        "title": "ProjectTemplateFields",
         "type": "object"
       },
       "ProjectUpdate": {
@@ -9317,6 +10462,74 @@
           "updated_at"
         ],
         "title": "ProjectUpdateRead",
+        "type": "object"
+      },
+      "ProjectsDisplay": {
+        "description": "How the person arranges the workspace projects list.\n\n`closed` is how far back completed and canceled projects show: all of them,\nthose closed in the past week, month or quarter, or none. `zoom` is the\ntimeline layout's scale. Every field has the list's own default, so an\naccount that never arranged the list reads as the list opens.",
+        "properties": {
+          "closed": {
+            "default": "all",
+            "enum": [
+              "all",
+              "week",
+              "month",
+              "quarter",
+              "none"
+            ],
+            "title": "Closed",
+            "type": "string"
+          },
+          "group": {
+            "default": "status",
+            "enum": [
+              "status",
+              "health",
+              "priority",
+              "initiative",
+              "lead",
+              "team",
+              "none"
+            ],
+            "title": "Group",
+            "type": "string"
+          },
+          "layout": {
+            "default": "list",
+            "enum": [
+              "list",
+              "board",
+              "timeline"
+            ],
+            "title": "Layout",
+            "type": "string"
+          },
+          "order": {
+            "default": "target",
+            "enum": [
+              "target",
+              "start",
+              "name",
+              "priority",
+              "progress",
+              "created",
+              "updated"
+            ],
+            "title": "Order",
+            "type": "string"
+          },
+          "zoom": {
+            "default": "month",
+            "enum": [
+              "week",
+              "month",
+              "quarter",
+              "year"
+            ],
+            "title": "Zoom",
+            "type": "string"
+          }
+        },
+        "title": "ProjectsDisplay",
         "type": "object"
       },
       "PullRequestSummaryEntryRead": {
@@ -13085,6 +14298,32 @@
         "title": "SimilarListRead",
         "type": "object"
       },
+      "SkippedTemplateIssueRead": {
+        "description": "One template issue a project created from a template left out, and why.",
+        "properties": {
+          "key": {
+            "description": "The issue's key within the template",
+            "title": "Key",
+            "type": "string"
+          },
+          "reason": {
+            "description": "Why the issue rules refused it, as the 422 would have said",
+            "title": "Reason",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "title",
+          "reason"
+        ],
+        "title": "SkippedTemplateIssueRead",
+        "type": "object"
+      },
       "SlaSettingsRead": {
         "description": "A team's SLA rules as the API returns them.",
         "properties": {
@@ -14784,6 +16023,90 @@
         "title": "TeamCreate",
         "type": "object"
       },
+      "TeamDisplayDefaultsRead": {
+        "description": "A team's display defaults as the API returns them, null for a page on its built-in default.",
+        "properties": {
+          "board_display": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DisplayOptionsBody"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "list_display": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DisplayOptionsBody"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "team_id": {
+            "title": "Team Id",
+            "type": "string"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          },
+          "updated_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated By"
+          }
+        },
+        "required": [
+          "team_id"
+        ],
+        "title": "TeamDisplayDefaultsRead",
+        "type": "object"
+      },
+      "TeamDisplayDefaultsUpdate": {
+        "description": "The body a team's display defaults patch takes.\n\n`list_display` sets what the team's issue list opens with and `board_display`\nwhat its board opens with. A page left out keeps its saved default, and null\nclears it back to the built-in one. Each page's options are replaced whole.",
+        "properties": {
+          "board_display": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DisplayOptionsBody"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "list_display": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DisplayOptionsBody"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "title": "TeamDisplayDefaultsUpdate",
+        "type": "object"
+      },
       "TeamListRead": {
         "description": "The body the teams list route answers with.",
         "properties": {
@@ -14819,7 +16142,7 @@
         "type": "object"
       },
       "TeamMemberRead": {
-        "description": "One team member, joined with their user row for display.",
+        "description": "One team member, joined with their user row for display.\n\n`full_name` rides along with the handle so a reader who prefers full names\nsees them in the team's pickers too, the way the workspace member list does.",
         "properties": {
           "added_at": {
             "format": "date-time",
@@ -14843,6 +16166,11 @@
           },
           "email": {
             "title": "Email",
+            "type": "string"
+          },
+          "full_name": {
+            "default": "",
+            "title": "Full Name",
             "type": "string"
           },
           "role": {
@@ -15293,7 +16621,7 @@
         "type": "object"
       },
       "TemplateCreate": {
-        "description": "The body a template create takes: a name and any of the issue fields.",
+        "description": "The body a template create takes: a name and any of the issue fields.\n\n`kind` \"project\" makes a project template, which fills `project` and leaves\nthe issue fields unset.",
         "properties": {
           "assignee_id": {
             "anyOf": [
@@ -15340,6 +16668,15 @@
             ],
             "title": "Estimate"
           },
+          "kind": {
+            "default": "issue",
+            "enum": [
+              "issue",
+              "project"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
           "label_ids": {
             "items": {
               "type": "string"
@@ -15383,6 +16720,16 @@
               }
             ],
             "title": "Priority"
+          },
+          "project": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProjectTemplateFields"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "project_id": {
             "anyOf": [
@@ -15465,7 +16812,7 @@
         "type": "object"
       },
       "TemplateRead": {
-        "description": "One template as the API returns it.\n\n`scope` says where it comes from as the team in the path sees it: the team's\nown, its parent team's, or the workspace's. `team_id` is `None` for a\nworkspace template.",
+        "description": "One template as the API returns it.\n\n`scope` says where it comes from as the team in the path sees it: the team's\nown, its parent team's, or the workspace's. `team_id` is `None` for a\nworkspace template. `project` is set on a project template only.",
         "properties": {
           "assignee_id": {
             "anyOf": [
@@ -15531,6 +16878,15 @@
             "title": "Id",
             "type": "string"
           },
+          "kind": {
+            "default": "issue",
+            "enum": [
+              "issue",
+              "project"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
           "label_ids": {
             "items": {
               "type": "string"
@@ -15564,6 +16920,16 @@
               }
             ],
             "title": "Priority"
+          },
+          "project": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProjectBlueprint"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "project_id": {
             "anyOf": [
@@ -15646,8 +17012,19 @@
         "type": "object"
       },
       "TemplateSettingsRead": {
-        "description": "A team's template settings as the API returns them.\n\n`default_template_id` is what the team saved and `effective_default_template_id`\nwhat its create dialog opens with, which falls back to the parent team's.",
+        "description": "A team's template settings as the API returns them.\n\n`default_template_id` is what the team saved and `effective_default_template_id`\nwhat its issue create dialog opens with, which falls back to the parent team's.\nThe two project fields are the same for the new project dialog.",
         "properties": {
+          "default_project_template_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Project Template Id"
+          },
           "default_template_id": {
             "anyOf": [
               {
@@ -15658,6 +17035,17 @@
               }
             ],
             "title": "Default Template Id"
+          },
+          "effective_default_project_template_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Effective Default Project Template Id"
           },
           "effective_default_template_id": {
             "anyOf": [
@@ -15682,8 +17070,19 @@
         "type": "object"
       },
       "TemplateSettingsUpdate": {
-        "description": "The body a team's template settings patch takes; null clears the default.",
+        "description": "The body a team's template settings patch takes: only the defaults sent change, and null clears one.",
         "properties": {
+          "default_project_template_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Project Template Id"
+          },
           "default_template_id": {
             "anyOf": [
               {
@@ -15804,6 +17203,16 @@
               }
             ],
             "title": "Priority"
+          },
+          "project": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProjectTemplateFields"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "project_id": {
             "anyOf": [
@@ -16297,7 +17706,7 @@
         "type": "object"
       },
       "UserPreferencesUpdate": {
-        "description": "The preferences a person may change on their own account.\n\nEvery field is optional, so the global email switch, one kind's channels and\nthe timezone can each be changed without restating the others. `timezone` is\nthe IANA zone due date reminders are judged in, which the browser captures on\nsign in and the person can change. `pulse_digest` is how often the Pulse\ndigest email comes, `off` by default. Deliberately not a settings\ndomain of its own: a few values on the row the product already owns are cheaper\nthan a table and a second read on every notification.",
+        "description": "The preferences a person may change on their own account.\n\nEvery field is optional, so the global email switch, one kind's channels and\nthe timezone can each be changed without restating the others. `timezone` is\nthe IANA zone due date reminders are judged in, which the browser captures on\nsign in and the person can change. `pulse_digest` is how often the Pulse\ndigest email comes, `off` by default. `home_view`, `week_start`,\n`name_display` and `font_size` are the interface preferences the account\nPreferences page sets, kept on the row so they follow the person to every\ndevice. `projects_display` replaces how the projects list is arranged as a\nwhole. Deliberately not a settings\ndomain of its own: a few values on the row the product already owns are cheaper\nthan a table and a second read on every notification.",
         "properties": {
           "email_notifications": {
             "anyOf": [
@@ -16309,6 +17718,56 @@
               }
             ],
             "title": "Email Notifications"
+          },
+          "font_size": {
+            "anyOf": [
+              {
+                "enum": [
+                  "small",
+                  "default",
+                  "large"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Font Size"
+          },
+          "home_view": {
+            "anyOf": [
+              {
+                "enum": [
+                  "home",
+                  "inbox",
+                  "my_issues",
+                  "projects",
+                  "pulse",
+                  "views"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Home View"
+          },
+          "name_display": {
+            "anyOf": [
+              {
+                "enum": [
+                  "username",
+                  "full_name"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name Display"
           },
           "notification_preferences": {
             "anyOf": [
@@ -16331,7 +17790,8 @@
                     "standup_digest",
                     "sla_at_risk",
                     "sla_breached",
-                    "review_requested"
+                    "review_requested",
+                    "reminder"
                   ]
                 },
                 "type": "object"
@@ -16341,6 +17801,16 @@
               }
             ],
             "title": "Notification Preferences"
+          },
+          "projects_display": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProjectsDisplay"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "pulse_digest": {
             "anyOf": [
@@ -16370,6 +17840,22 @@
               }
             ],
             "title": "Timezone"
+          },
+          "week_start": {
+            "anyOf": [
+              {
+                "enum": [
+                  "monday",
+                  "sunday",
+                  "saturday"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Week Start"
           }
         },
         "title": "UserPreferencesUpdate",
@@ -16437,13 +17923,45 @@
             "title": "Email Verified",
             "type": "boolean"
           },
+          "font_size": {
+            "default": "default",
+            "enum": [
+              "small",
+              "default",
+              "large"
+            ],
+            "title": "Font Size",
+            "type": "string"
+          },
           "full_name": {
             "default": "",
             "title": "Full Name",
             "type": "string"
           },
+          "home_view": {
+            "default": "home",
+            "enum": [
+              "home",
+              "inbox",
+              "my_issues",
+              "projects",
+              "pulse",
+              "views"
+            ],
+            "title": "Home View",
+            "type": "string"
+          },
           "id": {
             "title": "Id",
+            "type": "string"
+          },
+          "name_display": {
+            "default": "username",
+            "enum": [
+              "username",
+              "full_name"
+            ],
+            "title": "Name Display",
             "type": "string"
           },
           "notification_preferences": {
@@ -16452,6 +17970,9 @@
             },
             "title": "Notification Preferences",
             "type": "object"
+          },
+          "projects_display": {
+            "$ref": "#/components/schemas/ProjectsDisplay"
           },
           "pulse_digest": {
             "default": "off",
@@ -16478,6 +17999,16 @@
             "default": false,
             "title": "Two Factor",
             "type": "boolean"
+          },
+          "week_start": {
+            "default": "monday",
+            "enum": [
+              "monday",
+              "sunday",
+              "saturday"
+            ],
+            "title": "Week Start",
+            "type": "string"
           }
         },
         "required": [
@@ -16625,7 +18156,7 @@
         "type": "object"
       },
       "ViewCreate": {
-        "description": "The body a saved view create takes.\n\n`owner_id` and `scope` are absent on purpose: the owner comes from the\nauthorization context and the scope is derived from `team_id` and `shared`,\nso neither is something a caller can assert. `shared` without a team files\nthe view under the whole workspace.",
+        "description": "The body a saved view create takes.\n\n`owner_id` and `scope` are absent on purpose: the owner comes from the\nauthorization context and the scope is derived from `team_id` and `shared`,\nso neither is something a caller can assert. `shared` without a team files\nthe view under the whole workspace. `entity` set to `projects` saves a projects\npage arrangement: its filter takes the projects page's keys and\n`projects_display` its layout, grouping, ordering and completed window, while\nthe issue display fields are ignored.",
         "properties": {
           "color": {
             "anyOf": [
@@ -16650,6 +18181,23 @@
             ],
             "title": "Color"
           },
+          "completed_window": {
+            "anyOf": [
+              {
+                "enum": [
+                  "all",
+                  "past_week",
+                  "past_month",
+                  "none"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed Window"
+          },
           "description": {
             "anyOf": [
               {
@@ -16661,6 +18209,15 @@
               }
             ],
             "title": "Description"
+          },
+          "entity": {
+            "default": "issues",
+            "enum": [
+              "issues",
+              "projects"
+            ],
+            "title": "Entity",
+            "type": "string"
           },
           "filter": {
             "additionalProperties": true,
@@ -16761,6 +18318,16 @@
             "title": "Ordering Reversed",
             "type": "boolean"
           },
+          "projects_display": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProjectsDisplay"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "shared": {
             "default": false,
             "title": "Shared",
@@ -16850,12 +18417,14 @@
                     "parent",
                     "sub_issues",
                     "pull_requests",
+                    "milestone",
+                    "links",
                     "created_at",
                     "updated_at"
                   ],
                   "type": "string"
                 },
-                "maxItems": 15,
+                "maxItems": 17,
                 "type": "array"
               },
               {
@@ -16886,7 +18455,7 @@
         "type": "object"
       },
       "ViewRead": {
-        "description": "One saved view as the API returns it.\n\n`favorite` is the caller's own star, not a property of the view, so the same\nview reads differently to two members.",
+        "description": "One saved view as the API returns it.\n\n`favorite` is the caller's own star, not a property of the view, so the same\nview reads differently to two members. `projects_display` is the arrangement of\na project view and null on an issue view.",
         "properties": {
           "color": {
             "anyOf": [
@@ -16898,6 +18467,17 @@
               }
             ],
             "title": "Color"
+          },
+          "completed_window": {
+            "default": "all",
+            "enum": [
+              "all",
+              "past_week",
+              "past_month",
+              "none"
+            ],
+            "title": "Completed Window",
+            "type": "string"
           },
           "created_at": {
             "format": "date-time",
@@ -16914,6 +18494,15 @@
               }
             ],
             "title": "Description"
+          },
+          "entity": {
+            "default": "issues",
+            "enum": [
+              "issues",
+              "projects"
+            ],
+            "title": "Entity",
+            "type": "string"
           },
           "favorite": {
             "default": false,
@@ -16978,6 +18567,16 @@
           "owner_id": {
             "title": "Owner Id",
             "type": "string"
+          },
+          "projects_display": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProjectsDisplay"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "scope": {
             "title": "Scope",
@@ -17068,7 +18667,7 @@
         "type": "object"
       },
       "ViewUpdate": {
-        "description": "The body a saved view patch takes, every field optional.\n\n`kind` and `team_id` are not patchable: the team decides the sort key the\nrow is filed under, so moving it would be a delete and a create wearing the name\nof an update. `shared` is the one exception, for a view without a team: it\nmoves a personal view to the whole workspace or back, which refiles the row\nunder the same view id.",
+        "description": "The body a saved view patch takes, every field optional.\n\n`kind` and `team_id` are not patchable: the team decides the sort key the\nrow is filed under, so moving it would be a delete and a create wearing the name\nof an update. `shared` is the one exception, for a view without a team: it\nmoves a personal view to the whole workspace or back, which refiles the row\nunder the same view id. `entity` is fixed at create, and `projects_display`\napplies only to a project view.",
         "properties": {
           "color": {
             "anyOf": [
@@ -17092,6 +18691,23 @@
               }
             ],
             "title": "Color"
+          },
+          "completed_window": {
+            "anyOf": [
+              {
+                "enum": [
+                  "all",
+                  "past_week",
+                  "past_month",
+                  "none"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed Window"
           },
           "description": {
             "anyOf": [
@@ -17215,6 +18831,16 @@
             ],
             "title": "Ordering Reversed"
           },
+          "projects_display": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProjectsDisplay"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "shared": {
             "anyOf": [
               {
@@ -17323,12 +18949,14 @@
                     "parent",
                     "sub_issues",
                     "pull_requests",
+                    "milestone",
+                    "links",
                     "created_at",
                     "updated_at"
                   ],
                   "type": "string"
                 },
-                "maxItems": 15,
+                "maxItems": 17,
                 "type": "array"
               },
               {
@@ -18538,6 +20166,28 @@
             ],
             "title": "Parent Id"
           },
+          "parent_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Key"
+          },
+          "parent_title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Title"
+          },
           "priority": {
             "enum": [
               "none",
@@ -18583,6 +20233,11 @@
                 "type": "null"
               }
             ]
+          },
+          "relation_count": {
+            "default": 0,
+            "title": "Relation Count",
+            "type": "integer"
           },
           "sla_breaches_at": {
             "anyOf": [
@@ -23538,7 +25193,7 @@
         ]
       },
       "patch": {
-        "description": "Rewrite one's own comment, stamping `edited_at` and re-extracting mentions.\n\nThe author alone, not a team admin: rewriting someone else's words is a\ndifferent act from removing them, and only the second has a moderation case.\n\nMentions are recomputed from the new body, so an edit that adds one notifies\nand an edit that removes one stops claiming it.",
+        "description": "Rewrite one's own comment, stamping `edited_at` and re-extracting mentions.\n\nThe author alone, not a team admin: rewriting someone else's words is a\ndifferent act from removing them, and only the second has a moderation case.\n\nMentions are recomputed from the new body, so an edit that adds one notifies\nthat person alone and an edit that removes one stops claiming it. A key the\nedit adds leaves a backlink on that issue.",
         "operationId": "update_comment_api_workspaces__workspace_id__comments__comment_id__patch",
         "parameters": [
           {
@@ -24806,6 +26461,303 @@
         "summary": "List Versions",
         "tags": [
           "planning"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/drafts": {
+      "get": {
+        "description": "The caller's drafts, newest saved first, across the workspace or on one issue.",
+        "operationId": "read_drafts_api_workspaces__workspace_id__drafts_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "issue_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 64,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Issue Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DraftListRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Read Drafts",
+        "tags": [
+          "views"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/drafts/{issue_id}": {
+      "delete": {
+        "description": "Discard the caller's draft in one thread, a no-op when there is none.",
+        "operationId": "discard_draft_api_workspaces__workspace_id__drafts__issue_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "issue_id",
+            "required": true,
+            "schema": {
+              "maxLength": 64,
+              "minLength": 1,
+              "title": "Issue Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "parent_comment_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 64,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Parent Comment Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Discard Draft",
+        "tags": [
+          "views"
+        ]
+      },
+      "get": {
+        "description": "The caller's draft on an issue or one reply thread, or a 404 when there is none.",
+        "operationId": "read_draft_api_workspaces__workspace_id__drafts__issue_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "issue_id",
+            "required": true,
+            "schema": {
+              "maxLength": 64,
+              "minLength": 1,
+              "title": "Issue Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "parent_comment_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 64,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Parent Comment Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DraftRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Read Draft",
+        "tags": [
+          "views"
+        ]
+      },
+      "put": {
+        "description": "Save the caller's draft on an issue or one reply thread, replacing the one there.",
+        "operationId": "write_draft_api_workspaces__workspace_id__drafts__issue_id__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "issue_id",
+            "required": true,
+            "schema": {
+              "maxLength": 64,
+              "minLength": 1,
+              "title": "Issue Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "parent_comment_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 64,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Parent Comment Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DraftWrite"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DraftRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Write Draft",
+        "tags": [
+          "views"
         ]
       }
     },
@@ -26099,7 +28051,7 @@
               "items": {
                 "type": "string"
               },
-              "maxItems": 19,
+              "maxItems": 20,
               "title": "Kind",
               "type": "array"
             }
@@ -26269,6 +28221,191 @@
           }
         ],
         "summary": "Mark Read",
+        "tags": [
+          "views"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/inbox/reminders": {
+      "get": {
+        "description": "The caller's pending issue reminders, soonest first, or the one on `issue_id`.\n\nA reminder on an issue that is gone or no longer visible is left out.",
+        "operationId": "list_issue_reminders_api_workspaces__workspace_id__inbox_reminders_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "issue_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Issue Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IssueReminderListRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "List Issue Reminders",
+        "tags": [
+          "views"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/inbox/reminders/{issue_id}": {
+      "delete": {
+        "description": "Cancel the caller's pending reminder on one issue, or 404 when none is pending.",
+        "operationId": "cancel_issue_reminder_api_workspaces__workspace_id__inbox_reminders__issue_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "issue_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Issue Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Cancel Issue Reminder",
+        "tags": [
+          "views"
+        ]
+      },
+      "put": {
+        "description": "Remind the caller about one issue at `remind_at`, replacing any reminder already set on it.\n\nThe moment must carry a timezone and be between a minute and 365 days out. An\nissue the caller cannot see is a 404.",
+        "operationId": "set_issue_reminder_api_workspaces__workspace_id__inbox_reminders__issue_id__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "issue_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Issue Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IssueReminderWrite"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IssueReminderRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Set Issue Reminder",
         "tags": [
           "views"
         ]
@@ -26645,7 +28782,7 @@
         ]
       },
       "get": {
-        "description": "One initiative, rolled up from the projects the caller can see.",
+        "description": "One initiative, rolled up from the projects the caller can see across its sub-initiatives.",
         "operationId": "read_initiative_row_api_workspaces__workspace_id__initiatives__initiative_id__get",
         "parameters": [
           {
@@ -26701,7 +28838,7 @@
         ]
       },
       "patch": {
-        "description": "Patch an initiative's fields; null clears the description, owner, health, date or cadence.",
+        "description": "Patch an initiative's fields; null clears the description, owner, health, date, cadence or parent.",
         "operationId": "update_initiative_row_api_workspaces__workspace_id__initiatives__initiative_id__patch",
         "parameters": [
           {
@@ -27056,6 +29193,64 @@
           }
         ],
         "summary": "Follow Initiative",
+        "tags": [
+          "planning"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/initiatives/{initiative_id}/progress": {
+      "get": {
+        "description": "Scope, started and completed work per day across the initiative and its sub-initiatives.",
+        "operationId": "read_initiative_progress_api_workspaces__workspace_id__initiatives__initiative_id__progress_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "initiative_id",
+            "required": true,
+            "schema": {
+              "title": "Initiative Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InitiativeProgressRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Read Initiative Progress",
         "tags": [
           "planning"
         ]
@@ -27640,7 +29835,7 @@
     },
     "/api/workspaces/{workspace_id}/issues": {
       "get": {
-        "description": "One page of the issues the caller may see, filtered and sorted.\n\nEvery id filter repeats, ORing its values, and `none` matches the unset field\nwhere the field can be unset. Filters are applied after the key read rather\nthan through an index, so adding one costs no GSI. The cursor is a position in\nthe filtered, sorted set and is bound to the filter, so a cursor carried to a\ndifferent filter starts over rather than skipping rows.\n\nThe exception is a filter on one person: `subscriber_id=me`, one `creator_id`\nor one `assignee_id` reads that person's own index instead of every team, which\nis what the My issues tabs ask for. Any other `subscriber_id` is matched after\nthe read, against the subscriptions of each person it names.\n\n`match=any` keeps an issue meeting any one condition rather than all of them.\n`groups` is a JSON array of condition objects, each holding these same filter\nnames plus its own `match`, and each counting as one condition, which is how\n\"status is Todo and (label is Bug or priority is Urgent)\" is said. A group may\nhold groups of its own, two levels at most, so a client can wrap its own\nconditions in one group under the list's fixed scope. `content`\nmatches title and description text, `label_id_all` wants every label named,\nand `completed_after` and `completed_before` bound the day an issue was done.\n\nArchived issues are left out unless `include_archived` is set, and\n`archived_only` lists nothing but them, the archive view. That read goes\nstraight to each status's archived partition of the status index rather than\nreading every issue of the team and dropping the live ones. Issues awaiting\ntriage are left out the same way unless `include_triage` is set, and\n`triage_only` lists nothing but them.\n\n`include_sub_teams` with a `team_id` rolls that team's sub-teams the caller\nmay see into the list, so a parent team's views show its sub-teams' issues.\n`reverse` turns the sort around, issues lacking the sorted value still last.\n\nEvery body carries `synced_at`. Sent back as `updated_since` with the same\nfilter, it turns the read into a delta: only the issues changed since, every\none in the list's sort order and unpaged, plus `removed_ids` for issues that\nleft the filter, were archived or were deleted. `resync_required` asks for a\nfull read instead, when the cursor is older than deletions are remembered or\nthe delta is too large to carry. A delta costs one key-bounded query per team\non the change feed index, so a poll that finds nothing reads almost nothing.\n\nA delta answer carries a weak `ETag` over its body. Two polls that find the\nsame thing answer the same body, so a poll that sends the tag back in\n`If-None-Match` gets a 304 with no body instead. A full read carries none,\nbecause its cursor moves with the clock.",
+        "description": "One page of the issues the caller may see, filtered and sorted.\n\nEvery id filter repeats, ORing its values, and `none` matches the unset field\nwhere the field can be unset. Filters are applied after the key read rather\nthan through an index, so adding one costs no GSI. The cursor is a position in\nthe filtered, sorted set and is bound to the filter, so a cursor carried to a\ndifferent filter starts over rather than skipping rows.\n\nThe exception is a filter on one person: `subscriber_id=me`, one `creator_id`\nor one `assignee_id` reads that person's own index instead of every team, which\nis what the My issues tabs ask for. Any other `subscriber_id` is matched after\nthe read, against the subscriptions of each person it names.\n\n`match=any` keeps an issue meeting any one condition rather than all of them.\n`groups` is a JSON array of condition objects, each holding these same filter\nnames plus its own `match`, and each counting as one condition, which is how\n\"status is Todo and (label is Bug or priority is Urgent)\" is said. A group may\nhold groups of its own, two levels at most, so a client can wrap its own\nconditions in one group under the list's fixed scope. `content`\nmatches title and description text, `label_id_all` wants every label named,\nand `completed_after` and `completed_before` bound the day an issue was done.\n\nArchived issues are left out unless `include_archived` is set, and\n`archived_only` lists nothing but them, the archive view. That read goes\nstraight to each status's archived partition of the status index rather than\nreading every issue of the team and dropping the live ones. Issues awaiting\ntriage are left out the same way unless `include_triage` is set, and\n`triage_only` lists nothing but them.\n\n`include_sub_teams` with a `team_id` rolls that team's sub-teams the caller\nmay see into the list, so a parent team's views show its sub-teams' issues.\n`reverse` turns the sort around, issues lacking the sorted value still last.\nEach sub-issue carries its parent's `parent_key` and `parent_title`, so a row\nlisted apart from its parent can still name it.\n\nEvery body carries `synced_at`. Sent back as `updated_since` with the same\nfilter, it turns the read into a delta: only the issues changed since, every\none in the list's sort order and unpaged, plus `removed_ids` for issues that\nleft the filter, were archived or were deleted. `resync_required` asks for a\nfull read instead, when the cursor is older than deletions are remembered or\nthe delta is too large to carry. A delta costs one key-bounded query per team\non the change feed index, so a poll that finds nothing reads almost nothing.\n\nA delta answer carries a weak `ETag` over its body. Two polls that find the\nsame thing answer the same body, so a poll that sends the tag back in\n`If-None-Match` gets a 304 with no body instead. A full read carries none,\nbecause its cursor moves with the clock.",
         "operationId": "list_issues_api_workspaces__workspace_id__issues_get",
         "parameters": [
           {
@@ -34152,7 +36347,7 @@
     },
     "/api/workspaces/{workspace_id}/search/similar": {
       "get": {
-        "description": "Open issues whose titles share terms with a draft title, for the create dialog.\n\nA title with no searchable term answers an empty list rather than the 422\nsearch gives, because the dialog asks while the person is still typing.",
+        "description": "Open issues whose titles share terms with a draft title, for the create dialog.\n\nA title with no searchable term answers an empty list rather than the 422\nsearch gives, because the dialog asks while the person is still typing.\n`team_id` is the draft's team, whose matches rank first.",
         "operationId": "similar_api_workspaces__workspace_id__search_similar_get",
         "parameters": [
           {
@@ -34190,6 +36385,22 @@
                 }
               ],
               "title": "Exclude Issue Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "team_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Team Id"
             }
           },
           {
@@ -36106,6 +38317,112 @@
           }
         ],
         "summary": "Update Cycle Settings",
+        "tags": [
+          "teams"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/teams/{team_id}/display-defaults": {
+      "get": {
+        "description": "What the team's issue list and board open with for a member who has not changed them.",
+        "operationId": "read_display_defaults_api_workspaces__workspace_id__teams__team_id__display_defaults_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TeamDisplayDefaultsRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Read Display Defaults",
+        "tags": [
+          "teams"
+        ]
+      },
+      "patch": {
+        "description": "Set or clear the layout, grouping, ordering and properties the team's pages open with.\n\nA team admin's call. Members who changed a page's display keep their own\noptions until they reset to the team default.",
+        "operationId": "update_display_defaults_api_workspaces__workspace_id__teams__team_id__display_defaults_patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TeamDisplayDefaultsUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TeamDisplayDefaultsRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Update Display Defaults",
         "tags": [
           "teams"
         ]
@@ -39392,7 +41709,7 @@
     },
     "/api/workspaces/{workspace_id}/teams/{team_id}/template-settings": {
       "get": {
-        "description": "The team's saved default template and the one its create dialog opens with.",
+        "description": "The team's saved default templates and the ones its create dialogs open with.",
         "operationId": "read_template_settings_api_workspaces__workspace_id__teams__team_id__template_settings_get",
         "parameters": [
           {
@@ -39439,7 +41756,7 @@
         ]
       },
       "patch": {
-        "description": "Set or clear the template the team's create dialog opens with.",
+        "description": "Set or clear the templates the team's issue and project create dialogs open with.",
         "operationId": "update_template_settings_api_workspaces__workspace_id__teams__team_id__template_settings_patch",
         "parameters": [
           {
@@ -39498,7 +41815,7 @@
     },
     "/api/workspaces/{workspace_id}/teams/{team_id}/templates": {
       "get": {
-        "description": "Every template the team offers, its own, its parent's and the workspace's, and its default.",
+        "description": "Every template of one kind the team offers, its own, its parent's and the workspace's, and its default.",
         "operationId": "list_team_templates_api_workspaces__workspace_id__teams__team_id__templates_get",
         "parameters": [
           {
@@ -39508,6 +41825,22 @@
             "schema": {
               "minLength": 1,
               "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Which templates to list: issue or project",
+            "in": "query",
+            "name": "kind",
+            "required": false,
+            "schema": {
+              "default": "issue",
+              "description": "Which templates to list: issue or project",
+              "enum": [
+                "issue",
+                "project"
+              ],
+              "title": "Kind",
               "type": "string"
             }
           }
@@ -40837,7 +43170,7 @@
     },
     "/api/workspaces/{workspace_id}/templates": {
       "get": {
-        "description": "Every workspace template, which every team offers.",
+        "description": "Every workspace template of one kind, which every team offers.",
         "operationId": "list_workspace_templates_api_workspaces__workspace_id__templates_get",
         "parameters": [
           {
@@ -40847,6 +43180,22 @@
             "schema": {
               "minLength": 1,
               "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Which templates to list: issue or project",
+            "in": "query",
+            "name": "kind",
+            "required": false,
+            "schema": {
+              "default": "issue",
+              "description": "Which templates to list: issue or project",
+              "enum": [
+                "issue",
+                "project"
+              ],
+              "title": "Kind",
               "type": "string"
             }
           }
@@ -41062,7 +43411,7 @@
     },
     "/api/workspaces/{workspace_id}/views": {
       "get": {
-        "description": "Saved views the caller may read, narrowed by scope.\n\n`all` is the caller's own views plus the team views of teams they can see,\nwhich for a guest is only the teams they hold a membership in, so the listing\nis built from what they may read rather than filtered afterwards. The\nanswer carries a weak `ETag`, so an unchanged poll gets a 304.",
+        "description": "Saved views the caller may read, narrowed by scope and, with `entity`, to issue or project views.\n\n`all` is the caller's own views plus the team views of teams they can see,\nwhich for a guest is only the teams they hold a membership in, so the listing\nis built from what they may read rather than filtered afterwards. The\nanswer carries a weak `ETag`, so an unchanged poll gets a 304.",
         "operationId": "list_views_api_workspaces__workspace_id__views_get",
         "parameters": [
           {
@@ -41105,6 +43454,26 @@
                 }
               ],
               "title": "Team Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "entity",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "issues",
+                    "projects"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Entity"
             }
           }
         ],

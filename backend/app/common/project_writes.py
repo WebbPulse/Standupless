@@ -7,6 +7,7 @@ date rules a person's does.
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any, Optional
 
 from fastapi import HTTPException, status
@@ -37,6 +38,7 @@ from app.common.planning_rules import (
     visible_team_ids,
 )
 from app.common.project_cadence import workspace_interval
+from app.common.project_templates import add_template_rows, fill_project, find_project_template
 from app.common.relation_effects import cancelled_status, categories_for
 from app.common.sub_teams import listed_teams
 
@@ -123,10 +125,18 @@ def create_project(repositories: Repositories, context: AuthzContext, payload: P
     """Create a project on one or more teams.
 
     The caller must be able to write in every team named, since a project put on a
-    team appears in that team's planning.
+    team appears in that team's planning. A named project template fills the
+    fields left out before anything is checked, and its milestones and issues
+    are added once the project exists, its dates counted from today. Any
+    template issue left out is named in `skipped_template_issues`.
     """
     teams = payload.teams
     require_team_changes(repositories, context, teams)
+    template = None
+    today = utc_now().date()
+    if payload.template_id:
+        template = find_project_template(repositories, context, teams, payload.template_id)
+        payload = fill_project(repositories, context, payload, template, today)
     if payload.lead_id is not None:
         require_workspace_member(repositories, context, payload.lead_id)
     for member_id in payload.member_ids:
@@ -153,6 +163,7 @@ def create_project(repositories: Repositories, context: AuthzContext, payload: P
         member_ids=list(payload.member_ids),
         update_interval_days=payload.update_interval_days,
         initiative_id=payload.initiative_id,
+        completed_at=utc_now() if payload.status in CLOSED_STATUSES else None,
         created_by=context.user_id,
     )
     try:
@@ -162,9 +173,12 @@ def create_project(repositories: Repositories, context: AuthzContext, payload: P
             status_code=status.HTTP_409_CONFLICT,
             detail={"error_code": "CONFLICT", "message": "That project already exists"},
         ) from exc
-    return ProjectRead.from_row(
+    body = ProjectRead.from_row(
         created, teams, default_interval_days=workspace_interval(repositories.workspaces, context.workspace_id)
     )
+    if template is not None:
+        body.skipped_template_issues = add_template_rows(repositories, context, created, template, today)
+    return body
 
 
 def open_project_issues(
@@ -237,6 +251,20 @@ def store_open_issues(repositories: Repositories, context: AuthzContext, planned
     return written
 
 
+def closed_since(existing: Project, closed: bool, now: datetime) -> Optional[datetime]:
+    """When a patched project closed: now on closing, kept while closed, None once open.
+
+    A project that moves between completed and canceled keeps the time it first
+    closed, and one closed before the field existed takes the time of the patch
+    that next touches it, so the projects list can always window closed rows.
+    """
+    if not closed:
+        return None
+    if normalise_project_status(existing.status) in CLOSED_STATUSES and existing.completed_at is not None:
+        return existing.completed_at
+    return now
+
+
 def update_project(
     repositories: Repositories, context: AuthzContext, project_id: str, payload: ProjectUpdate
 ) -> ProjectRead:
@@ -280,10 +308,12 @@ def update_project(
         if fields["initiative_id"] is not None:
             require_initiative_target(repositories, context, fields["initiative_id"])
 
-    updated = existing.model_copy(update={**fields, "updated_at": utc_now()})
+    now = utc_now()
+    updated = existing.model_copy(update={**fields, "updated_at": now})
     check_project_dates(updated.start_date, updated.target_date)
 
     closed = normalise_project_status(updated.status) in CLOSED_STATUSES
+    updated.completed_at = closed_since(existing, closed, now)
     if choice is not None and not closed:
         raise unprocessable("open_issues applies only to a patch that leaves the project completed or canceled")
     open_issues: list[Issue] = []

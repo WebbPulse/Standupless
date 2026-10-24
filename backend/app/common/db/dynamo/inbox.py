@@ -23,6 +23,7 @@ from pydantic import BaseModel, Field
 from webbpulse.dynamodb import ConditionFailed, Page, Repository
 
 from app.common.db.dynamo.base import as_item, build_repository, delete_partition, utc_now
+from app.common.db.dynamo.issue_reminders import IssueReminderStore
 from app.common.db.dynamo.notify_digests import DigestStore
 from app.common.db.dynamo.tables import INBOX
 
@@ -41,6 +42,7 @@ NotificationKind = Literal[
     "sla_at_risk",
     "sla_breached",
     "review_requested",
+    "reminder",
 ]
 
 NOTIFICATION_KINDS: tuple[str, ...] = (
@@ -58,7 +60,11 @@ NOTIFICATION_KINDS: tuple[str, ...] = (
     "sla_at_risk",
     "sla_breached",
     "review_requested",
+    "reminder",
 )
+
+ISSUE_REMINDER = "reminder"
+"""The kind a reminder a member set on an issue for themselves takes when it comes due."""
 
 REVIEW_REQUESTED = "review_requested"
 """The kind a GitHub review request takes in the requested member's inbox, in app only."""
@@ -227,7 +233,8 @@ class Notification(BaseModel):
 class InboxRepository:
     """Reads and writes `inbox` rows for exactly one recipient at a time.
 
-    `digests` holds the pending notification emails, which share this table under
+    `digests` holds the pending notification emails and `reminders` the issue
+    reminders members set for themselves, both sharing this table under
     partitions no inbox can name.
     """
 
@@ -235,9 +242,11 @@ class InboxRepository:
         """Take an injected package repository, or build this table's own."""
         self._repository = build_repository(INBOX, repository)
         self.digests = DigestStore(self._repository)
+        self.reminders = IssueReminderStore(self._repository)
 
     def delete_all(self, workspace_id: str, user_id: str) -> int:
-        """Delete one person's whole inbox in one workspace, for the workspace and account purges."""
+        """Delete one person's whole inbox in one workspace, reminders included, for the purges."""
+        self.reminders.delete_all(workspace_id, user_id)
         return delete_partition(self._repository, INBOX, inbox_partition(workspace_id, user_id))
 
     def get(self, workspace_id: str, user_id: str, notification_id: str) -> Notification | None:

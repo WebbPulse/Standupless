@@ -406,9 +406,14 @@ def issue_json(teams: TeamRepository, issue: Issue, *, status_name: str = "") ->
     }
 
 
-def summary_json(teams: TeamRepository, issue: Issue) -> dict[str, Any]:
-    """One issue as a listing renders it, under its team's current key and the synthetic triage status in triage."""
+def summary_json(teams: TeamRepository, issue: Issue, parent: Optional[Issue] = None) -> dict[str, Any]:
+    """One issue as a listing renders it, under its team's current key and the synthetic triage status in triage.
+
+    Given its `parent`, a sub-issue also names the parent's key and title, so a
+    listing that leaves the parent out still says whose step the row is.
+    """
     issue = current(teams, issue)
+    named = parent if parent is not None and parent.issue_id == issue.parent_id else None
     return {
         "issue_id": issue.issue_id,
         "issue_key": issue.key,
@@ -420,6 +425,8 @@ def summary_json(teams: TeamRepository, issue: Issue) -> dict[str, Any]:
         "estimate": issue.estimate,
         "assignee_id": issue.assignee_id,
         "parent_id": issue.parent_id,
+        "parent_key": named.key if named is not None else None,
+        "parent_title": named.title if named is not None else None,
         "cycle_id": issue.cycle_id,
         "project_id": issue.project_id,
         "updated_at": issue.updated_at.isoformat(),

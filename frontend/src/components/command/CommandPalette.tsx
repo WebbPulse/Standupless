@@ -21,6 +21,10 @@
  * dialog for each over the page in view, and a project or initiative page adds
  * its own "Create document".
  *
+ * The favorite, project, cycle, team and view pickers are nested lists a row
+ * opens, and the `O` then letter shortcuts open the palette straight onto
+ * one of them through the `picker` prop.
+ *
  * An exact issue key resolves without the index, the same way the search page
  * does, since the index does not hold keys and a key is the most common thing
  * anyone types here.
@@ -59,7 +63,9 @@ import {
   LuRocket,
   LuSearch,
   LuSettings,
+  LuSlidersHorizontal,
   LuSquarePen,
+  LuStar,
   LuSun,
   LuTarget,
   LuTerminal,
@@ -73,12 +79,15 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { usePolledQuery } from '@webbpulse/api-client/react';
 import { useQueryAuth } from '@webbpulse/auth/react';
 import { listWorkspaceDocuments } from '../../api/documents';
+import { listFavorites } from '../../api/favorites';
+import { listCycles, listProjects } from '../../api/planning';
 import { listTeamTemplates } from '../../api/templates';
 import { listViews, search } from '../../api/views';
 import ViewIcon from '../views/ViewIcon';
 import { useCreateIssue } from '../../hooks/useCreateIssue';
 import { useCreatePlanning } from '../../hooks/useCreatePlanning';
 import { useCreateTeam } from '../../hooks/useCreateTeam';
+import type { PalettePicker } from '../../hooks/useCommandPalette';
 import { useIssueSubject } from '../../hooks/useIssueSubject';
 import { displayKeys, useRegisteredShortcuts } from '../../hooks/useShortcuts';
 import { useTheme } from '../../hooks/useTheme';
@@ -87,6 +96,7 @@ import { cn } from '../../lib/cn';
 import {
   accountSecuritySettingsPath,
   cliSetupPath,
+  cyclePath,
   documentPath,
   inboxPath,
   initiativesPath,
@@ -94,6 +104,8 @@ import {
   mcpSetupPath,
   myIssuesPath,
   newViewPath,
+  preferencesSettingsPath,
+  projectPath,
   projectsPath,
   profileSettingsPath,
   pulsePath,
@@ -113,12 +125,17 @@ import {
   viewsPath,
 } from '../../lib/paths';
 import { COPY_ISSUE_URL_KEYS } from '../../lib/copyIssue';
+import { favoriteHref } from '../../lib/favorites';
+import ProjectIcon from '../planning/ProjectIcon';
 import {
   matchesTerm,
   settingsDestinations,
   teamSettingsDestinations,
 } from '../../lib/paletteDestinations';
 import {
+  cyclesKey,
+  favoritesKey,
+  projectsKey,
   searchKey,
   templatesKey,
   viewsKey,
@@ -133,7 +150,7 @@ import {
 import { teamTree } from '../../lib/teamOrder';
 import type { Theme } from '../../lib/theme';
 import { currentOrFirstTeam, settingsLanding } from '../../lib/workspaceNav';
-import type { TeamRead, WorkspaceRead } from '../../types/Api';
+import type { CycleRead, TeamRead, WorkspaceRead } from '../../types/Api';
 import { LOOKUP_POLL_MS } from '../../lib/polling';
 
 /** How many hits the palette asks the search route for. */
@@ -157,6 +174,8 @@ export interface CommandPaletteProps {
   teams?: readonly TeamRead[];
   /** Opens the keyboard shortcut overlay. */
   onShowShortcuts?: () => void;
+  /** The picker to open on instead of the top level, or null for the top level. */
+  picker?: PalettePicker | null;
 }
 
 /**
@@ -185,10 +204,10 @@ interface CommandGroup {
 }
 
 /**
- * The palette's lists: the top level, or the team, view, sub-team parent or
- * issue template picker inside it.
+ * The palette's lists: the top level, or the favorite, project, cycle, team,
+ * view, sub-team parent or issue template picker inside it.
  */
-type Page = 'root' | 'teams' | 'views' | 'sub-team' | 'template';
+type Page = 'root' | PalettePicker | 'sub-team' | 'template';
 
 /** What the back button and the input say on each nested list. */
 const PAGE_COPY: Record<
@@ -197,6 +216,9 @@ const PAGE_COPY: Record<
 > = {
   teams: { back: 'Switch team', placeholder: 'Switch to a team' },
   views: { back: 'Open view', placeholder: 'Open a saved view' },
+  favorites: { back: 'Open favorite', placeholder: 'Open a favorite' },
+  projects: { back: 'Open project', placeholder: 'Open a project' },
+  cycles: { back: 'Open cycle', placeholder: 'Open a cycle' },
   'sub-team': {
     back: 'Create sub-team',
     placeholder: 'Pick the parent team',
@@ -231,6 +253,36 @@ const THEMES: { theme: Theme; label: string; icon: React.ReactNode }[] = [
     icon: <LuMonitor className={ICON} />,
   },
 ];
+
+/** The order cycles list in: the current one, then upcoming, then the rest. */
+const CYCLE_RANK: Record<CycleRead['status'], number> = {
+  active: 0,
+  upcoming: 1,
+  completed: 2,
+  cancelled: 3,
+};
+
+/** How a cycle's status reads as a row hint. */
+const CYCLE_HINT: Record<CycleRead['status'], string> = {
+  active: 'Current',
+  upcoming: 'Upcoming',
+  completed: 'Completed',
+  cancelled: 'Cancelled',
+};
+
+/**
+ * A team's cycles in picker order: current first, upcoming soonest first,
+ * then completed and cancelled ones most recent first.
+ */
+const pickerCycles = (cycles: readonly CycleRead[]): CycleRead[] =>
+  [...cycles].sort((left, right) => {
+    const rank = CYCLE_RANK[left.status] - CYCLE_RANK[right.status];
+    if (rank !== 0) return rank;
+    const dates = left.start_date.localeCompare(right.start_date);
+    return left.status === 'upcoming' || left.status === 'active'
+      ? dates
+      : -dates;
+  });
 
 /** A shortcut as a row hint, such as "G then I". */
 const shortcutHint = (keys: string): string =>
@@ -272,6 +324,7 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
   workspace,
   teams = [],
   onShowShortcuts,
+  picker = null,
 }) => {
   const navigate = useNavigate();
   const location = useLocation();
@@ -284,7 +337,7 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
   const { canUndo, undo } = useUndo(workspace.id);
   const subject = useIssueSubject();
   const [term, setTerm] = useState('');
-  const [page, setPage] = useState<Page>('root');
+  const [page, setPage] = useState<Page>(picker ?? 'root');
   const [active, setActive] = useState(0);
   const input = useRef<HTMLInputElement>(null);
   const list = useRef<HTMLUListElement>(null);
@@ -336,6 +389,37 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
       intervalMs: LOOKUP_POLL_MS,
       enabled: page === 'views' && workspaceId !== '',
       queryKey: viewsKey(workspaceId, 'all', ''),
+      auth,
+    }
+  );
+
+  const { data: favorites } = usePolledQuery(
+    ({ signal }) => listFavorites(workspaceId, signal),
+    {
+      intervalMs: LOOKUP_POLL_MS,
+      enabled: page === 'favorites' && workspaceId !== '',
+      queryKey: favoritesKey(workspaceId),
+      auth,
+    }
+  );
+
+  const { data: projectList } = usePolledQuery(
+    ({ signal }) => listProjects(workspaceId, {}, signal),
+    {
+      intervalMs: LOOKUP_POLL_MS,
+      enabled: page === 'projects' && workspaceId !== '',
+      queryKey: [...projectsKey(workspaceId, '', ''), 'palette'],
+      auth,
+    }
+  );
+
+  const { data: cycleList } = usePolledQuery(
+    ({ signal }) =>
+      listCycles(workspaceId, { team_id: team?.id ?? '' }, signal),
+    {
+      intervalMs: LOOKUP_POLL_MS,
+      enabled: page === 'cycles' && workspaceId !== '' && team !== undefined,
+      queryKey: [...cyclesKey(workspaceId, team?.id ?? '', ''), 'palette'],
       auth,
     }
   );
@@ -478,7 +562,8 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
       built.push({
         id: 'action-switch-team',
         label: 'Switch team',
-        keywords: 'change',
+        keywords: 'change open',
+        hint: 'O then T',
         icon: <LuArrowLeftRight className={ICON} />,
         page: 'teams',
       });
@@ -517,16 +602,44 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
         id: 'action-open-view',
         label: 'Open view',
         keywords: 'saved filter go',
+        hint: 'O then V',
         icon: <LuLayoutList className={ICON} />,
         page: 'views',
+      },
+      {
+        id: 'action-open-favorite',
+        label: 'Open favorite',
+        keywords: 'starred go',
+        hint: 'O then F',
+        icon: <LuStar className={ICON} />,
+        page: 'favorites',
+      },
+      {
+        id: 'action-open-project',
+        label: 'Open project',
+        keywords: 'go',
+        hint: 'O then P',
+        icon: <LuTarget className={ICON} />,
+        page: 'projects',
       }
     );
+    if (team !== undefined) {
+      built.push({
+        id: 'action-open-cycle',
+        label: 'Open cycle',
+        keywords: 'go sprint',
+        hint: 'O then C',
+        icon: <LuRefreshCcw className={ICON} />,
+        page: 'cycles',
+      });
+    }
     return built;
   }, [
     createIssue,
     createTeam,
     createPlanning,
     slug,
+    team,
     teams,
     theme,
     setTheme,
@@ -659,6 +772,14 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
         to: profileSettingsPath(slug),
       },
       {
+        id: 'nav-preferences',
+        label: 'Preferences',
+        keywords:
+          'account preferences theme dark light font text size home view default page week start first day full names usernames display',
+        icon: <LuSlidersHorizontal className={ICON} />,
+        to: preferencesSettingsPath(slug),
+      },
+      {
         id: 'nav-account-security',
         label: 'Security & access',
         keywords:
@@ -762,6 +883,64 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
       return rows.length === 0
         ? []
         : [{ heading: 'Switch team', commands: rows }];
+    }
+
+    if (page === 'favorites') {
+      const rows = (favorites ?? [])
+        .flatMap((favorite) => {
+          const href = favoriteHref(slug, favorite);
+          return href === null
+            ? []
+            : [
+                {
+                  id: `favorite-${favorite.kind}-${favorite.target_id}`,
+                  label: favorite.title,
+                  keywords: favorite.kind,
+                  ...(favorite.issue_key ? { hint: favorite.issue_key } : {}),
+                  icon: <LuStar className={ICON} />,
+                  to: href,
+                },
+              ];
+        })
+        .filter((command) => matches(command, deferred));
+      return rows.length === 0
+        ? []
+        : [{ heading: 'Favorites', commands: rows }];
+    }
+
+    if (page === 'projects') {
+      const rows = (projectList?.projects ?? [])
+        .map((project) => ({
+          id: `project-${project.project_id}`,
+          label: project.name,
+          icon: (
+            <ProjectIcon
+              icon={project.icon}
+              color={project.color}
+              className="h-4 w-4"
+            />
+          ),
+          to: projectPath(slug, project.project_id),
+        }))
+        .filter((command) => matches(command, deferred));
+      return rows.length === 0 ? [] : [{ heading: 'Projects', commands: rows }];
+    }
+
+    if (page === 'cycles') {
+      const rows = (
+        team === undefined ? [] : pickerCycles(cycleList?.cycles ?? [])
+      )
+        .map((cycle) => ({
+          id: `cycle-${cycle.cycle_id}`,
+          label: cycle.name,
+          hint: CYCLE_HINT[cycle.status],
+          icon: <LuRefreshCcw className={ICON} />,
+          to: cyclePath(slug, team?.key_prefix ?? '', cycle.cycle_id),
+        }))
+        .filter((command) => matches(command, deferred));
+      return rows.length === 0
+        ? []
+        : [{ heading: team?.name ?? 'Cycles', commands: rows }];
     }
 
     if (page === 'sub-team') {
@@ -933,6 +1112,9 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
   }, [
     page,
     savedViews,
+    favorites,
+    projectList,
+    cycleList,
     templateList,
     team,
     createIssue,
@@ -1059,7 +1241,9 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
         ? 'Searching'
         : page === 'template' && (templateList?.templates.length ?? 0) === 0
           ? 'This team has no templates yet.'
-          : 'Nothing matched that.';
+          : page === 'favorites' && deferred === ''
+            ? 'Nothing is starred yet.'
+            : 'Nothing matched that.';
 
   const placeholder =
     page === 'root' ? 'Type a command or search' : PAGE_COPY[page].placeholder;

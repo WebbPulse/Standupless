@@ -1016,6 +1016,12 @@
   {
     "auth": "workspace:read",
     "domain": "planning",
+    "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/initiatives/{initiative_id}/progress"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "planning",
     "method": "DELETE",
     "path": "/api/workspaces/{workspace_id}/initiatives/{initiative_id}/projects/{project_id}"
   },
@@ -1318,6 +1324,18 @@
     "domain": "teams",
     "method": "PATCH",
     "path": "/api/workspaces/{workspace_id}/teams/{team_id}/cycle-settings"
+  },
+  {
+    "auth": "team:read",
+    "domain": "teams",
+    "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/teams/{team_id}/display-defaults"
+  },
+  {
+    "auth": "team:admin",
+    "domain": "teams",
+    "method": "PATCH",
+    "path": "/api/workspaces/{workspace_id}/teams/{team_id}/display-defaults"
   },
   {
     "auth": "team:admin",
@@ -1653,6 +1671,30 @@
     "auth": "workspace:read",
     "domain": "views",
     "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/drafts"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "views",
+    "method": "DELETE",
+    "path": "/api/workspaces/{workspace_id}/drafts/{issue_id}"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "views",
+    "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/drafts/{issue_id}"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "views",
+    "method": "PUT",
+    "path": "/api/workspaces/{workspace_id}/drafts/{issue_id}"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "views",
+    "method": "GET",
     "path": "/api/workspaces/{workspace_id}/favorites"
   },
   {
@@ -1690,6 +1732,24 @@
     "domain": "views",
     "method": "POST",
     "path": "/api/workspaces/{workspace_id}/inbox/read"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "views",
+    "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/inbox/reminders"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "views",
+    "method": "DELETE",
+    "path": "/api/workspaces/{workspace_id}/inbox/reminders/{issue_id}"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "views",
+    "method": "PUT",
+    "path": "/api/workspaces/{workspace_id}/inbox/reminders/{issue_id}"
   },
   {
     "auth": "workspace:read",

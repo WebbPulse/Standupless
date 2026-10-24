@@ -58,6 +58,8 @@ interface ReaderProps {
 /** Props for one comment inside a card. */
 interface CommentItemProps extends ReaderProps {
   comment: CommentRead;
+  /** The people an edit can mention. */
+  people: Assignable[];
   /** Opens the thread's reply box, or undefined on a reply. */
   onReply?: () => void;
 }
@@ -68,6 +70,7 @@ const anchorOf = (commentId: string): string => `comment-${commentId}`;
 /** One comment: header, body, attachments and reactions. */
 const CommentItem: React.FC<CommentItemProps> = ({
   comment,
+  people,
   workspaceId,
   issueId,
   currentUserId,
@@ -226,6 +229,7 @@ const CommentItem: React.FC<CommentItemProps> = ({
                 editable
                 autoFocus
                 ariaLabel="Edit comment"
+                mentionPeople={people}
                 className="rounded-md border border-line-strong bg-bg px-3 py-2 text-sm leading-5.5"
                 density="compact"
                 onCommit={() => false}
@@ -313,10 +317,20 @@ export const CommentCard: React.FC<CommentCardProps> = ({
 
   return (
     <div className="rounded-lg border border-line bg-surface">
-      <CommentItem comment={comment} onReply={openReply} {...reader} />
+      <CommentItem
+        comment={comment}
+        people={people}
+        onReply={openReply}
+        {...reader}
+      />
       {replies.map((reply) => (
         <div key={reply.comment_id} className="border-t border-line">
-          <CommentItem comment={reply} onReply={openReply} {...reader} />
+          <CommentItem
+            comment={reply}
+            people={people}
+            onReply={openReply}
+            {...reader}
+          />
         </div>
       ))}
       {reader.canComment &&

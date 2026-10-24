@@ -21,8 +21,8 @@
  * ```
  *
  * - `keys` is one key or a space separated sequence (`'c'`, `'g i'`, `'?'`,
- *   `'/'`, `'escape'`, `'space'`). A token may carry `shift+` or `mod+` (Ctrl, or Cmd on
- *   a Mac). Letters are matched case-insensitively and never match while Shift
+ *   `'/'`, `'escape'`, `'space'`). A token may carry `shift+`, `alt+` or `mod+`
+ *   (Ctrl, or Cmd on a Mac). Letters are matched case-insensitively and never match while Shift
  *   is held unless the token says `shift+`; punctuation such as `?` ignores
  *   Shift, because producing it needs Shift on most layouts.
  * - `scope` is `'global'` (the default) for shortcuts that work anywhere in a
@@ -50,7 +50,7 @@
  *
  * Nothing fires while focus is in an input, a textarea, a select or anything
  * contenteditable, while Ctrl, Cmd or Alt is held (unless the token asks for
- * `mod+`), while a modal dialog is open, or when another handler already
+ * `mod+` or `alt+`), while a modal dialog is open, or when another handler already
  * claimed the event. Outside a {@link ShortcutRegistryContext} provider the
  * hooks do nothing, so a page renders the same in a test without the shell.
  */
@@ -63,7 +63,7 @@ import {
   useRef,
   useSyncExternalStore,
 } from 'react';
-import { modKeyLabel, shiftKeyLabel } from '../lib/platform';
+import { altKeyLabel, modKeyLabel, shiftKeyLabel } from '../lib/platform';
 import { isModalOpen, isTypingTarget } from './useCommandPalette';
 
 /**
@@ -141,6 +141,7 @@ export const SEQUENCE_TIMEOUT_MS = 1200;
 interface KeyToken {
   key: string;
   shift: boolean;
+  alt: boolean;
   mod: boolean;
 }
 
@@ -156,6 +157,7 @@ export const parseKeys = (keys: string): KeyToken[] =>
       return {
         key: key === 'esc' ? 'escape' : key,
         shift: pieces.includes('shift'),
+        alt: pieces.includes('alt'),
         mod: pieces.includes('mod'),
       };
     });
@@ -205,7 +207,7 @@ export const eventMatches = (
     event.shiftKey &&
     keyFromCode(event.code) === token.key;
   if (key !== token.key && !byCode) return false;
-  if (event.altKey) return false;
+  if (event.altKey !== token.alt) return false;
   const mod = event.ctrlKey || event.metaKey;
   if (mod !== token.mod) return false;
   if (isLetter(token.key) && event.shiftKey !== token.shift) return false;
@@ -273,6 +275,7 @@ export const createShortcutRegistry = (
         got === undefined ||
         want.key !== got.key ||
         want.shift !== got.shift ||
+        want.alt !== got.alt ||
         want.mod !== got.mod
       ) {
         return 'none';
@@ -286,6 +289,7 @@ export const createShortcutRegistry = (
   const tokenFor = (event: KeyboardEvent): KeyToken => ({
     key: keyName(event),
     shift: isLetter(keyName(event)) && event.shiftKey,
+    alt: event.altKey,
     mod: event.ctrlKey || event.metaKey,
   });
 
@@ -441,6 +445,7 @@ export const displayKeys = (keys: string): string[] =>
   parseKeys(keys).map((token) => {
     const caps: string[] = [];
     if (token.mod) caps.push(modKeyLabel());
+    if (token.alt) caps.push(altKeyLabel());
     if (token.shift) caps.push(shiftKeyLabel());
     caps.push(
       KEY_NAMES[token.key] ??

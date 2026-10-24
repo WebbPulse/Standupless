@@ -20,10 +20,9 @@ from webbpulse.http import CursorPage
 
 from app.common.api.dependencies.authz import AuthzContext, Capability, require
 from app.common.api.dependencies.repositories import Repositories, get_repositories
-from app.common.comment_writes import comment_page
+from app.common.comment_writes import comment_page, edit_comment
 from app.common.comment_writes import create_comment as create_comment_row
 from app.common.db.dynamo.comments import Comment
-from app.common.mentions import mentioned_user_ids
 from app.domains.discussion.schemas.discussion import (
     DEFAULT_LIMIT,
     MAX_LIMIT,
@@ -208,21 +207,14 @@ def update_comment(
     different act from removing them, and only the second has a moderation case.
 
     Mentions are recomputed from the new body, so an edit that adds one notifies
-    and an edit that removes one stops claiming it.
+    that person alone and an edit that removes one stops claiming it. A key the
+    edit adds leaves a backlink on that issue.
     """
     comment = _load_comment(repositories, context, payload.issue_id, comment_id)
     if not may_edit_comment(context, comment):
         raise forbidden()
 
-    mentions = mentioned_user_ids(repositories, context.workspace_id, payload.body)
-    updated = repositories.comments.edit(context.workspace_id, payload.issue_id, comment_id, payload.body, mentions)
-    if updated is None:
-        raise not_found()
-
-    added = [user_id for user_id in mentions if user_id not in comment.mentions]
-    repositories.subscriptions.subscribe_many(
-        context.workspace_id, payload.issue_id, comment.team_id, added, "mentioned"
-    )
+    updated = edit_comment(repositories, context, comment, payload.body)
 
     counts = repositories.comments.count_replies(
         repositories.comments.iter_for_issue(context.workspace_id, payload.issue_id)

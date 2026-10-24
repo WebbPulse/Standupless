@@ -159,6 +159,39 @@ def test_display_switches_are_strict_booleans(client: TestClient, workspace: str
     assert cleared.status_code == 422
 
 
+def test_the_completed_window_round_trips_beside_the_switch(client: TestClient, workspace: str) -> None:
+    """The window keeps `show_completed` in step, and setting either one moves the other."""
+    sign_in(client, MEMBER)
+
+    default = _create(client, workspace).json()
+    assert (default["completed_window"], default["show_completed"]) == ("all", True)
+    hidden = _create(client, workspace, show_completed=False).json()
+    assert hidden["completed_window"] == "none"
+
+    view = _create(client, workspace, completed_window="past_week").json()
+    assert (view["completed_window"], view["show_completed"]) == ("past_week", True)
+    path = f"/api/workspaces/{workspace}/views/{view['view_id']}"
+
+    month = client.patch(path, json={"completed_window": "past_month"}).json()
+    assert (month["completed_window"], month["show_completed"]) == ("past_month", True)
+    none = client.patch(path, json={"completed_window": "none"}).json()
+    assert (none["completed_window"], none["show_completed"]) == ("none", False)
+    shown = client.patch(path, json={"show_completed": True}).json()
+    assert (shown["completed_window"], shown["show_completed"]) == ("all", True)
+
+    assert client.patch(path, json={"completed_window": None}).status_code == 422
+    assert client.patch(path, json={"completed_window": "past_year"}).status_code == 422
+
+
+def test_the_milestone_and_links_properties_round_trip(client: TestClient, workspace: str) -> None:
+    """A view may show the milestone and the link count beside the other row properties."""
+    sign_in(client, MEMBER)
+
+    created = _create(client, workspace, visible_properties=["id", "milestone", "links"])
+    assert created.status_code == 201, created.text
+    assert created.json()["visible_properties"] == ["id", "milestone", "links"]
+
+
 def test_the_new_groupings_and_sorts_round_trip(client: TestClient, workspace: str) -> None:
     """Project, cycle, parent, team and SLA groupings and the status, start and estimate sorts are kept."""
     sign_in(client, MEMBER)

@@ -26,10 +26,13 @@ export interface SubTeamRollUp {
 /**
  * The roll-up state of `team`'s page. `enabled` false keeps the page on the
  * team alone, as the archive does, while still listing the sub-teams.
+ * `base` is what the page does with no parameter, false for a saved view
+ * that keeps to the team alone, so the URL only carries a change from it.
  */
 export const useSubTeamRollUp = (
   team: TeamRead | null | undefined,
-  enabled = true
+  enabled = true,
+  base = true
 ): SubTeamRollUp => {
   const { data: allTeams } = useTeams();
   const [params, setParams] = useSearchParams();
@@ -41,14 +44,15 @@ export const useSubTeamRollUp = (
         : (allTeams ?? []).filter((other) => other.parent_team_id === teamId),
     [allTeams, teamId]
   );
+  const held = params.get(ROLL_UP_PARAM);
   const rollUp =
-    enabled && subTeams.length > 0 && params.get(ROLL_UP_PARAM) !== '0';
+    enabled && subTeams.length > 0 && (held === null ? base : held !== '0');
   const toggle = useCallback((): void => {
     const next = new URLSearchParams(params);
-    if (rollUp) next.set(ROLL_UP_PARAM, '0');
-    else next.delete(ROLL_UP_PARAM);
+    if (!rollUp === base) next.delete(ROLL_UP_PARAM);
+    else next.set(ROLL_UP_PARAM, rollUp ? '0' : '1');
     setParams(next, { replace: true });
-  }, [params, rollUp, setParams]);
+  }, [params, rollUp, setParams, base]);
   return { subTeams, rollUp, toggle };
 };
 

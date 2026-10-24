@@ -10,6 +10,7 @@ import React from 'react';
 import { useElementWidth } from '../../hooks/useElementWidth';
 import type { PlanningMeasure } from '../../lib/planningModel';
 import type { VelocityCycleRead } from '../../types/Api';
+import { axisTicks } from './BurnUpChart';
 
 /** Props for VelocityChart: the closed cycles oldest first and the measure. */
 export interface VelocityChartProps {
@@ -55,11 +56,12 @@ export const VelocityChart: React.FC<VelocityChartProps> = ({
     cycle,
     ...valuesOf(cycle, measure),
   }));
-  const top = Math.max(
-    1,
+  const highest = Math.max(
     average,
     ...rows.map((row) => Math.max(row.scope, row.completed))
   );
+  const ticks = axisTicks(highest);
+  const top = ticks[ticks.length - 1] ?? 1;
   const plotWidth = width - PAD_LEFT - PAD_RIGHT;
   const plotHeight = HEIGHT - PAD_TOP - PAD_BOTTOM;
   const slot = plotWidth / Math.max(rows.length, 1);
@@ -85,24 +87,25 @@ export const VelocityChart: React.FC<VelocityChartProps> = ({
           role="img"
           aria-label={`Velocity chart. ${summary}`}
         >
-          {[0, 0.5, 1].map((share) => (
-            <g key={share}>
+          {ticks.map((tick) => (
+            <g key={tick}>
               <line
                 x1={PAD_LEFT}
                 x2={width - PAD_RIGHT}
-                y1={y(top * share)}
-                y2={y(top * share)}
+                y1={y(tick)}
+                y2={y(tick)}
                 stroke="var(--line)"
                 strokeWidth="1"
               />
               <text
                 x={PAD_LEFT - 6}
-                y={y(top * share) + 3}
+                y={y(tick) + 3}
                 textAnchor="end"
                 fontSize={FONT_SIZE}
                 fill="var(--text-faint)"
+                data-testid="velocity-tick"
               >
-                {String(Math.round(top * share))}
+                {String(tick)}
               </text>
             </g>
           ))}

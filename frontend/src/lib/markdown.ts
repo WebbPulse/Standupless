@@ -2,7 +2,7 @@
  * A small Markdown parser for issue descriptions and comments. It covers what
  * people write in a tracker (paragraphs, headings, lists and task lists,
  * quotes, fenced code, inline code, emphasis, links, embedded images and
- * videos, and @mentions) and nothing
+ * videos, @mentions and issue keys) and nothing
  * that would need raw HTML: the output is a tree the renderer turns into React
  * elements, so no string from a comment is ever parsed as markup.
  *
@@ -20,6 +20,7 @@ export type InlineNode =
   | { type: 'link'; href: string; children: InlineNode[] }
   | { type: 'strong' | 'em' | 'del'; children: InlineNode[] }
   | { type: 'mention'; handle: string }
+  | { type: 'issue'; key: string }
   | { type: 'image' | 'video'; src: string; alt: string }
   | { type: 'break' };
 
@@ -51,12 +52,12 @@ export const isLinkTarget = (href: string): boolean =>
 /**
  * The inline grammar, tried left to right at each position. The groups are,
  * in order: an embed, a code span, a link, a bare URL, strong, strong with underscores,
- * strikethrough, emphasis, emphasis with underscores, a mention, and a
- * backslash escape, which the rich editor writes when literal text would
+ * strikethrough, emphasis, emphasis with underscores, a mention, an issue
+ * key such as `ENG-12`, and a backslash escape, which the rich editor writes when literal text would
  * otherwise read as formatting.
  */
 const INLINE =
-  /!\[([^\]]*)\]\(([^)\s]+)\)|(`+)([^`]|[^`][\s\S]*?[^`])\3(?!`)|\[([^\]]+)\]\(([^)\s]+)\)|(https?:\/\/[^\s<]*[^\s<.,:;"')\]!?])|\*\*(\S[\s\S]*?)\*\*|__(\S[\s\S]*?)__|~~(\S[\s\S]*?)~~|\*(\S[\s\S]*?)\*|(?<![\w])_(\S[\s\S]*?)_(?![\w])|(?<![\w@/])@([A-Za-z0-9][A-Za-z0-9_-]{0,38})(?![\w-])|\\([!-/:-@[-`{-~])/g;
+  /!\[([^\]]*)\]\(([^)\s]+)\)|(`+)([^`]|[^`][\s\S]*?[^`])\3(?!`)|\[([^\]]+)\]\(([^)\s]+)\)|(https?:\/\/[^\s<]*[^\s<.,:;"')\]!?])|\*\*(\S[\s\S]*?)\*\*|__(\S[\s\S]*?)__|~~(\S[\s\S]*?)~~|\*(\S[\s\S]*?)\*|(?<![\w])_(\S[\s\S]*?)_(?![\w])|(?<![\w@/])@([A-Za-z0-9][A-Za-z0-9_-]{0,38})(?![\w-])|(?<![\w/-])([A-Z][A-Z0-9]{1,5}-\d{1,9})(?![\w-])|\\([!-/:-@[-`{-~])/g;
 
 /** Appends text, merging it into a text node already at the end. */
 const pushText = (out: InlineNode[], value: string): void => {
@@ -103,6 +104,7 @@ export const parseInline = (source: string): InlineNode[] => {
       em,
       emAlt,
       mention,
+      issueRef,
       escaped,
     ] = match;
     if (embedAlt !== undefined && embedSrc !== undefined) {
@@ -144,6 +146,8 @@ export const parseInline = (source: string): InlineNode[] => {
       out.push({ type: 'em', children: parseInline(em ?? emAlt ?? '') });
     } else if (mention !== undefined) {
       out.push({ type: 'mention', handle: mention });
+    } else if (issueRef !== undefined) {
+      out.push({ type: 'issue', key: issueRef });
     } else if (escaped !== undefined) {
       pushText(out, escaped);
     } else {

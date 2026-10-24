@@ -45,6 +45,7 @@ from webbpulse.events import deserialize_image, register_stream_consumer, source
 
 from app.common.api.dependencies.repositories import Repositories
 from app.common.bulk_import import from_bulk_import
+from app.common.comment_drafts import clear_posted_draft
 from app.common.composition.consumers import CONSUMERS
 from app.common.core.config import settings
 from app.common.db.dynamo.inbox import Notification, expires_at, inbox_partition, notification_id
@@ -380,9 +381,15 @@ def handle_comment_record(repositories: Repositories, record: Mapping[str, Any])
     the new comment's id. The record is the comment's insert, so at this point the
     row may not be readable yet, and walking from it would find no ancestors and
     quietly notify nobody who was being replied to. A comment a bulk import
-    wrote notifies nobody.
+    wrote notifies nobody. An edit is handed to `handle_comment_edit`, which
+    pings only the people it newly mentions.
     """
-    if str(record.get("eventName", "")).upper() != "INSERT" or from_bulk_import(record):
+    if from_bulk_import(record):
+        return 0
+    event = str(record.get("eventName", "")).upper()
+    if event == "MODIFY":
+        return handle_comment_edit(repositories, record)
+    if event != "INSERT":
         return 0
 
     new_image = deserialize_image(record, "NewImage")
@@ -444,6 +451,72 @@ def handle_comment_record(repositories: Repositories, record: Mapping[str, Any])
                 actor_id=actor_id,
                 actor_display=display,
                 created_at=created_at,
+                source_id=comment_id,
+                comment_excerpt=body,
+                source=_text(new_image, "source") or None,
+            )
+        )
+    return written
+
+
+def handle_comment_edit(repositories: Repositories, record: Mapping[str, Any]) -> int:
+    """Notify from one edited `comments` record, answering how many rows were written.
+
+    Only the people the edit adds to the comment's mentions are notified, as a
+    mention: everyone else heard about the comment when it was posted, and a fixed
+    typo is not news. A modify that does not stamp a new `edited_at`, such as a
+    reply count moving, notifies nobody. The edit time is the id's timestamp half,
+    so someone mentioned, dropped and mentioned again in later edits hears each time
+    while a redelivered record still writes nothing new.
+    """
+    new_image = deserialize_image(record, "NewImage")
+    old_image = deserialize_image(record, "OldImage") or {}
+    if not new_image:
+        return 0
+
+    edited_raw = _text(new_image, "edited_at")
+    if not edited_raw or edited_raw == _text(old_image, "edited_at"):
+        return 0
+    try:
+        edited_at = datetime.fromisoformat(edited_raw)
+    except ValueError:
+        return 0
+    if edited_at.tzinfo is None:
+        edited_at = edited_at.replace(tzinfo=timezone.utc)
+
+    workspace_id = _text(new_image, "workspace_id")
+    issue_id = _text(new_image, "issue_id")
+    comment_id = _text(new_image, "comment_id")
+    if not workspace_id or not issue_id or not comment_id:
+        return 0
+
+    actor_id = _text(new_image, "author_id")
+    before = set(_strings(old_image, "mentions"))
+    added = sorted(
+        user_id for user_id in set(_strings(new_image, "mentions")) - before if user_id and user_id != actor_id
+    )
+    if not added:
+        return 0
+
+    issue = repositories.issues.get(workspace_id, issue_id)
+    if issue is None:
+        return 0
+
+    display = actor_name(repositories, actor_id)
+    body = _text(new_image, "body")
+    written = 0
+    for recipient_id in cap_recipients(added, workspace_id=workspace_id, source=f"comment#{comment_id}"):
+        written += int(
+            write_notification(
+                repositories,
+                workspace_id=workspace_id,
+                recipient_id=recipient_id,
+                kind=MENTIONED,
+                issue=issue,
+                comment_id=comment_id,
+                actor_id=actor_id,
+                actor_display=display,
+                created_at=edited_at,
                 source_id=comment_id,
                 comment_excerpt=body,
                 source=_text(new_image, "source") or None,
@@ -607,12 +680,37 @@ def handle_planning_record(repositories: Repositories, record: Mapping[str, Any]
     return written
 
 
+def clear_comment_draft(repositories: Repositories, record: Mapping[str, Any]) -> bool:
+    """Clear the author's draft in the thread a new comment was posted to, reporting whether one went.
+
+    Done here rather than in the comment write, because the discussion image may
+    not write the table drafts live in, and this covers every client that posts.
+    A draft the author saved after the comment was posted is kept, so starting the
+    next comment before this record lands loses nothing. A bulk import clears nothing.
+    """
+    if str(record.get("eventName", "")).upper() != "INSERT" or from_bulk_import(record):
+        return False
+    new_image = deserialize_image(record, "NewImage")
+    if not new_image:
+        return False
+    workspace_id = _text(new_image, "workspace_id")
+    issue_id = _text(new_image, "issue_id")
+    author_id = _text(new_image, "author_id")
+    posted_at = _stamped_at({"created_at": new_image.get("created_at")})
+    if not workspace_id or not issue_id or not author_id or posted_at is None:
+        return False
+    return clear_posted_draft(
+        repositories, workspace_id, author_id, issue_id, _text(new_image, "parent_comment_id") or None, posted_at
+    )
+
+
 def handle_record(repositories: Repositories, record: Mapping[str, Any]) -> None:
     """Route one record to the handler for the table it came from.
 
-    The digest flush schedule's synthetic record runs the flush, the project
-    update reminder sweep every quarter hour, the standup digest sweep every five
-    minutes, and the issue due date and Pulse digest sweeps every hour, and nothing else. Each sweep
+    The digest flush schedule's synthetic record runs the flush, the issue
+    reminders that have come due on every tick, the project update reminder
+    sweep every quarter hour, the standup digest sweep every five minutes, and
+    the issue due date and Pulse digest sweeps every hour, and nothing else. Each sweep
     runs on the first tick of its window, so a late tick does not skip a pass. The sweeps
     are imported here rather than at the top because they build on this module's
     writers.
@@ -624,10 +722,11 @@ def handle_record(repositories: Repositories, record: Mapping[str, Any]) -> None
     repositories = _GRANT.narrow(repositories)
     if is_digest_flush(record):
         flush_due(repositories)
-        from app.domains.views.consumers import due_reminders, pulse_digest, standups
+        from app.domains.views.consumers import due_reminders, issue_reminders, pulse_digest, standups
         from app.domains.views.consumers.project_reminders import run_reminders, sweep_due
 
         now = datetime.now(timezone.utc)
+        issue_reminders.run_issue_reminders(repositories, now)
         if sweep_due(repositories, now):
             run_reminders(repositories, now)
         if standups.sweep_due(repositories, now):
@@ -645,6 +744,7 @@ def handle_record(repositories: Repositories, record: Mapping[str, Any]) -> None
         written = handle_issue_record(repositories, record)
     elif physical == table_name("comments", prefix):
         written = handle_comment_record(repositories, record)
+        clear_comment_draft(repositories, record)
     elif physical == table_name("subscriptions", prefix):
         written = handle_subscription_record(repositories, record)
     elif physical == table_name("planning", prefix):

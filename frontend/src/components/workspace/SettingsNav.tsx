@@ -1,7 +1,7 @@
 /**
  * The navigation between the settings pages, as a row of tabs in the page
  * bar's toolbar row. The personal pages come first, Linear's Account group:
- * Profile, Notifications and Security & access belong to the person and apply
+ * Profile, Preferences, Notifications and Security & access belong to the person and apply
  * in every workspace, so every member sees them. The workspace pages follow.
  *
  * Workspace administration is admin only, but the team list, the workflow
@@ -32,7 +32,7 @@ const tabClass = ({ isActive }: { isActive: boolean }): string =>
       : 'text-text-muted hover:text-text'
   );
 
-/** Renders the links between the personal profile, notification and security pages, then the workspace, security, team, workflow, label, template, billing, API key, integrations, connected app, MCP and CLI, agent profile, share link, export, import and audit log settings. */
+/** Renders the links between the personal profile, preference, notification and security pages, then the workspace, security, team, workflow, label, template, billing, API key, integrations, connected app, MCP and CLI, agent profile, share link, export, import and audit log settings. */
 export const SettingsNav: React.FC<SettingsNavProps> = ({ workspace }) => (
   <nav aria-label="Settings sections" className="flex flex-wrap gap-1">
     <NavLink
@@ -40,6 +40,12 @@ export const SettingsNav: React.FC<SettingsNavProps> = ({ workspace }) => (
       className={tabClass}
     >
       Profile
+    </NavLink>
+    <NavLink
+      to={`/w/${workspace.slug}/settings/account/preferences`}
+      className={tabClass}
+    >
+      Preferences
     </NavLink>
     <NavLink
       to={`/w/${workspace.slug}/settings/notifications`}

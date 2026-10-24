@@ -4,6 +4,8 @@
  * minute out and within 90 days, so every preset here stays inside that.
  */
 
+import { weekStartDay } from '../../lib/preferences';
+
 /** One snooze choice: what it reads as and when it brings the row back. */
 export interface SnoozePreset {
   id: string;
@@ -26,10 +28,13 @@ const tomorrowMorning = (now: Date): Date => {
   return next;
 };
 
-/** The next Monday morning, a full week out when today is already Monday. */
+/**
+ * The morning the viewer's next week starts, Monday unless they chose another
+ * first day, a full week out when today is already that day.
+ */
 const nextWeekMorning = (now: Date): Date => {
   const next = new Date(now);
-  const daysAhead = (8 - next.getDay()) % 7 || 7;
+  const daysAhead = (weekStartDay() - next.getDay() + 7) % 7 || 7;
   next.setDate(next.getDate() + daysAhead);
   next.setHours(MORNING_HOUR, 0, 0, 0);
   return next;

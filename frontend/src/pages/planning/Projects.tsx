@@ -1,24 +1,45 @@
 /**
- * Every project in the workspace as one dense table: icon and name, health,
- * priority, status, lead, target date, teams and progress. Rows group by status, lead or team
- * and order by date, name or progress from the Display menu; the filters,
- * grouping and ordering live in the URL so an arranged list can be shared,
- * and health, priority, status and lead can be changed from the row without
- * opening it. Filtered to a parent team, the list includes the projects of
- * its visible sub-teams, with the issue list's toggle to show the team alone.
+ * Every project in the workspace, laid out as a dense list, a board or a
+ * timeline. The list shows icon and name, health, priority, status, lead,
+ * target date, teams and progress, and edits health, priority, status and
+ * lead from the row without opening it. The board puts projects in columns by
+ * the grouping and moves them between columns by dragging; the timeline draws
+ * them as bars from start to target date. Rows group by status, health,
+ * priority, initiative, lead or team, order by date, name, priority or
+ * progress, and completed projects show for all time, a recent window or not
+ * at all. The arrangement is saved to the account and carried in the URL so
+ * an arranged page can be shared. Filtered to a parent team, the page
+ * includes the projects of its visible sub-teams, with the issue list's
+ * toggle to show the team alone. The arrangement and filters save as a view
+ * of projects, and opened as that view the page starts from what it stores,
+ * keeps changes in the URL until they are saved over it or as a new view,
+ * and leaves the account's own arrangement alone.
  */
 
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 import { invalidateQueries } from '@webbpulse/api-client/react';
 import {
+  LuBookmarkPlus,
   LuChevronRight,
   LuListFilter,
+  LuPencil,
   LuPlus,
   LuTarget,
   LuX,
 } from 'react-icons/lu';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { updateProject } from '../../api/planning';
+import {
+  createView,
+  updateView,
+  type SavedViewDisplayRead,
+  type SavedViewFilter,
+} from '../../api/views';
+import {
+  SaveViewDialog,
+  refreshViewLists,
+  type ViewDetails,
+} from '../../components/issues/view/IssueViewPage';
 import CreateProjectDialog from '../../components/planning/CreateProjectDialog';
 import ProgressRing from '../../components/planning/ProgressRing';
 import { PriorityPicker } from '../../components/issues/PropertyPickers';
@@ -32,47 +53,68 @@ import ProjectGroupGlyph from '../../components/planning/ProjectGroupGlyph';
 import UpdateDueBadge from '../../components/planning/UpdateDueBadge';
 import ProjectIcon from '../../components/planning/ProjectIcon';
 import ProjectStatusGlyph from '../../components/planning/ProjectStatusGlyph';
+import ProjectsBoard from '../../components/planning/ProjectsBoard';
 import ProjectsDisplayMenu from '../../components/planning/ProjectsDisplayMenu';
+import ProjectTimeline, {
+  TimelineControls,
+  type ProjectTimelineHandle,
+} from '../../components/planning/ProjectTimeline';
 import { ErrorAlert } from '../../components/ui/alert';
 import Avatar from '../../components/ui/avatar';
 import Button, { IconButton } from '../../components/ui/button';
 import { Combobox, type ComboboxOption } from '../../components/ui/combobox';
 import EmptyState from '../../components/ui/empty-state';
+import FavoriteButton from '../../components/ui/FavoriteButton';
 import { Popover } from '../../components/ui/popover';
 import { SkeletonRows } from '../../components/ui/skeleton';
 import SubTeamToggle from '../../components/workspace/SubTeamToggle';
 import WorkspaceShell from '../../components/workspace/WorkspaceShell';
+import { useAuth } from '../../hooks/useAuth';
 import useCloseProjectPrompt from '../../hooks/useCloseProjectPrompt';
+import { useInitiatives } from '../../hooks/useInitiatives';
 import { useListKeyboardNav } from '../../hooks/useListKeyboardNav';
 import { usePlanningTeamLists } from '../../hooks/usePlanningTeamLists';
 import { useShortcut } from '../../hooks/useShortcuts';
+import { useProjectMoves } from '../../hooks/useProjectMoves';
+import { useProjectsDisplay } from '../../hooks/useProjectsDisplay';
 import { useTeam } from '../../hooks/useTeam';
+import { useTimelineShortcuts } from '../../hooks/useTimelineShortcuts';
 import { useWorkspace } from '../../hooks/useWorkspace';
 import { useWorkspaceProjects } from '../../hooks/useWorkspaceProjects';
 import { ROLL_UP_PARAM, useSubTeamRollUp } from '../../hooks/useSubTeamRollUp';
 import { canWriteIssues } from '../../lib/capabilities';
 import { cn } from '../../lib/cn';
 import { errorMessage } from '../../lib/errors';
+import { sharedChange, viewVisibility } from '../../lib/issueView';
 import {
   personAvatar,
   personLabel,
   type Assignable,
 } from '../../lib/issuePeople';
 import { useOptimisticRecord } from '../../lib/optimistic';
-import { projectPath } from '../../lib/paths';
+import { projectPath, viewPath } from '../../lib/paths';
 import {
   PROJECT_STATUS_LABELS,
   progressPercent,
 } from '../../lib/planningDisplay';
 import { PROJECT_STATUS_ORDER, canEditProject } from '../../lib/planningModel';
 import {
+  PROJECTS_DISPLAY_FIELDS,
   groupProjects,
-  parseGrouping,
-  parseOrdering,
+  groupValue,
   sortProjects,
+  withinClosedWindow,
   type ProjectGroup,
 } from '../../lib/projectList';
+import {
+  orderedStatuses,
+  projectViewBase,
+  sameProjectFilter,
+  toProjectViewFilter,
+} from '../../lib/projectView';
 import { shortDateLabel } from '../../lib/propertyOptions';
+import { viewKey } from '../../lib/queryKeys';
+import { showErrorToast, showToast } from '../../lib/toast';
 import type {
   ProjectRead,
   ProjectStatus,
@@ -81,10 +123,17 @@ import type {
   WorkspaceRole,
 } from '../../types/Api';
 import { teamTree } from '../../lib/teamOrder';
+import type { TimelineZoom } from '../../lib/timeline';
 
 /** The grid every header and row lines up on. */
 const GRID =
   'grid grid-cols-[minmax(0,1fr)_3.5rem] items-center gap-3 md:grid-cols-[minmax(0,1fr)_7rem_2rem_8.5rem_2rem_6rem_6rem_4.5rem]';
+
+/** The statuses a closed project holds, hidden as board columns with completed projects. */
+const CLOSED_STATUSES: ReadonlySet<ProjectStatus> = new Set([
+  'completed',
+  'canceled',
+]);
 
 /** The filter value that asks for projects with no lead. */
 const NO_LEAD = 'none';
@@ -308,9 +357,24 @@ const ProjectRow: React.FC<ProjectRowProps> = ({
   );
 };
 
+/** Which dialog is open over the page, saving a new view or editing the open one. */
+type Saving = 'new' | 'details' | null;
+
+/** The filters the page keeps in the URL. */
+type FilterField = 'team' | 'status' | 'lead';
+
+/** Props for Projects. */
+export interface ProjectsProps {
+  /** A view of projects the page opens as, its stored filters and arrangement the base. */
+  view?: SavedViewDisplayRead;
+  /** What sits before the title, the way back to the views list for a view. */
+  leading?: React.ReactNode;
+}
+
 /** The projects of the whole workspace, grouped, filtered and editable. */
-export const Projects: React.FC = () => {
+export const Projects: React.FC<ProjectsProps> = ({ view, leading }) => {
   const { workspace } = useWorkspace();
+  const { user } = useAuth();
   const slug = workspace?.slug ?? '';
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
@@ -320,26 +384,64 @@ export const Projects: React.FC = () => {
     isLoading: isResolvingTeams,
     error: teamsError,
   } = useTeam(undefined);
+  const [saving, setSaving] = useState<Saving>(null);
+  const [updating, setUpdating] = useState(false);
 
-  const teamFilter = params.get('team') ?? '';
+  const base = useMemo(
+    () => (view === undefined ? undefined : projectViewBase(view, teams)),
+    [view, teams]
+  );
+  const baseOf = useCallback(
+    (field: FilterField): string =>
+      base === undefined
+        ? ''
+        : field === 'team'
+          ? base.team
+          : field === 'status'
+            ? base.status.join(',')
+            : base.lead,
+    [base]
+  );
+  const teamFilter = params.get('team') ?? baseOf('team');
+  const statusText = params.get('status') ?? baseOf('status');
   const statusFilter = useMemo(
     () =>
-      (params.get('status') ?? '')
+      statusText
         .split(',')
         .filter((value): value is ProjectStatus =>
           PROJECT_STATUS_ORDER.includes(value as ProjectStatus)
         ),
-    [params]
+    [statusText]
   );
-  const leadFilter = params.get('lead') ?? '';
-  const grouping = parseGrouping(params.get('group'));
-  const ordering = parseOrdering(params.get('order'));
+  const leadFilter = params.get('lead') ?? baseOf('lead');
+  const {
+    display,
+    change: changeDisplay,
+    reset,
+  } = useProjectsDisplay(base?.display);
+  const { layout, group: grouping, order: ordering, closed, zoom } = display;
   const filteredTeam = teams.find((team) => team.key_prefix === teamFilter);
+  const baseRollUp = base?.rollUp ?? true;
   const {
     subTeams,
     rollUp,
     toggle: toggleRollUp,
-  } = useSubTeamRollUp(filteredTeam);
+  } = useSubTeamRollUp(filteredTeam, true, baseRollUp);
+  const heldRollUp = params.get(ROLL_UP_PARAM);
+  const savedFilter = toProjectViewFilter({
+    teamId:
+      filteredTeam?.id ??
+      (base !== undefined && teamFilter === base.team ? base.teamId : ''),
+    status: statusFilter,
+    lead: leadFilter,
+    rollUp: heldRollUp === null ? baseRollUp : heldRollUp !== '0',
+  });
+  const changed =
+    base !== undefined &&
+    (!sameProjectFilter(savedFilter, toProjectViewFilter(base)) ||
+      PROJECTS_DISPLAY_FIELDS.some(
+        (field) => display[field] !== base.display[field]
+      ));
 
   const { projects, error, isLoading, queryKey } = useWorkspaceProjects(
     workspaceId,
@@ -353,8 +455,26 @@ export const Projects: React.FC = () => {
     labels: false,
   });
 
+  const { initiatives } = useInitiatives(
+    workspaceId,
+    grouping === 'initiative'
+  );
+  const { apply: applyMoves, move: moveProject } = useProjectMoves(
+    workspaceId,
+    queryKey
+  );
+  const [now] = useState(() => new Date());
+  const timeline = useRef<ProjectTimelineHandle | null>(null);
+
   const [creating, setCreating] = useState<ProjectStatus | null>(null);
   const [folded, setFolded] = useState<string[]>([]);
+  const toggleFolded = (key: string): void => {
+    setFolded((held) =>
+      held.includes(key)
+        ? held.filter((value) => value !== key)
+        : [...held, key]
+    );
+  };
 
   const writableTeams = useMemo(
     () => teams.filter((team) => canWriteIssues(workspace?.role, team.role)),
@@ -364,7 +484,7 @@ export const Projects: React.FC = () => {
 
   const rows = useMemo(
     () =>
-      projects
+      applyMoves(projects)
         .filter(
           (project) =>
             statusFilter.length === 0 || statusFilter.includes(project.status)
@@ -375,13 +495,30 @@ export const Projects: React.FC = () => {
             : leadFilter === NO_LEAD
               ? project.lead_id === null
               : project.lead_id === leadFilter
-        ),
-    [projects, statusFilter, leadFilter]
+        )
+        .filter((project) => withinClosedWindow(project, closed, now)),
+    [applyMoves, projects, statusFilter, leadFilter, closed, now]
   );
 
+  const sorted = useMemo(() => sortProjects(rows, ordering), [rows, ordering]);
   const groups = useMemo(
-    () => groupProjects(sortProjects(rows, ordering), grouping, people, teams),
-    [rows, ordering, grouping, people, teams]
+    () => groupProjects(sorted, grouping, people, teams, { initiatives }),
+    [sorted, grouping, people, teams, initiatives]
+  );
+  const columns = useMemo(
+    () =>
+      layout !== 'board'
+        ? []
+        : groupProjects(sorted, grouping, people, teams, {
+            initiatives,
+            keepEmpty: true,
+          }).filter((column) => {
+            if (column.kind !== 'status') return true;
+            const status = groupValue(column) as ProjectStatus;
+            if (statusFilter.length > 0) return statusFilter.includes(status);
+            return closed !== 'none' || !CLOSED_STATUSES.has(status);
+          }),
+    [layout, sorted, grouping, people, teams, initiatives, statusFilter, closed]
   );
   const isOpen = useCallback(
     (group: ProjectGroup) =>
@@ -416,23 +553,93 @@ export const Projects: React.FC = () => {
     count: visible.length,
     onActivate,
     resetKey: `${params.toString()}:${folded.join(',')}:${String(rows.length)}`,
-    enabled: creating === null,
+    enabled: creating === null && layout === 'list',
   });
 
-  const setParam = (field: string, value: string): void => {
-    const next = new URLSearchParams(params);
-    if (value === '') next.delete(field);
+  const writeParam = (
+    next: URLSearchParams,
+    field: FilterField,
+    value: string
+  ): void => {
+    if (value === baseOf(field)) next.delete(field);
     else next.set(field, value);
+  };
+
+  const setParam = (field: FilterField, value: string): void => {
+    const next = new URLSearchParams(params);
+    writeParam(next, field, value);
     setParams(next, { replace: true });
+  };
+
+  const saveNew = async (details: ViewDetails): Promise<void> => {
+    const shareWith = details.shared ? details.teamId : undefined;
+    try {
+      const created = await createView(workspaceId, {
+        name: details.name,
+        kind: 'list',
+        entity: 'projects',
+        filter: savedFilter as unknown as SavedViewFilter,
+        projects_display: display,
+        ...(shareWith === undefined ? {} : { team_id: shareWith }),
+        ...(shareWith === undefined && details.shared ? { shared: true } : {}),
+        ...details.look,
+      });
+      refreshViewLists(workspaceId, details.teamId);
+      setSaving(null);
+      showToast(`Saved view ${created.name}.`);
+      void navigate(viewPath(slug, created.view_id));
+    } catch (failure) {
+      showErrorToast(errorMessage(failure, 'Could not save the view.'));
+    }
+  };
+
+  const saveDetails = async (details: ViewDetails): Promise<void> => {
+    if (view === undefined) return;
+    try {
+      await updateView(workspaceId, view.view_id, {
+        name: details.name,
+        ...details.look,
+        ...sharedChange(view, details.shared),
+      });
+      invalidateQueries(viewKey(workspaceId, view.view_id));
+      refreshViewLists(workspaceId, view.team_id ?? undefined);
+      setSaving(null);
+      showToast('View updated.');
+    } catch (failure) {
+      showErrorToast(errorMessage(failure, 'Could not update the view.'));
+    }
+  };
+
+  const saveOver = async (): Promise<void> => {
+    if (view === undefined) return;
+    setUpdating(true);
+    try {
+      await updateView(workspaceId, view.view_id, {
+        filter: savedFilter as unknown as SavedViewFilter,
+        projects_display: display,
+      });
+      invalidateQueries(viewKey(workspaceId, view.view_id));
+      refreshViewLists(workspaceId, view.team_id ?? undefined);
+      showToast('View updated.');
+    } catch (failure) {
+      showErrorToast(errorMessage(failure, 'Could not update the view.'));
+    } finally {
+      setUpdating(false);
+    }
+  };
+
+  const discard = (): void => {
+    setParams(new URLSearchParams(), { replace: true });
   };
 
   const toggleStatus = (status: string): void => {
     const held = statusFilter as string[];
     setParam(
       'status',
-      (held.includes(status)
-        ? held.filter((value) => value !== status)
-        : [...held, status]
+      orderedStatuses(
+        held.includes(status)
+          ? held.filter((value) => value !== status)
+          : [...held, status]
       ).join(',')
     );
   };
@@ -452,12 +659,50 @@ export const Projects: React.FC = () => {
   });
 
   useShortcut({
+    keys: 'shift+v',
+    label: 'Save as view',
+    scope: 'page',
+    group: 'Projects',
+    enabled: saving === null && creating === null,
+    handler: () => {
+      setSaving('new');
+    },
+  });
+
+  useShortcut({
+    keys: 'mod+s',
+    label: 'Save view changes',
+    scope: 'page',
+    group: 'Projects',
+    enabled: changed && !updating && saving === null,
+    handler: (event) => {
+      event?.preventDefault();
+      void saveOver();
+    },
+  });
+
+  useShortcut({
     keys: 'shift+g',
     label: 'Toggle grouping',
     group: 'Projects',
     handler: () => {
-      setParam('group', grouping === 'none' ? '' : 'none');
+      changeDisplay({ group: grouping === 'none' ? 'status' : 'none' });
     },
+  });
+
+  const timelineControls = {
+    zoom,
+    onZoomChange: (value: TimelineZoom) => {
+      changeDisplay({ zoom: value });
+    },
+    onToday: () => {
+      timeline.current?.scrollToToday();
+    },
+  };
+  useTimelineShortcuts({
+    ...timelineControls,
+    group: 'Projects',
+    enabled: layout === 'timeline',
   });
 
   const statusOptions: ComboboxOption[] = PROJECT_STATUS_ORDER.map(
@@ -502,23 +747,96 @@ export const Projects: React.FC = () => {
   const showSkeleton =
     teamsError === null && (isResolvingTeams || isLoading) && rows.length === 0;
 
+  const saveBar = !changed ? null : (
+    <div
+      role="region"
+      aria-label="Unsaved view changes"
+      className="flex w-full flex-wrap items-center gap-2 rounded-md border border-line bg-surface px-2.5 py-1.5 text-xs"
+    >
+      <span
+        aria-hidden="true"
+        className="h-1.5 w-1.5 shrink-0 rounded-full bg-accent"
+      />
+      <span className="text-text-muted">Unsaved changes</span>
+      <span className="flex-1" />
+      <Button size="sm" variant="ghost" onClick={discard}>
+        Discard
+      </Button>
+      <Button
+        size="sm"
+        variant="ghost"
+        onClick={() => {
+          setSaving('new');
+        }}
+      >
+        Save as new
+      </Button>
+      <Button
+        size="sm"
+        variant="primary"
+        disabled={updating}
+        onClick={() => void saveOver()}
+      >
+        Save
+      </Button>
+    </div>
+  );
+
   return (
     <WorkspaceShell
-      title="Projects"
+      title={view?.name ?? 'Projects'}
+      {...(leading === undefined ? {} : { leading })}
+      {...(view === undefined
+        ? {}
+        : {
+            titleAccessory: (
+              <FavoriteButton
+                workspaceId={workspaceId}
+                kind="view"
+                targetId={view.view_id}
+                title={view.name}
+              />
+            ),
+          })}
       flush
       actions={
-        canCreate ? (
-          <Button
-            variant="primary"
-            size="sm"
-            onClick={() => {
-              setCreating('planned');
-            }}
-          >
-            <LuPlus aria-hidden="true" />
-            New project
-          </Button>
-        ) : undefined
+        <div className="flex items-center gap-1.5">
+          {view === undefined ? (
+            <Button
+              size="sm"
+              variant="ghost"
+              className="gap-1.5"
+              onClick={() => {
+                setSaving('new');
+              }}
+            >
+              <LuBookmarkPlus aria-hidden="true" className="h-3.5 w-3.5" />
+              Save as view
+            </Button>
+          ) : (
+            <IconButton
+              label="Edit view details"
+              size="sm"
+              onClick={() => {
+                setSaving('details');
+              }}
+            >
+              <LuPencil aria-hidden="true" className="h-3.5 w-3.5" />
+            </IconButton>
+          )}
+          {canCreate && (
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={() => {
+                setCreating('planned');
+              }}
+            >
+              <LuPlus aria-hidden="true" />
+              New project
+            </Button>
+          )}
+        </div>
       }
       toolbar={
         <div className="flex flex-wrap items-center gap-1.5">
@@ -547,8 +865,7 @@ export const Projects: React.FC = () => {
             selected={teamFilter === '' ? [] : [teamFilter]}
             onSelect={(value) => {
               const next = new URLSearchParams(params);
-              if (value === teamFilter) next.delete('team');
-              else next.set('team', value);
+              writeParam(next, 'team', value === teamFilter ? '' : value);
               next.delete(ROLL_UP_PARAM);
               setParams(next, { replace: true });
             }}
@@ -562,10 +879,10 @@ export const Projects: React.FC = () => {
               size="sm"
               onClick={() => {
                 const next = new URLSearchParams(params);
-                next.delete('team');
+                writeParam(next, 'team', '');
+                writeParam(next, 'status', '');
+                writeParam(next, 'lead', '');
                 next.delete(ROLL_UP_PARAM);
-                next.delete('status');
-                next.delete('lead');
                 setParams(next, { replace: true });
               }}
             >
@@ -573,164 +890,211 @@ export const Projects: React.FC = () => {
               Clear
             </Button>
           )}
-          <div className="ml-auto">
+          <div className="ml-auto flex items-center gap-1">
             <ProjectsDisplayMenu
+              layout={layout}
+              onLayoutChange={(value) => {
+                changeDisplay({ layout: value });
+              }}
               grouping={grouping}
-              ordering={ordering}
               onGroupingChange={(value) => {
-                setParam('group', value === 'status' ? '' : value);
+                changeDisplay({ group: value });
               }}
+              ordering={ordering}
               onOrderingChange={(value) => {
-                setParam('order', value === 'target' ? '' : value);
+                changeDisplay({ order: value });
               }}
-              onReset={
-                grouping === 'status' && ordering === 'target'
-                  ? undefined
-                  : () => {
-                      const next = new URLSearchParams(params);
-                      next.delete('group');
-                      next.delete('order');
-                      setParams(next, { replace: true });
-                    }
-              }
+              closed={closed}
+              onClosedChange={(value) => {
+                changeDisplay({ closed: value });
+              }}
+              onReset={reset}
             />
+            {layout === 'timeline' && (
+              <TimelineControls {...timelineControls} />
+            )}
           </div>
+          {saveBar}
         </div>
       }
     >
-      <div className="min-h-0 flex-1 overflow-y-auto">
-        {teamsError !== null && (
-          <div className="px-4 pt-3 lg:px-6">
-            <ErrorAlert
-              message={errorMessage(
-                teamsError,
-                'Could not load teams. Try again shortly.'
-              )}
-            />
-          </div>
-        )}
-        {error !== null && error !== undefined && (
-          <div className="px-4 pt-3 lg:px-6">
-            <ErrorAlert
-              message={errorMessage(
-                error,
-                'Could not load projects. Try again shortly.'
-              )}
-            />
-          </div>
-        )}
-        <div
-          role="presentation"
-          className={cn(
-            GRID,
-            'sticky top-0 z-20 h-8 border-b border-line bg-bg px-4 text-2xs font-medium tracking-wide text-text-faint uppercase lg:px-6'
-          )}
-        >
-          <span>Name</span>
-          <span className="hidden px-2 md:block">Health</span>
-          <span className="hidden text-center md:block">
-            <span className="sr-only">Priority</span>
-          </span>
-          <span className="hidden px-2 md:block">Status</span>
-          <span className="hidden text-center md:block">Lead</span>
-          <span className="hidden md:block">Target</span>
-          <span className="hidden md:block">Teams</span>
-          <span className="text-right">
-            <span className="hidden md:inline">Progress</span>
-          </span>
-        </div>
-        {showSkeleton ? (
-          <SkeletonRows label="Loading projects" />
-        ) : rows.length === 0 && error == null && teamsError === null ? (
-          <EmptyState
-            icon={<LuTarget />}
-            message={
-              hasFilters
-                ? 'No projects match these filters.'
-                : 'No projects yet. A project is a dated body of work that one or more teams share.'
-            }
+      {teamsError !== null && (
+        <div className="px-4 pt-3 lg:px-6">
+          <ErrorAlert
+            message={errorMessage(
+              teamsError,
+              'Could not load teams. Try again shortly.'
+            )}
           />
-        ) : (
-          groups.map((group, groupIndex) => {
-            const open = isOpen(group);
-            const start = starts[groupIndex] ?? 0;
-            const status =
-              group.kind === 'status'
-                ? (group.key.slice('status:'.length) as ProjectStatus)
-                : null;
-            return (
-              <section key={group.key} aria-label={group.label}>
-                {group.kind !== 'none' && (
-                  <div className="group/header sticky top-8 z-10 flex h-9 items-center gap-2 border-b border-line bg-surface px-4 transition-colors duration-100 hover:bg-raised lg:px-6">
-                    <button
-                      type="button"
-                      aria-expanded={open}
-                      data-hover="parent"
-                      onClick={() => {
-                        setFolded((held) =>
-                          held.includes(group.key)
-                            ? held.filter((value) => value !== group.key)
-                            : [...held, group.key]
-                        );
-                      }}
-                      className="flex min-w-0 flex-1 items-center gap-2 text-left text-sm font-medium text-text focus-visible:ring-1 focus-visible:ring-accent focus-visible:outline-none"
-                    >
-                      <LuChevronRight
-                        aria-hidden="true"
-                        className={cn(
-                          'h-3.5 w-3.5 text-text-faint transition-transform duration-100',
-                          open && 'rotate-90'
-                        )}
-                      />
-                      <ProjectGroupGlyph group={group} teams={teams} />
-                      <span className="truncate">{group.label}</span>
-                      <span className="text-xs font-normal text-text-faint tabular-nums">
-                        {String(group.rows.length)}
-                      </span>
-                    </button>
-                    {canCreate && status !== null && (
-                      <IconButton
-                        label={`New ${PROJECT_STATUS_LABELS[status].toLowerCase()} project`}
-                        size="sm"
-                        className="opacity-0 group-hover/header:opacity-100 focus-visible:opacity-100 pointer-coarse:opacity-100"
+        </div>
+      )}
+      {error !== null && error !== undefined && (
+        <div className="px-4 pt-3 lg:px-6">
+          <ErrorAlert
+            message={errorMessage(
+              error,
+              'Could not load projects. Try again shortly.'
+            )}
+          />
+        </div>
+      )}
+      {layout === 'list' ? (
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          <div
+            role="presentation"
+            className={cn(
+              GRID,
+              'sticky top-0 z-20 h-8 border-b border-line bg-bg px-4 text-2xs font-medium tracking-wide text-text-faint uppercase lg:px-6'
+            )}
+          >
+            <span>Name</span>
+            <span className="hidden px-2 md:block">Health</span>
+            <span className="hidden text-center md:block">
+              <span className="sr-only">Priority</span>
+            </span>
+            <span className="hidden px-2 md:block">Status</span>
+            <span className="hidden text-center md:block">Lead</span>
+            <span className="hidden md:block">Target</span>
+            <span className="hidden md:block">Teams</span>
+            <span className="text-right">
+              <span className="hidden md:inline">Progress</span>
+            </span>
+          </div>
+          {showSkeleton ? (
+            <SkeletonRows label="Loading projects" />
+          ) : rows.length === 0 && error == null && teamsError === null ? (
+            <EmptyState
+              icon={<LuTarget />}
+              message={
+                hasFilters
+                  ? 'No projects match these filters.'
+                  : 'No projects yet. A project is a dated body of work that one or more teams share.'
+              }
+            />
+          ) : (
+            groups.map((group, groupIndex) => {
+              const open = isOpen(group);
+              const start = starts[groupIndex] ?? 0;
+              const status =
+                group.kind === 'status'
+                  ? (group.key.slice('status:'.length) as ProjectStatus)
+                  : null;
+              return (
+                <section key={group.key} aria-label={group.label}>
+                  {group.kind !== 'none' && (
+                    <div className="group/header sticky top-8 z-10 flex h-9 items-center gap-2 border-b border-line bg-surface px-4 transition-colors duration-100 hover:bg-raised lg:px-6">
+                      <button
+                        type="button"
+                        aria-expanded={open}
+                        data-hover="parent"
                         onClick={() => {
-                          setCreating(status);
+                          toggleFolded(group.key);
                         }}
+                        className="flex min-w-0 flex-1 items-center gap-2 text-left text-sm font-medium text-text focus-visible:ring-1 focus-visible:ring-accent focus-visible:outline-none"
                       >
-                        <LuPlus className="h-3.5 w-3.5" />
-                      </IconButton>
-                    )}
-                  </div>
-                )}
-                {open && (
-                  <ul>
-                    {group.rows.map((project, index) => {
-                      const position = start + index;
-                      return (
-                        <ProjectRow
-                          key={project.project_id}
-                          project={project}
-                          slug={slug}
-                          workspaceId={workspaceId}
-                          teams={teams}
-                          people={people}
-                          workspaceRole={workspace?.role}
-                          isActive={position === activeIndex}
-                          rowRef={registerItem(position)}
-                          onPointerEnter={() => {
-                            setActiveIndex(position);
-                          }}
-                          refreshKey={queryKey}
+                        <LuChevronRight
+                          aria-hidden="true"
+                          className={cn(
+                            'h-3.5 w-3.5 text-text-faint transition-transform duration-100',
+                            open && 'rotate-90'
+                          )}
                         />
-                      );
-                    })}
-                  </ul>
-                )}
-              </section>
-            );
-          })
-        )}
-      </div>
+                        <ProjectGroupGlyph group={group} teams={teams} />
+                        <span className="truncate">{group.label}</span>
+                        <span className="text-xs font-normal text-text-faint tabular-nums">
+                          {String(group.rows.length)}
+                        </span>
+                      </button>
+                      {canCreate && status !== null && (
+                        <IconButton
+                          label={`New ${PROJECT_STATUS_LABELS[status].toLowerCase()} project`}
+                          size="sm"
+                          className="opacity-0 group-hover/header:opacity-100 focus-visible:opacity-100 pointer-coarse:opacity-100"
+                          onClick={() => {
+                            setCreating(status);
+                          }}
+                        >
+                          <LuPlus className="h-3.5 w-3.5" />
+                        </IconButton>
+                      )}
+                    </div>
+                  )}
+                  {open && (
+                    <ul>
+                      {group.rows.map((project, index) => {
+                        const position = start + index;
+                        return (
+                          <ProjectRow
+                            key={project.project_id}
+                            project={project}
+                            slug={slug}
+                            workspaceId={workspaceId}
+                            teams={teams}
+                            people={people}
+                            workspaceRole={workspace?.role}
+                            isActive={position === activeIndex}
+                            rowRef={registerItem(position)}
+                            onPointerEnter={() => {
+                              setActiveIndex(position);
+                            }}
+                            refreshKey={queryKey}
+                          />
+                        );
+                      })}
+                    </ul>
+                  )}
+                </section>
+              );
+            })
+          )}
+        </div>
+      ) : showSkeleton ? (
+        <SkeletonRows label="Loading projects" />
+      ) : layout === 'board' ? (
+        <ProjectsBoard
+          columns={columns}
+          projects={rows}
+          slug={slug}
+          workspaceId={workspaceId}
+          teams={teams}
+          people={people}
+          workspaceRole={workspace?.role}
+          onMove={moveProject}
+          createIn={(column) => {
+            if (!canCreate || column.kind !== 'status') return undefined;
+            const status = groupValue(column) as ProjectStatus;
+            return () => {
+              setCreating(status);
+            };
+          }}
+        />
+      ) : rows.length === 0 && error == null && teamsError === null ? (
+        <EmptyState
+          icon={<LuTarget />}
+          message={
+            hasFilters
+              ? 'No projects match these filters.'
+              : 'No projects yet. A project is a dated body of work that one or more teams share.'
+          }
+        />
+      ) : (
+        <ProjectTimeline
+          ref={timeline}
+          groups={groups}
+          projects={sorted}
+          slug={slug}
+          workspaceId={workspaceId}
+          teams={teams}
+          people={people}
+          workspaceRole={workspace?.role}
+          zoom={zoom}
+          folded={folded}
+          onToggleGroup={toggleFolded}
+          refreshKey={queryKey}
+          listLabel="Projects on the timeline"
+          testId="projects-timeline"
+        />
+      )}
 
       {creating !== null && (
         <CreateProjectDialog
@@ -746,6 +1110,49 @@ export const Projects: React.FC = () => {
             invalidateQueries(queryKey);
             void navigate(projectPath(slug, project.project_id));
           }}
+        />
+      )}
+      {saving === 'new' && (
+        <SaveViewDialog
+          open
+          onClose={() => {
+            setSaving(null);
+          }}
+          title={view === undefined ? 'Save view' : 'Save as new view'}
+          teams={teams}
+          initialTeamId={filteredTeam?.id}
+          canShareWorkspace={workspace?.role !== 'guest'}
+          initialName={view === undefined ? '' : `${view.name} copy`}
+          {...(view === undefined
+            ? {}
+            : {
+                initialLook: {
+                  icon: view.icon ?? null,
+                  color: view.color ?? null,
+                  description: view.description ?? null,
+                },
+              })}
+          onSave={saveNew}
+        />
+      )}
+      {saving === 'details' && view !== undefined && (
+        <SaveViewDialog
+          open
+          onClose={() => {
+            setSaving(null);
+          }}
+          title="Edit view"
+          teams={teams}
+          detailsOnly
+          {...viewVisibility(view, user?.id, workspace?.role)}
+          submitLabel="Save changes"
+          initialName={view.name}
+          initialLook={{
+            icon: view.icon ?? null,
+            color: view.color ?? null,
+            description: view.description ?? null,
+          }}
+          onSave={saveDetails}
         />
       )}
     </WorkspaceShell>

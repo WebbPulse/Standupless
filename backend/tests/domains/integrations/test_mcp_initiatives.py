@@ -133,3 +133,32 @@ def test_a_guest_is_refused_initiatives(client: TestClient, repositories: Any, w
     assert refusal(tool(client, guest, "list_initiatives", {}))
     assert refusal(tool(client, guest, "create_initiative", {"name": "Mine"}))
     assert refusal(tool(client, guest, "get_initiative", {"initiative_id": "Grow"})) == NOT_VISIBLE
+
+
+def test_sub_initiatives_are_nested_by_name_and_roll_up(
+    client: TestClient, repositories: Any, planning: dict[str, str]
+) -> None:
+    """A parent named by name nests the initiative, the parent rolls up its projects and null detaches it."""
+    secret = mint_for(repositories, MEMBER, PROJECTS)
+    root = answer(tool(client, secret, "create_initiative", {"name": "Company goals"}))
+    child = answer(tool(client, secret, "create_initiative", {"name": "Grow", "parent_initiative_id": "company goals"}))
+    answer(tool(client, secret, "add_project_to_initiative", {"initiative_id": "Grow", "project_id": "Home project"}))
+
+    rolled = answer(tool(client, secret, "get_initiative", {"initiative_id": "Company goals"}))
+    progress = answer(tool(client, secret, "get_initiative_progress", {"initiative_id": "Company goals"}))
+    cycle = refusal(
+        tool(client, secret, "update_initiative", {"initiative_id": "Company goals", "parent_initiative_id": "Grow"})
+    )
+    detached = answer(
+        tool(client, secret, "update_initiative", {"initiative_id": "Grow", "parent_initiative_id": None})
+    )
+
+    assert child["parent_initiative_id"] == root["initiative_id"]
+    assert child["ancestors"] == [{"initiative_id": root["initiative_id"], "name": "Company goals"}]
+    assert rolled["sub_initiative_ids"] == [child["initiative_id"]]
+    assert rolled["project_ids"] == []
+    assert rolled["rollup_project_ids"] == [planning["project_id"]]
+    assert progress["initiative_id"] == root["initiative_id"]
+    assert progress["days"]
+    assert "sub-initiatives" in cycle
+    assert detached["parent_initiative_id"] is None

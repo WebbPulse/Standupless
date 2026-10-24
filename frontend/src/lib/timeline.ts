@@ -4,6 +4,8 @@
  * a drag moves a bar by whole days, whatever the viewer's time zone.
  */
 
+import { weekStartDay } from './preferences';
+
 /** One day in milliseconds. */
 const DAY_MS = 86400000;
 
@@ -167,7 +169,9 @@ export const timelineHeader = (
     isMonth(day) && utc(day).getUTCMonth() % 3 === 0;
   const isYear = (day: number): boolean =>
     isMonth(day) && utc(day).getUTCMonth() === 0;
-  const isMonday = (day: number): boolean => utc(day).getUTCDay() === 1;
+  const firstDay = weekStartDay();
+  const isWeekStart = (day: number): boolean =>
+    utc(day).getUTCDay() === firstDay;
   const monthName = (day: number): string =>
     MONTHS[utc(day).getUTCMonth()] ?? '';
   const dayOfMonth = (day: number): string => String(utc(day).getUTCDate());
@@ -181,7 +185,7 @@ export const timelineHeader = (
   if (zoom === 'month') {
     return {
       major: spans(range, isMonth, monthLabel),
-      minor: spans(range, isMonday, dayOfMonth),
+      minor: spans(range, isWeekStart, dayOfMonth),
     };
   }
   if (zoom === 'quarter') {
@@ -269,4 +273,13 @@ export const offscreenSide = (
   if (barLeft + barWidth < viewLeft) return 'before';
   if (barLeft > viewRight) return 'after';
   return null;
+};
+
+/** Steps a zoom one notch in or out, held at the ends of the scale. */
+export const stepZoom = (zoom: TimelineZoom, step: number): TimelineZoom => {
+  const index = TIMELINE_ZOOMS.indexOf(zoom) + step;
+  return (
+    TIMELINE_ZOOMS[Math.min(TIMELINE_ZOOMS.length - 1, Math.max(0, index))] ??
+    zoom
+  );
 };

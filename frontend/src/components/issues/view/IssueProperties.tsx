@@ -16,7 +16,8 @@ import {
   LuCalendar,
   LuCalendarClock,
   LuIterationCw,
-  LuListTree,
+  LuLink,
+  LuMilestone,
   LuCircleDashed,
   LuTriangle,
 } from 'react-icons/lu';
@@ -25,7 +26,11 @@ import { useTriageOn } from '../../../hooks/useTriageTeams';
 import { cn } from '../../../lib/cn';
 import { PRIORITY_LABELS } from '../../../lib/issueDisplay';
 import { personAvatar, personLabel } from '../../../lib/issuePeople';
-import { labelsOf, type FilterField } from '../../../lib/issueView';
+import {
+  labelsOf,
+  milestoneOf,
+  type FilterField,
+} from '../../../lib/issueView';
 import { pullRequestChipStyle } from '../../../lib/pullRequestState';
 import { cyclePath, projectPath } from '../../../lib/paths';
 import { shortDateLabel } from '../../../lib/propertyOptions';
@@ -48,6 +53,7 @@ import {
   StatusPicker,
 } from '../PropertyPickers';
 import { useIssueViewEnv } from './IssueViewContext';
+import { SubIssueProgressChip } from './SubIssueCues';
 
 /** Props shared by every property cell: the issue it shows. */
 export interface IssueCellProps {
@@ -301,19 +307,23 @@ export interface MetaChipsProps {
   issue: OrderedIssueRead;
   /** True on a board card, where the chips wrap under the title. */
   card?: boolean;
+  /** False where the row draws the sub-issue chip beside its title instead. */
+  withProgress?: boolean;
 }
 
 /**
  * The chips after the title: sub-issue progress, labels, pull requests,
- * project, cycle, estimate and dates, each only when the view shows it and
+ * project, milestone, cycle, relation count, estimate and dates, each only when the view shows it and
  * the issue has it, then the SLA countdown whenever the issue's team SLA
  * covers it.
  */
 export const MetaChips: React.FC<MetaChipsProps> = ({
   issue,
   card = false,
+  withProgress = true,
 }) => {
-  const { slug, state, context, teamNameFor, filterFor } = useIssueViewEnv();
+  const { slug, state, context, teamNameFor, filterFor, milestones } =
+    useIssueViewEnv();
   const filterLabel = filterFor?.('label');
   const filterEstimate = filterFor?.('estimate');
   const keyPrefix = issue.key.split('-')[0] ?? '';
@@ -324,19 +334,17 @@ export const MetaChips: React.FC<MetaChipsProps> = ({
     (item) => item.project_id === issue.project_id
   );
   const cycle = context.cycles.find((item) => item.cycle_id === issue.cycle_id);
+  const milestone = shows('milestone')
+    ? milestoneOf(issue, milestones ? { ...context, milestones } : context)
+    : undefined;
+  const links = issue.relation_count ?? 0;
   const teamName = teamNameFor?.(issue.team_id);
   const hide = card ? '' : 'hidden md:inline-flex';
 
   return (
     <>
-      {shows('sub_issues') && issue.progress.total > 0 && (
-        <Chip
-          label="Sub-issues done"
-          icon={<LuListTree aria-hidden="true" className="h-3 w-3" />}
-          className={hide}
-        >
-          {issue.progress.completed}/{issue.progress.total}
-        </Chip>
+      {withProgress && shows('sub_issues') && issue.progress.total > 0 && (
+        <SubIssueProgressChip progress={issue.progress} className={hide} />
       )}
       {shows('labels') &&
         labels.slice(0, LABELS_SHOWN).map((label) =>
@@ -361,6 +369,7 @@ export const MetaChips: React.FC<MetaChipsProps> = ({
                 color={label.color}
                 name={label.name}
                 className="max-w-32 hover:border-line-strong"
+                reveal={false}
               />
             </FilterChipButton>
           )
@@ -390,6 +399,15 @@ export const MetaChips: React.FC<MetaChipsProps> = ({
           <span className="truncate">{project.name}</span>
         </NavChipLink>
       )}
+      {shows('milestone') && milestone !== undefined && (
+        <Chip
+          label={`Milestone: ${milestone.name}`}
+          icon={<LuMilestone aria-hidden="true" className="h-3 w-3" />}
+          className={cn('max-w-40', card ? '' : 'hidden lg:inline-flex')}
+        >
+          {milestone.name}
+        </Chip>
+      )}
       {shows('cycle') && cycle !== undefined && (
         <NavChipLink
           tooltip={`Open cycle: ${cycle.name}`}
@@ -400,6 +418,15 @@ export const MetaChips: React.FC<MetaChipsProps> = ({
           <LuIterationCw aria-hidden="true" className="h-3 w-3" />
           <span className="truncate">{cycle.name}</span>
         </NavChipLink>
+      )}
+      {shows('links') && links > 0 && (
+        <Chip
+          label={links === 1 ? '1 link' : `${String(links)} links`}
+          icon={<LuLink aria-hidden="true" className="h-3 w-3" />}
+          className={hide}
+        >
+          {links}
+        </Chip>
       )}
       {shows('estimate') &&
         issue.estimate !== null &&

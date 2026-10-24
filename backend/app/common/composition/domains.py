@@ -163,10 +163,11 @@ def _views_routers() -> "Sequence[RouterSpec]":
     parameter or off the row rather than from the path, so each route decides
     visibility against the team the data actually belongs to.
     """
-    from app.domains.views.endpoints import board, favorites, home, inbox, insights, search, share_links, views
+    from app.domains.views.endpoints import board, drafts, favorites, home, inbox, insights, search, share_links, views
 
     return [
         (favorites.router, "/workspaces", ("views",)),
+        (drafts.router, "/workspaces", ("views",)),
         (board.router, "/workspaces", ("views",)),
         (insights.router, "/workspaces", ("views",)),
         (home.router, "/workspaces", ("views",)),
@@ -361,7 +362,7 @@ def _integrations_unprefixed_routers(settings: "Any") -> "Sequence[APIRouter]":
     ]
 
 
-_DISCUSSION_REPOSITORIES = ("comments", "reactions", "attachments", "subscriptions")
+_DISCUSSION_REPOSITORIES = ("comments", "reactions", "attachments", "subscriptions", "activity")
 
 _DISCUSSION_READ_REPOSITORIES = ("memberships", "workspaces", "users", "teams", "issues", "api_keys")
 
@@ -448,11 +449,22 @@ def _planning_unprefixed_routers(settings: "Any") -> "Sequence[APIRouter]":
     return [build_router()]
 
 
-_PLANNING_REPOSITORIES = ("planning", "releases", "documents", "idempotency", "issues", "activity", "subscriptions")
+_PLANNING_REPOSITORIES = (
+    "planning",
+    "releases",
+    "documents",
+    "idempotency",
+    "issues",
+    "activity",
+    "subscriptions",
+    "counters",
+)
 """What the planning image writes.
 
 `issues`, `activity` and `subscriptions` are for completing or canceling a
-project, which can move or cancel its open issues through the issue patch path.
+project, which can move or cancel its open issues through the issue patch path,
+and for a project made from a template, whose issues go through the issue create
+path, which allocates their keys from `counters`.
 """
 
 _PLANNING_READ_REPOSITORIES = (

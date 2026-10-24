@@ -50,7 +50,7 @@ const FIXED: { group: string; rows: HelpRow[] }[] = [
 ];
 
 /** The order headings appear in; anything else follows alphabetically. */
-const ORDER = ['General', 'Navigation', 'Issue', 'List', 'Board'];
+const ORDER = ['General', 'Navigation', 'Open', 'Issue', 'List', 'Board'];
 
 /** How a key sequence reads: caps joined by "then" for a sequence. */
 const KeyCaps: React.FC<{ keys: string[]; sequence: boolean }> = ({

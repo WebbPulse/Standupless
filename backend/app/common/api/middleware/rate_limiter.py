@@ -15,6 +15,11 @@ API Gateway stage throttle stays as the backstop above both.
 
 Staging is never rate limited, by the shared `webbpulse` convention that
 `settings.rate_limiting_enabled` carries.
+
+A consumer's queue or stream batch is never counted either. The Lambda Web Adapter
+posts it to the events path with no caller behind it, so every consumer shared one
+anonymous default bucket, and a refused batch answered 429 inside a successful
+invocation, which the event source mapping reads as handled and deletes (STUP-327).
 """
 
 from __future__ import annotations
@@ -140,18 +145,32 @@ def rate_limit_identity(request: Request) -> str:
 _principal_identity = principal_identity(client_identity)
 
 
+def is_event_source_batch(request: Request) -> bool:
+    """Whether this request is a queue or stream batch the adapter passed through, not a caller.
+
+    Both halves must hold: the path is the one `webbpulse.events.events_path` names, and
+    the request did not arrive through API Gateway, so a gateway request to that path is
+    still counted like any other.
+    """
+    from webbpulse.events import arrived_through_api_gateway, events_path
+
+    if request.method.upper() != "POST" or request.url.path != events_path():
+        return False
+    return not arrived_through_api_gateway(request)
+
+
 def build_rate_limit_middleware(**kwargs: Any) -> Any:
     """The configured shared middleware: plan tiers first, then three per-IP classes.
 
     `tiers` defaults to the product's plan-tier limits; pass `tiers=None` to count only
-    the classes.
+    the classes. An event source batch skips the limiter entirely.
     """
     from webbpulse.ratelimit import rate_limit_middleware as shared_middleware
 
     from app.common.api.middleware.rate_limit_tiers import build_tiers
 
     kwargs.setdefault("tiers", build_tiers())
-    return shared_middleware(
+    limited = shared_middleware(
         limit_classes(),
         identity_fn=rate_limit_identity,
         exempt_paths=RATE_LIMIT_EXEMPT_EXACT,
@@ -162,6 +181,14 @@ def build_rate_limit_middleware(**kwargs: Any) -> Any:
         enabled=rate_limiting_enabled,
         **kwargs,
     )
+
+    async def middleware(request: Request, call_next: Any) -> Response:
+        """Pass an event source batch straight through and count everything else."""
+        if is_event_source_batch(request):
+            return await call_next(request)
+        return await limited(request, call_next)
+
+    return middleware
 
 
 _middleware: Any = None

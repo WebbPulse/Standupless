@@ -16,7 +16,8 @@
  * room and is nudged back inside the viewport, so a tooltip on a control at
  * the window's edge never widens the page into a horizontal scroll. Scrolling
  * or resizing closes it, because a fixed bubble would otherwise drift away
- * from its control.
+ * from its control. TooltipBubble is that bubble on its own, so the tooltip
+ * that reveals truncated text shares the same look and placement.
  */
 
 import React, {
@@ -47,7 +48,7 @@ export interface TooltipProps {
 const subscribeNothing = (): (() => void) => () => undefined;
 
 /** Whether focus on an element came from the keyboard rather than a click. */
-const focusIsVisible = (element: Element): boolean => {
+export const focusIsVisible = (element: Element): boolean => {
   try {
     return element.matches(':focus-visible');
   } catch {
@@ -55,35 +56,36 @@ const focusIsVisible = (element: Element): boolean => {
   }
 };
 
-/** Wraps one control and shows its text beneath it on hover or keyboard focus. */
-export const Tooltip: React.FC<TooltipProps> = ({
+/** Props for TooltipBubble: the control it hangs off and what it shows. */
+export interface TooltipBubbleProps {
+  anchor: React.RefObject<HTMLElement | null>;
+  open: boolean;
+  text: string;
+  /** Called when a scroll or resize should close the open bubble. */
+  onDismiss: () => void;
+  side?: 'top' | 'bottom';
+  /** Center the bubble on its control, or line it up with the control's start. */
+  align?: 'center' | 'start';
+  /** Let long text wrap inside a capped width instead of keeping one line. */
+  wrap?: boolean;
+}
+
+/** The floating bubble shared by every tooltip, portalled to the body. */
+export const TooltipBubble: React.FC<TooltipBubbleProps> = ({
+  anchor,
+  open,
   text,
-  children,
+  onDismiss,
   side = 'bottom',
-  className = '',
+  align = 'center',
+  wrap = false,
 }) => {
-  const [open, setOpen] = useState(false);
   const mounted = useSyncExternalStore(
     subscribeNothing,
     () => true,
     () => false
   );
-  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const pressed = useRef(false);
   const bubble = useRef<HTMLSpanElement>(null);
-  const anchor = useRef<HTMLSpanElement>(null);
-
-  const clear = useCallback((): void => {
-    if (timer.current !== undefined) clearTimeout(timer.current);
-    timer.current = undefined;
-  }, []);
-
-  const hide = useCallback((): void => {
-    clear();
-    setOpen(false);
-  }, [clear]);
-
-  useEffect(() => clear, [clear]);
 
   useLayoutEffect(() => {
     const node = bubble.current;
@@ -100,21 +102,66 @@ export const Tooltip: React.FC<TooltipProps> = ({
       height,
       side
     );
-    const left = target.left + target.width / 2 - own.width / 2;
+    const left =
+      align === 'start'
+        ? target.left
+        : target.left + target.width / 2 - own.width / 2;
     const shift = shiftIntoView(left, left + own.width, width);
     node.style.top = `${String(top)}px`;
     node.style.left = `${String(left + shift)}px`;
-  }, [open, text, side]);
+  }, [anchor, open, text, side, align]);
 
   useEffect(() => {
     if (!open) return;
-    window.addEventListener('scroll', hide, true);
-    window.addEventListener('resize', hide);
+    window.addEventListener('scroll', onDismiss, true);
+    window.addEventListener('resize', onDismiss);
     return () => {
-      window.removeEventListener('scroll', hide, true);
-      window.removeEventListener('resize', hide);
+      window.removeEventListener('scroll', onDismiss, true);
+      window.removeEventListener('resize', onDismiss);
     };
-  }, [open, hide]);
+  }, [open, onDismiss]);
+
+  if (!mounted) return null;
+  return createPortal(
+    <span
+      ref={bubble}
+      role="tooltip"
+      aria-hidden="true"
+      data-open={open ? '' : undefined}
+      className={cn(
+        'pointer-events-none fixed top-0 left-0 z-70 rounded-sm bg-text px-2 py-1 text-2xs font-medium text-bg shadow-overlay transition-opacity duration-100 not-data-open:hidden starting:opacity-0',
+        wrap ? 'max-w-80 whitespace-pre-wrap break-words' : 'whitespace-pre'
+      )}
+    >
+      {text}
+    </span>,
+    document.body
+  );
+};
+
+/** Wraps one control and shows its text beneath it on hover or keyboard focus. */
+export const Tooltip: React.FC<TooltipProps> = ({
+  text,
+  children,
+  side = 'bottom',
+  className = '',
+}) => {
+  const [open, setOpen] = useState(false);
+  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const pressed = useRef(false);
+  const anchor = useRef<HTMLSpanElement>(null);
+
+  const clear = useCallback((): void => {
+    if (timer.current !== undefined) clearTimeout(timer.current);
+    timer.current = undefined;
+  }, []);
+
+  const hide = useCallback((): void => {
+    clear();
+    setOpen(false);
+  }, [clear]);
+
+  useEffect(() => clear, [clear]);
 
   return (
     <span
@@ -151,19 +198,13 @@ export const Tooltip: React.FC<TooltipProps> = ({
       }}
     >
       {children}
-      {mounted &&
-        createPortal(
-          <span
-            ref={bubble}
-            role="tooltip"
-            aria-hidden="true"
-            data-open={open ? '' : undefined}
-            className="pointer-events-none fixed top-0 left-0 z-70 rounded-sm bg-text px-2 py-1 text-2xs font-medium whitespace-pre text-bg shadow-overlay transition-opacity duration-100 not-data-open:hidden starting:opacity-0"
-          >
-            {text}
-          </span>,
-          document.body
-        )}
+      <TooltipBubble
+        anchor={anchor}
+        open={open}
+        text={text}
+        side={side}
+        onDismiss={hide}
+      />
     </span>
   );
 };

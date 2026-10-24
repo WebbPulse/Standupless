@@ -436,7 +436,7 @@ def test_a_reply_notifies_the_parent_author(
 def test_a_comment_edit_notifies_nobody(
     issues_client: TestClient, workspace: str, repositories: Any, statuses: Any
 ) -> None:
-    """Only a new comment is news; editing one is not worth a second badge."""
+    """An edit that mentions nobody new is not worth a second badge for the assignee."""
     sign_in(issues_client, OWNER)
     issue = seed_issue(issues_client, workspace, title="Discussed", assignee_id=MEMBER)
 
@@ -463,6 +463,66 @@ def test_a_comment_edit_notifies_nobody(
     )
 
     assert inbox_of(repositories, workspace, MEMBER) == []
+
+
+def _comment_edit(
+    workspace: str, issue_id: str, *, before: "list[str]", after: "list[str]", edited_at: str
+) -> "dict[str, Any]":
+    """The stream record an edit to one comment's mentions produces."""
+    common = {"workspace_id": workspace, "issue_id": issue_id, "comment_id": "01C000000000000000000001"}
+    return _record(
+        COMMENTS_ARN,
+        "MODIFY",
+        new=_image(**common, author_id=OWNER, body="Edited", mentions=after, edited_at=edited_at),
+        old=_image(**common, author_id=OWNER, body="Original", mentions=before),
+    )
+
+
+def test_a_comment_edit_notifies_only_the_newly_mentioned(
+    issues_client: TestClient, workspace: str, repositories: Any, statuses: Any
+) -> None:
+    """Someone the edit adds hears it as a mention; someone already mentioned hears nothing new."""
+    sign_in(issues_client, OWNER)
+    issue = seed_issue(issues_client, workspace, title="Discussed", assignee_id=MEMBER)
+
+    handle_record(
+        repositories,
+        _comment_edit(
+            workspace, issue["id"], before=[MEMBER], after=[MEMBER, ADMIN], edited_at="2026-10-23T12:00:00+00:00"
+        ),
+    )
+
+    assert [row["kind"] for row in inbox_of(repositories, workspace, ADMIN)] == ["mentioned"]
+    assert inbox_of(repositories, workspace, MEMBER) == []
+
+
+def test_a_replayed_comment_edit_writes_one_row(
+    issues_client: TestClient, workspace: str, repositories: Any, statuses: Any
+) -> None:
+    """The edit time is part of the id, so a redelivered edit is a no-op."""
+    sign_in(issues_client, OWNER)
+    issue = seed_issue(issues_client, workspace, title="Discussed")
+    record = _comment_edit(workspace, issue["id"], before=[], after=[ADMIN], edited_at="2026-10-23T12:00:00+00:00")
+
+    handle_record(repositories, record)
+    handle_record(repositories, record)
+
+    assert len(inbox_of(repositories, workspace, ADMIN)) == 1
+
+
+def test_a_comment_edit_mentioning_the_author_notifies_nobody(
+    issues_client: TestClient, workspace: str, repositories: Any, statuses: Any
+) -> None:
+    """Mentioning yourself in an edit is not news to you."""
+    sign_in(issues_client, OWNER)
+    issue = seed_issue(issues_client, workspace, title="Discussed")
+
+    handle_record(
+        repositories,
+        _comment_edit(workspace, issue["id"], before=[], after=[OWNER], edited_at="2026-10-23T12:00:00+00:00"),
+    )
+
+    assert inbox_of(repositories, workspace, OWNER) == []
 
 
 def test_a_record_from_an_unexpected_table_is_ignored(repositories: Any, workspace: str) -> None:

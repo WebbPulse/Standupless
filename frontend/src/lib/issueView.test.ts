@@ -16,6 +16,7 @@ import {
   filterValuesFor,
   GROUP_FIELDS,
   groupIssues,
+  manualMoveKeys,
   matchesFilters,
   moveChange,
   narrowFilters,
@@ -205,12 +206,63 @@ describe('view options', () => {
     const hidden: ViewState = {
       ...base,
       showSubIssues: false,
-      showCompleted: false,
+      completed: 'none',
     };
     const params = writeViewState(hidden, base);
 
     expect(params.toString()).toBe('subs=0&done=0');
     expect(sameViewState(parseViewState(params, base), hidden)).toBe(true);
+  });
+
+  it('carries a bounded completed window through the address', () => {
+    const recent: ViewState = { ...base, completed: 'past_month' };
+    const params = writeViewState(recent, base);
+
+    expect(params.toString()).toBe('done=month');
+    expect(parseViewState(params, base).completed).toBe('past_month');
+    expect(
+      parseViewState(new URLSearchParams('done=week'), base).completed
+    ).toBe('past_week');
+    expect(
+      parseViewState(new URLSearchParams('done=1'), {
+        ...base,
+        completed: 'none',
+      }).completed
+    ).toBe('all');
+    expect(
+      parseViewState(new URLSearchParams('done=junk'), base).completed
+    ).toBe(base.completed);
+  });
+
+  it('keeps closed issues inside the window by when they closed', () => {
+    const now = Date.parse('2026-10-21T12:00:00Z');
+    const rows = [
+      issue({ id: 'open' }),
+      issue({
+        id: 'recent',
+        status_id: 'st-done',
+        completed_at: '2026-10-18T00:00:00Z',
+      }),
+      issue({
+        id: 'weeks',
+        status_id: 'st-done',
+        completed_at: '2026-10-01T00:00:00Z',
+      }),
+      issue({
+        id: 'old',
+        status_id: 'st-done',
+        completed_at: '2026-08-01T00:00:00Z',
+      }),
+    ];
+    const ids = (completed: ViewState['completed']) =>
+      shownIssues(rows, { showSubIssues: true, completed }, context, now).map(
+        (row) => row.id
+      );
+
+    expect(ids('all')).toEqual(['open', 'recent', 'weeks', 'old']);
+    expect(ids('past_week')).toEqual(['open', 'recent']);
+    expect(ids('past_month')).toEqual(['open', 'recent', 'weeks']);
+    expect(ids('none')).toEqual(['open']);
   });
 
   it('leaves out sub-issues and closed issues when hidden', () => {
@@ -219,19 +271,19 @@ describe('view options', () => {
       issue({ id: 'child', parent_id: 'open' }),
       issue({ id: 'closed', status_id: 'st-done' }),
     ];
-    const ids = (state: Pick<ViewState, 'showSubIssues' | 'showCompleted'>) =>
+    const ids = (state: Pick<ViewState, 'showSubIssues' | 'completed'>) =>
       shownIssues(rows, state, context).map((row) => row.id);
 
-    expect(ids({ showSubIssues: true, showCompleted: true })).toEqual([
+    expect(ids({ showSubIssues: true, completed: 'all' })).toEqual([
       'open',
       'child',
       'closed',
     ]);
-    expect(ids({ showSubIssues: false, showCompleted: true })).toEqual([
+    expect(ids({ showSubIssues: false, completed: 'all' })).toEqual([
       'open',
       'closed',
     ]);
-    expect(ids({ showSubIssues: true, showCompleted: false })).toEqual([
+    expect(ids({ showSubIssues: true, completed: 'none' })).toEqual([
       'open',
       'child',
     ]);
@@ -317,13 +369,14 @@ describe('saved views', () => {
     const state: ViewState = {
       ...defaultViewState(),
       showSubIssues: false,
-      showCompleted: false,
+      completed: 'none',
     };
     const body = stateToViewBody(state, 'Open work');
 
     expect(body).toMatchObject({
       show_sub_issues: false,
       show_completed: false,
+      completed_window: 'none',
     });
     const view = {
       view_id: 'v-2',
@@ -333,7 +386,7 @@ describe('saved views', () => {
 
     const restored = viewToState(view);
     expect(restored.showSubIssues).toBe(false);
-    expect(restored.showCompleted).toBe(false);
+    expect(restored.completed).toBe('none');
     expect(sameViewState(restored, state)).toBe(true);
   });
 
@@ -350,7 +403,7 @@ describe('saved views', () => {
 
     const restored = viewToState(view);
     expect(restored.showSubIssues).toBe(true);
-    expect(restored.showCompleted).toBe(true);
+    expect(restored.completed).toBe('all');
     expect(restored.showArchived).toBe(false);
   });
 
@@ -666,6 +719,69 @@ describe('moving and ordering', () => {
     expect(key > 'a0' && key < 'a2').toBe(true);
     expect(orderKeyAt(column, 0, 'x') < 'a0').toBe(true);
     expect(orderKeyAt(column, 3, 'x') > 'a4').toBe(true);
+  });
+
+  it('moves a placed issue a step past its neighbour with one key', () => {
+    const rows = [
+      issue({ id: 'a', sort_order: 'a0' }),
+      issue({ id: 'b', sort_order: 'a2' }),
+      issue({ id: 'c', sort_order: 'a4' }),
+    ];
+
+    const up = manualMoveKeys(rows, 'c', -1);
+    expect(up).toHaveLength(1);
+    expect(up?.[0]?.id).toBe('c');
+    const key = up?.[0]?.sort_order ?? '';
+    expect(key > 'a0' && key < 'a2').toBe(true);
+
+    const down = manualMoveKeys(rows, 'a', 1)?.[0]?.sort_order ?? '';
+    expect(down > 'a2' && down < 'a4').toBe(true);
+  });
+
+  it('refuses a move past either end', () => {
+    const rows = [
+      issue({ id: 'a', sort_order: 'a0' }),
+      issue({ id: 'b', sort_order: 'a2' }),
+    ];
+
+    expect(manualMoveKeys(rows, 'a', -1)).toBeNull();
+    expect(manualMoveKeys(rows, 'b', 1)).toBeNull();
+    expect(manualMoveKeys(rows, 'x', 1)).toBeNull();
+  });
+
+  it('places the unplaced rows it passes so the move lands', () => {
+    const rows = [
+      issue({ id: 'a', sort_order: 'a0' }),
+      issue({ id: 'b', sort_order: null }),
+      issue({ id: 'c', sort_order: null }),
+    ];
+
+    const placements = manualMoveKeys(rows, 'c', -1) ?? [];
+    expect(placements.map((each) => each.id)).toEqual(['c', 'b']);
+    const [first = '', second = ''] = placements.map((each) => each.sort_order);
+    expect(first > 'a0').toBe(true);
+    expect(second > first).toBe(true);
+    const sorted = sortIssues(
+      rows.map((row) => {
+        const placed = placements.find((each) => each.id === row.id);
+        return placed === undefined
+          ? row
+          : { ...row, sort_order: placed.sort_order };
+      }),
+      'manual'
+    );
+    expect(sorted.map((row) => row.id)).toEqual(['a', 'c', 'b']);
+  });
+
+  it('writes falling keys when the manual order is reversed', () => {
+    const rows = [
+      issue({ id: 'c', sort_order: 'a4' }),
+      issue({ id: 'b', sort_order: 'a2' }),
+      issue({ id: 'a', sort_order: 'a0' }),
+    ];
+
+    const key = manualMoveKeys(rows, 'a', -1, true)?.[0]?.sort_order ?? '';
+    expect(key > 'a2' && key < 'a4').toBe(true);
   });
 });
 

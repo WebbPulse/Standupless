@@ -182,7 +182,7 @@ def _listing_of(repositories: Repositories, link: ShareLinkView) -> tuple[dict[s
         raise share_not_found()
 
     view = repositories.views.get(link.workspace_id, _view_key_of(link))
-    if view is None or view.team_id != link.team_id:
+    if view is None or view.team_id != link.team_id or view.lists_projects:
         raise share_not_found()
     return _pinned(view.filter, link.team_id), view.ordering or view.sort or DEFAULT_SORT
 

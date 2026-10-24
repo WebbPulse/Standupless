@@ -21,9 +21,13 @@ import type {
   InboxReadWrite,
   InboxSnoozeWrite,
   InboxUnreadWrite,
+  IssueReminderListRead,
+  IssueReminderRead,
   IssueListRead,
   NotificationListRead,
   NotificationRead,
+  ProjectsDisplayPreference,
+  ProjectStatus,
   SavedViewCreate,
   SavedViewRead,
   SavedViewUpdate,
@@ -41,6 +45,9 @@ import type {
 /** How a saved view is displayed. `kind` stays fixed; this may change. */
 export type ViewLayout = 'list' | 'board';
 
+/** How far back a view reaches for issues in a completed or canceled status. */
+export type CompletedWindow = 'all' | 'past_week' | 'past_month' | 'none';
+
 /** The issue properties a view may show, in the vocabulary the server checks. */
 export type ViewVisibleProperty =
   | 'id'
@@ -56,6 +63,8 @@ export type ViewVisibleProperty =
   | 'parent'
   | 'sub_issues'
   | 'pull_requests'
+  | 'milestone'
+  | 'links'
   | 'created_at'
   | 'updated_at';
 
@@ -94,8 +103,27 @@ export interface ViewFilterNegations {
   estimate_not?: string | string[];
 }
 
+/**
+ * The keys a view of projects stores: the team narrowed to, the project
+ * statuses, the lead (a user id or `none`), and whether a parent team rolls up
+ * its sub-teams' projects, which an absent key reads as doing.
+ */
+export interface ProjectViewFilter {
+  team_id?: string;
+  status?: ProjectStatus | ProjectStatus[];
+  lead_id?: string | string[];
+  sub_teams?: 'true' | 'false';
+}
+
 /** A stored filter with the negation keys, every key the issue list takes. */
 export type SavedViewFilter = ViewFilter & ViewFilterNegations;
+
+/** What a saved view lists. A view saved before projects could be saved reads as issues. */
+export type ViewEntity = 'issues' | 'projects';
+
+/** True when the view lists projects rather than issues. */
+export const listsProjects = (view: { entity?: ViewEntity }): boolean =>
+  view.entity === 'projects';
 
 /**
  * A saved view's display settings. `sub_group_by` needs a distinct `group_by`,
@@ -113,6 +141,12 @@ export interface SavedViewDisplay {
   layout: ViewLayout;
   show_sub_issues: boolean;
   show_completed: boolean;
+  /**
+   * How far back the view reaches for closed issues. It wins over
+   * `show_completed`, which stays in step with it; an older server leaves it
+   * out and the switch decides.
+   */
+  completed_window?: CompletedWindow;
   show_archived?: boolean;
 }
 
@@ -129,6 +163,10 @@ export interface SavedViewDisplayRead extends SavedViewRead, SavedViewDisplay {
   description?: string | null;
   /** Whether the caller starred this view; a star is theirs alone. */
   favorite?: boolean;
+  /** What the view lists; an older server leaves it out, which reads as issues. */
+  entity?: ViewEntity;
+  /** A view of projects' arrangement, null on a view of issues. */
+  projects_display?: ProjectsDisplayPreference | null;
 }
 
 /** The fixed palette a view's icon may take. */
@@ -172,12 +210,17 @@ export interface SavedViewDisplayCreate extends Omit<
   layout?: ViewLayout | null;
   show_sub_issues?: boolean;
   show_completed?: boolean;
+  completed_window?: CompletedWindow;
   show_archived?: boolean;
   icon?: string | null;
   color?: ViewColor | null;
   description?: string | null;
   /** True with no team to share the view with the whole workspace. */
   shared?: boolean;
+  /** What the view lists, issues when left out. */
+  entity?: ViewEntity;
+  /** A view of projects' arrangement, refused on a view of issues. */
+  projects_display?: ProjectsDisplayPreference;
 }
 
 /** The editable fields on a saved view, including its display settings. */
@@ -194,12 +237,15 @@ export interface SavedViewDisplayUpdate extends Omit<
   layout?: ViewLayout | null;
   show_sub_issues?: boolean;
   show_completed?: boolean;
+  completed_window?: CompletedWindow;
   show_archived?: boolean;
   icon?: string | null;
   color?: ViewColor | null;
   description?: string | null;
   /** Moves a view without a team between its owner and the whole workspace. */
   shared?: boolean;
+  /** A view of projects' new arrangement, merged onto the stored one. */
+  projects_display?: Partial<ProjectsDisplayPreference>;
 }
 
 const SCALAR_FILTER_KEYS = new Set([
@@ -311,6 +357,14 @@ export const inboxUnreadPath = (workspaceId: string): string =>
 export const inboxSnoozePath = (workspaceId: string): string =>
   `${inboxPath(workspaceId)}/snooze`;
 
+/** The route the caller's issue reminders are listed on. */
+export const remindersPath = (workspaceId: string): string =>
+  `${inboxPath(workspaceId)}/reminders`;
+
+/** The route the caller's reminder on one issue is set and cancelled through. */
+export const reminderPath = (workspaceId: string, issueId: string): string =>
+  `${remindersPath(workspaceId)}/${encodeURIComponent(issueId)}`;
+
 /** The route one notification is deleted through. */
 export const notificationPath = (
   workspaceId: string,
@@ -378,6 +432,7 @@ export const listBoardColumn = async (
 export interface ViewListQuery {
   scope?: ViewListScope;
   team_id?: string;
+  entity?: ViewEntity;
 }
 
 /**
@@ -528,12 +583,13 @@ export const searchAll = async (
 
 /**
  * Open issues in the visible teams whose titles share terms with a draft
- * title, best match first. A title with no searchable word answers nothing.
+ * title, best match first, with `team_id`'s issues ranked ahead of the rest.
+ * A title with no searchable word answers nothing.
  */
 export const similarIssues = async (
   workspaceId: string,
   title: string,
-  query: { limit?: number; exclude_issue_id?: string } = {},
+  query: { limit?: number; exclude_issue_id?: string; team_id?: string } = {},
   signal?: AbortSignal
 ): Promise<SimilarIssueRead[]> => {
   const response = await apiClient.get<SimilarListRead>(
@@ -635,6 +691,48 @@ export const snoozeNotifications = async (
     body
   );
   return response.data?.updated ?? 0;
+};
+
+/**
+ * Lists the caller's pending issue reminders, soonest first, optionally on one
+ * issue alone. A reminder on an issue the caller can no longer see is left out.
+ */
+export const listReminders = async (
+  workspaceId: string,
+  issueId?: string,
+  signal?: AbortSignal
+): Promise<IssueReminderRead[]> => {
+  const response = await apiClient.get<IssueReminderListRead>(
+    remindersPath(workspaceId),
+    listOptions({ issue_id: issueId }, signal)
+  );
+  const reminders = response.data?.reminders;
+  return Array.isArray(reminders) ? reminders : [];
+};
+
+/**
+ * Reminds the caller about one issue at a moment, replacing any reminder they
+ * already set on it. The moment carries its offset, so presets are the
+ * caller's own clock.
+ */
+export const setReminder = async (
+  workspaceId: string,
+  issueId: string,
+  remindAt: string
+): Promise<IssueReminderRead> => {
+  const response = await apiClient.put<IssueReminderRead>(
+    reminderPath(workspaceId, issueId),
+    { remind_at: remindAt }
+  );
+  return response.data;
+};
+
+/** Cancels the caller's pending reminder on one issue. */
+export const cancelReminder = async (
+  workspaceId: string,
+  issueId: string
+): Promise<void> => {
+  await apiClient.delete<void>(reminderPath(workspaceId, issueId));
 };
 
 /** Deletes one notification. */

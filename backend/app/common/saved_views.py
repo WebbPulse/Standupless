@@ -17,10 +17,13 @@ from webbpulse.dynamodb import ConditionFailed
 
 from app.common.api.dependencies.authz import AuthzContext
 from app.common.api.dependencies.repositories import Repositories
+from app.common.api.schemas.projects_display import ProjectsDisplay, stored_projects_display
 from app.common.api.schemas.views import (
     DISPLAY_SWITCHES,
     ViewCreate,
     ViewUpdate,
+    completed_window_of,
+    invalid_project_filter_keys,
     malformed_filter_keys,
     unknown_filter_keys,
 )
@@ -50,14 +53,19 @@ def invalid_filter(unknown: Sequence[str]) -> HTTPException:
 
 
 def readable_views(
-    repositories: Repositories, context: AuthzContext, scope: str, team_id: Optional[str]
+    repositories: Repositories,
+    context: AuthzContext,
+    scope: str,
+    team_id: Optional[str],
+    entity: Optional[str] = None,
 ) -> list[SavedView]:
-    """Saved views the caller may read, narrowed by scope, in name order.
+    """Saved views the caller may read, narrowed by scope and what they list, in name order.
 
     `mine` is the caller's own views, `team` the shared views of one team or of
     every team they can see, `workspace` the views shared with the whole
     workspace, and `all` every one of those. For a guest the teams are only the
     ones they hold a membership in, and workspace views are not theirs to read.
+    `entity` keeps only issue views or only project views when set.
     """
     rows: list[SavedView] = []
 
@@ -78,6 +86,9 @@ def readable_views(
 
     if scope == "mine" and team_id:
         rows = [row for row in rows if row.team_id == team_id]
+
+    if entity is not None:
+        rows = [row for row in rows if row.lists_projects == (entity == "projects")]
 
     return sorted(rows, key=lambda row: (row.name.lower(), row.view_id))
 
@@ -117,11 +128,20 @@ def require_view_writer(repositories: Repositories, context: AuthzContext, view:
     raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=FORBIDDEN)
 
 
-def check_filter(value: Optional[dict[str, Any]]) -> None:
-    """Refuse a filter the issue list could not run, naming the offending keys."""
-    bad = sorted(set(unknown_filter_keys(value)) | set(malformed_filter_keys(value)))
+def check_filter(value: Optional[dict[str, Any]], entity: str = "issues") -> None:
+    """Refuse a filter the issue list, or for a project view the projects page, could not run, naming the keys."""
+    if entity == "projects":
+        bad = invalid_project_filter_keys(value)
+    else:
+        bad = sorted(set(unknown_filter_keys(value)) | set(malformed_filter_keys(value)))
     if bad:
         raise invalid_filter(bad)
+
+
+def require_issue_view(view: SavedView) -> None:
+    """Refuse a project view where only an issue view's filter can run, as a 422."""
+    if view.lists_projects:
+        raise unprocessable("A project view lists projects, not issues")
 
 
 def check_sub_group(group_by: Optional[str], sub_group_by: Optional[str]) -> None:
@@ -143,16 +163,19 @@ def create_saved_view(repositories: Repositories, context: AuthzContext, payload
 
     A team view needs the caller to be a member of that team, so a reader cannot
     leave a shared view on a team they cannot write in, and a guest cannot share
-    a view with a workspace they only partly see. The owner is the caller.
+    a view with a workspace they only partly see. The owner is the caller. A
+    project view stores its projects arrangement and none of the issue display
+    fields, and an issue view refuses a projects arrangement.
     """
-    check_filter(payload.filter)
+    projects = payload.entity == "projects"
+    check_filter(payload.filter, payload.entity)
+    if projects:
+        return _create(repositories, context, payload, _project_view(context, payload))
+    if payload.projects_display is not None:
+        raise unprocessable("projects_display applies only to a project view")
     check_sub_group(payload.group_by, payload.sub_group_by)
 
-    if payload.team_id:
-        require_team_member(repositories, context, payload.team_id)
-    elif payload.shared and context.is_guest:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=FORBIDDEN)
-
+    window = completed_window_of(payload.completed_window, payload.show_completed)
     view_id = new_view_id()
     view = SavedView(
         workspace_id=context.workspace_id,
@@ -170,13 +193,43 @@ def create_saved_view(repositories: Repositories, context: AuthzContext, payload
         visible_properties=list(payload.visible_properties) if payload.visible_properties is not None else None,
         layout=payload.layout or payload.kind,
         show_sub_issues=payload.show_sub_issues,
-        show_completed=payload.show_completed,
+        show_completed=window != "none",
+        completed_window=window,
         show_archived=payload.show_archived,
         icon=payload.icon,
         color=payload.color,
         description=payload.description,
         owner_id=context.user_id,
     )
+    return _create(repositories, context, payload, view)
+
+
+def _project_view(context: AuthzContext, payload: ViewCreate) -> SavedView:
+    """The row a project view create stores: its filter and arrangement, no issue display fields."""
+    view_id = new_view_id()
+    display = payload.projects_display or ProjectsDisplay()
+    return SavedView(
+        workspace_id=context.workspace_id,
+        view_key=view_key_for(context.user_id, payload.team_id, view_id, shared=payload.shared),
+        view_id=view_id,
+        name=payload.name,
+        entity="projects",
+        team_id=payload.team_id,
+        filter=dict(payload.filter),
+        projects_display=display.model_dump(),
+        icon=payload.icon,
+        color=payload.color,
+        description=payload.description,
+        owner_id=context.user_id,
+    )
+
+
+def _create(repositories: Repositories, context: AuthzContext, payload: ViewCreate, view: SavedView) -> SavedView:
+    """Store a new view once the caller may file it where it names, a team or the workspace."""
+    if payload.team_id:
+        require_team_member(repositories, context, payload.team_id)
+    elif payload.shared and context.is_guest:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=FORBIDDEN)
     try:
         repositories.views.create(view)
     except ConditionFailed as exc:
@@ -191,18 +244,32 @@ def update_saved_view(
 
     Only the fields the payload set are written. The display switches take true or
     false and never null, because a switch that could be neither would leave the
-    client guessing what the view shows.
+    client guessing what the view shows. The filter is judged by what the view
+    lists, and only a project view takes a projects arrangement, its named fields
+    moving and the rest kept.
     """
-    check_filter(payload.filter)
-
     view = load_visible_view(repositories, context, view_id)
+    check_filter(payload.filter, "projects" if view.lists_projects else "issues")
     require_view_writer(repositories, context, view)
 
     changes = payload.model_dump(exclude_unset=True)
     shared = changes.pop("shared", None)
+    if "projects_display" in changes:
+        if not view.lists_projects:
+            raise unprocessable("projects_display applies only to a project view")
+        if changes["projects_display"] is None:
+            raise unprocessable("projects_display must be an arrangement, not null")
+        stored = stored_projects_display(view.projects_display).model_dump()
+        changes["projects_display"] = {**stored, **changes["projects_display"]}
     for name in DISPLAY_SWITCHES:
         if name in changes and changes[name] is None:
+            if name == "completed_window":
+                raise unprocessable("completed_window must be all, past_week, past_month or none")
             raise unprocessable(f"{name} must be true or false")
+    if "completed_window" in changes:
+        changes["show_completed"] = changes["completed_window"] != "none"
+    elif "show_completed" in changes:
+        changes["completed_window"] = "all" if changes["show_completed"] else "none"
     if shared is not None:
         view = rescope_view(repositories, context, view, shared)
     if not changes:

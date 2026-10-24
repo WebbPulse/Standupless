@@ -70,6 +70,7 @@ CONSUMER_OWNED_ATTRIBUTES: tuple[str, ...] = (
     "progress",
     "blocked_by_open_count",
     "blocking_count",
+    "relation_count",
     PULL_REQUEST_SUMMARY,
 )
 """Attributes only a consumer writes, which `replace` never puts back.
@@ -260,6 +261,7 @@ class Issue(BaseModel):
     progress: Progress = Field(default_factory=Progress)
     blocked_by_open_count: int = 0
     blocking_count: int = 0
+    relation_count: int = 0
     pull_request_summary: PullRequestSummary | None = None
     created_by: str
     created_at: datetime = Field(default_factory=utc_now)
@@ -701,6 +703,26 @@ class IssueRepository:
                 update_expression="SET #blocking = :blocking, #changed = :changed",
                 expression_names={"#blocking": "blocking_count", "#changed": CHANGED_AT},
                 expression_values={":blocking": count, ":changed": changed_stamp()},
+                condition=Attr("issue_id").exists(),
+                return_values="ALL_NEW",
+            )
+        except ConditionFailed:
+            return None
+        return as_issue(item) if item is not None else None
+
+    def set_relation_count(self, workspace_id: str, issue_id: str, count: int) -> Issue | None:
+        """Write how many links the issue holds in either direction, or `None` when the issue is gone.
+
+        A single-attribute update like `set_blocking_count`, so it never reverts
+        a concurrent patch or moves `updated_at`.
+        """
+        key = {"workspace_id": workspace_id, "issue_id": issue_id}
+        try:
+            item = self._repository.update(
+                key,
+                update_expression="SET #relations = :relations, #changed = :changed",
+                expression_names={"#relations": "relation_count", "#changed": CHANGED_AT},
+                expression_values={":relations": count, ":changed": changed_stamp()},
                 condition=Attr("issue_id").exists(),
                 return_values="ALL_NEW",
             )

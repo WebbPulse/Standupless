@@ -560,6 +560,13 @@ export const describeActivity = (
         'unsubscribed',
         personEntity(entry.from, context),
       ]);
+    case 'mentioned':
+      return describe('relation', [
+        entry.field === 'comment'
+          ? 'mentioned this in a comment on'
+          : 'mentioned this in',
+        ...issueReference(entry.to, context),
+      ]);
     default:
       return describe('other', [humanizeName(String(entry.kind))]);
   }

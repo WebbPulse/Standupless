@@ -5,6 +5,8 @@ do, so a guest is refused as it is over HTTP, the rollup counts only the project
 the credential can see, and adding a project needs the same write right on one of
 its teams the project form does. Initiatives are named by id or by a name unique
 in the workspace, and projects by id or by a name unique among the visible ones.
+An initiative may sit under a parent as a sub-initiative, and its rollup and
+progress take in every project below it.
 """
 
 from __future__ import annotations
@@ -21,6 +23,7 @@ from app.common.api.schemas.planning import (
     InitiativeUpdateRead,
     ProjectHealthField,
 )
+from app.common.initiative_progress import initiative_progress
 from app.common.initiative_writes import (
     add_project_to_initiative,
     create_initiative,
@@ -75,8 +78,14 @@ def _initiative_json(initiative: InitiativeRead) -> dict[str, Any]:
         "status": initiative.status,
         "health": initiative.health,
         "target_date": initiative.target_date,
+        "parent_initiative_id": initiative.parent_initiative_id,
+        "ancestors": [ancestor.model_dump() for ancestor in initiative.ancestors],
+        "sub_initiative_ids": initiative.sub_initiative_ids,
         "project_ids": initiative.project_ids,
+        "rollup_project_ids": initiative.rollup_project_ids,
         "project_count": initiative.project_count,
+        "measure": initiative.measure,
+        "progress": initiative.progress.model_dump(),
         "counts": initiative.counts.model_dump(),
         "status_counts": initiative.status_counts,
         "points": initiative.points.model_dump(),
@@ -125,6 +134,10 @@ def _payload(call: ToolCall, *, nullable_fields: bool) -> dict[str, Any]:
             payload[name] = None
     if call.present("owner_id"):
         payload["owner_id"] = resolve_user(call, call.arguments["owner_id"])
+    if call.optional("parent_initiative_id") is not None:
+        payload["parent_initiative_id"] = initiative_id_ref(call, call.arguments["parent_initiative_id"])
+    elif nullable_fields and call.present("parent_initiative_id"):
+        payload["parent_initiative_id"] = None
     if call.optional("update_interval_days") is not None:
         payload["update_interval_days"] = _interval(call.arguments["update_interval_days"])
     elif nullable_fields and call.present("update_interval_days"):
@@ -149,6 +162,12 @@ def _get_initiative(call: ToolCall) -> Any:
     """One initiative with its rollup."""
     initiative_id = initiative_id_ref(call, call.require("initiative_id"))
     return _initiative_json(get_initiative(call.repositories, call.context, initiative_id))
+
+
+def _get_progress(call: ToolCall) -> Any:
+    """An initiative's scope, started and completed work per day across its sub-initiatives."""
+    initiative_id = initiative_id_ref(call, call.require("initiative_id"))
+    return initiative_progress(call.repositories, call.context, initiative_id).model_dump()
 
 
 def _create_initiative(call: ToolCall) -> Any:
@@ -242,6 +261,9 @@ INITIATIVE_PROPERTIES: dict[str, Any] = {
     "status": enum(INITIATIVE_STATUSES, "The initiative status"),
     "health": nullable_enum(HEALTHS, "The initiative health, or null for none"),
     "target_date": nullable("Target date, YYYY-MM-DD"),
+    "parent_initiative_id": nullable(
+        "The parent initiative to nest this one under, by id or name; null makes it top level"
+    ),
     "update_interval_days": {
         "type": ["integer", "null"],
         "enum": [*INTERVAL_OPTIONS, None],
@@ -260,8 +282,9 @@ INITIATIVE_TOOLS: tuple[Tool, ...] = (
     Tool(
         name="list_initiatives",
         description=(
-            "One page of the workspace's initiatives by target date, each rolled up from the projects in it: "
-            "project count, issue counts, points and how many projects stand at each health."
+            "One page of the workspace's initiatives by target date, each rolled up from the projects in it and "
+            "in its sub-initiatives: project count, issue counts, points and how many projects stand at each "
+            "health. Each names its parent and direct sub-initiatives."
         ),
         scopes=("projects:read",),
         schema=object_schema(
@@ -271,14 +294,30 @@ INITIATIVE_TOOLS: tuple[Tool, ...] = (
     ),
     Tool(
         name="get_initiative",
-        description="One initiative with its owner, status, health, target date, projects and rollup.",
+        description=(
+            "One initiative with its owner, status, health, target date, parent chain, sub-initiatives, "
+            "projects and a rollup across every sub-initiative below it."
+        ),
         scopes=("projects:read",),
         schema=object_schema({"initiative_id": string(INITIATIVE_HELP)}, required=("initiative_id",)),
         handler=_get_initiative,
     ),
     Tool(
+        name="get_initiative_progress",
+        description=(
+            "An initiative's progress over time: scope, started and completed work per day, in issues or points, "
+            "across its projects and every sub-initiative's, from the issues the credential can see."
+        ),
+        scopes=("projects:read",),
+        schema=object_schema({"initiative_id": string(INITIATIVE_HELP)}, required=("initiative_id",)),
+        handler=_get_progress,
+    ),
+    Tool(
         name="create_initiative",
-        description="Create an initiative that groups projects across teams. The status defaults to planned.",
+        description=(
+            "Create an initiative that groups projects across teams, optionally as a sub-initiative of a parent. "
+            "The status defaults to planned."
+        ),
         scopes=("projects:write",),
         schema=object_schema(INITIATIVE_PROPERTIES, required=("name",)),
         handler=_create_initiative,
@@ -287,7 +326,8 @@ INITIATIVE_TOOLS: tuple[Tool, ...] = (
         name="update_initiative",
         description=(
             "Change an initiative's fields. Only the fields named are written; null clears the description, "
-            "owner, health and target date, and returns the update cadence to the workspace default."
+            "owner, health, target date and parent, and returns the update cadence to the workspace default. "
+            "A parent may not be the initiative itself or one below it, and nesting stops at five levels."
         ),
         scopes=("projects:write",),
         schema=object_schema(
@@ -298,8 +338,8 @@ INITIATIVE_TOOLS: tuple[Tool, ...] = (
     Tool(
         name="delete_initiative",
         description=(
-            "Permanently delete an initiative and its updates. Its projects stay but leave the initiative. "
-            "Needs its creator, its owner or a workspace admin."
+            "Permanently delete an initiative and its updates. Its projects stay but leave the initiative, and "
+            "its sub-initiatives move up to its parent. Needs its creator, its owner or a workspace admin."
         ),
         scopes=("projects:write",),
         schema=object_schema({"initiative_id": string(INITIATIVE_HELP)}, required=("initiative_id",)),

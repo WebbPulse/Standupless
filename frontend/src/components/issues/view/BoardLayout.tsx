@@ -31,10 +31,12 @@ import {
   type IssueGroup,
   type ViewState,
 } from '../../../lib/issueView';
+import { parentRefOf } from '../../../lib/issueTree';
 import { issuePath } from '../../../lib/paths';
 import { showToast } from '../../../lib/toast';
 import { IconButton } from '../../ui/button';
 import { Menu, MenuItem } from '../../ui/menu';
+import { TruncatedText, useTruncationTooltip } from '../../ui/truncated-text';
 import { RelationMarkers } from '../BlockedMarker';
 import {
   AssigneeCell,
@@ -44,6 +46,7 @@ import {
 } from './IssueProperties';
 import { useIssueViewEnv } from './IssueViewContext';
 import { ArchivedMarker, GroupGlyph } from './ListRows';
+import { CardParentRef } from './SubIssueCues';
 import { isNoOpDrop } from '../../../lib/boardDrop';
 import { useIssuePrefetch } from '../../../hooks/useIssuePrefetch';
 
@@ -119,6 +122,8 @@ const BoardCard: React.FC<BoardCardProps> = ({
   const isSelected = env.selected.has(issue.id);
   const isPeeked = env.peekedKey === issue.key;
   const prefetch = useIssuePrefetch(issue.key, isFocused);
+  const parent = env.parentOf?.(issue) ?? parentRefOf(issue);
+  const titleTip = useTruncationTooltip<HTMLAnchorElement>({ chain: prefetch });
   return (
     <li
       data-row-id={issue.id}
@@ -155,13 +160,18 @@ const BoardCard: React.FC<BoardCardProps> = ({
         {!shows('id') && <span className="flex-1" />}
         {shows('assignee') && <AssigneeCell issue={issue} />}
       </div>
+      {parent !== undefined && (
+        <CardParentRef slug={env.slug} parent={parent} />
+      )}
       <div className="flex items-start gap-1.5">
         {shows('status') && env.state.groupBy !== 'status' && (
           <StatusCell issue={issue} className="-ml-1" />
         )}
         <Link
+          ref={titleTip.ref}
           to={issuePath(env.slug, issue.key)}
           {...prefetch}
+          {...titleTip.handlers}
           draggable={false}
           data-hover="parent"
           onClick={(event) => {
@@ -176,6 +186,7 @@ const BoardCard: React.FC<BoardCardProps> = ({
         >
           {issue.title}
         </Link>
+        {titleTip.tip}
         <RelationMarkers issue={issue} className="mt-0.5" />
         {(issue.archived_at ?? null) !== null && (
           <ArchivedMarker className="mt-0.5" />
@@ -443,9 +454,9 @@ export const BoardLayout: React.FC<BoardLayoutProps> = ({
                   )}
                 >
                   <GroupGlyph group={column} />
-                  <span className="truncate text-sm font-medium text-text">
+                  <TruncatedText className="text-sm font-medium text-text">
                     {column.label}
-                  </span>
+                  </TruncatedText>
                   <span className="text-xs text-text-faint tabular-nums">
                     {column.issues.length}
                   </span>
@@ -558,7 +569,9 @@ export const BoardLayout: React.FC<BoardLayoutProps> = ({
               className="flex h-8 items-center gap-2 rounded-md px-2 text-left text-sm text-text-muted pointer-coarse:h-11 hover:bg-raised hover:text-text focus-visible:outline-2 focus-visible:outline-accent"
             >
               <GroupGlyph group={column} />
-              <span className="min-w-0 flex-1 truncate">{column.label}</span>
+              <TruncatedText className="min-w-0 flex-1">
+                {column.label}
+              </TruncatedText>
               <span className="text-xs text-text-faint tabular-nums">
                 {column.issues.length}
               </span>

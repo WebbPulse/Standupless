@@ -80,6 +80,10 @@ const KIND_COPY: Record<NotificationKind, { title: string; detail: string }> = {
     title: 'Overdue issues',
     detail: 'An issue assigned to you is past its due date.',
   },
+  reminder: {
+    title: 'Issue reminders',
+    detail: 'A reminder you set on an issue comes due.',
+  },
   standup_digest: {
     title: 'Standup digests',
     detail: "Your team's scheduled standup digest is ready.",

@@ -20,6 +20,12 @@ const createComment = vi.fn<(body: unknown) => Promise<CommentRead>>();
 const uploadAttachment = vi.fn<(file: File) => Promise<AttachmentRead>>();
 const deleteAttachment = vi.fn<(id: string) => Promise<void>>();
 
+vi.mock('../../api/drafts', () => ({
+  listIssueDrafts: () => Promise.resolve([]),
+  saveDraft: () => Promise.resolve({}),
+  deleteDraft: () => Promise.resolve(),
+}));
+
 vi.mock('../../api/discussion', () => ({
   createComment: (_w: string, _i: string, body: unknown) => createComment(body),
   uploadAttachment: (_w: string, _i: string, file: File) =>

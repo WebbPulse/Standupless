@@ -14,6 +14,7 @@ import { clearPolledQueryCache } from '@webbpulse/api-client/react';
 import { useNavigate } from 'react-router-dom';
 import { getIdentityClient } from '../api/identityClient';
 import { clearIssueContextCache } from '../lib/issueContextCache';
+import { preferencesOf, setPreferences } from '../lib/preferences';
 import { isAppShell, SHELL_SIGN_IN_PATH } from '../lib/shell';
 import { clearSignedIn, useSignedInHint } from '../lib/signedInHint';
 import { browserTimezone, setViewerTimezone } from '../lib/viewerTimezone';
@@ -56,6 +57,31 @@ const useTimezoneCapture = (
       })
       .catch(() => undefined);
   }, [signedIn, stored, user, setUser]);
+};
+
+/**
+ * Copies the profile's interface preferences into the shared store whenever
+ * they change, so a name, a date shortcut or the text size follows the account
+ * rather than the browser. A signed out page keeps what was last in force.
+ */
+const usePreferenceSync = (user: UserRead | null): void => {
+  const homeView = user?.home_view;
+  const weekStart = user?.week_start;
+  const nameDisplay = user?.name_display;
+  const fontSize = user?.font_size;
+  const signedIn = user !== null;
+
+  useEffect(() => {
+    if (!signedIn) return;
+    setPreferences(
+      preferencesOf({
+        home_view: homeView,
+        week_start: weekStart,
+        name_display: nameDisplay,
+        font_size: fontSize,
+      })
+    );
+  }, [signedIn, homeView, weekStart, nameDisplay, fontSize]);
 };
 
 /**
@@ -103,6 +129,7 @@ const AuthExtrasProvider: React.FC<{ children: ReactNode }> = ({
   useSignedInHint(isAuthenticated, isLoading);
   useSignedOutCacheClear(isAuthenticated, isLoading);
   useTimezoneCapture(isAuthenticated ? user : null, setUser);
+  usePreferenceSync(isAuthenticated ? user : null);
 
   const login = useCallback(
     (userData: UserRead) => {

@@ -3,22 +3,42 @@
  * a summary, and a footer of property chips for status, health, priority,
  * lead, members, teams and dates, the way a new issue is written. Cmd or Ctrl
  * and Enter creates it from anywhere in the dialog.
+ *
+ * A project template prefills the fields and adds its milestones and issues
+ * once the project exists. The first team's default is applied as the dialog
+ * opens, and the header chip switches templates or goes back to none. The
+ * fields stay editable; one still holding what the template wrote is left out
+ * of the create, so the server fills it, dates counted from its own today.
  */
 
 import React, { useState } from 'react';
 import { LuCalendar, LuCalendarCheck } from 'react-icons/lu';
+import { useQueryAuth } from '@webbpulse/auth/react';
+import { usePolledQuery } from '@webbpulse/api-client/react';
 import { createProject } from '../../api/planning';
+import { listTeamTemplates } from '../../api/templates';
 import { usePlanningTeamLists } from '../../hooks/usePlanningTeamLists';
 import { errorMessage } from '../../lib/errors';
+import { showToast } from '../../lib/toast';
+import {
+  projectTemplateHint,
+  projectTemplatePrefill,
+  type ProjectTemplatePrefill,
+} from '../../lib/projectTemplates';
 import type {
   IssuePriority,
+  ProjectCreate,
   ProjectHealth,
   ProjectIconName,
   ProjectRead,
   ProjectStatus,
+  SkippedTemplateIssueRead,
   TeamRead,
+  TemplateListRead,
+  TemplateRead,
 } from '../../types/Api';
 import { DatePicker, PriorityPicker } from '../issues/PropertyPickers';
+import { TemplatePicker } from '../issues/TemplatePicker';
 import { ErrorAlert } from '../ui/alert';
 import Button from '../ui/button';
 import Dialog from '../ui/dialog';
@@ -43,6 +63,66 @@ export interface CreateProjectDialogProps {
   onCreated: (project: ProjectRead) => void;
 }
 
+/** How often the dialog re-reads the teams' project templates while open. */
+const TEMPLATES_POLL_MS = 60000;
+
+/** The template the form was filled from and what it wrote. */
+interface AppliedTemplate {
+  id: string;
+  fill: ProjectTemplatePrefill;
+}
+
+/**
+ * The project templates the chosen teams offer, each once in the first
+ * team's order, and the first team's default.
+ */
+const listProjectTemplates = async (
+  workspaceId: string,
+  teamIds: readonly string[],
+  signal?: AbortSignal
+): Promise<TemplateListRead> => {
+  const lists = await Promise.all(
+    teamIds.map((teamId) =>
+      listTeamTemplates(workspaceId, teamId, signal, 'project')
+    )
+  );
+  const seen = new Set<string>();
+  const templates: TemplateRead[] = [];
+  for (const list of lists) {
+    for (const template of list.templates) {
+      if (seen.has(template.id)) continue;
+      seen.add(template.id);
+      templates.push(template);
+    }
+  }
+  return {
+    templates,
+    default_template_id: lists[0]?.default_template_id ?? null,
+  };
+};
+
+/** Whether two id lists hold the same ids in the same order. */
+const sameIds = (left: readonly string[], right: readonly string[]): boolean =>
+  left.length === right.length &&
+  left.every((value, index) => value === right[index]);
+
+/**
+ * Raises a notice naming the template issues the server left out of a new
+ * project, so a skipped issue is never lost without a word.
+ */
+const announceSkipped = (
+  skipped: readonly SkippedTemplateIssueRead[]
+): void => {
+  const first = skipped[0];
+  if (first === undefined) return;
+  const titles = skipped.map((row) => row.title).join(', ');
+  const message =
+    skipped.length === 1
+      ? `Left out template issue "${first.title}": ${first.reason}`
+      : `Left out ${String(skipped.length)} template issues: ${titles}`;
+  showToast(message, 'error');
+};
+
 /** The dialog that creates a project. */
 export const CreateProjectDialog: React.FC<CreateProjectDialogProps> = ({
   workspaceId,
@@ -66,7 +146,53 @@ export const CreateProjectDialog: React.FC<CreateProjectDialogProps> = ({
   const [targetDate, setTargetDate] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<unknown>(null);
+  const [applied, setApplied] = useState<AppliedTemplate | null>(null);
+  const [pendingDefault, setPendingDefault] = useState(true);
   const { people } = usePlanningTeamLists(workspaceId, teamIds);
+  const auth = useQueryAuth();
+
+  const { data: templateList } = usePolledQuery(
+    ({ signal }) => listProjectTemplates(workspaceId, teamIds, signal),
+    {
+      intervalMs: TEMPLATES_POLL_MS,
+      queryKey: ['project-templates', 'picker', ...teamIds],
+      auth,
+      enabled: teamIds.length > 0,
+    }
+  );
+  const templates = templateList?.templates ?? [];
+  const template =
+    applied === null
+      ? undefined
+      : templates.find((item) => item.id === applied.id);
+  const hint =
+    template === undefined ? null : projectTemplateHint(template.project);
+
+  const applyTemplate = (next: TemplateRead | null): void => {
+    const fill: ProjectTemplatePrefill =
+      next === null ? {} : projectTemplatePrefill(next);
+    const written = applied?.fill.description ?? '';
+    if (summary.trim() === '' || summary === written) {
+      setSummary(fill.description ?? '');
+    }
+    setStatus(fill.status ?? initialStatus);
+    setPriority(fill.priority ?? 'none');
+    setLeadId(fill.leadId ?? null);
+    setMemberIds(fill.memberIds ?? []);
+    setIcon(fill.icon ?? null);
+    setColor(fill.color ?? null);
+    setStartDate(fill.startDate ?? null);
+    setTargetDate(fill.targetDate ?? null);
+    setApplied(next === null ? null : { id: next.id, fill });
+  };
+
+  if (pendingDefault && templateList !== null) {
+    setPendingDefault(false);
+    const preset = templateList.templates.find(
+      (item) => item.id === templateList.default_template_id
+    );
+    if (preset !== undefined) applyTemplate(preset);
+  }
 
   const dateError =
     startDate !== null && targetDate !== null && targetDate < startDate
@@ -79,22 +205,30 @@ export const CreateProjectDialog: React.FC<CreateProjectDialogProps> = ({
     if (!canCreate || isSaving) return;
     setIsSaving(true);
     setError(null);
-    createProject(workspaceId, {
+    const body: ProjectCreate = {
       team_ids: teamIds,
       name: name.trim(),
-      description: summary.trim() === '' ? null : summary.trim(),
-      lead_id: leadId,
-      start_date: startDate,
-      target_date: targetDate,
-      status,
-      icon,
-      color,
       health,
-      priority,
-      member_ids: memberIds,
-    }).then(
+    };
+    const fill: ProjectTemplatePrefill =
+      template === undefined || applied === null ? {} : applied.fill;
+    const description = summary.trim() === '' ? null : summary.trim();
+    if (fill.description !== description) body.description = description;
+    if (fill.leadId !== leadId) body.lead_id = leadId;
+    if (fill.startDate !== startDate) body.start_date = startDate;
+    if (fill.targetDate !== targetDate) body.target_date = targetDate;
+    if (fill.status !== status) body.status = status;
+    if (fill.icon !== icon) body.icon = icon;
+    if (fill.color !== color) body.color = color;
+    if (fill.priority !== priority) body.priority = priority;
+    if (fill.memberIds === undefined || !sameIds(fill.memberIds, memberIds)) {
+      body.member_ids = memberIds;
+    }
+    if (template !== undefined) body.template_id = template.id;
+    createProject(workspaceId, body).then(
       (project) => {
         setIsSaving(false);
+        announceSkipped(project.skipped_template_issues ?? []);
         onCreated(project);
       },
       (failure: unknown) => {
@@ -126,6 +260,15 @@ export const CreateProjectDialog: React.FC<CreateProjectDialogProps> = ({
             }}
           />
           <p className="text-xs font-medium text-text-muted">New project</p>
+          {templates.length > 0 && (
+            <span className="ml-auto flex items-center gap-1">
+              <TemplatePicker
+                templates={templates}
+                value={template?.id ?? null}
+                onChange={applyTemplate}
+              />
+            </span>
+          )}
         </div>
         {error !== null && (
           <ErrorAlert
@@ -199,6 +342,7 @@ export const CreateProjectDialog: React.FC<CreateProjectDialogProps> = ({
             {...(startDate === null ? {} : { min: startDate })}
           />
         </div>
+        {hint !== null && <p className="text-xs text-text-muted">{hint}</p>}
         <ErrorAlert message={dateError} />
         <div className="flex items-center justify-end gap-2 border-t border-line pt-3">
           <Button variant="secondary" size="sm" onClick={onClose}>

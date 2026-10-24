@@ -25,7 +25,47 @@ export interface UserRead {
   timezone?: string | null;
   /** How often the Pulse email digest goes out, or `off`. */
   pulse_digest?: PulseDigest;
+  /** The page a workspace opens on. */
+  home_view?: HomeView;
+  /** The day the person's week starts on. */
+  week_start?: WeekStart;
+  /** Whether teammates read by username or full name. */
+  name_display?: NameDisplay;
+  /** The interface text size. */
+  font_size?: FontSize;
+  /** How the projects page is laid out, grouped, ordered and windowed. */
+  projects_display?: ProjectsDisplayPreference;
 }
+
+/** The projects page arrangement an account saves, every field filled. */
+export interface ProjectsDisplayPreference {
+  layout: 'list' | 'board' | 'timeline';
+  group:
+    'status' | 'health' | 'priority' | 'initiative' | 'lead' | 'team' | 'none';
+  order:
+    | 'target'
+    | 'start'
+    | 'name'
+    | 'priority'
+    | 'progress'
+    | 'created'
+    | 'updated';
+  closed: 'all' | 'week' | 'month' | 'quarter' | 'none';
+  zoom: 'week' | 'month' | 'quarter' | 'year';
+}
+
+/** The page a workspace opens on when the person enters it. */
+export type HomeView =
+  'home' | 'inbox' | 'my_issues' | 'projects' | 'pulse' | 'views';
+
+/** The day a person's week starts on. */
+export type WeekStart = 'monday' | 'sunday' | 'saturday';
+
+/** Whether people read by their username or their full name. */
+export type NameDisplay = 'username' | 'full_name';
+
+/** The interface text size a person picked. */
+export type FontSize = 'small' | 'default' | 'large';
 
 /** How often a person's Pulse email digest goes out. */
 export type PulseDigest = 'off' | 'daily' | 'weekly';
@@ -73,6 +113,12 @@ export interface UserPreferencesUpdate {
   >;
   timezone?: string;
   pulse_digest?: PulseDigest;
+  home_view?: HomeView;
+  week_start?: WeekStart;
+  name_display?: NameDisplay;
+  font_size?: FontSize;
+  /** Replaces the saved projects page arrangement whole. */
+  projects_display?: ProjectsDisplayPreference;
 }
 
 /** A role held at the workspace level. */
@@ -516,6 +562,8 @@ export interface TeamMemberRead {
   added_at: string;
   /** The URL of the person's avatar image, or null when they use their initials. */
   avatar_url?: string | null;
+  /** The person's written name, or an empty string when none is set. */
+  full_name?: string;
 }
 
 /** The body the team members route answers with. */
@@ -682,7 +730,8 @@ export type ActivityKind =
   | 'archived'
   | 'unarchived'
   | 'subscriber_added'
-  | 'subscriber_removed';
+  | 'subscriber_removed'
+  | 'mentioned';
 
 /**
  * Direct sub-issue counts, maintained by the rollup consumer rather than the
@@ -736,6 +785,12 @@ export interface IssueRead {
   start_date: string | null;
   due_date: string | null;
   parent_id: string | null;
+  /**
+   * The parent's key and title, which the list route fills on a sub-issue so a
+   * row shown apart from its parent can still name it. Absent elsewhere.
+   */
+  parent_key?: string | null;
+  parent_title?: string | null;
   cycle_id: string | null;
   project_id: string | null;
   /**
@@ -798,6 +853,11 @@ export interface IssueRead {
    * or cancelled. Optional so a row read before it was stamped reads as none.
    */
   completed_at?: string | null;
+  /**
+   * How many relations the issue carries, every kind counted. Optional so a
+   * row read before it was counted reads as none.
+   */
+  relation_count?: number;
   created_by: string;
   created_at: string;
   updated_at: string;
@@ -843,6 +903,71 @@ export interface IssueCreate {
   project_milestone_id?: string | null;
 }
 
+/** What a template fills: a new issue, or a new project. */
+export type TemplateKind = 'issue' | 'project';
+
+/** One milestone a project template adds, its target counted from the creation day. */
+export interface ProjectTemplateMilestone {
+  key?: string | null;
+  name: string;
+  description?: string | null;
+  target_offset_days?: number | null;
+}
+
+/**
+ * One issue a project template adds. `parent_key` names an issue listed
+ * before it, making this a sub-issue, and `milestone_key` one of the
+ * template's milestones.
+ */
+export interface ProjectTemplateIssue {
+  key?: string | null;
+  title: string;
+  body?: string | null;
+  status_id?: string | null;
+  priority?: IssuePriority | null;
+  assignee_id?: string | null;
+  label_ids?: string[];
+  estimate?: string | null;
+  milestone_key?: string | null;
+  parent_key?: string | null;
+}
+
+/**
+ * What a project template fills, every field optional. The offsets are days
+ * from the creation day to the start and target dates. Milestones and issues
+ * sent without a key are given one, `m1` and `i1` onwards.
+ */
+export interface ProjectTemplateFields {
+  description?: string | null;
+  lead_id?: string | null;
+  member_ids?: string[];
+  status?: ProjectStatus | null;
+  priority?: IssuePriority | null;
+  icon?: ProjectIconName | null;
+  color?: string | null;
+  start_offset_days?: number | null;
+  target_offset_days?: number | null;
+  milestones?: ProjectTemplateMilestone[];
+  issues?: ProjectTemplateIssue[];
+}
+
+/** A saved template milestone, which always has its key. */
+export interface ProjectBlueprintMilestone extends ProjectTemplateMilestone {
+  key: string;
+}
+
+/** A saved template issue, which always has its key. */
+export interface ProjectBlueprintIssue extends ProjectTemplateIssue {
+  key: string;
+}
+
+/** A saved project template's fields, milestones and issues. */
+export interface ProjectBlueprint extends ProjectTemplateFields {
+  member_ids: string[];
+  milestones: ProjectBlueprintMilestone[];
+  issues: ProjectBlueprintIssue[];
+}
+
 /** The issue fields a template fills, every one optional. */
 export interface TemplateFields {
   title?: string | null;
@@ -862,12 +987,17 @@ export interface TemplateFields {
 export interface TemplateCreate extends TemplateFields {
   name: string;
   label_ids?: string[];
+  /** A project template sends `project` and none of the issue fields. */
+  kind?: TemplateKind;
+  project?: ProjectTemplateFields | null;
 }
 
 /** A template patch: only the fields sent change, and null clears one. */
 export interface TemplateUpdate extends TemplateFields {
   name?: string;
   label_ids?: string[] | null;
+  /** Replaces a project template's whole blueprint. */
+  project?: ProjectTemplateFields | null;
 }
 
 /**
@@ -889,6 +1019,10 @@ export interface TemplateRead {
   project_id: string | null;
   project_milestone_id: string | null;
   cycle_id: string | null;
+  /** Absent on an older answer, which is an issue template. */
+  kind?: TemplateKind;
+  /** A project template's blueprint; null on an issue template. */
+  project?: ProjectBlueprint | null;
   position: number;
   created_by: string | null;
   created_at: string;
@@ -906,11 +1040,14 @@ export interface TemplateSettingsRead {
   team_id: string;
   default_template_id: string | null;
   effective_default_template_id: string | null;
+  default_project_template_id?: string | null;
+  effective_default_project_template_id?: string | null;
 }
 
-/** The body that sets or clears a team's default template. */
+/** The body that sets or clears a team's defaults; only the fields sent change. */
 export interface TemplateSettingsUpdate {
-  default_template_id: string | null;
+  default_template_id?: string | null;
+  default_project_template_id?: string | null;
 }
 
 /** How often a recurring issue repeats. */
@@ -1521,6 +1658,7 @@ export type NotificationKind =
   | 'initiative_update_due'
   | 'due_soon'
   | 'overdue'
+  | 'reminder'
   | 'standup_digest'
   | 'sla_at_risk'
   | 'sla_breached'
@@ -1604,6 +1742,29 @@ export interface InboxUnreadWrite {
 export interface InboxSnoozeWrite {
   notification_ids: string[];
   until: string;
+}
+
+/** What setting a reminder takes: the timezone aware moment it comes due. */
+export interface IssueReminderWrite {
+  remind_at: string;
+}
+
+/**
+ * One pending reminder the caller set on an issue. It is the caller's own, so
+ * nobody else sees it, and at `remind_at` it becomes a `reminder` inbox row.
+ */
+export interface IssueReminderRead {
+  issue_id: string;
+  issue_key: string;
+  issue_title: string;
+  team_id: string;
+  remind_at: string;
+  created_at: string;
+}
+
+/** The caller's pending reminders, soonest first. */
+export interface IssueReminderListRead {
+  reminders: IssueReminderRead[];
 }
 
 /** How many rows a mark-read call changed. */
@@ -1997,9 +2158,22 @@ export interface ProjectRead {
   initiative_id?: string | null;
   /** Issues still open in the project, answered by a patch that leaves it completed or canceled. */
   open_issue_count?: number | null;
+  /** When the project last became completed or canceled, null while it is open. */
+  completed_at?: string | null;
+  /** Template issues left out, answered by a create from a project template, empty when none were. */
+  skipped_template_issues?: SkippedTemplateIssueRead[] | null;
   created_by: string;
   created_at: string;
   updated_at: string;
+}
+
+/** One template issue a project created from a template left out, and why. */
+export interface SkippedTemplateIssueRead {
+  /** The issue's key within the template. */
+  key: string;
+  title: string;
+  /** Why the issue rules refused it. */
+  reason: string;
 }
 
 /** What a project close does with the issues still open in it. */
@@ -2030,6 +2204,8 @@ export interface ProjectListRead {
 export interface ProjectCreate {
   team_ids?: string[];
   team_id?: string;
+  /** A project template one of the teams offers, filling the fields left out. */
+  template_id?: string | null;
   name: string;
   description?: string | null;
   lead_id?: string | null;
@@ -2179,9 +2355,16 @@ export interface HealthBreakdownRead {
   none: number;
 }
 
+/** An initiative named by id and name, as a breadcrumb draws it. */
+export interface InitiativeRef {
+  initiative_id: string;
+  name: string;
+}
+
 /**
- * A workspace level initiative grouping projects across teams. The rollup
- * fields count only the projects the caller can see.
+ * A workspace level initiative grouping projects across teams. It may sit
+ * under a parent as a sub-initiative, and the rollup fields take in every
+ * sub-initiative below it, counting only the projects the caller can see.
  */
 export interface InitiativeRead {
   initiative_id: string;
@@ -2192,7 +2375,17 @@ export interface InitiativeRead {
   status: InitiativeStatus;
   health: ProjectHealth | null;
   target_date: string | null;
+  /** The initiative this one sits under, or null at the top level. */
+  parent_initiative_id?: string | null;
+  /** The chain of parents, root first. */
+  ancestors?: InitiativeRef[];
+  /** The initiatives directly below this one. */
+  sub_initiative_ids?: string[];
+  /** The visible projects held directly. */
   project_ids: string[];
+  /** The visible projects of this initiative and every sub-initiative below it. */
+  rollup_project_ids?: string[];
+  /** How many projects the rollup covers. */
   project_count: number;
   counts: RollupCounts;
   points: RollupCounts;
@@ -2211,6 +2404,26 @@ export interface InitiativeRead {
   created_by: string;
   created_at: string;
   updated_at: string;
+}
+
+/** One day of an initiative's progress graph, in the series' measure. */
+export interface InitiativeProgressPoint {
+  date: string;
+  scope: number;
+  started: number;
+  completed: number;
+}
+
+/**
+ * An initiative's scope, started and completed work per day across its
+ * subtree. `days` runs through today and `end_date` is where the axis ends.
+ */
+export interface InitiativeProgressRead {
+  initiative_id: string;
+  measure: 'points' | 'issues';
+  start_date: string;
+  end_date: string;
+  days: InitiativeProgressPoint[];
 }
 
 /** One page of the workspace's initiatives, by target date. */
@@ -2235,9 +2448,10 @@ export interface InitiativeCreate {
   health?: ProjectHealth | null;
   target_date?: string | null;
   update_interval_days?: ProjectUpdateInterval | null;
+  parent_initiative_id?: string | null;
 }
 
-/** The editable fields on an initiative. A null clears an owner or a date. */
+/** The editable fields on an initiative. A null clears an owner, a date or the parent. */
 export interface InitiativeUpdate {
   name?: string;
   description?: string | null;
@@ -2246,6 +2460,7 @@ export interface InitiativeUpdate {
   health?: ProjectHealth | null;
   target_date?: string | null;
   update_interval_days?: ProjectUpdateInterval | null;
+  parent_initiative_id?: string | null;
 }
 
 /** One written update on an initiative. */
@@ -3946,4 +4161,27 @@ export interface FavoriteRead {
 /** The caller's favorites in their order. */
 export interface FavoriteListRead {
   favorites: FavoriteRead[];
+}
+
+/** One of the caller's unposted comment drafts, on an issue or one reply thread of it. */
+export interface DraftRead {
+  issue_id: string;
+  /** The root comment a reply draft answers, or null for a draft on the issue itself. */
+  parent_comment_id?: string | null;
+  team_id: string;
+  body: string;
+  issue_key?: string | null;
+  issue_title?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+/** The caller's drafts, newest saved first. */
+export interface DraftListRead {
+  drafts: DraftRead[];
+}
+
+/** The body a draft save takes, replacing what the thread's draft held. */
+export interface DraftWrite {
+  body: string;
 }

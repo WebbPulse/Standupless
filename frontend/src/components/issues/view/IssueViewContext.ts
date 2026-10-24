@@ -8,13 +8,18 @@
 import { createContext, useContext } from 'react';
 import type { OrderedIssueRead } from '../../../api/issues';
 import type { IssueCollection } from '../../../hooks/useIssueCollection';
+import type { ParentRef } from '../../../lib/issueTree';
 import type {
   FilterField,
   IssueContext,
   ViewState,
 } from '../../../lib/issueView';
 import type { EstimateOptions } from '../../../lib/validation';
-import type { EstimateScale, LabelRead } from '../../../types/Api';
+import type {
+  EstimateScale,
+  LabelRead,
+  MilestoneRead,
+} from '../../../types/Api';
 
 /** The shared state of one issue view. */
 export interface IssueViewEnv {
@@ -55,6 +60,17 @@ export interface IssueViewEnv {
    * for a field the view cannot filter on, where the chip stays inert.
    */
   filterFor?: (field: FilterField) => ((value: string) => void) | undefined;
+  /**
+   * The milestones the milestone property names. A project's own list has
+   * them in its context; a list elsewhere reads them from each project it
+   * knows while the property shows.
+   */
+  milestones?: MilestoneRead[] | undefined;
+  /**
+   * The parent a sub-issue names, from the loaded issues or the list route's
+   * parent fields. Unset reads the parent fields alone.
+   */
+  parentOf?: (issue: OrderedIssueRead) => ParentRef | undefined;
 }
 
 /** The view's shared state. Null outside an issue view. */

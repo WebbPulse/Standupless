@@ -190,6 +190,10 @@ def test_the_contract_fixes_the_tool_set() -> None:
         "add_favorite",
         "remove_favorite",
         "reorder_favorites",
+        "set_comment_draft",
+        "get_comment_draft",
+        "list_comment_drafts",
+        "delete_comment_draft",
         "list_workspace_labels",
         "list_workspace_exports",
         "list_workspace_members",
@@ -213,6 +217,9 @@ def test_the_contract_fixes_the_tool_set() -> None:
         "search_issues",
         "set_github_transitions",
         "set_standup_note",
+        "set_issue_reminder",
+        "list_issue_reminders",
+        "cancel_issue_reminder",
         "snooze_notification",
         "subscribe_to_issue",
         "test_channel",
@@ -233,6 +240,7 @@ def test_the_contract_fixes_the_tool_set() -> None:
         "update_team_archive_settings",
         "update_team_auto_close_settings",
         "update_team_cycle_settings",
+        "update_team_display_defaults",
         "update_team_github_sync",
         "pin_team_repository",
         "update_team_member_role",
@@ -255,6 +263,7 @@ def test_the_contract_fixes_the_tool_set() -> None:
         "backfill_releases",
         "list_initiatives",
         "get_initiative",
+        "get_initiative_progress",
         "create_initiative",
         "update_initiative",
         "delete_initiative",
@@ -292,7 +301,7 @@ def test_the_contract_fixes_the_tool_set() -> None:
         "save_agent_profile",
         "delete_agent_profile",
     }
-    assert len(TOOLS) == 178
+    assert len(TOOLS) == 187
 
 
 def test_a_notification_gets_no_body(client: TestClient, workspace: str, repositories: Any) -> None:

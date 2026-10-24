@@ -12,10 +12,11 @@ team, which acts on the caller alone.
 
 from __future__ import annotations
 
-from typing import Any, Callable, Mapping, Optional
+from typing import Any, Callable, Mapping, Optional, get_args
 
 from app.common import audit, issue_triage, label_merge, team_members, team_workflow, team_writes
 from app.common.api.dependencies.authz import Capability, check_capability
+from app.common.api.schemas.projects_display import stored_projects_display
 from app.common.api.schemas.teams import (
     ArchiveSettingsUpdate,
     AutoCloseSettingsUpdate,
@@ -26,8 +27,19 @@ from app.common.api.schemas.teams import (
     StatusCreate,
     StatusUpdate,
     TeamCreate,
+    TeamDisplayDefaultsRead,
+    TeamDisplayDefaultsUpdate,
     TeamUpdate,
     display_name,
+)
+from app.common.api.schemas.views import (
+    COMPLETED_WINDOWS,
+    VIEW_ENTITIES,
+    VISIBLE_PROPERTIES,
+    GroupByField,
+    LayoutField,
+    SortField,
+    completed_window_of,
 )
 from app.common.db.dynamo.memberships import Membership
 from app.common.db.dynamo.team_config import (
@@ -203,6 +215,14 @@ def _auto_close_settings_json(settings: AutoCloseSettings) -> dict[str, Any]:
         "period_months": settings.period_months,
         "status_id": settings.status_id,
     }
+
+
+def _display_defaults_json(call: ToolCall, team_id: str) -> dict[str, Any]:
+    """A team's display defaults as the display defaults route answers them, without the team id."""
+    defaults = team_writes.display_defaults(call.repositories, call.context.workspace_id, team_id)
+    body = TeamDisplayDefaultsRead.from_row(defaults).model_dump(mode="json")
+    body.pop("team_id", None)
+    return body
 
 
 def _archive_settings_json(settings: ArchiveSettings) -> dict[str, Any]:
@@ -440,6 +460,7 @@ def _get_team(call: ToolCall) -> Any:
     body["triage_settings"] = {
         "enabled": issue_triage.triage_settings(call.repositories, workspace_id, team.team_id).enabled
     }
+    body["display_defaults"] = _display_defaults_json(call, team.team_id)
     return body
 
 
@@ -533,6 +554,49 @@ def _update_auto_close_settings(call: ToolCall) -> Any:
     payload = AutoCloseSettingsUpdate.model_validate(arguments)
     saved = team_writes.update_auto_close_settings(call.repositories, call.context.workspace_id, team.team_id, payload)
     return {"team_id": team.team_id, **_auto_close_settings_json(saved)}
+
+
+def _update_display_defaults(call: ToolCall) -> Any:
+    """Set or clear what a team's issue list and board open with for members who have not changed them."""
+    team = admin_team(call)
+    payload = TeamDisplayDefaultsUpdate.model_validate(given_arguments(call, ("list_display", "board_display")))
+    team_writes.update_display_defaults(
+        call.repositories, call.context.workspace_id, team.team_id, call.context.user_id, payload
+    )
+    return {"team_id": team.team_id, **_display_defaults_json(call, team.team_id)}
+
+
+def _display_options_schema(page: str) -> dict[str, Any]:
+    """The options object one team page takes, null clearing it back to the built-in default."""
+    return {
+        "type": ["object", "null"],
+        "description": (
+            f"What the team's {page} opens with, replacing its saved default whole; null clears it. "
+            "Leave a field out to keep the built-in default for it"
+        ),
+        "properties": {
+            "layout": enum(get_args(LayoutField), "list or board"),
+            "group_by": enum((*get_args(GroupByField), "none"), "Group rows by this property, none for no grouping"),
+            "sub_group_by": enum(
+                (*get_args(GroupByField), "none"),
+                "Sub group within each group, needs group_by; none for no sub grouping",
+            ),
+            "ordering": enum(get_args(SortField), "Ordering within groups"),
+            "ordering_reversed": {"type": "boolean", "description": "Reverse the ordering"},
+            "visible_properties": {
+                "type": "array",
+                "items": {"type": "string", "enum": list(VISIBLE_PROPERTIES)},
+                "description": "Row properties to show, in order",
+            },
+            "show_sub_issues": {"type": "boolean", "description": "Show sub-issues"},
+            "completed_window": enum(
+                COMPLETED_WINDOWS, "Which completed and cancelled issues to show: all, past_week, past_month or none"
+            ),
+            "show_empty_groups": {"type": "boolean", "description": "Show groups with no issues"},
+            "show_archived": {"type": "boolean", "description": "Show archived issues"},
+        },
+        "additionalProperties": False,
+    }
 
 
 def _update_archive_settings(call: ToolCall) -> Any:
@@ -789,19 +853,24 @@ def _list_users(call: ToolCall) -> Any:
 def _list_views(call: ToolCall) -> Any:
     """Saved views this credential may read, in name order, with their stored filters.
 
-    A view's filter uses the issue list's own keys, so it can be passed to
-    `list_issues` as is.
+    An issue view's filter uses the issue list's own keys, so it can be passed to
+    `list_issues` as is. A project view carries the projects page's filter and its
+    `projects_display` arrangement instead.
     """
     scope = str(call.optional("scope", "all"))
     if scope not in VIEW_SCOPES:
         raise ToolError(f"scope must be one of: {', '.join(VIEW_SCOPES)}")
+    entity = call.optional("entity")
+    if entity is not None and entity not in VIEW_ENTITIES:
+        raise ToolError(f"entity must be one of: {', '.join(VIEW_ENTITIES)}")
     team_id = call.optional("team_id")
-    rows = readable_views(call.repositories, call.context, scope, str(team_id) if team_id else None)
+    rows = readable_views(call.repositories, call.context, scope, str(team_id) if team_id else None, entity)
     return {
         "views": [
             {
                 "view_id": row.view_id,
                 "name": row.name,
+                "entity": "projects" if row.lists_projects else "issues",
                 "team_id": row.team_id,
                 "owner_id": row.owner_id,
                 "layout": row.layout or row.kind,
@@ -810,7 +879,11 @@ def _list_views(call: ToolCall) -> Any:
                 "group_by": row.group_by,
                 "show_sub_issues": row.show_sub_issues is not False,
                 "show_completed": row.show_completed is not False,
+                "completed_window": completed_window_of(row.completed_window, row.show_completed),
                 "show_archived": row.show_archived is True,
+                "projects_display": (
+                    stored_projects_display(row.projects_display).model_dump() if row.lists_projects else None
+                ),
             }
             for row in rows
         ]
@@ -955,6 +1028,25 @@ TEAM_TOOLS: tuple[Tool, ...] = (
             required=("team_id",),
         ),
         handler=_update_auto_close_settings,
+        administers_team=True,
+    ),
+    Tool(
+        name="update_team_display_defaults",
+        description=(
+            "Set the default layout, grouping, ordering, row properties and switches a team's issue list "
+            "(list_display) and board (board_display) open with for members who have not changed their own "
+            "display. A page left out keeps its default and null clears it. Needs team admin."
+        ),
+        scopes=("teams:write",),
+        schema=object_schema(
+            {
+                "team_id": string(TEAM_ARGUMENT),
+                "list_display": _display_options_schema("issue list"),
+                "board_display": _display_options_schema("board"),
+            },
+            required=("team_id",),
+        ),
+        handler=_update_display_defaults,
         administers_team=True,
     ),
     Tool(
@@ -1271,13 +1363,14 @@ TEAM_TOOLS: tuple[Tool, ...] = (
         description=(
             "Saved views this credential can read: 'mine' the caller's own, 'team' shared team views, "
             "'workspace' views shared with the whole workspace, 'all' every one (the default). Each carries "
-            "its issue list filter and sort."
+            "its issue list filter and sort, or for a project view its projects filter and projects_display."
         ),
         scopes=("views:read",),
         schema=object_schema(
             {
                 "scope": enum(VIEW_SCOPES, "Which views, defaulting to all"),
                 "team_id": string("Narrow to one team"),
+                "entity": enum(VIEW_ENTITIES, "Only issue views or only project views"),
             }
         ),
         handler=_list_views,

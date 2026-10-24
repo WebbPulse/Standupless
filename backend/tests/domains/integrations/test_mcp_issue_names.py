@@ -17,7 +17,7 @@ from app.common.db.dynamo.search_index import tokenize
 from app.common.issue_filters import UnknownStatusCategory, build_issue_filter
 from app.domains.integrations.mcp import issue_tools
 from tests.domains.helpers import MEMBER
-from tests.domains.integrations.conftest import TEAM, WORKSPACE, seed_issue
+from tests.domains.integrations.conftest import OTHER_TEAM, TEAM, WORKSPACE, seed_issue
 from tests.domains.integrations.test_mcp import tool
 from tests.domains.integrations.test_mcp_tools import answer, mint_for, refusal, seed_planning
 
@@ -187,3 +187,52 @@ def test_create_issue_leaves_the_parent_out_of_possible_duplicates(
 
     assert created["parent_id"] == parent
     assert [row["issue_id"] for row in created["possible_duplicates"]] == [unrelated]
+
+
+def _other_team_issue(repositories: Any, issue_id: str, title: str, body: str = "") -> None:
+    """Put one open issue in `OTHER_TEAM` and index its title and body as the search consumer would."""
+    number = int(issue_id[-1])
+    repositories.issues.create(
+        Issue(
+            workspace_id=WORKSPACE,
+            issue_id=issue_id,
+            team_id=OTHER_TEAM,
+            key=f"XYZ-{number}",
+            number=number,
+            title=title,
+            body=body,
+            status_id=repositories.team_config.list_statuses(WORKSPACE, OTHER_TEAM)[0].status_id,
+            created_by=MEMBER,
+        )
+    )
+    repositories.search_index.apply(WORKSPACE, OTHER_TEAM, issue_id, appeared=tokenize(title, body), departed=set())
+
+
+def test_create_issue_leaves_out_a_cross_team_issue_sharing_only_common_words(
+    client: TestClient, repositories: Any, workspace: str
+) -> None:
+    """A body full of the new title's terms is not enough when the titles share only a generic word."""
+    _other_team_issue(
+        repositories,
+        "01JB0000000000000000000IS7",
+        "Backfill the search index with existing comments",
+        body="Retry Lambda throttling in the deploy workflow step for existing functions.",
+    )
+    secret = mint_for(repositories, MEMBER, WRITE)
+
+    created = _create(client, secret, title="Retry Lambda throttling in the deploy workflow's existing-functions step")
+
+    assert created["possible_duplicates"] == []
+
+
+def test_create_issue_ranks_same_team_duplicates_first(client: TestClient, repositories: Any, workspace: str) -> None:
+    """A lookalike in the new issue's team comes before an equally close one in another team."""
+    secret = mint_for(repositories, MEMBER, WRITE)
+    title = "Login redirect broken on Safari"
+    same_team = _create(client, secret, title=title)["issue_id"]
+    _index(repositories, same_team, title)
+    _other_team_issue(repositories, "01JB0000000000000000000IS8", title)
+
+    created = _create(client, secret, title="Login redirect broken")
+
+    assert [row["issue_id"] for row in created["possible_duplicates"]] == [same_team, "01JB0000000000000000000IS8"]

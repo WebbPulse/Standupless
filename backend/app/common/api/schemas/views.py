@@ -15,8 +15,10 @@ from typing import Any, Literal, Mapping, Optional, get_args
 from pydantic import BaseModel, Field, StrictBool, field_validator
 from webbpulse.http import cursor_page
 
+from app.common.api.schemas.projects_display import ProjectsDisplay, stored_projects_display
 from app.common.change_source import ChangeSource
 from app.common.db.dynamo.inbox import Notification
+from app.common.db.dynamo.planning import PROJECT_STATUSES
 from app.common.db.dynamo.views import SavedView
 from app.common.inbox_summary import notification_summary
 
@@ -35,6 +37,11 @@ SortField = Literal[
 
 ViewKindField = Literal["list", "board"]
 
+ViewEntityField = Literal["issues", "projects"]
+"""What a view lists: issues, the default every view saved before project views reads as, or projects."""
+
+VIEW_ENTITIES: tuple[str, ...] = get_args(ViewEntityField)
+
 LayoutField = Literal["list", "board"]
 
 VisiblePropertyField = Literal[
@@ -51,10 +58,29 @@ VisiblePropertyField = Literal[
     "parent",
     "sub_issues",
     "pull_requests",
+    "milestone",
+    "links",
     "created_at",
     "updated_at",
 ]
 """The row properties a view may show, a fixed set so a client never meets one it cannot render."""
+
+CompletedWindowField = Literal["all", "past_week", "past_month", "none"]
+"""How many completed and cancelled issues a view shows: all, those finished in the last week or month, or none."""
+
+COMPLETED_WINDOWS: tuple[str, ...] = get_args(CompletedWindowField)
+
+
+def completed_window_of(window: Optional[str], show_completed: Optional[bool]) -> CompletedWindowField:
+    """The window a stored view shows, read from `show_completed` when it predates the window."""
+    if window == "past_week":
+        return "past_week"
+    if window == "past_month":
+        return "past_month"
+    if window == "none" or (window is None and show_completed is False):
+        return "none"
+    return "all"
+
 
 GroupByField = Literal[
     "status",
@@ -86,6 +112,7 @@ NotificationKindField = Literal[
     "standup_digest",
     "sla_at_risk",
     "sla_breached",
+    "reminder",
 ]
 
 FILTER_FIELDS: frozenset[str] = frozenset(
@@ -144,6 +171,17 @@ Fixed rather than open because a saved view is run by expanding it into the issu
 list query, and a key the list does not accept would be a filter that silently
 does nothing.
 """
+
+PROJECT_FILTER_FIELDS: frozenset[str] = frozenset({"team_id", "status", "lead_id", "sub_teams"})
+"""Every key a project view's filter may carry, the projects page's own filters.
+
+`team_id` is the one team the page is narrowed to, `status` the project statuses
+it keeps, `lead_id` the leads it keeps, `none` standing for projects with no lead,
+and `sub_teams` whether a parent team's page rolls up its sub-teams.
+"""
+
+PROJECT_SCALAR_FILTER_FIELDS: frozenset[str] = frozenset({"team_id", "sub_teams"})
+"""The project filter keys that hold one value rather than a list."""
 
 VIEW_NAME_MAX = 80
 
@@ -209,6 +247,8 @@ def normalize_filter(value: Optional[dict[str, Any]]) -> Optional[dict[str, Any]
     if value is None:
         return None
     normalized = {key: _normalized_entry(str(key), entry) for key, entry in value.items()}
+    if isinstance(normalized.get("sub_teams"), bool):
+        normalized["sub_teams"] = "true" if normalized["sub_teams"] else "false"
     groups = normalized.get("groups")
     if isinstance(groups, list):
         normalized["groups"] = [normalize_filter(group) if isinstance(group, dict) else group for group in groups]
@@ -294,6 +334,38 @@ def unknown_filter_keys(value: Mapping[str, Any] | None) -> list[str]:
     return sorted(str(key) for key in value if str(key) not in FILTER_FIELDS)
 
 
+def invalid_project_filter_keys(value: Mapping[str, Any] | None) -> list[str]:
+    """Every key of a project view's filter that is unknown or holds a value the projects page cannot apply.
+
+    A status must be one the projects page offers, and `sub_teams` `true` or
+    `false`, so a stored view never names a filter the page would quietly drop.
+    """
+    if not value:
+        return []
+    bad: list[str] = []
+    for key, entry in value.items():
+        name = str(key)
+        if name not in PROJECT_FILTER_FIELDS or not _project_entry_well_formed(name, entry):
+            bad.append(name)
+    return sorted(bad)
+
+
+def _project_entry_well_formed(key: str, entry: Any) -> bool:
+    """Whether one project filter value has the shape its key takes."""
+    if entry is None:
+        return True
+    if key == "sub_teams":
+        return entry in ("true", "false")
+    values = [entry] if isinstance(entry, str) else entry
+    if not isinstance(values, list) or not all(isinstance(item, str) and item for item in values):
+        return False
+    if key in PROJECT_SCALAR_FILTER_FIELDS and not isinstance(entry, str):
+        return False
+    if key == "status":
+        return all(item in PROJECT_STATUSES for item in values)
+    return True
+
+
 VISIBLE_PROPERTIES: tuple[str, ...] = get_args(VisiblePropertyField)
 
 
@@ -310,10 +382,14 @@ class ViewCreate(BaseModel):
     `owner_id` and `scope` are absent on purpose: the owner comes from the
     authorization context and the scope is derived from `team_id` and `shared`,
     so neither is something a caller can assert. `shared` without a team files
-    the view under the whole workspace.
+    the view under the whole workspace. `entity` set to `projects` saves a projects
+    page arrangement: its filter takes the projects page's keys and
+    `projects_display` its layout, grouping, ordering and completed window, while
+    the issue display fields are ignored.
     """
 
     name: str = Field(min_length=1, max_length=VIEW_NAME_MAX)
+    entity: ViewEntityField = "issues"
     kind: ViewKindField = "list"
     filter: dict[str, Any] = Field(default_factory=dict)
     sort: SortField = "updated_desc"
@@ -325,7 +401,9 @@ class ViewCreate(BaseModel):
     layout: Optional[LayoutField] = None
     show_sub_issues: StrictBool = True
     show_completed: StrictBool = True
+    completed_window: Optional[CompletedWindowField] = None
     show_archived: StrictBool = False
+    projects_display: Optional[ProjectsDisplay] = None
     icon: Optional[str] = Field(default=None, min_length=1, max_length=VIEW_ICON_MAX)
     color: Optional[ViewColorField] = None
     description: Optional[str] = Field(default=None, max_length=VIEW_DESCRIPTION_MAX)
@@ -352,7 +430,8 @@ class ViewUpdate(BaseModel):
     row is filed under, so moving it would be a delete and a create wearing the name
     of an update. `shared` is the one exception, for a view without a team: it
     moves a personal view to the whole workspace or back, which refiles the row
-    under the same view id.
+    under the same view id. `entity` is fixed at create, and `projects_display`
+    applies only to a project view.
     """
 
     name: Optional[str] = Field(default=None, min_length=1, max_length=VIEW_NAME_MAX)
@@ -366,7 +445,9 @@ class ViewUpdate(BaseModel):
     layout: Optional[LayoutField] = None
     show_sub_issues: Optional[StrictBool] = None
     show_completed: Optional[StrictBool] = None
+    completed_window: Optional[CompletedWindowField] = None
     show_archived: Optional[StrictBool] = None
+    projects_display: Optional[ProjectsDisplay] = None
     icon: Optional[str] = Field(default=None, min_length=1, max_length=VIEW_ICON_MAX)
     color: Optional[ViewColorField] = None
     description: Optional[str] = Field(default=None, max_length=VIEW_DESCRIPTION_MAX)
@@ -385,20 +466,28 @@ class ViewUpdate(BaseModel):
         return normalize_filter(value)
 
 
-DISPLAY_SWITCHES: tuple[str, ...] = ("ordering_reversed", "show_sub_issues", "show_completed", "show_archived")
-"""The view's boolean display switches, which a patch may set but never clear to null."""
+DISPLAY_SWITCHES: tuple[str, ...] = (
+    "ordering_reversed",
+    "show_sub_issues",
+    "show_completed",
+    "completed_window",
+    "show_archived",
+)
+"""The view's display switches, booleans and the completed window, which a patch may set but never clear to null."""
 
 
 class ViewRead(BaseModel):
     """One saved view as the API returns it.
 
     `favorite` is the caller's own star, not a property of the view, so the same
-    view reads differently to two members.
+    view reads differently to two members. `projects_display` is the arrangement of
+    a project view and null on an issue view.
     """
 
     view_id: str
     workspace_id: str
     name: str
+    entity: ViewEntityField = "issues"
     kind: str
     scope: str
     team_id: Optional[str] = None
@@ -412,7 +501,9 @@ class ViewRead(BaseModel):
     layout: str
     show_sub_issues: bool = True
     show_completed: bool = True
+    completed_window: CompletedWindowField = "all"
     show_archived: bool = False
+    projects_display: Optional[ProjectsDisplay] = None
     icon: Optional[str] = None
     color: Optional[str] = None
     description: Optional[str] = None
@@ -428,6 +519,7 @@ class ViewRead(BaseModel):
             view_id=view.view_id,
             workspace_id=view.workspace_id,
             name=view.name,
+            entity="projects" if view.lists_projects else "issues",
             kind=view.kind,
             scope=view.scope,
             team_id=view.team_id,
@@ -441,7 +533,9 @@ class ViewRead(BaseModel):
             layout=view.layout or view.kind,
             show_sub_issues=view.show_sub_issues is not False,
             show_completed=view.show_completed is not False,
+            completed_window=completed_window_of(view.completed_window, view.show_completed),
             show_archived=view.show_archived is True,
+            projects_display=stored_projects_display(view.projects_display) if view.lists_projects else None,
             icon=view.icon,
             color=view.color,
             description=view.description,
@@ -596,3 +690,38 @@ class InboxReadResult(BaseModel):
     """How many notifications a mark-read actually moved."""
 
     updated: int = 0
+
+
+class IssueReminderWrite(BaseModel):
+    """The body setting a reminder takes: the moment the caller wants to hear about the issue again.
+
+    `remind_at` must carry a timezone, so the moment is the one the caller picked
+    on their own clock rather than one the server guessed.
+    """
+
+    remind_at: datetime
+
+    @field_validator("remind_at")
+    @classmethod
+    def _aware(cls, value: datetime) -> datetime:
+        """Refuse a naive moment rather than guessing its zone."""
+        if value.tzinfo is None:
+            raise ValueError("remind_at must include a timezone")
+        return value
+
+
+class IssueReminderRead(BaseModel):
+    """One pending reminder of the caller's, with the issue it is about as it reads now."""
+
+    issue_id: str
+    issue_key: str
+    issue_title: str
+    team_id: str
+    remind_at: datetime
+    created_at: datetime
+
+
+class IssueReminderListRead(BaseModel):
+    """The caller's pending reminders, soonest first."""
+
+    reminders: list[IssueReminderRead] = Field(default_factory=list)

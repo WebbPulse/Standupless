@@ -28,7 +28,7 @@ from app.common.saved_views import (
     set_view_favorite,
     update_saved_view,
 )
-from app.domains.views.schemas.view import ScopeField, ViewCreate, ViewListRead, ViewRead, ViewUpdate
+from app.domains.views.schemas.view import ScopeField, ViewCreate, ViewEntityField, ViewListRead, ViewRead, ViewUpdate
 
 router = APIRouter()
 
@@ -39,17 +39,18 @@ def list_views(
     workspace_id: str = Path(..., min_length=1),
     scope: ScopeField = Query(default="mine"),
     team_id: Optional[str] = Query(default=None),
+    entity: Optional[ViewEntityField] = Query(default=None),
     context: AuthzContext = Depends(require(Capability.WORKSPACE_READ)),
     repositories: Repositories = Depends(get_repositories),
 ) -> Response:
-    """Saved views the caller may read, narrowed by scope.
+    """Saved views the caller may read, narrowed by scope and, with `entity`, to issue or project views.
 
     `all` is the caller's own views plus the team views of teams they can see,
     which for a guest is only the teams they hold a membership in, so the listing
     is built from what they may read rather than filtered afterwards. The
     answer carries a weak `ETag`, so an unchanged poll gets a 304.
     """
-    ordered = readable_views(repositories, context, scope, team_id)
+    ordered = readable_views(repositories, context, scope, team_id, entity)
     starred = favorite_ids(repositories, context)
     listing = ViewListRead(views=[ViewRead.from_row(row, favorite=row.view_id in starred) for row in ordered])
     return conditional_response(request, listing)

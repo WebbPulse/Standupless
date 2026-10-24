@@ -11,6 +11,8 @@ import type {
 import apiClient, { type RequestOptions } from './client';
 import { untilMergeComplete } from '../lib/labelMerge';
 import { conditionalGet, type ReadContext } from './conditional';
+import type { IssueListSort } from './issues';
+import type { CompletedWindow, ViewLayout, ViewVisibleProperty } from './views';
 import type {
   ArchiveSettingsRead,
   ArchiveSettingsUpdate,
@@ -38,6 +40,7 @@ import type {
   StatusListRead,
   StatusRead,
   StatusUpdate,
+  ViewGroupBy,
 } from '../types/Api';
 
 /** The route a workspace's teams are read from. */
@@ -69,6 +72,47 @@ export const cycleSettingsPath = (
   workspaceId: string,
   teamId: string
 ): string => `${teamPath(workspaceId, teamId)}/cycle-settings`;
+
+/**
+ * The display options one team page opens with. Each null field keeps the
+ * page's built-in default, and a grouping of `none` means no grouping.
+ */
+export interface TeamDisplayOptions {
+  layout?: ViewLayout | null;
+  group_by?: ViewGroupBy | 'none' | null;
+  sub_group_by?: ViewGroupBy | 'none' | null;
+  ordering?: IssueListSort | null;
+  ordering_reversed?: boolean | null;
+  visible_properties?: ViewVisibleProperty[] | null;
+  show_sub_issues?: boolean | null;
+  completed_window?: CompletedWindow | null;
+  show_empty_groups?: boolean | null;
+  show_archived?: boolean | null;
+}
+
+/**
+ * What a team's list and board open with for every member until they change
+ * the display themselves. A null page keeps the built-in default.
+ */
+export interface TeamDisplayDefaultsRead {
+  team_id: string;
+  list_display: TeamDisplayOptions | null;
+  board_display: TeamDisplayOptions | null;
+  updated_by: string | null;
+  updated_at: string | null;
+}
+
+/** A change to a team's display defaults: a page given replaces it whole, null clears it. */
+export interface TeamDisplayDefaultsUpdate {
+  list_display?: TeamDisplayOptions | null;
+  board_display?: TeamDisplayOptions | null;
+}
+
+/** The route a team's display defaults are read and changed at. */
+export const displayDefaultsPath = (
+  workspaceId: string,
+  teamId: string
+): string => `${teamPath(workspaceId, teamId)}/display-defaults`;
 
 /** The route a team's auto-close setting is read and changed at. */
 export const autoCloseSettingsPath = (
@@ -509,6 +553,32 @@ export const updateCycleSettings = async (
 ): Promise<CycleSettingsRead> => {
   const response = await apiClient.patch<CycleSettingsRead>(
     cycleSettingsPath(workspaceId, teamId),
+    body
+  );
+  return response.data;
+};
+
+/** Reads what a team's list and board open with, both null when never set. */
+export const getDisplayDefaults = async (
+  workspaceId: string,
+  teamId: string,
+  signal?: AbortSignal
+): Promise<TeamDisplayDefaultsRead> => {
+  const response = await apiClient.get<TeamDisplayDefaultsRead>(
+    displayDefaultsPath(workspaceId, teamId),
+    signalOptions(signal)
+  );
+  return response.data;
+};
+
+/** Changes what a team's list or board opens with. Team admin only. */
+export const updateDisplayDefaults = async (
+  workspaceId: string,
+  teamId: string,
+  body: TeamDisplayDefaultsUpdate
+): Promise<TeamDisplayDefaultsRead> => {
+  const response = await apiClient.patch<TeamDisplayDefaultsRead>(
+    displayDefaultsPath(workspaceId, teamId),
     body
   );
   return response.data;

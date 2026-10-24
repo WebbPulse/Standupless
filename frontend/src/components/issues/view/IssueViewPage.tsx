@@ -9,6 +9,11 @@
  * with the save bar showing, and a saved view opens it over its own settings,
  * so the list updates live as the filters change and the save bar offers to
  * keep, fork or discard the change. Any other list can be saved as a view.
+ *
+ * A team's own list and board may open over the team's default display
+ * instead of the built-in one. An admin keeps what is on screen as that
+ * default from the display menu, and everyone else puts their changes back
+ * to it with Reset to default.
  */
 
 import React, { useCallback, useMemo, useState } from 'react';
@@ -84,7 +89,10 @@ import IssueListView from './IssueListView';
 import { LOOKUP_POLL_MS } from '../../../lib/polling';
 
 /** Clears every cached views list, so each surface listing views re-reads. */
-const refreshViewLists = (workspaceId: string, teamId?: string): void => {
+export const refreshViewLists = (
+  workspaceId: string,
+  teamId?: string
+): void => {
   invalidateQueries([
     viewsKey(workspaceId, 'mine', ''),
     viewsKey(workspaceId, 'team', ''),
@@ -379,6 +387,21 @@ export interface IssueViewPageProps {
   archive?: boolean;
   /** A control right after the title, such as the team's favorite star. */
   titleAccessory?: React.ReactNode;
+  /**
+   * Keeps or drops the team default display, offered where `base` is a
+   * team's default and the caller administers that team.
+   */
+  teamDefault?: TeamDefaultControl | undefined;
+}
+
+/** What a page needs to change the team default display it opens over. */
+export interface TeamDefaultControl {
+  /** True while the team has a default of its own for this page. */
+  isSet: boolean;
+  /** Keeps a state's display options as the team default. */
+  save: (state: ViewState) => Promise<unknown>;
+  /** Drops the team default, back to the built-in display. */
+  clear: () => Promise<unknown>;
 }
 
 /** Which save dialog is open: a new view, or the details of the one running. */
@@ -403,6 +426,7 @@ export const IssueViewPage: React.FC<IssueViewPageProps> = ({
   hideFilterFields,
   archive = false,
   titleAccessory,
+  teamDefault,
 }) => {
   const auth = useQueryAuth();
   const navigate = useNavigate();
@@ -413,6 +437,7 @@ export const IssueViewPage: React.FC<IssueViewPageProps> = ({
   const [saving, setSaving] = useState<Saving>(null);
   const [updating, setUpdating] = useState(false);
   const [insightsOpen, setInsightsOpen] = useState(false);
+  const [defaultBusy, setDefaultBusy] = useState(false);
 
   const state = useMemo(() => parseViewState(params, base), [params, base]);
   const setState = useCallback(
@@ -422,6 +447,54 @@ export const IssueViewPage: React.FC<IssueViewPageProps> = ({
     [setParams, base, params]
   );
   const changed = !sameViewState(state, base);
+  const displayChanged = !sameViewState(
+    {
+      ...state,
+      filters: base.filters,
+      match: base.match,
+      groups: base.groups,
+      q: base.q,
+    },
+    base
+  );
+  const runTeamDefault = useCallback(
+    async (write: () => Promise<unknown>, done: string, failed: string) => {
+      setDefaultBusy(true);
+      try {
+        await write();
+        showToast(done);
+      } catch (error) {
+        showErrorToast(errorMessage(error, failed));
+      } finally {
+        setDefaultBusy(false);
+      }
+    },
+    []
+  );
+  const teamDefaultActions =
+    teamDefault === undefined
+      ? undefined
+      : {
+          busy: defaultBusy,
+          onSave: displayChanged
+            ? () => {
+                void runTeamDefault(
+                  () => teamDefault.save(state),
+                  'Saved as the team default.',
+                  'Could not save the team default.'
+                );
+              }
+            : undefined,
+          onClear: teamDefault.isSet
+            ? () => {
+                void runTeamDefault(
+                  teamDefault.clear,
+                  'Team default cleared.',
+                  'Could not clear the team default.'
+                );
+              }
+            : undefined,
+        };
 
   const teamIds = useMemo(() => teams.map((team) => team.id), [teams]);
   const collection = useIssueCollection(
@@ -698,17 +771,9 @@ export const IssueViewPage: React.FC<IssueViewPageProps> = ({
           onChange={setState}
           archive={archive}
           groupFields={fieldsFor(GROUP_FIELDS, filterContext)}
+          teamDefault={teamDefaultActions}
           onReset={
-            sameViewState(
-              {
-                ...state,
-                filters: base.filters,
-                match: base.match,
-                groups: base.groups,
-                q: base.q,
-              },
-              base
-            )
+            !displayChanged
               ? undefined
               : () => {
                   setState({

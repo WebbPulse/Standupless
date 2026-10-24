@@ -61,6 +61,19 @@ export const allLabelsKey = (teamId: string): QueryKey => [
 /** The issue templates one team offers, with its default. */
 export const templatesKey = (teamId: string): QueryKey => ['templates', teamId];
 
+/** One team's saved default templates, issue and project. */
+export const templateSettingsKey = (teamId: string): QueryKey => [
+  'templates',
+  teamId,
+  'settings',
+];
+
+/** The project templates one team offers, with its default. */
+export const projectTemplatesKey = (teamId: string): QueryKey => [
+  'project-templates',
+  teamId,
+];
+
 /** One team's recurring issues. */
 export const recurringKey = (teamId: string): QueryKey => [
   'recurring-issues',
@@ -70,6 +83,12 @@ export const recurringKey = (teamId: string): QueryKey => [
 /** The issue templates a workspace offers every team. */
 export const workspaceTemplatesKey = (workspaceId: string): QueryKey => [
   'workspace-templates',
+  workspaceId,
+];
+
+/** The project templates a workspace offers every team. */
+export const workspaceProjectTemplatesKey = (workspaceId: string): QueryKey => [
+  'workspace-project-templates',
   workspaceId,
 ];
 
@@ -238,6 +257,12 @@ export const inboxKey = (
   filter: InboxFilter
 ): QueryKey => ['inbox', workspaceId, filter];
 
+/** The caller's pending reminder on one issue. */
+export const issueReminderKey = (
+  workspaceId: string,
+  issueId: string
+): QueryKey => ['issue-reminder', workspaceId, issueId];
+
 /** The unread badge count, polled by the shell on every page. */
 export const inboxCountKey = (workspaceId: string): QueryKey => [
   'inbox-count',
@@ -326,6 +351,12 @@ export const initiativesKey = (
   workspaceId: string,
   status: string
 ): QueryKey => ['initiatives', workspaceId, status];
+
+/** One initiative's progress graph over its whole subtree. */
+export const initiativeProgressKey = (
+  workspaceId: string,
+  initiativeId: string
+): QueryKey => ['initiativeProgress', workspaceId, initiativeId];
 
 /** One initiative read by its id, as its page polls it. */
 export const initiativeDetailKey = (

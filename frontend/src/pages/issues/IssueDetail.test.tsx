@@ -60,6 +60,12 @@ const listStatuses = vi.fn<() => Promise<StatusRead[]>>();
 const listLabels = vi.fn<() => Promise<LabelRead[]>>();
 const listTeamMembers = vi.fn<() => Promise<TeamMemberRead[]>>();
 
+vi.mock('../../api/drafts', () => ({
+  listIssueDrafts: () => Promise.resolve([]),
+  saveDraft: () => Promise.resolve({}),
+  deleteDraft: () => Promise.resolve(),
+}));
+
 vi.mock('../../api/documents', () => ({
   listDocuments: () => Promise.resolve([]),
   listIssueDocuments: () => Promise.resolve([]),

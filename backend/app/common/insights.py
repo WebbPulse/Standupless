@@ -33,7 +33,7 @@ from app.common.issue_keyed_reads import keyed_rows
 from app.common.issue_keys import current_all
 from app.common.issue_rules import unprocessable
 from app.common.issue_writes import archived_rows
-from app.common.saved_views import load_visible_view
+from app.common.saved_views import load_visible_view, require_issue_view
 from app.common.sub_teams import listed_teams
 
 PRIORITY_NAMES: dict[str, str] = {
@@ -125,6 +125,7 @@ def resolve_scope(
     filters: list[IssueFilter] = [wanted]
     if view_id:
         view = load_visible_view(repositories, context, view_id)
+        require_issue_view(view)
         stored = dict(view.filter or {})
         view_team = view.team_id or _scalar(stored.get("team_id"))
         if team_id and view_team and team_id != view_team:

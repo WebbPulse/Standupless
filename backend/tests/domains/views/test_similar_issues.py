@@ -14,7 +14,7 @@ from fastapi.testclient import TestClient
 
 from app.common.similar_issues import required_matches
 from tests.domains.helpers import MEMBER, OWNER, add_team_member, sign_in
-from tests.domains.views.conftest import TEAM, seed_issue
+from tests.domains.views.conftest import OTHER_TEAM, TEAM, seed_issue
 from tests.domains.views.test_search import index_issue
 
 
@@ -107,3 +107,22 @@ def test_the_issue_being_edited_can_be_left_out(
     )
 
     assert response.json()["results"] == []
+
+
+def test_the_drafts_team_ranks_first(
+    client: TestClient, issues_client: TestClient, workspace: str, repositories: Any, statuses: Any
+) -> None:
+    """`team_id` puts the draft's own team ahead of a closer match elsewhere."""
+    sign_in(issues_client, OWNER)
+    elsewhere = seed_issue(issues_client, workspace, title="Widget pipeline stalls nightly", team_id=OTHER_TEAM)
+    here = seed_issue(issues_client, workspace, title="Widget pipeline broken", team_id=TEAM)
+    index_issue(repositories, workspace, OTHER_TEAM, elsewhere)
+    index_issue(repositories, workspace, TEAM, here)
+
+    sign_in(client, OWNER)
+    url = f"/api/workspaces/{workspace}/search/similar"
+    unranked = client.get(url, params={"title": "widget pipeline stalls"})
+    ranked = client.get(url, params={"title": "widget pipeline stalls", "team_id": TEAM})
+
+    assert [row["issue_id"] for row in unranked.json()["results"]] == [elsewhere["id"], here["id"]]
+    assert [row["issue_id"] for row in ranked.json()["results"]] == [here["id"], elsewhere["id"]]

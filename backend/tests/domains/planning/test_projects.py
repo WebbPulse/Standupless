@@ -711,3 +711,31 @@ def test_a_project_with_no_open_issues_closes_with_a_zero_count(client: TestClie
 
     assert response.status_code == 200
     assert response.json()["open_issue_count"] == 0
+
+
+def test_closing_a_project_stamps_when_and_reopening_clears_it(client: TestClient, workspace: str) -> None:
+    """Closed rows carry `completed_at`: set on close, kept across closed states, cleared on reopen."""
+    sign_in(client, MEMBER)
+    project = seed_project(client, workspace)
+    path = _path(workspace, project["project_id"])
+    assert project["completed_at"] is None
+
+    completed = client.patch(path, json={"status": "completed"}).json()
+    assert completed["completed_at"] is not None
+
+    canceled = client.patch(path, json={"status": "canceled"}).json()
+    assert canceled["completed_at"] == completed["completed_at"]
+
+    renamed = client.patch(path, json={"name": "Renamed"}).json()
+    assert renamed["completed_at"] == completed["completed_at"]
+
+    reopened = client.patch(path, json={"status": "in_progress"}).json()
+    assert reopened["completed_at"] is None
+
+
+def test_a_project_created_closed_carries_its_close_time(client: TestClient, workspace: str) -> None:
+    """A project created completed is windowed from its creation."""
+    sign_in(client, MEMBER)
+    body = seed_project(client, workspace, status="completed")
+    assert body["completed_at"] is not None
+    assert seed_project(client, workspace, name="Open")["completed_at"] is None

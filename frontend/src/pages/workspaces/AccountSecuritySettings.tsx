@@ -31,7 +31,9 @@ const AccountSecuritySettings: React.FC = () => {
       {workspace !== null && (
         <div className="max-w-2xl space-y-8">
           <EmailSection />
-          <SessionsSection />
+          <SessionsSection
+            connectedAppsHref={`/w/${workspace.slug}/settings/connected-apps`}
+          />
           <PasskeyPanel />
           <TwoFactorPanel />
           <ConnectedAccountsPanel />

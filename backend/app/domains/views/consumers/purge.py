@@ -1,4 +1,4 @@
-"""The views stage of the team purge: team views, search postings and share links.
+"""The views stage of the team purge: team views, comment drafts, search postings and share links.
 
 Share links are revoked rather than deleted: the store has no single-row delete,
 and a revoked link stops resolving at once and expires with the rest. Inbox rows
@@ -7,7 +7,7 @@ and the inbox is partitioned by user rather than by team.
 
 A workspace purge ends by deleting the whole views partition, every member's
 inbox in the workspace and every share link of the tenant. An account purge
-deletes the person's own views, favorites and inbox in each workspace they
+deletes the person's own views, favorites, drafts and inbox in each workspace they
 belonged to, and leaves the team and workspace views they saved, which belong to
 everyone they shared them with.
 """
@@ -36,11 +36,12 @@ def revoke_share_links(repositories: Repositories, workspace_id: str, team_id: s
 
 
 def step(repositories: Repositories, job: PurgeJob, deadline: Deadline) -> int | None:
-    """Remove the team's views and search postings and revoke its share links."""
+    """Remove the team's views, the drafts on its issues and its search postings, and revoke its share links."""
     workspace_id, team_id = job.workspace_id, job.team_id
     while views := repositories.views.list_for_team(workspace_id, team_id):
         for view in views:
             repositories.views.delete(workspace_id, view.view_key)
+    repositories.views.delete_drafts_for_team(workspace_id, team_id)
     while repositories.search_index.delete_team_page(workspace_id, team_id):
         if deadline.expired():
             return 0
@@ -62,7 +63,7 @@ def workspace_step(repositories: Repositories, job: PurgeJob, deadline: Deadline
 
 
 def account_step(repositories: Repositories, job: PurgeJob, deadline: Deadline) -> int | None:
-    """Remove the person's own views and inbox in each workspace they belonged to."""
+    """Remove the person's own views, favorites, drafts and inbox in each workspace they belonged to."""
     user = repositories.users.get(job.user_id)
     if user is None:
         return None
@@ -71,6 +72,7 @@ def account_step(repositories: Repositories, job: PurgeJob, deadline: Deadline) 
             for view in views:
                 repositories.views.delete(workspace_id, view.view_key)
         repositories.views.set_favorite_items(workspace_id, job.user_id, [])
+        repositories.views.delete_drafts_for_user(workspace_id, job.user_id)
         repositories.inbox.delete_all(workspace_id, job.user_id)
     return None
 

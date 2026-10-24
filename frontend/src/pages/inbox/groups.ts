@@ -128,6 +128,7 @@ export const INBOX_CATEGORIES: InboxCategory[] = [
     kinds: ['project_update', 'project_update_due', 'initiative_update_due'],
   },
   { id: 'due', label: 'Due dates', kinds: ['due_soon', 'overdue'] },
+  { id: 'reminders', label: 'Reminders', kinds: ['reminder'] },
   { id: 'sla', label: 'SLA', kinds: ['sla_at_risk', 'sla_breached'] },
   { id: 'reviews', label: 'Reviews', kinds: ['review_requested'] },
   { id: 'standups', label: 'Standups', kinds: ['standup_digest'] },

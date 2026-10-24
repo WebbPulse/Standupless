@@ -4,7 +4,9 @@ Saved view writes run the view routes' own `app.common.saved_views` path: a
 personal view is its owner's alone, a team view needs team membership to create
 and its owner or a team admin to change or delete. The inbox tools run the inbox
 routes' `app.common.inbox` path, which builds the partition from the credential's
-own user, so no argument can reach another member's notifications.
+own user, so no argument can reach another member's notifications. The issue
+reminder tools run `app.common.issue_reminders` the same way, so a reminder is
+always the caller's own.
 """
 
 from __future__ import annotations
@@ -14,12 +16,16 @@ from typing import Any, Optional, get_args
 from fastapi import HTTPException
 
 from app.common.api.dependencies.authz import Capability, check_capability
+from app.common.api.schemas.projects_display import PROJECTS_DISPLAY_FIELDS
 from app.common.api.schemas.views import (
+    COMPLETED_WINDOWS,
+    VIEW_ENTITIES,
     VISIBLE_PROPERTIES,
     GroupByField,
     InboxReadRequest,
     InboxSnoozeRequest,
     InboxUnreadRequest,
+    IssueReminderWrite,
     LayoutField,
     SortField,
     ViewColorField,
@@ -36,6 +42,7 @@ from app.common.inbox import (
     mark_unread,
     snooze,
 )
+from app.common.issue_reminders import cancel_reminder, list_reminders, set_reminder
 from app.common.saved_views import (
     create_saved_view,
     delete_saved_view,
@@ -49,6 +56,7 @@ from app.domains.integrations.mcp.toolkit import (
     ToolCall,
     enum,
     filter_values,
+    issue_ref,
     limit,
     object_schema,
     one_or_many,
@@ -78,7 +86,9 @@ VIEW_FIELDS: tuple[str, ...] = (
     "layout",
     "show_sub_issues",
     "show_completed",
+    "completed_window",
     "show_archived",
+    "projects_display",
     "icon",
     "color",
     "description",
@@ -94,6 +104,21 @@ CLEARABLE_VIEW_FIELDS: tuple[str, ...] = (
     "description",
 )
 """The view fields an update clears by passing null."""
+
+
+def _projects_display() -> dict[str, Any]:
+    """The projects arrangement a project view keeps, each field one of the projects page's choices."""
+    return {
+        "type": "object",
+        "properties": {
+            field: {"type": "string", "enum": list(choices)} for field, choices in PROJECTS_DISPLAY_FIELDS.items()
+        },
+        "additionalProperties": False,
+        "description": (
+            "Project views only: layout (list, board, timeline), group, order, closed (how far back completed "
+            "and canceled projects show) and the timeline zoom; a missing field takes the default"
+        ),
+    }
 
 
 def _boolean(description: str) -> dict[str, Any]:
@@ -132,7 +157,9 @@ def _view_properties(*, clearable: bool) -> dict[str, Any]:
                 "is_blocking and has_sub_issues as true or false). Values are ids or lists of ids; assignee_id, "
                 "creator_id and subscriber_id may be 'me'. match is all (default) or any, and groups is a list "
                 "of condition objects with these same keys and their own match, each counting as one condition, "
-                "and a group may hold groups of its own, two levels at most."
+                "and a group may hold groups of its own, two levels at most. A project view's filter instead "
+                "takes team_id, status (project statuses such as planned or in_progress), lead_id (user ids, "
+                "'none' for no lead) and sub_teams as true or false."
             ),
         },
         "sort": enum(SORTS, "Sort order"),
@@ -143,8 +170,13 @@ def _view_properties(*, clearable: bool) -> dict[str, Any]:
         "ordering_reversed": _boolean("Reverse the sort direction, keeping issues without the value last"),
         "visible_properties": properties_list,
         "show_sub_issues": _boolean("Show sub-issues"),
-        "show_completed": _boolean("Show completed issues"),
+        "show_completed": _boolean("Show completed issues, all of them or none"),
+        "completed_window": enum(
+            COMPLETED_WINDOWS,
+            "Completed and cancelled issues to show: all, past_week, past_month or none; wins over show_completed",
+        ),
         "show_archived": _boolean("Show archived issues"),
+        "projects_display": _projects_display(),
         "icon": {"type": ["string", "null"] if clearable else "string", "description": "Icon name for the view"},
         "color": {
             "type": ["string", "null"] if clearable else "string",
@@ -209,6 +241,8 @@ def _create_view(call: ToolCall) -> Any:
     """Save a new view, personal unless a team is named, as the view route does."""
     _workspace_member(call)
     fields = _view_fields(call)
+    if call.present("entity"):
+        fields["entity"] = call.arguments["entity"]
     team = call.optional("team_id")
     if team is not None:
         fields["team_id"] = team_id_ref(call, team)
@@ -302,6 +336,33 @@ def _delete_notification(call: ToolCall) -> Any:
     return {"deleted": True, "notification_id": notification_id}
 
 
+def _set_issue_reminder(call: ToolCall) -> Any:
+    """Remind the caller about one issue at a moment, replacing any reminder already set on it."""
+    _workspace_member(call)
+    issue = issue_ref(call, call.require("issue_id"))
+    payload = IssueReminderWrite.model_validate({"remind_at": call.require("remind_at")})
+    return set_reminder(call.repositories, call.context, issue.issue_id, payload).model_dump(mode="json")
+
+
+def _list_issue_reminders(call: ToolCall) -> Any:
+    """The caller's pending issue reminders, soonest first, or the one on one issue."""
+    _workspace_member(call)
+    reference = call.optional("issue_id")
+    issue_id = issue_ref(call, reference).issue_id if reference else None
+    items = list_reminders(call.repositories, call.context, issue_id)
+    return {"reminders": [item.model_dump(mode="json") for item in items]}
+
+
+def _cancel_issue_reminder(call: ToolCall) -> Any:
+    """Cancel the caller's pending reminder on one issue."""
+    _workspace_member(call)
+    issue = issue_ref(call, call.require("issue_id"))
+    cancel_reminder(call.repositories, call.context, issue.issue_id)
+    return {"cancelled": True, "issue_id": issue.issue_id}
+
+
+ISSUE_REF = string("The issue: its issue_id, or its key such as ENG-12")
+
 VIEW_REF = string("The view: its view_id, or its exact name when only one readable view has it")
 
 NOTIFICATION_IDS = one_or_many("One notification_id or a list of up to 100, as list_notifications answers them")
@@ -312,12 +373,14 @@ VIEW_TOOLS: tuple[Tool, ...] = (
         description=(
             "Save a view: personal by default, shared on a team with team_id (team: id, key such as ENG, "
             "or name; needs team membership), or shared with the workspace with shared=true. Stores an issue "
-            "filter, sort, layout and display settings."
+            "filter, sort, layout and display settings, or with entity=projects a projects filter and "
+            "projects_display."
         ),
         scopes=("views:write",),
         schema=object_schema(
             {
                 **_view_properties(clearable=False),
+                "entity": enum(VIEW_ENTITIES, "What the view lists, issues (the default) or projects"),
                 "team_id": string("Share on this team: id, key or name"),
                 "shared": _boolean("Share with the whole workspace when no team is named"),
             },
@@ -417,5 +480,34 @@ VIEW_TOOLS: tuple[Tool, ...] = (
         ),
         handler=_delete_notification,
         destructive=True,
+    ),
+    Tool(
+        name="set_issue_reminder",
+        description=(
+            "Remind yourself about an issue: at remind_at a reminder notification for it lands in your inbox, "
+            "and by email when your reminder emails are on. remind_at is an ISO 8601 time with a timezone, "
+            "such as 2026-10-01T09:00:00-07:00, at least a minute out and within 365 days. One reminder per "
+            "issue; setting another replaces it. Only you see it."
+        ),
+        scopes=("notifications:write",),
+        schema=object_schema(
+            {"issue_id": ISSUE_REF, "remind_at": string("When to be reminded, ISO 8601 with a timezone")},
+            required=("issue_id", "remind_at"),
+        ),
+        handler=_set_issue_reminder,
+    ),
+    Tool(
+        name="list_issue_reminders",
+        description="Your pending issue reminders, soonest first, or only the one on issue_id when it is given.",
+        scopes=("notifications:read",),
+        schema=object_schema({"issue_id": ISSUE_REF}),
+        handler=_list_issue_reminders,
+    ),
+    Tool(
+        name="cancel_issue_reminder",
+        description="Cancel your pending reminder on an issue. Errors when no reminder is pending on it.",
+        scopes=("notifications:write",),
+        schema=object_schema({"issue_id": ISSUE_REF}, required=("issue_id",)),
+        handler=_cancel_issue_reminder,
     ),
 )

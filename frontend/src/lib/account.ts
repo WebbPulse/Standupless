@@ -1,7 +1,7 @@
 /**
  * The wording and rules the personal account settings share: the shape a
  * username takes, the sentences for a refused email change, and how a session's
- * device and sign-in methods read.
+ * device and client read.
  */
 
 /** The shape a username takes, which is the shape the mention parser reads. */
@@ -26,23 +26,62 @@ const DEVICE_LABELS: Record<string, string> = {
   unknown: 'Unknown device',
 };
 
-/** How each sign-in method reads. */
-const METHOD_LABELS: Record<string, string> = {
-  pwd: 'Password',
-  otp: 'Authenticator code',
-  mfa: 'Two-factor',
-  passkey: 'Passkey',
-  hwk: 'Passkey',
-  oauth: 'Connected account',
-  fed: 'Connected account',
-  sso: 'Single sign-on',
-  email: 'Email link',
-};
-
 /** The device a session runs on, as a person reads it. */
 export const deviceLabel = (device: string): string =>
   DEVICE_LABELS[device] ?? 'Unknown device';
 
-/** How a session signed in, as a person reads it, or an empty string. */
-export const methodLabel = (amr: string[]): string =>
-  [...new Set(amr.map((method) => METHOD_LABELS[method] ?? method))].join(', ');
+/** How the products a session's user agent can name read. */
+const CLIENT_LABELS: Record<string, string> = {
+  'claude-code': 'Claude Code',
+  'standupless-cli': 'Standupless CLI',
+};
+
+/** The platforms a phone or tablet reports. */
+const MOBILE_PLATFORMS = new Set(['iOS', 'Android']);
+
+/** The fields of a session its label reads. */
+export interface SessionLabelInput {
+  device: string;
+  client: string;
+  platform: string;
+  clientId: string;
+}
+
+/** The product a session runs in, without its platform, or an empty string for a browser. */
+const productLabel = (session: SessionLabelInput, appName: string): string => {
+  if (session.clientId !== '') {
+    return appName !== ''
+      ? appName
+      : (CLIENT_LABELS[session.client] ?? (session.client || 'Connected app'));
+  }
+  if (session.client === 'Standupless') {
+    return MOBILE_PLATFORMS.has(session.platform)
+      ? 'Standupless mobile'
+      : 'Standupless desktop';
+  }
+  if (session.client !== '') {
+    return CLIENT_LABELS[session.client] ?? session.client;
+  }
+  return '';
+};
+
+/**
+ * What a session is, as a person reads it: the connected app or client it runs
+ * in, or a browser, with the platform when known. `appName` is the connected
+ * app's name for an OAuth session. A session that names nothing falls back to
+ * its device class.
+ */
+export const sessionLabel = (
+  session: SessionLabelInput,
+  appName = ''
+): string => {
+  const product = productLabel(session, appName);
+  const platform = session.platform;
+  if (product !== '') {
+    return platform !== '' ? `${product} on ${platform}` : product;
+  }
+  if (platform !== '') {
+    return `Browser on ${platform}`;
+  }
+  return deviceLabel(session.device);
+};

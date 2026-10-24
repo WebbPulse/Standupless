@@ -14,6 +14,12 @@ import CommentCard from './CommentCard';
 
 const addReaction = vi.fn<(target: unknown) => Promise<ReactionGroup>>();
 
+vi.mock('../../api/drafts', () => ({
+  listIssueDrafts: () => Promise.resolve([]),
+  saveDraft: () => Promise.resolve({}),
+  deleteDraft: () => Promise.resolve(),
+}));
+
 vi.mock('../../api/discussion', async () => {
   const actual = await vi.importActual<typeof import('../../api/discussion')>(
     '../../api/discussion'

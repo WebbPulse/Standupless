@@ -111,8 +111,9 @@ TRIAGE_TOOLS: tuple[Tool, ...] = (
     Tool(
         name="list_triage_issues",
         description=(
-            "Issues waiting in a team's triage inbox, newest filed first: those filed by guests, people "
-            "outside the team or workspace keys while the team has triage on. Snoozed issues are left out "
+            "Issues waiting in a team's triage inbox, newest filed first: new issues filed with no status while "
+            "the team has triage on, and every one from a guest, someone outside the team or a workspace key. "
+            "Snoozed issues are left out "
             "until their time passes; snoozed=true lists only them."
         ),
         scopes=("issues:read",),
@@ -158,8 +159,10 @@ TRIAGE_TOOLS: tuple[Tool, ...] = (
     Tool(
         name="update_team_triage_settings",
         description=(
-            "Turn a team's triage inbox on or off. While on, issues filed by guests, people outside the team "
-            "and workspace keys wait in triage until accepted. Needs team admin."
+            "Turn a team's triage inbox on or off. While on, every new issue that names no status waits in triage "
+            "until accepted, including a team member's; issues filed by guests, people outside the team and "
+            "workspace keys always do. A member's sub-issue or an issue given a real status skips it. "
+            "Needs team admin."
         ),
         scopes=("teams:write",),
         schema=object_schema(

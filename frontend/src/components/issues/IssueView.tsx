@@ -21,6 +21,11 @@
  * issue still opens here, under a banner that restores it. The supporting
  * lists are read once here and handed down, so the panel and the timeline
  * resolve the same ids without reading them twice.
+ *
+ * Remind me, from the menu, the palette or H, brings the issue back to the
+ * caller's inbox at a moment they pick, and a pending reminder shows above the
+ * description with ways to change or cancel it. In a pane beside a list H stays
+ * with the list, so the command is reached through the menu and the palette.
  */
 
 import React, {
@@ -37,6 +42,7 @@ import {
   LuArchive,
   LuArchiveRestore,
   LuChevronRight,
+  LuClock,
   LuCopy,
   LuCopyPlus,
   LuCornerUpLeft,
@@ -67,6 +73,11 @@ import { useAttachFiles } from '../../hooks/useAttachFiles';
 import { useAuth } from '../../hooks/useAuth';
 import { useCreateIssue } from '../../hooks/useCreateIssue';
 import { useCursorPages, type CursorPage } from '../../hooks/useCursorPages';
+import {
+  REMIND_ME_KEYS,
+  REMIND_ME_LABEL,
+  useIssueReminder,
+} from '../../hooks/useIssueReminder';
 import { useIssueSubscription } from '../../hooks/useIssueSubscription';
 import { useProjectMilestones } from '../../hooks/useProjectMilestones';
 import { useShortcut } from '../../hooks/useShortcuts';
@@ -91,6 +102,7 @@ import {
 } from '../../lib/issueConversion';
 import { recordArchive, recordPatch } from '../../lib/issueUndo';
 import { embeddedAttachmentIds } from '../../lib/media';
+import { reminderLabel } from '../../lib/reminders';
 import { useOptimisticRecord } from '../../lib/optimistic';
 import { issuePath, teamPath } from '../../lib/paths';
 import {
@@ -112,6 +124,7 @@ import { IconButton } from '../ui/button';
 import { LINK_CLASS } from '../ui/link';
 import Menu, { MenuItem, MenuSeparator, MenuShortcut } from '../ui/menu';
 import Spinner from '../ui/spinner';
+import { useTruncationTooltip } from '../ui/truncated-text';
 import { Toaster } from '../ui/toast';
 import AddLinkDialog from './AddLinkDialog';
 import AddRelationDialog from './AddRelationDialog';
@@ -126,6 +139,7 @@ import {
   type RelationGlyphProps,
 } from './RelationGlyphs';
 import IssueSubscribeButton from './IssueSubscribeButton';
+import RemindMeDialog from './RemindMeDialog';
 import FavoriteButton from '../ui/FavoriteButton';
 import IssueTimeline from './IssueTimeline';
 import IssueTrailNav from './IssueTrailNav';
@@ -377,6 +391,7 @@ export const IssueView: React.FC<IssueViewProps> = ({
   const [moving, setMoving] = useState(false);
   const [parenting, setParenting] = useState(false);
   const [converting, setConverting] = useState(false);
+  const [reminding, setReminding] = useState(false);
 
   const canonicalKey = data?.key;
   const redirectRef = useRef(issueRef);
@@ -391,6 +406,9 @@ export const IssueView: React.FC<IssueViewProps> = ({
 
   const attachFiles = useAttachFiles(workspaceId, issueId);
   const subscription = useIssueSubscription(workspaceId, issueId);
+  const reminder = useIssueReminder(workspaceId, issueId);
+  const teamTip = useTruncationTooltip<HTMLAnchorElement>();
+  const remindKeys = embedded ? '' : REMIND_ME_KEYS;
 
   const team = teams?.find((item) => item.id === teamId);
   const canEdit = canWriteIssues(workspace?.role, team?.role);
@@ -551,11 +569,14 @@ export const IssueView: React.FC<IssueViewProps> = ({
       {team !== undefined && (
         <>
           <Link
+            ref={teamTip.ref}
             to={teamPath(slug, team.key_prefix)}
             className={TEAM_LINK_CLASS}
+            {...teamTip.handlers}
           >
             {team.name}
           </Link>
+          {teamTip.tip}
           <LuChevronRight
             aria-hidden="true"
             className="h-3.5 w-3.5 shrink-0 text-text-faint"
@@ -694,6 +715,16 @@ export const IssueView: React.FC<IssueViewProps> = ({
               <MenuSeparator />
             </>
           )}
+          <MenuItem
+            onSelect={() => {
+              setReminding(true);
+            }}
+          >
+            <LuClock aria-hidden="true" className="h-3.5 w-3.5" />
+            {`${REMIND_ME_LABEL}…`}
+            {remindKeys !== '' && <MenuShortcut keys={remindKeys} />}
+          </MenuItem>
+          <MenuSeparator />
           <MenuItem onSelect={copyIssueId}>
             <LuCopy aria-hidden="true" className="h-3.5 w-3.5" />
             Copy ID
@@ -750,6 +781,14 @@ export const IssueView: React.FC<IssueViewProps> = ({
         enabled={canAct}
         onRun={() => {
           setLinkOpen(true);
+        }}
+      />
+      <IssueCommand
+        keys={remindKeys}
+        label={`${REMIND_ME_LABEL}…`}
+        enabled={issue !== null}
+        onRun={() => {
+          setReminding(true);
         }}
       />
       <IssueCommand
@@ -894,11 +933,43 @@ export const IssueView: React.FC<IssueViewProps> = ({
                       )}
                     </div>
                   )}
+                  {reminder.reminder !== null && (
+                    <div
+                      role="status"
+                      className="flex items-center gap-2 rounded-md border border-line bg-surface px-3 py-2 text-sm text-text-muted"
+                    >
+                      <LuClock
+                        aria-hidden="true"
+                        className="h-3.5 w-3.5 shrink-0"
+                      />
+                      <span className="min-w-0 flex-1">
+                        Reminder set for{' '}
+                        {reminderLabel(reminder.reminder.remind_at)}.
+                      </span>
+                      <button
+                        type="button"
+                        className={LINK_CLASS}
+                        onClick={() => {
+                          setReminding(true);
+                        }}
+                      >
+                        Change
+                      </button>
+                      <button
+                        type="button"
+                        className={LINK_CLASS}
+                        onClick={reminder.cancel}
+                      >
+                        Cancel reminder
+                      </button>
+                    </div>
+                  )}
                   <IssueBody
                     workspaceId={workspaceId}
                     issue={issue}
                     canEdit={canEdit}
                     onSaved={receive}
+                    people={options.people}
                     onDropFiles={attachFiles}
                   />
 
@@ -1010,6 +1081,14 @@ export const IssueView: React.FC<IssueViewProps> = ({
                 setMoving(false);
               }}
               onMoved={onMoved}
+            />
+            <RemindMeDialog
+              open={reminding}
+              issueKey={issue.key}
+              reminder={reminder}
+              onClose={() => {
+                setReminding(false);
+              }}
             />
             <AddLinkDialog
               workspaceId={workspaceId}

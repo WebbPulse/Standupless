@@ -12,7 +12,8 @@ routes stay thin and every rule has one home.
 from __future__ import annotations
 
 from datetime import date
-from typing import Any, Iterable
+from difflib import get_close_matches
+from typing import Any, Collection, Iterable, Mapping
 
 from fastapi import HTTPException, status
 
@@ -21,6 +22,7 @@ from app.common.api.dependencies.repositories import Repositories
 from app.common.cycle_schedule import RELATIVE_CYCLES, relative_cycle
 from app.common.db.dynamo.api_keys import is_service_subject
 from app.common.db.dynamo.issues import Issue
+from app.common.db.dynamo.planning import Project
 from app.common.db.dynamo.team_config import Status
 from app.common.db.dynamo.teams import Team
 from app.common.estimates import allowed_estimates
@@ -149,8 +151,27 @@ def check_status(repositories: Repositories, workspace_id: str, team_id: str, st
     """
     row = repositories.team_config.get_status(workspace_id, team_id, status_id)
     if row is None:
-        raise unprocessable(f"No such status: {status_id}")
+        raise unprocessable(unknown_status_message(repositories, workspace_id, team_id, status_id))
     return row
+
+
+def unknown_status_message(repositories: Repositories, workspace_id: str, team_id: str, reference: str) -> str:
+    """The refusal for a status this team lacks, naming its statuses and the closest one.
+
+    A caller that guessed a name, such as `Canceled` for `Cancelled`, learns the
+    spelling and the id to send without a second call to list the statuses.
+    """
+    rows = repositories.team_config.list_statuses(workspace_id, team_id, include_hidden=False)
+    if not rows:
+        return f"No such status: {reference}. This team has no statuses."
+    listed = ", ".join(f"{row.name} ({row.status_id})" for row in rows)
+    message = f"No such status: {reference}. This team's statuses are: {listed}."
+    by_folded = {row.name.casefold(): row for row in rows}
+    closest = get_close_matches(reference.strip().casefold(), list(by_folded), n=1, cutoff=0.6)
+    if closest:
+        match = by_folded[closest[0]]
+        message += f" Did you mean {match.name} ({match.status_id})?"
+    return message
 
 
 def default_status(repositories: Repositories, workspace_id: str, team_id: str) -> Status:
@@ -198,19 +219,22 @@ def check_parent(
     team_id: str,
     issue_id: str | None,
     parent_id: str | None,
+    *,
+    known: Mapping[str, Issue] | None = None,
 ) -> str | None:
     """Hold a parent to the contract's three rules, or raise a 422.
 
     Same team, never itself, and at most one level deep: a child cannot itself
     have children, which is what keeps `progress` a count of direct children rather
-    than a tree walk.
+    than a tree walk. `known` holds issues this request wrote moments ago, checked
+    as written rather than through a read that can lag the write.
     """
     if not parent_id:
         return None
     if issue_id is not None and parent_id == issue_id:
         raise unprocessable("An issue cannot be its own parent")
 
-    parent = repositories.issues.get(workspace_id, parent_id)
+    parent = (known or {}).get(parent_id) or repositories.issues.get(workspace_id, parent_id)
     if parent is None:
         raise unprocessable(f"No such issue: {parent_id}")
     if parent.team_id != team_id:
@@ -276,16 +300,23 @@ def check_project(
     workspace_id: str,
     team_id: str,
     project_id: str | None,
+    *,
+    known: Project | None = None,
 ) -> str | None:
     """Hold a project to being on this issue's team, or raise a 422.
 
     A project spans one or more teams, and an issue may join it only from one of
     them, so the project's own team list is what decides. A project not on this
     team reads as absent, which tells the caller nothing about other teams.
+    `known` is a project this request wrote moments ago, checked as written
+    rather than through a read that can lag the write.
     """
     if not project_id:
         return None
-    project = repositories.planning.get_project(workspace_id, project_id)
+    if known is not None and known.project_id == project_id:
+        project: Project | None = known
+    else:
+        project = repositories.planning.get_project(workspace_id, project_id)
     if project is None or team_id not in project.team_ids:
         raise unprocessable(f"No such project: {project_id}")
     return project_id
@@ -296,16 +327,22 @@ def check_project_milestone(
     workspace_id: str,
     project_id: str | None,
     milestone_id: str | None,
+    *,
+    known: Mapping[str, Collection[str]] | None = None,
 ) -> str | None:
     """Hold a milestone to being one of the issue's own project's, or raise a 422.
 
     A milestone is a stage of one project, so an issue outside that project, or
-    in no project, cannot sit in it.
+    in no project, cannot sit in it. `known` maps a project this request wrote
+    moments ago to the milestone ids it wrote on it, trusted as written rather
+    than read back through a read that can lag the write.
     """
     if not milestone_id:
         return None
     if not project_id:
         raise unprocessable("project_milestone_id needs a project_id")
+    if milestone_id in (known or {}).get(project_id, ()):
+        return milestone_id
     if repositories.planning.get_milestone(workspace_id, project_id, milestone_id) is None:
         raise unprocessable(f"No such milestone: {milestone_id}")
     return milestone_id
@@ -334,17 +371,30 @@ def team_role(repositories: Repositories, context: AuthzContext, team_id: str) -
     return IMPLIED_TEAM_ROLE.get(context.role)
 
 
-def lands_in_triage(repositories: Repositories, context: AuthzContext, team_id: str, requested: bool) -> bool:
+def lands_in_triage(
+    repositories: Repositories,
+    context: AuthzContext,
+    team_id: str,
+    requested: bool,
+    *,
+    status_named: bool = False,
+    has_parent: bool = False,
+) -> bool:
     """Whether a new issue in one team starts in its triage inbox.
 
     Only when the team has triage on: then an issue filed by a guest, by someone
-    outside the team or by a workspace key lands there, and a member may ask for it.
+    outside the team or by a workspace key always lands there, and so does a
+    member's issue that names no status. A member who names a real status files
+    straight into it, and a member's sub-issue files straight in unless triage
+    is asked for.
     """
     if not triage_on(repositories, context.workspace_id, team_id):
         return False
     if requested or context.is_guest or is_service_subject(context.user_id):
         return True
-    return repositories.memberships.get_team_membership(context.workspace_id, team_id, context.user_id) is None
+    if repositories.memberships.get_team_membership(context.workspace_id, team_id, context.user_id) is None:
+        return True
+    return not status_named and not has_parent
 
 
 def triage_on(repositories: Repositories, workspace_id: str, team_id: str) -> bool:

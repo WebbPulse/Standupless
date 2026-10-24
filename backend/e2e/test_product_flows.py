@@ -583,6 +583,39 @@ class TestDiscussionDomain:
         deleted = api.delete(path, params=scope)
         assert deleted.status_code in (200, 204), deleted.text[:400]
 
+    @WRITES
+    def test_a_comment_draft_is_saved_restored_and_discarded(
+        self, api: Any, run_scope: RunScope, workspace: "dict[str, Any]", issue: "dict[str, Any]"
+    ) -> None:
+        """A draft saved on the issue reads back and lists, and discarding it twice is fine.
+
+        The drafts routes sit under their own views prefix at the gateway, so a
+        missing prefix would answer 404 here rather than the draft.
+        """
+        drafts = f"/api/workspaces/{workspace['id']}/drafts"
+        path = f"{drafts}/{issue['id']}"
+        body = run_scope.name("draft")
+
+        saved = api.put(path, json={"body": body})
+        assert saved.status_code == 200, saved.text[:400]
+        assert saved.json()["body"] == body
+
+        readback = api.get(path)
+        assert readback.status_code == 200, readback.text[:400]
+        assert readback.json()["body"] == body
+        assert readback.json()["issue_id"] == issue["id"]
+
+        listed = api.get(drafts, params={"issue_id": issue["id"]})
+        assert listed.status_code == 200, listed.text[:400]
+        assert [row["body"] for row in listed.json()["drafts"]] == [body]
+
+        for _ in range(2):
+            discarded = api.delete(path)
+            assert discarded.status_code == 204, discarded.text[:400]
+
+        gone = api.get(path)
+        assert gone.status_code == 404, gone.text[:400]
+
 
 class TestViewsDomain:
     """The read surfaces a signed in user lands on: the board, the inbox and search."""
@@ -839,6 +872,58 @@ class TestPlanningDomain:
         assert deleted.status_code in (200, 204), deleted.text[:400]
 
     @WRITES
+    def test_a_project_is_created_from_a_template(
+        self, api: Any, run_scope: RunScope, workspace: "dict[str, Any]", team: "dict[str, Any]"
+    ) -> None:
+        """A project template saved on the team seeds a new project with its milestone, issue and sub-issue."""
+        base = f"/api/workspaces/{workspace['id']}"
+        templates_path = f"{base}/teams/{team['id']}/templates"
+        blueprint = {
+            "status": "planned",
+            "target_offset_days": 30,
+            "milestones": [{"key": "alpha", "name": run_scope.name("alpha"), "target_offset_days": 7}],
+            "issues": [
+                {"key": "plan", "title": run_scope.name("plan"), "milestone_key": "alpha"},
+                {"title": run_scope.name("review"), "parent_key": "plan"},
+            ],
+        }
+        saved = {"kind": "project", "name": run_scope.name("project-template"), "project": blueprint}
+        template = _created(api.post(templates_path, json=saved), "project template")
+        project: "dict[str, Any] | None" = None
+        issue_ids: "list[str]" = []
+        try:
+            listed = api.get(templates_path, params={"kind": "project"})
+            assert listed.status_code == 200, listed.text[:400]
+            assert template["id"] in _ids(listed.json(), "template", "templates")
+            plain = api.get(templates_path)
+            assert template["id"] not in _ids(plain.json(), "template", "templates")
+
+            body = {"team_ids": [team["id"]], "name": run_scope.name("templated"), "template_id": template["id"]}
+            project = _created(api.post(f"{base}/projects", json=body), "project")
+            assert project["status"] == "planned"
+            today = datetime.now(timezone.utc).date()
+            assert project["target_date"] == (today + timedelta(days=30)).isoformat()
+
+            milestones = api.get(f"{base}/projects/{project['id']}/milestones")
+            assert milestones.status_code == 200, milestones.text[:400]
+            rows = milestones.json()["milestones"]
+            assert [row["name"] for row in rows] == [run_scope.name("alpha")]
+
+            issues = api.get(f"{base}/issues", params={"team_id": team["id"], "project_id": project["id"]})
+            assert issues.status_code == 200, issues.text[:400]
+            by_title = {row["title"]: row for row in _items(issues.json(), "issues")}
+            issue_ids = [row["id"] for row in by_title.values()]
+            plan = by_title[run_scope.name("plan")]
+            assert plan["project_milestone_id"] == rows[0]["milestone_id"]
+            assert by_title[run_scope.name("review")]["parent_id"] == plan["id"]
+        finally:
+            for issue_id in reversed(issue_ids):
+                api.delete(f"{base}/issues/{issue_id}")
+            if project is not None:
+                api.delete(f"{base}/projects/{project['id']}")
+            api.delete(f"{templates_path}/{template['id']}")
+
+    @WRITES
     def test_a_project_update_round_trips(
         self, api: Any, run_scope: RunScope, workspace: "dict[str, Any]", team: "dict[str, Any]"
     ) -> None:
@@ -1062,6 +1147,70 @@ class TestPlanningDomain:
         finally:
             deleted = api.delete(initiative_path)
             assert deleted.status_code in (200, 204), deleted.text[:400]
+            api.delete(project_path)
+
+    @WRITES
+    def test_a_reference_picked_with_hash_round_trips(
+        self,
+        api: Any,
+        e2e_env: Any,
+        run_scope: RunScope,
+        workspace: "dict[str, Any]",
+        team: "dict[str, Any]",
+        issue: "dict[str, Any]",
+        track: Any,
+    ) -> None:
+        """The `#` picker's search finds a project and a document, and what a pick writes reads back verbatim.
+
+        A picked issue writes its key and a picked project or document writes a link
+        named after it to its page, so the description stays plain Markdown that the
+        app draws as chips and every other reader still follows as a link.
+        """
+        base = f"/api/workspaces/{workspace['id']}"
+        origin = urlsplit(e2e_env.api_base_url)
+        site = f"{origin.scheme}://{origin.netloc}"
+        project = _created(
+            api.post(f"{base}/projects", json={"team_id": team["id"], "name": run_scope.name("picker-roadmap")}),
+            "project",
+        )
+        project_path = f"{base}/projects/{project['id']}"
+        try:
+            document = _created(
+                api.post(f"{project_path}/documents", json={"title": run_scope.name("picker-brief")}),
+                "document",
+            )
+            track(f"{base}/documents/{document['id']}")
+
+            found = api.get(
+                f"{base}/search",
+                params=[("q", project["name"]), ("type", "projects"), ("limit", "50")],
+            )
+            assert found.status_code == 200, found.text[:400]
+            assert project["id"] in [row["project_id"] for row in found.json().get("projects", [])]
+            found = api.get(
+                f"{base}/search",
+                params=[("q", document["title"]), ("type", "documents"), ("limit", "50")],
+            )
+            assert found.status_code == 200, found.text[:400]
+            assert document["id"] in [row["document_id"] for row in found.json().get("documents", [])]
+
+            slug = workspace["slug"]
+            body = (
+                f"Blocked on {issue['key']}, planned in "
+                f"[{project['name']}]({site}/w/{slug}/projects/{project['id']}) and "
+                f"[{document['title']}]({site}/w/{slug}/documents/{document['id']})"
+            )
+            created = _created(
+                api.post(
+                    f"{base}/issues", json={"team_id": team["id"], "title": run_scope.name("picker"), "body": body}
+                ),
+                "issue",
+            )
+            track(f"{base}/issues/{created['id']}")
+            readback = api.get(f"{base}/issues/{created['id']}")
+            assert readback.status_code == 200, readback.text[:400]
+            assert readback.json()["body"] == body
+        finally:
             api.delete(project_path)
 
     @WRITES
@@ -1484,6 +1633,36 @@ class TestIssueDetail:
 
         deleted = api.delete(path, params={"issue_id": issue["id"]})
         assert deleted.status_code in (200, 204), deleted.text[:400]
+
+    @WRITES
+    def test_an_issue_key_leaves_a_mentioned_in_backlink(
+        self, api: Any, run_scope: RunScope, workspace: "dict[str, Any]", team: "dict[str, Any]", track: Any
+    ) -> None:
+        """A description and a comment naming another issue each leave one backlink on it.
+
+        Editing the comment without adding a key writes nothing more, so the history
+        of the mentioned issue reads one row per place the mention was first written.
+        """
+        issues = f"/api/workspaces/{workspace['id']}/issues"
+        target = _created(api.post(issues, json={"team_id": team["id"], "title": run_scope.name("target")}), "issue")
+        track(f"{issues}/{target['id']}")
+        body = {"team_id": team["id"], "title": run_scope.name("source"), "body": f"Blocked on {target['key']}"}
+        source = _created(api.post(issues, json=body), "issue")
+        track(f"{issues}/{source['id']}")
+
+        thread = f"{issues}/{source['id']}/comments"
+        comment = _created(api.post(thread, json={"body": f"Same cause as {target['key']}"}), "comment")
+        path = f"/api/workspaces/{workspace['id']}/comments/{comment['id']}"
+        track(path, {"issue_id": source["id"]})
+        edited = api.patch(path, json={"issue_id": source["id"], "body": f"Same root cause as {target['key']}"})
+        assert edited.status_code == 200, edited.text[:400]
+
+        history = api.get(f"{issues}/{target['id']}/activity")
+        assert history.status_code == 200, history.text[:400]
+        rows = [row for row in history.json()["activity"] if row["kind"] == "mentioned"]
+        assert sorted(row["field"] for row in rows) == ["comment", "description"], rows
+        assert all(row["to"]["id"] == source["id"] for row in rows), rows
+        assert all(row["to"]["key"] == source["key"] for row in rows), rows
 
 
 PIXEL = bytes.fromhex(

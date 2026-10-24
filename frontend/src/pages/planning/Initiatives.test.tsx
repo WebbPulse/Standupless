@@ -2,7 +2,8 @@
  * The initiatives list. Covers that rows group by status with their project
  * count and progress, that a member creates an initiative owned by them and
  * lands on it, that an empty workspace explains what an initiative is, and that
- * a guest is told initiatives are for members and offered no way to start one.
+ * a guest is told initiatives are for members and offered no way to start one,
+ * and that sub-initiatives sit indented under their parent and fold away.
  */
 
 import { render, screen, waitFor, within } from '@testing-library/react';
@@ -203,6 +204,49 @@ describe('Initiatives', () => {
       });
     });
     expect(await screen.findByText('initiative page')).toBeInTheDocument();
+  });
+
+  it('nests sub-initiatives under their parent and folds them away', async () => {
+    listInitiatives.mockResolvedValue({
+      initiatives: [
+        initiative('ini-1', 'Company goals', { status: 'active' }),
+        initiative('ini-2', 'Grow revenue', {
+          status: 'active',
+          parent_initiative_id: 'ini-1',
+        }),
+        initiative('ini-3', 'Hire', {
+          status: 'planned',
+          parent_initiative_id: 'ini-1',
+        }),
+      ],
+      next_cursor: null,
+    });
+    const user = userEvent.setup();
+    renderPage();
+
+    const active = await screen.findByRole('region', { name: 'Active' });
+    const links = within(active).getAllByRole('link');
+    expect(links.map((link) => link.getAttribute('aria-label'))).toEqual([
+      'Company goals',
+      'Grow revenue',
+    ]);
+    const planned = screen.getByRole('region', { name: 'Planned' });
+    expect(within(planned).getByText('in Company goals')).toBeInTheDocument();
+
+    await user.click(
+      within(active).getByRole('button', { name: 'Collapse Company goals' })
+    );
+    expect(
+      within(active).queryByRole('link', { name: 'Grow revenue' })
+    ).not.toBeInTheDocument();
+    expect(within(active).getByText('1 sub-initiative')).toBeInTheDocument();
+
+    await user.click(
+      within(active).getByRole('button', { name: 'Expand Company goals' })
+    );
+    expect(
+      within(active).getByRole('link', { name: 'Grow revenue' })
+    ).toBeInTheDocument();
   });
 
   it('explains initiatives when there are none', async () => {

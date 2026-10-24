@@ -28,6 +28,7 @@ export const NOTIFICATION_KINDS: readonly NotificationKind[] = [
   'initiative_update_due',
   'due_soon',
   'overdue',
+  'reminder',
   'standup_digest',
   'sla_at_risk',
   'sla_breached',

@@ -53,14 +53,14 @@ locals {
       secrets     = true
       ses         = false
       memory      = 512
-      tables      = ["comments", "reactions", "attachments", "subscriptions", "rate-limits"]
+      tables      = ["comments", "reactions", "attachments", "subscriptions", "activity", "rate-limits"]
       read_tables = ["memberships", "workspaces", "users", "teams", "issues", "api-keys"]
     }
     planning = {
       secrets     = false
       ses         = false
       memory      = 512
-      tables      = ["planning", "idempotency", "issues", "activity", "subscriptions", "rate-limits"]
+      tables      = ["planning", "idempotency", "issues", "activity", "subscriptions", "counters", "rate-limits"]
       read_tables = ["memberships", "workspaces", "users", "teams", "team_config", "api-keys"]
     }
     planning-rollup-consumer = {
@@ -337,7 +337,8 @@ locals {
         IDENTITY_EMAIL_FROM            = local.email_from
         IDENTITY_SES_CONFIGURATION_SET = module.ses.configuration_set_name
 
-        IDENTITY_REGISTRATION_ENABLED = "true"
+        IDENTITY_REGISTRATION_ENABLED    = "true"
+        IDENTITY_REGISTRATION_ATTRIBUTES = jsonencode(["display_name"])
 
         IDENTITY_TOTP_CIPHER = "secret"
 

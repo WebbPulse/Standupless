@@ -45,6 +45,7 @@ ActivityKind = Literal[
     "unarchived",
     "subscriber_added",
     "subscriber_removed",
+    "mentioned",
 ]
 
 ACTIVITY_KINDS: tuple[str, ...] = (
@@ -58,6 +59,7 @@ ACTIVITY_KINDS: tuple[str, ...] = (
     "unarchived",
     "subscriber_added",
     "subscriber_removed",
+    "mentioned",
 )
 
 

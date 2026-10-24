@@ -4,6 +4,7 @@
  * the date presets can be tested against a fixed day rather than the clock.
  */
 
+import { weekStartDay } from './preferences';
 import type { StatusCategory, StatusRead } from '../types/Api';
 
 /** The workflow categories in the order a status picker groups them. */
@@ -70,18 +71,22 @@ export interface DatePreset {
 
 /**
  * The quick picks a date picker offers, counted from `today`. The week ends
- * on Friday because that is when work stops, and next week starts on Monday.
+ * on Friday because that is when work stops, and next week starts on the day
+ * the viewer's week starts, Monday unless they chose otherwise.
  */
-export const datePresets = (today: Date): DatePreset[] => {
+export const datePresets = (
+  today: Date,
+  weekStart: number = weekStartDay()
+): DatePreset[] => {
   const weekday = today.getDay();
   const toFriday = (5 - weekday + 7) % 7;
-  const toMonday = (1 - weekday + 7) % 7 || 7;
+  const toWeekStart = (weekStart - weekday + 7) % 7 || 7;
   const monthEnd = new Date(today.getFullYear(), today.getMonth() + 1, 0);
   return [
     { label: 'Today', value: isoDate(today) },
     { label: 'Tomorrow', value: isoDate(addDays(today, 1)) },
     { label: 'End of this week', value: isoDate(addDays(today, toFriday)) },
-    { label: 'Next week', value: isoDate(addDays(today, toMonday)) },
+    { label: 'Next week', value: isoDate(addDays(today, toWeekStart)) },
     { label: 'In two weeks', value: isoDate(addDays(today, 14)) },
     { label: 'End of this month', value: isoDate(monthEnd) },
   ];

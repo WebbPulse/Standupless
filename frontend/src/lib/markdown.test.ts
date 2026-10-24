@@ -92,6 +92,17 @@ describe('parseInline', () => {
     ]);
   });
 
+  it('reads an issue key but not one inside a word, path or code', () => {
+    expect(
+      parseInline('see ENG-12, not xENG-1 or /i/ENG-3 or `ENG-4`')
+    ).toEqual([
+      { type: 'text', value: 'see ' },
+      { type: 'issue', key: 'ENG-12' },
+      { type: 'text', value: ', not xENG-1 or /i/ENG-3 or ' },
+      { type: 'code', value: 'ENG-4' },
+    ]);
+  });
+
   it('keeps a single newline as a break', () => {
     expect(parseInline('one\ntwo')).toEqual([
       { type: 'text', value: 'one' },

@@ -1,4 +1,4 @@
-"""Inbox routes: list, unread count, mark read, mark unread, snooze and delete.
+"""Inbox routes: list, unread count, mark read, mark unread, snooze and delete, and issue reminders.
 
 The inbox is per user by construction. The partition key is built from the
 authorization context and never from a parameter, so there is no route by which one
@@ -12,6 +12,11 @@ a short index query rather than a filtered partition read. Marking read deletes
 Snoozing sets `unread_at` to the moment the notification should come back, and every
 unread read bounds the index at now, so a snoozed row returns by itself when its time
 comes, with no sweep or scheduler to run.
+
+An issue reminder is the caller asking to hear about one issue again at a moment
+they pick. It waits under the caller's own reminder partition and the notify
+consumer's minute tick turns it into a `reminder` row in this inbox when it comes
+due. Setting one only needs to see the issue, since nobody else sees it.
 """
 
 from __future__ import annotations
@@ -28,6 +33,7 @@ from app.common.inbox import delete_notification as delete_row
 from app.common.inbox import mark_read as mark_rows_read
 from app.common.inbox import mark_unread as mark_rows_unread
 from app.common.inbox import snooze as snooze_rows
+from app.common.issue_reminders import cancel_reminder, list_reminders, set_reminder
 from app.domains.views.schemas.view import (
     INBOX_DEFAULT_LIMIT,
     INBOX_MAX_LIMIT,
@@ -37,6 +43,9 @@ from app.domains.views.schemas.view import (
     InboxReadResult,
     InboxSnoozeRequest,
     InboxUnreadRequest,
+    IssueReminderListRead,
+    IssueReminderRead,
+    IssueReminderWrite,
     NotificationRead,
 )
 
@@ -140,6 +149,48 @@ def snooze(
     snooze can neither return before the request lands nor outlive the row.
     """
     return InboxReadResult(updated=snooze_rows(repositories, context, payload))
+
+
+@router.get("/{workspace_id}/inbox/reminders", response_model=IssueReminderListRead)
+def list_issue_reminders(
+    workspace_id: str = Path(..., min_length=1),
+    issue_id: Optional[str] = Query(default=None, min_length=1),
+    context: AuthzContext = Depends(require(Capability.WORKSPACE_READ)),
+    repositories: Repositories = Depends(get_repositories),
+) -> IssueReminderListRead:
+    """The caller's pending issue reminders, soonest first, or the one on `issue_id`.
+
+    A reminder on an issue that is gone or no longer visible is left out.
+    """
+    return IssueReminderListRead(reminders=list_reminders(repositories, context, issue_id))
+
+
+@router.put("/{workspace_id}/inbox/reminders/{issue_id}", response_model=IssueReminderRead)
+def set_issue_reminder(
+    payload: IssueReminderWrite,
+    workspace_id: str = Path(..., min_length=1),
+    issue_id: str = Path(..., min_length=1),
+    context: AuthzContext = Depends(require(Capability.WORKSPACE_READ)),
+    repositories: Repositories = Depends(get_repositories),
+) -> IssueReminderRead:
+    """Remind the caller about one issue at `remind_at`, replacing any reminder already set on it.
+
+    The moment must carry a timezone and be between a minute and 365 days out. An
+    issue the caller cannot see is a 404.
+    """
+    return set_reminder(repositories, context, issue_id, payload)
+
+
+@router.delete("/{workspace_id}/inbox/reminders/{issue_id}", status_code=status.HTTP_204_NO_CONTENT)
+def cancel_issue_reminder(
+    workspace_id: str = Path(..., min_length=1),
+    issue_id: str = Path(..., min_length=1),
+    context: AuthzContext = Depends(require(Capability.WORKSPACE_READ)),
+    repositories: Repositories = Depends(get_repositories),
+) -> Response:
+    """Cancel the caller's pending reminder on one issue, or 404 when none is pending."""
+    cancel_reminder(repositories, context, issue_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.delete("/{workspace_id}/inbox/{notification_id}", status_code=status.HTTP_204_NO_CONTENT)

@@ -216,7 +216,19 @@ class TestSessions:
         current = [row for row in sessions if row["current"]]
         assert len(current) == 1, f"expected one current session, found {len(current)}."
         for row in sessions:
-            assert {"id", "device", "ip", "started_at", "last_active_at", "expires_at", "amr"} <= row.keys()
+            assert {
+                "id",
+                "device",
+                "ip",
+                "last_ip",
+                "client",
+                "platform",
+                "client_id",
+                "started_at",
+                "last_active_at",
+                "expires_at",
+                "amr",
+            } <= row.keys()
 
         own = client.delete(f"/api/auth/sessions/{current[0]['id']}")
         assert own.status_code == 400, f"revoking the current session answered {own.status_code}."

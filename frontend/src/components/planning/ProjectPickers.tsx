@@ -445,6 +445,10 @@ export interface InitiativePickerProps extends ProjectPickerBaseProps {
   value: string | null;
   initiatives: InitiativeRead[];
   onChange: (value: string | null) => void;
+  /** What the picker names, "Initiative" for a project and "Parent" for an initiative. */
+  field?: string;
+  /** The name the chosen initiative reads as while the list has not loaded it. */
+  valueName?: string | null;
 }
 
 /** The option value that takes a project out of its initiative. */
@@ -455,6 +459,8 @@ export const InitiativePicker: React.FC<InitiativePickerProps> = ({
   value,
   initiatives,
   onChange,
+  field = 'Initiative',
+  valueName = null,
   disabled = false,
   variant = 'rail',
   align = 'start',
@@ -466,7 +472,7 @@ export const InitiativePicker: React.FC<InitiativePickerProps> = ({
   const options: ComboboxOption[] = [
     {
       value: NO_INITIATIVE,
-      label: 'No initiative',
+      label: `No ${field.toLowerCase()}`,
       icon: <LuGoal className="h-3.5 w-3.5" />,
     },
     ...initiatives.map((initiative) => ({
@@ -482,19 +488,19 @@ export const InitiativePicker: React.FC<InitiativePickerProps> = ({
   const text =
     value === null
       ? variant === 'chip'
-        ? 'Initiative'
-        : 'No initiative'
-      : (chosen?.name ?? 'Unknown');
+        ? field
+        : `No ${field.toLowerCase()}`
+      : (chosen?.name ?? valueName ?? 'Unknown');
   return (
     <Popover
-      label="Initiative"
+      label={field}
       align={align}
       block={variant === 'rail'}
       contentClassName="w-64"
       trigger={(trigger) => (
         <Trigger
           trigger={trigger}
-          field="Initiative"
+          field={field}
           icon={<LuGoal className="h-3.5 w-3.5" />}
           text={text}
           empty={value === null}
@@ -506,11 +512,11 @@ export const InitiativePicker: React.FC<InitiativePickerProps> = ({
     >
       {(close) => (
         <Combobox
-          label="Initiative"
-          placeholder="Set initiative"
+          label={field}
+          placeholder={`Set ${field.toLowerCase()}`}
           options={options}
           selected={[value ?? NO_INITIATIVE]}
-          emptyMessage="No initiative matches"
+          emptyMessage={`No ${field.toLowerCase()} matches`}
           onSelect={(picked) => {
             close();
             const next = picked === NO_INITIATIVE ? null : picked;

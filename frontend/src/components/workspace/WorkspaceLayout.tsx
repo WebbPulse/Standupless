@@ -337,6 +337,7 @@ const WorkspaceOverlays: React.FC = () => {
                       <CommandPalette
                         open={palette.open}
                         onClose={palette.closePalette}
+                        picker={palette.picker}
                         workspace={workspace}
                         teams={teams}
                         onShowShortcuts={showHelp}

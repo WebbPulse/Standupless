@@ -51,6 +51,17 @@ def test_the_caller_reads_their_own_row(client: TestClient, repositories: Any) -
         "two_factor": False,
         "timezone": None,
         "pulse_digest": "off",
+        "home_view": "home",
+        "week_start": "monday",
+        "name_display": "username",
+        "font_size": "default",
+        "projects_display": {
+            "layout": "list",
+            "group": "status",
+            "order": "target",
+            "closed": "all",
+            "zoom": "month",
+        },
     }
 
 
@@ -92,6 +103,88 @@ def test_the_pulse_digest_defaults_off_and_takes_a_cadence(client: TestClient, r
 
     assert client.patch("/api/users/me/preferences", json={"pulse_digest": "hourly"}).status_code == 422
     assert client.patch("/api/users/me/preferences", json={"pulse_digest": "off"}).json()["pulse_digest"] == "off"
+
+
+def test_interface_preferences_default_and_change_one_at_a_time(client: TestClient, repositories: Any) -> None:
+    """Each interface preference saves on its own, keeps the others and refuses a choice it does not have."""
+    make_user(repositories, OWNER, "owner@example.com", display_name="Owner")
+    sign_in(client, OWNER)
+
+    response = client.patch("/api/users/me/preferences", json={"home_view": "inbox"})
+    assert response.status_code == 200
+    assert response.json()["home_view"] == "inbox"
+    assert response.json()["week_start"] == "monday"
+
+    body = client.patch(
+        "/api/users/me/preferences",
+        json={"week_start": "sunday", "name_display": "full_name", "font_size": "large"},
+    ).json()
+    assert (body["home_view"], body["week_start"], body["name_display"], body["font_size"]) == (
+        "inbox",
+        "sunday",
+        "full_name",
+        "large",
+    )
+    stored = repositories.users.get(OWNER)
+    assert (stored.home_view, stored.week_start, stored.name_display, stored.font_size) == (
+        "inbox",
+        "sunday",
+        "full_name",
+        "large",
+    )
+
+    for field, value in (
+        ("home_view", "board"),
+        ("week_start", "friday"),
+        ("name_display", "email"),
+        ("font_size", "huge"),
+    ):
+        assert client.patch("/api/users/me/preferences", json={field: value}).status_code == 422
+
+
+def test_a_retired_stored_preference_reads_as_the_default(client: TestClient, repositories: Any) -> None:
+    """A value written before a choice was withdrawn reads as the default rather than failing the read."""
+    make_user(repositories, OWNER, "owner@example.com", display_name="Owner")
+    repositories.users.update(OWNER, home_view="roadmap", font_size="tiny")
+    sign_in(client, OWNER)
+    body = client.get("/api/users/me").json()
+    assert body["home_view"] == "home"
+    assert body["font_size"] == "default"
+
+
+def test_the_projects_display_is_kept_whole_and_refuses_unknown_choices(client: TestClient, repositories: Any) -> None:
+    """The projects list arrangement replaces as a whole, follows the account and refuses a choice it lacks."""
+    make_user(repositories, OWNER, "owner@example.com", display_name="Owner")
+    sign_in(client, OWNER)
+
+    response = client.patch(
+        "/api/users/me/preferences",
+        json={"projects_display": {"layout": "board", "group": "health", "closed": "month"}},
+    )
+    assert response.status_code == 200
+    assert response.json()["projects_display"] == {
+        "layout": "board",
+        "group": "health",
+        "order": "target",
+        "closed": "month",
+        "zoom": "month",
+    }
+    assert repositories.users.get(OWNER).projects_display["group"] == "health"
+    assert client.get("/api/users/me").json()["projects_display"]["layout"] == "board"
+
+    for field, value in (("layout", "gallery"), ("group", "label"), ("closed", "year"), ("zoom", "day")):
+        refused = client.patch("/api/users/me/preferences", json={"projects_display": {field: value}})
+        assert refused.status_code == 422
+
+
+def test_a_retired_projects_display_choice_reads_as_the_default(client: TestClient, repositories: Any) -> None:
+    """A stored arrangement naming a withdrawn choice reads that field as the default and keeps the rest."""
+    make_user(repositories, OWNER, "owner@example.com", display_name="Owner")
+    repositories.users.update(OWNER, projects_display={"layout": "gallery", "group": "initiative"})
+    sign_in(client, OWNER)
+    display = client.get("/api/users/me").json()["projects_display"]
+    assert display["layout"] == "list"
+    assert display["group"] == "initiative"
 
 
 def test_one_kind_can_be_turned_off_per_channel(client: TestClient, repositories: Any) -> None:
