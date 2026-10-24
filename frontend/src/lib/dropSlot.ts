@@ -15,7 +15,7 @@ export const slotIndex = (
 ): number => {
   const rows = [
     ...list.querySelectorAll<HTMLElement>('li[data-project-id]'),
-  ].filter((row) => row.dataset.projectId !== movingId);
+  ].filter((row) => row.dataset['projectId'] !== movingId);
   const index = rows.findIndex((row) => {
     const box = row.getBoundingClientRect();
     return y < box.top + box.height / 2;
