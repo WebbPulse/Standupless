@@ -61,6 +61,19 @@ export const allLabelsKey = (teamId: string): QueryKey => [
 /** The issue templates one team offers, with its default. */
 export const templatesKey = (teamId: string): QueryKey => ['templates', teamId];
 
+/** One team's saved default templates, issue and project. */
+export const templateSettingsKey = (teamId: string): QueryKey => [
+  'templates',
+  teamId,
+  'settings',
+];
+
+/** The project templates one team offers, with its default. */
+export const projectTemplatesKey = (teamId: string): QueryKey => [
+  'project-templates',
+  teamId,
+];
+
 /** One team's recurring issues. */
 export const recurringKey = (teamId: string): QueryKey => [
   'recurring-issues',
@@ -70,6 +83,12 @@ export const recurringKey = (teamId: string): QueryKey => [
 /** The issue templates a workspace offers every team. */
 export const workspaceTemplatesKey = (workspaceId: string): QueryKey => [
   'workspace-templates',
+  workspaceId,
+];
+
+/** The project templates a workspace offers every team. */
+export const workspaceProjectTemplatesKey = (workspaceId: string): QueryKey => [
+  'workspace-project-templates',
   workspaceId,
 ];
 

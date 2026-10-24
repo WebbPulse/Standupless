@@ -868,6 +868,19 @@ class InviteRead(TypedDict):
     role: str
 
 
+class IssueBlueprint(TypedDict):
+    assignee_id: NotRequired[str | None]
+    body: NotRequired[str | None]
+    estimate: NotRequired[str | None]
+    key: str
+    label_ids: NotRequired[list[str]]
+    milestone_key: NotRequired[str | None]
+    parent_key: NotRequired[str | None]
+    priority: NotRequired[str | None]
+    status_id: NotRequired[str | None]
+    title: str
+
+
 class IssueBulkPatch(TypedDict):
     add_label_ids: NotRequired[list[str]]
     archived: NotRequired[bool | None]
@@ -946,6 +959,19 @@ class IssueSyncRead(TypedDict):
     repository_full_name: str
     synced_at: str
     url: str
+
+
+class IssueTemplateItem(TypedDict):
+    assignee_id: NotRequired[str | None]
+    body: NotRequired[str | None]
+    estimate: NotRequired[str | None]
+    key: NotRequired[str | None]
+    label_ids: NotRequired[list[str]]
+    milestone_key: NotRequired[str | None]
+    parent_key: NotRequired[str | None]
+    priority: NotRequired[Literal["none", "urgent", "high", "medium", "low"] | None]
+    status_id: NotRequired[str | None]
+    title: str
 
 
 class IssueUpdate(TypedDict):
@@ -1063,6 +1089,13 @@ class MemberUpdate(TypedDict):
     role: Literal["owner", "admin", "member", "guest"]
 
 
+class MilestoneBlueprint(TypedDict):
+    description: NotRequired[str | None]
+    key: str
+    name: str
+    target_offset_days: NotRequired[int | None]
+
+
 class MilestoneCreate(TypedDict):
     description: NotRequired[str | None]
     name: str
@@ -1086,6 +1119,13 @@ class MilestoneRead(TypedDict):
     target_date: NotRequired[str | None]
     updated_at: str
     workspace_id: str
+
+
+class MilestoneTemplate(TypedDict):
+    description: NotRequired[str | None]
+    key: NotRequired[str | None]
+    name: str
+    target_offset_days: NotRequired[int | None]
 
 
 class MilestoneUpdate(TypedDict):
@@ -1159,6 +1199,20 @@ class ProgressRead(TypedDict):
     total: NotRequired[int]
 
 
+class ProjectBlueprint(TypedDict):
+    color: NotRequired[str | None]
+    description: NotRequired[str | None]
+    icon: NotRequired[str | None]
+    issues: NotRequired[list[IssueBlueprint]]
+    lead_id: NotRequired[str | None]
+    member_ids: NotRequired[list[str]]
+    milestones: NotRequired[list[MilestoneBlueprint]]
+    priority: NotRequired[str | None]
+    start_offset_days: NotRequired[int | None]
+    status: NotRequired[str | None]
+    target_offset_days: NotRequired[int | None]
+
+
 class ProjectCreate(TypedDict):
     color: NotRequired[str | None]
     description: NotRequired[str | None]
@@ -1194,6 +1248,7 @@ class ProjectCreate(TypedDict):
     target_date: NotRequired[str | None]
     team_id: NotRequired[str | None]
     team_ids: NotRequired[list[str] | None]
+    template_id: NotRequired[str | None]
     update_interval_days: NotRequired[int | None]
 
 
@@ -1234,6 +1289,40 @@ class ProjectRead(TypedDict):
     update_interval_inherited: NotRequired[bool]
     updated_at: str
     workspace_id: str
+
+
+class ProjectTemplateFields(TypedDict):
+    color: NotRequired[str | None]
+    description: NotRequired[str | None]
+    icon: NotRequired[
+        Literal[
+            "box",
+            "rocket",
+            "target",
+            "flag",
+            "zap",
+            "star",
+            "bug",
+            "book",
+            "code",
+            "globe",
+            "heart",
+            "layers",
+            "shield",
+            "sparkles",
+            "users",
+            "wrench",
+        ]
+        | None
+    ]
+    issues: NotRequired[list[IssueTemplateItem]]
+    lead_id: NotRequired[str | None]
+    member_ids: NotRequired[list[str]]
+    milestones: NotRequired[list[MilestoneTemplate]]
+    priority: NotRequired[Literal["none", "urgent", "high", "medium", "low"] | None]
+    start_offset_days: NotRequired[int | None]
+    status: NotRequired[Literal["backlog", "planned", "in_progress", "paused", "completed", "canceled"] | None]
+    target_offset_days: NotRequired[int | None]
 
 
 class ProjectUpdate(TypedDict):
@@ -2219,10 +2308,12 @@ class TemplateCreate(TypedDict):
     body: NotRequired[str | None]
     cycle_id: NotRequired[str | None]
     estimate: NotRequired[str | None]
+    kind: NotRequired[Literal["issue", "project"]]
     label_ids: NotRequired[list[str]]
     name: str
     position: NotRequired[int | None]
     priority: NotRequired[Literal["none", "urgent", "high", "medium", "low"] | None]
+    project: NotRequired[ProjectTemplateFields | None]
     project_id: NotRequired[str | None]
     project_milestone_id: NotRequired[str | None]
     status_id: NotRequired[str | None]
@@ -2237,10 +2328,12 @@ class TemplateRead(TypedDict):
     cycle_id: NotRequired[str | None]
     estimate: NotRequired[str | None]
     id: str
+    kind: NotRequired[Literal["issue", "project"]]
     label_ids: NotRequired[list[str]]
     name: str
     position: NotRequired[int]
     priority: NotRequired[Literal["none", "urgent", "high", "medium", "low"] | None]
+    project: NotRequired[ProjectBlueprint | None]
     project_id: NotRequired[str | None]
     project_milestone_id: NotRequired[str | None]
     scope: NotRequired[Literal["team", "parent", "workspace"]]
@@ -2251,12 +2344,15 @@ class TemplateRead(TypedDict):
 
 
 class TemplateSettingsRead(TypedDict):
+    default_project_template_id: NotRequired[str | None]
     default_template_id: NotRequired[str | None]
+    effective_default_project_template_id: NotRequired[str | None]
     effective_default_template_id: NotRequired[str | None]
     team_id: str
 
 
 class TemplateSettingsUpdate(TypedDict):
+    default_project_template_id: NotRequired[str | None]
     default_template_id: NotRequired[str | None]
 
 
@@ -2269,6 +2365,7 @@ class TemplateUpdate(TypedDict):
     name: NotRequired[str | None]
     position: NotRequired[int | None]
     priority: NotRequired[Literal["none", "urgent", "high", "medium", "low"] | None]
+    project: NotRequired[ProjectTemplateFields | None]
     project_id: NotRequired[str | None]
     project_milestone_id: NotRequired[str | None]
     status_id: NotRequired[str | None]

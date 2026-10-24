@@ -1,14 +1,15 @@
 /**
- * The issue template routes: a team's templates, which include its parent
- * team's and the workspace's, the default its create dialog opens with, and
- * the workspace templates every team offers. A team's templates are kept by
- * its members, its default by a team admin and the workspace's by a workspace
- * admin.
+ * The issue and project template routes: a team's templates, which include
+ * its parent team's and the workspace's, the defaults its create dialogs open
+ * with, and the workspace templates every team offers. A team's templates are
+ * kept by its members, its defaults by a team admin and the workspace's by a
+ * workspace admin. Each list reads one kind, issue unless asked otherwise.
  */
 
 import apiClient, { type RequestOptions } from './client';
 import type {
   TemplateCreate,
+  TemplateKind,
   TemplateListRead,
   TemplateRead,
   TemplateSettingsRead,
@@ -36,6 +37,17 @@ export const workspaceTemplatesPath = (workspaceId: string): string =>
 const signalOptions = (signal?: AbortSignal): RequestOptions | undefined =>
   signal === undefined ? undefined : { signal };
 
+/** The options a list read carries: the kind when one is asked for. */
+const listOptions = (
+  signal?: AbortSignal,
+  kind?: TemplateKind
+): RequestOptions | undefined => {
+  if (kind === undefined) return signalOptions(signal);
+  return signal === undefined
+    ? { query: { kind } }
+    : { query: { kind }, signal };
+};
+
 /** A list answer with its arrays guaranteed, whatever the body held. */
 const normalised = (body: TemplateListRead | undefined): TemplateListRead => ({
   templates: Array.isArray(body?.templates) ? body.templates : [],
@@ -43,17 +55,19 @@ const normalised = (body: TemplateListRead | undefined): TemplateListRead => ({
 });
 
 /**
- * Lists the templates a team offers, in picker order: its own, then its
- * parent team's, then the workspace's, with the default it opens with.
+ * Lists the templates of one kind a team offers, in picker order: its own,
+ * then its parent team's, then the workspace's, with the default it opens
+ * with.
  */
 export const listTeamTemplates = async (
   workspaceId: string,
   teamId: string,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  kind?: TemplateKind
 ): Promise<TemplateListRead> => {
   const response = await apiClient.get<TemplateListRead>(
     teamTemplatesPath(workspaceId, teamId),
-    signalOptions(signal)
+    listOptions(signal, kind)
   );
   return normalised(response.data);
 };
@@ -96,7 +110,7 @@ export const deleteTeamTemplate = async (
   );
 };
 
-/** Reads a team's saved default template and the one it falls back to. */
+/** Reads a team's saved default templates and the ones it falls back to. */
 export const getTemplateSettings = async (
   workspaceId: string,
   teamId: string,
@@ -109,7 +123,7 @@ export const getTemplateSettings = async (
   return response.data;
 };
 
-/** Sets or clears the template a team's create dialog opens with. */
+/** Sets or clears the templates a team's create dialogs open with. */
 export const updateTemplateSettings = async (
   workspaceId: string,
   teamId: string,
@@ -122,14 +136,15 @@ export const updateTemplateSettings = async (
   return response.data;
 };
 
-/** Lists the workspace's templates, which every team offers. */
+/** Lists the workspace's templates of one kind, which every team offers. */
 export const listWorkspaceTemplates = async (
   workspaceId: string,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  kind?: TemplateKind
 ): Promise<TemplateListRead> => {
   const response = await apiClient.get<TemplateListRead>(
     workspaceTemplatesPath(workspaceId),
-    signalOptions(signal)
+    listOptions(signal, kind)
   );
   return normalised(response.data);
 };

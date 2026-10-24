@@ -6059,6 +6059,109 @@
         "title": "InviteRead",
         "type": "object"
       },
+      "IssueBlueprint": {
+        "description": "One issue a project template adds.\n\n`key` names it inside the template, so `parent_key` can make it a sub-issue\nof an issue listed before it and `milestone_key` can tie it to a milestone.",
+        "properties": {
+          "assignee_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Assignee Id"
+          },
+          "body": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Body"
+          },
+          "estimate": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Estimate"
+          },
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "label_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Label Ids",
+            "type": "array"
+          },
+          "milestone_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Milestone Key"
+          },
+          "parent_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Key"
+          },
+          "priority": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Priority"
+          },
+          "status_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status Id"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "title"
+        ],
+        "title": "IssueBlueprint",
+        "type": "object"
+      },
       "IssueBulkPatch": {
         "description": "The fields one bulk patch sets on every named issue.\n\nThe triage fields and the parent: a title, body or date is per issue by nature,\nso a bulk write of one would be a mistake rather than a shortcut. Labels are an\nadd and a remove rather than a replacement, so tagging a selection keeps each\nissue's other labels. `parent_id` nests every named issue under one parent, or\ndetaches them when null, under the single patch's same team and one level rules.\n\n`archived` archives the selection when true and restores it when false, after\nany field change in the same patch, so a selection is archived in one request\nrather than one per issue.",
         "properties": {
@@ -7254,6 +7357,126 @@
         "title": "IssueSyncRead",
         "type": "object"
       },
+      "IssueTemplateItem": {
+        "description": "One issue a project template adds.\n\n`parent_key` makes it a sub-issue of an issue listed before it, and\n`milestone_key` ties it to one of the template's milestones.",
+        "properties": {
+          "assignee_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Assignee Id"
+          },
+          "body": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Body"
+          },
+          "estimate": {
+            "anyOf": [
+              {
+                "maxLength": 16,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Estimate"
+          },
+          "key": {
+            "anyOf": [
+              {
+                "maxLength": 40,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Key"
+          },
+          "label_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Label Ids",
+            "type": "array"
+          },
+          "milestone_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Milestone Key"
+          },
+          "parent_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Key"
+          },
+          "priority": {
+            "anyOf": [
+              {
+                "enum": [
+                  "none",
+                  "urgent",
+                  "high",
+                  "medium",
+                  "low"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Priority"
+          },
+          "status_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status Id"
+          },
+          "title": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title"
+        ],
+        "title": "IssueTemplateItem",
+        "type": "object"
+      },
       "IssueUpdate": {
         "description": "The body an issue patch takes.\n\n`team_id` is absent by design: an issue's key, counter and every index\ncomposite are derived from it, so changing it is the move route's job.",
         "properties": {
@@ -8153,6 +8376,47 @@
         "title": "MemberUpdate",
         "type": "object"
       },
+      "MilestoneBlueprint": {
+        "description": "One milestone a project template adds, its target date as days after the creation date.",
+        "properties": {
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "target_offset_days": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Offset Days"
+          }
+        },
+        "required": [
+          "key",
+          "name"
+        ],
+        "title": "MilestoneBlueprint",
+        "type": "object"
+      },
       "MilestoneCreate": {
         "description": "The body `POST /api/workspaces/{workspace_id}/projects/{project_id}/milestones` takes.\n\n`sort_order` is optional: left out, the milestone is placed after the last one.",
         "properties": {
@@ -8329,6 +8593,58 @@
           "updated_at"
         ],
         "title": "MilestoneRead",
+        "type": "object"
+      },
+      "MilestoneTemplate": {
+        "description": "One milestone a project template adds; `target_offset_days` counts from the creation day.",
+        "properties": {
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "key": {
+            "anyOf": [
+              {
+                "maxLength": 40,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Key"
+          },
+          "name": {
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "target_offset_days": {
+            "anyOf": [
+              {
+                "maximum": 3650.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Offset Days"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "MilestoneTemplate",
         "type": "object"
       },
       "MilestoneUpdate": {
@@ -8796,8 +9112,124 @@
         "title": "ProgressRead",
         "type": "object"
       },
+      "ProjectBlueprint": {
+        "description": "What a project template fills: the project's fields, its milestones and its issues.\n\nDates are offsets in days from the day the project is created, so a template\nnever goes stale.",
+        "properties": {
+          "color": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Color"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "icon": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Icon"
+          },
+          "issues": {
+            "items": {
+              "$ref": "#/components/schemas/IssueBlueprint"
+            },
+            "title": "Issues",
+            "type": "array"
+          },
+          "lead_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lead Id"
+          },
+          "member_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Member Ids",
+            "type": "array"
+          },
+          "milestones": {
+            "items": {
+              "$ref": "#/components/schemas/MilestoneBlueprint"
+            },
+            "title": "Milestones",
+            "type": "array"
+          },
+          "priority": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Priority"
+          },
+          "start_offset_days": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start Offset Days"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
+          },
+          "target_offset_days": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Offset Days"
+          }
+        },
+        "title": "ProjectBlueprint",
+        "type": "object"
+      },
       "ProjectCreate": {
-        "description": "The body `POST /api/workspaces/{workspace_id}/projects` takes.\n\n`team_ids` is the project's teams, at least one. `team_id` is the single-team\nspelling an older client sends; given alone it is read as a one-team list, and\ngiven beside `team_ids` it must be one of them.",
+        "description": "The body `POST /api/workspaces/{workspace_id}/projects` takes.\n\n`team_ids` is the project's teams, at least one. `team_id` is the single-team\nspelling an older client sends; given alone it is read as a one-team list, and\ngiven beside `team_ids` it must be one of them. `template_id` names a project\ntemplate one of the teams offers: it fills the fields left out and adds its\nmilestones and issues.",
         "properties": {
           "color": {
             "anyOf": [
@@ -8977,6 +9409,18 @@
               }
             ],
             "title": "Team Ids"
+          },
+          "template_id": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Template Id"
           },
           "update_interval_days": {
             "anyOf": [
@@ -9335,6 +9779,162 @@
           "updated_at"
         ],
         "title": "ProjectRead",
+        "type": "object"
+      },
+      "ProjectTemplateFields": {
+        "description": "What a project template fills, every field optional.\n\nThe two offsets are days from the creation day to the start and target dates.\nMilestones and issues without a key are given one, `m1` and `i1` onwards,\nso the keys stay unique and every reference names a row of the template.",
+        "properties": {
+          "color": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Color"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "icon": {
+            "anyOf": [
+              {
+                "enum": [
+                  "box",
+                  "rocket",
+                  "target",
+                  "flag",
+                  "zap",
+                  "star",
+                  "bug",
+                  "book",
+                  "code",
+                  "globe",
+                  "heart",
+                  "layers",
+                  "shield",
+                  "sparkles",
+                  "users",
+                  "wrench"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Icon"
+          },
+          "issues": {
+            "items": {
+              "$ref": "#/components/schemas/IssueTemplateItem"
+            },
+            "maxItems": 50,
+            "title": "Issues",
+            "type": "array"
+          },
+          "lead_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lead Id"
+          },
+          "member_ids": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 50,
+            "title": "Member Ids",
+            "type": "array"
+          },
+          "milestones": {
+            "items": {
+              "$ref": "#/components/schemas/MilestoneTemplate"
+            },
+            "maxItems": 25,
+            "title": "Milestones",
+            "type": "array"
+          },
+          "priority": {
+            "anyOf": [
+              {
+                "enum": [
+                  "none",
+                  "urgent",
+                  "high",
+                  "medium",
+                  "low"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Priority"
+          },
+          "start_offset_days": {
+            "anyOf": [
+              {
+                "maximum": 3650.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start Offset Days"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "enum": [
+                  "backlog",
+                  "planned",
+                  "in_progress",
+                  "paused",
+                  "completed",
+                  "canceled"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
+          },
+          "target_offset_days": {
+            "anyOf": [
+              {
+                "maximum": 3650.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Offset Days"
+          }
+        },
+        "title": "ProjectTemplateFields",
         "type": "object"
       },
       "ProjectUpdate": {
@@ -15879,7 +16479,7 @@
         "type": "object"
       },
       "TemplateCreate": {
-        "description": "The body a template create takes: a name and any of the issue fields.",
+        "description": "The body a template create takes: a name and any of the issue fields.\n\n`kind` \"project\" makes a project template, which fills `project` and leaves\nthe issue fields unset.",
         "properties": {
           "assignee_id": {
             "anyOf": [
@@ -15926,6 +16526,15 @@
             ],
             "title": "Estimate"
           },
+          "kind": {
+            "default": "issue",
+            "enum": [
+              "issue",
+              "project"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
           "label_ids": {
             "items": {
               "type": "string"
@@ -15969,6 +16578,16 @@
               }
             ],
             "title": "Priority"
+          },
+          "project": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProjectTemplateFields"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "project_id": {
             "anyOf": [
@@ -16051,7 +16670,7 @@
         "type": "object"
       },
       "TemplateRead": {
-        "description": "One template as the API returns it.\n\n`scope` says where it comes from as the team in the path sees it: the team's\nown, its parent team's, or the workspace's. `team_id` is `None` for a\nworkspace template.",
+        "description": "One template as the API returns it.\n\n`scope` says where it comes from as the team in the path sees it: the team's\nown, its parent team's, or the workspace's. `team_id` is `None` for a\nworkspace template. `project` is set on a project template only.",
         "properties": {
           "assignee_id": {
             "anyOf": [
@@ -16117,6 +16736,15 @@
             "title": "Id",
             "type": "string"
           },
+          "kind": {
+            "default": "issue",
+            "enum": [
+              "issue",
+              "project"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
           "label_ids": {
             "items": {
               "type": "string"
@@ -16150,6 +16778,16 @@
               }
             ],
             "title": "Priority"
+          },
+          "project": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProjectBlueprint"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "project_id": {
             "anyOf": [
@@ -16232,8 +16870,19 @@
         "type": "object"
       },
       "TemplateSettingsRead": {
-        "description": "A team's template settings as the API returns them.\n\n`default_template_id` is what the team saved and `effective_default_template_id`\nwhat its create dialog opens with, which falls back to the parent team's.",
+        "description": "A team's template settings as the API returns them.\n\n`default_template_id` is what the team saved and `effective_default_template_id`\nwhat its issue create dialog opens with, which falls back to the parent team's.\nThe two project fields are the same for the new project dialog.",
         "properties": {
+          "default_project_template_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Project Template Id"
+          },
           "default_template_id": {
             "anyOf": [
               {
@@ -16244,6 +16893,17 @@
               }
             ],
             "title": "Default Template Id"
+          },
+          "effective_default_project_template_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Effective Default Project Template Id"
           },
           "effective_default_template_id": {
             "anyOf": [
@@ -16268,8 +16928,19 @@
         "type": "object"
       },
       "TemplateSettingsUpdate": {
-        "description": "The body a team's template settings patch takes; null clears the default.",
+        "description": "The body a team's template settings patch takes: only the defaults sent change, and null clears one.",
         "properties": {
+          "default_project_template_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Project Template Id"
+          },
           "default_template_id": {
             "anyOf": [
               {
@@ -16390,6 +17061,16 @@
               }
             ],
             "title": "Priority"
+          },
+          "project": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProjectTemplateFields"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "project_id": {
             "anyOf": [
@@ -40525,7 +41206,7 @@
     },
     "/api/workspaces/{workspace_id}/teams/{team_id}/template-settings": {
       "get": {
-        "description": "The team's saved default template and the one its create dialog opens with.",
+        "description": "The team's saved default templates and the ones its create dialogs open with.",
         "operationId": "read_template_settings_api_workspaces__workspace_id__teams__team_id__template_settings_get",
         "parameters": [
           {
@@ -40572,7 +41253,7 @@
         ]
       },
       "patch": {
-        "description": "Set or clear the template the team's create dialog opens with.",
+        "description": "Set or clear the templates the team's issue and project create dialogs open with.",
         "operationId": "update_template_settings_api_workspaces__workspace_id__teams__team_id__template_settings_patch",
         "parameters": [
           {
@@ -40631,7 +41312,7 @@
     },
     "/api/workspaces/{workspace_id}/teams/{team_id}/templates": {
       "get": {
-        "description": "Every template the team offers, its own, its parent's and the workspace's, and its default.",
+        "description": "Every template of one kind the team offers, its own, its parent's and the workspace's, and its default.",
         "operationId": "list_team_templates_api_workspaces__workspace_id__teams__team_id__templates_get",
         "parameters": [
           {
@@ -40641,6 +41322,22 @@
             "schema": {
               "minLength": 1,
               "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Which templates to list: issue or project",
+            "in": "query",
+            "name": "kind",
+            "required": false,
+            "schema": {
+              "default": "issue",
+              "description": "Which templates to list: issue or project",
+              "enum": [
+                "issue",
+                "project"
+              ],
+              "title": "Kind",
               "type": "string"
             }
           }
@@ -41970,7 +42667,7 @@
     },
     "/api/workspaces/{workspace_id}/templates": {
       "get": {
-        "description": "Every workspace template, which every team offers.",
+        "description": "Every workspace template of one kind, which every team offers.",
         "operationId": "list_workspace_templates_api_workspaces__workspace_id__templates_get",
         "parameters": [
           {
@@ -41980,6 +42677,22 @@
             "schema": {
               "minLength": 1,
               "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Which templates to list: issue or project",
+            "in": "query",
+            "name": "kind",
+            "required": false,
+            "schema": {
+              "default": "issue",
+              "description": "Which templates to list: issue or project",
+              "enum": [
+                "issue",
+                "project"
+              ],
+              "title": "Kind",
               "type": "string"
             }
           }
