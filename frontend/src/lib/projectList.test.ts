@@ -304,7 +304,9 @@ describe('board moves', () => {
   });
 
   it('changes both fields on a drop into a column and a swimlane', () => {
-    const [planned] = groupProjects([], 'status', [], [], { keepEmpty: true });
+    const planned = groupProjects([], 'status', [], [], {
+      keepEmpty: true,
+    }).find((group) => group.key === 'status:planned');
     const high = groupProjects([], 'priority', [], [], {
       keepEmpty: true,
     }).find((group) => group.key === 'priority:high');
@@ -331,7 +333,9 @@ describe('board moves', () => {
   });
 
   it('refuses a swimlane drop that would join a team', () => {
-    const [planned] = groupProjects([], 'status', [], [], { keepEmpty: true });
+    const planned = groupProjects([], 'status', [], [], {
+      keepEmpty: true,
+    }).find((group) => group.key === 'status:planned');
     const [design] = groupProjects([], 'team', [], [team('t2', 'Design')], {
       keepEmpty: true,
     });
