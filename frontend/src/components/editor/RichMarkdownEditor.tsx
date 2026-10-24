@@ -9,6 +9,9 @@
  * picked image or video lands inline behind a progress bar and any other file
  * lands as a link to it. The same surface backs the comment composer, which
  * adds a submit, a cancel and @mention suggestions from the people it names.
+ * Inside a workspace, typing `#` or a team's key opens a picker of the issues,
+ * projects and documents the writer can see, and issue keys and links to
+ * projects and documents are drawn as chips while editing.
  *
  * Changes commit when focus leaves the surface or on Ctrl or Cmd Enter, and
  * Escape puts back the last committed text. Text input made only of control
@@ -25,13 +28,17 @@ import { EditorContent, useEditor } from '@tiptap/react';
 import type { Editor } from '@tiptap/core';
 import React, {
   useCallback,
+  useContext,
   useEffect,
   useImperativeHandle,
   useMemo,
   useRef,
   useState,
 } from 'react';
+import { TeamsContext } from '../../contexts/TeamsContextDefinition';
+import { WorkspaceContext } from '../../contexts/WorkspaceContextDefinition';
 import { useKeyboardFocus } from '../../hooks/useKeyboardFocus';
+import { useReferenceResults } from '../../hooks/useReferenceResults';
 import { filesFrom, normalizeLinkUrl } from '../../lib/attachments';
 import { cn } from '../../lib/cn';
 import {
@@ -39,19 +46,29 @@ import {
   personLabel,
   type Assignable,
 } from '../../lib/issuePeople';
+import { isTeamKey } from '../../lib/issueDisplay';
 import { isSafeUrl } from '../../lib/markdown';
 import { isContentPath, resolveMediaUrl } from '../../lib/media';
 import { useMedia } from '../../lib/mediaContext';
 import { matchPeople, mentionHandle, mentionQuery } from '../../lib/mentions';
+import {
+  currentOrigin,
+  isSearchable,
+  linkedReference,
+  referenceHref,
+  referenceQuery,
+  type ReferenceItem,
+} from '../../lib/references';
 import Avatar from '../ui/avatar';
 import type { MarkdownDensity } from '../ui/markdown';
-import { markdownExtensions } from './markdownExtensions';
+import { markdownExtensions, referenceChipsKey } from './markdownExtensions';
 import { readMarkdown, writeMarkdown } from './markdownCodec';
 import {
   hasUploadsInFlight,
   insertUploads,
   type UploadFile,
 } from './mediaNodes';
+import { ReferenceMenu } from './ReferenceMenu';
 import './richMarkdown.css';
 
 /** What a parent can do to the editor from outside. */
@@ -126,6 +143,15 @@ interface MentionDraft {
   to: number;
   top: number;
   left: number;
+}
+
+/** The `#` reference being typed, where it sits, and where its list opens. */
+type ReferenceDraft = MentionDraft;
+
+/** Where a suggestion list opens and the text it would replace. */
+interface CaretQuery {
+  start: number;
+  query: string;
 }
 
 /**
@@ -206,13 +232,50 @@ export const RichMarkdownEditor: React.FC<RichMarkdownEditorProps> = ({
   mentionState.current = { mention, matches, highlight };
   const readMentionRef = useRef<(editor: Editor) => void>(() => undefined);
   const chooseRef = useRef<(person: Assignable) => void>(() => undefined);
+
+  const workspace = useContext(WorkspaceContext)?.workspace ?? null;
+  const teams = useContext(TeamsContext)?.data ?? null;
+  const [reference, setReference] = useState<ReferenceDraft | null>(null);
+  const [referenceHighlight, setReferenceHighlight] = useState(0);
+  const referenceResults = useReferenceResults(
+    workspace?.id ?? null,
+    reference?.query ?? null
+  );
+  const shownReferenceHighlight = Math.min(
+    referenceHighlight,
+    Math.max(0, referenceResults.items.length - 1)
+  );
+  const referenceState = useRef({
+    reference,
+    items: referenceResults.items,
+    highlight: shownReferenceHighlight,
+  });
+  referenceState.current = {
+    reference,
+    items: referenceResults.items,
+    highlight: shownReferenceHighlight,
+  };
+  const chooseReferenceRef = useRef<(item: ReferenceItem) => void>(
+    () => undefined
+  );
+  const lookup = useRef({ workspace, teams });
+  lookup.current = { workspace, teams };
   const { keyboardFocused, focusProps } = useKeyboardFocus();
 
   const extensions = useMemo(
     () =>
-      markdownExtensions(
-        placeholder === undefined ? {} : { placeholder: placeholder }
-      ),
+      markdownExtensions({
+        ...(placeholder === undefined ? {} : { placeholder: placeholder }),
+        isIssueKey: (key) => {
+          const known = lookup.current.teams;
+          return known !== null && isTeamKey(key, known);
+        },
+        isReferenceLink: (href) => {
+          const slug = lookup.current.workspace?.slug;
+          const target = linkedReference(href, currentOrigin());
+          return slug !== undefined && target?.slug === slug;
+        },
+      }),
     [placeholder]
   );
 
@@ -238,6 +301,33 @@ export const RichMarkdownEditor: React.FC<RichMarkdownEditorProps> = ({
         },
         handleKeyDown: (_view, event) => {
           const mod = event.metaKey || event.ctrlKey;
+          const picking = referenceState.current;
+          if (picking.reference !== null) {
+            const count = picking.items.length;
+            if (
+              count > 0 &&
+              (event.key === 'ArrowDown' || event.key === 'ArrowUp')
+            ) {
+              event.preventDefault();
+              const step = event.key === 'ArrowDown' ? 1 : -1;
+              setReferenceHighlight((picking.highlight + step + count) % count);
+              return true;
+            }
+            if ((event.key === 'Enter' && !mod) || event.key === 'Tab') {
+              const item = picking.items[picking.highlight];
+              if (item !== undefined) {
+                event.preventDefault();
+                chooseReferenceRef.current(item);
+                return true;
+              }
+            }
+            if (event.key === 'Escape') {
+              event.preventDefault();
+              event.stopPropagation();
+              setReference(null);
+              return true;
+            }
+          }
           const open = mentionState.current;
           if (open.mention !== null && open.matches.length > 0) {
             const count = open.matches.length;
@@ -355,6 +445,7 @@ export const RichMarkdownEditor: React.FC<RichMarkdownEditorProps> = ({
         const next = event.relatedTarget as Node | null;
         if (next !== null && surface.current?.contains(next) === true) return;
         setMention(null);
+        setReference(null);
         handlers.current.onFocusChange?.(false);
         commitRef.current();
       },
@@ -365,16 +456,18 @@ export const RichMarkdownEditor: React.FC<RichMarkdownEditorProps> = ({
   editorRef.current = editor;
 
   readMentionRef.current = (current: Editor): void => {
-    if (mentionPeople === undefined) return;
     const { selection } = current.state;
     const box = surface.current?.getBoundingClientRect();
     const { $from } = selection;
     if (
+      !current.isEditable ||
       !selection.empty ||
       box === undefined ||
-      $from.parent.type.spec.code === true
+      $from.parent.type.spec.code === true ||
+      current.isActive('code')
     ) {
       setMention(null);
+      setReference(null);
       return;
     }
     const before = $from.parent.textBetween(
@@ -383,21 +476,66 @@ export const RichMarkdownEditor: React.FC<RichMarkdownEditorProps> = ({
       undefined,
       '\ufffc'
     );
+    const place = (typed: CaretQuery, width: number): MentionDraft => {
+      const from = $from.pos - (before.length - typed.start);
+      const caret = current.view.coordsAtPos(from);
+      return {
+        query: typed.query,
+        from,
+        to: $from.pos,
+        top: caret.bottom - box.top + 4,
+        left: Math.max(0, Math.min(caret.left - box.left, box.width - width)),
+      };
+    };
+    const typedReference =
+      lookup.current.workspace === null
+        ? null
+        : referenceQuery(before, before.length, lookup.current.teams ?? []);
+    if (typedReference !== null) {
+      setMention(null);
+      if (referenceState.current.reference?.query !== typedReference.query) {
+        setReferenceHighlight(0);
+      }
+      setReference(place(typedReference, 320));
+      return;
+    }
+    setReference(null);
+    if (mentionPeople === undefined) return;
     const typed = mentionQuery(before, before.length);
     if (typed === null) {
       setMention(null);
       return;
     }
-    const from = $from.pos - (before.length - typed.start);
-    const caret = current.view.coordsAtPos(from);
     if (mentionState.current.mention?.query !== typed.query) setHighlight(0);
-    setMention({
-      query: typed.query,
-      from,
-      to: $from.pos,
-      top: caret.bottom - box.top + 4,
-      left: Math.max(0, Math.min(caret.left - box.left, box.width - 256)),
-    });
+    setMention(place(typed, 256));
+  };
+
+  chooseReferenceRef.current = (item: ReferenceItem): void => {
+    const open = referenceState.current.reference;
+    const slug = lookup.current.workspace?.slug;
+    if (open === null || slug === undefined) return;
+    const range = { from: open.from, to: open.to };
+    const chain = editor.chain().focus();
+    if (item.kind === 'issue') {
+      chain.insertContentAt(range, `${item.key} `).run();
+    } else {
+      chain
+        .insertContentAt(range, [
+          {
+            type: 'text',
+            text: item.kind === 'project' ? item.name : item.title,
+            marks: [
+              {
+                type: 'link',
+                attrs: { href: referenceHref(currentOrigin(), slug, item) },
+              },
+            ],
+          },
+          { type: 'text', text: ' ' },
+        ])
+        .run();
+    }
+    setReference(null);
   };
 
   chooseRef.current = (person: Assignable): void => {
@@ -467,6 +605,15 @@ export const RichMarkdownEditor: React.FC<RichMarkdownEditorProps> = ({
     if (editor.isEditable !== editable) editor.setEditable(editable, false);
   }, [editor, editable]);
 
+  const chipsDrawnFor = useRef({ teams, workspace });
+  useEffect(() => {
+    const drawn = chipsDrawnFor.current;
+    if (drawn.teams === teams && drawn.workspace === workspace) return;
+    chipsDrawnFor.current = { teams, workspace };
+    if (editor.isDestroyed) return;
+    editor.view.dispatch(editor.state.tr.setMeta(referenceChipsKey, true));
+  }, [editor, teams, workspace]);
+
   useEffect(() => {
     if (editor.isFocused || isDirty()) return;
     committed.current = value;
@@ -495,6 +642,7 @@ export const RichMarkdownEditor: React.FC<RichMarkdownEditorProps> = ({
         committed.current = markdown;
         adopt(editor, markdown);
         setMention(null);
+        setReference(null);
         handlers.current.onChange?.(
           readMarkdown(editor),
           hasUploadsInFlight(editor)
@@ -622,6 +770,20 @@ export const RichMarkdownEditor: React.FC<RichMarkdownEditorProps> = ({
             </li>
           ))}
         </ul>
+      )}
+      {reference !== null && (
+        <ReferenceMenu
+          items={referenceResults.items}
+          highlight={shownReferenceHighlight}
+          loading={referenceResults.loading}
+          searchable={isSearchable(reference.query)}
+          top={reference.top}
+          left={reference.left}
+          onChoose={(item) => {
+            chooseReferenceRef.current(item);
+          }}
+          onHighlight={setReferenceHighlight}
+        />
       )}
       {linkDraft !== null && (
         <div

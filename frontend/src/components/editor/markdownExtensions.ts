@@ -45,10 +45,30 @@ import { MediaImage, MediaUpload } from './mediaNodes';
 export interface MarkdownExtensionOptions {
   /** Shown in an empty document. Omitted for read-only surfaces. */
   placeholder?: string;
+  /**
+   * Whether text shaped like an issue key names one of the workspace's teams,
+   * so it is drawn as a chip while editing. Unset draws no key chips.
+   */
+  isIssueKey?: (key: string) => boolean;
+  /**
+   * Whether a link points at a project or document of the workspace, so it is
+   * drawn as a chip while editing. Unset draws no link chips.
+   */
+  isReferenceLink?: (href: string) => boolean;
 }
+
+/**
+ * The meta a transaction carries to redraw the reference chips when what
+ * counts as a reference changed, such as the team list arriving, while the
+ * document itself did not.
+ */
+export const referenceChipsKey = new PluginKey<DecorationSet>('referenceChips');
 
 /** The @mention shape the server resolves, as `lib/markdown.ts` reads it. */
 const MENTION = /(?<![\w@/])@([A-Za-z0-9][A-Za-z0-9_-]{0,38})(?![\w-])/g;
+
+/** The issue key shape `lib/markdown.ts` reads as a reference. */
+const ISSUE_KEY = /(?<![\w/-])([A-Z][A-Z0-9]{1,5}-\d{1,9})(?![\w-])/g;
 
 /**
  * A marked instance of our own, so registering Tiptap's tokenizers never
@@ -174,6 +194,88 @@ const MentionChips = Extension.create({
   },
 });
 
+/** What the reference chips are drawn from. */
+interface ReferenceChipOptions {
+  isIssueKey?: (key: string) => boolean;
+  isReferenceLink?: (href: string) => boolean;
+}
+
+/**
+ * Finds each issue key naming a team, and each link to a project or document,
+ * and marks it for the chip style. Code is skipped, as the renderer skips it.
+ */
+const referenceDecorations = (
+  doc: ProseMirrorNode,
+  options: ReferenceChipOptions
+): DecorationSet => {
+  const { isIssueKey, isReferenceLink } = options;
+  const found: Decoration[] = [];
+  doc.descendants((node, position) => {
+    if (!node.isText || node.text === undefined) return;
+    if (node.marks.some((mark) => mark.type.name === 'code')) return;
+    const link = node.marks.find((mark) => mark.type.name === 'link');
+    if (link !== undefined) {
+      const href = (link.attrs as { href?: unknown }).href;
+      if (
+        isReferenceLink !== undefined &&
+        typeof href === 'string' &&
+        isReferenceLink(href)
+      ) {
+        found.push(
+          Decoration.inline(position, position + node.nodeSize, {
+            class: 'rich-reference',
+          })
+        );
+      }
+      return;
+    }
+    if (isIssueKey === undefined) return;
+    for (const match of node.text.matchAll(ISSUE_KEY)) {
+      if (!isIssueKey(match[0])) continue;
+      const start = position + match.index;
+      found.push(
+        Decoration.inline(start, start + match[0].length, {
+          class: 'rich-reference rich-issue-ref',
+        })
+      );
+    }
+  });
+  return DecorationSet.create(doc, found);
+};
+
+/**
+ * Shows issue keys and project and document links as chips while editing,
+ * without making them nodes, so the stored text is exactly what was written.
+ * A transaction carrying {@link referenceChipsKey} redraws them in place.
+ */
+const ReferenceChips = Extension.create<ReferenceChipOptions>({
+  name: 'referenceChips',
+  addOptions() {
+    return {};
+  },
+  addProseMirrorPlugins() {
+    const options = this.options;
+    return [
+      new Plugin({
+        key: referenceChipsKey,
+        state: {
+          init: (_, state) => referenceDecorations(state.doc, options),
+          apply: (transaction, held) =>
+            transaction.docChanged ||
+            transaction.getMeta(referenceChipsKey) !== undefined
+              ? referenceDecorations(transaction.doc, options)
+              : held,
+        },
+        props: {
+          decorations(state) {
+            return this.getState(state);
+          },
+        },
+      }),
+    ];
+  },
+});
+
 /**
  * A link that stops at its last character, so text typed right after a link
  * is plain text, as in Linear, rather than growing the link.
@@ -210,6 +312,14 @@ export const markdownExtensions = (
     MediaImage.configure({ inline: false, allowBase64: false }),
     MediaUpload,
     MentionChips,
+    ReferenceChips.configure({
+      ...(options.isIssueKey === undefined
+        ? {}
+        : { isIssueKey: options.isIssueKey }),
+      ...(options.isReferenceLink === undefined
+        ? {}
+        : { isReferenceLink: options.isReferenceLink }),
+    }),
     StanduplessMarkdown.configure({ marked: createMarked() as never }),
   ] as AnyExtension[];
   if (options.placeholder !== undefined) {
