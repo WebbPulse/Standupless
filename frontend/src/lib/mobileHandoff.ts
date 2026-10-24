@@ -75,7 +75,7 @@ export const takeMobileHandoffVerifier = (
   now: number = Date.now(),
   storage: Storage | null = deviceStorage()
 ): string | null => {
-  let raw: string | null = null;
+  let raw: string | null;
   try {
     raw = storage?.getItem(MOBILE_HANDOFF_STORAGE_KEY) ?? null;
     storage?.removeItem(MOBILE_HANDOFF_STORAGE_KEY);
