@@ -28,6 +28,7 @@ export type ProjectActivityIcon =
   | 'date'
   | 'teams'
   | 'initiative'
+  | 'labels'
   | 'milestone';
 
 /** One piece of a sentence: plain words, a named thing, or a status or health with its glyph. */
@@ -49,6 +50,8 @@ export interface ProjectActivityLookups {
   teams: { id: string; name: string }[];
   initiatives: { initiative_id: string; name: string }[];
   milestones: { milestone_id: string; name: string }[];
+  /** The workspace's project labels, for label changes; a missing one reads "a label". */
+  projectLabels?: { id: string; name: string }[] | undefined;
 }
 
 const text = (value: string): ProjectActivityPart => ({
@@ -83,6 +86,10 @@ const personName = (userId: string, lookups: ProjectActivityLookups): string =>
 
 const teamName = (teamId: string, lookups: ProjectActivityLookups): string =>
   lookups.teams.find((team) => team.id === teamId)?.name ?? 'a team';
+
+const labelName = (labelId: string, lookups: ProjectActivityLookups): string =>
+  lookups.projectLabels?.find((label) => label.id === labelId)?.name ??
+  'a label';
 
 /** Joins named things as "A", "A and B" or "A, B and C". */
 const joinNames = (names: string[]): ProjectActivityPart[] =>
@@ -199,6 +206,16 @@ const describeField = (
           asList(row.to),
           (id) => personName(id, lookups),
           'as members'
+        ),
+      };
+    case 'label_ids':
+      return {
+        icon: 'labels',
+        parts: listChange(
+          asList(row.from),
+          asList(row.to),
+          (id) => labelName(id, lookups),
+          'as labels'
         ),
       };
     case 'start_date':

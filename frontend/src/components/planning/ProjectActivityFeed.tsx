@@ -18,6 +18,7 @@ import {
   LuMilestone,
   LuPencil,
   LuSignalHigh,
+  LuTag,
   LuTarget,
   LuUserRound,
   LuUsers,
@@ -63,6 +64,7 @@ const ICONS: Record<ProjectActivityIcon, IconType> = {
   date: LuCalendar,
   teams: LuUsers,
   initiative: LuTarget,
+  labels: LuTag,
   milestone: LuMilestone,
 };
 
@@ -74,6 +76,8 @@ export interface ProjectActivityFeedProps {
   teams: ProjectActivityLookups['teams'];
   initiatives: ProjectActivityLookups['initiatives'];
   milestones: ProjectActivityLookups['milestones'];
+  /** The workspace's project labels, naming label changes. */
+  projectLabels?: ProjectActivityLookups['projectLabels'] | undefined;
   /** The project's updates loaded so far, newest first. */
   updates: ProjectUpdateRead[];
   /** Whether older updates are still unread. */
@@ -213,6 +217,7 @@ export const ProjectActivityFeed: React.FC<ProjectActivityFeedProps> = ({
   teams,
   initiatives,
   milestones,
+  projectLabels,
   updates,
   updatesHaveMore,
   onLoadMoreUpdates,
@@ -222,8 +227,8 @@ export const ProjectActivityFeed: React.FC<ProjectActivityFeedProps> = ({
   const [limit, setLimit] = useState(INITIAL_ROWS);
 
   const lookups = useMemo<ProjectActivityLookups>(
-    () => ({ people, teams, initiatives, milestones }),
-    [people, teams, initiatives, milestones]
+    () => ({ people, teams, initiatives, milestones, projectLabels }),
+    [people, teams, initiatives, milestones, projectLabels]
   );
 
   const entries = useMemo<FeedEntry[]>(() => {

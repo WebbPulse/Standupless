@@ -138,13 +138,16 @@ export type ProjectColumn =
   | 'created'
   | 'updated'
   | 'completed'
-  | 'progress';
+  | 'progress'
+  | 'labels'
+  | 'id';
 
 /** The properties in the order the list draws them, matching the server. */
 export const PROJECT_COLUMNS: ProjectColumn[] = [
   'summary',
   'milestones',
   'dependencies',
+  'labels',
   'health',
   'priority',
   'status',
@@ -158,15 +161,18 @@ export const PROJECT_COLUMNS: ProjectColumn[] = [
   'updated',
   'completed',
   'progress',
+  'id',
 ];
 
 /** The properties in the order the display menu offers them as chips. */
 export const PROJECT_COLUMN_CHIPS: ProjectColumn[] = [
   'milestones',
   'summary',
+  'id',
   'priority',
   'status',
   'health',
+  'labels',
   'teams',
   'lead',
   'members',
@@ -185,6 +191,7 @@ export const INLINE_PROJECT_COLUMNS: ReadonlySet<ProjectColumn> = new Set([
   'summary',
   'milestones',
   'dependencies',
+  'labels',
 ]);
 
 /** How each property reads in the display menu and the list header. */
@@ -205,6 +212,8 @@ export const PROJECT_COLUMN_LABELS: Record<ProjectColumn, string> = {
   updated: 'Updated',
   completed: 'Completed',
   progress: 'Progress',
+  labels: 'Labels',
+  id: 'ID',
 };
 
 /** The properties a person who never chose sees, matching the server. */
@@ -650,6 +659,7 @@ export type ProjectMove = Partial<
     | 'start_date'
     | 'target_date'
     | 'member_ids'
+    | 'label_ids'
   >
 >;
 

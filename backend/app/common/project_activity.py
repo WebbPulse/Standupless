@@ -37,6 +37,7 @@ TRACKED_FIELDS: tuple[str, ...] = (
     "priority",
     "lead_id",
     "member_ids",
+    "label_ids",
     "start_date",
     "target_date",
     "team_ids",

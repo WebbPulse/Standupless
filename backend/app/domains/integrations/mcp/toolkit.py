@@ -17,6 +17,7 @@ from pydantic import ValidationError
 
 from app.common.api.dependencies.authz import AuthzContext
 from app.common.api.dependencies.repositories import Repositories
+from app.common.api.schemas.planning import project_slug_id
 from app.common.api.schemas.projects_display import PROJECTS_COLUMNS, PROJECTS_DISPLAY_FIELDS
 from app.common.db.dynamo.issues import Issue
 from app.common.db.dynamo.teams import Team, TeamRepository
@@ -265,7 +266,7 @@ def ambiguous(kind: str, reference: str) -> ToolError:
 
 
 def project_id_ref(call: ToolCall, value: Any) -> str:
-    """A project id from an id or a name unique among the projects the caller can see.
+    """A project id from an id, a name or a short id unique among the projects the caller can see.
 
     Only projects on a visible team are matched by name, so a name cannot probe for
     a project outside the caller's reach. An id is passed through for the write or
@@ -284,6 +285,12 @@ def project_id_ref(call: ToolCall, value: Any) -> str:
         for row in call.repositories.planning.list_projects(workspace_id)
         if row.name.casefold() == folded and visible_project_teams(row, visible)
     ]
+    if not named:
+        named = [
+            row
+            for row in call.repositories.planning.list_projects(workspace_id)
+            if project_slug_id(row.project_id) == folded and visible_project_teams(row, visible)
+        ]
     if len(named) > 1:
         raise ambiguous("project", reference)
     if not named:
