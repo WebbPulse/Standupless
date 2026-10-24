@@ -241,7 +241,7 @@ const withoutTrelloActions = (text: string): string => {
       return text;
     if (!('actions' in parsed)) return text;
     const board: Record<string, unknown> = { ...parsed };
-    delete board.actions;
+    delete board['actions'];
     return JSON.stringify(board);
   } catch {
     return text;
