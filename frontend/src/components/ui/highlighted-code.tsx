@@ -70,7 +70,7 @@ export const HighlightedCode: React.FC<HighlightedCodeProps> = ({
       <div className="absolute top-1 right-1 flex items-center">
         <button
           type="button"
-          className="code-block-copy"
+          className="code-block-copy hover:bg-raised hover:text-text"
           aria-label={copyLabel}
           title={copyLabel}
           data-copied={String(copied)}

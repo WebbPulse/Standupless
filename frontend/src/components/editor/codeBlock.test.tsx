@@ -6,7 +6,11 @@
  * set has loaded.
  */
 
-import { Editor } from '@tiptap/core';
+import {
+  Editor,
+  getExtensionField,
+  type KeyboardShortcutCommand,
+} from '@tiptap/core';
 import { TextSelection } from '@tiptap/pm/state';
 import { act, cleanup, fireEvent, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -62,6 +66,34 @@ const press = (editor: Editor, init: KeyboardEventInit): void => {
   });
 };
 
+/**
+ * Runs the code block's own binding for a key, apart from the browser's
+ * fallback, which jsdom's empty layout would otherwise answer.
+ */
+const codeBlockShortcut = (editor: Editor, key: string): boolean => {
+  const extension = editor.extensionManager.extensions.find(
+    (item) => item.name === 'codeBlock'
+  );
+  if (extension === undefined) throw new Error('no code block extension');
+  const add = getExtensionField<() => Record<string, KeyboardShortcutCommand>>(
+    extension,
+    'addKeyboardShortcuts',
+    {
+      name: extension.name,
+      options: extension.options,
+      editor,
+      type: editor.schema.nodes['codeBlock'],
+    }
+  );
+  const binding = add()[key];
+  if (binding === undefined) throw new Error(`no binding for ${key}`);
+  let handled = false;
+  act(() => {
+    handled = binding({ editor });
+  });
+  return handled;
+};
+
 describe('code block keys', () => {
   it('indents on Tab and outdents on Shift+Tab', () => {
     const editor = editorWith('```ts\nconst a = 1;\n```');
@@ -112,13 +144,12 @@ describe('code block keys', () => {
     expect(selection.$from.parent.textContent).toBe('after');
   });
 
-  it('stays in the block on the down arrow above its last line', () => {
+  it('leaves the down arrow above the last line to the editor', () => {
     const editor = editorWith('```ts\nfirst\nlast\n```');
     cursorAt(editor, 1);
 
-    press(editor, { key: 'ArrowDown', code: 'ArrowDown' });
-
-    expect(editor.state.doc.childCount).toBe(1);
+    expect(codeBlockShortcut(editor, 'ArrowDown')).toBe(false);
+    expect(editor.state.selection.$from.parent.type.name).toBe('codeBlock');
   });
 });
 
