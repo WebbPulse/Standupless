@@ -122,6 +122,7 @@ import {
   teamCyclesPath,
   teamPath,
   teamReleasesPath,
+  teamViewsPath,
   teamSettingsPath,
   teamTriagePath,
   viewsPath,
@@ -736,6 +737,13 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
         keywords: 'releases deploys deployments shipped',
         icon: <LuRocket className={ICON} />,
         to: teamReleasesPath(slug, team.key_prefix),
+      });
+      built.push({
+        id: 'nav-team-views',
+        label: `${team.name} views`,
+        keywords: 'views saved filters go to views',
+        icon: <LuLayers className={ICON} />,
+        to: teamViewsPath(slug, team.key_prefix),
       });
       built.push({
         id: 'nav-archive',

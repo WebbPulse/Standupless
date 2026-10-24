@@ -85,6 +85,7 @@ import {
   teamReleasesPath,
   teamSettingsPath,
   teamTriagePath,
+  teamViewsPath,
   viewsPath,
   workspacePath,
   accountSecuritySettingsPath,
@@ -477,6 +478,15 @@ const TeamSection: React.FC<TeamSectionProps> = ({
           <LuTarget className={SUB_ICON} aria-hidden="true" />
           Projects
         </Link>
+        <NavLink
+          to={teamViewsPath(slug, team.key_prefix)}
+          end
+          className={subItemClass}
+          onClick={onNavigate}
+        >
+          <LuLayers className={SUB_ICON} aria-hidden="true" />
+          Views
+        </NavLink>
       </div>
     </div>
   );

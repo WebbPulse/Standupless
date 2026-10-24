@@ -223,6 +223,10 @@ export const viewPath = (slug: string, viewId: string): string =>
 export const teamProjectsPath = (slug: string, keyPrefix: string): string =>
   `${projectsPath(slug)}?team=${encodeURIComponent(keyPrefix)}`;
 
+/** The saved views shared with one team. */
+export const teamViewsPath = (slug: string, keyPrefix: string): string =>
+  `${teamPath(slug, keyPrefix)}/views`;
+
 /** The workspace settings page that lists every team. */
 export const settingsTeamsPath = (slug: string): string =>
   `${settingsPath(slug)}/teams`;
