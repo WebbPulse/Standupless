@@ -34,7 +34,7 @@ from app.common.db.dynamo.github import IssueLink, PullRequestState, link_key, s
 from app.common.issue_key_search import find_keys
 from app.common.issue_move import find_issue_by_number
 from app.common.sla import apply_sla
-from app.domains.integrations import linking, pr_labels, pr_status
+from app.domains.integrations import linking, pr_labels, pr_resync, pr_status
 from app.domains.integrations.pr_summary import refresh_for_pr
 from app.domains.integrations.service import effective_transitions
 
@@ -205,6 +205,11 @@ def handle_record(repositories: Repositories, record: Mapping[str, Any]) -> None
         )
         return
 
+    if event == pr_resync.RESYNC_EVENT:
+        pr_resync.handle_resync(repositories, workspace_id, body)
+        return
+    pr_resync.maybe_sweep(repositories, workspace_id)
+
     repository = body.get("repository")
     if event in NAMED_REPOSITORY_EVENTS and isinstance(repository, Mapping):
         from app.domains.integrations.installs import refresh_repository_names, refresh_repository_visibility
@@ -215,9 +220,7 @@ def handle_record(repositories: Repositories, record: Mapping[str, Any]) -> None
         return
 
     if event == "pull_request":
-        recorded = _handle_pull_request(repositories, workspace_id, body, _event_time(record, payload))
-        _track_reviewers(repositories, workspace_id, body, _event_time(record, payload), recorded=recorded)
-        _reconcile_on_close(repositories, workspace_id, body, installation_id)
+        fold_pull_request(repositories, workspace_id, body, _event_time(record, payload))
     elif event == "push":
         _handle_push(repositories, workspace_id, body, _event_time(record, payload))
     elif event == "issues":
@@ -246,6 +249,20 @@ def handle_record(repositories: Repositories, record: Mapping[str, Any]) -> None
         from app.domains.integrations.tag_releases import handle_release
 
         handle_release(repositories, workspace_id, body)
+
+
+def fold_pull_request(
+    repositories: Repositories,
+    workspace_id: str,
+    body: Mapping[str, Any],
+    event_at: datetime,
+) -> None:
+    """Fold one `pull_request` delivery, whether GitHub sent it or a read back rebuilt it."""
+    installation = body.get("installation")
+    installation_id = str(installation.get("id", "")) if isinstance(installation, Mapping) else ""
+    recorded = _handle_pull_request(repositories, workspace_id, body, event_at)
+    _track_reviewers(repositories, workspace_id, body, event_at, recorded=recorded)
+    _reconcile_on_close(repositories, workspace_id, body, installation_id)
 
 
 def _reconcile_on_close(
