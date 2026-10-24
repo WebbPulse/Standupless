@@ -202,7 +202,7 @@ def test_the_new_groupings_and_sorts_round_trip(client: TestClient, workspace: s
         read = client.get(f"/api/workspaces/{workspace}/views/{created.json()['view_id']}").json()
         assert (read["group_by"], read["sub_group_by"]) == (group, sub_group)
 
-    for sort in ("status_asc", "start_asc", "estimate_desc"):
+    for sort in ("status_asc", "start_asc", "estimate_desc", "completed_desc"):
         created = _create(client, workspace, sort=sort, ordering=sort)
         assert created.status_code == 201, created.text
         assert (created.json()["sort"], created.json()["ordering"]) == (sort, sort)
