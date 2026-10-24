@@ -33,8 +33,22 @@ def test_a_project_view_keeps_its_filter_and_arrangement(client: TestClient, wor
         workspace,
         entity="projects",
         team_id=TEAM,
-        filter={"team_id": TEAM, "status": ["planned", "in_progress"], "lead_id": "none", "sub_teams": False},
-        projects_display={"layout": "timeline", "group": "lead", "order": "name", "closed": "month", "zoom": "quarter"},
+        filter={
+            "team_id": TEAM,
+            "status": ["planned", "in_progress"],
+            "lead_id": "none",
+            "sub_teams": False,
+            "is_blocked": True,
+            "is_blocking": "false",
+        },
+        projects_display={
+            "layout": "timeline",
+            "group": "lead",
+            "order": "name",
+            "closed": "month",
+            "zoom": "quarter",
+            "columns": ["status", "health"],
+        },
     )
 
     assert response.status_code == 201, response.text
@@ -46,6 +60,8 @@ def test_a_project_view_keeps_its_filter_and_arrangement(client: TestClient, wor
         "status": ["planned", "in_progress"],
         "lead_id": "none",
         "sub_teams": "false",
+        "is_blocked": "true",
+        "is_blocking": "false",
     }
     assert view["projects_display"] == {
         "layout": "timeline",
@@ -53,6 +69,7 @@ def test_a_project_view_keeps_its_filter_and_arrangement(client: TestClient, wor
         "order": "name",
         "closed": "month",
         "zoom": "quarter",
+        "columns": "health,status",
     }
     read = client.get(f"/api/workspaces/{workspace}/views/{view['view_id']}")
     assert read.json()["projects_display"] == view["projects_display"]
@@ -70,6 +87,7 @@ def test_a_project_view_without_an_arrangement_takes_the_default(client: TestCli
         "order": "target",
         "closed": "all",
         "zoom": "month",
+        "columns": "health,priority,status,lead,start,target,teams,progress",
     }
 
 
@@ -77,7 +95,13 @@ def test_a_project_view_refuses_issue_filter_keys_and_unknown_statuses(client: T
     """The projects page's keys and statuses are the whole set, so anything else is `INVALID_FILTER`."""
     sign_in(client, MEMBER)
 
-    for bad in ({"assignee_id": "me"}, {"status": ["shipping"]}, {"team_id": ["a", "b"]}, {"sub_teams": "maybe"}):
+    for bad in (
+        {"assignee_id": "me"},
+        {"status": ["shipping"]},
+        {"team_id": ["a", "b"]},
+        {"sub_teams": "maybe"},
+        {"is_blocked": "maybe"},
+    ):
         response = _create(client, workspace, entity="projects", filter=bad)
         assert response.status_code == 422, bad
         assert response.json()["error_code"] == "INVALID_FILTER"

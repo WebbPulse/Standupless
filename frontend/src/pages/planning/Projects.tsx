@@ -1,14 +1,16 @@
 /**
  * Every project in the workspace, laid out as a dense list, a board or a
  * timeline. The list shows icon and name with its blocked and blocking flags,
- * health, priority, status, lead, start and target dates, teams and progress,
- * and edits health, priority, status, lead and both dates from the row
- * without opening it. The board puts projects in columns by
+ * then the columns the Display menu keeps on: health, priority, status, lead,
+ * start and target dates, teams, issues and progress. Hidden columns leave
+ * the grid, and health, priority, status, lead and both dates edit from the
+ * row without opening it. The board puts projects in columns by
  * the grouping and moves them between columns by dragging; the timeline draws
  * them as bars from start to target date. Rows group by status, health,
  * priority, initiative, lead or team, order by date, name, priority or
  * progress, and completed projects show for all time, a recent window or not
- * at all. The arrangement is saved to the account and carried in the URL so
+ * at all. Filters narrow by status, lead, team, and whether an open blocker
+ * holds a project up or it holds another up. The arrangement is saved to the account and carried in the URL so
  * an arranged page can be shared. Filtered to a parent team, the page
  * includes the projects of its visible sub-teams, with the issue list's
  * toggle to show the team alone. The arrangement and filters save as a view
@@ -53,7 +55,10 @@ import {
   ProjectStatusPicker,
   TeamKey,
 } from '../../components/planning/ProjectPickers';
-import ProjectDependencyMarkers from '../../components/planning/ProjectDependencyMarkers';
+import ProjectDependencyMarkers, {
+  heldProjects,
+  openBlockers,
+} from '../../components/planning/ProjectDependencyMarkers';
 import ProjectGroupGlyph from '../../components/planning/ProjectGroupGlyph';
 import UpdateDueBadge from '../../components/planning/UpdateDueBadge';
 import ProjectIcon from '../../components/planning/ProjectIcon';
@@ -105,14 +110,19 @@ import {
 import { PROJECT_STATUS_ORDER, canEditProject } from '../../lib/planningModel';
 import {
   PROJECTS_DISPLAY_FIELDS,
+  PROJECT_COLUMN_LABELS,
+  columnList,
+  columnValue,
   groupProjects,
   groupValue,
   sortProjects,
   withinClosedWindow,
+  type ProjectColumn,
   type ProjectGroup,
 } from '../../lib/projectList';
 import {
   orderedStatuses,
+  type FlagFilter,
   projectViewBase,
   sameProjectFilter,
   toProjectViewFilter,
@@ -129,9 +139,47 @@ import type {
 import { teamTree } from '../../lib/teamOrder';
 import type { TimelineZoom } from '../../lib/timeline';
 
-/** The grid every header and row lines up on. */
+/** The grid every header and row lines up on, its tracks set by gridTracks. */
 const GRID =
-  'grid grid-cols-[minmax(0,1fr)_3.5rem] items-center gap-3 md:grid-cols-[minmax(0,1fr)_7rem_2rem_8.5rem_2rem_6rem_6rem_6rem_4.5rem]';
+  'grid grid-cols-[var(--project-columns-narrow)] items-center gap-3 md:grid-cols-[var(--project-columns)]';
+
+/** How wide each list column runs beside the name. */
+const COLUMN_WIDTHS: Record<ProjectColumn, string> = {
+  health: '7rem',
+  priority: '2rem',
+  status: '8.5rem',
+  lead: '2rem',
+  start: '6rem',
+  target: '6rem',
+  teams: '6rem',
+  issues: '4rem',
+  progress: '4.5rem',
+};
+
+/**
+ * The grid tracks for the shown columns: every one beside the name on wide
+ * screens, and only progress on narrow ones, so a hidden column leaves no gap.
+ */
+const gridTracks = (shown: readonly ProjectColumn[]): React.CSSProperties =>
+  ({
+    '--project-columns': [
+      'minmax(0,1fr)',
+      ...shown.map((column) => COLUMN_WIDTHS[column]),
+    ].join(' '),
+    '--project-columns-narrow': shown.includes('progress')
+      ? 'minmax(0,1fr) 3.5rem'
+      : 'minmax(0,1fr)',
+  }) as React.CSSProperties;
+
+/** The yes and no choices of the blocked and blocking filters. */
+const FLAG_OPTIONS: ComboboxOption[] = [
+  { value: 'true', label: 'Yes' },
+  { value: 'false', label: 'No' },
+];
+
+/** Whether a project passes a yes or no filter, every project when it is unset. */
+const flagMatches = (filter: string, holds: boolean): boolean =>
+  filter === '' || (filter === 'true') === holds;
 
 /** The statuses a closed project holds, hidden as board columns with completed projects. */
 const CLOSED_STATUSES: ReadonlySet<ProjectStatus> = new Set([
@@ -141,6 +189,30 @@ const CLOSED_STATUSES: ReadonlySet<ProjectStatus> = new Set([
 
 /** The filter value that asks for projects with no lead. */
 const NO_LEAD = 'none';
+
+/** How each column's header cell sits over its column. */
+const HEADER_CLASSES: Record<ProjectColumn, string> = {
+  health: 'hidden px-2 md:block',
+  priority: 'hidden text-center md:block',
+  status: 'hidden px-2 md:block',
+  lead: 'hidden text-center md:block',
+  start: 'hidden px-2 md:block',
+  target: 'hidden px-2 md:block',
+  teams: 'hidden md:block',
+  issues: 'hidden text-right md:block',
+  progress: 'text-right',
+};
+
+/** The short header text of each column, where the header names it. */
+const HEADER_LABELS: Record<ProjectColumn, string> = {
+  ...PROJECT_COLUMN_LABELS,
+  start: 'Start',
+  target: 'Target',
+};
+
+/** A blocked or blocking filter value, `true`, `false`, or empty when unset. */
+const flagParam = (value: string): FlagFilter =>
+  value === 'true' || value === 'false' ? value : '';
 
 /** Props for FilterButton: one filter's options and what is chosen. */
 interface FilterButtonProps {
@@ -215,6 +287,8 @@ interface ProjectRowProps {
   people: Assignable[];
   /** Every loaded project by id, so the dependency flags can name their projects. */
   byId: ReadonlyMap<string, ProjectRead>;
+  /** The columns shown beside the name, in drawing order. */
+  shown: readonly ProjectColumn[];
   workspaceRole: WorkspaceRole | undefined;
   isActive: boolean;
   rowRef: (node: HTMLElement | null) => void;
@@ -234,6 +308,7 @@ const ProjectRow: React.FC<ProjectRowProps> = ({
   teams,
   people,
   byId,
+  shown,
   workspaceRole,
   isActive,
   rowRef,
@@ -262,11 +337,13 @@ const ProjectRow: React.FC<ProjectRowProps> = ({
   );
   const lead = people.find((person) => person.user_id === project.lead_id);
   const href = projectPath(slug, project.project_id);
+  const has = (column: ProjectColumn): boolean => shown.includes(column);
 
   return (
     <li
       ref={rowRef}
       onPointerEnter={onPointerEnter}
+      style={gridTracks(shown)}
       className={cn(
         GRID,
         'relative h-11 border-b border-line px-4 text-sm transition-colors duration-100 hover:bg-surface has-[a:active]:bg-raised lg:px-6',
@@ -290,93 +367,117 @@ const ProjectRow: React.FC<ProjectRowProps> = ({
           </span>
         )}
       </div>
-      <div className="relative z-10 hidden md:block">
-        <HealthPicker
-          variant="rail"
-          value={project.health}
-          disabled={!editable}
-          onChange={(health) => {
-            void update({ health });
-          }}
-        />
-      </div>
-      <div className="relative z-10 hidden min-w-0 justify-center md:flex">
-        <PriorityPicker
-          variant="icon"
-          value={project.priority}
-          disabled={!editable}
-          onChange={(priority) => {
-            void update({ priority });
-          }}
-        />
-      </div>
-      <div className="relative z-10 hidden md:block">
-        <ProjectStatusPicker
-          variant="rail"
-          value={project.status}
-          percent={percent}
-          disabled={!editable}
-          onChange={closePrompt.changeStatus}
-        />
-      </div>
-      <div className="relative z-10 hidden min-w-0 justify-center md:flex">
-        <LeadPicker
-          variant="icon"
-          value={project.lead_id}
-          people={people}
-          disabled={!editable}
-          onChange={(leadId) => {
-            void update({ lead_id: leadId });
-          }}
-        />
-      </div>
-      <div className="relative z-10 hidden min-w-0 tabular-nums md:block">
-        <DatePicker
-          variant="rail"
-          field="Start date"
-          icon={null}
-          emptyLabel="No date"
-          value={project.start_date}
-          disabled={!editable}
-          {...(project.target_date === null
-            ? {}
-            : { max: project.target_date })}
-          onChange={(start) => {
-            void update({ start_date: start });
-          }}
-        />
-      </div>
-      <div className="relative z-10 hidden min-w-0 tabular-nums md:block">
-        <DatePicker
-          variant="rail"
-          field="Target date"
-          icon={null}
-          emptyLabel="No date"
-          value={project.target_date}
-          disabled={!editable}
-          {...(project.start_date === null ? {} : { min: project.start_date })}
-          onChange={(target) => {
-            void update({ target_date: target });
-          }}
-        />
-      </div>
-      <span className="pointer-events-none hidden min-w-0 items-center gap-1 md:flex">
-        {projectTeams.slice(0, 3).map((team) => (
-          <TeamKey key={team.id} keyPrefix={team.key_prefix} />
-        ))}
-        {projectTeams.length > 3 && (
-          <span className="text-2xs text-text-faint">
-            +{String(projectTeams.length - 3)}
+      {has('health') && (
+        <div className="relative z-10 hidden md:block">
+          <HealthPicker
+            variant="rail"
+            value={project.health}
+            disabled={!editable}
+            onChange={(health) => {
+              void update({ health });
+            }}
+          />
+        </div>
+      )}
+      {has('priority') && (
+        <div className="relative z-10 hidden min-w-0 justify-center md:flex">
+          <PriorityPicker
+            variant="icon"
+            value={project.priority}
+            disabled={!editable}
+            onChange={(priority) => {
+              void update({ priority });
+            }}
+          />
+        </div>
+      )}
+      {has('status') && (
+        <div className="relative z-10 hidden md:block">
+          <ProjectStatusPicker
+            variant="rail"
+            value={project.status}
+            percent={percent}
+            disabled={!editable}
+            onChange={closePrompt.changeStatus}
+          />
+        </div>
+      )}
+      {has('lead') && (
+        <div className="relative z-10 hidden min-w-0 justify-center md:flex">
+          <LeadPicker
+            variant="icon"
+            value={project.lead_id}
+            people={people}
+            disabled={!editable}
+            onChange={(leadId) => {
+              void update({ lead_id: leadId });
+            }}
+          />
+        </div>
+      )}
+      {has('start') && (
+        <div className="relative z-10 hidden min-w-0 tabular-nums md:block">
+          <DatePicker
+            variant="rail"
+            field="Start date"
+            icon={null}
+            emptyLabel="No date"
+            value={project.start_date}
+            disabled={!editable}
+            {...(project.target_date === null
+              ? {}
+              : { max: project.target_date })}
+            onChange={(start) => {
+              void update({ start_date: start });
+            }}
+          />
+        </div>
+      )}
+      {has('target') && (
+        <div className="relative z-10 hidden min-w-0 tabular-nums md:block">
+          <DatePicker
+            variant="rail"
+            field="Target date"
+            icon={null}
+            emptyLabel="No date"
+            value={project.target_date}
+            disabled={!editable}
+            {...(project.start_date === null
+              ? {}
+              : { min: project.start_date })}
+            onChange={(target) => {
+              void update({ target_date: target });
+            }}
+          />
+        </div>
+      )}
+      {has('teams') && (
+        <span className="pointer-events-none hidden min-w-0 items-center gap-1 md:flex">
+          {projectTeams.slice(0, 3).map((team) => (
+            <TeamKey key={team.id} keyPrefix={team.key_prefix} />
+          ))}
+          {projectTeams.length > 3 && (
+            <span className="text-2xs text-text-faint">
+              +{String(projectTeams.length - 3)}
+            </span>
+          )}
+          <span className="sr-only">
+            {projectTeams.map((team) => team.name).join(', ')}
           </span>
-        )}
-        <span className="sr-only">
-          {projectTeams.map((team) => team.name).join(', ')}
         </span>
-      </span>
-      <span className="pointer-events-none flex items-center justify-end gap-1.5 text-xs text-text-muted tabular-nums">
-        <ProgressRing percent={percent} />
-        <span>{`${String(percent)}%`}</span>
-      </span>
+      )}
+      {has('issues') && (
+        <span className="pointer-events-none hidden justify-end text-xs text-text-muted tabular-nums md:flex">
+          <span aria-hidden="true">{`${String(project.counts.done)}/${String(project.counts.total)}`}</span>
+          <span className="sr-only">{`${String(project.counts.done)} of ${String(project.counts.total)} issues done`}</span>
+        </span>
+      )}
+      {has('progress') && (
+        <span className="pointer-events-none flex items-center justify-end gap-1.5 text-xs text-text-muted tabular-nums">
+          <ProgressRing percent={percent} />
+          <span>{`${String(percent)}%`}</span>
+        </span>
+      )}
       {lead !== undefined && (
         <span className="sr-only">{`Lead ${personLabel(lead)}`}</span>
       )}
@@ -389,7 +490,7 @@ const ProjectRow: React.FC<ProjectRowProps> = ({
 type Saving = 'new' | 'details' | null;
 
 /** The filters the page keeps in the URL. */
-type FilterField = 'team' | 'status' | 'lead';
+type FilterField = 'team' | 'status' | 'lead' | 'blocked' | 'blocking';
 
 /** Props for Projects. */
 export interface ProjectsProps {
@@ -427,7 +528,9 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading }) => {
           ? base.team
           : field === 'status'
             ? base.status.join(',')
-            : base.lead,
+            : field === 'lead'
+              ? base.lead
+              : base[field],
     [base]
   );
   const teamFilter = params.get('team') ?? baseOf('team');
@@ -442,12 +545,20 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading }) => {
     [statusText]
   );
   const leadFilter = params.get('lead') ?? baseOf('lead');
+  const blockedFilter = flagParam(params.get('blocked') ?? baseOf('blocked'));
+  const blockingFilter = flagParam(
+    params.get('blocking') ?? baseOf('blocking')
+  );
   const {
     display,
     change: changeDisplay,
     reset,
   } = useProjectsDisplay(base?.display);
   const { layout, group: grouping, order: ordering, closed, zoom } = display;
+  const shownColumns = useMemo(
+    () => columnList(display.columns),
+    [display.columns]
+  );
   const filteredTeam = teams.find((team) => team.key_prefix === teamFilter);
   const baseRollUp = base?.rollUp ?? true;
   const {
@@ -462,6 +573,8 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading }) => {
       (base !== undefined && teamFilter === base.team ? base.teamId : ''),
     status: statusFilter,
     lead: leadFilter,
+    blocked: blockedFilter,
+    blocking: blockingFilter,
     rollUp: heldRollUp === null ? baseRollUp : heldRollUp !== '0',
   });
   const changed =
@@ -528,8 +641,25 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading }) => {
               ? project.lead_id === null
               : project.lead_id === leadFilter
         )
+        .filter(
+          (project) =>
+            flagMatches(
+              blockedFilter,
+              openBlockers(project, projectsById).length > 0
+            ) && flagMatches(blockingFilter, heldProjects(project).length > 0)
+        )
         .filter((project) => withinClosedWindow(project, closed, now)),
-    [applyMoves, projects, statusFilter, leadFilter, closed, now]
+    [
+      applyMoves,
+      projects,
+      projectsById,
+      statusFilter,
+      leadFilter,
+      blockedFilter,
+      blockingFilter,
+      closed,
+      now,
+    ]
   );
 
   const sorted = useMemo(() => sortProjects(rows, ordering), [rows, ordering]);
@@ -677,7 +807,11 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading }) => {
   };
 
   const hasFilters =
-    teamFilter !== '' || statusFilter.length > 0 || leadFilter !== '';
+    teamFilter !== '' ||
+    statusFilter.length > 0 ||
+    leadFilter !== '' ||
+    blockedFilter !== '' ||
+    blockingFilter !== '';
 
   useShortcut({
     keys: 'shift+p',
@@ -902,6 +1036,22 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading }) => {
               setParams(next, { replace: true });
             }}
           />
+          <FilterButton
+            field="Blocked"
+            options={FLAG_OPTIONS}
+            selected={blockedFilter === '' ? [] : [blockedFilter]}
+            onSelect={(value) => {
+              setParam('blocked', value === blockedFilter ? '' : value);
+            }}
+          />
+          <FilterButton
+            field="Blocking"
+            options={FLAG_OPTIONS}
+            selected={blockingFilter === '' ? [] : [blockingFilter]}
+            onSelect={(value) => {
+              setParam('blocking', value === blockingFilter ? '' : value);
+            }}
+          />
           {filteredTeam !== undefined && subTeams.length > 0 && (
             <SubTeamToggle rollUp={rollUp} onToggle={toggleRollUp} />
           )}
@@ -914,6 +1064,8 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading }) => {
                 writeParam(next, 'team', '');
                 writeParam(next, 'status', '');
                 writeParam(next, 'lead', '');
+                writeParam(next, 'blocked', '');
+                writeParam(next, 'blocking', '');
                 next.delete(ROLL_UP_PARAM);
                 setParams(next, { replace: true });
               }}
@@ -940,6 +1092,14 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading }) => {
               onClosedChange={(value) => {
                 changeDisplay({ closed: value });
               }}
+              {...(layout === 'list'
+                ? {
+                    columns: shownColumns,
+                    onColumnsChange: (value: ProjectColumn[]) => {
+                      changeDisplay({ columns: columnValue(value) });
+                    },
+                  }
+                : {})}
               onReset={reset}
             />
             {layout === 'timeline' && (
@@ -974,24 +1134,28 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading }) => {
         <div className="min-h-0 flex-1 overflow-y-auto">
           <div
             role="presentation"
+            style={gridTracks(shownColumns)}
             className={cn(
               GRID,
               'sticky top-0 z-20 h-8 border-b border-line bg-bg px-4 text-2xs font-medium tracking-wide text-text-faint uppercase lg:px-6'
             )}
           >
             <span>Name</span>
-            <span className="hidden px-2 md:block">Health</span>
-            <span className="hidden text-center md:block">
-              <span className="sr-only">Priority</span>
-            </span>
-            <span className="hidden px-2 md:block">Status</span>
-            <span className="hidden text-center md:block">Lead</span>
-            <span className="hidden px-2 md:block">Start</span>
-            <span className="hidden px-2 md:block">Target</span>
-            <span className="hidden md:block">Teams</span>
-            <span className="text-right">
-              <span className="hidden md:inline">Progress</span>
-            </span>
+            {shownColumns.map((column) => (
+              <span key={column} className={HEADER_CLASSES[column]}>
+                {column === 'priority' ? (
+                  <span className="sr-only">
+                    {PROJECT_COLUMN_LABELS.priority}
+                  </span>
+                ) : column === 'progress' ? (
+                  <span className="hidden md:inline">
+                    {PROJECT_COLUMN_LABELS.progress}
+                  </span>
+                ) : (
+                  HEADER_LABELS[column]
+                )}
+              </span>
+            ))}
           </div>
           {showSkeleton ? (
             <SkeletonRows label="Loading projects" />
@@ -1065,6 +1229,7 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading }) => {
                             teams={teams}
                             people={people}
                             byId={projectsById}
+                            shown={shownColumns}
                             workspaceRole={workspace?.role}
                             isActive={position === activeIndex}
                             rowRef={registerItem(position)}

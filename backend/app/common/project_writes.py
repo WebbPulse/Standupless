@@ -38,7 +38,7 @@ from app.common.planning_rules import (
     visible_team_ids,
 )
 from app.common.project_cadence import workspace_interval
-from app.common.project_relations import dependency_map, fill_one, with_dependencies
+from app.common.project_relations import Dependencies, dependency_map, fill_one, with_dependencies
 from app.common.project_templates import add_template_rows, fill_project, find_project_template
 from app.common.relation_effects import cancelled_status, categories_for
 from app.common.sub_teams import listed_teams
@@ -78,6 +78,8 @@ def list_projects(
     limit: int,
     initiative_id: Optional[str] = None,
     include_sub_teams: bool = False,
+    is_blocked: Optional[bool] = None,
+    is_blocking: Optional[bool] = None,
 ) -> tuple[list[ProjectRead], Optional[str]]:
     """One page of the workspace's projects the caller can see, and the next cursor.
 
@@ -86,7 +88,10 @@ def list_projects(
     ones in that initiative, which a guest may not filter by. The rows are read whole
     and paged over the filtered order, so a page is never left short by projects
     the caller cannot see. `include_sub_teams` widens `team_id` to the team and
-    its sub-teams the caller may read, as the issue list does.
+    its sub-teams the caller may read, as the issue list does. `is_blocked` keeps
+    the projects an open visible blocker holds up, or with false the rest, and
+    `is_blocking` the open projects that hold a visible project up, or with false
+    the rest, the same reading as the list's blocked and blocking flags.
     """
     wanted_status = None if status_filter is None else normalise_project_status(status_filter)
     if status_filter is not None and status_filter not in STATUS_VALUES:
@@ -102,11 +107,14 @@ def list_projects(
     default_days = workspace_interval(repositories.workspaces, context.workspace_id)
     bodies: list[ProjectRead] = []
     readable: set[str] = set()
+    closed: set[str] = set()
     for row in repositories.planning.list_projects(context.workspace_id):
         teams = visible_project_teams(row, visible)
         if not teams:
             continue
         readable.add(row.project_id)
+        if normalise_project_status(row.status) in CLOSED_STATUSES:
+            closed.add(row.project_id)
         if wanted_teams is not None and wanted_teams.isdisjoint(teams):
             continue
         if wanted_status is not None and row.status != wanted_status:
@@ -115,14 +123,43 @@ def list_projects(
             continue
         bodies.append(ProjectRead.from_row(row, teams, default_interval_days=default_days))
 
+    dependencies = dependency_map(repositories.planning.list_project_relations(context.workspace_id), readable)
+    if is_blocked is not None or is_blocking is not None:
+        bodies = [
+            body
+            for body in bodies
+            if _dependency_flags_match(body.project_id, dependencies, closed, is_blocked, is_blocking)
+        ]
     narrowed = f"{team_id}:subs" if include_sub_teams and team_id is not None else team_id or "all"
     scope = f"projects:{context.workspace_id}:{narrowed}:{wanted_status or 'all'}:{initiative_id or 'all'}"
+    if is_blocked is not None or is_blocking is not None:
+        scope = f"{scope}:{_flag_scope(is_blocked)}{_flag_scope(is_blocking)}"
     offset = decode_offset_cursor(cursor, scope)
-    dependencies = dependency_map(repositories.planning.list_project_relations(context.workspace_id), readable)
     window = [with_dependencies(body, dependencies) for body in bodies[offset : offset + limit]]
     next_offset = offset + len(window)
     next_cursor = encode_offset_cursor(next_offset, scope) if next_offset < len(bodies) else None
     return window, next_cursor
+
+
+def _flag_scope(flag: Optional[bool]) -> str:
+    """One dependency filter as a letter of the cursor scope, so a cursor never crosses filters."""
+    return "a" if flag is None else ("y" if flag else "n")
+
+
+def _dependency_flags_match(
+    project_id: str,
+    dependencies: Dependencies,
+    closed: set[str],
+    is_blocked: Optional[bool],
+    is_blocking: Optional[bool],
+) -> bool:
+    """Whether a project's blocked and blocking state is the one each set filter asks for."""
+    blockers, held = dependencies.get(project_id, ([], []))
+    blocked = any(blocker not in closed for blocker in blockers)
+    blocking = project_id not in closed and bool(held)
+    if is_blocked is not None and blocked != is_blocked:
+        return False
+    return is_blocking is None or blocking == is_blocking
 
 
 def create_project(repositories: Repositories, context: AuthzContext, payload: ProjectCreate) -> ProjectRead:

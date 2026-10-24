@@ -10674,7 +10674,7 @@
         "type": "object"
       },
       "ProjectsDisplay": {
-        "description": "How the person arranges the workspace projects list.\n\n`closed` is how far back completed and canceled projects show: all of them,\nthose closed in the past week, month or quarter, or none. `zoom` is the\ntimeline layout's scale. Every field has the list's own default, so an\naccount that never arranged the list reads as the list opens.",
+        "description": "How the person arranges the workspace projects list.\n\n`closed` is how far back completed and canceled projects show: all of them,\nthose closed in the past week, month or quarter, or none. `zoom` is the\ntimeline layout's scale. `columns` names the list columns shown beside the\nproject name, comma separated in the list's own order, and empty shows the\nname alone; a list of names is accepted and stored the same way. Every field\nhas the list's own default, so an account that never arranged the list reads\nas the list opens.",
         "properties": {
           "closed": {
             "default": "all",
@@ -10686,6 +10686,11 @@
               "none"
             ],
             "title": "Closed",
+            "type": "string"
+          },
+          "columns": {
+            "default": "health,priority,status,lead,start,target,teams,progress",
+            "title": "Columns",
             "type": "string"
           },
           "group": {
@@ -34708,7 +34713,7 @@
     },
     "/api/workspaces/{workspace_id}/projects": {
       "get": {
-        "description": "One page of the workspace's projects the caller can see, by target date, undated last.\n\nA project is listed when the caller can see at least one of its teams, and\n`team_id` narrows to the projects that team is on and `initiative_id` to the\nones in that initiative. The rows are read whole and paged over the filtered\norder, so a page is never left short by projects the caller cannot see.\nUndated projects sort last, because an absent target is a project nobody has\ncommitted to yet. `include_sub_teams` with `team_id` also lists the projects\nof the team's sub-teams the caller may read, so a private sub-team stays out\nfor outsiders.",
+        "description": "One page of the workspace's projects the caller can see, by target date, undated last.\n\nA project is listed when the caller can see at least one of its teams, and\n`team_id` narrows to the projects that team is on and `initiative_id` to the\nones in that initiative. The rows are read whole and paged over the filtered\norder, so a page is never left short by projects the caller cannot see.\nUndated projects sort last, because an absent target is a project nobody has\ncommitted to yet. `include_sub_teams` with `team_id` also lists the projects\nof the team's sub-teams the caller may read, so a private sub-team stays out\nfor outsiders. `is_blocked` keeps the projects an open blocker holds up and\n`is_blocking` the open projects holding another up, each false for the rest.",
         "operationId": "list_projects_api_workspaces__workspace_id__projects_get",
         "parameters": [
           {
@@ -34805,6 +34810,38 @@
               "default": false,
               "title": "Include Sub Teams",
               "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "is_blocked",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Is Blocked"
+            }
+          },
+          {
+            "in": "query",
+            "name": "is_blocking",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Is Blocking"
             }
           }
         ],

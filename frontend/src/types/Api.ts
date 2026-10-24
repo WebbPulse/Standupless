@@ -52,6 +52,8 @@ export interface ProjectsDisplayPreference {
     | 'updated';
   closed: 'all' | 'week' | 'month' | 'quarter' | 'none';
   zoom: 'week' | 'month' | 'quarter' | 'year';
+  /** The shown list columns, comma separated, absent on a row saved before columns could be chosen. */
+  columns?: string;
 }
 
 /** The page a workspace opens on when the person enters it. */

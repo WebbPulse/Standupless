@@ -61,6 +61,7 @@ def test_the_caller_reads_their_own_row(client: TestClient, repositories: Any) -
             "order": "target",
             "closed": "all",
             "zoom": "month",
+            "columns": "health,priority,status,lead,start,target,teams,progress",
         },
     }
 
@@ -168,13 +169,43 @@ def test_the_projects_display_is_kept_whole_and_refuses_unknown_choices(client: 
         "order": "target",
         "closed": "month",
         "zoom": "month",
+        "columns": "health,priority,status,lead,start,target,teams,progress",
     }
     assert repositories.users.get(OWNER).projects_display["group"] == "health"
     assert client.get("/api/users/me").json()["projects_display"]["layout"] == "board"
 
-    for field, value in (("layout", "gallery"), ("group", "label"), ("closed", "year"), ("zoom", "day")):
+    for field, value in (
+        ("layout", "gallery"),
+        ("group", "label"),
+        ("closed", "year"),
+        ("zoom", "day"),
+        ("columns", "health,milestones"),
+    ):
         refused = client.patch("/api/users/me/preferences", json={"projects_display": {field: value}})
         assert refused.status_code == 422
+
+
+def test_the_projects_list_columns_are_kept_in_the_list_order(client: TestClient, repositories: Any) -> None:
+    """Columns sent as a list or a text store as one text in the list's order, and empty shows the name alone."""
+    make_user(repositories, OWNER, "owner@example.com", display_name="Owner")
+    sign_in(client, OWNER)
+
+    listed = client.patch("/api/users/me/preferences", json={"projects_display": {"columns": ["progress", "lead"]}})
+    emptied = client.patch("/api/users/me/preferences", json={"projects_display": {"columns": ""}})
+
+    assert listed.status_code == 200, listed.text
+    assert listed.json()["projects_display"]["columns"] == "lead,progress"
+    assert emptied.json()["projects_display"]["columns"] == ""
+    assert repositories.users.get(OWNER).projects_display["columns"] == ""
+
+
+def test_a_retired_projects_list_column_is_dropped_on_read(client: TestClient, repositories: Any) -> None:
+    """A stored column the list no longer draws falls away and the others stay."""
+    make_user(repositories, OWNER, "owner@example.com", display_name="Owner")
+    repositories.users.update(OWNER, projects_display={"columns": "members,issues,health"})
+    sign_in(client, OWNER)
+
+    assert client.get("/api/users/me").json()["projects_display"]["columns"] == "health,issues"
 
 
 def test_a_retired_projects_display_choice_reads_as_the_default(client: TestClient, repositories: Any) -> None:
