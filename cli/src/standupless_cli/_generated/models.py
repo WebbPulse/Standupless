@@ -1190,6 +1190,47 @@ class IssueUpdate(TypedDict):
     title: NotRequired[str | None]
 
 
+class JiraCredentialsRequest(TypedDict):
+    email: str
+    site_url: str
+    token: str
+
+
+class JiraProjectChoice(TypedDict):
+    epics_as: NotRequired[Literal["projects", "parents"]]
+    jql: NotRequired[str | None]
+    project_key: NotRequired[str | None]
+    statuses: NotRequired[dict[str, str]]
+    team_id: str
+
+
+class JiraProjectMappingRead(TypedDict):
+    epics_as: str
+    jql: NotRequired[str | None]
+    name: str
+    project_key: NotRequired[str | None]
+    site_url: str
+    statuses: NotRequired[dict[str, str]]
+    team_id: str
+
+
+class JiraProjectRead(TypedDict):
+    archived: bool
+    id: str
+    key: str
+    name: str
+    project_type: NotRequired[str | None]
+    team_managed: bool
+    url: NotRequired[str | None]
+
+
+class JiraStatusPlanRead(TypedDict):
+    category: NotRequired[str | None]
+    source: str
+    status_id: str
+    status_name: str
+
+
 class JoinableWorkspaceRead(TypedDict):
     accent_color: NotRequired[str | None]
     domain: str
@@ -3584,7 +3625,8 @@ class IssueImportRead(TypedDict):
     finished_at: NotRequired[str | None]
     github_repository_id: NotRequired[str | None]
     import_id: str
-    kind: NotRequired[Literal["csv", "linear", "github", "shortcut", "asana"]]
+    jira_projects: NotRequired[list[JiraProjectMappingRead]]
+    kind: NotRequired[Literal["csv", "linear", "github", "shortcut", "asana", "jira"]]
     labels_created: int
     linear_teams: NotRequired[list[LinearTeamMappingRead]]
     linked_count: NotRequired[int]
@@ -3654,6 +3696,31 @@ class IssueSyncListRead(TypedDict):
     removed_ids: NotRequired[list[str]]
     resync_required: NotRequired[bool]
     synced_at: NotRequired[str | None]
+
+
+class JiraImportRequest(TypedDict):
+    email: str
+    projects: list[JiraProjectChoice]
+    site_url: str
+    token: str
+
+
+class JiraProjectListRead(TypedDict):
+    items: list[JiraProjectRead]
+    site_url: str
+
+
+class JiraProjectPreviewRead(TypedDict):
+    done_count: int
+    epics_as: str
+    estimate_field: NotRequired[str | None]
+    issue_count: int
+    jql: NotRequired[str | None]
+    name: str
+    project_key: NotRequired[str | None]
+    sprint_field: NotRequired[str | None]
+    statuses: list[JiraStatusPlanRead]
+    team_id: str
 
 
 class JoinableWorkspaceListRead(TypedDict):
@@ -4092,6 +4159,11 @@ class IssueImportListRead(TypedDict):
 
 class IssueReleaseListRead(TypedDict):
     releases: list[IssueReleaseRead]
+
+
+class JiraImportPreviewRead(TypedDict):
+    projects: list[JiraProjectPreviewRead]
+    site_url: str
 
 
 class LinkListRead(TypedDict):
