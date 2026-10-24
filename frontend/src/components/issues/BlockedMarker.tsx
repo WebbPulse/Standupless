@@ -1,9 +1,11 @@
 /**
- * The blocked and blocking flags a list row or board card shows beside an
- * issue. The server keeps both counts on the issue itself, so a page of rows
- * draws them without asking for any relations: `blocked_by_open_count` counts
- * open blockers only, so a completed or cancelled blocker drops the flag, and
- * `blocking_count` is zero once the issue itself is finished.
+ * The blocked and blocking flags a list row, board card, peek or issue page
+ * shows beside an issue, each with its count beside it, a count of one
+ * included, the way sub-issue counts read. The server keeps both counts on the
+ * issue itself, so a page of rows draws them without asking for any relations:
+ * `blocked_by_open_count` counts open blockers only, so a completed or
+ * cancelled blocker drops out, and `blocking_count` counts the open issues this
+ * one holds up and is zero once the issue itself is finished.
  *
  * Hovering a flag reads that one issue's links once and names the issues in
  * the tooltip, key and title, the way Linear lists them on hover. The flag
@@ -132,11 +134,17 @@ const Marker: React.FC<MarkerProps> = ({
         role="img"
         aria-label={name}
         data-relation-marker={type}
-        className={cn('inline-flex shrink-0 items-center', tone)}
+        className={cn('inline-flex shrink-0 items-center gap-0.5', tone)}
         onPointerEnter={load}
         onFocus={load}
       >
         <Glyph className="h-3.5 w-3.5" />
+        <span
+          data-relation-count
+          className="text-xs leading-none font-medium tabular-nums"
+        >
+          {count}
+        </span>
       </span>
     </Tooltip>
   );
