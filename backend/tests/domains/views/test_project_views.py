@@ -66,8 +66,12 @@ def test_a_project_view_keeps_its_filter_and_arrangement(client: TestClient, wor
     assert view["projects_display"] == {
         "layout": "timeline",
         "group": "lead",
+        "direction": "asc",
+        "rows": "none",
         "order": "name",
         "closed": "month",
+        "lead_team": "all",
+        "empty": "show",
         "zoom": "quarter",
         "columns": "health,status",
     }
@@ -84,10 +88,14 @@ def test_a_project_view_without_an_arrangement_takes_the_default(client: TestCli
     assert view["projects_display"] == {
         "layout": "list",
         "group": "status",
+        "direction": "asc",
+        "rows": "none",
         "order": "target",
         "closed": "all",
+        "lead_team": "all",
+        "empty": "show",
         "zoom": "month",
-        "columns": "health,priority,status,lead,start,target,teams,progress",
+        "columns": "summary,dependencies,health,priority,status,lead,start,target,teams,progress",
     }
 
 

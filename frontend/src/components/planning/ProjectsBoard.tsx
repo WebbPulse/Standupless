@@ -1,5 +1,6 @@
 /**
- * The projects page's board: one column per group, each project a card.
+ * The projects page's board: one column per group, each project a card
+ * carrying the properties the Display menu keeps on.
  * Dragging a card to another column changes the field the columns are by,
  * such as its status, health, priority, initiative or lead; a move that
  * closes a project with open issues first asks what to do with them. Team
@@ -7,14 +8,16 @@
  * on several teams.
  */
 
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { LuPlus } from 'react-icons/lu';
 import { Link } from 'react-router-dom';
 import CloseProjectDialog, { type ClosingStatus } from './CloseProjectDialog';
 import ProgressRing from './ProgressRing';
 import ProjectGroupGlyph from './ProjectGroupGlyph';
 import ProjectHealthGlyph from './ProjectHealthGlyph';
+import ProjectDependencyMarkers from './ProjectDependencyMarkers';
 import ProjectIcon from './ProjectIcon';
+import ProjectStatusGlyph from './ProjectStatusGlyph';
 import { TeamKey } from './ProjectPickers';
 import UpdateDueBadge from './UpdateDueBadge';
 import Avatar from '../ui/avatar';
@@ -33,12 +36,16 @@ import {
   type Assignable,
 } from '../../lib/issuePeople';
 import { projectPath } from '../../lib/paths';
-import { progressPercent } from '../../lib/planningDisplay';
+import {
+  PROJECT_STATUS_LABELS,
+  progressPercent,
+} from '../../lib/planningDisplay';
 import { canEditProject } from '../../lib/planningModel';
 import { healthLabel } from '../../lib/projectLook';
 import {
   groupPatch,
   inGroup,
+  type ProjectColumn,
   type ProjectGroup,
   type ProjectMove,
 } from '../../lib/projectList';
@@ -50,9 +57,22 @@ import type {
   WorkspaceRole,
 } from '../../types/Api';
 
+/** The properties a card carries when the page names none. */
+const DEFAULT_CARD_PROPERTIES: readonly ProjectColumn[] = [
+  'health',
+  'priority',
+  'target',
+  'teams',
+  'lead',
+  'progress',
+];
+
 /** Props for BoardCard: one project and how it is dragged. */
 interface BoardCardProps {
   project: ProjectRead;
+  /** Every loaded project by id, so the dependency flags can name their projects. */
+  byId: ReadonlyMap<string, ProjectRead>;
+  shown: readonly ProjectColumn[];
   slug: string;
   teams: TeamRead[];
   people: Assignable[];
@@ -65,6 +85,8 @@ interface BoardCardProps {
 /** One project as a board card that opens the project. */
 const BoardCard: React.FC<BoardCardProps> = ({
   project,
+  byId,
+  shown,
   slug,
   teams,
   people,
@@ -77,6 +99,22 @@ const BoardCard: React.FC<BoardCardProps> = ({
   const lead = people.find((person) => person.user_id === project.lead_id);
   const projectTeams = teams.filter((team) =>
     project.team_ids.includes(team.id)
+  );
+  const has = (column: ProjectColumn): boolean => shown.includes(column);
+  const summary =
+    has('summary') && project.description !== null
+      ? (project.description.split('\n')[0] ?? '')
+      : '';
+  const dated = (value: string | null, field: string): React.ReactNode => (
+    <span
+      className={cn(
+        'whitespace-nowrap tabular-nums',
+        value === null && 'text-text-faint'
+      )}
+    >
+      <span className="sr-only">{`${field} `}</span>
+      {value === null ? 'No date' : shortDateLabel(value)}
+    </span>
   );
   return (
     <li
@@ -100,34 +138,51 @@ const BoardCard: React.FC<BoardCardProps> = ({
         >
           {project.name}
         </Link>
+        {has('dependencies') && (
+          <ProjectDependencyMarkers project={project} byId={byId} />
+        )}
         <UpdateDueBadge project={project} className="shrink-0" />
       </div>
+      {summary !== '' && (
+        <p className="truncate text-xs text-text-faint">{summary}</p>
+      )}
       <div className="flex min-w-0 items-center gap-2 text-xs text-text-muted">
-        <ProjectHealthGlyph
-          health={project.health}
-          name={healthLabel(project.health)}
-        />
-        <PriorityGlyph
-          priority={project.priority}
-          name={PRIORITY_LABELS[project.priority]}
-        />
-        <span
-          className={cn(
-            'whitespace-nowrap tabular-nums',
-            project.target_date === null && 'text-text-faint'
-          )}
-        >
-          {project.target_date === null
-            ? 'No date'
-            : shortDateLabel(project.target_date)}
-        </span>
-        <span className="flex min-w-0 items-center gap-1">
-          {projectTeams.slice(0, 2).map((team) => (
-            <TeamKey key={team.id} keyPrefix={team.key_prefix} />
-          ))}
-        </span>
+        {has('status') && (
+          <ProjectStatusGlyph
+            status={project.status}
+            percent={percent}
+            name={PROJECT_STATUS_LABELS[project.status]}
+          />
+        )}
+        {has('health') && (
+          <ProjectHealthGlyph
+            health={project.health}
+            name={healthLabel(project.health)}
+          />
+        )}
+        {has('priority') && (
+          <PriorityGlyph
+            priority={project.priority}
+            name={PRIORITY_LABELS[project.priority]}
+          />
+        )}
+        {has('start') && dated(project.start_date, 'Start')}
+        {has('target') && dated(project.target_date, 'Target')}
+        {has('teams') && (
+          <span className="flex min-w-0 items-center gap-1">
+            {projectTeams.slice(0, 2).map((team) => (
+              <TeamKey key={team.id} keyPrefix={team.key_prefix} />
+            ))}
+          </span>
+        )}
+        {has('issues') && (
+          <span className="whitespace-nowrap tabular-nums">
+            <span aria-hidden="true">{`${String(project.counts.done)}/${String(project.counts.total)}`}</span>
+            <span className="sr-only">{`${String(project.counts.done)} of ${String(project.counts.total)} issues done`}</span>
+          </span>
+        )}
         <span className="ml-auto flex items-center gap-1.5 tabular-nums">
-          {lead !== undefined && (
+          {has('lead') && lead !== undefined && (
             <span title={personLabel(lead)}>
               <Avatar
                 name={personLabel(lead)}
@@ -137,8 +192,12 @@ const BoardCard: React.FC<BoardCardProps> = ({
               <span className="sr-only">{`Lead ${personLabel(lead)}`}</span>
             </span>
           )}
-          <ProgressRing percent={percent} />
-          <span>{`${String(percent)}%`}</span>
+          {has('progress') && (
+            <>
+              <ProgressRing percent={percent} />
+              <span>{`${String(percent)}%`}</span>
+            </>
+          )}
         </span>
       </div>
     </li>
@@ -150,6 +209,8 @@ export interface ProjectsBoardProps {
   columns: ProjectGroup[];
   /** Every project the caller sees, for the close dialog's move targets. */
   projects: ProjectRead[];
+  /** The properties each card carries, in drawing order. */
+  shown?: readonly ProjectColumn[] | undefined;
   slug: string;
   workspaceId: string;
   teams: TeamRead[];
@@ -181,6 +242,7 @@ interface PendingClose {
 export const ProjectsBoard: React.FC<ProjectsBoardProps> = ({
   columns,
   projects,
+  shown = DEFAULT_CARD_PROPERTIES,
   slug,
   teams,
   people,
@@ -191,6 +253,11 @@ export const ProjectsBoard: React.FC<ProjectsBoardProps> = ({
   const [drag, setDrag] = useState<BoardDrag | null>(null);
   const [over, setOver] = useState<string | null>(null);
   const [closing, setClosing] = useState<PendingClose | null>(null);
+
+  const byId = useMemo(
+    () => new Map(projects.map((project) => [project.project_id, project])),
+    [projects]
+  );
 
   const dragged =
     drag === null
@@ -281,6 +348,8 @@ export const ProjectsBoard: React.FC<ProjectsBoardProps> = ({
                   <BoardCard
                     key={project.project_id}
                     project={project}
+                    byId={byId}
+                    shown={shown}
                     slug={slug}
                     teams={teams}
                     people={people}
