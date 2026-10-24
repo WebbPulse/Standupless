@@ -1,6 +1,6 @@
 /**
- * The page the desktop app opens in the system browser when its own window
- * cannot finish a sign-in. A signed out visitor is sent to sign in first and
+ * The page the desktop and mobile apps open in the system browser when their
+ * own window cannot finish a sign-in. A signed out visitor is sent to sign in first and
  * brought back with the app's request intact. A signed in visitor sees what
  * will happen and confirms it, and only then is a single-use code minted and
  * handed to the app through its own URL scheme. Nothing is minted on load, so
@@ -28,7 +28,7 @@ type Phase = 'ready' | 'minting' | 'opened';
 const loginReturningTo = (pathAndQuery: string): string =>
   `/login?returnTo=${encodeURIComponent(pathAndQuery)}`;
 
-/** Confirms, mints and hands a sign-in to the desktop app. */
+/** Confirms, mints and hands a sign-in to the desktop or mobile app. */
 const DesktopHandoff: React.FC = () => {
   const { isAuthenticated, isLoading, user } = useAuth();
   const client = useAuthClient();
@@ -52,8 +52,8 @@ const DesktopHandoff: React.FC = () => {
   if (desktopHandoffSchemes.length === 0) {
     return (
       <AuthLayout
-        title="Desktop sign-in is not available"
-        subtitle="This deployment does not hand sign-ins to the desktop app. Sign in from the app window instead."
+        title="App sign-in is not available"
+        subtitle="This deployment does not hand sign-ins to the Standupless app. Sign in from the app instead."
       >
         <p className="text-sm text-text-muted">You can close this tab.</p>
       </AuthLayout>
@@ -64,7 +64,7 @@ const DesktopHandoff: React.FC = () => {
     return (
       <AuthLayout
         title="This link has expired"
-        subtitle="The sign-in link from the desktop app is incomplete or was not made by Standupless. Start again from the app."
+        subtitle="The sign-in link from the Standupless app is incomplete or was not made by Standupless. Start again from the app."
       >
         <p className="text-sm text-text-muted">You can close this tab.</p>
       </AuthLayout>
@@ -104,16 +104,16 @@ const DesktopHandoff: React.FC = () => {
 
   return (
     <AuthLayout
-      title="Open Standupless desktop?"
+      title="Open the Standupless app?"
       subtitle={
         email === undefined || email === ''
-          ? 'The desktop app asked to sign in with this browser.'
-          : `The desktop app asked to sign in as ${email}.`
+          ? 'The Standupless app asked to sign in with this browser.'
+          : `The Standupless app asked to sign in as ${email}.`
       }
     >
       <p className="text-sm text-text-muted">
         Only continue if you started this from the Standupless app on this
-        computer.
+        device.
       </p>
       <ErrorAlert message={error} />
       <ConfirmationAlert
@@ -134,7 +134,7 @@ const DesktopHandoff: React.FC = () => {
           ? 'Opening Standupless'
           : phase === 'opened'
             ? 'Open Standupless again'
-            : 'Open Standupless desktop'}
+            : 'Open the Standupless app'}
       </AuthSubmitButton>
       <p className="text-sm text-text-muted">
         <TextLink to={WORKSPACES_PATH}>Stay in the browser</TextLink>
