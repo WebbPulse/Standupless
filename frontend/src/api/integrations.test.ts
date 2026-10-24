@@ -52,6 +52,7 @@ import {
   replaceTransitions,
   repositoryPath,
   rotateWebhookSecret,
+  setLabelSet,
   slackChannelsPath,
   slackConnectionPath,
   slackInstallUrlPath,
@@ -156,6 +157,7 @@ const installation: GithubInstallationRead = {
     'https://github.com/organizations/WebbPulse/settings/installations/44551122',
   avatar_url: 'https://avatars.githubusercontent.com/u/1',
   suspended: false,
+  label_set: { enabled: false, include_public: false, queued: false },
 };
 
 /** One repository in exactly the shape the backend serialises. */
@@ -556,6 +558,19 @@ describe('the install flow', () => {
     del.mockResolvedValue({ data: null });
     await deleteInstallation(WS);
     expect(del).toHaveBeenCalledWith(installationPath(WS), undefined);
+  });
+
+  it('puts the workspace label set under the installation', async () => {
+    const answer = { enabled: true, include_public: false, queued: true };
+    put.mockResolvedValue({ data: answer });
+    await expect(
+      setLabelSet(WS, { enabled: true, include_public: false })
+    ).resolves.toEqual(answer);
+    expect(put).toHaveBeenCalledWith(
+      `${installationPath(WS)}/label-set`,
+      { enabled: true, include_public: false },
+      undefined
+    );
   });
 });
 

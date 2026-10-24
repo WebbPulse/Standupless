@@ -24,6 +24,8 @@ import type {
   DiscordLinkUrlRead,
   GithubInstallationRead,
   GithubIssueLinkRead,
+  GithubLabelSetRead,
+  GithubLabelSetWrite,
   GithubRepositoryRead,
   InstallUrlRead,
   IssueSyncRead,
@@ -323,6 +325,22 @@ export const linkRepository = async (
   const response = await apiClient.patch<GithubRepositoryRead>(
     repositoryPath(workspaceId, repositoryId),
     { team_id: teamId }
+  );
+  return response.data;
+};
+
+/**
+ * Turns the workspace label set on or off. While it is on, every workspace
+ * label is kept on every repository the App can see, except a repository a
+ * team already syncs labels with.
+ */
+export const setLabelSet = async (
+  workspaceId: string,
+  body: GithubLabelSetWrite
+): Promise<GithubLabelSetRead> => {
+  const response = await apiClient.put<GithubLabelSetRead>(
+    `${installationPath(workspaceId)}/label-set`,
+    body
   );
   return response.data;
 };

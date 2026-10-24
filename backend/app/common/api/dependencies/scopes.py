@@ -386,6 +386,7 @@ ROUTE_SCOPES: Mapping[tuple[str, str], tuple[str, ...]] = {
     ("GET", "/{workspace_id}/github/install-url"): NO_KEY_ACCESS,
     ("GET", "/{workspace_id}/github/installation"): NO_KEY_ACCESS,
     ("DELETE", "/{workspace_id}/github/installation"): NO_KEY_ACCESS,
+    ("PUT", "/{workspace_id}/github/installation/label-set"): NO_KEY_ACCESS,
     ("GET", "/{workspace_id}/github/repositories"): NO_KEY_ACCESS,
     ("PATCH", "/{workspace_id}/github/repositories/{repository_id}"): NO_KEY_ACCESS,
     ("GET", "/{workspace_id}/slack"): NO_KEY_ACCESS,

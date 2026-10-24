@@ -334,7 +334,7 @@ def _handle_installation_repositories(
     body: Mapping[str, Any],
     installation_id: str,
 ) -> None:
-    """Apply an added or removed repository delta."""
+    """Apply an added or removed repository delta, and push the workspace label set to what was added."""
     from app.domains.integrations.installs import apply_repository_changes, set_repository_selection
 
     workspace_id = _resolve_workspace(repositories, installation_id)
@@ -343,13 +343,18 @@ def _handle_installation_repositories(
     set_repository_selection(repositories, workspace_id, str(body.get("repository_selection", "")))
     added = body.get("repositories_added")
     removed = body.get("repositories_removed")
+    added_entries = [entry for entry in (added or []) if isinstance(entry, Mapping)]
     apply_repository_changes(
         repositories,
         workspace_id,
         installation_id,
-        added=[entry for entry in (added or []) if isinstance(entry, Mapping)],
+        added=added_entries,
         removed=[entry for entry in (removed or []) if isinstance(entry, Mapping)],
     )
+    if added_entries:
+        from app.domains.integrations.label_set import queue_added
+
+        queue_added(repositories, workspace_id, [str(entry.get("id", "")) for entry in added_entries])
 
 
 def _handle_pull_request(

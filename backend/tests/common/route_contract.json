@@ -356,6 +356,12 @@
   {
     "auth": "workspace:admin",
     "domain": "integrations",
+    "method": "PUT",
+    "path": "/api/workspaces/{workspace_id}/github/installation/label-set"
+  },
+  {
+    "auth": "workspace:admin",
+    "domain": "integrations",
     "method": "GET",
     "path": "/api/workspaces/{workspace_id}/github/repositories"
   },
