@@ -146,11 +146,15 @@ SHORTCUT_AUTHOR_PREFIX = "shortcut:"
 ASANA_AUTHOR_PREFIX = "asana:"
 """The author id prefix of a comment imported from Asana whose author matched no member."""
 
+JIRA_AUTHOR_PREFIX = "jira:"
+"""The author id prefix of a comment imported from Jira whose author matched no member."""
+
 PLACEHOLDER_AUTHORS: tuple[tuple[str, str], ...] = (
     (GITHUB_AUTHOR_PREFIX, "GitHub"),
     (LINEAR_AUTHOR_PREFIX, "Linear"),
     (SHORTCUT_AUTHOR_PREFIX, "Shortcut"),
     (ASANA_AUTHOR_PREFIX, "Asana"),
+    (JIRA_AUTHOR_PREFIX, "Jira"),
 )
 """Each placeholder author prefix and the source named after the placeholder's name."""
 
@@ -165,9 +169,9 @@ def authors_for(repositories: Repositories, user_ids: Iterable[str]) -> dict[str
 
     A comment synced from GitHub by someone with no linked account is authored as
     `github:<login>` and renders under that login, without a user lookup. A
-    comment imported from Linear, Shortcut or Asana by someone who is not a
-    member is authored as `linear:<name>`, `shortcut:<name>` or `asana:<name>`
-    and renders the same way.
+    comment imported from Linear, Shortcut, Asana or Jira by someone who is not
+    a member is authored as `linear:<name>`, `shortcut:<name>`, `asana:<name>`
+    or `jira:<name>` and renders the same way.
     """
     wanted = [user_id for user_id in dict.fromkeys(user_ids) if user_id]
     if not wanted:
