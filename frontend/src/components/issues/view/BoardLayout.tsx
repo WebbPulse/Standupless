@@ -10,6 +10,10 @@
  * on the right, or below the board on phones, with their counts, and one
  * click brings a column back. On touch screens the columns snap into place.
  *
+ * A quiet New issue row closes each cell the viewer may create in. It shows on
+ * hover or focus, and always in an empty cell, and opens the create dialog with
+ * the column's value, and the lane's in swimlanes, already set.
+ *
  * Native drag and drop keeps this dependency free. The keyboard path to the
  * same writes is the property shortcuts on the focused card.
  */
@@ -382,12 +386,17 @@ export const BoardLayout: React.FC<BoardLayoutProps> = ({
         },
         target
       );
+    const cellLabel =
+      laneField === 'none' ? column.label : `${column.label}, ${lane.label}`;
+    const onCreate = createIn?.(
+      column,
+      laneField === 'none' ? undefined : lane
+    );
+    const isEmpty = cell.issues.length === 0;
     return (
       <ul
         key={column.key}
-        aria-label={
-          laneField === 'none' ? column.label : `${column.label}, ${lane.label}`
-        }
+        aria-label={cellLabel}
         onDragOver={overCell(lane.key, column.key, cell.issues.length)}
         onDrop={(event) => {
           event.preventDefault();
@@ -400,7 +409,7 @@ export const BoardLayout: React.FC<BoardLayoutProps> = ({
           );
         }}
         className={cn(
-          'flex shrink-0 flex-col gap-1.5 rounded-md p-1.5 transition-colors',
+          'group/cell flex shrink-0 flex-col gap-1.5 rounded-md p-1.5 transition-colors',
           COLUMN_WIDTH,
           laneField === 'none' ? 'min-h-24' : 'min-h-12',
           isTarget && drag !== null ? 'bg-surface/80' : 'bg-surface/40'
@@ -434,6 +443,24 @@ export const BoardLayout: React.FC<BoardLayoutProps> = ({
           </React.Fragment>
         ))}
         {showsPlaceholder && target.index >= cell.issues.length && placeholder}
+        {onCreate !== undefined && drag === null && (
+          <li className="shrink-0">
+            <button
+              type="button"
+              aria-label={`New issue at the end of ${cellLabel}`}
+              onClick={onCreate}
+              className={cn(
+                'flex h-8 w-full items-center gap-1.5 rounded-md px-2 text-left text-sm text-text-faint transition-[opacity,color,background-color] duration-100 pointer-coarse:h-11 hover:bg-raised hover:text-text-muted focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-accent',
+                isEmpty
+                  ? 'opacity-100'
+                  : 'opacity-0 group-focus-within/cell:opacity-100 group-hover/cell:opacity-100 pointer-coarse:opacity-100'
+              )}
+            >
+              <LuPlus aria-hidden="true" className="h-3.5 w-3.5" />
+              New issue
+            </button>
+          </li>
+        )}
       </ul>
     );
   };
