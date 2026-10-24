@@ -75,9 +75,7 @@ def categories_for(repositories: Repositories, workspace_id: str, team_ids: Iter
     return categories
 
 
-def recount_blocked(
-    repositories: Repositories, workspace_id: str, issue_id: str, *, write: bool = True
-) -> int | None:
+def recount_blocked(repositories: Repositories, workspace_id: str, issue_id: str, *, write: bool = True) -> int | None:
     """Write how many open issues block one issue, answering the count.
 
     Recounted from the stored links rather than incremented, so a retried stream
@@ -100,9 +98,7 @@ def recount_blocked(
     return count
 
 
-def recount_blocking(
-    repositories: Repositories, workspace_id: str, issue_id: str, *, write: bool = True
-) -> int | None:
+def recount_blocking(repositories: Repositories, workspace_id: str, issue_id: str, *, write: bool = True) -> int | None:
     """Write how many issues one open issue blocks, answering the count.
 
     Recounted from the stored links like `recount_blocked`, and zero while the
