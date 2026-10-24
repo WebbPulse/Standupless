@@ -21,7 +21,8 @@
     "test:run": "vitest run",
     "test:ui": "vitest --ui",
     "test:coverage": "vitest --coverage",
-    "type-check": "tsc -b --noEmit"
+    "type-check": "tsc -b --noEmit",
+    "check:csp-hashes": "node --experimental-strip-types cspHashes.ts"
   },
   "dependencies": {
     "@capacitor/app": "^8.1.2",

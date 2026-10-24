@@ -29,7 +29,7 @@ export default [
     },
   }),
   {
-    files: ['prerender.ts', 'devProxy.ts'],
+    files: ['prerender.ts', 'devProxy.ts', 'cspHashes.ts'],
     languageOptions: {
       parserOptions: {
         project: ['./tsconfig.node.json'],
