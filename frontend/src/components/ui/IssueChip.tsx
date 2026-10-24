@@ -89,11 +89,7 @@ export const IssueChip: React.FC<{ issueKeyText: string }> = ({
 }) => {
   const workspace = useContext(WorkspaceContext)?.workspace ?? null;
   const teams = useContext(TeamsContext)?.data ?? null;
-  if (
-    workspace === null ||
-    teams === null ||
-    !isTeamKey(issueKeyText, teams)
-  ) {
+  if (workspace === null || teams === null || !isTeamKey(issueKeyText, teams)) {
     return <>{issueKeyText}</>;
   }
   return (
