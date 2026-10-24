@@ -2,7 +2,8 @@
 
 The inbox mark tools take ids but answer how many rows they changed, as the inbox
 routes do, so a foreign id answers zero from the key's own inbox rather than a
-refusal. The bulk delete takes no id at all and answers from the key's own inbox. They are listed in `ANSWERS_AT_HOME`, and `test_mcp_views` holds that the
+refusal. The bulk delete takes no id at all and answers from the key's own
+inbox. They are listed in `ANSWERS_AT_HOME`, and `test_mcp_views` holds that the
 foreign row they named is left untouched.
 """
 
