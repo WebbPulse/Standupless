@@ -2,7 +2,8 @@
  * Renders Markdown written in a description or a comment as React elements,
  * from the tree {@link parseMarkdown} builds. Nothing is set as HTML, so a
  * comment cannot inject markup, and a link opens in a new tab without handing
- * the new page a reference back to this one. Embedded images and videos, and
+ * the new page a reference back to this one. An issue key renders as a chip
+ * with the issue's status and title. Embedded images and videos, and
  * links to attached files, load through the page's media tokens.
  */
 
@@ -16,6 +17,7 @@ import {
   type InlineNode,
 } from '../../lib/markdown';
 import { AttachmentLink, MediaEmbed } from '../media/MediaEmbed';
+import IssueChip from './IssueChip';
 
 /**
  * How tightly a body sets. `comfortable` suits a description read as a
@@ -111,6 +113,8 @@ const renderInline = (nodes: InlineNode[], prefix: string): React.ReactNode[] =>
         );
       case 'mention':
         return <Mention key={key} handle={node.handle} />;
+      case 'issue':
+        return <IssueChip key={key} issueKeyText={node.key} />;
     }
   });
 

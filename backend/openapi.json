@@ -131,7 +131,8 @@
               "archived",
               "unarchived",
               "subscriber_added",
-              "subscriber_removed"
+              "subscriber_removed",
+              "mentioned"
             ],
             "title": "Kind",
             "type": "string"

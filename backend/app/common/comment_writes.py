@@ -1,8 +1,9 @@
-"""Comment list and create, shared by the comment routes and the MCP tools.
+"""Comment list, create and edit, shared by the comment routes and the MCP tools.
 
 Held in `common` because the integrations image may not import another domain's
-code, and a comment an agent adds must carry the same mentions, reply depth and
-subscriptions as one a person adds, or the inbox would treat the two differently.
+code, and a comment an agent adds must carry the same mentions, reply depth,
+subscriptions and issue backlinks as one a person adds, or the inbox would treat
+the two differently.
 """
 
 from __future__ import annotations
@@ -16,6 +17,7 @@ from app.common.api.dependencies.authz import AuthzContext
 from app.common.api.dependencies.repositories import Repositories
 from app.common.api.pagination import resume_key
 from app.common.db.dynamo.comments import Comment, as_comment, build_comment
+from app.common.issue_mentions import record_issue_mentions
 from app.common.issue_rules import load_visible_issue, not_found, require_team_member, unprocessable
 from app.common.mentions import mentioned_user_ids
 
@@ -66,7 +68,8 @@ def create_comment(
     The inbox rows the mentions produce are written by the `views` notify consumer
     off this table's stream, so the request path does no notification work. The
     author and everyone mentioned are subscribed to the issue here, which is what
-    makes the next comment on it reach them.
+    makes the next comment on it reach them. Every issue the body names by key
+    gets a "mentioned in" backlink.
 
     Every named attachment must already be on this issue. The lookup is keyed by
     the issue's own partition, so an id from another issue or workspace is refused
@@ -108,4 +111,30 @@ def create_comment(
     subscriptions = repositories.subscriptions
     subscriptions.subscribe(context.workspace_id, issue_id, issue.team_id, context.user_id, "commenter")
     subscriptions.subscribe_many(context.workspace_id, issue_id, issue.team_id, mentions, "mentioned")
+    record_issue_mentions(repositories, context, issue, None, body, place="comment", comment_id=created.comment_id)
     return created
+
+
+def edit_comment(repositories: Repositories, context: AuthzContext, comment: Comment, body: str) -> Comment:
+    """Rewrite one comment's body, re-extracting its mentions, and answer the stored comment.
+
+    Only what the edit adds is news: the people it newly mentions are subscribed,
+    and the notify consumer pings them alone off the stream record, while the
+    issues it newly names get a backlink. Someone already mentioned is not
+    subscribed again, so an edit never undoes their unsubscribing.
+    """
+    mentions = mentioned_user_ids(repositories, context.workspace_id, body)
+    updated = repositories.comments.edit(context.workspace_id, comment.issue_id, comment.comment_id, body, mentions)
+    if updated is None:
+        raise not_found()
+
+    added = [user_id for user_id in mentions if user_id not in comment.mentions]
+    repositories.subscriptions.subscribe_many(
+        context.workspace_id, comment.issue_id, comment.team_id, added, "mentioned"
+    )
+    issue = repositories.issues.get(context.workspace_id, comment.issue_id)
+    if issue is not None:
+        record_issue_mentions(
+            repositories, context, issue, comment.body, body, place="comment", comment_id=comment.comment_id
+        )
+    return updated

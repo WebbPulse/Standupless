@@ -112,3 +112,19 @@ export const allArchived = (
 ): boolean =>
   issues.length > 0 &&
   issues.every((issue) => (issue.archived_at ?? null) !== null);
+
+/**
+ * Whether an issue key's prefix is held by one of the teams, now or before a
+ * rename, so text shaped like a key, such as `UTF-8`, is not read as one.
+ */
+export const isTeamKey = (
+  key: string,
+  teams: readonly { key_prefix: string; retired_key_prefixes?: string[] }[]
+): boolean => {
+  const prefix = key.slice(0, key.lastIndexOf('-'));
+  return teams.some(
+    (team) =>
+      team.key_prefix === prefix ||
+      (team.retired_key_prefixes ?? []).includes(prefix)
+  );
+};
