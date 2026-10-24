@@ -3999,7 +3999,8 @@ export type LinearImportCount =
   | 'project_updates'
   | 'initiatives'
   | 'sub_issues'
-  | 'relations';
+  | 'relations'
+  | 'project_relations';
 
 /** One Linear team a Linear import reads and the Standupless team it writes into. */
 export interface LinearTeamMappingRead {

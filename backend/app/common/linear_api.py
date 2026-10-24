@@ -328,6 +328,19 @@ query Initiatives($first: Int!, $after: String) {
 }
 """
 
+PROJECT_RELATIONS_QUERY = """
+query ProjectRelations($first: Int!, $after: String) {
+  projectRelations(first: $first, after: $after) {
+    nodes {
+      id type anchorType relatedAnchorType createdAt
+      project { id createdAt }
+      relatedProject { id createdAt }
+    }
+    pageInfo { hasNextPage endCursor }
+  }
+}
+"""
+
 
 def list_teams(client: LinearClient) -> list[dict[str, Any]]:
     """Every team the key can read, as `id`, `key` and `name`."""

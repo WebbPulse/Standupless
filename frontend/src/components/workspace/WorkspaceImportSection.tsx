@@ -130,6 +130,7 @@ const PHASE_LABELS: Record<string, string> = {
   issues: 'Reading issues',
   links: 'Linking sub-issues and relations',
   initiatives: 'Reading initiatives',
+  project_relations: 'Linking project dependencies',
 };
 
 /** How many steps each Linear team takes, matching the server's phase list. */
@@ -146,6 +147,7 @@ const LINEAR_TALLIES: { name: LinearImportCount; noun: string }[] = [
   { name: 'milestones', noun: 'milestone' },
   { name: 'project_updates', noun: 'project update' },
   { name: 'initiatives', noun: 'initiative' },
+  { name: 'project_relations', noun: 'project dependency link' },
 ];
 
 /** A file the admin picked, read as text. */
