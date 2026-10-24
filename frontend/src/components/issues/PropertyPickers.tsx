@@ -809,6 +809,8 @@ export interface CustomDateProps {
   value: string | null;
   min?: string;
   max?: string;
+  /** Explains why a day is refused, in place of the generic range message. */
+  validate?: (value: string) => string | null;
   onPick: (value: string) => void;
 }
 
@@ -820,6 +822,7 @@ export const CustomDate: React.FC<CustomDateProps> = ({
   value,
   min,
   max,
+  validate,
   onPick,
 }) => {
   const [draft, setDraft] = useState(value ?? '');
@@ -843,8 +846,10 @@ export const CustomDate: React.FC<CustomDateProps> = ({
             return;
           }
           const refusal =
-            validateDateRange(min ?? '', next) ??
-            validateDateRange(next, max ?? '');
+            validate === undefined
+              ? (validateDateRange(min ?? '', next) ??
+                validateDateRange(next, max ?? ''))
+              : validate(next);
           setProblem(refusal);
           if (refusal === null) onPick(next);
         }}
@@ -873,6 +878,10 @@ export interface DatePickerProps extends PickerBaseProps {
   icon?: React.ReactNode;
   /** What an unset trigger reads, in place of the field's own phrase. */
   emptyLabel?: string;
+  /** False for a date that must stay set, which drops the clear row. */
+  clearable?: boolean;
+  /** Explains why a custom day is refused, in place of the range message. */
+  validate?: (value: string) => string | null;
 }
 
 /**
@@ -887,6 +896,8 @@ export const DatePicker: React.FC<DatePickerProps> = ({
   max,
   icon = <LuCalendar className="h-3.5 w-3.5" />,
   emptyLabel,
+  clearable = true,
+  validate,
   ...base
 }) => {
   const variant = base.variant ?? 'rail';
@@ -897,7 +908,7 @@ export const DatePicker: React.FC<DatePickerProps> = ({
     detail: shortDateLabel(preset.value, today),
     disabled: !dateInRange(preset.value, min, max),
   }));
-  if (value !== null) {
+  if (value !== null && clearable) {
     options.push({
       value: NONE,
       label: 'Clear date',
@@ -927,6 +938,7 @@ export const DatePicker: React.FC<DatePickerProps> = ({
           value={value}
           {...(min === undefined || min === '' ? {} : { min })}
           {...(max === undefined || max === '' ? {} : { max })}
+          {...(validate === undefined ? {} : { validate })}
           onPick={(picked) => {
             close();
             if (picked !== value) onChange(picked);

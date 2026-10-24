@@ -21,9 +21,9 @@ export interface EditableTextProps {
 /**
  * Text that reads as plain content and edits in place. The draft lives only
  * while the field has focus, so a poll that lands mid-edit does not overwrite
- * what is being typed, and blur or Cmd+Enter saves it. A multiline field
- * grows with its content, reading or editing, so it never scrolls inside
- * itself.
+ * what is being typed, blur or Cmd+Enter saves it, and Escape drops it. A
+ * multiline field grows with its content, reading or editing, so it never
+ * scrolls inside itself.
  */
 export const EditableText: React.FC<EditableTextProps> = ({
   value,
@@ -36,6 +36,7 @@ export const EditableText: React.FC<EditableTextProps> = ({
 }) => {
   const [draft, setDraft] = useState<string | null>(null);
   const area = useRef<HTMLTextAreaElement>(null);
+  const discarding = useRef(false);
   useAutoGrow(area);
   const commit = (text: string): void => {
     setDraft(null);
@@ -50,6 +51,11 @@ export const EditableText: React.FC<EditableTextProps> = ({
       if (!disabled) setDraft(value);
     },
     onBlur: () => {
+      if (discarding.current) {
+        discarding.current = false;
+        setDraft(null);
+        return;
+      }
       if (draft !== null) commit(draft);
     },
     className: cn(
@@ -72,6 +78,7 @@ export const EditableText: React.FC<EditableTextProps> = ({
             event.currentTarget.blur();
           }
           if (event.key === 'Escape') {
+            discarding.current = true;
             setDraft(null);
             event.currentTarget.blur();
           }
@@ -91,6 +98,7 @@ export const EditableText: React.FC<EditableTextProps> = ({
           event.currentTarget.blur();
         }
         if (event.key === 'Escape') {
+          discarding.current = true;
           setDraft(null);
           event.currentTarget.blur();
         }
