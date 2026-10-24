@@ -329,9 +329,6 @@ export interface ProjectForecast {
 /** How many recent days a project's completion rate is read over. */
 export const PROJECTION_WINDOW_DAYS = 14;
 
-/** How many recorded days a project projection needs before it is drawn. */
-export const MIN_PROJECTION_DAYS = 3;
-
 /** The furthest ahead a projected finish is named, in days. */
 export const MAX_PROJECTION_DAYS = 3650;
 

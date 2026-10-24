@@ -17,7 +17,7 @@ export interface MeasureToggleProps {
   /** What the pair is labelled as for assistive technology. */
   label?: string;
   /** Why a measure cannot be chosen, by measure; a named measure is disabled. */
-  unavailable?: Partial<Record<PlanningMeasure, string>>;
+  unavailable?: Partial<Record<PlanningMeasure, string>> | undefined;
 }
 
 const OPTIONS: { measure: PlanningMeasure; label: string }[] = [
