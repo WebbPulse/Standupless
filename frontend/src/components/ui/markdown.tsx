@@ -186,7 +186,7 @@ const renderBlock = (block: BlockNode, key: string): React.ReactNode => {
     case 'details':
       return (
         <details key={key} className="group">
-          <summary className="flex cursor-pointer list-none items-start gap-1 rounded-xs font-medium text-text outline-none focus-visible:ring-1 focus-visible:ring-accent [&::-webkit-details-marker]:hidden">
+          <summary className="flex cursor-pointer list-none items-start gap-1 rounded-xs font-medium text-text outline-none hover:bg-raised focus-visible:ring-1 focus-visible:ring-accent [&::-webkit-details-marker]:hidden">
             <LuChevronRight
               aria-hidden="true"
               className="mt-[0.3em] h-3.5 w-3.5 shrink-0 text-text-faint transition-transform group-open:rotate-90"

@@ -185,6 +185,21 @@ const backspace = (editor: Editor): boolean => {
 };
 
 /**
+ * Puts the caret on an empty line right after a section, reusing the empty
+ * paragraph already there, such as the one the editor keeps at the end of
+ * the document, rather than stacking another.
+ */
+const lineAfter = (tr: Transaction, after: number): void => {
+  const next = tr.doc.nodeAt(after);
+  const paragraph = tr.doc.type.schema.nodes['paragraph'];
+  if (paragraph === undefined) return;
+  if (next?.type !== paragraph || next.content.size > 0) {
+    tr.insert(after, paragraph.create());
+  }
+  tr.setSelection(TextSelection.create(tr.doc, after + 1));
+};
+
+/**
  * Enter in a summary moves into the body of an open section, onto its first
  * line when that is empty, and past a closed one. Enter on an empty last line
  * of a body leaves the section.
@@ -213,9 +228,7 @@ const enter = (editor: Editor): boolean => {
       }
       tr.setSelection(TextSelection.create(tr.doc, bodyStart + 1));
     } else {
-      const after = found.pos + found.node.nodeSize;
-      tr.insert(after, paragraph.create());
-      tr.setSelection(TextSelection.create(tr.doc, after + 1));
+      lineAfter(tr, found.pos + found.node.nodeSize);
     }
     view.dispatch(tr.scrollIntoView());
     return true;
@@ -236,9 +249,7 @@ const enter = (editor: Editor): boolean => {
   const found = sectionAround($from, BODY);
   if (found === null) return false;
   const tr = state.tr.delete($from.before(), $from.after());
-  const after = tr.mapping.map(found.pos + found.node.nodeSize);
-  tr.insert(after, paragraph.create());
-  tr.setSelection(TextSelection.create(tr.doc, after + 1));
+  lineAfter(tr, tr.mapping.map(found.pos + found.node.nodeSize));
   view.dispatch(tr.scrollIntoView());
   return true;
 };

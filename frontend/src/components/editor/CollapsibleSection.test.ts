@@ -65,9 +65,19 @@ const press = (editor: Editor, key: string): void => {
 const caretIn = (editor: Editor): string =>
   editor.state.selection.$from.parent.type.name;
 
-/** The type names of the document's top level blocks. */
-const topLevel = (editor: Editor): (string | undefined)[] =>
-  (editor.getJSON().content ?? []).map((child) => child.type);
+/**
+ * The type names of the document's top level blocks, leaving out the empty
+ * paragraph the editor keeps at the end so there is always a line to type on.
+ */
+const topLevel = (editor: Editor): (string | undefined)[] => {
+  const blocks = editor.getJSON().content ?? [];
+  const last = blocks.at(-1);
+  const trailing =
+    blocks.length > 1 &&
+    last?.type === 'paragraph' &&
+    (last.content ?? []).length === 0;
+  return (trailing ? blocks.slice(0, -1) : blocks).map((child) => child.type);
+};
 
 /** The first section's attributes. */
 const firstSectionOpen = (editor: Editor): unknown =>
@@ -211,7 +221,8 @@ describe('the keyboard in a section', () => {
     editor.commands.setTextSelection(6);
     press(editor, 'Enter');
     expect(editor.state.selection.$from.depth).toBe(1);
-    expect(topLevel(editor)).toEqual(['collapsibleSection', 'paragraph']);
+    expect(editor.state.selection.$from.parent.type.name).toBe('paragraph');
+    expect(editor.getJSON().content).toHaveLength(2);
   });
 
   it('returns from the start of the body to the summary on Backspace', () => {
