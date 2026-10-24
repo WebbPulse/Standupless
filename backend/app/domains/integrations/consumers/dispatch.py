@@ -167,6 +167,10 @@ def handle_record(repositories: Repositories, record: Mapping[str, Any]) -> None
         from app.domains.integrations.pr_labels import push_pr_labels
 
         push_pr_labels(repositories, job)
+    elif kind == "github.pr_labels_sweep":
+        from app.domains.integrations.pr_labels import sweep
+
+        sweep(repositories, job)
     elif kind in ("github.issue_sync", "github.comment_sync", "github.issue_backlink"):
         from app.domains.integrations import issue_sync
 

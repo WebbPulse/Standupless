@@ -11,7 +11,7 @@ from app.common.csv_import import MAX_CSV_BYTES, RowProblem
 from app.common.issue_import import ImportJob, ImportKind, ImportStatus, Preview, ResolvedRow
 from app.common.linear_import import phases
 
-ImportPreset = Literal["generic", "jira", "linear"]
+ImportPreset = Literal["generic", "jira", "linear", "asana", "shortcut", "pivotal", "trello"]
 
 GITHUB_PHASES: list[tuple[str, Optional[int]]] = [("issues", None)]
 """The one phase a GitHub import walks, its repository's issues a page at a time."""
@@ -23,7 +23,11 @@ class IssueImportRequest(BaseModel):
     team_id: str = Field(min_length=1, max_length=64)
     preset: ImportPreset = "generic"
     csv: str = Field(
-        min_length=1, max_length=MAX_CSV_BYTES, description="The whole CSV file as text, header row first."
+        min_length=1,
+        max_length=MAX_CSV_BYTES,
+        description=(
+            "The whole CSV file as text, header row first. With the trello preset, the board's JSON export instead."
+        ),
     )
     file_name: str = Field(default="", max_length=200)
     mapping: Optional[dict[str, Optional[str]]] = Field(
@@ -31,8 +35,9 @@ class IssueImportRequest(BaseModel):
         description=(
             "Overrides of the preset's mapping, field to header name; null unmaps a field. "
             "Fields are title, description, status, priority, assignee, labels, estimate, "
-            "due_date, source_key, created_at and parent. A parent column names another row of the "
-            "file by its source key or its title."
+            "due_date, source_key, created_at, parent and completed. A parent column names another row of "
+            "the file by its source key or its title, and a non-empty completed column puts the row in a "
+            "completed status."
         ),
     )
 

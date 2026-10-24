@@ -162,6 +162,8 @@ def test_the_contract_fixes_the_tool_set() -> None:
         "get_workspace_export",
         "get_workspace_import",
         "import_linear_workspace",
+        "preview_issue_import",
+        "import_issues_from_file",
         "list_linear_teams",
         "list_github_import_repositories",
         "import_github_issues",
@@ -318,7 +320,7 @@ def test_the_contract_fixes_the_tool_set() -> None:
         "save_agent_profile",
         "delete_agent_profile",
     }
-    assert len(TOOLS) == 204
+    assert len(TOOLS) == 206
 
 
 def test_a_notification_gets_no_body(client: TestClient, workspace: str, repositories: Any) -> None:

@@ -8102,7 +8102,7 @@
         "description": "The body both the dry run and the import take: a file, a team, a preset and any mapping changes.",
         "properties": {
           "csv": {
-            "description": "The whole CSV file as text, header row first.",
+            "description": "The whole CSV file as text, header row first. With the trello preset, the board's JSON export instead.",
             "maxLength": 4194304,
             "minLength": 1,
             "title": "Csv",
@@ -8133,7 +8133,7 @@
                 "type": "null"
               }
             ],
-            "description": "Overrides of the preset's mapping, field to header name; null unmaps a field. Fields are title, description, status, priority, assignee, labels, estimate, due_date, source_key, created_at and parent. A parent column names another row of the file by its source key or its title.",
+            "description": "Overrides of the preset's mapping, field to header name; null unmaps a field. Fields are title, description, status, priority, assignee, labels, estimate, due_date, source_key, created_at, parent and completed. A parent column names another row of the file by its source key or its title, and a non-empty completed column puts the row in a completed status.",
             "title": "Mapping"
           },
           "preset": {
@@ -8141,7 +8141,11 @@
             "enum": [
               "generic",
               "jira",
-              "linear"
+              "linear",
+              "asana",
+              "shortcut",
+              "pivotal",
+              "trello"
             ],
             "title": "Preset",
             "type": "string"
