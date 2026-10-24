@@ -127,7 +127,8 @@ def create_project(repositories: Repositories, context: AuthzContext, payload: P
     The caller must be able to write in every team named, since a project put on a
     team appears in that team's planning. A named project template fills the
     fields left out before anything is checked, and its milestones and issues
-    are added once the project exists, its dates counted from today.
+    are added once the project exists, its dates counted from today. Any
+    template issue left out is named in `skipped_template_issues`.
     """
     teams = payload.teams
     require_team_changes(repositories, context, teams)
@@ -176,7 +177,7 @@ def create_project(repositories: Repositories, context: AuthzContext, payload: P
         created, teams, default_interval_days=workspace_interval(repositories.workspaces, context.workspace_id)
     )
     if template is not None:
-        add_template_rows(repositories, context, body, template, today)
+        body.skipped_template_issues = add_template_rows(repositories, context, created, template, today)
     return body
 
 

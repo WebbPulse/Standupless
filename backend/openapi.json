@@ -9778,6 +9778,21 @@
             "title": "Project Id",
             "type": "string"
           },
+          "skipped_template_issues": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/SkippedTemplateIssueRead"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Template issues left out, answered by a create from a project template, empty when none were",
+            "title": "Skipped Template Issues"
+          },
           "start_date": {
             "anyOf": [
               {
@@ -14281,6 +14296,32 @@
           }
         },
         "title": "SimilarListRead",
+        "type": "object"
+      },
+      "SkippedTemplateIssueRead": {
+        "description": "One template issue a project created from a template left out, and why.",
+        "properties": {
+          "key": {
+            "description": "The issue's key within the template",
+            "title": "Key",
+            "type": "string"
+          },
+          "reason": {
+            "description": "Why the issue rules refused it, as the 422 would have said",
+            "title": "Reason",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "title",
+          "reason"
+        ],
+        "title": "SkippedTemplateIssueRead",
         "type": "object"
       },
       "SlaSettingsRead": {

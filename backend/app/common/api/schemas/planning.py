@@ -648,6 +648,14 @@ class ProjectUpdate(BaseModel):
         return _legacy_status(value)
 
 
+class SkippedTemplateIssueRead(BaseModel):
+    """One template issue a project created from a template left out, and why."""
+
+    key: str = Field(description="The issue's key within the template")
+    title: str
+    reason: str = Field(description="Why the issue rules refused it, as the 422 would have said")
+
+
 class ProjectRead(BaseModel):
     """One project as the API returns it, with its status stored rather than derived.
 
@@ -694,6 +702,10 @@ class ProjectRead(BaseModel):
     )
     completed_at: Optional[datetime] = Field(
         default=None, description="When the project last became completed or canceled, null while it is open"
+    )
+    skipped_template_issues: Optional[list[SkippedTemplateIssueRead]] = Field(
+        default=None,
+        description="Template issues left out, answered by a create from a project template, empty when none were",
     )
     created_by: str
     created_at: datetime

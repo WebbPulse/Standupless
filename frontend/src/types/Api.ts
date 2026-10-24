@@ -2160,9 +2160,20 @@ export interface ProjectRead {
   open_issue_count?: number | null;
   /** When the project last became completed or canceled, null while it is open. */
   completed_at?: string | null;
+  /** Template issues left out, answered by a create from a project template, empty when none were. */
+  skipped_template_issues?: SkippedTemplateIssueRead[] | null;
   created_by: string;
   created_at: string;
   updated_at: string;
+}
+
+/** One template issue a project created from a template left out, and why. */
+export interface SkippedTemplateIssueRead {
+  /** The issue's key within the template. */
+  key: string;
+  title: string;
+  /** Why the issue rules refused it. */
+  reason: string;
 }
 
 /** What a project close does with the issues still open in it. */

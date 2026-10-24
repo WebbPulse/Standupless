@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from datetime import date
 from difflib import get_close_matches
-from typing import Any, Iterable
+from typing import Any, Collection, Iterable, Mapping
 
 from fastapi import HTTPException, status
 
@@ -22,6 +22,7 @@ from app.common.api.dependencies.repositories import Repositories
 from app.common.cycle_schedule import RELATIVE_CYCLES, relative_cycle
 from app.common.db.dynamo.api_keys import is_service_subject
 from app.common.db.dynamo.issues import Issue
+from app.common.db.dynamo.planning import Project
 from app.common.db.dynamo.team_config import Status
 from app.common.db.dynamo.teams import Team
 from app.common.estimates import allowed_estimates
@@ -218,19 +219,22 @@ def check_parent(
     team_id: str,
     issue_id: str | None,
     parent_id: str | None,
+    *,
+    known: Mapping[str, Issue] | None = None,
 ) -> str | None:
     """Hold a parent to the contract's three rules, or raise a 422.
 
     Same team, never itself, and at most one level deep: a child cannot itself
     have children, which is what keeps `progress` a count of direct children rather
-    than a tree walk.
+    than a tree walk. `known` holds issues this request wrote moments ago, checked
+    as written rather than through a read that can lag the write.
     """
     if not parent_id:
         return None
     if issue_id is not None and parent_id == issue_id:
         raise unprocessable("An issue cannot be its own parent")
 
-    parent = repositories.issues.get(workspace_id, parent_id)
+    parent = (known or {}).get(parent_id) or repositories.issues.get(workspace_id, parent_id)
     if parent is None:
         raise unprocessable(f"No such issue: {parent_id}")
     if parent.team_id != team_id:
@@ -296,16 +300,23 @@ def check_project(
     workspace_id: str,
     team_id: str,
     project_id: str | None,
+    *,
+    known: Project | None = None,
 ) -> str | None:
     """Hold a project to being on this issue's team, or raise a 422.
 
     A project spans one or more teams, and an issue may join it only from one of
     them, so the project's own team list is what decides. A project not on this
     team reads as absent, which tells the caller nothing about other teams.
+    `known` is a project this request wrote moments ago, checked as written
+    rather than through a read that can lag the write.
     """
     if not project_id:
         return None
-    project = repositories.planning.get_project(workspace_id, project_id)
+    if known is not None and known.project_id == project_id:
+        project: Project | None = known
+    else:
+        project = repositories.planning.get_project(workspace_id, project_id)
     if project is None or team_id not in project.team_ids:
         raise unprocessable(f"No such project: {project_id}")
     return project_id
@@ -316,16 +327,22 @@ def check_project_milestone(
     workspace_id: str,
     project_id: str | None,
     milestone_id: str | None,
+    *,
+    known: Mapping[str, Collection[str]] | None = None,
 ) -> str | None:
     """Hold a milestone to being one of the issue's own project's, or raise a 422.
 
     A milestone is a stage of one project, so an issue outside that project, or
-    in no project, cannot sit in it.
+    in no project, cannot sit in it. `known` maps a project this request wrote
+    moments ago to the milestone ids it wrote on it, trusted as written rather
+    than read back through a read that can lag the write.
     """
     if not milestone_id:
         return None
     if not project_id:
         raise unprocessable("project_milestone_id needs a project_id")
+    if milestone_id in (known or {}).get(project_id, ()):
+        return milestone_id
     if repositories.planning.get_milestone(workspace_id, project_id, milestone_id) is None:
         raise unprocessable(f"No such milestone: {milestone_id}")
     return milestone_id

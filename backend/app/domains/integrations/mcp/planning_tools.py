@@ -217,6 +217,11 @@ def _project_json(project: ProjectRead) -> dict[str, Any]:
         "next_update_due_at": project.next_update_due_at.isoformat() if project.next_update_due_at else None,
         "update_due_state": project.update_due_state,
         **({} if project.open_issue_count is None else {"open_issue_count": project.open_issue_count}),
+        **(
+            {}
+            if project.skipped_template_issues is None
+            else {"skipped_template_issues": [row.model_dump() for row in project.skipped_template_issues]}
+        ),
         "updated_at": project.updated_at.isoformat(),
     }
 
@@ -775,7 +780,8 @@ PLANNING_TOOLS: tuple[Tool, ...] = (
         description=(
             "Create a project on one or more teams. The status defaults to backlog. template_id names a project "
             "template one of the teams offers: it fills every field not given, dates counted from today, and "
-            "adds its milestones and issues."
+            "adds its milestones and issues. A template issue the issue rules refuse is left out and listed in "
+            "skipped_template_issues."
         ),
         scopes=("projects:write",),
         schema=object_schema(
