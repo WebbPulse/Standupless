@@ -58,6 +58,7 @@ from app.common.project_updates import (
     update_project_update,
 )
 from app.common.project_writes import create_project, delete_project, list_projects, update_project
+from app.domains.integrations.mcp.template_tools import project_template_ref
 from app.domains.integrations.mcp.toolkit import (
     NOT_VISIBLE,
     Tool,
@@ -78,7 +79,6 @@ from app.domains.integrations.mcp.toolkit import (
     summary_json,
     team_id_ref,
 )
-from app.domains.integrations.mcp.template_tools import project_template_ref
 from app.domains.integrations.mcp.transport import ToolError
 
 CYCLE_STATUSES: tuple[str, ...] = ("upcoming", "active", "completed", "cancelled")
