@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 from app.common.csv_import import MAX_CSV_BYTES, RowProblem
 from app.common.issue_import import ImportJob, ImportKind, ImportStatus, Preview, ResolvedRow
 from app.common.linear_import import phases
+from app.domains.integrations import asana_import
 
 ImportPreset = Literal["generic", "jira", "linear", "asana", "shortcut", "pivotal", "trello"]
 
@@ -142,6 +143,18 @@ class LinearTeamMappingRead(BaseModel):
     team_id: str
 
 
+class AsanaProjectMappingRead(BaseModel):
+    """One Asana project an Asana import reads, the Standupless team it writes into, and how its tasks map."""
+
+    project_gid: str
+    name: str
+    team_id: str
+    create_project: bool
+    status_field_gid: Optional[str] = None
+    status_field_name: Optional[str] = None
+    statuses: dict[str, str] = Field(default_factory=dict)
+
+
 class IssueImportRead(BaseModel):
     """One import job and how far it has got."""
 
@@ -178,6 +191,7 @@ class IssueImportRead(BaseModel):
     github_repository_id: Optional[str] = Field(
         default=None, description="The repository a GitHub import reads; its full name is the file name."
     )
+    asana_projects: list[AsanaProjectMappingRead] = Field(default_factory=list)
     phase: Optional[str] = Field(default=None, description="What a running Linear or GitHub import is reading now.")
     phase_index: int = 0
     phase_count: int = 0
@@ -188,7 +202,13 @@ class IssueImportRead(BaseModel):
 
         A list leaves the row problems out, since each job may hold hundreds.
         """
-        steps = phases(job) if job.kind == "linear" else GITHUB_PHASES if job.kind == "github" else []
+        steps: list[tuple[str, Optional[int]]] = []
+        if job.kind == "linear":
+            steps = phases(job)
+        elif job.kind == "github":
+            steps = GITHUB_PHASES
+        elif job.kind == "asana":
+            steps = asana_import.phases(job)
         current = steps[job.phase_index] if job.phase_index < len(steps) else None
         return cls(
             import_id=job.import_id,
@@ -217,6 +237,18 @@ class IssueImportRead(BaseModel):
             counts=dict(job.counts),
             linear_teams=[LinearTeamMappingRead(**mapping.model_dump()) for mapping in job.linear_teams],
             github_repository_id=job.github_repository_id or None,
+            asana_projects=[
+                AsanaProjectMappingRead(
+                    project_gid=mapping.project_gid,
+                    name=mapping.name,
+                    team_id=mapping.team_id,
+                    create_project=mapping.create_project,
+                    status_field_gid=mapping.status_field_gid or None,
+                    status_field_name=mapping.status_field_name or None,
+                    statuses=dict(mapping.statuses),
+                )
+                for mapping in job.asana_projects
+            ],
             phase=current[0] if current is not None else None,
             phase_index=min(job.phase_index, len(steps)),
             phase_count=len(steps),
