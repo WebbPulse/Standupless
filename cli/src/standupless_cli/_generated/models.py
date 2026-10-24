@@ -634,6 +634,21 @@ class DownloadRead(TypedDict):
     url: str
 
 
+class DraftRead(TypedDict):
+    body: str
+    created_at: str
+    issue_id: str
+    issue_key: NotRequired[str | None]
+    issue_title: NotRequired[str | None]
+    parent_comment_id: NotRequired[str | None]
+    team_id: str
+    updated_at: str
+
+
+class DraftWrite(TypedDict):
+    body: str
+
+
 class FavoriteRef(TypedDict):
     kind: Literal["issue", "project", "cycle", "view", "team", "document", "initiative"]
     target_id: str
@@ -2965,6 +2980,10 @@ class DocumentListRead(TypedDict):
 class DocumentVersionListRead(TypedDict):
     next_cursor: NotRequired[str | None]
     versions: list[DocumentVersionRead]
+
+
+class DraftListRead(TypedDict):
+    drafts: list[DraftRead]
 
 
 class ErrorResponse(TypedDict):

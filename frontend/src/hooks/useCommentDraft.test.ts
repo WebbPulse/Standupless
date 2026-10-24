@@ -45,7 +45,7 @@ const handle = (initial = ''): RichMarkdownHandle & { text: string } => {
     },
     insertFiles: vi.fn(),
   };
-  return editor as unknown as RichMarkdownHandle & { text: string };
+  return editor;
 };
 
 /** Renders the hook for one thread with a fresh editor ref. */
@@ -121,7 +121,7 @@ describe('useCommentDraft', () => {
     expect(editor.text).toBe('Typed first');
   });
 
-  it('saves after a pause, once, with the latest text', async () => {
+  it('saves after a pause, once, with the latest text', () => {
     listIssueDrafts.mockResolvedValue([]);
     vi.useFakeTimers();
     const { result } = mount();
@@ -140,7 +140,7 @@ describe('useCommentDraft', () => {
     expect(saveDraft).toHaveBeenCalledWith(null, 'Hello');
   });
 
-  it('discards the draft when the text is emptied', async () => {
+  it('discards the draft when the text is emptied', () => {
     listIssueDrafts.mockResolvedValue([]);
     vi.useFakeTimers();
     const { result } = mount('c-1');
@@ -157,7 +157,7 @@ describe('useCommentDraft', () => {
     expect(deleteDraft).toHaveBeenCalledWith('c-1');
   });
 
-  it('discards at once on post and saves nothing pending', async () => {
+  it('discards at once on post and saves nothing pending', () => {
     listIssueDrafts.mockResolvedValue([]);
     vi.useFakeTimers();
     const { result } = mount();
