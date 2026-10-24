@@ -82,7 +82,13 @@ describe('filterSlashCommands', () => {
   });
 
   it('narrows as the query grows', () => {
-    expect(ids('h')).toEqual(['heading1', 'heading2', 'heading3', 'divider']);
+    expect(ids('h')).toEqual([
+      'heading1',
+      'heading2',
+      'heading3',
+      'divider',
+      'taskList',
+    ]);
     expect(ids('head')).toEqual(['heading1', 'heading2', 'heading3']);
     expect(ids('h2')).toEqual(['heading2']);
     expect(ids('todo')).toEqual(['taskList']);

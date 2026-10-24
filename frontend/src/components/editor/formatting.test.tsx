@@ -7,7 +7,13 @@
 
 import { Editor } from '@tiptap/core';
 import { TextSelection } from '@tiptap/pm/state';
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+} from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   FORMAT_ACTIONS,
@@ -22,6 +28,7 @@ import { readMarkdown, writeMarkdown } from './markdownCodec';
 const editors: Editor[] = [];
 
 afterEach(() => {
+  cleanup();
   for (const editor of editors.splice(0)) editor.destroy();
   document.body.innerHTML = '';
 });
