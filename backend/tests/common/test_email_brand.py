@@ -67,7 +67,9 @@ def test_the_default_email_is_dark_first_like_the_app() -> None:
 
     assert EMAIL_THEME.scheme == "dark"
     assert "font-family:Inter, ui-sans-serif" in html
-    assert f"border:1px solid {EMAIL_THEME.dark.line};border-radius:8px;" in html
+    line = EMAIL_THEME.dark.line
+    assert f'class="wp-line" bgcolor="{line}" style="background-color:{line};' in html
+    assert "border-radius:8px;padding:1px;" in html
     assert f"border-radius:6px;background-color:{BRAND_ACCENT_DARK};" in html
     assert "color:#17120f;text-decoration:none" in html
     assert BRAND_ACCENT not in html
