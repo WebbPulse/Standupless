@@ -6,6 +6,8 @@
  *
  * Given `onFilter`, the priority, status, labels, estimate and assignee are
  * chips that narrow the list to their value instead of opening the issue.
+ * A sub-issue names its parent in a muted prefix ahead of the title, since
+ * these lists never draw the parent beside it.
  */
 
 import React from 'react';
@@ -26,6 +28,7 @@ import {
   type ScopedLabel,
   type ScopedStatus,
 } from '../../lib/issueView';
+import { parentRefOf } from '../../lib/issueTree';
 import { shownStatusId } from '../../lib/triageStatus';
 import type { IssueRead } from '../../types/Api';
 import Avatar from '../ui/avatar';
@@ -33,6 +36,7 @@ import Badge, { LabelChip } from '../ui/badge';
 import { RelationMarkers } from './BlockedMarker';
 import { FilterChipButton } from './ChipActions';
 import SlaBadge from './SlaBadge';
+import { ParentPrefix } from './view/SubIssueCues';
 import { PriorityGlyph } from '../ui/glyphs';
 import { StatusIcon } from '../ui/StatusIcon';
 import { TruncatedText } from '../ui/truncated-text';
@@ -83,6 +87,7 @@ export const IssueRow: React.FC<IssueRowProps> = ({
   const priorityName = PRIORITY_LABELS[issue.priority];
   const statusName = status?.name ?? 'Unknown status';
   const prefetch = useIssuePrefetch(issue.key);
+  const parent = parentRefOf(issue);
 
   const priorityGlyph = (
     <PriorityGlyph priority={issue.priority} name={priorityName} />
@@ -146,6 +151,7 @@ export const IssueRow: React.FC<IssueRowProps> = ({
           {statusGlyph}
         </FilterChipButton>
       )}
+      {parent !== undefined && <ParentPrefix slug={slug} parent={parent} />}
       <TruncatedText className="min-w-0 flex-1 text-sm font-medium text-text">
         {issue.title}
       </TruncatedText>

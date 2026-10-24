@@ -46,6 +46,7 @@ from app.common.issue_filters import UnknownStatusCategory, build_issue_filter, 
 from app.common.issue_keys import current
 from app.common.issue_links import create_link, delete_link, list_links
 from app.common.issue_move import move_issue
+from app.common.issue_parents import parents_of
 from app.common.issue_rules import TRIAGE_STATUS_ID, TRIAGE_STATUS_NAME, require_team_reader, visible_team_ids
 from app.common.issue_subscribers import list_subscribers, subscribe, unsubscribe
 from app.common.issue_writes import bulk_update_issues, create_issue, list_issues, update_issue, walk_page
@@ -348,7 +349,7 @@ def _reverse(call: ToolCall) -> bool:
 
 
 def _page(call: ToolCall, **overrides: Any) -> dict[str, Any]:
-    """One page of the issue list, through the same fan-out the HTTP list runs.
+    """One page of the issue list, through the same fan-out the HTTP list runs, each sub-issue naming its parent.
 
     "Subscribed by me" reads the caller's own subscription index, as the HTTP list does.
     """
@@ -369,7 +370,11 @@ def _page(call: ToolCall, **overrides: Any) -> dict[str, Any]:
         reverse=_reverse(call),
         subscribed=subscribed,
     )
-    return {"issues": [summary_json(call.repositories.teams, row) for row in rows], "next_cursor": next_cursor}
+    parents = parents_of(call.repositories.issues, call.repositories.teams, call.context.workspace_id, rows)
+    return {
+        "issues": [summary_json(call.repositories.teams, row, parents.get(row.parent_id or "")) for row in rows],
+        "next_cursor": next_cursor,
+    }
 
 
 def _list_issues(call: ToolCall) -> Any:
@@ -1084,7 +1089,8 @@ ISSUE_TOOLS: tuple[Tool, ...] = (
     Tool(
         name="create_issue",
         description=(
-            "Create an issue in a team, allocating its key. The status defaults to the team's first. "
+            "Create an issue in a team, allocating its key. With no status_id it starts in the team's first status, "
+            "or in triage while the team has triage on; a sub-issue from a team member skips triage unless asked. "
             "parent_id makes it a sub-issue; cycle_id, project_id and project_milestone_id place it. "
             "template_id fills every field not passed from one of the team's templates (see list_templates), "
             "and title may then be omitted when the template has one. "

@@ -184,6 +184,21 @@ def test_list_issues_reverses_the_sort(client: TestClient, repositories: Any, is
     assert [row["issue_key"] for row in rows] == ["ABC-2", "ABC-1"]
 
 
+def test_list_issues_names_the_parent_of_a_sub_issue_listed_apart(
+    client: TestClient, repositories: Any, issue: Issue
+) -> None:
+    """A sub-issue filtered away from its parent still carries the parent's key and title."""
+    child = seed_issue(repositories, WORKSPACE, TEAM, "01JB0000000000000000000IS3", "ABC", 2)
+    repositories.issues.replace(child.model_copy(update={"parent_id": issue.issue_id}))
+    secret = mint_for(repositories, MEMBER, ("issues:read",))
+
+    rows = answer(tool(client, secret, "list_issues", {"team_id": TEAM, "parent_id": issue.issue_id}))["issues"]
+
+    assert [(row["issue_key"], row["parent_key"], row["parent_title"]) for row in rows] == [
+        ("ABC-2", "ABC-1", "An issue")
+    ]
+
+
 def test_list_issues_filters_by_cycle_project_label_and_status(
     client: TestClient, repositories: Any, issue: Issue, planning: dict[str, str]
 ) -> None:

@@ -362,7 +362,7 @@ def _integrations_unprefixed_routers(settings: "Any") -> "Sequence[APIRouter]":
     ]
 
 
-_DISCUSSION_REPOSITORIES = ("comments", "reactions", "attachments", "subscriptions")
+_DISCUSSION_REPOSITORIES = ("comments", "reactions", "attachments", "subscriptions", "activity")
 
 _DISCUSSION_READ_REPOSITORIES = ("memberships", "workspaces", "users", "teams", "issues", "api_keys")
 

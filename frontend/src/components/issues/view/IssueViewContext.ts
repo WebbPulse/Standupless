@@ -8,6 +8,7 @@
 import { createContext, useContext } from 'react';
 import type { OrderedIssueRead } from '../../../api/issues';
 import type { IssueCollection } from '../../../hooks/useIssueCollection';
+import type { ParentRef } from '../../../lib/issueTree';
 import type {
   FilterField,
   IssueContext,
@@ -65,6 +66,11 @@ export interface IssueViewEnv {
    * knows while the property shows.
    */
   milestones?: MilestoneRead[] | undefined;
+  /**
+   * The parent a sub-issue names, from the loaded issues or the list route's
+   * parent fields. Unset reads the parent fields alone.
+   */
+  parentOf?: (issue: OrderedIssueRead) => ParentRef | undefined;
 }
 
 /** The view's shared state. Null outside an issue view. */

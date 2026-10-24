@@ -730,7 +730,8 @@ export type ActivityKind =
   | 'archived'
   | 'unarchived'
   | 'subscriber_added'
-  | 'subscriber_removed';
+  | 'subscriber_removed'
+  | 'mentioned';
 
 /**
  * Direct sub-issue counts, maintained by the rollup consumer rather than the
@@ -784,6 +785,12 @@ export interface IssueRead {
   start_date: string | null;
   due_date: string | null;
   parent_id: string | null;
+  /**
+   * The parent's key and title, which the list route fills on a sub-issue so a
+   * row shown apart from its parent can still name it. Absent elsewhere.
+   */
+  parent_key?: string | null;
+  parent_title?: string | null;
   cycle_id: string | null;
   project_id: string | null;
   /**

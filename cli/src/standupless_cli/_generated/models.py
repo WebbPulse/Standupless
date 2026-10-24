@@ -31,6 +31,7 @@ ActivityRead = TypedDict(
             "unarchived",
             "subscriber_added",
             "subscriber_removed",
+            "mentioned",
         ],
         "release_id": NotRequired[str | None],
         "source": NotRequired[Literal["web", "mcp", "cli", "api", "github", "system"] | None],
@@ -2832,6 +2833,8 @@ class AppCommonApiSchemasIssuesIssueRead(TypedDict):
     label_ids: NotRequired[list[str]]
     number: int
     parent_id: NotRequired[str | None]
+    parent_key: NotRequired[str | None]
+    parent_title: NotRequired[str | None]
     priority: Literal["none", "urgent", "high", "medium", "low"]
     progress: ProgressRead
     project_id: NotRequired[str | None]

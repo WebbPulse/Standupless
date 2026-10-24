@@ -1518,6 +1518,36 @@ class TestIssueDetail:
         deleted = api.delete(path, params={"issue_id": issue["id"]})
         assert deleted.status_code in (200, 204), deleted.text[:400]
 
+    @WRITES
+    def test_an_issue_key_leaves_a_mentioned_in_backlink(
+        self, api: Any, run_scope: RunScope, workspace: "dict[str, Any]", team: "dict[str, Any]", track: Any
+    ) -> None:
+        """A description and a comment naming another issue each leave one backlink on it.
+
+        Editing the comment without adding a key writes nothing more, so the history
+        of the mentioned issue reads one row per place the mention was first written.
+        """
+        issues = f"/api/workspaces/{workspace['id']}/issues"
+        target = _created(api.post(issues, json={"team_id": team["id"], "title": run_scope.name("target")}), "issue")
+        track(f"{issues}/{target['id']}")
+        body = {"team_id": team["id"], "title": run_scope.name("source"), "body": f"Blocked on {target['key']}"}
+        source = _created(api.post(issues, json=body), "issue")
+        track(f"{issues}/{source['id']}")
+
+        thread = f"{issues}/{source['id']}/comments"
+        comment = _created(api.post(thread, json={"body": f"Same cause as {target['key']}"}), "comment")
+        path = f"/api/workspaces/{workspace['id']}/comments/{comment['id']}"
+        track(path, {"issue_id": source["id"]})
+        edited = api.patch(path, json={"issue_id": source["id"], "body": f"Same root cause as {target['key']}"})
+        assert edited.status_code == 200, edited.text[:400]
+
+        history = api.get(f"{issues}/{target['id']}/activity")
+        assert history.status_code == 200, history.text[:400]
+        rows = [row for row in history.json()["activity"] if row["kind"] == "mentioned"]
+        assert sorted(row["field"] for row in rows) == ["comment", "description"], rows
+        assert all(row["to"]["id"] == source["id"] for row in rows), rows
+        assert all(row["to"]["key"] == source["key"] for row in rows), rows
+
 
 PIXEL = bytes.fromhex(
     "89504e470d0a1a0a0000000d4948445200000001000000010806000000"

@@ -969,6 +969,7 @@ export const IssueView: React.FC<IssueViewProps> = ({
                     issue={issue}
                     canEdit={canEdit}
                     onSaved={receive}
+                    people={options.people}
                     onDropFiles={attachFiles}
                   />
 

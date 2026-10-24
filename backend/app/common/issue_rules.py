@@ -12,6 +12,7 @@ routes stay thin and every rule has one home.
 from __future__ import annotations
 
 from datetime import date
+from difflib import get_close_matches
 from typing import Any, Iterable
 
 from fastapi import HTTPException, status
@@ -149,8 +150,27 @@ def check_status(repositories: Repositories, workspace_id: str, team_id: str, st
     """
     row = repositories.team_config.get_status(workspace_id, team_id, status_id)
     if row is None:
-        raise unprocessable(f"No such status: {status_id}")
+        raise unprocessable(unknown_status_message(repositories, workspace_id, team_id, status_id))
     return row
+
+
+def unknown_status_message(repositories: Repositories, workspace_id: str, team_id: str, reference: str) -> str:
+    """The refusal for a status this team lacks, naming its statuses and the closest one.
+
+    A caller that guessed a name, such as `Canceled` for `Cancelled`, learns the
+    spelling and the id to send without a second call to list the statuses.
+    """
+    rows = repositories.team_config.list_statuses(workspace_id, team_id, include_hidden=False)
+    if not rows:
+        return f"No such status: {reference}. This team has no statuses."
+    listed = ", ".join(f"{row.name} ({row.status_id})" for row in rows)
+    message = f"No such status: {reference}. This team's statuses are: {listed}."
+    by_folded = {row.name.casefold(): row for row in rows}
+    closest = get_close_matches(reference.strip().casefold(), list(by_folded), n=1, cutoff=0.6)
+    if closest:
+        match = by_folded[closest[0]]
+        message += f" Did you mean {match.name} ({match.status_id})?"
+    return message
 
 
 def default_status(repositories: Repositories, workspace_id: str, team_id: str) -> Status:
@@ -334,17 +354,30 @@ def team_role(repositories: Repositories, context: AuthzContext, team_id: str) -
     return IMPLIED_TEAM_ROLE.get(context.role)
 
 
-def lands_in_triage(repositories: Repositories, context: AuthzContext, team_id: str, requested: bool) -> bool:
+def lands_in_triage(
+    repositories: Repositories,
+    context: AuthzContext,
+    team_id: str,
+    requested: bool,
+    *,
+    status_named: bool = False,
+    has_parent: bool = False,
+) -> bool:
     """Whether a new issue in one team starts in its triage inbox.
 
     Only when the team has triage on: then an issue filed by a guest, by someone
-    outside the team or by a workspace key lands there, and a member may ask for it.
+    outside the team or by a workspace key always lands there, and so does a
+    member's issue that names no status. A member who names a real status files
+    straight into it, and a member's sub-issue files straight in unless triage
+    is asked for.
     """
     if not triage_on(repositories, context.workspace_id, team_id):
         return False
     if requested or context.is_guest or is_service_subject(context.user_id):
         return True
-    return repositories.memberships.get_team_membership(context.workspace_id, team_id, context.user_id) is None
+    if repositories.memberships.get_team_membership(context.workspace_id, team_id, context.user_id) is None:
+        return True
+    return not status_named and not has_parent
 
 
 def triage_on(repositories: Repositories, workspace_id: str, team_id: str) -> bool:

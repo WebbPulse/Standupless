@@ -202,6 +202,7 @@ export const IssuePeek: React.FC<IssuePeekProps> = ({ issueId, onClose }) => {
               issue={issue}
               canEdit={canEdit}
               onSaved={receive}
+              people={options.people}
             />
 
             <div className="space-y-3">
