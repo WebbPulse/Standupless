@@ -17,6 +17,8 @@ FOREIGN_IMPORT_ID = "01JB0000000000000000IMPRT9"
 
 ISOLATION_LINEAR_KEY = "lin_api_isolation_fake_0000000000000000"
 
+ISOLATION_ASANA_TOKEN = "2/isolation/fake:0000000000000000"
+
 ANSWERS_AT_HOME: frozenset[str] = frozenset(
     {
         "get_workspace",
@@ -73,6 +75,15 @@ def arguments(foreign: dict[str, str], home_issue: str) -> dict[str, dict[str, A
         "import_linear_workspace": {
             "api_key": ISOLATION_LINEAR_KEY,
             "teams": [{"linear_team_id": "team-isolation", "team_id": foreign["team_id"]}],
+        },
+        "list_asana_projects": {"token": ISOLATION_ASANA_TOKEN},
+        "preview_asana_import": {
+            "token": ISOLATION_ASANA_TOKEN,
+            "projects": [{"project_gid": "1200000000000001", "team_id": foreign["team_id"]}],
+        },
+        "import_asana_workspace": {
+            "token": ISOLATION_ASANA_TOKEN,
+            "projects": [{"project_gid": "1200000000000001", "team_id": foreign["team_id"]}],
         },
         "preview_issue_import": {"team_id": foreign["team_id"], "preset": "generic", "file": "Title\nIsolation\n"},
         "import_issues_from_file": {"team_id": foreign["team_id"], "preset": "generic", "file": "Title\nIsolation\n"},
