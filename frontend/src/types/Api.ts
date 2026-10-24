@@ -759,7 +759,9 @@ export type ActivityKind =
   | 'unarchived'
   | 'subscriber_added'
   | 'subscriber_removed'
-  | 'mentioned';
+  | 'mentioned'
+  | 'thread_resolved'
+  | 'thread_unresolved';
 
 /**
  * Direct sub-issue counts, maintained by the rollup consumer rather than the
@@ -1368,8 +1370,19 @@ export interface CommentRead {
   source?: ChangeSource | null;
   /** Where a root comment's thread is mirrored on GitHub, when it is. */
   github_thread?: GithubThread | null;
+  /** Who resolved a root comment's thread and when, while it is resolved. */
+  resolution?: ThreadResolution | null;
   created_at: string;
   edited_at: string | null;
+}
+
+/**
+ * A resolved thread's mark, held on its root comment. Any team member may set
+ * or clear it, and a reply to the thread clears it.
+ */
+export interface ThreadResolution {
+  resolved_by: string;
+  resolved_at: string;
 }
 
 /**

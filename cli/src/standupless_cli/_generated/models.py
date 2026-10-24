@@ -32,6 +32,8 @@ ActivityRead = TypedDict(
             "subscriber_added",
             "subscriber_removed",
             "mentioned",
+            "thread_resolved",
+            "thread_unresolved",
         ],
         "release_id": NotRequired[str | None],
         "source": NotRequired[Literal["web", "mcp", "cli", "api", "github", "system"] | None],
@@ -2569,6 +2571,11 @@ class TemplateSettingsUpdate(TypedDict):
     default_update_template_id: NotRequired[str | None]
 
 
+class ThreadResolution(TypedDict):
+    resolved_at: NotRequired[str]
+    resolved_by: str
+
+
 class TransitionCreate(TypedDict, closed=True):
     branch_pattern: NotRequired[str | None]
     status_id: NotRequired[str | None]
@@ -3287,6 +3294,7 @@ class CommentRead(TypedDict):
     parent_comment_id: NotRequired[str | None]
     reactions: NotRequired[list[ReactionGroupRead]]
     reply_count: NotRequired[int]
+    resolution: NotRequired[ThreadResolution | None]
     source: NotRequired[Literal["web", "mcp", "cli", "api", "github", "system"] | None]
     team_id: str
     workspace_id: str
