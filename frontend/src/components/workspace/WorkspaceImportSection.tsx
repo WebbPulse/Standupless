@@ -1,8 +1,9 @@
 /**
  * The issue import, led by an import assistant laid out like Linear's: one row
  * per provider, each opening its own flow. Linear reads a workspace through
- * Linear's API and GitHub reads a repository's Issues through the installed
- * App. Asana, Shortcut and Jira open the file flow with their export preset
+ * Linear's API, Asana reads projects through Asana's API with a pasted token,
+ * and GitHub reads a repository's Issues through the installed App. Shortcut
+ * and Jira open the file flow with their export preset
  * chosen until their API importers land, and the file row takes any CSV
  * export or a Trello board's JSON. For a file the admin picks the tracker it
  * came from, a target team and the file, checks what every row would become,
@@ -33,6 +34,7 @@ import { useTeamsFor } from '../../hooks/useTeams';
 import { errorMessage } from '../../lib/errors';
 import { workspaceImportsKey } from '../../lib/queryKeys';
 import type {
+  AsanaImportCount,
   GitHubImportCount,
   ImportField,
   ImportPreset,
@@ -53,6 +55,7 @@ import TextLink from '../ui/link';
 import RelativeTime from '../ui/relative-time';
 import { Select, SelectField } from '../ui/select';
 import Spinner from '../ui/spinner';
+import AsanaImportForm from './AsanaImportForm';
 import GitHubImportForm from './GitHubImportForm';
 import ImportProviderIcon, { type ImportProvider } from './ImportProviderIcon';
 import LinearImportForm from './LinearImportForm';
@@ -68,8 +71,8 @@ const ACTIVE_POLL_MS = 3000;
 /** How often the list is read once every job has settled. */
 const IDLE_POLL_MS = 60000;
 
-/** Where an import reads from: Linear through its API, GitHub through the App, or a file. */
-type Source = 'linear' | 'github' | 'csv';
+/** Where an import reads from: Linear or Asana through its API, GitHub through the App, or a file. */
+type Source = 'linear' | 'asana' | 'github' | 'csv';
 
 /** One row of the import assistant: what it is called, the flow it opens and the preset a file flow starts on. */
 interface ProviderRow {
@@ -86,10 +89,8 @@ const PROVIDERS: ProviderRow[] = [
   {
     value: 'asana',
     title: 'Asana',
-    detail: 'A project exported as CSV',
-    source: 'csv',
-    preset: 'asana',
-    comingSoon: true,
+    detail: 'Projects, tasks and comments through the Asana API',
+    source: 'asana',
   },
   {
     value: 'shortcut',
@@ -198,6 +199,23 @@ const LINEAR_TALLIES: { name: LinearImportCount; noun: string }[] = [
   { name: 'project_relations', noun: 'project dependency link' },
 ];
 
+/** How each step of an Asana import reads while it runs. */
+const ASANA_PHASE_LABELS: Record<string, string> = {
+  project: 'Reading the project',
+  tasks: 'Reading tasks',
+};
+
+/** How many steps each Asana project takes, matching the server's phase list. */
+const ASANA_PROJECT_PHASES = 2;
+
+/** The tallies a finished Asana import lists, in order, with the noun each counts. */
+const ASANA_TALLIES: { name: AsanaImportCount; noun: string }[] = [
+  { name: 'comments', noun: 'comment' },
+  { name: 'labels', noun: 'new label' },
+  { name: 'sub_issues', noun: 'sub-issue link' },
+  { name: 'projects', noun: 'project' },
+];
+
 /** The tallies a finished GitHub import lists after its issue counts, in order. */
 const GITHUB_TALLIES: { name: GitHubImportCount; noun: string }[] = [
   { name: 'comments', noun: 'comment' },
@@ -282,6 +300,34 @@ const linearOutcome = (job: IssueImportRead): string => {
   return parts.join(', ');
 };
 
+/** The line under a running Asana job that says which project and step it is on. */
+const asanaProgress = (job: IssueImportRead): string => {
+  if (job.status === 'queued') return 'Waiting to start';
+  const index = job.phase_index ?? 0;
+  const total = job.phase_count ?? 0;
+  const project = (job.asana_projects ?? [])[
+    Math.floor(index / ASANA_PROJECT_PHASES)
+  ];
+  const step = ASANA_PHASE_LABELS[job.phase ?? ''] ?? 'Importing';
+  const parts = [project === undefined ? step : `${step} in ${project.name}`];
+  if (total > 0) parts.push(`step ${Math.min(index + 1, total)} of ${total}`);
+  parts.push(`${count(job.created_count, 'issue')} so far`);
+  return parts.join(', ');
+};
+
+/** The line under a finished Asana job that lists what it brought over. */
+const asanaOutcome = (job: IssueImportRead): string => {
+  const counts = job.counts ?? {};
+  const parts = [`${count(job.created_count, 'issue')} created`];
+  const updated = job.updated_count ?? counts.issues_updated ?? 0;
+  if (updated > 0) parts.push(`${updated} updated`);
+  for (const { name, noun } of ASANA_TALLIES) {
+    const n = counts[name] ?? 0;
+    if (n > 0) parts.push(count(n, noun));
+  }
+  return parts.join(', ');
+};
+
 /** The line under a running GitHub job that says how far it got. */
 const githubProgress = (job: IssueImportRead): string => {
   if (job.status === 'queued') return 'Waiting to start';
@@ -314,6 +360,10 @@ const jobSummary = (job: IssueImportRead): string => {
     if (job.status === 'completed') return linearOutcome(job);
     if (job.status !== 'failed') return linearProgress(job);
   }
+  if (job.kind === 'asana') {
+    if (job.status === 'completed') return asanaOutcome(job);
+    if (job.status !== 'failed') return asanaProgress(job);
+  }
   if (job.kind === 'github') {
     if (job.status === 'completed') return githubOutcome(job);
     if (job.status !== 'failed') return githubProgress(job);
@@ -343,6 +393,12 @@ const jobTitle = (job: IssueImportRead, teams: TeamRead[]): string => {
         : `${row.linear_key} into ${target.name}`;
     });
     return mapped.length === 0 ? 'Linear' : `Linear ${mapped.join(', ')}`;
+  }
+  if (job.kind === 'asana') {
+    const names = (job.asana_projects ?? []).map((row) => row.name);
+    const into = teams.find((t) => t.id === job.asana_projects?.[0]?.team_id);
+    const title = names.length === 0 ? 'Asana' : `Asana ${names.join(', ')}`;
+    return into === undefined ? title : `${title} into ${into.name}`;
   }
   const target = teams.find((t) => t.id === job.team_id);
   if (job.kind === 'github') {
@@ -700,6 +756,15 @@ export const WorkspaceImportSection: React.FC<WorkspaceImportSectionProps> = ({
 
       {source === null ? null : source === 'linear' ? (
         <LinearImportForm
+          workspaceId={workspace.id}
+          teams={teamList}
+          importing={importing}
+          onStarted={() => {
+            invalidateQueries(queryKey);
+          }}
+        />
+      ) : source === 'asana' ? (
+        <AsanaImportForm
           workspaceId={workspace.id}
           teams={teamList}
           importing={importing}
