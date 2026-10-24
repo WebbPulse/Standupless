@@ -10437,6 +10437,122 @@
         "title": "ProgressRead",
         "type": "object"
       },
+      "ProjectActivityListRead": {
+        "properties": {
+          "activity": {
+            "items": {
+              "$ref": "#/components/schemas/ProjectActivityRead"
+            },
+            "title": "Activity",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "required": [
+          "activity"
+        ],
+        "title": "ProjectActivityListRead",
+        "type": "object"
+      },
+      "ProjectActivityRead": {
+        "description": "One recorded change to a project as the API returns it.\n\n`from` and `to` are the wire names the issue activity uses, aliased off the\nstored `from_value` and `to_value` because `from` is a Python keyword. A\nmilestone row carries the milestone's id and names it in `to`, or in `from`\nonce removed.",
+        "properties": {
+          "activity_id": {
+            "title": "Activity Id",
+            "type": "string"
+          },
+          "actor_id": {
+            "title": "Actor Id",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "field": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Field"
+          },
+          "from": {
+            "title": "From"
+          },
+          "kind": {
+            "enum": [
+              "created",
+              "field_changed",
+              "milestone_added",
+              "milestone_removed",
+              "milestone_changed"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "milestone_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Milestone Id"
+          },
+          "project_id": {
+            "title": "Project Id",
+            "type": "string"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "enum": [
+                  "web",
+                  "mcp",
+                  "cli",
+                  "api",
+                  "github",
+                  "system"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source"
+          },
+          "to": {
+            "title": "To"
+          }
+        },
+        "required": [
+          "activity_id",
+          "project_id",
+          "actor_id",
+          "kind",
+          "created_at"
+        ],
+        "title": "ProjectActivityRead",
+        "type": "object"
+      },
       "ProjectBlueprint": {
         "description": "What a project template fills: the project's fields, its milestones and its issues.\n\nDates are offsets in days from the day the project is created, so a template\nnever goes stale.",
         "properties": {
@@ -38216,6 +38332,92 @@
           }
         ],
         "summary": "Update Project",
+        "tags": [
+          "planning"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/projects/{project_id}/activity": {
+      "get": {
+        "description": "One page of a project's property and milestone changes, newest first.",
+        "operationId": "list_activity_api_workspaces__workspace_id__projects__project_id__activity_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectActivityListRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "List Activity",
         "tags": [
           "planning"
         ]

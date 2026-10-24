@@ -22,11 +22,12 @@ Manager, CloudWatch alarms and X-Ray Transaction Search. The CloudFront certific
 no NAT Gateway.
 
 Almost everything comes from `terraform.webbpulse.com/WebbPulse/platform-modules/aws` submodules, all
-pinned `~> 2.25` so one version resolves for the whole root: `app-baseline`, `staging-dns`,
+pinned `~> 2.45` so one version resolves for the whole root: `app-baseline`, `staging-dns`,
 `acm-certificate`, `spa-frontend`, `http-api`, `lambda-function`, `ecr-repository`,
 `dynamodb-tables`, `identity`, `app-secrets`, `api-alarms`, `staging-access-gate` and
-`github-actions-role`. 2.25 is what carries the plan time known counts `http-api` and
-`staging-access-gate` need, and `lambda-function`'s `dynamodb_stream_event_sources`. Hand written is
+`github-actions-role`. 2.45 is what lets both the `http-api` lambda mode authorizer (prod) and the
+`staging-access-gate` authorizer (staging) verify tokens against packaged signing keys, with no
+JWKS fetch on a cold start. Hand written is
 what a single-provider module cannot own: the SES records and identity, the CloudFront Function, and
 the Transaction Search plumbing.
 

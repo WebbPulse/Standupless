@@ -1,6 +1,6 @@
 module "app_secrets" {
   source  = "terraform.webbpulse.com/WebbPulse/platform-modules/aws//modules/app-secrets"
-  version = "~> 2.30"
+  version = "~> 2.45"
 
   name_prefix = local.prefix
 

@@ -8,7 +8,7 @@
 
 import { useCallback, useMemo, useRef, useState } from 'react';
 import { useQueryAuth } from '@webbpulse/auth/react';
-import { usePolledQuery } from '@webbpulse/api-client/react';
+import { invalidateQueries, usePolledQuery } from '@webbpulse/api-client/react';
 import {
   createMilestone,
   deleteMilestone,
@@ -17,7 +17,7 @@ import {
 } from '../api/planning';
 import { errorMessage } from '../lib/errors';
 import { byMilestoneOrder } from '../lib/milestones';
-import { milestonesKey } from '../lib/queryKeys';
+import { milestonesKey, projectActivityKey } from '../lib/queryKeys';
 import { showErrorToast } from '../lib/toast';
 import type {
   MilestoneCreate,
@@ -86,9 +86,10 @@ export const useProjectMilestones = (
       pending.current -= 1;
       await refetch();
       if (pending.current === 0) setLocal(null);
+      invalidateQueries([projectActivityKey(workspaceId, projectId)]);
       return result;
     },
-    [refetch]
+    [refetch, workspaceId, projectId]
   );
 
   const create = useCallback(

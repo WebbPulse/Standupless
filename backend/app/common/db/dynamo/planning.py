@@ -55,6 +55,15 @@ PROJECT_UPDATE = "project_update"
 
 PROJECT_UPDATE_KEY_PREFIX = "project_update#"
 
+PROJECT_ACTIVITY = "project_activity"
+
+PROJECT_ACTIVITY_KEY_PREFIX = "project_activity#"
+"""Where a project's property changes are filed, one row per change, oldest first by ULID.
+
+`begins_with("project#")` never matches it, so the project listing never reads an
+activity row.
+"""
+
 PROJECT_RELATION = "project_relation"
 
 PROJECT_RELATION_KEY_PREFIX = "project_relation#"
@@ -236,6 +245,16 @@ def project_update_prefix(project_id: str) -> str:
 def project_update_key(project_id: str, update_id: str) -> str:
     """The sort key of one project update, time sortable by its ULID."""
     return f"{project_update_prefix(project_id)}{update_id}"
+
+
+def project_activity_prefix(project_id: str) -> str:
+    """The sort key prefix every activity row of one project shares."""
+    return f"{PROJECT_ACTIVITY_KEY_PREFIX}{project_id}#"
+
+
+def project_activity_key(project_id: str, activity_id: str) -> str:
+    """The sort key of one project activity row, time sortable by its ULID."""
+    return f"{project_activity_prefix(project_id)}{activity_id}"
 
 
 def project_relation_key(blocker_id: str, blocked_id: str) -> str:
@@ -611,6 +630,30 @@ class ProjectUpdateRow(BaseModel):
     import_batch_id: str | None = None
 
 
+class ProjectActivityRow(BaseModel):
+    """One recorded change to a project: created, a property changed, or a milestone added or removed.
+
+    `field` names the property for a `field_changed` row and is None otherwise.
+    `from_value` and `to_value` hold the property's old and new values, or the
+    milestone's name for a milestone row, so the feed renders without reading
+    back a milestone that may since have been deleted.
+    """
+
+    workspace_id: str
+    planning_key: str
+    activity_id: str = Field(default_factory=new_planning_id)
+    project_id: str
+    kind: str = PROJECT_ACTIVITY
+    event: str
+    field: str | None = None
+    from_value: Any = None
+    to_value: Any = None
+    milestone_id: str | None = None
+    actor_id: str
+    source: str | None = None
+    created_at: datetime = Field(default_factory=utc_now)
+
+
 class ProjectRelation(BaseModel):
     """One dependency between two projects of a workspace: `project_id` blocks `target_project_id`."""
 
@@ -868,6 +911,21 @@ def as_initiative_update(item: Mapping[str, Any]) -> InitiativeUpdateRow:
 def is_initiative_update(item: Mapping[str, Any]) -> bool:
     """Whether one stored row is an initiative update."""
     return str(item.get("kind", "")) == INITIATIVE_UPDATE
+
+
+def as_project_activity_item(row: ProjectActivityRow) -> dict[str, Any]:
+    """One project activity row as the stored item, null fields dropped."""
+    return {name: value for name, value in row.model_dump(mode="json").items() if value is not None}
+
+
+def as_project_activity(item: Mapping[str, Any]) -> ProjectActivityRow:
+    """One stored item as a `ProjectActivityRow`."""
+    return ProjectActivityRow.model_validate(dict(item))
+
+
+def is_project_activity(item: Mapping[str, Any]) -> bool:
+    """Whether one stored row is a project activity row."""
+    return str(item.get("kind", "")) == PROJECT_ACTIVITY
 
 
 def is_project_update(item: Mapping[str, Any]) -> bool:
@@ -1233,6 +1291,49 @@ class PlanningRepository:
         removed = 0
         while True:
             page = self._query_prefix(workspace_id, project_update_prefix(project_id), limit, None)
+            if not page.items:
+                return removed
+            removed += self._repository.delete_many(
+                [{"workspace_id": workspace_id, "planning_key": item["planning_key"]} for item in page.items]
+            )
+
+    def record_project_activity(self, rows: list[ProjectActivityRow]) -> list[ProjectActivityRow]:
+        """Store a project's activity rows in one batch.
+
+        Unconditional, because each sort key carries a fresh ULID and a condition
+        would only add a failure mode to a write that follows a change already stored.
+        """
+        if rows:
+            self._repository.put_many([as_project_activity_item(row) for row in rows])
+        return rows
+
+    def list_project_activity(
+        self,
+        workspace_id: str,
+        project_id: str,
+        *,
+        limit: int,
+        start_key: Mapping[str, Any] | None = None,
+    ) -> tuple[list[ProjectActivityRow], Mapping[str, Any] | None]:
+        """One page of a project's activity, newest first, and the key to resume from."""
+        if not workspace_id or not project_id:
+            return [], None
+        page = self._repository.query(
+            Key("workspace_id").eq(workspace_id) & Key("planning_key").begins_with(project_activity_prefix(project_id)),
+            limit=limit,
+            start_key=dict(start_key) if start_key else None,
+            ascending=False,
+        )
+        rows = [as_project_activity(item) for item in page.items if is_project_activity(item)]
+        return rows, page.last_evaluated_key
+
+    def delete_project_activity(self, workspace_id: str, project_id: str, *, limit: int = 100) -> int:
+        """Remove every activity row of one project, returning how many went."""
+        if not workspace_id or not project_id:
+            return 0
+        removed = 0
+        while True:
+            page = self._query_prefix(workspace_id, project_activity_prefix(project_id), limit, None)
             if not page.items:
                 return removed
             removed += self._repository.delete_many(
