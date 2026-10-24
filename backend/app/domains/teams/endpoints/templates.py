@@ -1,4 +1,7 @@
-"""Issue template routes: a team's templates, the workspace's, and a team's default.
+"""Issue and project template routes: a team's templates, the workspace's, and a team's defaults.
+
+Both kinds share the routes: a list takes `kind`, a create carries it in the
+body, and a patch or delete finds the template whichever kind it is.
 
 A team's list is its own templates, its parent team's when the caller can see
 the parent, and the workspace's, each tagged with the `scope` it came from. Any
@@ -11,13 +14,15 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Path, Response, status
+from fastapi import APIRouter, Depends, Path, Query, Response, status
 
 from app.common import issue_templates
 from app.common.api.dependencies.authz import AuthzContext, Capability, require
 from app.common.api.dependencies.repositories import Repositories, get_repositories
 from app.common.api.schemas.templates import (
+    ROW_KINDS,
     TemplateCreate,
+    TemplateKindField,
     TemplateListRead,
     TemplateRead,
     TemplateSettingsRead,
@@ -27,15 +32,18 @@ from app.common.api.schemas.templates import (
 
 router = APIRouter()
 
+KindQuery = Annotated[TemplateKindField, Query(description="Which templates to list: issue or project")]
+
 
 @router.get("/{workspace_id}/teams/{team_id}/templates", response_model=TemplateListRead)
 def list_team_templates(
     context: Annotated[AuthzContext, Depends(require(Capability.TEAM_READ))],
     repositories: Annotated[Repositories, Depends(get_repositories)],
+    kind: KindQuery = "issue",
 ) -> TemplateListRead:
-    """Every template the team offers, its own, its parent's and the workspace's, and its default."""
+    """Every template of one kind the team offers, its own, its parent's and the workspace's, and its default."""
     team_id = str(context.team_id)
-    rows, default = issue_templates.list_team_templates(repositories, context, team_id)
+    rows, default = issue_templates.list_team_templates(repositories, context, team_id, ROW_KINDS[kind])
     return TemplateListRead(
         templates=[TemplateRead.from_row(row, team_id) for row in rows], default_template_id=default
     )
@@ -89,9 +97,9 @@ def read_template_settings(
     context: Annotated[AuthzContext, Depends(require(Capability.TEAM_READ))],
     repositories: Annotated[Repositories, Depends(get_repositories)],
 ) -> TemplateSettingsRead:
-    """The team's saved default template and the one its create dialog opens with."""
-    stored, effective = issue_templates.template_settings(repositories, context, str(context.team_id))
-    return TemplateSettingsRead.from_row(stored, effective)
+    """The team's saved default templates and the ones its create dialogs open with."""
+    stored, effective, project = issue_templates.template_settings(repositories, context, str(context.team_id))
+    return TemplateSettingsRead.from_row(stored, effective, project)
 
 
 @router.patch("/{workspace_id}/teams/{team_id}/template-settings", response_model=TemplateSettingsRead)
@@ -100,18 +108,21 @@ def update_template_settings(
     context: Annotated[AuthzContext, Depends(require(Capability.TEAM_READ))],
     repositories: Annotated[Repositories, Depends(get_repositories)],
 ) -> TemplateSettingsRead:
-    """Set or clear the template the team's create dialog opens with."""
-    stored, effective = issue_templates.update_template_settings(repositories, context, str(context.team_id), payload)
-    return TemplateSettingsRead.from_row(stored, effective)
+    """Set or clear the templates the team's issue and project create dialogs open with."""
+    stored, effective, project = issue_templates.update_template_settings(
+        repositories, context, str(context.team_id), payload
+    )
+    return TemplateSettingsRead.from_row(stored, effective, project)
 
 
 @router.get("/{workspace_id}/templates", response_model=TemplateListRead)
 def list_workspace_templates(
     context: Annotated[AuthzContext, Depends(require(Capability.WORKSPACE_READ))],
     repositories: Annotated[Repositories, Depends(get_repositories)],
+    kind: KindQuery = "issue",
 ) -> TemplateListRead:
-    """Every workspace template, which every team offers."""
-    rows = issue_templates.list_workspace_templates(repositories, context)
+    """Every workspace template of one kind, which every team offers."""
+    rows = issue_templates.list_workspace_templates(repositories, context, ROW_KINDS[kind])
     return TemplateListRead(templates=[TemplateRead.from_row(row) for row in rows])
 
 

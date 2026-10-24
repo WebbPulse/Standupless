@@ -38,6 +38,7 @@ from app.common.planning_rules import (
     visible_team_ids,
 )
 from app.common.project_cadence import workspace_interval
+from app.common.project_templates import add_template_rows, fill_project, find_project_template
 from app.common.relation_effects import cancelled_status, categories_for
 from app.common.sub_teams import listed_teams
 
@@ -124,10 +125,17 @@ def create_project(repositories: Repositories, context: AuthzContext, payload: P
     """Create a project on one or more teams.
 
     The caller must be able to write in every team named, since a project put on a
-    team appears in that team's planning.
+    team appears in that team's planning. A named project template fills the
+    fields left out before anything is checked, and its milestones and issues
+    are added once the project exists, its dates counted from today.
     """
     teams = payload.teams
     require_team_changes(repositories, context, teams)
+    template = None
+    today = utc_now().date()
+    if payload.template_id:
+        template = find_project_template(repositories, context, teams, payload.template_id)
+        payload = fill_project(repositories, context, payload, template, today)
     if payload.lead_id is not None:
         require_workspace_member(repositories, context, payload.lead_id)
     for member_id in payload.member_ids:
@@ -164,9 +172,12 @@ def create_project(repositories: Repositories, context: AuthzContext, payload: P
             status_code=status.HTTP_409_CONFLICT,
             detail={"error_code": "CONFLICT", "message": "That project already exists"},
         ) from exc
-    return ProjectRead.from_row(
+    body = ProjectRead.from_row(
         created, teams, default_interval_days=workspace_interval(repositories.workspaces, context.workspace_id)
     )
+    if template is not None:
+        add_template_rows(repositories, context, body, template, today)
+    return body
 
 
 def open_project_issues(

@@ -3,7 +3,7 @@
  * reorder and delete, and the ones it inherits from its parent team and the
  * workspace, listed read only. A team admin also picks the template the
  * team's create dialog opens with; a sub-team that picks none opens with its
- * parent's.
+ * parent's. The team's project templates follow, kept the same way.
  */
 
 import React, { useId } from 'react';
@@ -22,7 +22,7 @@ import {
 } from '../../api/templates';
 import { useTeamOptions } from '../../hooks/useTeamOptions';
 import { errorMessage } from '../../lib/errors';
-import { templatesKey } from '../../lib/queryKeys';
+import { templateSettingsKey, templatesKey } from '../../lib/queryKeys';
 import type { EstimateOptions } from '../../lib/validation';
 import type {
   EstimateScale,
@@ -34,6 +34,7 @@ import TemplateEditor from '../templates/TemplateEditor';
 import { ErrorAlert } from '../ui/alert';
 import { SelectField } from '../ui/select';
 import Spinner from '../ui/spinner';
+import ProjectTemplatesSection from './ProjectTemplatesSection';
 
 /** Props for TemplatesSection: which team, and what the caller may change. */
 export interface TemplatesSectionProps {
@@ -52,9 +53,6 @@ export interface TemplatesSectionProps {
 /** How often the list is re-read while the settings page is open. */
 const POLL_MS = 30000;
 
-/** The query key the team's saved default is read under. */
-const settingsKey = (teamId: string) => [...templatesKey(teamId), 'settings'];
-
 /** Lists and edits a team's templates and its default. */
 export const TemplatesSection: React.FC<TemplatesSectionProps> = ({
   workspaceId,
@@ -67,7 +65,7 @@ export const TemplatesSection: React.FC<TemplatesSectionProps> = ({
 }) => {
   const auth = useQueryAuth();
   const selectId = useId();
-  const keys = [templatesKey(teamId), settingsKey(teamId)];
+  const keys = [templatesKey(teamId), templateSettingsKey(teamId)];
   const options = useTeamOptions(workspaceId, teamId, { planning: true });
 
   const { data, error, isLoading } = usePolledQuery(
@@ -76,7 +74,7 @@ export const TemplatesSection: React.FC<TemplatesSectionProps> = ({
   );
   const { data: settings } = usePolledQuery(
     ({ signal }) => getTemplateSettings(workspaceId, teamId, signal),
-    { intervalMs: POLL_MS, queryKey: settingsKey(teamId), auth }
+    { intervalMs: POLL_MS, queryKey: templateSettingsKey(teamId), auth }
   );
 
   const { mutate: create } = useMutationWithRefetch(
@@ -114,76 +112,87 @@ export const TemplatesSection: React.FC<TemplatesSectionProps> = ({
       : undefined;
 
   return (
-    <section className="space-y-4">
-      <div className="space-y-1">
-        <h3 className="text-base font-semibold">Templates</h3>
-        <p className="text-sm text-text-muted">
-          Templates prefill the new issue dialog with a title, description and
-          properties. Templates marked Workspace or Parent team are kept where
-          they are defined.
-        </p>
-      </div>
+    <div className="space-y-8">
+      <section className="space-y-4">
+        <div className="space-y-1">
+          <h3 className="text-base font-semibold">Templates</h3>
+          <p className="text-sm text-text-muted">
+            Templates prefill the new issue dialog with a title, description and
+            properties. Templates marked Workspace or Parent team are kept where
+            they are defined.
+          </p>
+        </div>
 
-      {error !== null && (
-        <ErrorAlert
-          message={errorMessage(error, 'Could not load the templates.')}
-        />
-      )}
-
-      {isLoading || data === null ? (
-        <Spinner label="Loading templates" />
-      ) : (
-        <>
-          <SelectField
-            id={selectId}
-            label="Default template"
-            className="max-w-xs"
-            disabled={!canSetDefault || savingDefault}
-            value={stored ?? ''}
-            onChange={(event) => {
-              const picked = event.target.value;
-              setDefault(picked === '' ? null : picked).catch(() => undefined);
-            }}
-          >
-            <option value="">
-              {fallback === undefined
-                ? 'No default'
-                : `Parent team default (${fallback.name})`}
-            </option>
-            {templates.map((template) => (
-              <option key={template.id} value={template.id}>
-                {template.name}
-              </option>
-            ))}
-          </SelectField>
-          {defaultError !== null && (
-            <ErrorAlert
-              message={errorMessage(
-                defaultError,
-                'Could not change the default template.'
-              )}
-            />
-          )}
-          <TemplateEditor
-            templates={templates}
-            scope="team"
-            canEdit={canEdit}
-            defaultTemplateId={effective}
-            options={{
-              statuses: options.statuses,
-              labels: options.labels,
-              people: options.people,
-              projects: options.projects,
-              cycles: options.cycles,
-              estimateScale,
-              ...(estimateOptions === undefined ? {} : { estimateOptions }),
-            }}
-            actions={{ create, update, remove }}
-            {...(onMakeRecurring === undefined ? {} : { onMakeRecurring })}
+        {error !== null && (
+          <ErrorAlert
+            message={errorMessage(error, 'Could not load the templates.')}
           />
-        </>
-      )}
-    </section>
+        )}
+
+        {isLoading || data === null ? (
+          <Spinner label="Loading templates" />
+        ) : (
+          <>
+            <SelectField
+              id={selectId}
+              label="Default template"
+              className="max-w-xs"
+              disabled={!canSetDefault || savingDefault}
+              value={stored ?? ''}
+              onChange={(event) => {
+                const picked = event.target.value;
+                const next = picked === '' ? null : picked;
+                setDefault(next).catch(() => undefined);
+              }}
+            >
+              <option value="">
+                {fallback === undefined
+                  ? 'No default'
+                  : `Parent team default (${fallback.name})`}
+              </option>
+              {templates.map((template) => (
+                <option key={template.id} value={template.id}>
+                  {template.name}
+                </option>
+              ))}
+            </SelectField>
+            {defaultError !== null && (
+              <ErrorAlert
+                message={errorMessage(
+                  defaultError,
+                  'Could not change the default template.'
+                )}
+              />
+            )}
+            <TemplateEditor
+              templates={templates}
+              scope="team"
+              canEdit={canEdit}
+              defaultTemplateId={effective}
+              options={{
+                statuses: options.statuses,
+                labels: options.labels,
+                people: options.people,
+                projects: options.projects,
+                cycles: options.cycles,
+                estimateScale,
+                ...(estimateOptions === undefined ? {} : { estimateOptions }),
+              }}
+              actions={{ create, update, remove }}
+              {...(onMakeRecurring === undefined ? {} : { onMakeRecurring })}
+            />
+          </>
+        )}
+      </section>
+      <ProjectTemplatesSection
+        workspaceId={workspaceId}
+        teamId={teamId}
+        estimateScale={estimateScale}
+        {...(estimateOptions === undefined ? {} : { estimateOptions })}
+        canEdit={canEdit}
+        canSetDefault={canSetDefault}
+      />
+    </div>
   );
 };
 

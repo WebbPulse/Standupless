@@ -839,6 +839,58 @@ class TestPlanningDomain:
         assert deleted.status_code in (200, 204), deleted.text[:400]
 
     @WRITES
+    def test_a_project_is_created_from_a_template(
+        self, api: Any, run_scope: RunScope, workspace: "dict[str, Any]", team: "dict[str, Any]"
+    ) -> None:
+        """A project template saved on the team seeds a new project with its milestone, issue and sub-issue."""
+        base = f"/api/workspaces/{workspace['id']}"
+        templates_path = f"{base}/teams/{team['id']}/templates"
+        blueprint = {
+            "status": "planned",
+            "target_offset_days": 30,
+            "milestones": [{"key": "alpha", "name": run_scope.name("alpha"), "target_offset_days": 7}],
+            "issues": [
+                {"key": "plan", "title": run_scope.name("plan"), "milestone_key": "alpha"},
+                {"title": run_scope.name("review"), "parent_key": "plan"},
+            ],
+        }
+        saved = {"kind": "project", "name": run_scope.name("project-template"), "project": blueprint}
+        template = _created(api.post(templates_path, json=saved), "project template")
+        project: "dict[str, Any] | None" = None
+        issue_ids: "list[str]" = []
+        try:
+            listed = api.get(templates_path, params={"kind": "project"})
+            assert listed.status_code == 200, listed.text[:400]
+            assert template["id"] in _ids(listed.json(), "template", "templates")
+            plain = api.get(templates_path)
+            assert template["id"] not in _ids(plain.json(), "template", "templates")
+
+            body = {"team_ids": [team["id"]], "name": run_scope.name("templated"), "template_id": template["id"]}
+            project = _created(api.post(f"{base}/projects", json=body), "project")
+            assert project["status"] == "planned"
+            today = datetime.now(timezone.utc).date()
+            assert project["target_date"] == (today + timedelta(days=30)).isoformat()
+
+            milestones = api.get(f"{base}/projects/{project['id']}/milestones")
+            assert milestones.status_code == 200, milestones.text[:400]
+            rows = milestones.json()["milestones"]
+            assert [row["name"] for row in rows] == [run_scope.name("alpha")]
+
+            issues = api.get(f"{base}/issues", params={"team_id": team["id"], "project_id": project["id"]})
+            assert issues.status_code == 200, issues.text[:400]
+            by_title = {row["title"]: row for row in _items(issues.json(), "issues")}
+            issue_ids = [row["id"] for row in by_title.values()]
+            plan = by_title[run_scope.name("plan")]
+            assert plan["project_milestone_id"] == rows[0]["milestone_id"]
+            assert by_title[run_scope.name("review")]["parent_id"] == plan["id"]
+        finally:
+            for issue_id in reversed(issue_ids):
+                api.delete(f"{base}/issues/{issue_id}")
+            if project is not None:
+                api.delete(f"{base}/projects/{project['id']}")
+            api.delete(f"{templates_path}/{template['id']}")
+
+    @WRITES
     def test_a_project_update_round_trips(
         self, api: Any, run_scope: RunScope, workspace: "dict[str, Any]", team: "dict[str, Any]"
     ) -> None:

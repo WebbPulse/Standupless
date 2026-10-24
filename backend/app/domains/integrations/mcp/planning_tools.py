@@ -78,6 +78,7 @@ from app.domains.integrations.mcp.toolkit import (
     summary_json,
     team_id_ref,
 )
+from app.domains.integrations.mcp.template_tools import project_template_ref
 from app.domains.integrations.mcp.transport import ToolError
 
 CYCLE_STATUSES: tuple[str, ...] = ("upcoming", "active", "completed", "cancelled")
@@ -457,7 +458,11 @@ def _interval(value: Any) -> int:
 
 def _create_project(call: ToolCall) -> Any:
     """Create a project on one or more teams the caller may write in."""
-    payload = ProjectCreate.model_validate(_project_payload(call, nullable_fields=False))
+    fields = _project_payload(call, nullable_fields=False)
+    if call.optional("template_id") is not None:
+        teams = fields.get("team_ids") or []
+        fields["template_id"] = project_template_ref(call, teams, call.arguments["template_id"]).template_id
+    payload = ProjectCreate.model_validate(fields)
     return _project_json(create_project(call.repositories, call.context, payload))
 
 
@@ -767,9 +772,16 @@ PLANNING_TOOLS: tuple[Tool, ...] = (
     ),
     Tool(
         name="create_project",
-        description="Create a project on one or more teams. The status defaults to backlog.",
+        description=(
+            "Create a project on one or more teams. The status defaults to backlog. template_id names a project "
+            "template one of the teams offers: it fills every field not given, dates counted from today, and "
+            "adds its milestones and issues."
+        ),
         scopes=("projects:write",),
-        schema=object_schema(PROJECT_PROPERTIES, required=("name", "team_ids")),
+        schema=object_schema(
+            {**PROJECT_PROPERTIES, "template_id": string("A project template: its id or its name")},
+            required=("name", "team_ids"),
+        ),
         handler=_create_project,
     ),
     Tool(

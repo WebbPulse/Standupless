@@ -166,3 +166,24 @@ describe('workspace templates', () => {
     );
   });
 });
+
+describe('project templates', () => {
+  it('lists a team kind as a query parameter', async () => {
+    get.mockResolvedValue({ data: { templates: [] } });
+    await listTeamTemplates(WS, TEAM, undefined, 'project');
+    expect(get).toHaveBeenCalledWith(
+      '/workspaces/ws-1/teams/team-1/templates',
+      { query: { kind: 'project' } }
+    );
+  });
+
+  it('lists a workspace kind with the signal', async () => {
+    get.mockResolvedValue({ data: { templates: [] } });
+    const signal = new AbortController().signal;
+    await listWorkspaceTemplates(WS, signal, 'project');
+    expect(get).toHaveBeenCalledWith('/workspaces/ws-1/templates', {
+      query: { kind: 'project' },
+      signal,
+    });
+  });
+});

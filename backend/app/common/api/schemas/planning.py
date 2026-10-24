@@ -458,11 +458,14 @@ class ProjectCreate(BaseModel):
 
     `team_ids` is the project's teams, at least one. `team_id` is the single-team
     spelling an older client sends; given alone it is read as a one-team list, and
-    given beside `team_ids` it must be one of them.
+    given beside `team_ids` it must be one of them. `template_id` names a project
+    template one of the teams offers: it fills the fields left out and adds its
+    milestones and issues.
     """
 
     team_ids: Optional[list[str]] = Field(default=None, max_length=TEAMS_MAX)
     team_id: Optional[str] = Field(default=None, min_length=1)
+    template_id: Optional[str] = Field(default=None, min_length=1)
     name: str = Field(min_length=1, max_length=NAME_MAX)
     description: Optional[str] = None
     lead_id: Optional[str] = Field(default=None, min_length=1)

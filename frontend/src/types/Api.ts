@@ -896,6 +896,71 @@ export interface IssueCreate {
   project_milestone_id?: string | null;
 }
 
+/** What a template fills: a new issue, or a new project. */
+export type TemplateKind = 'issue' | 'project';
+
+/** One milestone a project template adds, its target counted from the creation day. */
+export interface ProjectTemplateMilestone {
+  key?: string | null;
+  name: string;
+  description?: string | null;
+  target_offset_days?: number | null;
+}
+
+/**
+ * One issue a project template adds. `parent_key` names an issue listed
+ * before it, making this a sub-issue, and `milestone_key` one of the
+ * template's milestones.
+ */
+export interface ProjectTemplateIssue {
+  key?: string | null;
+  title: string;
+  body?: string | null;
+  status_id?: string | null;
+  priority?: IssuePriority | null;
+  assignee_id?: string | null;
+  label_ids?: string[];
+  estimate?: string | null;
+  milestone_key?: string | null;
+  parent_key?: string | null;
+}
+
+/**
+ * What a project template fills, every field optional. The offsets are days
+ * from the creation day to the start and target dates. Milestones and issues
+ * sent without a key are given one, `m1` and `i1` onwards.
+ */
+export interface ProjectTemplateFields {
+  description?: string | null;
+  lead_id?: string | null;
+  member_ids?: string[];
+  status?: ProjectStatus | null;
+  priority?: IssuePriority | null;
+  icon?: ProjectIconName | null;
+  color?: string | null;
+  start_offset_days?: number | null;
+  target_offset_days?: number | null;
+  milestones?: ProjectTemplateMilestone[];
+  issues?: ProjectTemplateIssue[];
+}
+
+/** A saved template milestone, which always has its key. */
+export interface ProjectBlueprintMilestone extends ProjectTemplateMilestone {
+  key: string;
+}
+
+/** A saved template issue, which always has its key. */
+export interface ProjectBlueprintIssue extends ProjectTemplateIssue {
+  key: string;
+}
+
+/** A saved project template's fields, milestones and issues. */
+export interface ProjectBlueprint extends ProjectTemplateFields {
+  member_ids: string[];
+  milestones: ProjectBlueprintMilestone[];
+  issues: ProjectBlueprintIssue[];
+}
+
 /** The issue fields a template fills, every one optional. */
 export interface TemplateFields {
   title?: string | null;
@@ -915,12 +980,17 @@ export interface TemplateFields {
 export interface TemplateCreate extends TemplateFields {
   name: string;
   label_ids?: string[];
+  /** A project template sends `project` and none of the issue fields. */
+  kind?: TemplateKind;
+  project?: ProjectTemplateFields | null;
 }
 
 /** A template patch: only the fields sent change, and null clears one. */
 export interface TemplateUpdate extends TemplateFields {
   name?: string;
   label_ids?: string[] | null;
+  /** Replaces a project template's whole blueprint. */
+  project?: ProjectTemplateFields | null;
 }
 
 /**
@@ -942,6 +1012,10 @@ export interface TemplateRead {
   project_id: string | null;
   project_milestone_id: string | null;
   cycle_id: string | null;
+  /** Absent on an older answer, which is an issue template. */
+  kind?: TemplateKind;
+  /** A project template's blueprint; null on an issue template. */
+  project?: ProjectBlueprint | null;
   position: number;
   created_by: string | null;
   created_at: string;
@@ -959,11 +1033,14 @@ export interface TemplateSettingsRead {
   team_id: string;
   default_template_id: string | null;
   effective_default_template_id: string | null;
+  default_project_template_id?: string | null;
+  effective_default_project_template_id?: string | null;
 }
 
-/** The body that sets or clears a team's default template. */
+/** The body that sets or clears a team's defaults; only the fields sent change. */
 export interface TemplateSettingsUpdate {
-  default_template_id: string | null;
+  default_template_id?: string | null;
+  default_project_template_id?: string | null;
 }
 
 /** How often a recurring issue repeats. */
@@ -2109,6 +2186,8 @@ export interface ProjectListRead {
 export interface ProjectCreate {
   team_ids?: string[];
   team_id?: string;
+  /** A project template one of the teams offers, filling the fields left out. */
+  template_id?: string | null;
   name: string;
   description?: string | null;
   lead_id?: string | null;
