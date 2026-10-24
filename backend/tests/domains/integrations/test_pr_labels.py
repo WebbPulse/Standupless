@@ -566,7 +566,7 @@ def test_the_sweep_leaves_a_repository_whose_labels_a_team_syncs(
 
 
 def test_the_sweep_paces_the_jobs_it_queues(
-    repositories: Any, installed: str, enqueued: list[tuple[str, Any]], github_env: None, monkeypatch: pytest.MonkeyPatch
+    repositories: Any, installed: str, github_env: None, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Each batch of pull requests is held back one second more than the batch before."""
     delays: list[int] = []
