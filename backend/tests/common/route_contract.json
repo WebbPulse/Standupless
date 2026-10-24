@@ -1377,6 +1377,18 @@
     "auth": "workspace:read",
     "domain": "teams",
     "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/display-defaults"
+  },
+  {
+    "auth": "workspace:admin",
+    "domain": "teams",
+    "method": "PATCH",
+    "path": "/api/workspaces/{workspace_id}/display-defaults"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "teams",
+    "method": "GET",
     "path": "/api/workspaces/{workspace_id}/labels"
   },
   {
