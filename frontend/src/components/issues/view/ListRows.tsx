@@ -6,7 +6,9 @@
  * Every row reserves the same leading slots (select, disclosure, priority,
  * key, status) at fixed widths, so the glyphs line up across every group
  * whether or not a group holds a parent. Nested sub-issues indent their
- * title only.
+ * title only, with tree connectors drawn in the indent; a parent carries a
+ * done/total chip beside its title, and a sub-issue listed apart from its
+ * parent names it in a muted prefix.
  */
 
 import React from 'react';
@@ -14,7 +16,13 @@ import { LuArchive, LuChevronRight, LuPlus } from 'react-icons/lu';
 import { Link } from 'react-router-dom';
 import type { OrderedIssueRead } from '../../../api/issues';
 import { cn } from '../../../lib/cn';
-import { foldedParentKey, treeRows } from '../../../lib/issueTree';
+import {
+  foldedParentKey,
+  parentRefOf,
+  treeGuides,
+  treeRows,
+  type TreeGuide,
+} from '../../../lib/issueTree';
 import type { IssueGroup } from '../../../lib/issueView';
 import { issuePath } from '../../../lib/paths';
 import Avatar from '../../ui/avatar';
@@ -30,6 +38,7 @@ import {
   StatusCell,
 } from './IssueProperties';
 import { useIssueViewEnv } from './IssueViewContext';
+import { ParentPrefix, SubIssueProgressChip, TreeGuides } from './SubIssueCues';
 import { useIssuePrefetch } from '../../../hooks/useIssuePrefetch';
 
 /** One group with its sub-groups, when the view is sub-grouped. */
@@ -231,6 +240,8 @@ export interface IssueTreePlace {
   childCount: number;
   expanded: boolean;
   onToggle: () => void;
+  /** How the row's connector is drawn, from its place among its siblings. */
+  guide?: TreeGuide | undefined;
 }
 
 /** The width one level of nesting indents a title by, in pixels. */
@@ -269,7 +280,7 @@ const TreeDisclosure: React.FC<{
         aria-label={`${place.expanded ? 'Collapse' : 'Expand'} sub-issues of ${issueKey}`}
         title={place.expanded ? 'Collapse sub-issues' : 'Expand sub-issues'}
         onClick={place.onToggle}
-        className="relative z-10 flex h-5 w-5 items-center justify-center rounded-sm text-text-faint transition-colors duration-100 hover:bg-line hover:text-text focus-visible:outline-2 focus-visible:outline-accent"
+        className="relative z-10 flex h-5 w-5 items-center justify-center rounded-sm text-text-muted transition-colors duration-100 hover:bg-line hover:text-text focus-visible:outline-2 focus-visible:outline-accent"
       >
         <LuChevronRight
           aria-hidden="true"
@@ -301,6 +312,10 @@ export const IssueListRow: React.FC<IssueListRowProps> = ({ issue, tree }) => {
   const selecting = env.selected.size > 0;
   const archived = (issue.archived_at ?? null) !== null;
   const prefetch = useIssuePrefetch(issue.key, isFocused);
+  const depth = tree?.depth ?? 0;
+  const parent =
+    depth === 0 ? (env.parentOf?.(issue) ?? parentRefOf(issue)) : undefined;
+  const showsProgress = shows('sub_issues') && issue.progress.total > 0;
 
   return (
     <li
@@ -365,6 +380,21 @@ export const IssueListRow: React.FC<IssueListRowProps> = ({ issue, tree }) => {
         </span>
       )}
       {shows('status') && <StatusCell issue={issue} />}
+      {tree !== undefined && (
+        <TreeGuides
+          depth={depth}
+          indent={INDENT}
+          guide={tree.guide}
+          opensBelow={tree.expanded && tree.childCount > 0}
+        />
+      )}
+      {parent !== undefined && (
+        <ParentPrefix
+          slug={env.slug}
+          parent={parent}
+          className={tree === undefined ? undefined : 'ml-2'}
+        />
+      )}
       <Link
         to={issuePath(env.slug, issue.key)}
         {...prefetch}
@@ -383,16 +413,18 @@ export const IssueListRow: React.FC<IssueListRowProps> = ({ issue, tree }) => {
             : { paddingLeft: tree.depth * INDENT }
         }
         className={cn(
-          'min-w-0 flex-1 truncate font-medium after:absolute after:inset-0 focus-visible:outline-none focus-visible:after:outline-2 focus-visible:after:-outline-offset-2 focus-visible:after:outline-accent',
+          'min-w-0 truncate font-medium after:absolute after:inset-0 focus-visible:outline-none focus-visible:after:outline-2 focus-visible:after:-outline-offset-2 focus-visible:after:outline-accent',
           archived ? 'text-text-muted' : 'text-text'
         )}
       >
         {issue.title}
       </Link>
+      {showsProgress && <SubIssueProgressChip progress={issue.progress} />}
+      <span aria-hidden="true" className="flex-1" />
       {archived && <ArchivedMarker />}
       <RelationMarkers issue={issue} />
       <span className="flex shrink-0 items-center gap-1.5">
-        <MetaChips issue={issue} />
+        <MetaChips issue={issue} withProgress={false} />
       </span>
       {shows('assignee') && <AssigneeCell issue={issue} />}
     </li>
@@ -423,9 +455,10 @@ const Rows: React.FC<{
   const rows = treeRows(issues, nest, (id) =>
     collapsed.has(foldedParentKey(id))
   );
+  const guides = nest ? treeGuides(rows) : [];
   return (
     <ul aria-label={label}>
-      {rows.map((row) => (
+      {rows.map((row, index) => (
         <IssueListRow
           key={row.issue.id}
           issue={row.issue}
@@ -438,6 +471,7 @@ const Rows: React.FC<{
                   onToggle: () => {
                     onToggle(foldedParentKey(row.issue.id));
                   },
+                  guide: guides[index],
                 }
               : undefined
           }

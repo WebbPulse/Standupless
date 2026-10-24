@@ -6,7 +6,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { treeRows, type TreeIssue } from './issueTree';
+import { parentRefOf, treeGuides, treeRows, type TreeIssue } from './issueTree';
 
 /** An issue with an id and an optional parent. */
 const node = (id: string, parent: string | null = null): TreeIssue => ({
@@ -79,5 +79,66 @@ describe('treeRows', () => {
       ['a', 0],
       ['b', 1],
     ]);
+  });
+});
+
+describe('treeGuides', () => {
+  it('ends the guide at the last sibling and carries an ancestor past it', () => {
+    const guides = treeGuides([
+      { depth: 0 },
+      { depth: 1 },
+      { depth: 2 },
+      { depth: 1 },
+      { depth: 0 },
+    ]);
+
+    expect(guides.map((guide) => guide.last)).toEqual([
+      false,
+      false,
+      true,
+      true,
+      true,
+    ]);
+    expect(guides[2]?.continues).toEqual([true]);
+    expect(guides[3]?.continues).toEqual([]);
+  });
+});
+
+describe('parentRefOf', () => {
+  const loaded = new Map([
+    [
+      'p',
+      {
+        id: 'p',
+        key: 'ENG-1',
+        title: 'Loaded',
+        progress: { total: 2, completed: 1 },
+      },
+    ],
+  ]);
+
+  it('prefers the loaded parent row and its progress', () => {
+    expect(
+      parentRefOf(
+        { parent_id: 'p', parent_key: 'OLD-1', parent_title: 'Old' },
+        loaded
+      )
+    ).toEqual({
+      id: 'p',
+      key: 'ENG-1',
+      title: 'Loaded',
+      progress: { total: 2, completed: 1 },
+    });
+  });
+
+  it('falls back to the key and title the list attached', () => {
+    expect(
+      parentRefOf({ parent_id: 'q', parent_key: 'ENG-7', parent_title: 'Far' })
+    ).toEqual({ id: 'q', key: 'ENG-7', title: 'Far' });
+  });
+
+  it('names nothing for a top-level issue or an unnamed parent', () => {
+    expect(parentRefOf({ parent_id: null })).toBeUndefined();
+    expect(parentRefOf({ parent_id: 'q' })).toBeUndefined();
   });
 });

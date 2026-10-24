@@ -81,3 +81,84 @@ export const treeRows = <T extends TreeIssue>(
   }
   return rows;
 };
+
+/** How a nested row's tree connector is drawn. */
+export interface TreeGuide {
+  /** True when no later sibling follows, so the elbow ends the guide. */
+  last: boolean;
+  /**
+   * For each ancestor level from the top, whether that ancestor has a later
+   * sibling, so its guide keeps running past this row.
+   */
+  continues: boolean[];
+}
+
+/**
+ * The connector for every row, in the order given, read off the rows' depths:
+ * a row is the last of its siblings when no row at its depth follows before
+ * the tree climbs above it.
+ */
+export const treeGuides = (rows: readonly { depth: number }[]): TreeGuide[] => {
+  const seen: boolean[] = [];
+  const guides: TreeGuide[] = new Array<TreeGuide>(rows.length);
+  for (let index = rows.length - 1; index >= 0; index -= 1) {
+    const depth = rows[index]?.depth ?? 0;
+    const continues: boolean[] = [];
+    for (let level = 1; level < depth; level += 1) {
+      continues.push(seen[level] === true);
+    }
+    guides[index] = { last: seen[depth] !== true, continues };
+    seen[depth] = true;
+    seen.length = depth + 1;
+  }
+  return guides;
+};
+
+/** The parent a sub-issue names on its row or card. */
+export interface ParentRef {
+  id: string;
+  key: string;
+  title: string;
+  /** The parent's own sub-issue progress, when the parent is loaded. */
+  progress?: { total: number; completed: number };
+}
+
+/** The fields a parent reference reads off an issue. */
+export interface ParentedIssue {
+  parent_id: string | null;
+  parent_key?: string | null;
+  parent_title?: string | null;
+}
+
+/**
+ * The parent an issue names: the loaded parent row when there is one, which is
+ * fresher and carries its progress, or else the key and title the list route
+ * attached. Undefined for a top-level issue or a parent nothing names.
+ */
+export const parentRefOf = (
+  issue: ParentedIssue,
+  loaded?: ReadonlyMap<
+    string,
+    {
+      id: string;
+      key: string;
+      title: string;
+      progress: { total: number; completed: number };
+    }
+  >
+): ParentRef | undefined => {
+  const parentId = issue.parent_id;
+  if (parentId === null) return undefined;
+  const row = loaded?.get(parentId);
+  if (row !== undefined) {
+    return {
+      id: row.id,
+      key: row.key,
+      title: row.title,
+      progress: row.progress,
+    };
+  }
+  const key = issue.parent_key ?? null;
+  if (key === null) return undefined;
+  return { id: parentId, key, title: issue.parent_title ?? '' };
+};

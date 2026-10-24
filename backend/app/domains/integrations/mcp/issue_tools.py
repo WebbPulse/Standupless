@@ -45,6 +45,7 @@ from app.common.issue_filters import UnknownStatusCategory, build_issue_filter, 
 from app.common.issue_keys import current
 from app.common.issue_links import create_link, delete_link, list_links
 from app.common.issue_move import move_issue
+from app.common.issue_parents import parents_of
 from app.common.issue_rules import TRIAGE_STATUS_ID, TRIAGE_STATUS_NAME, require_team_reader, visible_team_ids
 from app.common.issue_subscribers import list_subscribers, subscribe, unsubscribe
 from app.common.issue_writes import bulk_update_issues, create_issue, list_issues, update_issue, walk_page
@@ -347,7 +348,7 @@ def _reverse(call: ToolCall) -> bool:
 
 
 def _page(call: ToolCall, **overrides: Any) -> dict[str, Any]:
-    """One page of the issue list, through the same fan-out the HTTP list runs.
+    """One page of the issue list, through the same fan-out the HTTP list runs, each sub-issue naming its parent.
 
     "Subscribed by me" reads the caller's own subscription index, as the HTTP list does.
     """
@@ -368,7 +369,11 @@ def _page(call: ToolCall, **overrides: Any) -> dict[str, Any]:
         reverse=_reverse(call),
         subscribed=subscribed,
     )
-    return {"issues": [summary_json(call.repositories.teams, row) for row in rows], "next_cursor": next_cursor}
+    parents = parents_of(call.repositories.issues, call.repositories.teams, call.context.workspace_id, rows)
+    return {
+        "issues": [summary_json(call.repositories.teams, row, parents.get(row.parent_id or "")) for row in rows],
+        "next_cursor": next_cursor,
+    }
 
 
 def _list_issues(call: ToolCall) -> Any:
