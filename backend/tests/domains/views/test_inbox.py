@@ -246,10 +246,12 @@ def test_clearing_everything_leaves_snoozed_rows_unless_asked(
 
     sign_in(client, MEMBER)
     first = client.post(f"/api/workspaces/{workspace}/inbox/clear", json={})
-    second = client.post(f"/api/workspaces/{workspace}/inbox/clear", json={"include_snoozed": True})
 
     assert first.json()["deleted"] == 2
     assert repositories.inbox.get(workspace, MEMBER, "01N0000000000000000000C000") is not None
+
+    second = client.post(f"/api/workspaces/{workspace}/inbox/clear", json={"include_snoozed": True})
+
     assert second.json()["deleted"] == 1
     assert repositories.inbox.get(workspace, MEMBER, "01N0000000000000000000C000") is None
     assert client.get(f"/api/workspaces/{workspace}/inbox/count").json()["unread"] == 0
