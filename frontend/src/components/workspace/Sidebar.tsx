@@ -105,6 +105,7 @@ import { IconButton } from '../ui/button';
 import Menu, { MenuItem, MenuSeparator } from '../ui/menu';
 import { Skeleton } from '../ui/skeleton';
 import ThemeToggle from '../ui/theme-toggle';
+import { TruncatedText } from '../ui/truncated-text';
 import InboxBadge from '../views/InboxBadge';
 import PulseBadge from '../views/PulseBadge';
 import ReviewsBadge from '../views/ReviewsBadge';
@@ -350,9 +351,9 @@ const TeamSection: React.FC<TeamSectionProps> = ({
           shape="square"
           className="h-4 w-4 text-2xs"
         />
-        <span className="min-w-0 truncate text-left font-medium">
+        <TruncatedText className="min-w-0 text-left font-medium">
           {team.name}
-        </span>
+        </TruncatedText>
         {team.private === true && (
           <LuLock
             aria-label="Private team"
@@ -644,7 +645,9 @@ export const Sidebar: React.FC<SidebarProps> = ({ workspace, onNavigate }) => {
               ) : (
                 <Logo size={18} title={null} />
               )}
-              <span className="min-w-0 flex-1 truncate">{workspace.name}</span>
+              <TruncatedText className="min-w-0 flex-1">
+                {workspace.name}
+              </TruncatedText>
               <LuChevronsUpDown
                 className="h-3.5 w-3.5 shrink-0 text-text-faint"
                 aria-hidden="true"
@@ -929,7 +932,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ workspace, onNavigate }) => {
               src={user.avatar_url}
               size="sm"
             />
-            <span className="truncate">{user.display_name ?? user.email}</span>
+            <TruncatedText>{user.display_name ?? user.email}</TruncatedText>
           </span>
         )}
         <ThemeToggle />
