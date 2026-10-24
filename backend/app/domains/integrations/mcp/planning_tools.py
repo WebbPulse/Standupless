@@ -55,6 +55,7 @@ from app.common.planning_rules import (
 )
 from app.common.project_cadence import INTERVAL_OPTIONS, workspace_interval
 from app.common.project_relations import create_relation, delete_relation, fill_one, list_relations
+from app.common.project_activity import activity_page
 from app.common.project_updates import (
     create_project_update,
     delete_project_update,
@@ -654,6 +655,18 @@ def _list_project_updates(call: ToolCall) -> Any:
     return {"updates": [_project_update_json(row) for row in rows], "next_cursor": next_cursor}
 
 
+def _list_project_activity(call: ToolCall) -> Any:
+    """One page of a visible project's property and milestone changes, newest first."""
+    rows, next_cursor = activity_page(
+        call.repositories,
+        call.context,
+        _project_id(call, call.require("project_id")),
+        cursor=call.optional("cursor"),
+        limit=limit(call.optional("limit")),
+    )
+    return {"activity": [row.model_dump(mode="json", by_alias=True) for row in rows], "next_cursor": next_cursor}
+
+
 def _create_project_update(call: ToolCall) -> Any:
     """Post an update on a project the caller may edit, setting the project's health, from a template if named."""
     project_id = _project_id(call, call.require("project_id"))
@@ -1041,6 +1054,19 @@ PLANNING_TOOLS: tuple[Tool, ...] = (
             required=("project_id",),
         ),
         handler=_list_project_updates,
+    ),
+    Tool(
+        name="list_project_activity",
+        description=(
+            "One page of a project's activity, newest first: who changed its status, health, priority, lead, "
+            "members, dates, teams or milestones, with the old and new value."
+        ),
+        scopes=("projects:read",),
+        schema=object_schema(
+            {"project_id": string(PROJECT_HELP), **page_properties()},
+            required=("project_id",),
+        ),
+        handler=_list_project_activity,
     ),
     Tool(
         name="create_project_update",
