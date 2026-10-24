@@ -1,9 +1,10 @@
-"""Issue and project templates: their reads and writes, and filling a new issue from one.
+"""Issue, project and document templates: their reads and writes, and filling a new issue from one.
 
 Held in `common` because the template routes live in the teams domain while the
 issues domain applies a template on create, and the MCP tools in the
-integrations image do both. Both kinds share these paths, told apart by `kind`;
-a project template is applied by `app.common.project_templates`. A team offers its own templates, its parent team's
+integrations image do both. Every kind shares these paths, told apart by `kind`;
+a project template is applied by `app.common.project_templates` and a document
+template by `app.common.document_templates`. A team offers its own templates, its parent team's
 when the caller can see the parent, and the workspace's. A template is held
 strictly to the rows it names when it is saved, and applied leniently: a status,
 label or person removed since is dropped rather than failing the create, because
@@ -29,6 +30,7 @@ from app.common.api.schemas.templates import (
 )
 from app.common.db.dynamo.team_config import new_config_id
 from app.common.db.dynamo.team_templates import (
+    DOCUMENT_TEMPLATE,
     ISSUE_TEMPLATE,
     PROJECT_TEMPLATE,
     TEMPLATE_FIELDS,
@@ -60,8 +62,20 @@ LIST_FIELDS: tuple[str, ...] = ("label_ids",)
 DEFAULT_FIELDS: dict[str, str] = {
     ISSUE_TEMPLATE: "default_template_id",
     PROJECT_TEMPLATE: "default_project_template_id",
+    DOCUMENT_TEMPLATE: "default_document_template_id",
 }
-"""The settings field holding a team's default template of each kind."""
+"""The settings field holding a team's default template of each kind, the one its list answers with."""
+
+SETTING_KINDS: dict[str, str] = {
+    "default_template_id": ISSUE_TEMPLATE,
+    "default_project_template_id": PROJECT_TEMPLATE,
+    "default_document_template_id": DOCUMENT_TEMPLATE,
+    "default_update_template_id": DOCUMENT_TEMPLATE,
+}
+"""The kind of template each settings field names; a new document and a new update both start from a document."""
+
+DOCUMENT_FIELDS: tuple[str, ...] = ("title", "body")
+"""The fields a document template carries."""
 
 
 def conflict(message: str) -> HTTPException:
@@ -108,20 +122,24 @@ def effective_default(
     team_id: str,
     offered: list[IssueTemplate],
     kind: str = ISSUE_TEMPLATE,
+    field: Optional[str] = None,
 ) -> Optional[str]:
     """The template of one kind one team's create dialog opens with: its own default, else its parent's.
 
-    A default naming a template since deleted, or one this caller is not offered,
+    `field` names the settings field to read, the kind's own by default, so the
+    update composer can read its default apart from the new document's. A
+    default naming a template since deleted, or one this caller is not offered,
     reads as none, so the answer is always one of `offered`.
     """
     ids = {row.template_id for row in offered}
+    name = field or DEFAULT_FIELDS[kind]
     candidates = [team_id]
     parent_id = visible_parent_id(repositories, context, team_id)
     if parent_id is not None:
         candidates.append(parent_id)
     for candidate in candidates:
         settings = repositories.team_config.get_template_settings(context.workspace_id, candidate)
-        chosen = getattr(settings, DEFAULT_FIELDS[kind]) if settings is not None else None
+        chosen = getattr(settings, name) if settings is not None else None
         if chosen:
             return chosen if chosen in ids else None
     return None
@@ -258,9 +276,15 @@ def _check_blueprint(
     return ProjectBlueprint.model_validate(fields.model_dump())
 
 
-def _issue_fields_sent(fields: dict[str, Any]) -> list[str]:
-    """The issue template fields a write sends with a value."""
-    return [name for name in TEMPLATE_FIELDS if fields.get(name) not in (None, [])]
+def _issue_fields_sent(fields: dict[str, Any], kept: tuple[str, ...] = ()) -> list[str]:
+    """The issue template fields a write sends with a value, those in `kept` aside."""
+    return [name for name in TEMPLATE_FIELDS if name not in kept and fields.get(name) not in (None, [])]
+
+
+def _check_document(fields: dict[str, Any]) -> None:
+    """Hold a document template write to its title and body, or raise a 422."""
+    if _issue_fields_sent(fields, DOCUMENT_FIELDS):
+        raise unprocessable("A document template fills title and body only")
 
 
 def _next_position(repositories: Repositories, workspace_id: str, team_id: Optional[str], kind: str) -> int:
@@ -277,8 +301,8 @@ def _create(
 ) -> IssueTemplate:
     """Save a new template on a team, or on the workspace when `team` is `None`.
 
-    A project template takes `project` and no issue fields, and an issue
-    template the reverse.
+    A project template takes `project` and no issue fields, a document template
+    only a title and a body, and an issue template any issue field but `project`.
     """
     workspace_id = context.workspace_id
     team_id = team.team_id if team is not None else None
@@ -292,6 +316,8 @@ def _create(
         blueprint = _check_blueprint(repositories, workspace_id, team, payload.project or ProjectTemplateFields())
     elif payload.project is not None:
         raise unprocessable("project is for a project template; send kind project")
+    elif kind == DOCUMENT_TEMPLATE:
+        _check_document(fields)
     draft = IssueTemplate.model_validate(
         {
             **payload.model_dump(exclude={"position", "kind", "project"}),
@@ -307,7 +333,7 @@ def _create(
             "created_by": context.user_id,
         }
     )
-    checked = _check_fields(repositories, workspace_id, team, fields, draft) if blueprint is None else {}
+    checked = _check_fields(repositories, workspace_id, team, fields, draft) if kind == ISSUE_TEMPLATE else {}
     template = draft.model_copy(update={name: checked[name] for name in TEMPLATE_FIELDS if name in checked})
     try:
         return repositories.team_config.create_template(template)
@@ -322,7 +348,7 @@ def _update(
     template_id: str,
     payload: TemplateUpdate,
 ) -> IssueTemplate:
-    """Patch one template of either kind: only the fields sent change, and null clears one.
+    """Patch one template of any kind: only the fields sent change, and null clears one.
 
     A project template's `project` is replaced whole, and null empties it.
     """
@@ -350,6 +376,12 @@ def _update(
         return stored
     if payload.project is not None:
         raise unprocessable("project is for a project template")
+    if existing.kind == DOCUMENT_TEMPLATE:
+        _check_document(fields)
+        stored = repositories.team_config.replace_template(existing.model_copy(update=fields))
+        if stored is None:
+            raise not_found()
+        return stored
     merged = existing.model_copy(update=fields)
     checked = _check_fields(repositories, workspace_id, team, fields, merged)
     stored = repositories.team_config.replace_template(existing.model_copy(update=checked))
@@ -401,42 +433,44 @@ def delete_workspace_template(repositories: Repositories, context: AuthzContext,
         raise not_found()
 
 
-def _effective_defaults(
-    repositories: Repositories, context: AuthzContext, team_id: str
-) -> tuple[Optional[str], Optional[str]]:
-    """The issue and the project template one team's create dialogs open with."""
-    _, issue = list_team_templates(repositories, context, team_id, ISSUE_TEMPLATE)
-    _, project = list_team_templates(repositories, context, team_id, PROJECT_TEMPLATE)
-    return issue, project
+def _effective_defaults(repositories: Repositories, context: AuthzContext, team_id: str) -> dict[str, Optional[str]]:
+    """The template each of one team's create dialogs and composers opens with, by settings field."""
+    offered = {kind: team_templates(repositories, context, team_id, kind) for kind in DEFAULT_FIELDS}
+    return {
+        field: effective_default(repositories, context, team_id, offered[kind], kind, field)
+        for field, kind in SETTING_KINDS.items()
+    }
+
+
+def _blank_settings(context: AuthzContext, team_id: str) -> TemplateSettings:
+    """The settings of a team that never saved any."""
+    return TemplateSettings(
+        workspace_id=context.workspace_id, config_key=template_settings_key(team_id), team_id=team_id
+    )
 
 
 def template_settings(
     repositories: Repositories, context: AuthzContext, team_id: str
-) -> tuple[TemplateSettings, Optional[str], Optional[str]]:
-    """One team's saved template settings and the issue and project defaults its dialogs open with."""
-    effective, effective_project = _effective_defaults(repositories, context, team_id)
+) -> tuple[TemplateSettings, dict[str, Optional[str]]]:
+    """One team's saved template settings and the default each of its dialogs opens with, by settings field."""
+    effective = _effective_defaults(repositories, context, team_id)
     stored = repositories.team_config.get_template_settings(context.workspace_id, team_id)
-    if stored is None:
-        stored = TemplateSettings(
-            workspace_id=context.workspace_id, config_key=template_settings_key(team_id), team_id=team_id
-        )
-    return stored, effective, effective_project
+    return stored or _blank_settings(context, team_id), effective
 
 
 def update_template_settings(
     repositories: Repositories, context: AuthzContext, team_id: str, payload: TemplateSettingsUpdate
-) -> tuple[TemplateSettings, Optional[str], Optional[str]]:
-    """Set or clear one team's default templates, held to team admin and to templates the team offers.
+) -> tuple[TemplateSettings, dict[str, Optional[str]]]:
+    """Set or clear one team's default templates, held to team admin and to templates of the right kind it offers.
 
     Only the defaults sent change, so setting the project default keeps the
     issue default as it was.
     """
     require_team_admin(repositories, context, team_id)
-    stored = repositories.team_config.get_template_settings(context.workspace_id, team_id) or TemplateSettings(
-        workspace_id=context.workspace_id, config_key=template_settings_key(team_id), team_id=team_id
-    )
+    stored = repositories.team_config.get_template_settings(context.workspace_id, team_id)
+    stored = stored or _blank_settings(context, team_id)
     changes: dict[str, Optional[str]] = {}
-    for kind, name in DEFAULT_FIELDS.items():
+    for name, kind in SETTING_KINDS.items():
         if name not in payload.model_fields_set:
             continue
         wanted = (getattr(payload, name) or "").strip() or None
@@ -446,8 +480,7 @@ def update_template_settings(
                 raise unprocessable(f"No such template: {wanted}")
         changes[name] = wanted
     saved = repositories.team_config.put_template_settings(stored.model_copy(update=changes))
-    effective, effective_project = _effective_defaults(repositories, context, team_id)
-    return saved, effective, effective_project
+    return saved, _effective_defaults(repositories, context, team_id)
 
 
 def find_template(

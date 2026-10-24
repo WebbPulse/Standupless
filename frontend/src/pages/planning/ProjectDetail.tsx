@@ -69,6 +69,7 @@ import WorkspaceShell from '../../components/workspace/WorkspaceShell';
 import useCloseProjectPrompt from '../../hooks/useCloseProjectPrompt';
 import useCreateDocumentCommand from '../../hooks/useCreateDocumentCommand';
 import { useCreatePlannedIssue } from '../../hooks/useCreatePlannedIssue';
+import useDocumentTemplates from '../../hooks/useDocumentTemplates';
 import { useInitiatives } from '../../hooks/useInitiatives';
 import { usePlanningIssues } from '../../hooks/usePlanningIssues';
 import { usePlanningTeamLists } from '../../hooks/usePlanningTeamLists';
@@ -245,6 +246,12 @@ export const ProjectDetail: React.FC = () => {
         (candidate) => candidate.project_id !== projectId
       ),
     [workspaceProjects, projectId]
+  );
+  const updateTemplates = useDocumentTemplates(
+    workspaceId,
+    'project',
+    projectId,
+    project !== null
   );
   const { initiatives } = useInitiatives(
     workspaceId,
@@ -604,6 +611,8 @@ export const ProjectDetail: React.FC = () => {
             dueAt={project.next_update_due_at ?? null}
             composing={composing}
             onComposingChange={setComposing}
+            templates={updateTemplates.templates}
+            defaultTemplate={updateTemplates.defaultUpdate}
           />
         </div>
       ) : tab === 'issues' ? (

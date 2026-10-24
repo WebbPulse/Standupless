@@ -632,9 +632,12 @@ def _list_project_updates(call: ToolCall) -> Any:
 
 
 def _create_project_update(call: ToolCall) -> Any:
-    """Post an update on a project the caller may edit, setting the project's health."""
+    """Post an update on a project the caller may edit, setting the project's health, from a template if named."""
     project_id = _project_id(call, call.require("project_id"))
-    payload = ProjectUpdateCreate.model_validate({"body": call.require("body"), "health": call.require("health")})
+    fields = {"body": call.optional("body"), "template_id": call.optional("template_id")}
+    payload = ProjectUpdateCreate.model_validate(
+        {"health": call.require("health"), **{name: value for name, value in fields.items() if value is not None}}
+    )
     return _project_update_json(create_project_update(call.repositories, call.context, project_id, payload))
 
 
@@ -1003,16 +1006,20 @@ PLANNING_TOOLS: tuple[Tool, ...] = (
         name="create_project_update",
         description=(
             "Post a status update on a project, in Markdown, with its health. "
-            "Posting sets the project's health and notifies its lead and members."
+            "Posting sets the project's health and notifies its lead and members. "
+            "Give template_id instead of body to post a document template's body."
         ),
         scopes=("projects:write",),
         schema=object_schema(
             {
                 "project_id": string(PROJECT_HELP),
-                "body": string("The update, in Markdown"),
+                "body": string("The update, in Markdown. Required unless template_id is given"),
                 "health": enum(PROJECT_HEALTHS, "How the project stands"),
+                "template_id": string(
+                    "A document template whose body the update takes when body is left out: id or name"
+                ),
             },
-            required=("project_id", "body", "health"),
+            required=("project_id", "health"),
         ),
         handler=_create_project_update,
     ),

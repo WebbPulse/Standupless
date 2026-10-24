@@ -3522,21 +3522,42 @@
         "type": "object"
       },
       "DocumentCreate": {
-        "description": "The body a document create takes; the parent comes from the path.",
+        "description": "The body a document create takes; the parent comes from the path.\n\n`template_id` names a document template the parent offers. Its title fills\na left out `title`, and its body a left out `body`; a create without either\na title or a template is refused.",
         "properties": {
           "body": {
-            "default": "",
-            "title": "Body",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Body"
+          },
+          "template_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Template Id"
           },
           "title": {
-            "title": "Title",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
           }
         },
-        "required": [
-          "title"
-        ],
         "title": "DocumentCreate",
         "type": "object"
       },
@@ -3830,6 +3851,45 @@
           "updated_at"
         ],
         "title": "DocumentSummaryRead",
+        "type": "object"
+      },
+      "DocumentTemplateListRead": {
+        "description": "The document templates a project or initiative offers, and the ones its composers open with.\n\n`default_document_template_id` is what a new document starts from and\n`default_update_template_id` what the update composer opens with, each the\nfirst of the project's teams to set one and always one of `templates`. An\ninitiative belongs to no team, so it carries neither.",
+        "properties": {
+          "default_document_template_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Document Template Id"
+          },
+          "default_update_template_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Update Template Id"
+          },
+          "templates": {
+            "items": {
+              "$ref": "#/components/schemas/TemplateRead"
+            },
+            "title": "Templates",
+            "type": "array"
+          }
+        },
+        "required": [
+          "templates"
+        ],
+        "title": "DocumentTemplateListRead",
         "type": "object"
       },
       "DocumentVersionListRead": {
@@ -5551,11 +5611,18 @@
         "type": "object"
       },
       "InitiativeUpdateCreate": {
-        "description": "The body `POST /api/workspaces/{workspace_id}/initiatives/{initiative_id}/updates` takes.",
+        "description": "The body `POST /api/workspaces/{workspace_id}/initiatives/{initiative_id}/updates` takes.\n\n`body` may be left out when `template_id` names a workspace document\ntemplate, whose body the update then takes.",
         "properties": {
           "body": {
-            "title": "Body",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Body"
           },
           "health": {
             "enum": [
@@ -5565,10 +5632,20 @@
             ],
             "title": "Health",
             "type": "string"
+          },
+          "template_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Template Id"
           }
         },
         "required": [
-          "body",
           "health"
         ],
         "title": "InitiativeUpdateCreate",
@@ -10403,11 +10480,18 @@
         "type": "object"
       },
       "ProjectUpdateCreate": {
-        "description": "The body `POST /api/workspaces/{workspace_id}/projects/{project_id}/updates` takes.\n\nHealth is required, as in Linear, because an update is the report of how the\nproject stands and posting one is what sets the project's health.",
+        "description": "The body `POST /api/workspaces/{workspace_id}/projects/{project_id}/updates` takes.\n\nHealth is required, as in Linear, because an update is the report of how the\nproject stands and posting one is what sets the project's health. `body`\nmay be left out when `template_id` names a document template, whose body\nthe update then takes.",
         "properties": {
           "body": {
-            "title": "Body",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Body"
           },
           "health": {
             "enum": [
@@ -10417,10 +10501,20 @@
             ],
             "title": "Health",
             "type": "string"
+          },
+          "template_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Template Id"
           }
         },
         "required": [
-          "body",
           "health"
         ],
         "title": "ProjectUpdateCreate",
@@ -16736,7 +16830,7 @@
         "type": "object"
       },
       "TemplateCreate": {
-        "description": "The body a template create takes: a name and any of the issue fields.\n\n`kind` \"project\" makes a project template, which fills `project` and leaves\nthe issue fields unset.",
+        "description": "The body a template create takes: a name and any of the issue fields.\n\n`kind` \"project\" makes a project template, which fills `project` and leaves\nthe issue fields unset. `kind` \"document\" makes a document template, which\ntakes only `title` and `body`.",
         "properties": {
           "assignee_id": {
             "anyOf": [
@@ -16787,7 +16881,8 @@
             "default": "issue",
             "enum": [
               "issue",
-              "project"
+              "project",
+              "document"
             ],
             "title": "Kind",
             "type": "string"
@@ -16927,7 +17022,7 @@
         "type": "object"
       },
       "TemplateRead": {
-        "description": "One template as the API returns it.\n\n`scope` says where it comes from as the team in the path sees it: the team's\nown, its parent team's, or the workspace's. `team_id` is `None` for a\nworkspace template. `project` is set on a project template only.",
+        "description": "One template as the API returns it.\n\n`scope` says where it comes from as the team in the path sees it: the team's\nown, its parent team's, or the workspace's. `team_id` is `None` for a\nworkspace template. `project` is set on a project template only, and a\ndocument template sets only `title` and `body`.",
         "properties": {
           "assignee_id": {
             "anyOf": [
@@ -16997,7 +17092,8 @@
             "default": "issue",
             "enum": [
               "issue",
-              "project"
+              "project",
+              "document"
             ],
             "title": "Kind",
             "type": "string"
@@ -17127,8 +17223,19 @@
         "type": "object"
       },
       "TemplateSettingsRead": {
-        "description": "A team's template settings as the API returns them.\n\n`default_template_id` is what the team saved and `effective_default_template_id`\nwhat its issue create dialog opens with, which falls back to the parent team's.\nThe two project fields are the same for the new project dialog.",
+        "description": "A team's template settings as the API returns them.\n\n`default_template_id` is what the team saved and `effective_default_template_id`\nwhat its issue create dialog opens with, which falls back to the parent team's.\nThe project fields are the same for the new project dialog, the document\nfields for a new document of a project the team is on, and the update fields\nfor the project update composer.",
         "properties": {
+          "default_document_template_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Document Template Id"
+          },
           "default_project_template_id": {
             "anyOf": [
               {
@@ -17150,6 +17257,28 @@
               }
             ],
             "title": "Default Template Id"
+          },
+          "default_update_template_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Update Template Id"
+          },
+          "effective_default_document_template_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Effective Default Document Template Id"
           },
           "effective_default_project_template_id": {
             "anyOf": [
@@ -17173,6 +17302,17 @@
             ],
             "title": "Effective Default Template Id"
           },
+          "effective_default_update_template_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Effective Default Update Template Id"
+          },
           "team_id": {
             "title": "Team Id",
             "type": "string"
@@ -17185,8 +17325,19 @@
         "type": "object"
       },
       "TemplateSettingsUpdate": {
-        "description": "The body a team's template settings patch takes: only the defaults sent change, and null clears one.",
+        "description": "The body a team's template settings patch takes: only the defaults sent change, and null clears one.\n\nThe document and update defaults both name a document template.",
         "properties": {
+          "default_document_template_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Document Template Id"
+          },
           "default_project_template_id": {
             "anyOf": [
               {
@@ -17208,6 +17359,17 @@
               }
             ],
             "title": "Default Template Id"
+          },
+          "default_update_template_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Update Template Id"
           }
         },
         "title": "TemplateSettingsUpdate",
@@ -29019,6 +29181,64 @@
         ]
       }
     },
+    "/api/workspaces/{workspace_id}/initiatives/{initiative_id}/document-templates": {
+      "get": {
+        "description": "The workspace document templates an initiative's new documents and updates may start from.",
+        "operationId": "list_initiative_document_templates_api_workspaces__workspace_id__initiatives__initiative_id__document_templates_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "initiative_id",
+            "required": true,
+            "schema": {
+              "title": "Initiative Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentTemplateListRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "List Initiative Document Templates",
+        "tags": [
+          "planning"
+        ]
+      }
+    },
     "/api/workspaces/{workspace_id}/initiatives/{initiative_id}/documents": {
       "get": {
         "description": "An initiative's documents, most recently edited first.",
@@ -34878,6 +35098,64 @@
           }
         ],
         "summary": "Update Project",
+        "tags": [
+          "planning"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/projects/{project_id}/document-templates": {
+      "get": {
+        "description": "The document templates a project's new documents and updates may start from, and its defaults.",
+        "operationId": "list_project_document_templates_api_workspaces__workspace_id__projects__project_id__document_templates_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentTemplateListRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "List Project Document Templates",
         "tags": [
           "planning"
         ]
@@ -42055,7 +42333,7 @@
         ]
       },
       "patch": {
-        "description": "Set or clear the templates the team's issue and project create dialogs open with.",
+        "description": "Set or clear the templates the team's issue, project, document and update composers open with.",
         "operationId": "update_template_settings_api_workspaces__workspace_id__teams__team_id__template_settings_patch",
         "parameters": [
           {
@@ -42128,16 +42406,17 @@
             }
           },
           {
-            "description": "Which templates to list: issue or project",
+            "description": "Which templates to list: issue, project or document",
             "in": "query",
             "name": "kind",
             "required": false,
             "schema": {
               "default": "issue",
-              "description": "Which templates to list: issue or project",
+              "description": "Which templates to list: issue, project or document",
               "enum": [
                 "issue",
-                "project"
+                "project",
+                "document"
               ],
               "title": "Kind",
               "type": "string"
@@ -43483,16 +43762,17 @@
             }
           },
           {
-            "description": "Which templates to list: issue or project",
+            "description": "Which templates to list: issue, project or document",
             "in": "query",
             "name": "kind",
             "required": false,
             "schema": {
               "default": "issue",
-              "description": "Which templates to list: issue or project",
+              "description": "Which templates to list: issue, project or document",
               "enum": [
                 "issue",
-                "project"
+                "project",
+                "document"
               ],
               "title": "Kind",
               "type": "string"

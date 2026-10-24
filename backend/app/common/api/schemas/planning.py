@@ -814,17 +814,20 @@ class ProjectUpdateCreate(BaseModel):
     """The body `POST /api/workspaces/{workspace_id}/projects/{project_id}/updates` takes.
 
     Health is required, as in Linear, because an update is the report of how the
-    project stands and posting one is what sets the project's health.
+    project stands and posting one is what sets the project's health. `body`
+    may be left out when `template_id` names a document template, whose body
+    the update then takes.
     """
 
-    body: str
+    body: Optional[str] = None
     health: ProjectHealthField
+    template_id: Optional[str] = None
 
     @field_validator("body")
     @classmethod
-    def check_body(cls, value: str) -> str:
+    def check_body(cls, value: Optional[str]) -> Optional[str]:
         """Hold the body to non-blank markdown under the byte cap."""
-        return _check_update_body(value) or value
+        return _check_update_body(value)
 
 
 class ProjectUpdatePatch(BaseModel):
@@ -1316,16 +1319,21 @@ class InitiativeProgressRead(BaseModel):
 
 
 class InitiativeUpdateCreate(BaseModel):
-    """The body `POST /api/workspaces/{workspace_id}/initiatives/{initiative_id}/updates` takes."""
+    """The body `POST /api/workspaces/{workspace_id}/initiatives/{initiative_id}/updates` takes.
 
-    body: str
+    `body` may be left out when `template_id` names a workspace document
+    template, whose body the update then takes.
+    """
+
+    body: Optional[str] = None
     health: ProjectHealthField
+    template_id: Optional[str] = None
 
     @field_validator("body")
     @classmethod
-    def check_body(cls, value: str) -> str:
+    def check_body(cls, value: Optional[str]) -> Optional[str]:
         """Hold the body to non-blank markdown under the byte cap."""
-        return _check_update_body(value) or value
+        return _check_update_body(value)
 
 
 class InitiativeUpdatePatch(BaseModel):

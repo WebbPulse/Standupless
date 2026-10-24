@@ -1,10 +1,12 @@
-"""Request and response schemas for issue and project templates.
+"""Request and response schemas for issue, project and document templates.
 
 A template is a name and the issue fields it fills, every one optional, because
 a template that only sets the labels is as useful as one that fills everything.
 A project template, `kind` "project", instead carries `project`: the project
 fields it fills, with dates as offsets from the creation day, and the milestones
-and issues a project made from it starts with.
+and issues a project made from it starts with. A document template, `kind`
+"document", carries only a title and a Markdown body, which a new document or a
+project or initiative update starts from.
 Fields that need a table read to judge, such as a status of the team, are held
 by the write path in `app.common.issue_templates`.
 """
@@ -29,6 +31,7 @@ from app.common.api.schemas.planning import (
 from app.common.api.schemas.teams import COLOR_PATTERN, ConfigScope
 from app.common.core.constants import ISSUE_BODY_MAX_BYTES
 from app.common.db.dynamo.team_templates import (
+    DOCUMENT_TEMPLATE,
     ISSUE_TEMPLATE,
     PROJECT_TEMPLATE,
     IssueTemplate,
@@ -36,10 +39,10 @@ from app.common.db.dynamo.team_templates import (
     TemplateSettings,
 )
 
-TemplateKindField = Literal["issue", "project"]
-"""What a template fills: a new issue, or a new project with its milestones and issues."""
+TemplateKindField = Literal["issue", "project", "document"]
+"""What a template fills: a new issue, a new project with its milestones and issues, or a new document or update."""
 
-ROW_KINDS: dict[str, str] = {"issue": ISSUE_TEMPLATE, "project": PROJECT_TEMPLATE}
+ROW_KINDS: dict[str, str] = {"issue": ISSUE_TEMPLATE, "project": PROJECT_TEMPLATE, "document": DOCUMENT_TEMPLATE}
 """The stored `kind` each API kind is kept as."""
 
 API_KINDS: dict[str, str] = {row: api for api, row in ROW_KINDS.items()}
@@ -306,7 +309,8 @@ class TemplateCreate(TemplateFields):
     """The body a template create takes: a name and any of the issue fields.
 
     `kind` "project" makes a project template, which fills `project` and leaves
-    the issue fields unset.
+    the issue fields unset. `kind` "document" makes a document template, which
+    takes only `title` and `body`.
     """
 
     kind: TemplateKindField = "issue"
@@ -352,7 +356,8 @@ class TemplateRead(BaseModel):
 
     `scope` says where it comes from as the team in the path sees it: the team's
     own, its parent team's, or the workspace's. `team_id` is `None` for a
-    workspace template. `project` is set on a project template only.
+    workspace template. `project` is set on a project template only, and a
+    document template sets only `title` and `body`.
     """
 
     id: str
@@ -420,12 +425,28 @@ class TemplateListRead(BaseModel):
     default_template_id: Optional[str] = None
 
 
+class DocumentTemplateListRead(BaseModel):
+    """The document templates a project or initiative offers, and the ones its composers open with.
+
+    `default_document_template_id` is what a new document starts from and
+    `default_update_template_id` what the update composer opens with, each the
+    first of the project's teams to set one and always one of `templates`. An
+    initiative belongs to no team, so it carries neither.
+    """
+
+    templates: list[TemplateRead]
+    default_document_template_id: Optional[str] = None
+    default_update_template_id: Optional[str] = None
+
+
 class TemplateSettingsRead(BaseModel):
     """A team's template settings as the API returns them.
 
     `default_template_id` is what the team saved and `effective_default_template_id`
     what its issue create dialog opens with, which falls back to the parent team's.
-    The two project fields are the same for the new project dialog.
+    The project fields are the same for the new project dialog, the document
+    fields for a new document of a project the team is on, and the update fields
+    for the project update composer.
     """
 
     team_id: str
@@ -433,23 +454,34 @@ class TemplateSettingsRead(BaseModel):
     effective_default_template_id: Optional[str] = None
     default_project_template_id: Optional[str] = None
     effective_default_project_template_id: Optional[str] = None
+    default_document_template_id: Optional[str] = None
+    effective_default_document_template_id: Optional[str] = None
+    default_update_template_id: Optional[str] = None
+    effective_default_update_template_id: Optional[str] = None
 
     @classmethod
-    def from_row(
-        cls, row: TemplateSettings, effective: Optional[str], effective_project: Optional[str] = None
-    ) -> "TemplateSettingsRead":
-        """Build the response shape from a stored settings row and the resolved defaults."""
+    def from_row(cls, row: TemplateSettings, effective: dict[str, Optional[str]]) -> "TemplateSettingsRead":
+        """Build the response shape from a stored settings row and the resolved default of each settings field."""
         return cls(
             team_id=row.team_id,
             default_template_id=row.default_template_id,
-            effective_default_template_id=effective,
+            effective_default_template_id=effective.get("default_template_id"),
             default_project_template_id=row.default_project_template_id,
-            effective_default_project_template_id=effective_project,
+            effective_default_project_template_id=effective.get("default_project_template_id"),
+            default_document_template_id=row.default_document_template_id,
+            effective_default_document_template_id=effective.get("default_document_template_id"),
+            default_update_template_id=row.default_update_template_id,
+            effective_default_update_template_id=effective.get("default_update_template_id"),
         )
 
 
 class TemplateSettingsUpdate(BaseModel):
-    """The body a team's template settings patch takes: only the defaults sent change, and null clears one."""
+    """The body a team's template settings patch takes: only the defaults sent change, and null clears one.
+
+    The document and update defaults both name a document template.
+    """
 
     default_template_id: Optional[str] = None
     default_project_template_id: Optional[str] = None
+    default_document_template_id: Optional[str] = None
+    default_update_template_id: Optional[str] = None

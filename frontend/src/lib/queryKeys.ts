@@ -74,6 +74,18 @@ export const projectTemplatesKey = (teamId: string): QueryKey => [
   teamId,
 ];
 
+/** The document templates one team offers, with its default. */
+export const documentTemplatesKey = (teamId: string): QueryKey => [
+  'document-templates',
+  teamId,
+];
+
+/** The document templates a project or initiative offers, with its defaults. */
+export const parentDocumentTemplatesKey = (
+  parentKind: 'project' | 'initiative',
+  parentId: string
+): QueryKey => ['document-templates', parentKind, parentId];
+
 /** One team's recurring issues. */
 export const recurringKey = (teamId: string): QueryKey => [
   'recurring-issues',
@@ -91,6 +103,11 @@ export const workspaceProjectTemplatesKey = (workspaceId: string): QueryKey => [
   'workspace-project-templates',
   workspaceId,
 ];
+
+/** The document templates a workspace offers every team. */
+export const workspaceDocumentTemplatesKey = (
+  workspaceId: string
+): QueryKey => ['workspace-document-templates', workspaceId];
 
 /** The statuses a workspace defines for every team. */
 export const workspaceStatusesKey = (workspaceId: string): QueryKey => [

@@ -16,7 +16,7 @@ from typing import Any, Mapping
 from fastapi import HTTPException, status
 from webbpulse.dynamodb import ConditionFailed, encode_start_key
 
-from app.common import pulse
+from app.common import document_templates, pulse
 from app.common.api.dependencies.authz import AuthzContext
 from app.common.api.dependencies.repositories import Repositories
 from app.common.api.pagination import resume_key
@@ -112,16 +112,17 @@ def list_project_updates(
 def create_project_update(
     repositories: Repositories, context: AuthzContext, project_id: str, payload: ProjectUpdateCreate
 ) -> ProjectUpdateRead:
-    """Post an update on a project the caller may edit, and mirror its health onto the project."""
+    """Post an update on a project the caller may edit, from a document template when one is named."""
     project, teams = load_readable_project(repositories, context, project_id)
     require_project_editor(repositories, context, teams)
+    body = document_templates.fill_update_body(repositories, context, teams, payload.body, payload.template_id)
     update_id = new_planning_id()
     update = ProjectUpdateRow(
         workspace_id=context.workspace_id,
         planning_key=project_update_key(project.project_id, update_id),
         update_id=update_id,
         project_id=project.project_id,
-        body=payload.body,
+        body=body,
         health=payload.health,
         author_id=context.user_id,
         source=context.source,

@@ -903,8 +903,8 @@ export interface IssueCreate {
   project_milestone_id?: string | null;
 }
 
-/** What a template fills: a new issue, or a new project. */
-export type TemplateKind = 'issue' | 'project';
+/** What a template fills: a new issue, a new project, or a new document or update. */
+export type TemplateKind = 'issue' | 'project' | 'document';
 
 /** One milestone a project template adds, its target counted from the creation day. */
 export interface ProjectTemplateMilestone {
@@ -1042,12 +1042,29 @@ export interface TemplateSettingsRead {
   effective_default_template_id: string | null;
   default_project_template_id?: string | null;
   effective_default_project_template_id?: string | null;
+  default_document_template_id?: string | null;
+  effective_default_document_template_id?: string | null;
+  default_update_template_id?: string | null;
+  effective_default_update_template_id?: string | null;
 }
 
 /** The body that sets or clears a team's defaults; only the fields sent change. */
 export interface TemplateSettingsUpdate {
   default_template_id?: string | null;
   default_project_template_id?: string | null;
+  default_document_template_id?: string | null;
+  default_update_template_id?: string | null;
+}
+
+/**
+ * The document templates a project or initiative offers: its teams' and the
+ * workspace's, or the workspace's alone for an initiative, with the ones its
+ * new document flow and update composer open with.
+ */
+export interface DocumentTemplateListRead {
+  templates: TemplateRead[];
+  default_document_template_id: string | null;
+  default_update_template_id: string | null;
 }
 
 /** How often a recurring issue repeats. */
@@ -4118,8 +4135,11 @@ export interface DocumentRead extends DocumentSummaryRead {
 
 /** The body a document create takes; the parent comes from the path. */
 export interface DocumentCreate {
-  title: string;
+  /** Required unless `template_id` is sent, whose title fills it. */
+  title?: string;
   body?: string;
+  /** A document template the parent offers, filling what was left out. */
+  template_id?: string;
 }
 
 /**

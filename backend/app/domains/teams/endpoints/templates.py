@@ -1,6 +1,6 @@
-"""Issue and project template routes: a team's templates, the workspace's, and a team's defaults.
+"""Issue, project and document template routes: a team's templates, the workspace's, and a team's defaults.
 
-Both kinds share the routes: a list takes `kind`, a create carries it in the
+Every kind shares the routes: a list takes `kind`, a create carries it in the
 body, and a patch or delete finds the template whichever kind it is.
 
 A team's list is its own templates, its parent team's when the caller can see
@@ -32,7 +32,7 @@ from app.common.api.schemas.templates import (
 
 router = APIRouter()
 
-KindQuery = Annotated[TemplateKindField, Query(description="Which templates to list: issue or project")]
+KindQuery = Annotated[TemplateKindField, Query(description="Which templates to list: issue, project or document")]
 
 
 @router.get("/{workspace_id}/teams/{team_id}/templates", response_model=TemplateListRead)
@@ -98,8 +98,8 @@ def read_template_settings(
     repositories: Annotated[Repositories, Depends(get_repositories)],
 ) -> TemplateSettingsRead:
     """The team's saved default templates and the ones its create dialogs open with."""
-    stored, effective, project = issue_templates.template_settings(repositories, context, str(context.team_id))
-    return TemplateSettingsRead.from_row(stored, effective, project)
+    stored, effective = issue_templates.template_settings(repositories, context, str(context.team_id))
+    return TemplateSettingsRead.from_row(stored, effective)
 
 
 @router.patch("/{workspace_id}/teams/{team_id}/template-settings", response_model=TemplateSettingsRead)
@@ -108,11 +108,9 @@ def update_template_settings(
     context: Annotated[AuthzContext, Depends(require(Capability.TEAM_READ))],
     repositories: Annotated[Repositories, Depends(get_repositories)],
 ) -> TemplateSettingsRead:
-    """Set or clear the templates the team's issue and project create dialogs open with."""
-    stored, effective, project = issue_templates.update_template_settings(
-        repositories, context, str(context.team_id), payload
-    )
-    return TemplateSettingsRead.from_row(stored, effective, project)
+    """Set or clear the templates the team's issue, project, document and update composers open with."""
+    stored, effective = issue_templates.update_template_settings(repositories, context, str(context.team_id), payload)
+    return TemplateSettingsRead.from_row(stored, effective)
 
 
 @router.get("/{workspace_id}/templates", response_model=TemplateListRead)
