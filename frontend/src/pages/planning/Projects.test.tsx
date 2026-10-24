@@ -16,7 +16,8 @@
  * collapses and isolates its column, and a drop into a swimlane changes both
  * the column and the lane field. The page opens with the team's or the
  * workspace's default for everyone, which only an admin of that scope sets or
- * clears from the Display menu.
+ * clears from the Display menu. Columns join the list in priority order as it
+ * widens, and a row whose name is cut off reveals it in a tooltip.
  */
 
 import {
@@ -597,6 +598,57 @@ describe('Projects', () => {
     const mark = link.parentElement?.querySelector('[data-icon]');
     expect(mark).toHaveAttribute('data-icon', 'rocket');
     expect(mark).toHaveAttribute('data-color', '#10b981');
+  });
+
+  it('hides the lower value columns first as the list narrows', async () => {
+    renderPage('/w/mine/projects?columns=status,start,created,progress');
+
+    await screen.findByRole('link', { name: 'Launch' });
+    const header = screen.getByText('Name').parentElement;
+    if (header === null) throw new Error('no header');
+    expect(within(header).getByText('Status')).toHaveClass(
+      'hidden',
+      '@min-[40rem]:block'
+    );
+    expect(within(header).getByText('Start')).toHaveClass(
+      'hidden',
+      '@min-[72rem]:block'
+    );
+    expect(within(header).getByText('Created')).toHaveClass(
+      'hidden',
+      '@min-[96rem]:block'
+    );
+    expect(header.style.getPropertyValue('--project-columns-md')).toBe(
+      'minmax(16rem,1fr) 8.5rem 4.5rem'
+    );
+  });
+
+  it('shows the full name in a tooltip when the row cuts it off', async () => {
+    renderPage();
+
+    const link = await screen.findByRole('link', { name: 'Launch' });
+    const row = link.closest('li');
+    if (row === null) throw new Error('no row');
+    const name = within(row).getByText('Launch', { selector: 'span' });
+    Object.defineProperty(name, 'scrollWidth', {
+      configurable: true,
+      value: 400,
+    });
+    Object.defineProperty(name, 'clientWidth', {
+      configurable: true,
+      value: 120,
+    });
+    name.getBoundingClientRect = () => new DOMRect(0, 0, 120, 20);
+
+    fireEvent.mouseMove(link, { clientX: 10, clientY: 10 });
+
+    await waitFor(() => {
+      expect(
+        screen
+          .queryAllByRole('tooltip', { hidden: true })
+          .map((tip) => tip.textContent)
+      ).toContain('Launch');
+    });
   });
 
   it('links a row to its project page', async () => {
