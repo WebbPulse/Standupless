@@ -29,6 +29,7 @@ import Avatar from '../../ui/avatar';
 import { IconButton } from '../../ui/button';
 import { PriorityGlyph } from '../../ui/glyphs';
 import { StatusIcon } from '../../ui/StatusIcon';
+import { TruncatedText, useTruncationTooltip } from '../../ui/truncated-text';
 import ProgressRing from '../../planning/ProgressRing';
 import { RelationMarkers } from '../BlockedMarker';
 import {
@@ -202,7 +203,9 @@ export const GroupHeader: React.FC<GroupHeaderProps> = ({
         )}
       />
       <GroupGlyph group={group} />
-      <span className="truncate font-medium text-text">{group.label}</span>
+      <TruncatedText className="font-medium text-text">
+        {group.label}
+      </TruncatedText>
       <span className="text-xs text-text-faint tabular-nums">
         {group.issues.length}
       </span>
@@ -316,6 +319,7 @@ export const IssueListRow: React.FC<IssueListRowProps> = ({ issue, tree }) => {
   const parent =
     depth === 0 ? (env.parentOf?.(issue) ?? parentRefOf(issue)) : undefined;
   const showsProgress = shows('sub_issues') && issue.progress.total > 0;
+  const titleTip = useTruncationTooltip<HTMLAnchorElement>({ chain: prefetch });
 
   return (
     <li
@@ -396,8 +400,10 @@ export const IssueListRow: React.FC<IssueListRowProps> = ({ issue, tree }) => {
         />
       )}
       <Link
+        ref={titleTip.ref}
         to={issuePath(env.slug, issue.key)}
         {...prefetch}
+        {...titleTip.handlers}
         data-hover="parent"
         onClick={(event) => {
           if (event.shiftKey) {
@@ -419,6 +425,7 @@ export const IssueListRow: React.FC<IssueListRowProps> = ({ issue, tree }) => {
       >
         {issue.title}
       </Link>
+      {titleTip.tip}
       {showsProgress && <SubIssueProgressChip progress={issue.progress} />}
       <span aria-hidden="true" className="flex-1" />
       {archived && <ArchivedMarker />}

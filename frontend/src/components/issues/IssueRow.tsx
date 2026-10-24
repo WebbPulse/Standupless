@@ -39,6 +39,7 @@ import SlaBadge from './SlaBadge';
 import { ParentPrefix } from './view/SubIssueCues';
 import { PriorityGlyph } from '../ui/glyphs';
 import { StatusIcon } from '../ui/StatusIcon';
+import { TruncatedText } from '../ui/truncated-text';
 import { useIssuePrefetch } from '../../hooks/useIssuePrefetch';
 
 /**
@@ -151,9 +152,9 @@ export const IssueRow: React.FC<IssueRowProps> = ({
         </FilterChipButton>
       )}
       {parent !== undefined && <ParentPrefix slug={slug} parent={parent} />}
-      <span className="min-w-0 flex-1 truncate text-sm font-medium text-text">
+      <TruncatedText className="min-w-0 flex-1 text-sm font-medium text-text">
         {issue.title}
-      </span>
+      </TruncatedText>
       <RelationMarkers issue={issue} />
 
       <span className="flex shrink-0 items-center gap-2 text-xs text-text-muted">
@@ -182,6 +183,7 @@ export const IssueRow: React.FC<IssueRowProps> = ({
                 color={label.color}
                 name={label.name}
                 className="hover:border-line-strong"
+                reveal={false}
               />
             </FilterChipButton>
           )
