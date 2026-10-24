@@ -12,7 +12,7 @@ from typing import Any
 import pytest
 from boto3.dynamodb.types import TypeSerializer
 
-from app.common.db.dynamo.base import utc_now
+from app.common.db.dynamo.base import as_item, utc_now
 from app.common.db.dynamo.github import IssueLink, link_key
 from app.common.db.dynamo.team_config import Label, label_key
 from app.domains.integrations import pr_labels
@@ -42,6 +42,7 @@ class FakeLabels:
         self.on_pr: list[str] = ["needs review"]
         self.repository: dict[str, str] = {"needs review": "ededed"}
         self.created: list[tuple[str, str]] = []
+        self.descriptions: dict[str, str | None] = {}
         self.removed: list[str] = []
         self.tokens = 0
 
@@ -56,12 +57,15 @@ class FakeLabels:
         assert repository_id == REPOSITORY_ID
         return {"number": number, "state": self.state, "labels": [{"name": name} for name in self.on_pr]}
 
-    def create_label(self, token: str, repository_id: str, name: str, color: str) -> bool:
+    def create_label(
+        self, token: str, repository_id: str, name: str, color: str, *, description: str | None = None
+    ) -> bool:
         """Create a repository label unless one of that name exists."""
         if name.lower() in {key.lower() for key in self.repository}:
             return False
         self.repository[name] = color
         self.created.append((name, color))
+        self.descriptions[name] = description
         return True
 
     def add_labels(self, token: str, repository_id: str, number: int, names: list[str]) -> None:
@@ -86,7 +90,9 @@ def labels_github(monkeypatch: pytest.MonkeyPatch) -> FakeLabels:
     return fake
 
 
-def make_label(repositories: Any, label_id: str, name: str, color: str = "#5E6AD2") -> str:
+def make_label(
+    repositories: Any, label_id: str, name: str, color: str = "#5E6AD2", *, description: str | None = None
+) -> str:
     """Store one team label and answer its id."""
     repositories.team_config.create_label(
         Label(
@@ -96,6 +102,7 @@ def make_label(repositories: Any, label_id: str, name: str, color: str = "#5E6AD
             label_id=label_id,
             name=name,
             color=color,
+            description=description,
         )
     )
     return label_id
@@ -109,9 +116,12 @@ def set_labels(repositories: Any, issue: Any, label_ids: list[str]) -> Any:
     return updated
 
 
-def put_link(repositories: Any, issue_id: str, *, applied: list[str] | None = None, **fields: Any) -> str:
-    """Store one link of the pull request `PR_node` to an issue."""
-    link_id = f"PR_node#{issue_id}"
+def put_link(
+    repositories: Any, issue_id: str, *, applied: list[str] | None = None, node: str = "PR_node", **fields: Any
+) -> str:
+    """Store one link of the pull request `node` to an issue."""
+    link_id = f"{node}#{issue_id}"
+    fields.setdefault("repository_id", REPOSITORY_ID)
     repositories.github.put_link(
         IssueLink(
             workspace_id=WORKSPACE,
@@ -121,7 +131,6 @@ def put_link(repositories: Any, issue_id: str, *, applied: list[str] | None = No
             issue_id=issue_id,
             issue_key="ABC-1",
             repository_full_name=REPOSITORY_FULL_NAME,
-            repository_id=REPOSITORY_ID,
             pr_number=7,
             pr_updated_ms=1000,
             applied_labels=applied or [],
@@ -155,6 +164,7 @@ def test_the_job_adds_the_issue_labels_creating_missing_ones_with_their_color(
 
     assert labels_github.on_pr == ["needs review", "Bug"]
     assert labels_github.created == [("Bug", "#E5484D")]
+    assert labels_github.descriptions == {"Bug": ""}
     stored = repositories.github.get_link(WORKSPACE, link_id)
     assert stored.applied_labels == ["Bug"]
 
@@ -495,3 +505,159 @@ def test_github_names_fall_back_to_the_child_past_the_length_limit() -> None:
     )
     short = Label(workspace_id=WORKSPACE, config_key="s", team_id=TEAM, label_id="S", name="Bug", color="#000000")
     assert github_label_names([group, child, short]) == {"C": "Child", "S": "Bug"}
+
+
+def test_a_created_label_carries_the_standupless_description(
+    repositories: Any, installed: str, issue: Any, labels_github: FakeLabels, github_env: None
+) -> None:
+    """The repository label the job creates matches what label definition sync would write."""
+    set_labels(repositories, issue, [make_label(repositories, "L1", "Bug", description="Something broke")])
+    put_link(repositories, issue.issue_id)
+
+    run_job(repositories)
+
+    assert labels_github.descriptions == {"Bug": "Something broke"}
+
+
+def run_sweep(repositories: Any) -> None:
+    """Run one pull request label sweep through the dispatch consumer."""
+    job = {"kind": pr_labels.PR_LABELS_SWEEP_JOB, "workspace_id": WORKSPACE}
+    dispatch.handle_record(repositories, sqs_record(job))
+
+
+def test_the_sweep_queues_each_open_pull_request_the_app_labelled(
+    repositories: Any, installed: str, issue: Any, enqueued: list[tuple[str, Any]], github_env: None
+) -> None:
+    """Unlabelled, merged and closed pull requests are left out, and a pull request with two links is queued once."""
+    second = seed_issue(repositories, WORKSPACE, TEAM, SECOND_ISSUE, "ABC", 2)
+    put_link(repositories, issue.issue_id, applied=["Bug"])
+    put_link(repositories, second.issue_id, applied=["Bug"])
+    put_link(repositories, issue.issue_id, node="PR_plain")
+    put_link(repositories, issue.issue_id, node="PR_merged", applied=["Bug"], pr_state="merged")
+    put_link(repositories, issue.issue_id, node="PR_closed", applied=["Bug"], pr_state="closed")
+
+    run_sweep(repositories)
+
+    assert [job["pr_node_id"] for job in label_jobs(enqueued)] == ["PR_node"]
+
+
+def test_the_sweep_leaves_a_repository_whose_labels_a_team_syncs(
+    repositories: Any, installed: str, issue: Any, enqueued: list[tuple[str, Any]], github_env: None
+) -> None:
+    """That team's reconcile renames the repository label, which GitHub carries onto the pull request itself."""
+    from app.common.db.dynamo.github import TeamSync, team_sync_key
+    from tests.domains.helpers import ADMIN
+
+    repositories.github.put_team_sync(
+        TeamSync(
+            workspace_id=WORKSPACE,
+            github_key=team_sync_key(TEAM),
+            team_id=TEAM,
+            repository_id=REPOSITORY_ID,
+            full_name=REPOSITORY_FULL_NAME,
+            created_by=ADMIN,
+        )
+    )
+    put_link(repositories, issue.issue_id, applied=["Bug"])
+
+    run_sweep(repositories)
+
+    assert label_jobs(enqueued) == []
+
+
+def test_the_sweep_paces_the_jobs_it_queues(
+    repositories: Any, installed: str, enqueued: list[tuple[str, Any]], github_env: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Each batch of pull requests is held back one second more than the batch before."""
+    delays: list[int] = []
+    monkeypatch.setattr(
+        pr_labels,
+        "enqueue_pr_labels",
+        lambda workspace_id, node_id, *, delay_seconds=0: delays.append(delay_seconds),
+    )
+    for index in range(pr_labels.SWEEP_PER_SECOND + 1):
+        put_link(repositories, f"01JB00000000000000000ISX{index}", node=f"PR_{index}", applied=["Bug"])
+
+    assert pr_labels.sweep(repositories, {"workspace_id": WORKSPACE}) == pr_labels.SWEEP_PER_SECOND + 1
+    assert delays == [0] * pr_labels.SWEEP_PER_SECOND + [1]
+
+
+def label_record(old: Label, new: Label) -> dict[str, Any]:
+    """One team configuration MODIFY record for a label row."""
+    return stream_record(as_item(old), as_item(new))
+
+
+def sweep_jobs(enqueued: list[tuple[str, Any]]) -> list[dict[str, Any]]:
+    """The sweep jobs among everything enqueued."""
+    return [
+        dict(envelope.payload)
+        for _url, envelope in enqueued
+        if envelope.payload.get("kind") == pr_labels.PR_LABELS_SWEEP_JOB
+    ]
+
+
+def test_renaming_or_regrouping_a_label_queues_a_sweep_and_recolouring_does_not(
+    repositories: Any, installed: str, enqueued: list[tuple[str, Any]], github_env: None
+) -> None:
+    """Only a change to the label's GitHub name needs the pull requests relabelled."""
+    make_label(repositories, "L1", "Bug")
+    before = repositories.team_config.get_label(WORKSPACE, TEAM, "L1")
+
+    stream.queue_label_sync(repositories, label_record(before, before.model_copy(update={"color": "#000000"})))
+    assert sweep_jobs(enqueued) == []
+
+    stream.queue_label_sync(repositories, label_record(before, before.model_copy(update={"name": "Defect"})))
+    stream.queue_label_sync(repositories, label_record(before, before.model_copy(update={"parent_id": "G1"})))
+    assert sweep_jobs(enqueued) == [{"kind": pr_labels.PR_LABELS_SWEEP_JOB, "workspace_id": WORKSPACE}] * 2
+
+
+def test_a_rename_queues_no_sweep_without_a_team_mirroring_labels(
+    repositories: Any, installed: str, enqueued: list[tuple[str, Any]], github_env: None
+) -> None:
+    """With every team's pull request label setting off, nothing is swept."""
+    make_label(repositories, "L1", "Bug")
+    before = repositories.team_config.get_label(WORKSPACE, TEAM, "L1")
+    for team in repositories.teams.list_for_workspace(WORKSPACE):
+        repositories.teams.update(WORKSPACE, team.team_id, sync_pr_labels=False)
+
+    stream.queue_label_sync(repositories, label_record(before, before.model_copy(update={"name": "Defect"})))
+
+    assert sweep_jobs(enqueued) == []
+
+
+def test_a_rename_queues_no_sweep_without_an_installation(
+    repositories: Any, workspace: str, enqueued: list[tuple[str, Any]], github_env: None
+) -> None:
+    """A workspace that never installed the App has no pull requests to relabel."""
+    make_label(repositories, "L1", "Bug")
+    before = repositories.team_config.get_label(WORKSPACE, TEAM, "L1")
+
+    stream.queue_label_sync(repositories, label_record(before, before.model_copy(update={"name": "Defect"})))
+
+    assert sweep_jobs(enqueued) == []
+
+
+def test_renaming_a_label_relabels_the_pull_request_end_to_end(
+    repositories: Any,
+    installed: str,
+    issue: Any,
+    labels_github: FakeLabels,
+    enqueued: list[tuple[str, Any]],
+    github_env: None,
+) -> None:
+    """The sweep's job swaps the old name the App applied for the new one."""
+    set_labels(repositories, issue, [make_label(repositories, "L1", "Bug")])
+    put_link(repositories, issue.issue_id)
+    run_job(repositories)
+    assert labels_github.on_pr == ["needs review", "Bug"]
+
+    before = repositories.team_config.get_label(WORKSPACE, TEAM, "L1")
+    repositories.team_config.update_label(WORKSPACE, TEAM, "L1", name="Defect")
+    after = repositories.team_config.get_label(WORKSPACE, TEAM, "L1")
+    stream.queue_label_sync(repositories, label_record(before, after))
+    run_sweep(repositories)
+    assert [job["pr_node_id"] for job in label_jobs(enqueued)] == ["PR_node"]
+    run_job(repositories)
+
+    assert labels_github.on_pr == ["needs review", "Defect"]
+    assert labels_github.removed == ["Bug"]

@@ -324,10 +324,12 @@ def queue_label_sync(repositories: Repositories, record: Mapping[str, Any]) -> i
     Every syncing team is queued rather than only the label's own, because a
     workspace or parent team label reaches every team that inherits it, and a
     reconcile with nothing to do makes no write. A workspace label also queues
-    the workspace label set push, when the workspace has it on.
+    the workspace label set push, when the workspace has it on, and a label whose
+    GitHub name moved queues a sweep of the pull requests the App labelled.
     """
     from app.domains.integrations.label_set import queue_on_change
     from app.domains.integrations.label_sync import definition_changed, queue_for_workspace
+    from app.domains.integrations.pr_labels import github_name_moved, queue_sweep
 
     new_image = deserialize_image(record, "NewImage")
     old_image = deserialize_image(record, "OldImage")
@@ -339,6 +341,8 @@ def queue_label_sync(repositories: Repositories, record: Mapping[str, Any]) -> i
     if str(image.get("config_key", "")).startswith(WORKSPACE_LABEL_PREFIX) and queue_on_change(
         repositories, workspace_id
     ):
+        queued += 1
+    if github_name_moved(old_image, new_image) and queue_sweep(repositories, workspace_id):
         queued += 1
     return queued
 
