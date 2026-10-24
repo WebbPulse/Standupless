@@ -130,7 +130,10 @@ class _GitHub:
         return self._with_pull_text(pairs)
 
     def _with_pull_text(self, pairs: list[tuple[str, str]]) -> list[tuple[str, str]]:
-        """Each commit's message, plus its pull request's title and branch when the message names no key.
+        """Each commit's message, with its pull request's title and branch added to the subject line.
+
+        They join the first line rather than the body, so a key they name counts as
+        a subject key does and release stage automation may move it.
 
         Pull requests already stored are read from `stored_pulls` first. With
         `best_effort_pulls` set, a read the call budget's deadline refuses ends the
@@ -171,7 +174,8 @@ class _GitHub:
             if pull is None:
                 result.append((commit_sha, message))
                 continue
-            result.append((commit_sha, f"{message}\n{pull.title}\n{pull.head_ref}"))
+            subject, _, rest = message.partition("\n")
+            result.append((commit_sha, f"{subject} {pull.title} {pull.head_ref}\n{rest}".rstrip("\n")))
         return result
 
     def _remember_stored(self, numbers: list[int]) -> None:
