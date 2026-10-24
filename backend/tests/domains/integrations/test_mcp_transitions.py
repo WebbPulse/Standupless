@@ -115,6 +115,22 @@ def test_update_issue_takes_a_status_name(client: TestClient, repositories: Any,
     assert moved["status_id"] == status_id_named(repositories, "In Progress")
 
 
+def test_update_issue_with_an_unknown_status_lists_the_team_statuses(
+    client: TestClient, repositories: Any, issue: Issue
+) -> None:
+    """A misspelt status is refused with every status name and id, and the closest one suggested."""
+    secret = mint_for(repositories, MEMBER, ("issues:write",))
+    cancelled = status_id_named(repositories, "Cancelled")
+
+    refused = refusal(tool(client, secret, "update_issue", {"issue_id": "ABC-1", "status_id": "Canceled"}))
+
+    assert "No such status: Canceled" in refused
+    for row in repositories.team_config.list_statuses(WORKSPACE, TEAM, include_hidden=False):
+        assert f"{row.name} ({row.status_id})" in refused
+    assert f"Did you mean Cancelled ({cancelled})?" in refused
+    assert repositories.issues.get(WORKSPACE, issue.issue_id).status_id == issue.status_id
+
+
 def test_create_issue_takes_a_status_name(client: TestClient, repositories: Any, workspace: str) -> None:
     """A new issue can start in a status named rather than by id."""
     secret = mint_for(repositories, MEMBER, ("issues:write",))
