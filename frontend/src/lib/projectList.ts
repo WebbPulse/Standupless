@@ -96,75 +96,120 @@ export const PROJECT_GROUPING_LABELS: Record<ProjectGrouping, string> = {
   none: 'No grouping',
 };
 
-/** Which completed and canceled projects the list keeps. */
-export type ClosedWindow = 'all' | 'week' | 'month' | 'quarter' | 'none';
+/** Which closed projects the list keeps: all, recently completed ones, or none. */
+export type ClosedWindow = 'all' | 'fortnight' | 'month' | 'none';
 
 /** The windows in the order the display menu offers them. */
 export const CLOSED_WINDOWS: ClosedWindow[] = [
   'all',
-  'week',
+  'fortnight',
   'month',
-  'quarter',
   'none',
 ];
 
 /** How each window reads in the display menu. */
 export const CLOSED_WINDOW_LABELS: Record<ClosedWindow, string> = {
   all: 'All',
-  week: 'Past week',
+  fortnight: 'Past 2 weeks',
   month: 'Past month',
-  quarter: 'Past quarter',
   none: 'None',
 };
 
 /** How many days back each recent window reaches. */
-const CLOSED_WINDOW_DAYS: Record<'week' | 'month' | 'quarter', number> = {
-  week: 7,
+const CLOSED_WINDOW_DAYS: Record<'fortnight' | 'month', number> = {
+  fortnight: 14,
   month: 30,
-  quarter: 90,
 };
 
-/** A column the projects list can show beside each project's name. */
+/** A property the projects list and board can show beside each project's name. */
 export type ProjectColumn =
+  | 'summary'
+  | 'milestones'
+  | 'dependencies'
   | 'health'
   | 'priority'
   | 'status'
   | 'lead'
+  | 'members'
   | 'start'
   | 'target'
   | 'teams'
   | 'issues'
+  | 'created'
+  | 'updated'
+  | 'completed'
   | 'progress';
 
-/** The columns in the order the list draws them and the menu offers them. */
+/** The properties in the order the list draws them, matching the server. */
 export const PROJECT_COLUMNS: ProjectColumn[] = [
+  'summary',
+  'milestones',
+  'dependencies',
   'health',
   'priority',
   'status',
   'lead',
+  'members',
   'start',
   'target',
   'teams',
   'issues',
+  'created',
+  'updated',
+  'completed',
   'progress',
 ];
 
-/** How each column reads in the display menu and the list header. */
+/** The properties in the order the display menu offers them as chips. */
+export const PROJECT_COLUMN_CHIPS: ProjectColumn[] = [
+  'milestones',
+  'summary',
+  'priority',
+  'status',
+  'health',
+  'teams',
+  'lead',
+  'members',
+  'dependencies',
+  'start',
+  'target',
+  'issues',
+  'created',
+  'updated',
+  'completed',
+  'progress',
+];
+
+/** The properties drawn inline after the name rather than in a column of their own. */
+export const INLINE_PROJECT_COLUMNS: ReadonlySet<ProjectColumn> = new Set([
+  'summary',
+  'milestones',
+  'dependencies',
+]);
+
+/** How each property reads in the display menu and the list header. */
 export const PROJECT_COLUMN_LABELS: Record<ProjectColumn, string> = {
+  summary: 'Summary',
+  milestones: 'Milestones',
+  dependencies: 'Dependencies',
   health: 'Health',
   priority: 'Priority',
   status: 'Status',
   lead: 'Lead',
+  members: 'Members',
   start: 'Start date',
   target: 'Target date',
   teams: 'Teams',
   issues: 'Issues',
+  created: 'Created',
+  updated: 'Updated',
+  completed: 'Completed',
   progress: 'Progress',
 };
 
-/** The columns a person who never chose sees, matching the server. */
+/** The properties a person who never chose sees, matching the server. */
 export const DEFAULT_PROJECT_COLUMNS =
-  'health,priority,status,lead,start,target,teams,progress';
+  'summary,dependencies,health,priority,status,lead,start,target,teams,progress';
 
 /** The known columns a stored or URL value names, in drawing order. */
 export const columnList = (value: string): ProjectColumn[] => {
@@ -176,12 +221,35 @@ export const columnList = (value: string): ProjectColumn[] => {
 export const columnValue = (columns: readonly ProjectColumn[]): string =>
   PROJECT_COLUMNS.filter((column) => columns.includes(column)).join(',');
 
+/** Whether groups run in their own order or reversed. */
+export type GroupDirection = 'asc' | 'desc';
+
+/** The group directions, for reading URL values. */
+export const GROUP_DIRECTIONS: GroupDirection[] = ['asc', 'desc'];
+
+/** Whether a team's projects page keeps every project on the team or only those it leads. */
+export type LeadTeamChoice = 'all' | 'lead';
+
+/** The lead team choices, for reading URL values. */
+export const LEAD_TEAM_CHOICES: LeadTeamChoice[] = ['all', 'lead'];
+
+/** Whether the board shows columns that hold no project. */
+export type EmptyColumnsChoice = 'show' | 'hide';
+
+/** The empty column choices, for reading URL values. */
+export const EMPTY_COLUMNS_CHOICES: EmptyColumnsChoice[] = ['show', 'hide'];
+
 /** The whole projects display, as the account stores it. */
 export interface ProjectsDisplay {
   layout: ProjectLayout;
   group: ProjectGrouping;
+  direction: GroupDirection;
+  /** The grouping inside each group, `none` for a single level. */
+  rows: ProjectGrouping;
   order: ProjectOrdering;
   closed: ClosedWindow;
+  lead_team: LeadTeamChoice;
+  empty: EmptyColumnsChoice;
   zoom: TimelineZoom;
   /** The shown list columns, comma separated in drawing order. */
   columns: string;
@@ -191,8 +259,12 @@ export interface ProjectsDisplay {
 export const DEFAULT_PROJECTS_DISPLAY: ProjectsDisplay = {
   layout: 'list',
   group: 'status',
+  direction: 'asc',
+  rows: 'none',
   order: 'target',
-  closed: 'all',
+  closed: 'fortnight',
+  lead_team: 'all',
+  empty: 'show',
   zoom: 'month',
   columns: DEFAULT_PROJECT_COLUMNS,
 };
@@ -204,8 +276,12 @@ type ChoiceField = Exclude<keyof ProjectsDisplay, 'columns'>;
 const DISPLAY_CHOICES: { [K in ChoiceField]: readonly string[] } = {
   layout: PROJECT_LAYOUTS,
   group: PROJECT_GROUPINGS,
+  direction: GROUP_DIRECTIONS,
+  rows: PROJECT_GROUPINGS,
   order: PROJECT_ORDERINGS,
   closed: CLOSED_WINDOWS,
+  lead_team: LEAD_TEAM_CHOICES,
+  empty: EMPTY_COLUMNS_CHOICES,
   zoom: TIMELINE_ZOOMS,
 };
 
@@ -251,8 +327,12 @@ export const resolveDisplay = (
   return {
     layout: pick('layout'),
     group: pick('group'),
+    direction: pick('direction'),
+    rows: pick('rows'),
     order: pick('order'),
     closed: pick('closed'),
+    lead_team: pick('lead_team'),
+    empty: pick('empty'),
     zoom: pick('zoom'),
     columns: pick('columns'),
   };
@@ -263,9 +343,10 @@ export const isClosedProject = (project: ProjectRead): boolean =>
   project.status === 'completed' || project.status === 'canceled';
 
 /**
- * Whether a project stays in the list under a completed projects window.
- * Open projects always stay. A closed one is judged by when it closed, or by
- * its last update on a row closed before the close time was recorded.
+ * Whether a project stays in the list under a closed projects window.
+ * Open projects always stay, and canceled ones only under `all`. A completed
+ * one is judged by when it closed, or by its last update on a row closed
+ * before the close time was recorded.
  */
 export const withinClosedWindow = (
   project: ProjectRead,
@@ -273,7 +354,7 @@ export const withinClosedWindow = (
   now: Date
 ): boolean => {
   if (!isClosedProject(project) || closed === 'all') return true;
-  if (closed === 'none') return false;
+  if (closed === 'none' || project.status === 'canceled') return false;
   const closedAt = Date.parse(project.completed_at ?? project.updated_at);
   if (Number.isNaN(closedAt)) return true;
   return now.getTime() - closedAt <= CLOSED_WINDOW_DAYS[closed] * 86400000;
@@ -527,6 +608,31 @@ export const groupProjects = (
       );
   }
 };
+
+/** Groups in the chosen direction: their own order, or reversed. */
+export const directedGroups = (
+  groups: ProjectGroup[],
+  direction: GroupDirection
+): ProjectGroup[] => (direction === 'desc' ? [...groups].reverse() : groups);
+
+/** The second level grouping in force: none when it repeats the first or the first is none. */
+export const effectiveRows = (
+  grouping: ProjectGrouping,
+  rows: ProjectGrouping
+): ProjectGrouping =>
+  grouping === 'none' || rows === grouping ? 'none' : rows;
+
+/**
+ * Whether a project stays on a team's projects page under the lead team
+ * choice: every project on the team, or only those whose lead team is one of
+ * `teamIds`, the team and the sub-teams it rolls up.
+ */
+export const withinLeadTeams = (
+  project: ProjectRead,
+  choice: LeadTeamChoice,
+  teamIds: readonly string[] | null
+): boolean =>
+  choice === 'all' || teamIds === null || teamIds.includes(project.team_id);
 
 /** The value a group key carries after its kind, such as `on_track`. */
 export const groupValue = (group: ProjectGroup): string =>

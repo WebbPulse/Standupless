@@ -117,13 +117,16 @@ def _projects_display() -> dict[str, Any]:
             "columns": {
                 "type": "array",
                 "items": {"type": "string", "enum": list(PROJECTS_COLUMNS)},
-                "description": "The list columns shown beside the name; an empty list shows the name alone",
+                "description": "The properties shown beside the name; an empty list shows the name alone",
             },
         },
         "additionalProperties": False,
         "description": (
-            "Project views only: layout (list, board, timeline), group, order, closed (how far back completed "
-            "and canceled projects show), the timeline zoom and the list columns; a missing field takes the default"
+            "Project views only: layout (list, board, timeline), group and its direction, rows (a second "
+            "grouping inside each group), order, closed (all, fortnight by default, month or none: which "
+            "completed projects show, canceled ones only under all), "
+            "lead_team (lead keeps only projects the filtered team leads), empty (show or hide empty board "
+            "columns), the timeline zoom and the shown properties; a missing field takes the default"
         ),
     }
 
