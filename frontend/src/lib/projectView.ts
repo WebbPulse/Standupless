@@ -119,6 +119,5 @@ export const sameProjectFilter = (
   asList(left.lead_id).join(',') === asList(right.lead_id).join(',') &&
   flagOf(left.is_blocked) === flagOf(right.is_blocked) &&
   flagOf(left.is_blocking) === flagOf(right.is_blocking) &&
-  asList(left.customer_id).join(',') ===
-    asList(right.customer_id).join(',') &&
+  asList(left.customer_id).join(',') === asList(right.customer_id).join(',') &&
   (left.sub_teams ?? 'true') === (right.sub_teams ?? 'true');

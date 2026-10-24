@@ -345,10 +345,7 @@ export const fieldsFor = <T extends string>(
  * from each project the list knows.
  */
 export const filterFieldsFor = (
-  context: Pick<
-    IssueContext,
-    'milestones' | 'teams' | 'projects' | 'customers'
-  >
+  context: Pick<IssueContext, 'milestones' | 'teams' | 'projects' | 'customers'>
 ): FilterField[] =>
   FILTER_FIELDS.filter(
     (field) =>

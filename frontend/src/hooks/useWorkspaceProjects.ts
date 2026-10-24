@@ -11,7 +11,11 @@ import { useQueryAuth } from '@webbpulse/auth/react';
 import { usePolledQuery, type QueryKey } from '@webbpulse/api-client/react';
 import { listProjects } from '../api/planning';
 import { projectsKey } from '../lib/queryKeys';
-import type { ProjectListQuery, ProjectRead } from '../types/Api';
+import type {
+  ProjectListQuery,
+  ProjectRead,
+  ProjectSortField,
+} from '../types/Api';
 
 /** How often the projects re-read. */
 const POLL_MS = 60000;
@@ -104,7 +108,7 @@ export const useWorkspaceProjects = (
         ...(customerIdsNot.length === 0
           ? {}
           : { customer_id_not: customerIdsNot }),
-        ...(sort === '' ? {} : { sort: sort as ProjectListQuery['sort'] }),
+        ...(sort === '' ? {} : { sort: sort as ProjectSortField }),
       });
     },
     [workspaceId, teamId, rollUp, narrowingKey]

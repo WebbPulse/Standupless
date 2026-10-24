@@ -494,7 +494,8 @@ const ProjectRow: React.FC<ProjectRowProps> = ({
 type Saving = 'new' | 'details' | null;
 
 /** The filters the page keeps in the URL. */
-type FilterField = 'team' | 'status' | 'lead' | 'blocked' | 'blocking' | 'customer';
+type FilterField =
+  'team' | 'status' | 'lead' | 'blocked' | 'blocking' | 'customer';
 
 /** Props for Projects. */
 export interface ProjectsProps {

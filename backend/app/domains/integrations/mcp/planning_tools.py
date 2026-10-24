@@ -228,9 +228,7 @@ def _project_json(project: ProjectRead) -> dict[str, Any]:
         "blocking_project_ids": project.blocking_project_ids,
         **({} if project.open_issue_count is None else {"open_issue_count": project.open_issue_count}),
         **(
-            {}
-            if project.customer_request_count is None
-            else {"customer_request_count": project.customer_request_count}
+            {} if project.customer_request_count is None else {"customer_request_count": project.customer_request_count}
         ),
         **({} if project.customer_revenue is None else {"customer_revenue": project.customer_revenue}),
         **(

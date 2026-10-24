@@ -58,9 +58,7 @@ def load_customer_index(repositories: Repositories, workspace_id: str, *, with_r
         counts[target] = counts.get(target, 0) + 1
     revenue: dict[str, int] = {}
     if with_revenue:
-        revenue = {
-            row.customer_id: row.revenue or 0 for row in repositories.customers.list_customers(workspace_id)
-        }
+        revenue = {row.customer_id: row.revenue or 0 for row in repositories.customers.list_customers(workspace_id)}
     return CustomerIndex(
         customers={target: frozenset(ids) for target, ids in customers.items()},
         counts=counts,
