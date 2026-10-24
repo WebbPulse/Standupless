@@ -1447,3 +1447,90 @@ def test_a_merge_does_not_move_an_issue_the_body_only_mentions(
     moved = repositories.issues.get(WORKSPACE, issue.issue_id)
     assert moved is not None
     assert moved.status_id == issue.status_id
+
+
+@pytest.mark.parametrize("body", ["Fixes ABC-1. Refs ABC-2.", "Fixes ABC-1, refs ABC-2"])
+def test_a_merge_into_main_closes_the_fixed_key_and_holds_the_referenced_one(
+    repositories: Any,
+    workspace: str,
+    installed: str,
+    issue: Any,
+    preset: dict[str, str],
+    pr_commits: PullRequestCommits,
+    enqueued: list[tuple[str, Any]],
+    github_env: None,
+    body: str,
+) -> None:
+    """A `Refs` key after a `Fixes` key links the pull request and keeps its status on merge."""
+    second = seed_issue(repositories, workspace, TEAM, "01JB0000000000000000000IS7", "ABC", 2)
+    before = status_of(repositories, second.issue_id)
+
+    events.handle_record(repositories, sqs_record(merged_event("A change", base="main", body=body)))
+
+    assert status_of(repositories, issue.issue_id) == preset["Done"]
+    assert status_of(repositories, second.issue_id) == before
+    assert len(repositories.github.list_links_for_issue(WORKSPACE, second.issue_id).items) == 1
+
+
+def test_a_merge_closes_every_key_in_a_fixes_list(
+    repositories: Any,
+    workspace: str,
+    installed: str,
+    issue: Any,
+    status_ids: dict[str, str],
+    enqueued: list[tuple[str, Any]],
+    github_env: None,
+) -> None:
+    """`Fixes ABC-1, ABC-2` closes both issues under the default rules."""
+    second = seed_issue(repositories, workspace, TEAM, "01JB0000000000000000000IS7", "ABC", 2)
+
+    events.handle_record(repositories, sqs_record(merged_event("A change", base="main", body="Fixes ABC-1, ABC-2")))
+
+    assert status_of(repositories, issue.issue_id) == status_ids["completed"]
+    assert status_of(repositories, second.issue_id) == status_ids["completed"]
+
+
+def test_a_merge_holds_a_refs_key_that_the_title_and_branch_also_name(
+    repositories: Any,
+    installed: str,
+    issue: Any,
+    preset: dict[str, str],
+    pr_commits: PullRequestCommits,
+    enqueued: list[tuple[str, Any]],
+    github_env: None,
+) -> None:
+    """Partial work names its key in the title and branch and says `Refs`, so the merge leaves it open."""
+    place(repositories, issue, preset["In Review"])
+
+    events.handle_record(
+        repositories,
+        sqs_record(
+            pull_request_event(
+                action="closed",
+                merged=True,
+                state="closed",
+                title="ABC-1 First slice",
+                body="Refs ABC-1",
+                branch="abc-1-first-slice",
+                base="staging",
+            )
+        ),
+    )
+
+    assert status_of(repositories, issue.issue_id) == preset["In Review"]
+
+
+def test_an_opened_refs_pull_request_still_starts_the_issue(
+    repositories: Any,
+    installed: str,
+    issue: Any,
+    preset: dict[str, str],
+    enqueued: list[tuple[str, Any]],
+    github_env: None,
+) -> None:
+    """Holding on merge leaves the opening move a `Refs` key makes as it was."""
+    events.handle_record(
+        repositories, sqs_record(pull_request_event(title="A change", body="Fixes ABC-2. Refs ABC-1."))
+    )
+
+    assert status_of(repositories, issue.issue_id) == preset["In Review"]

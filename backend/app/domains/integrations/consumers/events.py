@@ -411,6 +411,8 @@ def _handle_pull_request(
         link_id = f"{node_id}#{issue.issue_id}"
         previous = repositories.github.get_link(workspace_id, link_id)
         issue_trigger = trigger if match.moves_status else None
+        if issue_trigger == "pr_merged" and match.holds_on_merge:
+            issue_trigger = None
         newly_moving = previous is None or not previous.moves_status
         if match.moves_status and newly_moving and issue_trigger is None:
             issue_trigger = linking.trigger_for_new_link(

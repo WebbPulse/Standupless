@@ -140,6 +140,61 @@ def test_a_magic_word_does_not_carry_to_a_later_bare_mention() -> None:
     assert moves == {"ABC-1": True, "XYZ-2": False}
 
 
+@pytest.mark.parametrize("body", ["Fixes ABC-1. Refs XYZ-2.", "Fixes ABC-1, refs XYZ-2"])
+def test_a_fixes_word_does_not_carry_past_a_sentence_break_or_another_word(body: str) -> None:
+    """Only the key `Fixes` governs closes; the `Refs` key after it links, moves on open and holds on merge."""
+    found = {row.key: row for row in linking.extract(PREFIXES, title="A change", body=body)}
+
+    assert found["ABC-1"].magic_word == "fixes"
+    assert found["ABC-1"].holds_on_merge is False
+    assert found["XYZ-2"].magic_word is None
+    assert found["XYZ-2"].moves_status is True
+    assert found["XYZ-2"].holds_on_merge is True
+
+
+@pytest.mark.parametrize("body", ["Fixes ABC-1, ABC-2", "Fixes ABC-1 and ABC-2", "Fixes ABC-1, ABC-2 & XYZ-3"])
+def test_a_fixes_word_closes_every_key_in_its_list(body: str) -> None:
+    """A list joined by commas, `and` or `&` is governed by the one closing word before it."""
+    found = linking.extract(PREFIXES, title="A change", body=body)
+
+    assert found
+    assert all(row.magic_word == "fixes" and not row.holds_on_merge for row in found)
+
+
+def test_a_refs_key_holds_on_merge_even_when_the_title_names_it() -> None:
+    """Partial work puts its key in the title and says `Refs`, and a merge must not finish it."""
+    found = linking.extract(PREFIXES, branch="abc-1-slice", title="ABC-1 A slice", body="Refs ABC-1")
+
+    assert found[0].moves_status is True
+    assert found[0].holds_on_merge is True
+
+
+def test_a_key_both_fixed_and_referenced_closes() -> None:
+    """A closing word anywhere wins over a `Refs` elsewhere for the same key."""
+    found = linking.extract(PREFIXES, title="Fixes ABC-1", body="Refs ABC-1")
+
+    assert found[0].magic_word == "fixes"
+    assert found[0].holds_on_merge is False
+
+
+def test_a_commit_that_says_refs_holds_its_key_on_a_promotion() -> None:
+    """A promotion's commit that only references a key leaves that issue where it is."""
+    found = {
+        row.key: row
+        for row in linking.extract(PREFIXES, commit_messages=["ABC-1 First slice (#4)\n\nRefs ABC-1", "XYZ-2 Done"])
+    }
+
+    assert found["ABC-1"].holds_on_merge is True
+    assert found["XYZ-2"].holds_on_merge is False
+
+
+def test_a_bare_key_in_the_title_does_not_hold_on_merge() -> None:
+    """A key with no `Refs` word keeps moving on merge under a team's branch rules."""
+    found = linking.extract(PREFIXES, title="ABC-1 a change")
+
+    assert found[0].holds_on_merge is False
+
+
 def test_a_key_in_a_commit_message_still_moves() -> None:
     """A merged promotion names its work only in commits, so those keys stay movable."""
     found = linking.extract(PREFIXES, commit_messages=["ABC-1 a change"])
