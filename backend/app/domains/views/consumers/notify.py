@@ -45,6 +45,7 @@ from webbpulse.events import deserialize_image, register_stream_consumer, source
 
 from app.common.api.dependencies.repositories import Repositories
 from app.common.bulk_import import from_bulk_import
+from app.common.comment_drafts import clear_posted_draft
 from app.common.composition.consumers import CONSUMERS
 from app.common.core.config import settings
 from app.common.db.dynamo.inbox import Notification, expires_at, inbox_partition, notification_id
@@ -679,6 +680,30 @@ def handle_planning_record(repositories: Repositories, record: Mapping[str, Any]
     return written
 
 
+def clear_comment_draft(repositories: Repositories, record: Mapping[str, Any]) -> bool:
+    """Clear the author's draft in the thread a new comment was posted to, reporting whether one went.
+
+    Done here rather than in the comment write, because the discussion image may
+    not write the table drafts live in, and this covers every client that posts.
+    A draft the author saved after the comment was posted is kept, so starting the
+    next comment before this record lands loses nothing. A bulk import clears nothing.
+    """
+    if str(record.get("eventName", "")).upper() != "INSERT" or from_bulk_import(record):
+        return False
+    new_image = deserialize_image(record, "NewImage")
+    if not new_image:
+        return False
+    workspace_id = _text(new_image, "workspace_id")
+    issue_id = _text(new_image, "issue_id")
+    author_id = _text(new_image, "author_id")
+    posted_at = _stamped_at({"created_at": new_image.get("created_at")})
+    if not workspace_id or not issue_id or not author_id or posted_at is None:
+        return False
+    return clear_posted_draft(
+        repositories, workspace_id, author_id, issue_id, _text(new_image, "parent_comment_id") or None, posted_at
+    )
+
+
 def handle_record(repositories: Repositories, record: Mapping[str, Any]) -> None:
     """Route one record to the handler for the table it came from.
 
@@ -719,6 +744,7 @@ def handle_record(repositories: Repositories, record: Mapping[str, Any]) -> None
         written = handle_issue_record(repositories, record)
     elif physical == table_name("comments", prefix):
         written = handle_comment_record(repositories, record)
+        clear_comment_draft(repositories, record)
     elif physical == table_name("subscriptions", prefix):
         written = handle_subscription_record(repositories, record)
     elif physical == table_name("planning", prefix):

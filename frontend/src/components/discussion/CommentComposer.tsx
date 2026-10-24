@@ -22,6 +22,7 @@ import {
 import { LuArrowUp, LuPaperclip } from 'react-icons/lu';
 import { createComment } from '../../api/discussion';
 import { useAttachmentUploads } from '../../hooks/useAttachmentUploads';
+import { useCommentDraft } from '../../hooks/useCommentDraft';
 import { dragHasFiles, filesFrom } from '../../lib/attachments';
 import { cn } from '../../lib/cn';
 import { errorMessage } from '../../lib/errors';
@@ -79,6 +80,12 @@ export const CommentComposer: React.FC<CommentComposerProps> = ({
   const editor = useRef<RichMarkdownHandle>(null);
   const picker = useRef<HTMLInputElement>(null);
   const uploads = useAttachmentUploads(workspaceId, issueId);
+  const commentDraft = useCommentDraft(
+    workspaceId,
+    issueId,
+    parentCommentId,
+    editor
+  );
   const { upload: sendFile } = uploads;
   const { refresh } = useMedia();
 
@@ -124,6 +131,7 @@ export const CommentComposer: React.FC<CommentComposerProps> = ({
       .then(() => {
         invalidateQueries(attachmentsKey(issueId));
         uploads.settle(linked);
+        commentDraft.clear();
         editor.current?.setMarkdown('');
         onPosted?.();
       })
@@ -173,7 +181,7 @@ export const CommentComposer: React.FC<CommentComposerProps> = ({
         }
       >
         <RichMarkdownEditor
-          ref={editor}
+          ref={commentDraft.ref}
           value=""
           editable
           ariaLabel={label}
@@ -187,6 +195,7 @@ export const CommentComposer: React.FC<CommentComposerProps> = ({
           onChange={(markdown, uploading) => {
             setDraft(markdown);
             setInFlight(uploading);
+            commentDraft.save(markdown);
           }}
           onSubmit={submit}
           onFocusChange={setFocused}

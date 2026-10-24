@@ -3919,6 +3919,107 @@
         "title": "DownloadRead",
         "type": "object"
       },
+      "DraftListRead": {
+        "description": "The caller's drafts, newest saved first.",
+        "properties": {
+          "drafts": {
+            "items": {
+              "$ref": "#/components/schemas/DraftRead"
+            },
+            "title": "Drafts",
+            "type": "array"
+          }
+        },
+        "required": [
+          "drafts"
+        ],
+        "title": "DraftListRead",
+        "type": "object"
+      },
+      "DraftRead": {
+        "description": "One of the caller's drafts, with the issue it sits on as a listing names it.\n\n`parent_comment_id` is the root comment a reply draft answers, or null for a\ndraft on the issue itself. `issue_key` and `issue_title` are read at answer\ntime, so a moved or renamed issue never shows a stale one.",
+        "properties": {
+          "body": {
+            "title": "Body",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "issue_id": {
+            "title": "Issue Id",
+            "type": "string"
+          },
+          "issue_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Issue Key"
+          },
+          "issue_title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Issue Title"
+          },
+          "parent_comment_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Comment Id"
+          },
+          "team_id": {
+            "title": "Team Id",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "issue_id",
+          "team_id",
+          "body",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "DraftRead",
+        "type": "object"
+      },
+      "DraftWrite": {
+        "description": "The body a draft save takes, which replaces whatever the thread's draft held.",
+        "properties": {
+          "body": {
+            "minLength": 1,
+            "title": "Body",
+            "type": "string"
+          }
+        },
+        "required": [
+          "body"
+        ],
+        "title": "DraftWrite",
+        "type": "object"
+      },
       "ErrorResponse": {
         "description": "The `\"detailed\"` error envelope every handler renders, and what OpenAPI advertises.\n\n`details` is present only on a 422, where it holds one entry per offending field.",
         "properties": {
@@ -26319,6 +26420,303 @@
         "summary": "List Versions",
         "tags": [
           "planning"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/drafts": {
+      "get": {
+        "description": "The caller's drafts, newest saved first, across the workspace or on one issue.",
+        "operationId": "read_drafts_api_workspaces__workspace_id__drafts_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "issue_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 64,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Issue Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DraftListRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Read Drafts",
+        "tags": [
+          "views"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/drafts/{issue_id}": {
+      "delete": {
+        "description": "Discard the caller's draft in one thread, a no-op when there is none.",
+        "operationId": "discard_draft_api_workspaces__workspace_id__drafts__issue_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "issue_id",
+            "required": true,
+            "schema": {
+              "maxLength": 64,
+              "minLength": 1,
+              "title": "Issue Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "parent_comment_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 64,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Parent Comment Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Discard Draft",
+        "tags": [
+          "views"
+        ]
+      },
+      "get": {
+        "description": "The caller's draft on an issue or one reply thread, or a 404 when there is none.",
+        "operationId": "read_draft_api_workspaces__workspace_id__drafts__issue_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "issue_id",
+            "required": true,
+            "schema": {
+              "maxLength": 64,
+              "minLength": 1,
+              "title": "Issue Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "parent_comment_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 64,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Parent Comment Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DraftRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Read Draft",
+        "tags": [
+          "views"
+        ]
+      },
+      "put": {
+        "description": "Save the caller's draft on an issue or one reply thread, replacing the one there.",
+        "operationId": "write_draft_api_workspaces__workspace_id__drafts__issue_id__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "issue_id",
+            "required": true,
+            "schema": {
+              "maxLength": 64,
+              "minLength": 1,
+              "title": "Issue Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "parent_comment_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 64,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Parent Comment Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DraftWrite"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DraftRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Write Draft",
+        "tags": [
+          "views"
         ]
       }
     },

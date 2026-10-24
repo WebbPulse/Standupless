@@ -190,6 +190,10 @@ def test_the_contract_fixes_the_tool_set() -> None:
         "add_favorite",
         "remove_favorite",
         "reorder_favorites",
+        "set_comment_draft",
+        "get_comment_draft",
+        "list_comment_drafts",
+        "delete_comment_draft",
         "list_workspace_labels",
         "list_workspace_exports",
         "list_workspace_members",
@@ -297,7 +301,7 @@ def test_the_contract_fixes_the_tool_set() -> None:
         "save_agent_profile",
         "delete_agent_profile",
     }
-    assert len(TOOLS) == 183
+    assert len(TOOLS) == 187
 
 
 def test_a_notification_gets_no_body(client: TestClient, workspace: str, repositories: Any) -> None:

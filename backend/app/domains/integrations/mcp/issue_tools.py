@@ -30,6 +30,7 @@ from app.common.api.schemas.issues import (
     SubscribersRead,
 )
 from app.common.change_source import CHANGE_SOURCES
+from app.common.comment_drafts import clear_posted_draft
 from app.common.comment_writes import comment_page, create_comment
 from app.common.cycle_schedule import RELATIVE_CYCLES
 from app.common.db.dynamo.comments import Comment
@@ -650,6 +651,14 @@ def _add_comment(call: ToolCall) -> Any:
         issue.issue_id,
         str(call.require("body")),
         parent_comment_id=str(parent) if parent else None,
+    )
+    clear_posted_draft(
+        call.repositories,
+        created.workspace_id,
+        created.author_id,
+        created.issue_id,
+        created.parent_comment_id,
+        created.created_at,
     )
     return _comment_json(created)
 

@@ -21,6 +21,7 @@ from app.domains.integrations.mcp.agent_profile_tools import AGENT_PROFILE_TOOLS
 from app.domains.integrations.mcp.audit_tools import AUDIT_TOOLS
 from app.domains.integrations.mcp.channel_tools import CHANNEL_TOOLS
 from app.domains.integrations.mcp.document_tools import DOCUMENT_TOOLS
+from app.domains.integrations.mcp.draft_tools import DRAFT_TOOLS
 from app.domains.integrations.mcp.export_tools import EXPORT_TOOLS
 from app.domains.integrations.mcp.favorite_tools import FAVORITE_TOOLS
 from app.domains.integrations.mcp.import_tools import IMPORT_TOOLS
@@ -60,6 +61,7 @@ TOOLS: tuple[Tool, ...] = (
     *RELEASE_TOOLS,
     *VIEW_TOOLS,
     *FAVORITE_TOOLS,
+    *DRAFT_TOOLS,
     *WORKSPACE_TOOLS,
     *EXPORT_TOOLS,
     *IMPORT_TOOLS,

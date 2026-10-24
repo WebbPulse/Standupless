@@ -186,6 +186,51 @@ class FavoriteViews(BaseModel):
         return [FavoriteItem(kind="view", target_id=view_id) for view_id in self.view_ids]
 
 
+DRAFT_PREFIX = "draft#"
+"""The sort key prefix every comment draft shares."""
+
+DRAFT_ISSUE_THREAD = "issue"
+"""The thread part of a draft key for a draft on the issue itself rather than a reply."""
+
+DRAFTS_MAX = 200
+"""The most drafts one listing reads, so "my drafts" stays one bounded query."""
+
+
+def draft_user_prefix(user_id: str) -> str:
+    """The sort key prefix every draft of one member shares."""
+    return f"{DRAFT_PREFIX}{user_id}#"
+
+
+def draft_issue_prefix(user_id: str, issue_id: str) -> str:
+    """The sort key prefix every draft one member holds on one issue shares."""
+    return f"{draft_user_prefix(user_id)}{issue_id}#"
+
+
+def draft_key(user_id: str, issue_id: str, parent_comment_id: str | None = None) -> str:
+    """The sort key of one member's draft on an issue, or on one reply thread of it."""
+    return f"{draft_issue_prefix(user_id, issue_id)}{parent_comment_id or DRAFT_ISSUE_THREAD}"
+
+
+class CommentDraft(BaseModel):
+    """One member's unposted comment on an issue, or a reply to one root comment.
+
+    Stored beside saved views because the table has no stream, so writing a
+    draft can never notify anyone, and its key starts with the author, so a
+    member reads only their own. One row per member per thread: saving again
+    replaces the body.
+    """
+
+    workspace_id: str
+    view_key: str
+    user_id: str
+    issue_id: str
+    team_id: str
+    parent_comment_id: str | None = None
+    body: str
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
+
+
 class ViewRepository:
     """Reads and writes `views` rows, every method workspace first."""
 
@@ -324,6 +369,101 @@ class ViewRepository:
         )
         self._repository.put(as_item(row))
         return ordered
+
+    def get_draft(
+        self, workspace_id: str, user_id: str, issue_id: str, parent_comment_id: str | None = None
+    ) -> CommentDraft | None:
+        """One member's draft on an issue or a reply thread, or `None`."""
+        if not workspace_id or not user_id or not issue_id:
+            return None
+        item = self._repository.get(
+            {"workspace_id": workspace_id, "view_key": draft_key(user_id, issue_id, parent_comment_id)}
+        )
+        return CommentDraft.model_validate(dict(item)) if item is not None else None
+
+    def put_draft(self, draft: CommentDraft) -> CommentDraft:
+        """Store a draft, replacing the one already in its thread."""
+        self._repository.put(as_item(draft))
+        return draft
+
+    def delete_draft(
+        self, workspace_id: str, user_id: str, issue_id: str, parent_comment_id: str | None = None
+    ) -> None:
+        """Remove one member's draft in one thread, a no-op when there is none."""
+        if not workspace_id or not user_id or not issue_id:
+            return
+        key = {"workspace_id": workspace_id, "view_key": draft_key(user_id, issue_id, parent_comment_id)}
+        self._repository.delete(key)
+
+    def clear_draft_before(
+        self,
+        workspace_id: str,
+        user_id: str,
+        issue_id: str,
+        parent_comment_id: str | None,
+        posted_at: datetime,
+    ) -> bool:
+        """Remove a draft last saved no later than `posted_at`, reporting whether one went.
+
+        For a comment that was posted: the draft it came from goes, while one
+        saved after the post, such as the author starting their next comment,
+        stays. The delete is conditioned on the read `updated_at`, so a save that
+        lands between the read and the delete survives too.
+        """
+        if not workspace_id or not user_id or not issue_id:
+            return False
+        key = {"workspace_id": workspace_id, "view_key": draft_key(user_id, issue_id, parent_comment_id)}
+        item = self._repository.get(key)
+        if item is None or CommentDraft.model_validate(dict(item)).updated_at > posted_at:
+            return False
+        try:
+            self._repository.delete(key, condition=Attr("updated_at").eq(item["updated_at"]))
+        except ConditionFailed:
+            return False
+        return True
+
+    def list_drafts(
+        self, workspace_id: str, user_id: str, *, issue_id: str | None = None, limit: int = DRAFTS_MAX
+    ) -> list[CommentDraft]:
+        """One member's drafts, newest saved first, across the workspace or on one issue."""
+        if not workspace_id or not user_id:
+            return []
+        prefix = draft_issue_prefix(user_id, issue_id) if issue_id else draft_user_prefix(user_id)
+        items = self._repository.iter_query(
+            Key("workspace_id").eq(workspace_id) & Key("view_key").begins_with(prefix),
+            max_items=limit,
+        )
+        rows = [CommentDraft.model_validate(dict(item)) for item in items]
+        return sorted(rows, key=lambda row: row.updated_at, reverse=True)
+
+    def delete_drafts_for_user(self, workspace_id: str, user_id: str) -> int:
+        """Delete every draft one member holds in a workspace, for the account purge."""
+        if not workspace_id or not user_id:
+            return 0
+        removed = 0
+        for item in list(
+            self._repository.iter_query(
+                Key("workspace_id").eq(workspace_id) & Key("view_key").begins_with(draft_user_prefix(user_id))
+            )
+        ):
+            self._repository.delete({"workspace_id": workspace_id, "view_key": item["view_key"]})
+            removed += 1
+        return removed
+
+    def delete_drafts_for_team(self, workspace_id: str, team_id: str) -> int:
+        """Delete every draft on one team's issues, whoever wrote it, for the team purge."""
+        if not workspace_id or not team_id:
+            return 0
+        removed = 0
+        for item in list(
+            self._repository.iter_query(
+                Key("workspace_id").eq(workspace_id) & Key("view_key").begins_with(DRAFT_PREFIX)
+            )
+        ):
+            if item.get("team_id") == team_id:
+                self._repository.delete({"workspace_id": workspace_id, "view_key": item["view_key"]})
+                removed += 1
+        return removed
 
     def _list(self, workspace_id: str, prefix: str, limit: int) -> list[SavedView]:
         """Every view under one sort key prefix, in creation order."""

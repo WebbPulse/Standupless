@@ -4151,3 +4151,26 @@ export interface FavoriteRead {
 export interface FavoriteListRead {
   favorites: FavoriteRead[];
 }
+
+/** One of the caller's unposted comment drafts, on an issue or one reply thread of it. */
+export interface DraftRead {
+  issue_id: string;
+  /** The root comment a reply draft answers, or null for a draft on the issue itself. */
+  parent_comment_id?: string | null;
+  team_id: string;
+  body: string;
+  issue_key?: string | null;
+  issue_title?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+/** The caller's drafts, newest saved first. */
+export interface DraftListRead {
+  drafts: DraftRead[];
+}
+
+/** The body a draft save takes, replacing what the thread's draft held. */
+export interface DraftWrite {
+  body: string;
+}

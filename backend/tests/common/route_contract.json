@@ -1671,6 +1671,30 @@
     "auth": "workspace:read",
     "domain": "views",
     "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/drafts"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "views",
+    "method": "DELETE",
+    "path": "/api/workspaces/{workspace_id}/drafts/{issue_id}"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "views",
+    "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/drafts/{issue_id}"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "views",
+    "method": "PUT",
+    "path": "/api/workspaces/{workspace_id}/drafts/{issue_id}"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "views",
+    "method": "GET",
     "path": "/api/workspaces/{workspace_id}/favorites"
   },
   {
