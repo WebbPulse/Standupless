@@ -240,9 +240,11 @@ const chooseGitHub = async (user: ReturnType<typeof userEvent.setup>) => {
   await chooseProvider(user, /^GitHub/);
 };
 
-/** Picks the CSV source and fixture file, then dry runs it. */
+/** Opens the Jira file flow unless it is open, picks the fixture file, then dry runs it. */
 const pickAndCheck = async (user: ReturnType<typeof userEvent.setup>) => {
-  await chooseCsv(user);
+  if (screen.queryByRole('list', { name: 'Import assistant' }) !== null) {
+    await chooseCsv(user);
+  }
   await user.upload(
     screen.getByLabelText('CSV file'),
     new File([CSV], 'jira.csv', { type: 'text/csv' })
