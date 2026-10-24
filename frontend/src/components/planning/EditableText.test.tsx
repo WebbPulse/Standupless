@@ -1,7 +1,8 @@
 /**
  * Editable text. Covers that a multiline field, such as a project's
  * description, takes the full height of its content with no inner scroll box,
- * both while it is read and while it is edited.
+ * both while it is read and while it is edited, and that Escape drops the
+ * draft rather than saving it on the blur that follows.
  */
 
 import { render, screen } from '@testing-library/react';
@@ -45,5 +46,26 @@ describe('EditableText', () => {
     await user.type(field, ' More.');
     expect(field.style.height).toBe(`${String(CONTENT_HEIGHT)}px`);
     expect(field.style.overflowY).toBe('hidden');
+  });
+
+  it('drops the draft on Escape without saving it', async () => {
+    const user = userEvent.setup();
+    const onSave = vi.fn();
+    render(
+      <EditableText
+        label="Name"
+        placeholder="Name"
+        value="Sprint 1"
+        disabled={false}
+        onSave={onSave}
+      />
+    );
+
+    const field = screen.getByRole('textbox', { name: 'Name' });
+    await user.type(field, ' later{Escape}');
+
+    expect(onSave).not.toHaveBeenCalled();
+    expect(field).toHaveValue('Sprint 1');
+    expect(field).not.toHaveFocus();
   });
 });

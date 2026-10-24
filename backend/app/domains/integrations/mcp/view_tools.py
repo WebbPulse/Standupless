@@ -22,6 +22,7 @@ from app.common.api.schemas.views import (
     VIEW_ENTITIES,
     VISIBLE_PROPERTIES,
     GroupByField,
+    InboxClearRequest,
     InboxReadRequest,
     InboxSnoozeRequest,
     InboxUnreadRequest,
@@ -36,6 +37,7 @@ from app.common.api.schemas.views import (
 from app.common.db.dynamo.views import SavedView
 from app.common.inbox import (
     INBOX_KINDS,
+    clear_notifications,
     delete_notification,
     list_notifications,
     mark_read,
@@ -345,6 +347,17 @@ def _delete_notification(call: ToolCall) -> Any:
     return {"deleted": True, "notification_id": notification_id}
 
 
+def _clear_notifications(call: ToolCall) -> Any:
+    """Delete the caller's own notifications in bulk, the read ones or all of them."""
+    _workspace_member(call)
+    payload = InboxClearRequest(
+        read_only=_flag(call, "read_only"),
+        include_snoozed=_flag(call, "include_snoozed"),
+        kinds=filter_values(call.optional("kinds")) or [],
+    )
+    return {"deleted": clear_notifications(call.repositories, call.context, payload)}
+
+
 def _set_issue_reminder(call: ToolCall) -> Any:
     """Remind the caller about one issue at a moment, replacing any reminder already set on it."""
     _workspace_member(call)
@@ -488,6 +501,24 @@ VIEW_TOOLS: tuple[Tool, ...] = (
             {"notification_id": string("The notification_id to delete")}, required=("notification_id",)
         ),
         handler=_delete_notification,
+        destructive=True,
+    ),
+    Tool(
+        name="delete_all_notifications",
+        description=(
+            "Permanently delete your notifications in bulk. read_only=true deletes only read ones; otherwise "
+            "every one goes except those still snoozed, unless include_snoozed=true. kinds keeps to those kinds. "
+            "Answers how many were deleted. Issues are untouched."
+        ),
+        scopes=("notifications:write",),
+        schema=object_schema(
+            {
+                "read_only": _boolean("Only notifications already read"),
+                "include_snoozed": _boolean("Also delete notifications still snoozed"),
+                "kinds": one_or_many("One notification kind or a list, ORed: " + ", ".join(INBOX_KINDS)),
+            }
+        ),
+        handler=_clear_notifications,
         destructive=True,
     ),
     Tool(

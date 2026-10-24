@@ -27,6 +27,11 @@ import {
   getInstallation,
   getSlackConnection,
   getSlackLink,
+  getDiscordLink,
+  getDiscordLinkUrl,
+  discordLinkPath,
+  discordLinkUrlPath,
+  unlinkDiscord,
   getSlackInstallUrl,
   installUrlPath,
   installationPath,
@@ -47,6 +52,7 @@ import {
   replaceTransitions,
   repositoryPath,
   rotateWebhookSecret,
+  setLabelSet,
   slackChannelsPath,
   slackConnectionPath,
   slackInstallUrlPath,
@@ -73,6 +79,7 @@ import type {
   SlackChannelRead,
   SlackConnectionRead,
   SlackLinkRead,
+  DiscordLinkRead,
   TransitionRead,
   WebhookDeliveryRead,
   WebhookEndpointRead,
@@ -150,6 +157,7 @@ const installation: GithubInstallationRead = {
     'https://github.com/organizations/WebbPulse/settings/installations/44551122',
   avatar_url: 'https://avatars.githubusercontent.com/u/1',
   suspended: false,
+  label_set: { enabled: false, include_public: false, queued: false },
 };
 
 /** One repository in exactly the shape the backend serialises. */
@@ -382,6 +390,35 @@ describe('the Slack App', () => {
     await unlinkSlack(WS);
     expect(del).toHaveBeenCalledWith(slackLinkPath(WS), undefined);
   });
+
+  it("reads, starts and removes the caller's own Discord link", async () => {
+    expect(discordLinkPath(WS)).toBe('/workspaces/ws-mine/discord/me');
+    expect(discordLinkUrlPath(WS)).toBe(
+      '/workspaces/ws-mine/discord/me/link-url'
+    );
+    const link: DiscordLinkRead = {
+      configured: true,
+      available: true,
+      linked: true,
+      discord_user_id: '1100000000000000002',
+      guild_name: 'Acme',
+      linked_at: '2026-10-24T00:00:00Z',
+      problem: null,
+    };
+    get.mockResolvedValueOnce({ data: link });
+    await expect(getDiscordLink(WS)).resolves.toEqual(link);
+    expect(get).toHaveBeenCalledWith(discordLinkPath(WS), undefined);
+    const started = {
+      url: 'https://discord.com/oauth2/authorize?scope=identify',
+      expires_at: '2026-10-24T00:10:00Z',
+    };
+    get.mockResolvedValueOnce({ data: started });
+    await expect(getDiscordLinkUrl(WS)).resolves.toEqual(started);
+    expect(get).toHaveBeenCalledWith(discordLinkUrlPath(WS), undefined);
+    del.mockResolvedValue({ data: null });
+    await unlinkDiscord(WS);
+    expect(del).toHaveBeenCalledWith(discordLinkPath(WS), undefined);
+  });
 });
 
 describe('the workspace channels', () => {
@@ -521,6 +558,19 @@ describe('the install flow', () => {
     del.mockResolvedValue({ data: null });
     await deleteInstallation(WS);
     expect(del).toHaveBeenCalledWith(installationPath(WS), undefined);
+  });
+
+  it('puts the workspace label set under the installation', async () => {
+    const answer = { enabled: true, include_public: false, queued: true };
+    put.mockResolvedValue({ data: answer });
+    await expect(
+      setLabelSet(WS, { enabled: true, include_public: false })
+    ).resolves.toEqual(answer);
+    expect(put).toHaveBeenCalledWith(
+      `${installationPath(WS)}/label-set`,
+      { enabled: true, include_public: false },
+      undefined
+    );
   });
 });
 

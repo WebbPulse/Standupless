@@ -318,6 +318,24 @@
     "path": "/api/workspaces/{workspace_id}/discord/install-url"
   },
   {
+    "auth": "workspace:read",
+    "domain": "integrations",
+    "method": "DELETE",
+    "path": "/api/workspaces/{workspace_id}/discord/me"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "integrations",
+    "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/discord/me"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "integrations",
+    "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/discord/me/link-url"
+  },
+  {
     "auth": "workspace:admin",
     "domain": "integrations",
     "method": "GET",
@@ -334,6 +352,12 @@
     "domain": "integrations",
     "method": "GET",
     "path": "/api/workspaces/{workspace_id}/github/installation"
+  },
+  {
+    "auth": "workspace:admin",
+    "domain": "integrations",
+    "method": "PUT",
+    "path": "/api/workspaces/{workspace_id}/github/installation/label-set"
   },
   {
     "auth": "workspace:admin",
@@ -1852,6 +1876,12 @@
     "domain": "views",
     "method": "GET",
     "path": "/api/workspaces/{workspace_id}/inbox"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "views",
+    "method": "POST",
+    "path": "/api/workspaces/{workspace_id}/inbox/clear"
   },
   {
     "auth": "workspace:read",

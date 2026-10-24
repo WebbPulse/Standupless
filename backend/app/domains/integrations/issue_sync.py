@@ -626,13 +626,17 @@ def enqueue_backlink(workspace_id: str, issue_id: str) -> None:
     _enqueue(BACKLINK_JOB, {"kind": BACKLINK_JOB, "workspace_id": workspace_id, "issue_id": issue_id}, workspace_id)
 
 
-def _enqueue(name: str, payload: Mapping[str, Any], workspace_id: str) -> None:
-    """Put one job on the dispatch queue, when this environment has one."""
+def _enqueue(name: str, payload: Mapping[str, Any], workspace_id: str, *, delay_seconds: int = 0) -> None:
+    """Put one job on the dispatch queue, when this environment has one, held back `delay_seconds`."""
     from webbpulse.events import EventEnvelope, enqueue
 
     if not settings.WEBHOOK_DISPATCH_QUEUE_URL:
         return
-    enqueue(settings.WEBHOOK_DISPATCH_QUEUE_URL, EventEnvelope(name=name, payload=dict(payload), scope=workspace_id))
+    enqueue(
+        settings.WEBHOOK_DISPATCH_QUEUE_URL,
+        EventEnvelope(name=name, payload=dict(payload), scope=workspace_id),
+        delay_seconds=delay_seconds or None,
+    )
 
 
 class _Token:

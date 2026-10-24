@@ -9,9 +9,12 @@
  * issues, until the toggle narrows it to the team alone, and an empty cycle
  * says so rather than drawing an empty chart. A cycle left with its generated
  * name reads as its number, and the side panel's breakdown filters the list.
+ * The name, goal and dates edit in place with an optimistic save that rolls
+ * back on failure, an end before the start is refused, and a closed cycle
+ * reads only.
  */
 
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -20,6 +23,7 @@ import type {
   CycleHistoryRead,
   CycleListRead,
   CycleRead,
+  CycleUpdate,
   IssueListRead,
   IssueRead,
   StatusRead,
@@ -34,6 +38,8 @@ const getCycle =
 const getCycleHistory =
   vi.fn<(id: string, teamId: string) => Promise<CycleHistoryRead>>();
 const listCycles = vi.fn<(query: unknown) => Promise<CycleListRead>>();
+const updateCycle =
+  vi.fn<(id: string, body: CycleUpdate) => Promise<CycleRead>>();
 const listIssues = vi.fn<(query: unknown) => Promise<IssueListRead>>();
 const listTeams = vi.fn<() => Promise<TeamRead[]>>();
 
@@ -59,6 +65,8 @@ vi.mock('../../api/planning', () => ({
   getCycleHistory: (_w: string, id: string, teamId: string) =>
     getCycleHistory(id, teamId),
   listCycles: (_w: string, query: unknown) => listCycles(query),
+  updateCycle: (_w: string, id: string, body: CycleUpdate) =>
+    updateCycle(id, body),
   listProjects: () => Promise.resolve({ projects: [], next_cursor: null }),
 }));
 
@@ -261,7 +269,7 @@ const renderPage = (entry = '/w/mine/team/ENG/cycles/cyc-1') =>
  * render does not spend the whole budget of a single wait on the chain.
  */
 const historyRequested = async (): Promise<void> => {
-  await screen.findByText('Ship the engine');
+  await screen.findByDisplayValue('Ship the engine');
   await waitFor(() => {
     expect(getCycleHistory).toHaveBeenCalled();
   });
@@ -276,6 +284,14 @@ describe('CycleDetail', () => {
     getCycleHistory.mockResolvedValue(history);
     listIssues.mockResolvedValue({ issues: [], next_cursor: null });
     listCycles.mockResolvedValue({ cycles: [cycle], next_cursor: null });
+    updateCycle.mockImplementation((_id, body) =>
+      Promise.resolve({
+        ...cycle,
+        ...body,
+        goal: body.goal === undefined ? cycle.goal : body.goal,
+        updated_at: '2026-09-19T00:00:00Z',
+      })
+    );
   });
 
   it('draws the recorded history with a projection once a few days are in', async () => {
@@ -360,7 +376,9 @@ describe('CycleDetail', () => {
   it('reads the cycle under the team the route names', async () => {
     renderPage();
 
-    expect(await screen.findByText('Ship the engine')).toBeInTheDocument();
+    expect(
+      await screen.findByDisplayValue('Ship the engine')
+    ).toBeInTheDocument();
     expect(getCycle).toHaveBeenCalledWith('cyc-1', 'proj-1');
     expect(screen.getAllByText('Scope').length).toBeGreaterThan(0);
     expect(screen.getAllByText('Started').length).toBeGreaterThan(0);
@@ -372,10 +390,10 @@ describe('CycleDetail', () => {
     getCycle.mockResolvedValue({ ...cycle, name: 'auto-20260901', number: 3 });
     renderPage();
 
-    expect(await screen.findByTestId('cycle-title')).toHaveTextContent(
-      'Cycle 3'
-    );
-    expect(screen.queryByText('auto-20260901')).toBeNull();
+    expect(
+      await screen.findByRole('textbox', { name: 'Cycle name' })
+    ).toHaveValue('Cycle 3');
+    expect(screen.queryByDisplayValue('auto-20260901')).toBeNull();
   });
 
   it('breaks the issues down and filters the list from a row', async () => {
@@ -586,6 +604,124 @@ describe('CycleDetail', () => {
       expect(
         screen.getByRole('button', { name: 'This team only' })
       ).toBeInTheDocument();
+    });
+  });
+
+  describe('editing in place', () => {
+    it('renames the cycle on Enter', async () => {
+      const user = userEvent.setup();
+      renderPage();
+      const name = await screen.findByRole('textbox', { name: 'Cycle name' });
+
+      await user.clear(name);
+      await user.type(name, 'Launch{Enter}');
+
+      expect(updateCycle).toHaveBeenCalledWith('cyc-1', {
+        team_id: 'proj-1',
+        name: 'Launch',
+      });
+      expect(name).toHaveValue('Launch');
+    });
+
+    it('drops the draft on Escape', async () => {
+      const user = userEvent.setup();
+      renderPage();
+      const name = await screen.findByRole('textbox', { name: 'Cycle name' });
+
+      await user.type(name, ' later{Escape}');
+
+      expect(updateCycle).not.toHaveBeenCalled();
+      expect(name).toHaveValue('Sprint 1');
+    });
+
+    it('falls back to the readable name when the name is cleared', async () => {
+      const user = userEvent.setup();
+      getCycle.mockResolvedValue({ ...cycle, number: 4 });
+      renderPage();
+      const name = await screen.findByRole('textbox', { name: 'Cycle name' });
+
+      await user.clear(name);
+      await user.tab();
+
+      expect(updateCycle).toHaveBeenCalledWith('cyc-1', {
+        team_id: 'proj-1',
+        name: 'Cycle 4',
+      });
+    });
+
+    it('sets and clears the goal', async () => {
+      const user = userEvent.setup();
+      renderPage();
+      const goal = await screen.findByRole('textbox', { name: 'Cycle goal' });
+      expect(goal).toHaveAttribute('placeholder', 'Add a cycle goal');
+
+      await user.clear(goal);
+      await user.tab();
+
+      expect(updateCycle).toHaveBeenCalledWith('cyc-1', {
+        team_id: 'proj-1',
+        goal: null,
+      });
+    });
+
+    it('moves the end date from the picker', async () => {
+      const user = userEvent.setup();
+      renderPage();
+
+      await user.click(
+        await screen.findByRole('button', { name: /^End date:/ })
+      );
+      fireEvent.change(screen.getByLabelText('Custom date'), {
+        target: { value: '2026-09-21' },
+      });
+
+      expect(updateCycle).toHaveBeenCalledWith('cyc-1', {
+        team_id: 'proj-1',
+        end_date: '2026-09-21',
+      });
+    });
+
+    it('refuses an end date before the start', async () => {
+      const user = userEvent.setup();
+      renderPage();
+
+      await user.click(
+        await screen.findByRole('button', { name: /^End date:/ })
+      );
+      fireEvent.change(screen.getByLabelText('Custom date'), {
+        target: { value: '2026-08-20' },
+      });
+
+      expect(
+        await screen.findByText(
+          'The end date cannot fall before the start date.'
+        )
+      ).toBeInTheDocument();
+      expect(updateCycle).not.toHaveBeenCalled();
+    });
+
+    it('rolls a failed save back', async () => {
+      const user = userEvent.setup();
+      updateCycle.mockRejectedValue(new Error('offline'));
+      renderPage();
+      const name = await screen.findByRole('textbox', { name: 'Cycle name' });
+
+      await user.clear(name);
+      await user.type(name, 'Launch{Enter}');
+
+      await waitFor(() => {
+        expect(name).toHaveValue('Sprint 1');
+      });
+    });
+
+    it('keeps a completed cycle read only', async () => {
+      getCycle.mockResolvedValue({ ...cycle, status: 'completed' });
+      renderPage();
+
+      expect(await screen.findByText('Ship the engine')).toBeInTheDocument();
+      expect(screen.queryByRole('textbox', { name: 'Cycle name' })).toBeNull();
+      expect(screen.queryByRole('textbox', { name: 'Cycle goal' })).toBeNull();
+      expect(screen.queryByRole('button', { name: /^End date:/ })).toBeNull();
     });
   });
 });

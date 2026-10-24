@@ -45,6 +45,7 @@ import {
   linkRepository,
   listRepositories,
   readInstallation,
+  setLabelSet,
   type InstallationState,
 } from '../../api/integrations';
 import { errorMessage } from '../../lib/errors';
@@ -55,6 +56,7 @@ import {
 } from '../../lib/queryKeys';
 import type {
   GithubInstallationRead,
+  GithubLabelSetWrite,
   GithubRepositoryRead,
   TeamRead,
   WorkspaceRead,
@@ -62,6 +64,7 @@ import type {
 import { ErrorAlert } from '../ui/alert';
 import Badge from '../ui/badge';
 import Button from '../ui/button';
+import Checkbox from '../ui/checkbox';
 import Dialog from '../ui/dialog';
 import { SelectField } from '../ui/select';
 import { Skeleton } from '../ui/skeleton';
@@ -160,6 +163,15 @@ export const GithubSection: React.FC<GithubSectionProps> = ({ workspace }) => {
     (input: { repositoryId: string; teamId: string | null }) =>
       linkRepository(workspace.id, input.repositoryId, input.teamId),
     reposKey
+  );
+
+  const {
+    mutate: saveLabelSet,
+    error: labelSetError,
+    isMutating: savingLabelSet,
+  } = useMutationWithRefetch(
+    (body: GithubLabelSetWrite) => setLabelSet(workspace.id, body),
+    installKey
   );
 
   const resume = useCallback((): void => {
@@ -311,6 +323,10 @@ export const GithubSection: React.FC<GithubSectionProps> = ({ workspace }) => {
             onPin={(repositoryId, teamId) => {
               void pin({ repositoryId, teamId }).catch(() => undefined);
             }}
+            savingLabelSet={savingLabelSet}
+            onLabelSet={(body) => {
+              void saveLabelSet(body).catch(() => undefined);
+            }}
           />
         )}
       </div>
@@ -323,6 +339,14 @@ export const GithubSection: React.FC<GithubSectionProps> = ({ workspace }) => {
       {pinError !== null && (
         <ErrorAlert
           message={errorMessage(pinError, 'Could not change that repository.')}
+        />
+      )}
+      {labelSetError !== null && (
+        <ErrorAlert
+          message={errorMessage(
+            labelSetError,
+            'Could not change the workspace label set.'
+          )}
         />
       )}
       {reposError !== null && (
@@ -377,6 +401,8 @@ interface ConnectedBodyProps {
   teams: TeamRead[];
   onDisconnect: () => void;
   onPin: (repositoryId: string, teamId: string | null) => void;
+  savingLabelSet: boolean;
+  onLabelSet: (body: GithubLabelSetWrite) => void;
 }
 
 /** The account row and the repository list of a connected workspace. */
@@ -386,8 +412,11 @@ const ConnectedBody: React.FC<ConnectedBodyProps> = ({
   teams,
   onDisconnect,
   onPin,
+  savingLabelSet,
+  onLabelSet,
 }) => {
   const [avatarFailed, setAvatarFailed] = useState(false);
+  const labelSet = installation.label_set;
   const rows = repositories ?? [];
   const accountKind =
     installation.account_type === 'Organization'
@@ -455,6 +484,40 @@ const ConnectedBody: React.FC<ConnectedBodyProps> = ({
           </p>
         </div>
       )}
+
+      <div className="space-y-2 border-t border-line px-4 py-3">
+        <Checkbox
+          label="Keep workspace labels on every repository"
+          checked={labelSet.enabled}
+          disabled={savingLabelSet}
+          onChange={(event) => {
+            onLabelSet({
+              enabled: event.target.checked,
+              include_public: labelSet.include_public,
+            });
+          }}
+        />
+        <p className="text-xs text-text-faint">
+          Every workspace label, with its color and description, is created on
+          each repository the App can see and follows renames and recolors. A
+          repository a team syncs labels with follows that team instead.
+          Standupless only deletes labels it created, and turning this off
+          deletes nothing.
+        </p>
+        {labelSet.enabled && (
+          <Checkbox
+            label="Include public repositories"
+            checked={labelSet.include_public}
+            disabled={savingLabelSet}
+            onChange={(event) => {
+              onLabelSet({
+                enabled: true,
+                include_public: event.target.checked,
+              });
+            }}
+          />
+        )}
+      </div>
 
       <div className="border-t border-line">
         <div

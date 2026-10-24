@@ -3766,6 +3766,95 @@
         "title": "DiscordInstallUrlRead",
         "type": "object"
       },
+      "DiscordLinkRead": {
+        "description": "Whether the caller's personal notifications reach their Discord direct messages.\n\n`available` says the workspace has the Discord App in a server, `linked` that\nthe caller has a route, and `problem` why that route cannot deliver right now,\nsuch as closed DMs or the App leaving the server, which a new link clears.\nNothing here names another member or carries a token.",
+        "properties": {
+          "available": {
+            "title": "Available",
+            "type": "boolean"
+          },
+          "configured": {
+            "title": "Configured",
+            "type": "boolean"
+          },
+          "discord_user_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Discord User Id"
+          },
+          "guild_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Guild Name"
+          },
+          "linked": {
+            "default": false,
+            "title": "Linked",
+            "type": "boolean"
+          },
+          "linked_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Linked At"
+          },
+          "problem": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Problem"
+          }
+        },
+        "required": [
+          "configured",
+          "available"
+        ],
+        "title": "DiscordLinkRead",
+        "type": "object"
+      },
+      "DiscordLinkUrlRead": {
+        "description": "Where to send the caller to link their Discord account, and when that link stops working.",
+        "properties": {
+          "expires_at": {
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "url",
+          "expires_at"
+        ],
+        "title": "DiscordLinkUrlRead",
+        "type": "object"
+      },
       "DisplayOptionsBody": {
         "description": "The display options one team page opens with, each null where the page keeps its built-in default.\n\nHeld to the saved view's own choices, so a team default is always one a view\ncould save: a sub grouping needs a grouping and must differ from it. Either\ngrouping may be `none`, which a page reads as no grouping rather than as its\nbuilt-in one.",
         "properties": {
@@ -5569,6 +5658,43 @@
         "title": "ImportRowRead",
         "type": "object"
       },
+      "InboxClearRequest": {
+        "description": "The body a bulk delete takes: which of the caller's notifications to remove.\n\n`read_only` keeps to rows already read. Without it every row goes except those\nstill snoozed, unless `include_snoozed` takes them too. `kinds` keeps to those\nnotification kinds, matching the list's filter.",
+        "properties": {
+          "include_snoozed": {
+            "default": false,
+            "title": "Include Snoozed",
+            "type": "boolean"
+          },
+          "kinds": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 50,
+            "title": "Kinds",
+            "type": "array"
+          },
+          "read_only": {
+            "default": false,
+            "title": "Read Only",
+            "type": "boolean"
+          }
+        },
+        "title": "InboxClearRequest",
+        "type": "object"
+      },
+      "InboxClearResult": {
+        "description": "How many notifications a bulk delete removed.",
+        "properties": {
+          "deleted": {
+            "default": 0,
+            "title": "Deleted",
+            "type": "integer"
+          }
+        },
+        "title": "InboxClearResult",
+        "type": "object"
+      },
       "InboxCountRead": {
         "description": "The unread badge, counted from the sparse index and capped.",
         "properties": {
@@ -6770,6 +6896,9 @@
           "installed_by": {
             "title": "Installed By",
             "type": "string"
+          },
+          "label_set": {
+            "$ref": "#/components/schemas/LabelSetRead"
           },
           "manage_url": {
             "default": "",
@@ -8844,6 +8973,47 @@
         "title": "LabelRead",
         "type": "object"
       },
+      "LabelSetRead": {
+        "description": "Whether the workspace pushes its labels to every repository the installation can see.\n\n`queued` is true on a write that turned the push on and queued the first run.",
+        "properties": {
+          "enabled": {
+            "default": false,
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "include_public": {
+            "default": false,
+            "title": "Include Public",
+            "type": "boolean"
+          },
+          "queued": {
+            "default": false,
+            "title": "Queued",
+            "type": "boolean"
+          }
+        },
+        "title": "LabelSetRead",
+        "type": "object"
+      },
+      "LabelSetWrite": {
+        "description": "Turn the workspace label set push on or off, and choose whether public repositories get it.",
+        "properties": {
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "include_public": {
+            "default": false,
+            "title": "Include Public",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "enabled"
+        ],
+        "title": "LabelSetWrite",
+        "type": "object"
+      },
       "LabelUpdate": {
         "description": "The body a label patch takes.\n\n`parent_id` moves a label into a group of the same scope, and an explicit\nnull takes it out of its group, and an explicit null or empty `description`\nclears it. A field left out keeps its current value.",
         "properties": {
@@ -9659,7 +9829,7 @@
         "type": "object"
       },
       "NotificationChannels": {
-        "description": "Where one kind of notification is delivered: the inbox, email and chat direct messages.\n\n`chat` covers every chat account the person linked, Slack today, and only\nreaches them once one is linked.",
+        "description": "Where one kind of notification is delivered: the inbox, email and chat direct messages.\n\n`chat` covers every chat account the person linked, Slack or Discord, and only\nreaches them once one is linked.",
         "properties": {
           "chat": {
             "default": true,
@@ -22125,7 +22295,7 @@
             "description": "A person's account link finished."
           },
           "302": {
-            "description": "Successful Response"
+            "description": "Back to the settings page an install or a settings link started from."
           },
           "400": {
             "content": {
@@ -27957,6 +28127,144 @@
         ]
       }
     },
+    "/api/workspaces/{workspace_id}/discord/me": {
+      "delete": {
+        "description": "Stop the caller's Discord direct messages and forget which Discord account they are.",
+        "operationId": "unlink_my_discord_api_workspaces__workspace_id__discord_me_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Unlink My Discord",
+        "tags": [
+          "integrations"
+        ]
+      },
+      "get": {
+        "description": "Whether the caller's personal notifications reach their Discord direct messages.",
+        "operationId": "get_my_discord_link_api_workspaces__workspace_id__discord_me_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DiscordLinkRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Get My Discord Link",
+        "tags": [
+          "integrations"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/discord/me/link-url": {
+      "get": {
+        "description": "Where to send the caller to link their Discord account through Discord's `identify` consent.",
+        "operationId": "get_my_discord_link_url_api_workspaces__workspace_id__discord_me_link_url_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DiscordLinkUrlRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Get My Discord Link Url",
+        "tags": [
+          "integrations"
+        ]
+      }
+    },
     "/api/workspaces/{workspace_id}/documents": {
       "get": {
         "description": "Every document the caller can read, most recently edited first, for the command palette.",
@@ -29081,6 +29389,65 @@
         ]
       }
     },
+    "/api/workspaces/{workspace_id}/github/installation/label-set": {
+      "put": {
+        "description": "Turn the workspace label set push on or off, a 404 with no installation, or a 409 with no App.\n\nTurning it on, or widening it to public repositories, queues a push to every\nrepository the installation can see. Turning it off stops later pushes and\ndeletes nothing on GitHub.",
+        "operationId": "put_label_set_api_workspaces__workspace_id__github_installation_label_set_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LabelSetWrite"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LabelSetRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Put Label Set",
+        "tags": [
+          "integrations"
+        ]
+      }
+    },
     "/api/workspaces/{workspace_id}/github/repositories": {
       "get": {
         "description": "Every repository the installation can see, with the team it feeds.",
@@ -29994,6 +30361,65 @@
           }
         ],
         "summary": "List Inbox",
+        "tags": [
+          "views"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/inbox/clear": {
+      "post": {
+        "description": "Delete the caller's own notifications in bulk: the read ones, or all of them.\n\nOnly the caller's own partition is read, so nothing in anyone else's inbox can\nmatch. `kinds` narrows it as the list's filter does, and a row still snoozed\ngoes only when a full clear sends `include_snoozed`.",
+        "operationId": "clear_inbox_api_workspaces__workspace_id__inbox_clear_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InboxClearRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InboxClearResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Clear Inbox",
         "tags": [
           "views"
         ]

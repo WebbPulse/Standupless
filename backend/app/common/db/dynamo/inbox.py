@@ -549,6 +549,38 @@ class InboxRepository:
             return None
         return int(item["slot"])
 
+    def delete_matching(
+        self,
+        workspace_id: str,
+        user_id: str,
+        *,
+        read_only: bool = False,
+        include_snoozed: bool = False,
+        kinds: Iterable[str] = (),
+        now: datetime | None = None,
+    ) -> int:
+        """Delete every notification of one member that matches, reporting how many went.
+
+        `read_only` keeps to rows already read, which a snoozed row never is. Without
+        it every row goes, except those still snoozed unless `include_snoozed` takes
+        them too. `kinds` keeps to those kinds. Reads only this member's partition, so
+        nothing outside their own inbox can match.
+        """
+        moment = now or utc_now()
+        partition = inbox_partition(workspace_id, user_id)
+        state: Any = Attr("unread_at").not_exists() if read_only else None if include_snoozed else _awake(moment)
+        wanted = list(kinds)
+        of_kind = Attr("kind").is_in(wanted) if wanted else None
+        filter_expression = None
+        for condition in (state, of_kind):
+            if condition is not None:
+                filter_expression = condition if filter_expression is None else filter_expression & condition
+        keys = [
+            {"ws_user": partition, "notification_id": str(item["notification_id"])}
+            for item in self._repository.iter_query(Key("ws_user").eq(partition), filter_expression=filter_expression)
+        ]
+        return self._repository.delete_many(keys)
+
     def delete(self, workspace_id: str, user_id: str, notification_id: str) -> bool:
         """Remove one notification, reporting whether one was there."""
         if self.get(workspace_id, user_id, notification_id) is None:

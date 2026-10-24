@@ -173,6 +173,8 @@ COMMENT_SYNC_PREFIX = "cmtsync#"
 GITHUB_COMMENT_PREFIX = "ghcomment#"
 BACKLINK_PREFIX = "backlink#"
 LABEL_SYNC_PREFIX = "labelsync#"
+LABEL_SET_KEY = "labelset#settings"
+"""The one row per workspace holding its workspace label set opt-in."""
 DISPATCH_SLOTS_KEY = "dispatch#slots"
 """The one row per workspace holding the leases on its in-flight webhook attempts."""
 
@@ -241,6 +243,10 @@ def label_sync_prefix(repository_id: str) -> str:
 def label_sync_key(repository_id: str, label_id: str) -> str:
     """The sort key of one team label's sync state in one repository."""
     return f"{label_sync_prefix(repository_id)}{label_id}"
+
+
+WORKSPACE_LABEL_SYNC_TEAM = ""
+"""The `team_id` of a label sync row the workspace label set wrote rather than a team's sync."""
 
 
 def ws_issue(workspace_id: str, issue_id: str) -> str:
@@ -697,6 +703,23 @@ class LabelSync(BaseModel):
     description: str = ""
     created: bool = False
     synced_at: datetime = Field(default_factory=utc_now)
+
+
+class LabelSetSetting(BaseModel):
+    """Whether a workspace pushes its workspace labels to every repository the installation can see.
+
+    Kept on its own row rather than on `Installation`, because a refresh from
+    GitHub replaces the installation row whole. Public repositories are left out
+    unless `include_public` is on, since the label names would be published.
+    `updated_by` names who last changed it.
+    """
+
+    workspace_id: str
+    github_key: str = LABEL_SET_KEY
+    enabled: bool = False
+    include_public: bool = False
+    updated_by: str = ""
+    updated_at: datetime = Field(default_factory=utc_now)
 
 
 def _stored_time(value: datetime) -> str:
@@ -1231,6 +1254,7 @@ class GithubRepository:
             PR_STATE_PREFIX,
             REVIEWER_PREFIX,
             HEAD_SHA_PREFIX,
+            LABEL_SET_KEY,
             *SYNC_PREFIXES,
         ):
             for item in self._query(workspace_id, prefix, 1000):
@@ -1466,6 +1490,19 @@ class GithubRepository:
     def delete_label_sync(self, workspace_id: str, repository_id: str, label_id: str) -> bool:
         """Forget one label's sync state."""
         return self._delete(workspace_id, label_sync_key(repository_id, label_id))
+
+    def get_label_set(self, workspace_id: str) -> LabelSetSetting | None:
+        """The workspace's label set opt-in, or `None` when it was never set."""
+        if not workspace_id:
+            return None
+        item = self._repository.get({"workspace_id": workspace_id, "github_key": LABEL_SET_KEY})
+        return LabelSetSetting.model_validate(dict(item)) if item is not None else None
+
+    def put_label_set(self, row: LabelSetSetting) -> LabelSetSetting:
+        """Store the workspace's label set opt-in."""
+        saved = row.model_copy(update={"github_key": LABEL_SET_KEY, "updated_at": utc_now()})
+        self._repository.put(as_item(saved))
+        return saved
 
     def get_backlink(self, workspace_id: str, issue_id: str) -> IssueBacklink | None:
         """One issue's backlink comment row, or `None`."""

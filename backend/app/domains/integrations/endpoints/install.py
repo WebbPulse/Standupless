@@ -13,14 +13,18 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Response, status
 
+from app.common import audit
 from app.common.api.dependencies.authz import AuthzContext, Capability, require
 from app.common.api.dependencies.repositories import Repositories, get_repositories
 from app.common.core.config import settings
+from app.common.db.dynamo.github import LabelSetSetting
 from app.domains.integrations import github_api
 from app.domains.integrations.install_state import mint_state
 from app.domains.integrations.schemas.integrations import (
     InstallationRead,
     InstallUrlRead,
+    LabelSetRead,
+    LabelSetWrite,
     RepositoryLinkWrite,
     RepositoryRead,
 )
@@ -61,6 +65,9 @@ def get_installation(
     if installation is None:
         raise not_found()
     linked = repositories.github.list_repositories(context.workspace_id)
+    label_set = repositories.github.get_label_set(context.workspace_id) or LabelSetSetting(
+        workspace_id=context.workspace_id
+    )
     return InstallationRead(
         installation_id=installation.installation_id,
         account_login=installation.account_login,
@@ -74,7 +81,58 @@ def get_installation(
         installed_by=installation.installed_by,
         installed_at=installation.installed_at,
         repository_count=len(linked),
+        label_set=LabelSetRead(enabled=label_set.enabled, include_public=label_set.include_public),
     )
+
+
+@router.put("/{workspace_id}/github/installation/label-set", response_model=LabelSetRead)
+def put_label_set(
+    payload: LabelSetWrite,
+    context: Annotated[AuthzContext, Depends(require(Capability.WORKSPACE_ADMIN))],
+    repositories: Annotated[Repositories, Depends(get_repositories)],
+) -> LabelSetRead:
+    """Turn the workspace label set push on or off, a 404 with no installation, or a 409 with no App.
+
+    Turning it on, or widening it to public repositories, queues a push to every
+    repository the installation can see. Turning it off stops later pushes and
+    deletes nothing on GitHub.
+    """
+    from app.domains.integrations.label_set import queue_push
+
+    if not settings.github_configured:
+        raise not_configured()
+    installation = repositories.github.get_installation(context.workspace_id)
+    if installation is None:
+        raise not_found()
+    existing = repositories.github.get_label_set(context.workspace_id)
+    before = {
+        "enabled": existing.enabled if existing is not None else False,
+        "include_public": existing.include_public if existing is not None else False,
+    }
+    row = repositories.github.put_label_set(
+        LabelSetSetting(
+            workspace_id=context.workspace_id,
+            enabled=payload.enabled,
+            include_public=payload.include_public,
+            updated_by=context.user_id,
+        )
+    )
+    after = {"enabled": row.enabled, "include_public": row.include_public}
+    changed = [name for name in after if before[name] != after[name]]
+    if changed:
+        audit.record(
+            repositories,
+            context,
+            "github.label_set_updated",
+            target_type="github",
+            target_id=installation.installation_id,
+            target_label=installation.account_login,
+            before={name: before[name] for name in changed},
+            after={name: after[name] for name in changed},
+        )
+    widened = row.enabled and (not before["enabled"] or (row.include_public and not before["include_public"]))
+    queued = queue_push(context.workspace_id) if widened else False
+    return LabelSetRead(enabled=row.enabled, include_public=row.include_public, queued=queued)
 
 
 @router.delete("/{workspace_id}/github/installation", status_code=status.HTTP_204_NO_CONTENT)
