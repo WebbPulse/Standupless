@@ -12,6 +12,10 @@
  * The same editor keeps document templates, which are a name, a title and a
  * Markdown body with none of the issue properties, so the new document flow
  * and the update composer start from text a team agreed on.
+ *
+ * An issue template can also be a form: a list of questions the create dialog
+ * asks in place of a free description, whose answers land in the body and
+ * whose issues go to the team's triage.
  */
 
 import React, { useState } from 'react';
@@ -29,6 +33,7 @@ import type { EstimateOptions } from '../../lib/validation';
 import type {
   CycleRead,
   EstimateScale,
+  FormField,
   IssuePriority,
   LabelRead,
   ProjectRead,
@@ -49,8 +54,10 @@ import {
 import { ErrorAlert } from '../ui/alert';
 import { Badge } from '../ui/badge';
 import Button, { IconButton } from '../ui/button';
+import { Checkbox } from '../ui/checkbox';
 import { Input, Textarea } from '../ui/input';
 import Label from '../ui/label';
+import { FormFieldsEditor, formFieldsComplete } from './FormFieldsEditor';
 
 /** The lists the form's pickers choose from. Planning lists are team only. */
 export interface TemplateEditorOptions {
@@ -101,6 +108,8 @@ interface FormState {
   estimate: string | null;
   projectId: string | null;
   cycleId: string | null;
+  isForm: boolean;
+  formFields: FormField[];
 }
 
 const EMPTY_FORM: FormState = {
@@ -114,6 +123,8 @@ const EMPTY_FORM: FormState = {
   estimate: null,
   projectId: null,
   cycleId: null,
+  isForm: false,
+  formFields: [],
 };
 
 /** The form a saved template opens into. */
@@ -128,7 +139,24 @@ const formOf = (template: TemplateRead): FormState => ({
   estimate: template.estimate,
   projectId: template.project_id,
   cycleId: template.cycle_id,
+  isForm: (template.form_fields ?? []).length > 0,
+  formFields: template.form_fields ?? [],
 });
+
+/** The questions a write sends: none unless the template is a form. */
+const formFieldsOf = (form: FormState): FormField[] =>
+  form.isForm
+    ? form.formFields.map((field) => ({
+        ...field,
+        description: field.description?.trim() ? field.description : null,
+      }))
+    : [];
+
+/** Whether the form can be saved: a name, and a complete set of questions when it is a form. */
+const savable = (form: FormState): boolean =>
+  form.name.trim() !== '' &&
+  (!form.isForm ||
+    (form.formFields.length > 0 && formFieldsComplete(form.formFields)));
 
 /** Every field of the form as a write sends it, blanks as null. */
 const fieldsOf = (form: FormState) => ({
@@ -141,6 +169,7 @@ const fieldsOf = (form: FormState) => ({
   estimate: form.estimate,
   project_id: form.projectId,
   cycle_id: form.cycleId,
+  form_fields: formFieldsOf(form),
 });
 
 /** The fields a document template carries, blanks as null. */
@@ -252,7 +281,7 @@ const TemplateForm: React.FC<TemplateFormProps> = ({
       className="space-y-3 rounded-md border border-line p-3"
       onSubmit={(event) => {
         event.preventDefault();
-        if (form.name.trim() === '' || saving) return;
+        if (!savable(form) || saving) return;
         setSaving(true);
         setError(null);
         onSubmit(form)
@@ -292,6 +321,32 @@ const TemplateForm: React.FC<TemplateFormProps> = ({
           }}
         />
       </div>
+      {kind === 'issue' && (
+        <div className="space-y-2">
+          <Checkbox
+            label="Ask questions with a form"
+            checked={form.isForm}
+            onChange={(event) => {
+              set({ isForm: event.target.checked });
+            }}
+          />
+          {form.isForm && (
+            <>
+              <p className="text-xs text-text-muted">
+                The create dialog asks these questions, the answers land in the
+                description, and the issue goes to the team&apos;s triage.
+              </p>
+              <FormFieldsEditor
+                fields={form.formFields}
+                labels={options.labels}
+                onChange={(formFields) => {
+                  set({ formFields });
+                }}
+              />
+            </>
+          )}
+        </div>
+      )}
       <div className="space-y-1">
         <Label htmlFor="template-body">{copy.bodyLabel}</Label>
         <Textarea
@@ -395,7 +450,7 @@ const TemplateForm: React.FC<TemplateFormProps> = ({
         <Button
           type="submit"
           variant="primary"
-          disabled={form.name.trim() === '' || saving}
+          disabled={!savable(form) || saving}
         >
           {saving ? 'Saving' : submitLabel}
         </Button>
@@ -503,6 +558,9 @@ export const TemplateEditor: React.FC<TemplateEditorProps> = ({
                     {template.name}
                     {template.id === defaultTemplateId && (
                       <Badge tone="accent">Default</Badge>
+                    )}
+                    {(template.form_fields ?? []).length > 0 && (
+                      <Badge>Form</Badge>
                     )}
                   </p>
                   {template.title !== null && (
@@ -643,6 +701,7 @@ export const TemplateEditor: React.FC<TemplateEditorProps> = ({
                 {template.id === defaultTemplateId && (
                   <Badge tone="accent">Default</Badge>
                 )}
+                {(template.form_fields ?? []).length > 0 && <Badge>Form</Badge>}
                 <Badge>{TEMPLATE_GROUPS[template.scope]}</Badge>
                 {canEdit && onMakeRecurring !== undefined && (
                   <IconButton

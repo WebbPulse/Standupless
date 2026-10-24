@@ -6,7 +6,9 @@ A project template, `kind` "project", instead carries `project`: the project
 fields it fills, with dates as offsets from the creation day, and the milestones
 and issues a project made from it starts with. A document template, `kind`
 "document", carries only a title and a Markdown body, which a new document or a
-project or initiative update starts from.
+project or initiative update starts from. An issue template with `form_fields`
+is a form: each field is a question an issue filed from it answers, and a select
+option may put a label or a priority on the issue.
 Fields that need a table read to judge, such as a status of the team, are held
 by the write path in `app.common.issue_templates`.
 """
@@ -34,6 +36,7 @@ from app.common.db.dynamo.team_templates import (
     DOCUMENT_TEMPLATE,
     ISSUE_TEMPLATE,
     PROJECT_TEMPLATE,
+    FormFieldBlueprint,
     IssueTemplate,
     ProjectBlueprint,
     TemplateSettings,
@@ -70,7 +73,25 @@ OFFSET_MAX_DAYS = 3650
 """The furthest a template date may sit from the creation day."""
 
 KEY_MAX = 40
-"""The longest key a template milestone or issue may carry."""
+"""The longest key a template milestone, issue or form field may carry."""
+
+FormFieldType = Literal["short_text", "long_text", "select", "checkbox"]
+"""What a form field asks for: one line of text, a paragraph, one of a set of options, or a yes or no."""
+
+FORM_FIELDS_MAX = 20
+"""How many questions one form template asks."""
+
+FORM_OPTIONS_MAX = 25
+"""How many options one select field offers."""
+
+FORM_LABEL_MAX = 120
+"""The longest question a form field may ask."""
+
+FORM_DESCRIPTION_MAX = 500
+"""The longest help text a form field may carry."""
+
+FORM_OPTION_MAX = 80
+"""The longest option a select field may offer."""
 
 
 def _check_name(value: Optional[str]) -> Optional[str]:
@@ -261,7 +282,87 @@ class ProjectTemplateFields(BaseModel):
         return self
 
 
-def _settle_keys(rows: Sequence[MilestoneTemplate | IssueTemplateItem], prefix: str, noun: str) -> set[str]:
+class FormOption(BaseModel):
+    """One option of a select field; choosing it puts `label_id` and `priority` on the issue when set."""
+
+    value: str = Field(min_length=1, max_length=FORM_OPTION_MAX)
+    label_id: Optional[str] = None
+    priority: Optional[PriorityField] = None
+
+    @field_validator("value")
+    @classmethod
+    def check_value(cls, value: str) -> str:
+        """Reject an option that is only whitespace."""
+        candidate = value.strip()
+        if not candidate:
+            raise ValueError("an option must not be blank")
+        return candidate
+
+    @field_validator("label_id")
+    @classmethod
+    def check_label_id(cls, value: Optional[str]) -> Optional[str]:
+        """Read a blank label as none."""
+        return _check_key(value)
+
+
+class FormField(BaseModel):
+    """One question a form template asks.
+
+    A field without a key is given one, `f1` onwards. Only a select field takes
+    options, and it needs at least one.
+    """
+
+    key: Optional[str] = Field(default=None, max_length=KEY_MAX)
+    label: str = Field(min_length=1, max_length=FORM_LABEL_MAX)
+    type: FormFieldType = "short_text"
+    required: bool = False
+    description: Optional[str] = Field(default=None, max_length=FORM_DESCRIPTION_MAX)
+    options: list[FormOption] = Field(default_factory=list, max_length=FORM_OPTIONS_MAX)
+
+    @field_validator("key")
+    @classmethod
+    def check_key(cls, value: Optional[str]) -> Optional[str]:
+        """Read a blank key as none."""
+        return _check_key(value)
+
+    @field_validator("label")
+    @classmethod
+    def check_label(cls, value: str) -> str:
+        """Reject a question that is only whitespace."""
+        candidate = value.strip()
+        if not candidate:
+            raise ValueError("label must not be blank")
+        return candidate
+
+    @field_validator("description")
+    @classmethod
+    def check_description(cls, value: Optional[str]) -> Optional[str]:
+        """Read blank help text as none."""
+        return (value or "").strip() or None
+
+    @model_validator(mode="after")
+    def check_options(self) -> "FormField":
+        """Hold options to select fields, at least one each and every value distinct."""
+        if self.type != "select":
+            if self.options:
+                raise ValueError(f"{self.label}: only a select field takes options")
+            return self
+        if not self.options:
+            raise ValueError(f"{self.label}: a select field needs at least one option")
+        values = [option.value.casefold() for option in self.options]
+        if len(set(values)) != len(values):
+            raise ValueError(f"{self.label}: each option must be different")
+        return self
+
+
+def _check_form(value: Optional[list[FormField]]) -> Optional[list[FormField]]:
+    """Give every form field a unique key, raising on a key used twice."""
+    if value is not None:
+        _settle_keys(value, "f", "form field")
+    return value
+
+
+def _settle_keys(rows: Sequence[MilestoneTemplate | IssueTemplateItem | FormField], prefix: str, noun: str) -> set[str]:
     """Give each row without a key the next free one, raising on a key used twice."""
     taken = {item.key for item in rows if item.key}
     seen: set[str] = set()
@@ -310,13 +411,20 @@ class TemplateCreate(TemplateFields):
 
     `kind` "project" makes a project template, which fills `project` and leaves
     the issue fields unset. `kind` "document" makes a document template, which
-    takes only `title` and `body`.
+    takes only `title` and `body`. `form_fields` makes an issue template a form.
     """
 
     kind: TemplateKindField = "issue"
     name: str = Field(min_length=1, max_length=TEMPLATE_NAME_MAX)
     label_ids: list[str] = Field(default_factory=list)
     project: Optional[ProjectTemplateFields] = None
+    form_fields: list[FormField] = Field(default_factory=list, max_length=FORM_FIELDS_MAX)
+
+    @field_validator("form_fields")
+    @classmethod
+    def check_form_fields(cls, value: list[FormField]) -> list[FormField]:
+        """Give every form field a unique key."""
+        return _check_form(value) or []
 
     @field_validator("name")
     @classmethod
@@ -337,6 +445,13 @@ class TemplateUpdate(TemplateFields):
     name: Optional[str] = Field(default=None, min_length=1, max_length=TEMPLATE_NAME_MAX)
     label_ids: Optional[list[str]] = None
     project: Optional[ProjectTemplateFields] = None
+    form_fields: Optional[list[FormField]] = Field(default=None, max_length=FORM_FIELDS_MAX)
+
+    @field_validator("form_fields")
+    @classmethod
+    def check_form_fields(cls, value: Optional[list[FormField]]) -> Optional[list[FormField]]:
+        """Give every form field a unique key; null or an empty list turns the form off."""
+        return _check_form(value)
 
     @field_validator("name")
     @classmethod
@@ -357,7 +472,8 @@ class TemplateRead(BaseModel):
     `scope` says where it comes from as the team in the path sees it: the team's
     own, its parent team's, or the workspace's. `team_id` is `None` for a
     workspace template. `project` is set on a project template only, and a
-    document template sets only `title` and `body`.
+    document template sets only `title` and `body`. `form_fields` is set on a
+    form, an issue template whose issues answer its questions and land in triage.
     """
 
     id: str
@@ -376,6 +492,7 @@ class TemplateRead(BaseModel):
     project_milestone_id: Optional[str] = None
     cycle_id: Optional[str] = None
     project: Optional[ProjectBlueprint] = None
+    form_fields: list[FormFieldBlueprint] = Field(default_factory=list)
     position: int = 0
     created_by: Optional[str] = None
     created_at: datetime
@@ -407,6 +524,7 @@ class TemplateRead(BaseModel):
             project_milestone_id=row.project_milestone_id,
             cycle_id=row.cycle_id,
             project=row.project,
+            form_fields=list(row.form_fields),
             position=row.position,
             created_by=row.created_by,
             created_at=row.created_at,

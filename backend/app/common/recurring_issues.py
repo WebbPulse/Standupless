@@ -104,10 +104,16 @@ def template_names(repositories: Repositories, context: AuthzContext, team_id: s
 
 
 def _template(repositories: Repositories, context: AuthzContext, team_id: str, template_id: str) -> IssueTemplate:
-    """One template the team offers the caller, or a 422 naming it."""
+    """One template the team offers the caller, or a 422 naming it.
+
+    A form with a required question is refused too, since a schedule files with
+    no one there to answer it.
+    """
     template = find_template(repositories, context, team_id, template_id)
     if template is None:
         raise unprocessable(f"No such template: {template_id}")
+    if any(field.required for field in template.form_fields):
+        raise unprocessable(f"{template.name} is a form with required fields, so a schedule cannot file it")
     return template
 
 

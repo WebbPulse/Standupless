@@ -17,6 +17,12 @@
  * and the dialog sends what they hold, never the template id, so a field the
  * person clears stays cleared.
  *
+ * A form template is the exception. Its questions sit under the description
+ * and the issue waits until every required one is answered, then the dialog
+ * sends the template id with the answers and every field set explicitly, so
+ * the server renders the answers into the description, applies the labels and
+ * priority a chosen option maps to, and files the issue to triage.
+ *
  * Milestone, parent, sub-issues and attachments are filed in the same save.
  * The milestone chip appears once a project is chosen, the parent chip
  * searches the team's top level issues, and sub-issue rows become issues
@@ -115,6 +121,12 @@ import { useTeams } from '../../hooks/useTeams';
 import { SimilarIssues, useSimilarIssues } from './SimilarIssues';
 import { teamTree } from '../../lib/teamOrder';
 import { TemplatePicker } from './TemplatePicker';
+import {
+  FormQuestions,
+  missingAnswers,
+  sentAnswers,
+  type FormAnswers,
+} from './FormQuestions';
 import { LOOKUP_POLL_MS } from '../../lib/polling';
 
 /** Props for CreateIssueDialog: where the issue lands and what it may carry. */
@@ -276,6 +288,43 @@ const toPayload = (
   ...(draft.parent === null ? {} : { parent_id: draft.parent.id }),
 });
 
+/** The create body for a form: the template and its answers, with every field the template could fill set explicitly. */
+const formPayload = (
+  teamId: string,
+  title: string,
+  body: string,
+  draft: Draft,
+  template: TemplateRead,
+  answers: FormAnswers
+): IssueCreate => ({
+  ...toPayload(teamId, title, body, draft),
+  template_id: template.id,
+  form_answers: sentAnswers(template.form_fields ?? [], answers),
+  body: body.trim() === '' ? null : body,
+  status_id: draft.statusId === '' ? null : draft.statusId,
+  priority: draft.priority,
+  assignee_id: draft.assigneeId,
+  label_ids: draft.labelIds,
+  estimate: draft.estimate,
+  project_id: draft.projectId,
+  project_milestone_id: draft.projectMilestoneId,
+  cycle_id: draft.cycleId,
+});
+
+/** The rendered body of a form issue with its description swapped for the one carrying uploaded files. */
+const withResolvedDescription = (
+  rendered: string,
+  sent: string,
+  resolved: string
+): string => {
+  const tail = sent.trim();
+  const next = resolved.trim();
+  if (tail === '') return next === '' ? rendered : `${rendered}\n\n${next}`;
+  const at = rendered.lastIndexOf(tail);
+  if (at < 0) return rendered;
+  return rendered.slice(0, at) + next + rendered.slice(at + tail.length);
+};
+
 /** One sub-issue row, filed under the new issue when it is created. */
 interface SubIssueRow {
   id: string;
@@ -392,6 +441,7 @@ export const CreateIssueDialog: React.FC<CreateIssueDialogProps> = ({
   const [activeTeamId, setActiveTeamId] = useState(teamId);
   const [templateId, setTemplateId] = useState<string | null>(null);
   const [templateText, setTemplateText] = useState<TemplateText>(NO_TEXT);
+  const [answers, setAnswers] = useState<FormAnswers>({});
   const pendingTemplate = useRef<{ teamId: string; id: string | null } | null>({
     teamId,
     id: preset?.templateId ?? null,
@@ -460,19 +510,6 @@ export const CreateIssueDialog: React.FC<CreateIssueDialogProps> = ({
     subIssues
       .map((row) => (row.title.trim() === '' ? null : validateTitle(row.title)))
       .find((problem) => problem !== null) ?? null;
-  const canSubmit =
-    title.trim() !== '' &&
-    titleError === null &&
-    dateError === null &&
-    subIssueError === null &&
-    !isSaving;
-  const dirty =
-    title.trim() !== templateText.title.trim() ||
-    body.trim() !== templateText.body.trim() ||
-    attached.length > 0 ||
-    subIssues.some((row) => row.title.trim() !== '');
-  const canNest = draft.parent === null;
-
   const { data: templateList } = usePolledQuery(
     async ({ signal }): Promise<TeamTemplates> => ({
       ...(await listTeamTemplates(workspaceId, activeTeamId, signal)),
@@ -486,6 +523,32 @@ export const CreateIssueDialog: React.FC<CreateIssueDialogProps> = ({
   );
   const templates =
     templateList?.teamId === activeTeamId ? templateList.templates : [];
+  const formTemplate =
+    templates.find(
+      (template) =>
+        template.id === templateId && (template.form_fields ?? []).length > 0
+    ) ?? null;
+  const formFields = formTemplate?.form_fields ?? [];
+  const unanswered = missingAnswers(formFields, answers);
+  const triageShown = landsInTriage || (triageOn && formTemplate !== null);
+
+  const canSubmit =
+    title.trim() !== '' &&
+    titleError === null &&
+    unanswered.length === 0 &&
+    dateError === null &&
+    subIssueError === null &&
+    !isSaving;
+  const dirty =
+    title.trim() !== templateText.title.trim() ||
+    body.trim() !== templateText.body.trim() ||
+    attached.length > 0 ||
+    Object.values(answers).some(
+      (answer) =>
+        answer === true || (typeof answer === 'string' && answer.trim() !== '')
+    ) ||
+    subIssues.some((row) => row.title.trim() !== '');
+  const canNest = draft.parent === null;
 
   const prefillOf = (template: TemplateRead): TemplatePrefill =>
     templatePrefill(template, {
@@ -499,6 +562,7 @@ export const CreateIssueDialog: React.FC<CreateIssueDialogProps> = ({
     const text = { title: fill.title ?? '', body: fill.body ?? '' };
     const base = onHomeTeam ? presetDraft(preset) : EMPTY_DRAFT;
     setTemplateId(template?.id ?? null);
+    setAnswers({});
     setDraft(withTemplate(base, fill));
     if (title.trim() === '' || title === templateText.title) {
       setTitle(text.title);
@@ -525,6 +589,7 @@ export const CreateIssueDialog: React.FC<CreateIssueDialogProps> = ({
     });
     const text = { title: fill.title ?? '', body: fill.body ?? '' };
     setTemplateId(template.id);
+    setAnswers({});
     setTemplateText(text);
     setDraft((held) => withTemplate(held, fill));
     setTitle((held) => (held.trim() === '' ? text.title : held));
@@ -639,7 +704,11 @@ export const CreateIssueDialog: React.FC<CreateIssueDialogProps> = ({
     );
   };
 
-  const uploadHeld = async (issue: IssueRead): Promise<IssueRead> => {
+  const uploadHeld = async (
+    issue: IssueRead,
+    sentBody: string,
+    isForm: boolean
+  ): Promise<IssueRead> => {
     if (attached.length === 0) return issue;
     const paths = new Map<string, string>();
     await Promise.all(
@@ -667,7 +736,10 @@ export const CreateIssueDialog: React.FC<CreateIssueDialogProps> = ({
       })
     );
     if (!attached.some((item) => namesPending(body, item.id))) return issue;
-    const resolved = resolvePending(body, (id) => paths.get(id) ?? null);
+    const description = resolvePending(body, (id) => paths.get(id) ?? null);
+    const resolved = isForm
+      ? withResolvedDescription(issue.body ?? '', sentBody, description)
+      : description;
     try {
       return await updateIssue(workspaceId, issue.id, {
         body: resolved === '' ? null : resolved,
@@ -708,9 +780,14 @@ export const CreateIssueDialog: React.FC<CreateIssueDialogProps> = ({
     setError(null);
     const original = duplicateOf;
     const sentBody = attached.length === 0 ? body : stripPending(body);
-    createIssue(workspaceId, toPayload(activeTeamId, title, sentBody, draft))
+    const form = formTemplate;
+    const payload =
+      form === null
+        ? toPayload(activeTeamId, title, sentBody, draft)
+        : formPayload(activeTeamId, title, sentBody, draft, form, answers);
+    createIssue(workspaceId, payload)
       .then(async (made) => {
-        const issue = await uploadHeld(made);
+        const issue = await uploadHeld(made, sentBody, form !== null);
         await createSubIssues(issue);
         if (original !== null) {
           await createLink(workspaceId, issue.id, {
@@ -731,6 +808,7 @@ export const CreateIssueDialog: React.FC<CreateIssueDialogProps> = ({
         setLastCreated(issue);
         setTitle(templateText.title);
         setBody(templateText.body);
+        setAnswers({});
         setAttached([]);
         setSubIssues([]);
         setConfirming(false);
@@ -816,6 +894,7 @@ export const CreateIssueDialog: React.FC<CreateIssueDialogProps> = ({
               setActiveTeamId(team.id);
               setDraft(clearTeamScoped);
               setTemplateId(null);
+              setAnswers({});
               if (title === templateText.title) setTitle('');
               if (body === templateText.body) setBody('');
               setTemplateText(NO_TEXT);
@@ -919,6 +998,16 @@ export const CreateIssueDialog: React.FC<CreateIssueDialogProps> = ({
               expanded ? 'min-h-64' : 'min-h-16'
             )}
           />
+          {formTemplate !== null && (
+            <FormQuestions
+              fields={formFields}
+              answers={answers}
+              onChange={(next) => {
+                setAnswers(next);
+                setConfirming(false);
+              }}
+            />
+          )}
           {dragging && (
             <p className="text-xs text-accent">
               Drop to add to the description
@@ -967,7 +1056,7 @@ export const CreateIssueDialog: React.FC<CreateIssueDialogProps> = ({
             value={
               draft.statusId !== ''
                 ? draft.statusId
-                : landsInTriage
+                : triageShown
                   ? TRIAGE_STATUS_ID
                   : (defaultStatus?.id ?? null)
             }
