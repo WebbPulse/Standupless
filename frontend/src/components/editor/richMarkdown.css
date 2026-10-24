@@ -161,6 +161,19 @@
   @apply rounded-xs bg-accent-soft px-0.5 font-medium text-accent;
 }
 
+.rich-markdown .rich-reference {
+  @apply rounded-xs bg-raised px-1 text-text no-underline;
+}
+
+.rich-markdown a:has(.rich-reference),
+.rich-markdown .rich-reference a {
+  @apply text-text no-underline;
+}
+
+.rich-markdown .rich-issue-ref {
+  @apply font-mono text-[0.9em];
+}
+
 .rich-markdown .ProseMirror-gapcursor::after {
   @apply border-t border-text;
 }

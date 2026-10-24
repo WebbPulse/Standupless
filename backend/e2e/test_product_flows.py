@@ -1065,6 +1065,70 @@ class TestPlanningDomain:
             api.delete(project_path)
 
     @WRITES
+    def test_a_reference_picked_with_hash_round_trips(
+        self,
+        api: Any,
+        e2e_env: Any,
+        run_scope: RunScope,
+        workspace: "dict[str, Any]",
+        team: "dict[str, Any]",
+        issue: "dict[str, Any]",
+        track: Any,
+    ) -> None:
+        """The `#` picker's search finds a project and a document, and what a pick writes reads back verbatim.
+
+        A picked issue writes its key and a picked project or document writes a link
+        named after it to its page, so the description stays plain Markdown that the
+        app draws as chips and every other reader still follows as a link.
+        """
+        base = f"/api/workspaces/{workspace['id']}"
+        origin = urlsplit(e2e_env.api_base_url)
+        site = f"{origin.scheme}://{origin.netloc}"
+        project = _created(
+            api.post(f"{base}/projects", json={"team_id": team["id"], "name": run_scope.name("picker-roadmap")}),
+            "project",
+        )
+        project_path = f"{base}/projects/{project['id']}"
+        try:
+            document = _created(
+                api.post(f"{project_path}/documents", json={"title": run_scope.name("picker-brief")}),
+                "document",
+            )
+            track(f"{base}/documents/{document['id']}")
+
+            found = api.get(
+                f"{base}/search",
+                params=[("q", project["name"]), ("type", "projects"), ("limit", "50")],
+            )
+            assert found.status_code == 200, found.text[:400]
+            assert project["id"] in [row["project_id"] for row in found.json().get("projects", [])]
+            found = api.get(
+                f"{base}/search",
+                params=[("q", document["title"]), ("type", "documents"), ("limit", "50")],
+            )
+            assert found.status_code == 200, found.text[:400]
+            assert document["id"] in [row["document_id"] for row in found.json().get("documents", [])]
+
+            slug = workspace["slug"]
+            body = (
+                f"Blocked on {issue['key']}, planned in "
+                f"[{project['name']}]({site}/w/{slug}/projects/{project['id']}) and "
+                f"[{document['title']}]({site}/w/{slug}/documents/{document['id']})"
+            )
+            created = _created(
+                api.post(
+                    f"{base}/issues", json={"team_id": team["id"], "title": run_scope.name("picker"), "body": body}
+                ),
+                "issue",
+            )
+            track(f"{base}/issues/{created['id']}")
+            readback = api.get(f"{base}/issues/{created['id']}")
+            assert readback.status_code == 200, readback.text[:400]
+            assert readback.json()["body"] == body
+        finally:
+            api.delete(project_path)
+
+    @WRITES
     def test_a_project_keeps_its_linear_properties(
         self,
         api: Any,
