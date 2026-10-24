@@ -5,7 +5,8 @@
  * team's options menu, the create controls each role is offered, and moving
  * a team by drag, keyboard or menu into the caller's saved order, and that a
  * team's triage entry survives a navigation that mounts a new sidebar while
- * the triage summary is being re-read.
+ * the triage summary is being re-read, and that a team with cycles on offers
+ * its current cycle under Cycles.
  */
 
 import {
@@ -33,6 +34,7 @@ import {
 } from '../../hooks/useCreateTeam';
 import { triageSummaryKey } from '../../lib/queryKeys';
 import type {
+  CycleSettingsRead,
   FavoriteRead,
   ReviewsRead,
   SavedViewRead,
@@ -52,6 +54,8 @@ const listFavorites = vi.fn<() => Promise<FavoriteRead[]>>();
 const getTriageSummary = vi.fn<() => Promise<TriageSummaryRead>>();
 const getReviews = vi.fn<() => Promise<ReviewsRead>>();
 const getPulseCount = vi.fn<() => Promise<number>>();
+const getCycleSettings =
+  vi.fn<(teamId: string) => Promise<CycleSettingsRead>>();
 
 vi.mock('../../hooks/useAuth', () => ({
   useAuth: () => ({
@@ -69,6 +73,7 @@ vi.mock('../../api/teams', () => ({
   listTeams: () => listTeams(),
   setTeamOrder: (workspaceId: string, teamIds: string[]) =>
     setTeamOrder(workspaceId, teamIds),
+  getCycleSettings: (_w: string, teamId: string) => getCycleSettings(teamId),
 }));
 
 vi.mock('../../api/views', () => ({
@@ -117,6 +122,19 @@ const engine: TeamRead = {
   updated_at: '2026-09-17T00:00:00Z',
   role: 'admin',
 };
+
+/** A team's cycle schedule, switched on or off. */
+const cycleSettings = (enabled: boolean): CycleSettingsRead => ({
+  team_id: 'proj-1',
+  enabled,
+  duration_weeks: 2,
+  cooldown_weeks: 0,
+  start_weekday: 0,
+  upcoming_count: 2,
+  auto_add_started: true,
+  move_unfinished: true,
+  updated_at: null,
+});
 
 /** A second team, so the tests can tell one section from another. */
 const design: TeamRead = {
@@ -218,6 +236,8 @@ const dragData = (): { dataTransfer: Partial<DataTransfer> } => ({
 
 beforeEach(() => {
   listTeams.mockReset();
+  getCycleSettings.mockReset();
+  getCycleSettings.mockResolvedValue(cycleSettings(false));
   setTeamOrder.mockReset();
   getInboxCount.mockReset();
   listTeams.mockResolvedValue([engine, design]);
@@ -396,6 +416,35 @@ describe('the team sections', () => {
       'href',
       '/w/mine/team/ENG/cycles'
     );
+  });
+
+  it('offers the current cycle under Cycles when the team has cycles on', async () => {
+    getCycleSettings.mockResolvedValue(cycleSettings(true));
+    const user = userEvent.setup();
+    renderSidebar();
+
+    await user.click(await screen.findByRole('button', { name: /Engine/ }));
+
+    expect(
+      await screen.findByRole('link', { name: 'Current cycle' })
+    ).toHaveAttribute('href', '/w/mine/team/ENG/cycles/current');
+    expect(getCycleSettings).toHaveBeenCalledWith('proj-1');
+    expect(getCycleSettings).not.toHaveBeenCalledWith('proj-2');
+  });
+
+  it('leaves the current cycle out when the team has cycles off', async () => {
+    const user = userEvent.setup();
+    renderSidebar();
+
+    await user.click(await screen.findByRole('button', { name: /Engine/ }));
+
+    await waitFor(() => {
+      expect(getCycleSettings).toHaveBeenCalledWith('proj-1');
+    });
+    expect(screen.getByRole('link', { name: 'Cycles' })).toBeInTheDocument();
+    expect(
+      screen.queryByRole('link', { name: 'Current cycle' })
+    ).not.toBeInTheDocument();
   });
 
   it('opens the section the current route is inside without being clicked', async () => {
