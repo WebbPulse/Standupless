@@ -24300,7 +24300,7 @@
         ]
       },
       "patch": {
-        "description": "Rewrite one's own comment, stamping `edited_at` and re-extracting mentions.\n\nThe author alone, not a team admin: rewriting someone else's words is a\ndifferent act from removing them, and only the second has a moderation case.\n\nMentions are recomputed from the new body, so an edit that adds one notifies\nand an edit that removes one stops claiming it.",
+        "description": "Rewrite one's own comment, stamping `edited_at` and re-extracting mentions.\n\nThe author alone, not a team admin: rewriting someone else's words is a\ndifferent act from removing them, and only the second has a moderation case.\n\nMentions are recomputed from the new body, so an edit that adds one notifies\nthat person alone and an edit that removes one stops claiming it. A key the\nedit adds leaves a backlink on that issue.",
         "operationId": "update_comment_api_workspaces__workspace_id__comments__comment_id__patch",
         "parameters": [
           {
