@@ -1573,10 +1573,9 @@ class TestIssueDetail:
         content route, public at the gateway so an `<img>` element can reach it,
         answers with a redirect to a short lived presigned GET that returns the bytes.
         The same path with a forged token answers 404, so the route is not open. A
-        local stack has no upload bucket, so the case runs against a deployed stage only.
+        local stack presigns against its emulator over plain HTTP, so only a deployed
+        stage is held to an HTTPS redirect.
         """
-        if e2e_env.is_local:
-            pytest.skip("a local stack has no upload bucket to presign against")
         base = f"/api/workspaces/{workspace['id']}/attachments"
         pixel = bytes.fromhex(
             "89504e470d0a1a0a0000000d4948445200000001000000010806000000"
@@ -1619,7 +1618,7 @@ class TestIssueDetail:
         opened = anon.get(content, params={"issue_id": issue["id"], "token": token})
         assert opened.status_code == 302, opened.text[:400]
         location = opened.headers["location"]
-        assert urlsplit(location).scheme == "https"
+        assert urlsplit(location).scheme == ("http" if e2e_env.is_local else "https")
         fetched = httpx.get(location, timeout=30)
         assert fetched.status_code == 200
         assert fetched.content == pixel
@@ -1705,8 +1704,8 @@ class TestCustomIcons:
 
     Each owner goes through the same four calls the settings pages make, and the icon
     URL the read model hands back is then fetched anonymously, the way an `<img>`
-    element loads it, through the redirect to the bytes. A local stack has no upload
-    bucket, so these cases run against a deployed stage only.
+    element loads it, through the redirect to the bytes. A local stack runs them
+    against the bucket its AWS emulator serves.
     """
 
     def _round_trip(self, api: Any, anon: Any, base: str, field: str) -> None:
@@ -1734,26 +1733,20 @@ class TestCustomIcons:
         assert cleared.json()[field] is None
 
     @WRITES
-    def test_a_workspace_logo_round_trips(self, api: Any, anon: Any, e2e_env: Any, workspace: "dict[str, Any]") -> None:
+    def test_a_workspace_logo_round_trips(self, api: Any, anon: Any, workspace: "dict[str, Any]") -> None:
         """The owner sets a workspace logo, it loads through its public URL, and clearing it works."""
-        if e2e_env.is_local:
-            pytest.skip("a local stack has no upload bucket to presign against")
         self._round_trip(api, anon, f"/api/workspaces/{workspace['id']}/icon", "icon_url")
 
     @WRITES
     def test_a_team_icon_round_trips(
-        self, api: Any, anon: Any, e2e_env: Any, workspace: "dict[str, Any]", team: "dict[str, Any]"
+        self, api: Any, anon: Any, workspace: "dict[str, Any]", team: "dict[str, Any]"
     ) -> None:
         """The team's creator sets its icon, it loads through its public URL, and clearing it works."""
-        if e2e_env.is_local:
-            pytest.skip("a local stack has no upload bucket to presign against")
         self._round_trip(api, anon, f"/api/workspaces/{workspace['id']}/teams/{team['id']}/icon", "icon_url")
 
     @WRITES
-    def test_a_person_avatar_round_trips(self, api: Any, anon: Any, e2e_env: Any) -> None:
+    def test_a_person_avatar_round_trips(self, api: Any, anon: Any) -> None:
         """The run's user sets an avatar, it loads through its public URL, and clearing it works."""
-        if e2e_env.is_local:
-            pytest.skip("a local stack has no upload bucket to presign against")
         self._round_trip(api, anon, "/api/users/me/avatar", "avatar_url")
 
     @WRITES

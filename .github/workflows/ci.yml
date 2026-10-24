@@ -524,7 +524,9 @@ jobs:
           "IDENTITY_EPHEMERAL_USERS_ENABLED": "true",
           "IDENTITY_PASSKEYS_ENABLED": "true",
           "IDENTITY_PASSKEYS_SECOND_FACTOR": "true",
-          "IDENTITY_EMAIL_FROM": "",
+          "IDENTITY_EMAIL_FROM": "noreply@standupless.dev",
+          "EMAIL_ENABLED": "true",
+          "EMAIL_FROM": "noreply@standupless.dev",
           "IDENTITY_RP_ID": "localhost",
           "IDENTITY_RP_NAME": "Standupless local",
           "IDENTITY_WEBAUTHN_ORIGINS": "[\"http://localhost:5173\"]",
@@ -550,7 +552,8 @@ jobs:
           "E2E_USER_EMAIL": "e2e-local-user@standupless.dev",
           "E2E_USER_PASSWORD": "E2eLocalStackPassw0rd",
           "ATTACHMENTS_BUCKET": "standupless-e2e-local-imports",
-          "AWS_ENDPOINT_URL_S3": "http://127.0.0.1:9100",
+          "AWS_ENDPOINT_URL_S3": "http://127.0.0.1:4566",
+          "AWS_ENDPOINT_URL_SESV2": "http://127.0.0.1:4566",
           "AWS_REQUEST_CHECKSUM_CALCULATION": "when_required",
           "AWS_RESPONSE_CHECKSUM_VALIDATION": "when_required",
           "LINEAR_API_URL": "http://127.0.0.1:8765/graphql",
@@ -573,9 +576,18 @@ jobs:
         uv run --no-sync python scripts/create_local_tables.py &&
         uv run --no-sync python scripts/create_local_e2e_user.py &&
         uv run --no-sync python scripts/write_local_github_key.py &&
-        (nohup uv run --no-sync python scripts/local_s3.py > local-s3.log 2>&1 &) &&
+        uv run --no-sync python scripts/create_local_aws_resources.py &&
         timeout 240 bash -c 'until curl -sf http://localhost:8080/realms/master > /dev/null; do sleep 3; done'
       dynamodb-port: 8001
+      floci-image: floci/floci:2.2.0
+      floci-port: 4566
+      floci-services: >-
+        {"FLOCI_SERVICES_DYNAMODB_ENABLED": "false", "FLOCI_SERVICES_SQS_ENABLED": "false",
+        "FLOCI_SERVICES_SNS_ENABLED": "false", "FLOCI_SERVICES_LAMBDA_ENABLED": "false",
+        "FLOCI_SERVICES_KMS_ENABLED": "false", "FLOCI_SERVICES_SECRETSMANAGER_ENABLED": "false",
+        "FLOCI_SERVICES_SSM_ENABLED": "false", "FLOCI_SERVICES_EVENTBRIDGE_ENABLED": "false",
+        "FLOCI_SERVICES_SCHEDULER_ENABLED": "false", "FLOCI_SERVICES_COGNITO_ENABLED": "false",
+        "FLOCI_SERVICES_KINESIS_ENABLED": "false", "FLOCI_SERVICES_STEPFUNCTIONS_ENABLED": "false"}
       check-name: "e2e (local)"
       fail-on-suite-failure: true
     secrets:
