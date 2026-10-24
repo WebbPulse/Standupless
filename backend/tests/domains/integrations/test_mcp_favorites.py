@@ -96,3 +96,49 @@ def test_favorites_are_the_callers_own(client: TestClient, repositories: Any, is
     listed = answer(tool(client, theirs, "list_favorites", {}))
 
     assert listed["favorites"] == []
+
+
+def test_favorite_folders_by_name(client: TestClient, repositories: Any, issue: Issue) -> None:
+    """Folders are created, filled, reordered, renamed and deleted by the names a person writes."""
+    secret = mint_for(repositories, MEMBER, FAVORITES)
+    bugs = answer(tool(client, secret, "create_favorite_folder", {"name": "Bugs"}))
+    later = answer(tool(client, secret, "create_favorite_folder", {"name": "Later"}))
+
+    starred = answer(tool(client, secret, "add_favorite", {"kind": "issue", "target": "ABC-1", "folder": "bugs"}))
+    answer(tool(client, secret, "add_favorite", {"kind": "team", "target": "ABC"}))
+    reordered = answer(
+        tool(
+            client,
+            secret,
+            "reorder_favorites",
+            {"order": [{"kind": "team", "target": "ABC", "folder": "Later"}], "folders": ["Later", "Bugs"]},
+        )
+    )
+    renamed = answer(tool(client, secret, "rename_favorite_folder", {"folder": "Bugs", "name": "Defects"}))
+    deleted = answer(tool(client, secret, "delete_favorite_folder", {"folder": later["folder_id"]}))
+    again = answer(tool(client, secret, "delete_favorite_folder", {"folder": later["folder_id"]}))
+    listed = answer(tool(client, secret, "list_favorites", {}))
+
+    assert starred["folder_id"] == bugs["folder_id"]
+    assert [(row["kind"], row["folder_id"]) for row in reordered["favorites"]] == [
+        ("team", later["folder_id"]),
+        ("issue", bugs["folder_id"]),
+    ]
+    assert [row["name"] for row in reordered["folders"]] == ["Later", "Bugs"]
+    assert renamed["name"] == "Defects"
+    assert (deleted["deleted"], again["deleted"]) == (True, False)
+    assert [(row["kind"], row["folder_id"]) for row in listed["favorites"]] == [
+        ("team", None),
+        ("issue", bugs["folder_id"]),
+    ]
+    assert [row["name"] for row in listed["folders"]] == ["Defects"]
+
+
+def test_an_unknown_folder_is_refused(client: TestClient, repositories: Any, issue: Issue) -> None:
+    """Filing a favorite in a folder the caller does not have names the problem and stars nothing."""
+    secret = mint_for(repositories, MEMBER, FAVORITES)
+
+    refused = refusal(tool(client, secret, "add_favorite", {"kind": "issue", "target": "ABC-1", "folder": "Nope"}))
+
+    assert "Nope" in refused
+    assert repositories.views.favorite_items(issue.workspace_id, MEMBER) == []

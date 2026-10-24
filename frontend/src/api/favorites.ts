@@ -7,6 +7,7 @@
 
 import apiClient from './client';
 import type {
+  FavoriteFolderRead,
   FavoriteKind,
   FavoriteListRead,
   FavoriteOrder,
@@ -28,6 +29,16 @@ export const favoritePath = (
   kind: FavoriteKind,
   targetId: string
 ): string => `${favoritesPath(workspaceId)}/${kind}/${targetId}`;
+
+/** The route favorite folders are created on. */
+export const favoriteFoldersPath = (workspaceId: string): string =>
+  `${favoritesPath(workspaceId)}/folders`;
+
+/** The route one favorite folder is renamed and deleted through. */
+export const favoriteFolderPath = (
+  workspaceId: string,
+  folderId: string
+): string => `${favoriteFoldersPath(workspaceId)}/${folderId}`;
 
 /** Reads the caller's favorites, answering an empty list for a missing body. */
 export const listFavorites = async (
@@ -72,4 +83,49 @@ export const reorderFavorites = async (
     order
   );
   return Array.isArray(response.data?.favorites) ? response.data.favorites : [];
+};
+
+/** Reads the caller's favorite folders in their order, answering an empty list for a missing body. */
+export const listFavoriteFolders = async (
+  workspaceId: string,
+  signal?: AbortSignal
+): Promise<FavoriteFolderRead[]> => {
+  const response = await apiClient.get<FavoriteListRead>(
+    favoritesPath(workspaceId),
+    signal === undefined ? undefined : { signal }
+  );
+  return Array.isArray(response.data?.folders) ? response.data.folders : [];
+};
+
+/** Adds an empty favorite folder after the caller's others. */
+export const createFavoriteFolder = async (
+  workspaceId: string,
+  name: string
+): Promise<FavoriteFolderRead> => {
+  const response = await apiClient.post<FavoriteFolderRead>(
+    favoriteFoldersPath(workspaceId),
+    { name }
+  );
+  return response.data;
+};
+
+/** Renames one favorite folder. */
+export const renameFavoriteFolder = async (
+  workspaceId: string,
+  folderId: string,
+  name: string
+): Promise<FavoriteFolderRead> => {
+  const response = await apiClient.patch<FavoriteFolderRead>(
+    favoriteFolderPath(workspaceId, folderId),
+    { name }
+  );
+  return response.data;
+};
+
+/** Deletes one favorite folder, its favorites moving to the top level. */
+export const deleteFavoriteFolder = async (
+  workspaceId: string,
+  folderId: string
+): Promise<void> => {
+  await apiClient.delete<void>(favoriteFolderPath(workspaceId, folderId));
 };

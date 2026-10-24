@@ -83,6 +83,7 @@ vi.mock('../../api/views', () => ({
 
 vi.mock('../../api/favorites', () => ({
   listFavorites: () => listFavorites(),
+  listFavoriteFolders: () => Promise.resolve([]),
   addFavorite: vi.fn(),
   removeFavorite: vi.fn(),
   reorderFavorites: vi.fn(),

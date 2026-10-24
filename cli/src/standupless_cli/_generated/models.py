@@ -778,7 +778,18 @@ class DraftWrite(TypedDict):
     body: str
 
 
+class FavoriteFolderRead(TypedDict):
+    folder_id: str
+    name: str
+    position: int
+
+
+class FavoriteFolderWrite(TypedDict):
+    name: str
+
+
 class FavoriteRef(TypedDict):
+    folder_id: NotRequired[str | None]
     kind: Literal["issue", "project", "cycle", "view", "team", "document", "initiative"]
     target_id: str
     team_id: NotRequired[str | None]
@@ -3442,11 +3453,13 @@ class ErrorResponse(TypedDict):
 
 
 class FavoriteOrder(TypedDict):
+    folders: NotRequired[list[str] | None]
     items: list[FavoriteRef]
 
 
 class FavoriteRead(TypedDict):
     color: NotRequired[str | None]
+    folder_id: NotRequired[str | None]
     icon: NotRequired[str | None]
     issue_key: NotRequired[str | None]
     kind: Literal["issue", "project", "cycle", "view", "team", "document", "initiative"]
@@ -4125,6 +4138,7 @@ class DocumentTemplateListRead(TypedDict):
 
 class FavoriteListRead(TypedDict):
     favorites: list[FavoriteRead]
+    folders: NotRequired[list[FavoriteFolderRead]]
 
 
 class HomeRead(TypedDict):
