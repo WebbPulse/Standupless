@@ -10,6 +10,7 @@ import {
   parseTeamIssueScope,
   readScopeDisplay,
   scopeDisplayKey,
+  teamScopeCategories,
   teamScopeFilters,
   teamScopeHref,
   teamScopePath,
@@ -52,6 +53,17 @@ describe('teamScopeFilters', () => {
 
   it('leaves every issue unnarrowed', () => {
     expect(teamScopeFilters('all')).toEqual({});
+  });
+});
+
+describe('teamScopeCategories', () => {
+  it('names the categories each narrowing preset covers', () => {
+    expect(teamScopeCategories('active')).toEqual(['unstarted', 'started']);
+    expect(teamScopeCategories('backlog')).toEqual(['backlog']);
+  });
+
+  it('names none for every issue', () => {
+    expect(teamScopeCategories('all')).toBeUndefined();
   });
 });
 
