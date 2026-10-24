@@ -6,6 +6,7 @@
 
 import React from 'react';
 import { cn } from '../../lib/cn';
+import { useTruncationTooltip } from './truncated-text';
 
 /** Props for PageHeader: the title, the actions and an optional toolbar row. */
 export interface PageHeaderProps {
@@ -34,22 +35,32 @@ export const PageHeader: React.FC<PageHeaderProps> = ({
   className = '',
 }) => {
   const Heading = level === 1 ? 'h1' : 'h2';
+  const titleTip = useTruncationTooltip<HTMLHeadingElement>();
   return (
     <header className={cn('border-b border-line', className)}>
       <div className="flex h-topbar items-center gap-3 px-4 lg:px-6">
         {leading}
         {titleAccessory === undefined ? (
-          <Heading className="min-w-0 flex-1 truncate text-sm font-medium">
+          <Heading
+            ref={titleTip.ref}
+            className="min-w-0 flex-1 truncate text-sm font-medium"
+            {...titleTip.handlers}
+          >
             {title}
           </Heading>
         ) : (
           <div className="flex min-w-0 flex-1 items-center gap-1">
-            <Heading className="min-w-0 truncate text-sm font-medium">
+            <Heading
+              ref={titleTip.ref}
+              className="min-w-0 truncate text-sm font-medium"
+              {...titleTip.handlers}
+            >
               {title}
             </Heading>
             {titleAccessory}
           </div>
         )}
+        {titleTip.tip}
         {actions !== undefined && (
           <div className="flex shrink-0 items-center gap-1.5">{actions}</div>
         )}
