@@ -55,7 +55,7 @@ const STATUSES: StatusRead[] = [
   status('hidden-start', 'started', 1.5, true),
   status('doing', 'started', 2),
   status('done', 'completed', 4),
-  status('canceled', 'canceled', 5),
+  status('canceled', 'cancelled', 5),
 ];
 
 const BOTH_ON: BranchWorkflow = {
