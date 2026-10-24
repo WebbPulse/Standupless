@@ -142,4 +142,4 @@ export const projectGridTracks = (
       `--project-columns-${tier}`,
       tierTracks(shown, tier),
     ])
-  ) as React.CSSProperties;
+  );
