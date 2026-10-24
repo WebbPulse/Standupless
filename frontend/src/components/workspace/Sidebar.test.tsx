@@ -453,6 +453,23 @@ describe('the team sections', () => {
     ).toHaveAttribute('href', '/w/mine/projects?team=ENG');
   });
 
+  it('ends a team section with a Views link to the views shared with that team', async () => {
+    const user = userEvent.setup();
+    renderSidebar();
+
+    const team = await screen.findByRole('button', { name: /Engine/ });
+    await user.click(team);
+
+    const section = team.parentElement;
+    if (section === null) throw new Error('the team section did not render');
+    const links = within(section).getAllByRole('link');
+    expect(links[links.length - 1]).toHaveAccessibleName('Views');
+    expect(links[links.length - 1]).toHaveAttribute(
+      'href',
+      '/w/mine/team/ENG/views'
+    );
+  });
+
   it('marks only the team whose projects slice is open as current', async () => {
     listTeams.mockResolvedValue([engine, design]);
     renderSidebar('owner', '/w/mine/projects?team=ENG');

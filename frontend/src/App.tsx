@@ -228,6 +228,7 @@ const App: React.FC = () => (
             element={<ReleaseDetail />}
           />
           <Route path="team/:keyPrefix/standup" element={<Standup />} />
+          <Route path="team/:keyPrefix/views" element={<Views />} />
           <Route path="team/:keyPrefix/settings" element={<TeamSettings />} />
 
           <Route path="projects" element={<Projects />} />
