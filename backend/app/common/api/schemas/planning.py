@@ -81,6 +81,8 @@ ProjectIconField = Literal[
 
 MEMBERS_MAX = 50
 
+PROJECT_LABELS_MAX = 50
+
 NAME_MAX = 80
 
 GOAL_MAX = 2000
@@ -210,6 +212,30 @@ def _check_member_ids(value: Optional[list[str]]) -> Optional[list[str]]:
         if candidate not in seen:
             seen.append(candidate)
     return seen
+
+
+def _check_label_ids(value: Optional[list[str]]) -> Optional[list[str]]:
+    """Hold a project label list to distinct, non-blank ids, keeping the caller's order."""
+    if value is None:
+        return None
+    seen: list[str] = []
+    for label_id in value:
+        candidate = label_id.strip()
+        if not candidate:
+            raise ValueError("label_ids must not contain a blank id")
+        if candidate not in seen:
+            seen.append(candidate)
+    return seen
+
+
+def project_slug_id(project_id: str) -> str:
+    """The short id a project reads by, the last eight characters of its id in lower case.
+
+    Derived rather than stored, so every project has one without a backfill. A
+    ULID's tail is its random part, so two projects of a workspace sharing one is
+    vanishingly rare, and a lookup by slug id refuses an ambiguous match.
+    """
+    return project_id[-8:].lower()
 
 
 def _legacy_status(value: object) -> object:
@@ -511,6 +537,7 @@ class ProjectCreate(BaseModel):
     health: Optional[ProjectHealthField] = None
     priority: ProjectPriorityField = "none"
     member_ids: list[str] = Field(default_factory=list, max_length=MEMBERS_MAX)
+    label_ids: list[str] = Field(default_factory=list, max_length=PROJECT_LABELS_MAX)
     update_interval_days: Optional[int] = None
     initiative_id: Optional[str] = Field(default=None, min_length=1)
 
@@ -555,6 +582,12 @@ class ProjectCreate(BaseModel):
     def check_member_ids(cls, value: Optional[list[str]]) -> Optional[list[str]]:
         """Hold the member list to distinct, non-blank ids."""
         return _check_member_ids(value)
+
+    @field_validator("label_ids")
+    @classmethod
+    def check_label_ids(cls, value: Optional[list[str]]) -> Optional[list[str]]:
+        """Hold the project label list to distinct, non-blank ids."""
+        return _check_label_ids(value)
 
     @field_validator("status", mode="before")
     @classmethod
@@ -629,6 +662,7 @@ class ProjectUpdate(BaseModel):
     health: Optional[ProjectHealthField] = None
     priority: Optional[ProjectPriorityField] = None
     member_ids: Optional[list[str]] = Field(default=None, max_length=MEMBERS_MAX)
+    label_ids: Optional[list[str]] = Field(default=None, max_length=PROJECT_LABELS_MAX)
     update_interval_days: Optional[int] = None
     initiative_id: Optional[str] = Field(default=None, min_length=1)
     open_issues: Optional[ProjectOpenIssues] = None
@@ -675,6 +709,12 @@ class ProjectUpdate(BaseModel):
         """Hold the member list to distinct, non-blank ids."""
         return _check_member_ids(value)
 
+    @field_validator("label_ids")
+    @classmethod
+    def check_label_ids(cls, value: Optional[list[str]]) -> Optional[list[str]]:
+        """Hold the project label list to distinct, non-blank ids."""
+        return _check_label_ids(value)
+
     @field_validator("status", mode="before")
     @classmethod
     def check_status(cls, value: object) -> object:
@@ -719,6 +759,7 @@ class ProjectRead(BaseModel):
     """
 
     project_id: str
+    slug_id: str = Field(default="", description="The project's short id, the last eight characters of its id")
     workspace_id: str
     team_id: str
     team_ids: list[str]
@@ -733,6 +774,7 @@ class ProjectRead(BaseModel):
     health: Optional[ProjectHealthField] = None
     priority: ProjectPriorityField = "none"
     member_ids: list[str] = Field(default_factory=list)
+    label_ids: list[str] = Field(default_factory=list, description="The workspace project labels the project carries")
     counts: CountsRead
     points: CountsRead = Field(default_factory=CountsRead)
     measure: ProgressMeasureField = Field(
@@ -802,6 +844,7 @@ class ProjectRead(BaseModel):
         teams = visible_team_ids if visible_team_ids is not None else list(project.team_ids)
         return cls(
             project_id=project.project_id,
+            slug_id=project_slug_id(project.project_id),
             workspace_id=project.workspace_id,
             team_id=teams[0],
             team_ids=teams,
@@ -816,6 +859,7 @@ class ProjectRead(BaseModel):
             health=project.health,  # pyright: ignore[reportArgumentType]
             priority=project.priority,  # pyright: ignore[reportArgumentType]
             member_ids=list(project.member_ids),
+            label_ids=list(project.label_ids),
             counts=CountsRead.from_counts(project.counts),
             points=CountsRead.from_counts(project.points),
             measure=project.measure,

@@ -63,6 +63,7 @@ from app.common.project_updates import (
     update_project_update,
 )
 from app.common.project_writes import create_project, delete_project, list_projects, update_project
+from app.domains.integrations.mcp.project_label_tools import project_label_ids
 from app.domains.integrations.mcp.template_tools import project_template_ref
 from app.domains.integrations.mcp.toolkit import (
     NOT_VISIBLE,
@@ -121,7 +122,7 @@ TEAM_HELP = "The team: id, key such as ENG, or name"
 
 CYCLE_HELP = "The cycle: id, name, or current, next or previous on the team's schedule"
 
-PROJECT_HELP = "The project: id or name"
+PROJECT_HELP = "The project: id, short id or name"
 
 INITIATIVE_HELP = "The initiative: id or name"
 
@@ -205,6 +206,7 @@ def _project_json(project: ProjectRead) -> dict[str, Any]:
     """One project as the tools answer it, its teams narrowed to the visible ones."""
     return {
         "project_id": project.project_id,
+        "slug_id": project.slug_id,
         "team_ids": project.team_ids,
         "name": project.name,
         "description": project.description,
@@ -215,6 +217,7 @@ def _project_json(project: ProjectRead) -> dict[str, Any]:
         "icon": project.icon,
         "color": project.color,
         "member_ids": project.member_ids,
+        "label_ids": project.label_ids,
         "initiative_id": project.initiative_id,
         "start_date": project.start_date,
         "target_date": project.target_date,
@@ -412,6 +415,7 @@ def _list_projects(call: ToolCall) -> Any:
     status_filter = call.optional("status")
     initiative = call.optional("initiative_id")
     sort = call.optional("sort")
+    labels = filter_values(call.optional("label_id"))
     rows, next_cursor = list_projects(
         call.repositories,
         call.context,
@@ -426,6 +430,7 @@ def _list_projects(call: ToolCall) -> Any:
         customer_id=filter_values(call.optional("customer_id")),
         customer_id_not=filter_values(call.optional("customer_id_not")),
         sort=str(sort) if sort else None,
+        label_id=project_label_ids(call, labels, allow_none=True) if labels is not None else None,
     )
     return {"projects": [_project_json(row) for row in rows], "next_cursor": next_cursor}
 
@@ -480,6 +485,11 @@ def _project_payload(call: ToolCall, *, nullable_fields: bool) -> dict[str, Any]
         if not isinstance(members, list):
             raise ToolError("member_ids must be a list of user ids")
         payload["member_ids"] = [resolve_user(call, member) for member in members]
+    if call.optional("label_ids") is not None:
+        labels = call.arguments["label_ids"]
+        if not isinstance(labels, list):
+            raise ToolError("label_ids must be a list of project labels")
+        payload["label_ids"] = project_label_ids(call, labels)
     return payload
 
 
@@ -722,6 +732,7 @@ PROJECT_PROPERTIES: dict[str, Any] = {
     "icon": nullable_enum(PROJECT_ICONS, "The project icon, or null for the default"),
     "color": nullable("The project colour as #rrggbb, or null"),
     "member_ids": string_list("Every member of the project by user id, 'me' for the caller; replaces the list"),
+    "label_ids": string_list("Every project label on the project, each an id or a name; replaces the list"),
     "initiative_id": nullable(f"{INITIATIVE_HELP} the project belongs to, or null for none"),
     "update_interval_days": {
         "type": ["integer", "null"],
@@ -867,6 +878,9 @@ PLANNING_TOOLS: tuple[Tool, ...] = (
                     "Only projects any of these customers asked for; 'none' is projects no customer asked for"
                 ),
                 "customer_id_not": one_or_many("Only projects none of these customers asked for"),
+                "label_id": one_or_many(
+                    "Only projects carrying any of these project labels, by id or name; 'none' is projects with none"
+                ),
                 "sort": enum(
                     PROJECT_SORTS,
                     "The order, defaulting to target_asc; customer_requests_desc puts the most customer requests "
