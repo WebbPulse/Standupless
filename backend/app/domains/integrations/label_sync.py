@@ -274,7 +274,7 @@ def apply_rename(repositories: Repositories, job: Mapping[str, Any]) -> None:
     label, _, row = found
     team_name = _team_name(repositories, config, label, new)
     if team_name is None:
-        _log.info("Skipped a GitHub label rename outside its group.", extra={"event": "integrations.label_sync.skipped"})
+        _log.info("Skipped a label rename out of its group.", extra={"event": "integrations.label_sync.skipped"})
         return
     try:
         if team_name != label.name:
