@@ -36,7 +36,6 @@ import { useMutationWithRefetch } from '@webbpulse/api-client/react';
 import {
   LuCheck,
   LuCheckCheck,
-  LuBellRing,
   LuCalendar,
   LuClock,
   LuDownload,
@@ -110,7 +109,8 @@ import {
 } from './groups';
 import { InboxDisplayMenu, InboxFilterMenu } from './InboxViewMenus';
 import { keepPinned, type PinnedRow } from './pinned';
-import { SNOOZE_PRESETS, snoozeLabel } from './snooze';
+import SnoozeDialog from './SnoozeDialog';
+import { snoozeLabel } from './snooze';
 
 /** How often the inbox re-reads, matching the badge so the two agree. */
 const POLL_MS = 60000;
@@ -1372,49 +1372,20 @@ export const Inbox: React.FC = () => {
           )}
         </div>
       </div>
-      <Dialog
+      <SnoozeDialog
         open={snoozing !== null}
+        subject={snoozing === null ? 'It' : subjectName(snoozing.latest)}
+        snoozed={snoozing !== null && snoozedIds(snoozing).length > 0}
+        onSnooze={(until) => {
+          if (snoozing !== null) snoozeGroup(snoozing, until);
+        }}
+        onUnsnooze={() => {
+          if (snoozing !== null) unsnoozeGroup(snoozing);
+        }}
         onClose={() => {
           setSnoozing(null);
         }}
-        title="Snooze notification"
-        description={`${snoozing === null ? 'It' : subjectName(snoozing.latest)} comes back unread at the time you pick.`}
-        size="sm"
-      >
-        <ul className="flex flex-col gap-1">
-          {snoozing !== null && snoozedIds(snoozing).length > 0 ? (
-            <li>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="w-full justify-start"
-                onClick={() => {
-                  unsnoozeGroup(snoozing);
-                }}
-              >
-                <LuBellRing className="h-3.5 w-3.5" aria-hidden="true" />
-                Unsnooze now
-              </Button>
-            </li>
-          ) : null}
-          {SNOOZE_PRESETS.map((preset) => (
-            <li key={preset.id}>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="w-full justify-start"
-                onClick={() => {
-                  if (snoozing !== null)
-                    snoozeGroup(snoozing, preset.until(new Date()));
-                }}
-              >
-                <LuClock className="h-3.5 w-3.5" aria-hidden="true" />
-                {preset.label}
-              </Button>
-            </li>
-          ))}
-        </ul>
-      </Dialog>
+      />
       <Dialog
         open={clearing !== null}
         onClose={() => {

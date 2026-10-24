@@ -107,6 +107,15 @@ describe('custom moments', () => {
     );
   });
 
+  it('refuses a moment past a shorter bound', () => {
+    expect(reminderProblem(new Date('2027-02-01T16:00:00Z'), now, 90)).toBe(
+      'Pick a time within the next 90 days.'
+    );
+    expect(
+      reminderProblem(new Date('2026-12-01T16:00:00Z'), now, 90)
+    ).toBeNull();
+  });
+
   it('refuses a missing moment', () => {
     expect(reminderProblem(null, now)).toBe('Pick a date and time.');
   });
