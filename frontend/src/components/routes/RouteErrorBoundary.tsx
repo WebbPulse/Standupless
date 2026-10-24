@@ -108,7 +108,7 @@ class Boundary extends React.Component<BoundaryProps, BoundaryState> {
   }
 
   /** Reloads once for a chunk that failed to load. */
-  componentDidCatch(error: unknown): void {
+  override componentDidCatch(error: unknown): void {
     if (!isChunkLoadError(error)) return;
     const reload = this.props.reloadForChunk ?? reloadOnceForChunkError;
     if (reload()) this.setState({ reloading: true });
@@ -124,7 +124,7 @@ class Boundary extends React.Component<BoundaryProps, BoundaryState> {
   };
 
   /** The page, the reload screen or the fallback. */
-  render(): ReactNode {
+  override render(): ReactNode {
     const { error, reloading } = this.state;
     if (error === null) return this.props.children;
     if (reloading) return <BootSplash label="Loading the latest version" />;
