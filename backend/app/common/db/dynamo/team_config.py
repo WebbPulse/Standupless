@@ -14,9 +14,10 @@ archive sweep in the same scan as the finished statuses it reads issues from.
 The auto-close period and target status are one row at `team#<pid>#autoclose`,
 found by the same hourly run with a scan of its own.
 
-A team's default display options for its issue list and board are one row at
-`team#<pid>#display`, read when a member opens either page without display
-options of their own.
+A team's default display options for its issue list, board and projects page
+are one row at `team#<pid>#display`, read when a member opens one of those pages
+without display options of their own. The workspace's own projects page default
+is one row at `workspace#display`, the fallback under every team's.
 
 A team's SLA rules are one row at `team#<pid>#sla`, read when an issue's
 priority, status or triage state moves.
@@ -180,6 +181,10 @@ DISPLAY_DEFAULTS = "display_defaults"
 def display_defaults_key(team_id: str) -> str:
     """The sort key of one team's default display options row."""
     return f"team#{team_id}#display"
+
+
+WORKSPACE_DISPLAY_DEFAULTS_KEY = "workspace#display"
+"""The sort key of the workspace's default display options row."""
 
 
 TRIAGE_SETTINGS = "triage_settings"
@@ -524,10 +529,12 @@ class DisplayOptions(BaseModel):
 
 
 class TeamDisplayDefaults(BaseModel):
-    """What a team's issue list and board show to a member who has not changed them, one row per team.
+    """What a team's issue list, board and projects page show to a member who has not changed them, one row per team.
 
     Each page keeps its own options because a team may want its list ungrouped
-    and its board by status. `None` for a page means its built-in default.
+    and its board by status. `projects_display` is the projects arrangement, as
+    the plain strings a person's own arrangement is kept in. `None` for a page
+    means its built-in default, or for projects the workspace default.
     """
 
     workspace_id: str
@@ -536,6 +543,21 @@ class TeamDisplayDefaults(BaseModel):
     kind: str = DISPLAY_DEFAULTS
     list_display: DisplayOptions | None = None
     board_display: DisplayOptions | None = None
+    projects_display: dict[str, str] | None = None
+    updated_by: str | None = None
+    updated_at: datetime | None = None
+
+
+class WorkspaceDisplayDefaults(BaseModel):
+    """What the projects page shows to a member who has not arranged it and whose team set no default.
+
+    One row per workspace. `None` means the built-in arrangement.
+    """
+
+    workspace_id: str
+    config_key: str = WORKSPACE_DISPLAY_DEFAULTS_KEY
+    kind: str = DISPLAY_DEFAULTS
+    projects_display: dict[str, str] | None = None
     updated_by: str | None = None
     updated_at: datetime | None = None
 
@@ -1313,6 +1335,19 @@ class TeamConfigRepository(StandupRows, TemplateRows, RecurringRows):
 
     def put_display_defaults(self, defaults: TeamDisplayDefaults) -> TeamDisplayDefaults:
         """Store one team's display defaults whole, stamped with the time of the write."""
+        stored = defaults.model_copy(update={"updated_at": utc_now()})
+        self._repository.put(as_item(stored))
+        return stored
+
+    def get_workspace_display_defaults(self, workspace_id: str) -> WorkspaceDisplayDefaults | None:
+        """The workspace's stored display defaults, or `None` when no admin saved any."""
+        if not workspace_id:
+            return None
+        item = self._repository.get({"workspace_id": workspace_id, "config_key": WORKSPACE_DISPLAY_DEFAULTS_KEY})
+        return WorkspaceDisplayDefaults.model_validate(dict(item)) if item is not None else None
+
+    def put_workspace_display_defaults(self, defaults: WorkspaceDisplayDefaults) -> WorkspaceDisplayDefaults:
+        """Store the workspace's display defaults whole, stamped with the time of the write."""
         stored = defaults.model_copy(update={"updated_at": utc_now()})
         self._repository.put(as_item(stored))
         return stored

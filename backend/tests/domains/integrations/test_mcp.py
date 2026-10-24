@@ -263,6 +263,7 @@ def test_the_contract_fixes_the_tool_set() -> None:
         "update_team_triage_settings",
         "update_view",
         "update_workspace",
+        "update_workspace_display_defaults",
         "update_workspace_label",
         "update_workspace_status",
         "list_releases",
@@ -324,7 +325,7 @@ def test_the_contract_fixes_the_tool_set() -> None:
         "save_agent_profile",
         "delete_agent_profile",
     }
-    assert len(TOOLS) == 210
+    assert len(TOOLS) == 211
 
 
 def test_a_notification_gets_no_body(client: TestClient, workspace: str, repositories: Any) -> None:

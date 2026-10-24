@@ -17903,7 +17903,7 @@
         "type": "object"
       },
       "TeamDisplayDefaultsRead": {
-        "description": "A team's display defaults as the API returns them, null for a page on its built-in default.",
+        "description": "A team's display defaults as the API returns them, null for a page on its built-in default.\n\n`projects_display` is the team's own projects default, null when it set none.\n`effective_projects_display` is what a member who never arranged the projects\npage opens it with on this team: the team default, else the workspace\ndefault, else the built-in arrangement.",
         "properties": {
           "board_display": {
             "anyOf": [
@@ -17915,10 +17915,23 @@
               }
             ]
           },
+          "effective_projects_display": {
+            "$ref": "#/components/schemas/ProjectsDisplay"
+          },
           "list_display": {
             "anyOf": [
               {
                 "$ref": "#/components/schemas/DisplayOptionsBody"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "projects_display": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProjectsDisplay"
               },
               {
                 "type": "null"
@@ -17960,7 +17973,7 @@
         "type": "object"
       },
       "TeamDisplayDefaultsUpdate": {
-        "description": "The body a team's display defaults patch takes.\n\n`list_display` sets what the team's issue list opens with and `board_display`\nwhat its board opens with. A page left out keeps its saved default, and null\nclears it back to the built-in one. Each page's options are replaced whole.",
+        "description": "The body a team's display defaults patch takes.\n\n`list_display` sets what the team's issue list opens with, `board_display`\nwhat its board opens with and `projects_display` how the team's projects\npage is arranged. A page left out keeps its saved default, and null clears\nit back to the built-in one, or for projects to the workspace default. Each\npage's options are replaced whole.",
         "properties": {
           "board_display": {
             "anyOf": [
@@ -17976,6 +17989,16 @@
             "anyOf": [
               {
                 "$ref": "#/components/schemas/DisplayOptionsBody"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "projects_display": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProjectsDisplay"
               },
               {
                 "type": "null"
@@ -19683,7 +19706,7 @@
         "type": "object"
       },
       "UserPreferencesUpdate": {
-        "description": "The preferences a person may change on their own account.\n\nEvery field is optional, so the global email switch, one kind's channels and\nthe timezone can each be changed without restating the others. `timezone` is\nthe IANA zone due date reminders are judged in, which the browser captures on\nsign in and the person can change. `pulse_digest` is how often the Pulse\ndigest email comes, `off` by default. `home_view`, `week_start`,\n`name_display` and `font_size` are the interface preferences the account\nPreferences page sets, kept on the row so they follow the person to every\ndevice. `projects_display` replaces how the projects list is arranged as a\nwhole. `auto_grant_new_scopes` lets scopes the product adds later reach the\nconnected apps that were given every scope. Deliberately not a settings\ndomain of its own: a few values on the row the product already owns are cheaper\nthan a table and a second read on every notification.",
+        "description": "The preferences a person may change on their own account.\n\nEvery field is optional, so the global email switch, one kind's channels and\nthe timezone can each be changed without restating the others. `timezone` is\nthe IANA zone due date reminders are judged in, which the browser captures on\nsign in and the person can change. `pulse_digest` is how often the Pulse\ndigest email comes, `off` by default. `home_view`, `week_start`,\n`name_display` and `font_size` are the interface preferences the account\nPreferences page sets, kept on the row so they follow the person to every\ndevice. `projects_display` replaces how the projects list is arranged as a\nwhole, and null forgets the arrangement, so the page opens with the team's or\nthe workspace's default again. `auto_grant_new_scopes` lets scopes the product adds later reach the\nconnected apps that were given every scope. Deliberately not a settings\ndomain of its own: a few values on the row the product already owns are cheaper\nthan a table and a second read on every notification.",
         "properties": {
           "auto_grant_new_scopes": {
             "anyOf": [
@@ -19882,7 +19905,7 @@
         "type": "object"
       },
       "UserRead": {
-        "description": "The caller's own account, in the shape the frontend's `UserRead` expects.",
+        "description": "The caller's own account, in the shape the frontend's `UserRead` expects.\n\n`projects_display` is the person's projects arrangement, the built-in one\nwhen they never arranged the page, and `projects_display_saved` says whether\nthey did. A person who has not opens the page with their team's or the\nworkspace's default instead.",
         "properties": {
           "auto_grant_new_scopes": {
             "default": false,
@@ -19966,6 +19989,11 @@
           },
           "projects_display": {
             "$ref": "#/components/schemas/ProjectsDisplay"
+          },
+          "projects_display_saved": {
+            "default": false,
+            "title": "Projects Display Saved",
+            "type": "boolean"
           },
           "pulse_digest": {
             "default": "off",
@@ -21617,6 +21645,66 @@
           "confirm_name"
         ],
         "title": "WorkspaceDeletionRequest",
+        "type": "object"
+      },
+      "WorkspaceDisplayDefaultsRead": {
+        "description": "The workspace display defaults as the API returns them.\n\n`projects_display` is null when no admin saved one, and\n`effective_projects_display` is what the workspace projects page opens with\nfor a member who never arranged it.",
+        "properties": {
+          "effective_projects_display": {
+            "$ref": "#/components/schemas/ProjectsDisplay"
+          },
+          "projects_display": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProjectsDisplay"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          },
+          "updated_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated By"
+          }
+        },
+        "title": "WorkspaceDisplayDefaultsRead",
+        "type": "object"
+      },
+      "WorkspaceDisplayDefaultsUpdate": {
+        "description": "The body the workspace display defaults patch takes.\n\n`projects_display` replaces how the projects page is arranged for every\nmember who never arranged it and whose team set no default, and null clears\nit back to the built-in arrangement. Left out, it keeps its saved default.",
+        "properties": {
+          "projects_display": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProjectsDisplay"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "title": "WorkspaceDisplayDefaultsUpdate",
         "type": "object"
       },
       "WorkspaceExportCreate": {
@@ -28787,6 +28875,112 @@
         "summary": "Get My Discord Link Url",
         "tags": [
           "integrations"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/display-defaults": {
+      "get": {
+        "description": "What the projects page opens with for a member who never arranged it and whose team set no default.",
+        "operationId": "read_workspace_display_defaults_api_workspaces__workspace_id__display_defaults_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkspaceDisplayDefaultsRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Read Workspace Display Defaults",
+        "tags": [
+          "teams"
+        ]
+      },
+      "patch": {
+        "description": "Set or clear the projects arrangement every member opens with until they arrange it themselves.\n\nA workspace admin's call. A team default, where one is set, wins on that\nteam's projects page, and a member's own arrangement wins over both.",
+        "operationId": "update_workspace_display_defaults_api_workspaces__workspace_id__display_defaults_patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkspaceDisplayDefaultsUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkspaceDisplayDefaultsRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Update Workspace Display Defaults",
+        "tags": [
+          "teams"
         ]
       }
     },
@@ -42484,7 +42678,7 @@
     },
     "/api/workspaces/{workspace_id}/teams/{team_id}/display-defaults": {
       "get": {
-        "description": "What the team's issue list and board open with for a member who has not changed them.",
+        "description": "What the team's issue list, board and projects page open with for a member who has not changed them.",
         "operationId": "read_display_defaults_api_workspaces__workspace_id__teams__team_id__display_defaults_get",
         "parameters": [
           {

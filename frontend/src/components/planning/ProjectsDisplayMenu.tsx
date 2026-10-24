@@ -42,6 +42,7 @@ import {
   type ProjectLayout,
   type ProjectOrdering,
 } from '../../lib/projectList';
+import type { ProjectsDefaultActions } from '../../hooks/useProjectsDisplayDefault';
 import Button from '../ui/button';
 import { Popover } from '../ui/popover';
 import { Select } from '../ui/select';
@@ -85,7 +86,19 @@ export interface ProjectsDisplayMenuProps {
   onColumnsChange?: (columns: ProjectColumn[]) => void;
   /** Puts every choice back to the page's own, or undefined when they match. */
   onReset?: (() => void) | undefined;
+  /** Saving or clearing the default for everyone, left out for a non-admin and on a view. */
+  defaultActions?: ProjectsDefaultActions | undefined;
 }
+
+/** The muted text buttons the panel footer is drawn with. */
+const FOOTER_ACTION =
+  'text-xs text-text-muted hover:text-text focus-visible:outline-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-50';
+
+/** Who a default for everyone reaches, named in the footer button titles. */
+const SCOPE_AUDIENCE: Record<ProjectsDefaultActions['scope'], string> = {
+  team: 'everyone on this team',
+  workspace: 'everyone in this workspace',
+};
 
 /** Props for one labelled select row of the panel. */
 interface ChoiceRowProps<T extends string> {
@@ -212,6 +225,7 @@ export const ProjectsDisplayMenu: React.FC<ProjectsDisplayMenuProps> = ({
   columns,
   onColumnsChange,
   onReset,
+  defaultActions,
   customerOrdering = false,
 }) => (
   <Popover
@@ -366,11 +380,37 @@ export const ProjectsDisplayMenu: React.FC<ProjectsDisplayMenuProps> = ({
         </div>
       </div>
     )}
-    {onReset !== undefined && (
-      <div className="flex justify-end border-t border-line px-3 py-2">
-        <Button variant="ghost" size="sm" onClick={onReset}>
-          Reset
-        </Button>
+    {(onReset !== undefined ||
+      defaultActions?.onSave !== undefined ||
+      defaultActions?.onClear !== undefined) && (
+      <div className="flex flex-wrap items-center justify-end gap-x-3 gap-y-1 border-t border-line px-3 py-2">
+        {defaultActions?.onClear !== undefined && (
+          <button
+            type="button"
+            disabled={defaultActions.busy}
+            onClick={defaultActions.onClear}
+            title={`Stop opening this page this way for ${SCOPE_AUDIENCE[defaultActions.scope]}`}
+            className={FOOTER_ACTION}
+          >
+            Clear default
+          </button>
+        )}
+        {defaultActions?.onSave !== undefined && (
+          <button
+            type="button"
+            disabled={defaultActions.busy}
+            onClick={defaultActions.onSave}
+            title={`Open this page this way for ${SCOPE_AUDIENCE[defaultActions.scope]} until they change it`}
+            className={FOOTER_ACTION}
+          >
+            Set default for everyone
+          </button>
+        )}
+        {onReset !== undefined && (
+          <Button variant="ghost" size="sm" onClick={onReset}>
+            Reset
+          </Button>
+        )}
       </div>
     )}
   </Popover>

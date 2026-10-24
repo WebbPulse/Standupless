@@ -23,6 +23,7 @@ ANSWERS_AT_HOME: frozenset[str] = frozenset(
     {
         "get_workspace",
         "update_workspace",
+        "update_workspace_display_defaults",
         "list_workspace_members",
         "list_invites",
         "invite_member",
@@ -58,6 +59,7 @@ def arguments(foreign: dict[str, str], home_issue: str) -> dict[str, dict[str, A
     return {
         "get_workspace": {},
         "update_workspace": {"name": "Isolation rename"},
+        "update_workspace_display_defaults": {"projects_display": {"layout": "board"}},
         "list_workspace_members": {},
         "list_invites": {},
         "invite_member": {"email": "isolation@example.com", "role": "member"},

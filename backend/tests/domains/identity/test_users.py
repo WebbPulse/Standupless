@@ -67,6 +67,7 @@ def test_the_caller_reads_their_own_row(client: TestClient, repositories: Any) -
             "zoom": "month",
             "columns": "summary,dependencies,health,priority,status,lead,start,target,teams,progress",
         },
+        "projects_display_saved": False,
         "auto_grant_new_scopes": False,
     }
 
@@ -207,6 +208,27 @@ def test_the_projects_display_is_kept_whole_and_refuses_unknown_choices(client: 
     ):
         refused = client.patch("/api/users/me/preferences", json={"projects_display": {field: value}})
         assert refused.status_code == 422
+
+
+def test_a_saved_projects_display_is_marked_and_null_forgets_it(client: TestClient, repositories: Any) -> None:
+    """An arrangement equal to the built-in one still counts as saved, and null returns the page to the defaults."""
+    make_user(repositories, OWNER, "owner@example.com", display_name="Owner")
+    sign_in(client, OWNER)
+
+    built_in = client.get("/api/users/me").json()["projects_display"]
+    saved = client.patch("/api/users/me/preferences", json={"projects_display": built_in})
+
+    assert saved.status_code == 200, saved.text
+    assert saved.json()["projects_display_saved"] is True
+    assert repositories.users.get(OWNER).projects_display == built_in
+
+    forgotten = client.patch("/api/users/me/preferences", json={"projects_display": None})
+
+    assert forgotten.status_code == 200, forgotten.text
+    assert forgotten.json()["projects_display_saved"] is False
+    assert forgotten.json()["projects_display"] == built_in
+    assert repositories.users.get(OWNER).projects_display == {}
+    assert client.patch("/api/users/me/preferences", json={"projects_display": None}).status_code == 200
 
 
 def test_the_projects_list_columns_are_kept_in_the_list_order(client: TestClient, repositories: Any) -> None:
