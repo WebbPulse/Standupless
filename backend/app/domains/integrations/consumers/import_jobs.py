@@ -18,7 +18,7 @@ from webbpulse.events import register_stream_consumer
 
 from app.common import issue_import
 from app.common.api.dependencies.repositories import Repositories, build_bundle
-from app.domains.integrations import asana_import, github_import
+from app.domains.integrations import asana_import, github_import, shortcut_import
 
 _log = logging.getLogger(__name__)
 
@@ -60,6 +60,7 @@ def build_router(repositories: Repositories | None = None) -> APIRouter:
         )
     )
     issue_import.PAGE_RUNNERS[github_import.KIND] = github_import.run_github_page
+    issue_import.PAGE_RUNNERS[shortcut_import.KIND] = shortcut_import.run_shortcut_page
     issue_import.PAGE_RUNNERS[asana_import.KIND] = asana_import.run_asana_page
     router = APIRouter()
 
