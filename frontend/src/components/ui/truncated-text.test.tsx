@@ -176,7 +176,9 @@ describe('useTruncationTooltip', () => {
   it('reveals a cut off link on keyboard focus', () => {
     render(<Probe title="A link that runs past its column" />);
     const link = sized(screen.getByRole('link'), { scrollWidth: 240 });
-    link.matches = (selector: string) => selector === ':focus-visible';
+    const focusVisible = (selector: string): boolean =>
+      selector === ':focus-visible';
+    link.matches = focusVisible as typeof link.matches;
 
     fireEvent.focus(link);
 

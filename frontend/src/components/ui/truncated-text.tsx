@@ -45,7 +45,7 @@ export interface TruncationTooltip<T extends HTMLElement> {
 /** Options for useTruncationTooltip. */
 export interface TruncationTooltipOptions {
   /** The full text, when it differs from the element's own text content. */
-  text?: string;
+  text?: string | undefined;
   /** Handlers the element already has, such as a prefetch, run first. */
   chain?: Partial<Record<keyof TruncationTooltipHandlers, () => void>>;
 }
