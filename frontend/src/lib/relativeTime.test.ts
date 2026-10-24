@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { compactAge, fullTimestamp, relativeTime } from './relativeTime';
+import {
+  compactAge,
+  dayHeading,
+  fullTimestamp,
+  localDay,
+  relativeTime,
+} from './relativeTime';
 
 const now = new Date('2026-09-25T12:00:00');
 
@@ -42,5 +48,27 @@ describe('compactAge', () => {
   it('never reads a future time as negative, and keeps a bad value', () => {
     expect(compactAge('2026-09-25T12:05:00', now)).toBe('now');
     expect(compactAge('nonsense', now)).toBe('nonsense');
+  });
+});
+
+describe('dayHeading', () => {
+  it('reads the current and previous local day by name', () => {
+    expect(dayHeading('2026-09-25T08:00:00', now)).toBe('Today');
+    expect(dayHeading('2026-09-24T23:30:00', now)).toBe('Yesterday');
+  });
+
+  it('reads older days as the weekday and date, with the year only when it differs', () => {
+    expect(dayHeading('2026-09-21T12:00:00', now)).toBe('Mon, Sep 21');
+    expect(dayHeading('2025-12-31T12:00:00', now)).toBe('Wed, Dec 31, 2025');
+  });
+
+  it('returns a malformed value as it came', () => {
+    expect(dayHeading('soon', now)).toBe('soon');
+  });
+});
+
+describe('localDay', () => {
+  it('reads the local calendar day', () => {
+    expect(localDay('2026-09-25T08:00:00')).toBe('2026-09-25');
   });
 });
