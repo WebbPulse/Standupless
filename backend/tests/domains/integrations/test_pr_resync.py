@@ -229,9 +229,7 @@ def test_a_delivery_runs_the_sweep(
     github_env: None,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Any later delivery for the workspace sweeps its idle open links."""
-    open_pull_request(repositories)
-    pr_resync._swept.clear()
+    """Deliveries for the workspace run the sweep, once in a window however many arrive."""
     swept: list[str] = []
 
     def record(repositories: Any, workspace_id: str, **_: Any) -> int:
@@ -241,6 +239,7 @@ def test_a_delivery_runs_the_sweep(
 
     monkeypatch.setattr(pr_resync, "sweep", record)
 
+    open_pull_request(repositories)
     events.handle_record(repositories, sqs_record(pull_request_event(number=8, node_id="PR_other")))
 
     assert swept == [WORKSPACE]
