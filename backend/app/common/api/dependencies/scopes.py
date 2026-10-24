@@ -326,6 +326,8 @@ ROUTE_SCOPES: Mapping[tuple[str, str], tuple[str, ...]] = {
     ("POST", "/{workspace_id}/projects/{project_id}/documents"): PROJECTS_WRITE,
     ("GET", "/{workspace_id}/initiatives/{initiative_id}/documents"): PROJECTS_READ,
     ("POST", "/{workspace_id}/initiatives/{initiative_id}/documents"): PROJECTS_WRITE,
+    ("GET", "/{workspace_id}/projects/{project_id}/document-templates"): PROJECTS_READ,
+    ("GET", "/{workspace_id}/initiatives/{initiative_id}/document-templates"): PROJECTS_READ,
     ("GET", "/{workspace_id}/documents"): PROJECTS_READ,
     ("GET", "/{workspace_id}/documents/{document_id}"): PROJECTS_READ,
     ("PATCH", "/{workspace_id}/documents/{document_id}"): PROJECTS_WRITE,

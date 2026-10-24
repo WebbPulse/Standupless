@@ -987,6 +987,12 @@
     "auth": "workspace:read",
     "domain": "planning",
     "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/initiatives/{initiative_id}/document-templates"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "planning",
+    "method": "GET",
     "path": "/api/workspaces/{workspace_id}/initiatives/{initiative_id}/documents"
   },
   {
@@ -1090,6 +1096,12 @@
     "domain": "planning",
     "method": "PATCH",
     "path": "/api/workspaces/{workspace_id}/projects/{project_id}"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "planning",
+    "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/projects/{project_id}/document-templates"
   },
   {
     "auth": "workspace:read",

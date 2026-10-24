@@ -25,6 +25,7 @@ from typing import Iterable, cast
 from fastapi import HTTPException, status
 from webbpulse.dynamodb import ConditionFailed
 
+from app.common import document_templates
 from app.common.api.dependencies.authz import AuthzContext
 from app.common.api.dependencies.repositories import Repositories
 from app.common.api.schemas.documents import (
@@ -35,7 +36,6 @@ from app.common.api.schemas.documents import (
     DocumentSummaryRead,
     DocumentVersionRead,
 )
-from app.common import document_templates
 from app.common.change_source import ChangeSource
 from app.common.db.dynamo.base import utc_now
 from app.common.db.dynamo.documents import (
