@@ -1,7 +1,8 @@
 """The rollup consumer: keeps each parent's `progress` matching its children.
 
-It also keeps `blocked_by_open_count` right on the issues a blocker blocks, and the
-blocker's own `blocking_count`, since a
+It also keeps `blocked_by_open_count` right on the issues a blocker blocks, the
+blocker's own `blocking_count`, and the `blocking_count` of the issues blocking
+the one that moved, since a
 blocker's status can move from any writer, the API, a GitHub transition or an MCP
 tool, and this stream is the one place all of them pass.
 
@@ -47,7 +48,7 @@ from app.common.cycle_schedule import active_cycle
 from app.common.db.dynamo.activity import build_activity
 from app.common.db.dynamo.planning import MILESTONE_KEY_PREFIX
 from app.common.issue_rules import COMPLETED_CATEGORIES
-from app.common.relation_effects import recount_blocked_by, recount_blocking
+from app.common.relation_effects import recount_blocked_by, recount_blockers_of, recount_blocking
 from app.domains.issues import auto_archive, auto_close, recurring, sla_repair
 from app.domains.issues.cycle_close import is_cycle_close, sweep
 
@@ -314,6 +315,7 @@ def handle_record(repositories: Repositories, record: Mapping[str, Any]) -> None
     if blocker:
         recount_blocked_by(repositories, workspace_id, blocker)
         recount_blocking(repositories, workspace_id, blocker)
+        recount_blockers_of(repositories, workspace_id, blocker)
     if not stale:
         return
 
