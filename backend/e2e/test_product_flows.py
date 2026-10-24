@@ -583,6 +583,39 @@ class TestDiscussionDomain:
         deleted = api.delete(path, params=scope)
         assert deleted.status_code in (200, 204), deleted.text[:400]
 
+    @WRITES
+    def test_a_comment_draft_is_saved_restored_and_discarded(
+        self, api: Any, run_scope: RunScope, workspace: "dict[str, Any]", issue: "dict[str, Any]"
+    ) -> None:
+        """A draft saved on the issue reads back and lists, and discarding it twice is fine.
+
+        The drafts routes sit under their own views prefix at the gateway, so a
+        missing prefix would answer 404 here rather than the draft.
+        """
+        drafts = f"/api/workspaces/{workspace['id']}/drafts"
+        path = f"{drafts}/{issue['id']}"
+        body = run_scope.name("draft")
+
+        saved = api.put(path, json={"body": body})
+        assert saved.status_code == 200, saved.text[:400]
+        assert saved.json()["body"] == body
+
+        readback = api.get(path)
+        assert readback.status_code == 200, readback.text[:400]
+        assert readback.json()["body"] == body
+        assert readback.json()["issue_id"] == issue["id"]
+
+        listed = api.get(drafts, params={"issue_id": issue["id"]})
+        assert listed.status_code == 200, listed.text[:400]
+        assert [row["body"] for row in listed.json()["drafts"]] == [body]
+
+        for _ in range(2):
+            discarded = api.delete(path)
+            assert discarded.status_code == 204, discarded.text[:400]
+
+        gone = api.get(path)
+        assert gone.status_code == 404, gone.text[:400]
+
 
 class TestViewsDomain:
     """The read surfaces a signed in user lands on: the board, the inbox and search."""

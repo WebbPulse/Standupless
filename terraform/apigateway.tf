@@ -23,6 +23,7 @@ locals {
       "/api/workspaces/{workspace_id}/inbox",
       "/api/workspaces/{workspace_id}/share-links",
       "/api/workspaces/{workspace_id}/favorites",
+      "/api/workspaces/{workspace_id}/drafts",
     ]
 
     # The comment thread sits under the issues prefix's own subtree, so it is
