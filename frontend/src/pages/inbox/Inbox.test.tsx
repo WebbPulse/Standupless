@@ -12,7 +12,9 @@
  * actions menu deletes every read row or every row after a confirmation,
  * sending the current filter along. Removing and snoozing offer Undo: a
  * removal is held until its window lapses or the page goes, and undoing a
- * snooze unsnoozes and keeps read rows read.
+ * snooze unsnoozes and keeps read rows read. Each row's menu, from a right
+ * click or its "more" button, offers the issue-only entries only on issue
+ * rows, and unsubscribing from it, or with Shift S, offers Undo.
  */
 
 import {
@@ -31,6 +33,7 @@ import type { WorkspaceContextType } from '../../contexts/WorkspaceContextDefini
 import type {
   NotificationListRead,
   NotificationRead,
+  SubscribersRead,
   WorkspaceRead,
 } from '../../types/Api';
 import { fromLocalInput, toLocalInput } from '../../lib/reminders';
@@ -41,7 +44,7 @@ import {
   UNDO_TOAST_MS,
 } from '../../lib/undo';
 import BoundKeys from '../../test/BoundKeys';
-import { keysBound } from '../../test/shortcuts';
+import { boundKeys, keysBound } from '../../test/shortcuts';
 import Inbox from './Inbox';
 
 const listInbox = vi.fn<(query: unknown) => Promise<NotificationListRead>>();
@@ -54,6 +57,22 @@ const snoozeNotifications =
   vi.fn<
     (body: { notification_ids: string[]; until: string }) => Promise<number>
   >();
+
+const listSubscribers = vi.fn<(issueId: string) => Promise<SubscribersRead>>();
+const subscribe = vi.fn<(issueId: string) => Promise<SubscribersRead>>();
+const unsubscribe = vi.fn<(issueId: string) => Promise<SubscribersRead>>();
+
+vi.mock('../../api/notifications', async () => {
+  const actual = await vi.importActual<
+    typeof import('../../api/notifications')
+  >('../../api/notifications');
+  return {
+    ...actual,
+    listSubscribers: (_w: string, issueId: string) => listSubscribers(issueId),
+    subscribe: (_w: string, issueId: string) => subscribe(issueId),
+    unsubscribe: (_w: string, issueId: string) => unsubscribe(issueId),
+  };
+});
 
 vi.mock('../../hooks/useAuth', () => ({
   useAuth: () => ({
@@ -222,6 +241,12 @@ beforeEach(() => {
   clearInbox.mockResolvedValue(2);
   markUnread.mockResolvedValue(1);
   snoozeNotifications.mockResolvedValue(1);
+  listSubscribers.mockReset();
+  subscribe.mockReset();
+  unsubscribe.mockReset();
+  listSubscribers.mockResolvedValue({ subscribers: [], subscribed: true });
+  subscribe.mockResolvedValue({ subscribers: [], subscribed: true });
+  unsubscribe.mockResolvedValue({ subscribers: [], subscribed: false });
 });
 
 describe('inbox', () => {
@@ -987,5 +1012,168 @@ describe('inbox', () => {
     await waitFor(() => {
       expect(markAllRead).toHaveBeenCalled();
     });
+  });
+});
+
+/** A project update row, which is not about an issue. */
+const projectRow = () =>
+  notification({
+    notification_id: 'n-9',
+    kind: 'project_update',
+    issue_id: '',
+    issue_key: '',
+    issue_title: '',
+    project_id: 'prj-1',
+    project_name: 'Public beta',
+    project_update_id: 'upd-1',
+  });
+
+/** Right clicks the row holding `text` and answers the menu it opens. */
+const openRowMenu = async (text: string): Promise<HTMLElement> => {
+  const label = await screen.findByText(text);
+  const row = label.closest('li');
+  if (row === null) throw new Error('no row');
+  fireEvent.contextMenu(row, { clientX: 20, clientY: 20 });
+  return screen.findByRole('menu');
+};
+
+describe('inbox row menu', () => {
+  it('offers every entry on an issue row', async () => {
+    renderPage();
+
+    const menu = await openRowMenu('Cache the token');
+
+    const names = within(menu)
+      .getAllByRole('menuitem')
+      .map((item) => item.textContent);
+    expect(names).toEqual([
+      expect.stringContaining('Mark as read'),
+      expect.stringContaining('Snooze'),
+      expect.stringContaining('Delete notification'),
+      expect.stringContaining('Unsubscribe from issue'),
+      'Copy issue link',
+      'Open in new tab',
+    ]);
+  });
+
+  it('leaves the issue-only entries off a project update row', async () => {
+    listInbox.mockResolvedValue({
+      notifications: [projectRow()],
+      next_cursor: null,
+    });
+    renderPage();
+
+    const menu = await openRowMenu('Public beta');
+
+    expect(
+      within(menu).getByRole('menuitem', { name: /Mark as read/ })
+    ).toBeInTheDocument();
+    expect(
+      within(menu).queryByRole('menuitem', { name: /Unsubscribe/ })
+    ).not.toBeInTheDocument();
+    expect(
+      within(menu).queryByRole('menuitem', { name: 'Copy issue link' })
+    ).not.toBeInTheDocument();
+    expect(
+      within(menu).getByRole('menuitem', { name: 'Open in new tab' })
+    ).toBeInTheDocument();
+    expect(listSubscribers).not.toHaveBeenCalled();
+  });
+
+  it('offers to subscribe when the caller does not follow the issue', async () => {
+    listSubscribers.mockResolvedValue({ subscribers: [], subscribed: false });
+    const user = userEvent.setup();
+    renderPage();
+
+    const menu = await openRowMenu('Cache the token');
+    await user.click(
+      await within(menu).findByRole('menuitem', { name: /Subscribe to issue/ })
+    );
+
+    await waitFor(() => {
+      expect(subscribe).toHaveBeenCalledWith('iss-1');
+    });
+    expect(unsubscribe).not.toHaveBeenCalled();
+  });
+
+  it('opens the same menu from the row more button', async () => {
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(
+      await screen.findByRole('button', { name: 'More actions for ENG-1' })
+    );
+
+    expect(
+      await screen.findByRole('menuitem', { name: /Unsubscribe from issue/ })
+    ).toBeInTheDocument();
+  });
+
+  it('unsubscribes from the menu and resubscribes on undo', async () => {
+    const user = userEvent.setup();
+    renderPage();
+
+    const menu = await openRowMenu('Cache the token');
+    await user.click(
+      within(menu).getByRole('menuitem', { name: /Unsubscribe from issue/ })
+    );
+
+    await waitFor(() => {
+      expect(unsubscribe).toHaveBeenCalledWith('iss-1');
+    });
+    await waitFor(() => {
+      expect(currentUndo().at(-1)?.message).toBe('Unsubscribed from ENG-1');
+    });
+    await act(async () => {
+      await undoLast('ws-1');
+    });
+
+    expect(subscribe).toHaveBeenCalledWith('iss-1');
+  });
+
+  it('opens a row in a new tab', async () => {
+    const user = userEvent.setup();
+    const open = vi.spyOn(window, 'open').mockReturnValue(null);
+    renderPage();
+
+    const menu = await openRowMenu('Cache the token');
+    await user.click(
+      within(menu).getByRole('menuitem', { name: 'Open in new tab' })
+    );
+
+    expect(open).toHaveBeenCalledWith(
+      `${window.location.origin}/w/mine/issues/ENG-1`,
+      '_blank',
+      'noopener,noreferrer'
+    );
+    open.mockRestore();
+  });
+
+  it('toggles the subscription on the selected row with shift s', async () => {
+    renderPage('/w/mine/inbox?n=n-1');
+
+    await screen.findByLabelText('Peek iss-1');
+    await keysBound('shift+s');
+    press('S', { shiftKey: true });
+
+    await waitFor(() => {
+      expect(unsubscribe).toHaveBeenCalledWith('iss-1');
+    });
+    await waitFor(() => {
+      expect(currentUndo().at(-1)?.message).toBe('Unsubscribed from ENG-1');
+    });
+  });
+
+  it('does not bind shift s on a row with no issue', async () => {
+    listInbox.mockResolvedValue({
+      notifications: [projectRow()],
+      next_cursor: null,
+    });
+    renderPage('/w/mine/inbox?n=n-9');
+
+    await screen.findByRole('complementary', { name: 'Project update' });
+    await keysBound('enter');
+
+    expect(boundKeys()).not.toContain('shift+s');
   });
 });

@@ -44,6 +44,7 @@ import {
   datePresets,
   shortDateLabel,
   sortStatuses,
+  typedDateOption,
 } from '../../lib/propertyOptions';
 import {
   TRIAGE_STATUS,
@@ -170,6 +171,7 @@ interface SinglePickerProps extends PickerBaseProps {
   empty: boolean;
   placeholder: string;
   footer?: (close: () => void) => React.ReactNode;
+  leadOption?: (query: string) => ComboboxOption | null;
 }
 
 /** A trigger and a single choice list, closing on the pick. */
@@ -183,6 +185,7 @@ const SinglePicker: React.FC<SinglePickerProps> = ({
   empty,
   placeholder,
   footer,
+  leadOption,
   disabled = false,
   variant = 'rail',
   align = 'start',
@@ -222,6 +225,7 @@ const SinglePicker: React.FC<SinglePickerProps> = ({
           if (picked !== value) onChange(picked);
         }}
         footer={footer?.(close)}
+        {...(leadOption === undefined ? {} : { leadOption })}
       />
     )}
   </Popover>
@@ -922,12 +926,26 @@ export const DatePicker: React.FC<DatePickerProps> = ({
       icon: <LuX className="h-3.5 w-3.5" />,
     });
   }
+  const leadOption = (query: string): ComboboxOption | null => {
+    const typed = typedDateOption(query, today, min, max);
+    if (typed === null) return null;
+    return {
+      value: typed.value,
+      label: typed.label,
+      icon: <LuCalendar className="h-3.5 w-3.5" />,
+      disabled:
+        validate === undefined
+          ? typed.disabled
+          : validate(typed.value) !== null,
+    };
+  };
   return (
     <SinglePicker
       {...base}
       field={field}
-      placeholder="Pick a day"
+      placeholder="Try fri, in 3 days or nov 12"
       options={options}
+      leadOption={leadOption}
       value={value ?? NONE}
       onChange={(picked) => {
         onChange(picked === NONE ? null : picked);

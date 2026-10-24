@@ -152,6 +152,8 @@ def list_issues(
     conditions in one group under the list's fixed scope. `content`
     matches title and description text, `label_id_all` wants every label named,
     and `completed_after` and `completed_before` bound the day an issue was done.
+    The `completed_desc` sort puts the latest `completed_at` first and issues not
+    completed last.
     `customer_id` keeps the issues one of the named customers asked for and
     `customer_id_not` drops them, `none` standing for no customer request, and
     the `customer_requests_desc` and `customer_revenue_desc` sorts put the most

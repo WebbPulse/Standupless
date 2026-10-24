@@ -61,6 +61,7 @@ SortField = Literal[
     "estimate_desc",
     "customer_requests_desc",
     "customer_revenue_desc",
+    "completed_desc",
 ]
 
 ISSUE_KEY_PATTERN = re.compile(r"^([A-Za-z][A-Za-z0-9]{1,5})-(\d+)$")
@@ -374,7 +375,15 @@ class IssueRead(BaseModel):
     sla_breaches_at: Optional[datetime] = None
     sla_paused_at: Optional[datetime] = None
     sla_status: SlaStatusField = "none"
-    completed_at: Optional[datetime] = None
+    started_at: Optional[datetime] = Field(
+        default=None, description="When the issue first landed in a started status, null until then."
+    )
+    completed_at: Optional[datetime] = Field(
+        default=None, description="When the issue landed in a completed status, null while it is anywhere else."
+    )
+    cancelled_at: Optional[datetime] = Field(
+        default=None, description="When the issue landed in a cancelled status, null while it is anywhere else."
+    )
     external_ref: Optional[str] = None
 
     @classmethod
@@ -422,7 +431,9 @@ class IssueRead(BaseModel):
             sla_breaches_at=issue.sla_breaches_at,
             sla_paused_at=issue.sla_paused_at,
             sla_status=sla_status(issue),
+            started_at=issue.started_at,
             completed_at=issue.completed_at,
+            cancelled_at=issue.cancelled_at,
             external_ref=issue.external_ref,
         )
 

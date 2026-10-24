@@ -4,6 +4,7 @@
  * the date presets can be tested against a fixed day rather than the clock.
  */
 
+import { parseTypedDate } from './parseDate';
 import { weekStartDay } from './preferences';
 import type { StatusCategory, StatusRead } from '../types/Api';
 
@@ -115,6 +116,49 @@ export const dateInRange = (
 ): boolean =>
   (min === undefined || min === '' || value >= min) &&
   (max === undefined || max === '' || value <= max);
+
+/**
+ * How a typed date reads as the top option of a date picker: the weekday,
+ * month and day, with the year only when it is not this year.
+ */
+export const longDateLabel = (value: string, today = new Date()): string => {
+  const day = parseIsoDate(value);
+  if (day === null) return value;
+  const sameYear = day.getFullYear() === today.getFullYear();
+  return day.toLocaleDateString(undefined, {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+    ...(sameYear ? {} : { year: 'numeric' }),
+  });
+};
+
+/** The option a date picker leads with when its search text reads as a day. */
+export interface TypedDateOption extends DatePreset {
+  disabled: boolean;
+}
+
+/**
+ * Reads a date picker's search text as a day, such as "fri" or "nov 12", and
+ * returns it as the option to lead the list with, or null when the text is
+ * not a date. A day outside the allowed range is offered but disabled.
+ */
+export const typedDateOption = (
+  query: string,
+  today: Date,
+  min?: string,
+  max?: string,
+  weekStart: number = weekStartDay()
+): TypedDateOption | null => {
+  const day = parseTypedDate(query, today, { weekStart });
+  if (day === null) return null;
+  const value = isoDate(day);
+  return {
+    value,
+    label: longDateLabel(value, today),
+    disabled: !dateInRange(value, min, max),
+  };
+};
 
 /** A palette new labels are coloured from, so a created label is never grey. */
 export const LABEL_PALETTE = [

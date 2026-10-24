@@ -30,6 +30,7 @@ import {
   datePresets,
   shortDateLabel,
   sortStatuses,
+  typedDateOption,
 } from '../../../lib/propertyOptions';
 import { pickableLabels, replacedSiblings } from '../../../lib/labelGroups';
 import {
@@ -134,6 +135,7 @@ export const PropertyCommand: React.FC<PropertyCommandProps> = ({
   let empty = 'Nothing matches.';
   let pick: (value: string) => void = () => undefined;
   let footer: React.ReactNode = undefined;
+  let leadOption: ((query: string) => ComboboxOption | null) | undefined;
 
   const write = (
     change: IssueChange | ((issue: OrderedIssueRead) => IssueChange | null)
@@ -471,6 +473,15 @@ export const PropertyCommand: React.FC<PropertyCommandProps> = ({
         },
       ];
       selected = shared(issues.map((issue) => [issue.due_date ?? CLEAR]));
+      leadOption = (query) => {
+        const typed = typedDateOption(query, today, min);
+        return typed === null
+          ? null
+          : {
+              ...typed,
+              icon: <LuCalendar className="h-3.5 w-3.5 text-text-muted" />,
+            };
+      };
       pick = (value) => {
         setDue(value === CLEAR ? null : value);
       };
@@ -513,6 +524,7 @@ export const PropertyCommand: React.FC<PropertyCommandProps> = ({
           emptyMessage={empty}
           onSelect={pick}
           {...(footer === undefined ? {} : { footer })}
+          {...(leadOption === undefined ? {} : { leadOption })}
         />
       </div>
     </Dialog>

@@ -57,6 +57,11 @@ export interface ComboboxProps {
   footer?: React.ReactNode;
   /** Hears the filter text as it changes, for a list read from the server. */
   onQueryChange?: (query: string) => void;
+  /**
+   * Reads the filter text as an option of its own, such as a typed date, and
+   * leads the list with it, unfiltered, in place of any option of its value.
+   */
+  leadOption?: (query: string) => ComboboxOption | null;
   className?: string;
 }
 
@@ -91,6 +96,7 @@ export const Combobox: React.FC<ComboboxProps> = ({
   emptyMessage = 'No results',
   footer,
   onQueryChange,
+  leadOption,
   className = '',
 }) => {
   const [query, setQuery] = useState('');
@@ -98,10 +104,17 @@ export const Combobox: React.FC<ComboboxProps> = ({
   const optionIdPrefix = useId();
   const list = useRef<HTMLDivElement>(null);
 
-  const filtered = useMemo(
-    () => options.filter((option) => matches(option, query)),
-    [options, query]
+  const lead = useMemo(
+    () => (query.trim() === '' ? null : (leadOption?.(query) ?? null)),
+    [leadOption, query]
   );
+
+  const filtered = useMemo(() => {
+    const kept = options.filter((option) => matches(option, query));
+    return lead === null
+      ? kept
+      : [lead, ...kept.filter((option) => option.value !== lead.value)];
+  }, [options, query, lead]);
 
   const trimmed = query.trim();
   const canCreate =
