@@ -14,6 +14,7 @@ locals {
       "/api/workspaces/{workspace_id}/statuses",
       "/api/workspaces/{workspace_id}/labels",
       "/api/workspaces/{workspace_id}/templates",
+      "/api/workspaces/{workspace_id}/display-defaults",
     ]
     issues = ["/api/workspaces/{workspace_id}/issues"]
     views = [

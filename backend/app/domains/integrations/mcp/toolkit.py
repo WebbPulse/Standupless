@@ -17,6 +17,7 @@ from pydantic import ValidationError
 
 from app.common.api.dependencies.authz import AuthzContext
 from app.common.api.dependencies.repositories import Repositories
+from app.common.api.schemas.projects_display import PROJECTS_COLUMNS, PROJECTS_DISPLAY_FIELDS
 from app.common.db.dynamo.issues import Issue
 from app.common.db.dynamo.teams import Team, TeamRepository
 from app.common.issue_keys import current
@@ -149,6 +150,23 @@ def enum(values: tuple[str, ...], description: str) -> dict[str, Any]:
 def nullable_enum(values: tuple[str, ...], description: str) -> dict[str, Any]:
     """A string property narrowed to a fixed set that also takes null, which clears it."""
     return {"type": ["string", "null"], "enum": [*values, None], "description": description}
+
+
+def projects_display_schema(description: str, *, clearable: bool = False) -> dict[str, Any]:
+    """A projects page arrangement, each field one of the page's choices, null allowed when it clears."""
+    return {
+        "type": ["object", "null"] if clearable else "object",
+        "properties": {
+            **{field: {"type": "string", "enum": list(choices)} for field, choices in PROJECTS_DISPLAY_FIELDS.items()},
+            "columns": {
+                "type": "array",
+                "items": {"type": "string", "enum": list(PROJECTS_COLUMNS)},
+                "description": "The properties shown beside the name; an empty list shows the name alone",
+            },
+        },
+        "additionalProperties": False,
+        "description": description,
+    }
 
 
 def string_list(description: str) -> dict[str, Any]:

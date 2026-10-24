@@ -208,6 +208,7 @@ EXPECTED_TOOLS = frozenset(
         "update_team_triage_settings",
         "update_view",
         "update_workspace",
+        "update_workspace_display_defaults",
         "update_workspace_label",
         "update_workspace_status",
         "list_releases",
