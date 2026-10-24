@@ -341,6 +341,48 @@ def test_a_finished_blocker_stops_blocking_through_the_stream(
     assert _issue(client, workspace, blocker)["blocking_count"] == 1
 
 
+def test_a_finished_blocked_issue_does_not_count_on_its_blocker(
+    client: TestClient, workspace: str, statuses: Any
+) -> None:
+    """A link to a blocked issue that is already done leaves the blocking count alone."""
+    sign_in(client, OWNER)
+    blocker = create_issue(client, workspace, title="Blocker")
+    done = create_issue(client, workspace, title="Done", status_id=statuses["completed"].status_id)
+    open_issue = create_issue(client, workspace, title="Open")
+
+    _link(client, workspace, blocker, done, "blocks")
+    _link(client, workspace, blocker, open_issue, "blocks")
+
+    assert _issue(client, workspace, blocker)["blocking_count"] == 1
+
+
+def test_a_blocked_issue_finishing_drops_out_of_the_blocking_count(
+    client: TestClient, workspace: str, repositories: Any, statuses: Any
+) -> None:
+    """The stream recounts a blocker when an issue it blocks is finished, and again on reopen."""
+    sign_in(client, OWNER)
+    blocker = create_issue(client, workspace, title="Blocker")
+    first = create_issue(client, workspace, title="First")
+    second = create_issue(client, workspace, title="Second")
+    _link(client, workspace, blocker, first, "blocks")
+    _link(client, workspace, second, blocker, "blocked_by")
+    done = statuses["completed"].status_id
+
+    assert _issue(client, workspace, blocker)["blocking_count"] == 2
+
+    client.patch(f"/api/workspaces/{workspace}/issues/{first['id']}", json={"status_id": done})
+    record = _status_record(workspace, first["id"], first["status_id"], done)
+    handle_record(repositories, record)
+    handle_record(repositories, record)
+
+    assert _issue(client, workspace, blocker)["blocking_count"] == 1
+
+    client.patch(f"/api/workspaces/{workspace}/issues/{first['id']}", json={"status_id": first["status_id"]})
+    handle_record(repositories, _status_record(workspace, first["id"], done, first["status_id"]))
+
+    assert _issue(client, workspace, blocker)["blocking_count"] == 2
+
+
 def test_deleting_a_blocked_issue_clears_the_blocking_count(client: TestClient, workspace: str, statuses: Any) -> None:
     """A deleted blocked issue stops counting on its blocker at once."""
     sign_in(client, OWNER)

@@ -1,6 +1,7 @@
 /**
  * The blocked and blocking flags a list row draws. Covers that each shows only
- * while its count is above zero, that it names the count, that older rows
+ * while its count is above zero, that it names and prints the count for one
+ * and many, that a resolved blocker drops out of the count, that older rows
  * without the count draw nothing, and that the tooltip names open blockers
  * only.
  */
@@ -90,6 +91,49 @@ describe('BlockedMarker', () => {
   it('draws no blocking flag once the issue blocks nothing', () => {
     const { container } = render(<BlockingMarker count={0} />);
     expect(container).toBeEmptyDOMElement();
+  });
+});
+
+describe('relation counts', () => {
+  const shown = (name: string): string | null =>
+    screen.getByRole('img', { name }).querySelector('[data-relation-count]')
+      ?.textContent ?? null;
+
+  it('prints no count and no flag at zero', () => {
+    const { container } = renderRow(
+      issue({ blocked_by_open_count: 0, blocking_count: 0 })
+    );
+    expect(container.querySelector('[data-relation-count]')).toBeNull();
+  });
+
+  it('prints a count of one beside each flag', () => {
+    renderRow(issue({ blocked_by_open_count: 1, blocking_count: 1 }));
+    expect(shown('Blocked by 1 open issue')).toBe('1');
+    expect(shown('Blocking 1 issue')).toBe('1');
+  });
+
+  it('prints many beside each flag', () => {
+    renderRow(issue({ blocked_by_open_count: 4, blocking_count: 12 }));
+    expect(shown('Blocked by 4 open issues')).toBe('4');
+    expect(shown('Blocking 12 issues')).toBe('12');
+  });
+
+  it('drops a resolved blocker out of the count', () => {
+    const { rerender } = renderRow(issue({ blocked_by_open_count: 2 }));
+    expect(shown('Blocked by 2 open issues')).toBe('2');
+    rerender(
+      <MemoryRouter>
+        <ul>
+          <li>
+            <RelationMarkers issue={issue({ blocked_by_open_count: 1 })} />
+          </li>
+        </ul>
+      </MemoryRouter>
+    );
+    expect(shown('Blocked by 1 open issue')).toBe('1');
+    expect(
+      screen.queryByRole('img', { name: 'Blocked by 2 open issues' })
+    ).toBeNull();
   });
 });
 

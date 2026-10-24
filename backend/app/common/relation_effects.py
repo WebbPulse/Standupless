@@ -13,8 +13,9 @@ on a link write or a blocker's status change, both of which already pass through
 this domain.
 
 The blocking marker is `blocking_count` on the blocker's row for the same reason:
-how many `blocks` links an issue holds while its own status is open, the same
-rule the `is_blocking` filter reads, and zero once the issue is finished.
+how many open issues an issue holds up through its `blocks` links while its own
+status is open, and zero once the issue is finished. A blocked issue that is
+finished stops counting, so its status change recounts its blockers too.
 
 The links property on list and board rows reads `relation_count`, every link the
 issue holds in either direction, kept on the row for the same reason.
@@ -99,9 +100,10 @@ def recount_blocked(repositories: Repositories, workspace_id: str, issue_id: str
 
 
 def recount_blocking(repositories: Repositories, workspace_id: str, issue_id: str, *, write: bool = True) -> int | None:
-    """Write how many issues one open issue blocks, answering the count.
+    """Write how many open issues one open issue blocks, answering the count.
 
-    Recounted from the stored links like `recount_blocked`, and zero while the
+    Recounted from the stored links like `recount_blocked`, leaving out blocked
+    issues that are completed or cancelled, and zero while the
     issue itself is completed or cancelled, which is when Linear stops showing it
     as blocking. Nothing is written when the count already holds, the issue is
     gone or `write` is off.
@@ -112,11 +114,15 @@ def recount_blocking(repositories: Repositories, workspace_id: str, issue_id: st
     categories = categories_for(repositories, workspace_id, [issue.team_id])
     count = 0
     if categories.get(issue.status_id) not in COMPLETED_CATEGORIES:
-        count = sum(
-            1
+        blocked = [
+            relation.target_issue_id
             for relation in repositories.relations.list_for_issue(workspace_id, issue_id, limit=1000)
             if relation.relation_type == "blocks"
-        )
+        ]
+        rows = repositories.issues.get_many(workspace_id, blocked)
+        missing = {row.team_id for row in rows.values()} - {issue.team_id}
+        categories.update(categories_for(repositories, workspace_id, missing))
+        count = sum(1 for row in rows.values() if categories.get(row.status_id) not in COMPLETED_CATEGORIES)
     if write and issue.blocking_count != count:
         repositories.issues.set_blocking_count(workspace_id, issue_id, count)
     return count
@@ -153,6 +159,23 @@ def recount_blocked_by(repositories: Repositories, workspace_id: str, blocker_id
     for issue_id in blocked:
         recount_blocked(repositories, workspace_id, issue_id)
     return blocked
+
+
+def recount_blockers_of(repositories: Repositories, workspace_id: str, blocked_id: str) -> list[str]:
+    """Recount every issue that blocks one issue, answering their ids.
+
+    What a blocked issue's status change calls, since a finished blocked issue
+    no longer counts on its blockers: they are named by the `blocked_by` rows
+    under its own partition, so this is one query plus one recount per blocker.
+    """
+    blockers = [
+        relation.target_issue_id
+        for relation in repositories.relations.list_for_issue(workspace_id, blocked_id)
+        if relation.relation_type == "blocked_by"
+    ]
+    for issue_id in blockers:
+        recount_blocking(repositories, workspace_id, issue_id)
+    return blockers
 
 
 def delete_relations(repositories: Repositories, workspace_id: str, issue_id: str) -> None:
