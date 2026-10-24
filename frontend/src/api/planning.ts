@@ -23,6 +23,9 @@ import type {
   ProjectListQuery,
   ProjectListRead,
   ProjectRead,
+  ProjectRelationCreate,
+  ProjectRelationListRead,
+  ProjectRelationRead,
   ProjectUpdate,
   ProjectUpdateCreate,
   ProjectUpdateEdit,
@@ -63,6 +66,12 @@ export const milestonePath = (
   projectId: string,
   milestoneId: string
 ): string => `${milestonesPath(workspaceId, projectId)}/${milestoneId}`;
+
+/** The route one project's dependencies are listed and added on. */
+export const projectRelationsPath = (
+  workspaceId: string,
+  projectId: string
+): string => `${projectPath(workspaceId, projectId)}/relations`;
 
 /** The route one project's updates are listed and posted on. */
 export const projectUpdatesPath = (
@@ -289,6 +298,50 @@ export const deleteProject = async (
   await apiClient.delete<void>(projectPath(workspaceId, projectId), {
     query: teamQuery(teamId),
   });
+};
+
+/**
+ * Lists one project's dependencies from its own side, each either `blocks` or
+ * `blocked_by`. A project holds few, so the answer is whole.
+ */
+export const listProjectRelations = async (
+  workspaceId: string,
+  projectId: string,
+  signal?: AbortSignal
+): Promise<ProjectRelationRead[]> => {
+  const response = await apiClient.get<ProjectRelationListRead>(
+    projectRelationsPath(workspaceId, projectId),
+    listOptions({}, signal)
+  );
+  const body = response.data;
+  return Array.isArray(body?.relations) ? body.relations : [];
+};
+
+/**
+ * Makes a project block, or be blocked by, another. A pair already linked the
+ * same way answers the stored link, and a loop is refused with a 422.
+ */
+export const createProjectRelation = async (
+  workspaceId: string,
+  projectId: string,
+  body: ProjectRelationCreate
+): Promise<ProjectRelationRead> => {
+  const response = await apiClient.post<ProjectRelationRead>(
+    projectRelationsPath(workspaceId, projectId),
+    body
+  );
+  return response.data;
+};
+
+/** Removes one dependency of a project, from either side. */
+export const deleteProjectRelation = async (
+  workspaceId: string,
+  projectId: string,
+  relationId: string
+): Promise<void> => {
+  await apiClient.delete<void>(
+    `${projectRelationsPath(workspaceId, projectId)}/${relationId}`
+  );
 };
 
 /**

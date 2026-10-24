@@ -314,6 +314,69 @@ describe('Projects', () => {
     });
   });
 
+  it('edits the start and target dates from the row', async () => {
+    const user = userEvent.setup();
+    updateProject.mockResolvedValue({ ...launch, target_date: null });
+    renderPage();
+
+    expect(
+      await screen.findAllByRole('button', { name: 'Start date: No date' })
+    ).toHaveLength(2);
+    const [target] = screen.getAllByRole('button', {
+      name: /^Target date: /,
+    });
+    if (target === undefined) throw new Error('no target control');
+    await user.click(target);
+    await user.click(await screen.findByRole('option', { name: /Clear date/ }));
+
+    await waitFor(() => {
+      expect(updateProject).toHaveBeenCalledWith('prj-1', {
+        target_date: null,
+      });
+    });
+  });
+
+  it('flags a blocked project and the project blocking it', async () => {
+    listProjects.mockResolvedValue({
+      projects: [
+        { ...launch, blocked_by_project_ids: ['prj-2'] },
+        { ...rebrand, blocking_project_ids: ['prj-1'] },
+      ],
+      next_cursor: null,
+    });
+    renderPage();
+
+    expect(
+      await screen.findByRole('img', { name: 'Blocked by 1 open project' })
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('img', { name: 'Blocking 1 project' })
+    ).toBeInTheDocument();
+  });
+
+  it('drops the blocked flag once the blocker is completed', async () => {
+    listProjects.mockResolvedValue({
+      projects: [
+        { ...launch, blocked_by_project_ids: ['prj-2'] },
+        {
+          ...rebrand,
+          status: 'completed',
+          blocking_project_ids: ['prj-1'],
+        },
+      ],
+      next_cursor: null,
+    });
+    renderPage('/w/mine/projects?closed=all');
+
+    await screen.findByRole('link', { name: 'Launch' });
+    expect(
+      screen.queryByRole('img', { name: /Blocked by/ })
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('img', { name: /Blocking/ })
+    ).not.toBeInTheDocument();
+  });
+
   it('draws the icon and colour the project picked', async () => {
     listProjects.mockResolvedValue({
       projects: [{ ...launch, icon: 'rocket', color: '#10b981' }],

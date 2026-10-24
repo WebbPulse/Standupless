@@ -6,7 +6,9 @@
  * once and is undone with a notice if the write fails. The names stay pinned
  * on the left, the header stays pinned on top, and a bar's label follows the
  * view so a long bar is always named. Lanes sit under pinned group headers
- * when the rows are grouped.
+ * when the rows are grouped. A line runs from the end of each blocking
+ * project's bar to the start of the bar it holds up, drawn in the danger tone
+ * when the waiting project is planned to start before its blocker ends.
  */
 
 import React, {
@@ -49,6 +51,7 @@ import {
   progressPercent,
 } from '../../lib/planningDisplay';
 import { canEditProject } from '../../lib/planningModel';
+import { dependencyLines, dependencyPath } from '../../lib/projectDependencies';
 import type { ProjectGroup } from '../../lib/projectList';
 import {
   PX_PER_DAY,
@@ -581,6 +584,10 @@ export const ProjectTimeline: React.FC<ProjectTimelineProps> = ({
   }, [readView, hasRows]);
 
   const todayLeft = (today - range.start + 0.5) * pxPerDay;
+  const lines = useMemo(
+    () => dependencyLines(groups, folded, range, pxPerDay),
+    [groups, folded, range, pxPerDay]
+  );
 
   return (
     <div
@@ -656,6 +663,33 @@ export const ProjectTimeline: React.FC<ProjectTimelineProps> = ({
               className="absolute inset-y-0 z-10 w-px bg-accent"
               style={{ left: todayLeft }}
             />
+            {lines.length > 0 && (
+              <svg
+                className="absolute inset-0 h-full overflow-visible"
+                width={laneWidth}
+                data-testid="timeline-dependencies"
+              >
+                {lines.map((line) => (
+                  <g
+                    key={line.key}
+                    data-dependency={line.key}
+                    data-late={line.late ? 'true' : 'false'}
+                    className={line.late ? 'text-danger' : 'text-text-faint'}
+                  >
+                    <path
+                      d={dependencyPath(line)}
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth={1.25}
+                    />
+                    <path
+                      d={`M ${String(line.toX - 6)} ${String(line.toY - 3.5)} L ${String(line.toX)} ${String(line.toY)} L ${String(line.toX - 6)} ${String(line.toY + 3.5)} Z`}
+                      fill="currentColor"
+                    />
+                  </g>
+                ))}
+              </svg>
+            )}
           </div>
           {groups.map((group) => (
             <TimelineGroup

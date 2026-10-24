@@ -25,10 +25,14 @@ from app.common.api.schemas.planning import (
     ProjectCreate,
     ProjectListRead,
     ProjectRead,
+    ProjectRelationCreate,
+    ProjectRelationListRead,
+    ProjectRelationRead,
     ProjectUpdate,
 )
 from app.common.planning_rules import load_readable_project
 from app.common.project_cadence import workspace_interval
+from app.common.project_relations import create_relation, delete_relation, fill_one, list_relations
 from app.common.project_writes import create_project as create_project_row
 from app.common.project_writes import delete_project as delete_project_row
 from app.common.project_writes import list_projects as list_project_page
@@ -99,7 +103,7 @@ def read_project(
     """One project, or a 404 when the caller can see none of its teams."""
     project, teams = load_readable_project(repositories, context, project_id, team_id)
     default_days = workspace_interval(repositories.workspaces, context.workspace_id)
-    return ProjectRead.from_row(project, teams, default_interval_days=default_days)
+    return fill_one(repositories, context, ProjectRead.from_row(project, teams, default_interval_days=default_days))
 
 
 @router.patch("/{workspace_id}/projects/{project_id}", response_model=ProjectRead)
@@ -134,4 +138,55 @@ def delete_project(
     delete detaches issues in each of them.
     """
     delete_project_row(repositories, context, project_id, team_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.get("/{workspace_id}/projects/{project_id}/relations", response_model=ProjectRelationListRead)
+def list_project_relations(
+    context: Annotated[AuthzContext, Depends(require(Capability.WORKSPACE_READ))],
+    repositories: Annotated[Repositories, Depends(get_repositories)],
+    workspace_id: Annotated[str, Path()],
+    project_id: Annotated[str, Path()],
+) -> CursorPage[ProjectRelationRead]:
+    """Every dependency of one project, read from its side, whose other end the caller may see.
+
+    A project holds few dependencies, so the list is answered whole and never pages.
+    """
+    return ProjectRelationListRead(items=list_relations(repositories, context, project_id), next_cursor=None)
+
+
+@router.post(
+    "/{workspace_id}/projects/{project_id}/relations",
+    response_model=ProjectRelationRead,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_project_relation(
+    payload: ProjectRelationCreate,
+    response: Response,
+    context: Annotated[AuthzContext, Depends(require(Capability.WORKSPACE_READ))],
+    repositories: Annotated[Repositories, Depends(get_repositories)],
+    workspace_id: Annotated[str, Path()],
+    project_id: Annotated[str, Path()],
+) -> ProjectRelationRead:
+    """Make the project block, or be blocked by, another project.
+
+    A pair already linked the same way answers the stored link with a 200, and a
+    link back to the project itself or one that closes a loop is a 422.
+    """
+    relation, created = create_relation(repositories, context, project_id, payload)
+    if not created:
+        response.status_code = status.HTTP_200_OK
+    return relation
+
+
+@router.delete("/{workspace_id}/projects/{project_id}/relations/{relation_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_project_relation(
+    context: Annotated[AuthzContext, Depends(require(Capability.WORKSPACE_READ))],
+    repositories: Annotated[Repositories, Depends(get_repositories)],
+    workspace_id: Annotated[str, Path()],
+    project_id: Annotated[str, Path()],
+    relation_id: Annotated[str, Path()],
+) -> Response:
+    """Remove one dependency of the project, from either side."""
+    delete_relation(repositories, context, project_id, relation_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)

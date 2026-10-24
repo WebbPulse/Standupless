@@ -2162,6 +2162,10 @@ export interface ProjectRead {
   completed_at?: string | null;
   /** Template issues left out, answered by a create from a project template, empty when none were. */
   skipped_template_issues?: SkippedTemplateIssueRead[] | null;
+  /** The visible projects that block this one, oldest link first. */
+  blocked_by_project_ids?: string[];
+  /** The visible projects this one blocks, oldest link first. */
+  blocking_project_ids?: string[];
   created_by: string;
   created_at: string;
   updated_at: string;
@@ -2174,6 +2178,31 @@ export interface SkippedTemplateIssueRead {
   title: string;
   /** Why the issue rules refused it. */
   reason: string;
+}
+
+/** How a project dependency reads from the project it is listed on. */
+export type ProjectRelationType = 'blocks' | 'blocked_by';
+
+/** One dependency between two projects, read from the side of `project_id`. */
+export interface ProjectRelationRead {
+  relation_id: string;
+  type: ProjectRelationType;
+  project_id: string;
+  target_project_id: string;
+  created_by: string;
+  created_at: string;
+}
+
+/** A dependency to add between a project and another one. */
+export interface ProjectRelationCreate {
+  type: ProjectRelationType;
+  target_project_id: string;
+}
+
+/** The body the project relation list answers with, whole and never paged. */
+export interface ProjectRelationListRead {
+  relations: ProjectRelationRead[];
+  next_cursor: string | null;
 }
 
 /** What a project close does with the issues still open in it. */
