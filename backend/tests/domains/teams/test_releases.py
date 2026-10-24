@@ -678,3 +678,17 @@ def test_an_issue_lists_the_release_a_promotion_carried_as_included(client: Test
     assert rows[0]["included_in"] is None
     assert rows[1]["included_in"] == history["promotion"].release_id
     assert rows[1]["included_in_name"] == "2026-10-11-e"
+
+
+def test_create_leaves_out_a_key_a_commit_body_only_mentions(client: TestClient, repositories: Any) -> None:
+    """A key in a commit's subject lands and one its body mentions in prose does not."""
+    shipped = _issue(repositories, TEAM, "APO", 1)
+    _issue(repositories, TEAM, "APO", 2)
+    sign_in(client, MEMBER)
+    response = client.post(
+        RELEASES,
+        json={"version": "1.5.0", "commit_messages": ["APO-1: Cap entries (#3)\n\nThe API lowered it in APO-2."]},
+    )
+
+    assert response.status_code == 201, response.text
+    assert [issue["issue_id"] for issue in response.json()["issues"]] == [shipped.issue_id]
