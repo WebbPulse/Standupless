@@ -119,8 +119,14 @@ export const MemberActivityFeed: React.FC<MemberActivityFeedProps> = ({
         id: row.issue_id,
         key: row.issue_key,
       })),
-      projects: lists.projects,
-      cycles: lists.cycles,
+      projects: lists.projects.map((project) => ({
+        id: project.project_id,
+        name: project.name,
+      })),
+      cycles: lists.cycles.map((cycle) => ({
+        id: cycle.cycle_id,
+        name: cycle.name,
+      })),
     }),
     [lists, feed.activity]
   );
