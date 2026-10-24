@@ -225,7 +225,12 @@ const showContextMenu = (
     } else if (isExternalUrl(link)) {
       items.push({ label: 'Open in Browser', click: () => openExternal(link) });
     }
-    items.push({ label: 'Copy Link', click: () => clipboard.writeText(link) });
+    items.push({
+      label: 'Copy Link',
+      click: () => {
+        void clipboard.writeText(link);
+      },
+    });
   }
   if (params.isEditable) {
     if (items.length > 0) items.push({ type: 'separator' });
