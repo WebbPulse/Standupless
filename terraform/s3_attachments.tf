@@ -13,7 +13,7 @@
  */
 module "attachments_bucket" {
   source  = "terraform.webbpulse.com/WebbPulse/platform-modules/aws//modules/s3-bucket"
-  version = "~> 2.27"
+  version = "~> 2.45"
 
   bucket = "${local.prefix}-attachments-${data.aws_caller_identity.current.account_id}"
 

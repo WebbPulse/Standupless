@@ -41,7 +41,7 @@ locals {
 
 module "frontend" {
   source  = "terraform.webbpulse.com/WebbPulse/platform-modules/aws//modules/spa-frontend"
-  version = "~> 2.41"
+  version = "~> 2.45"
 
   name                       = "${local.prefix}-frontend"
   origin_access_control_name = "${local.prefix}-frontend-oac"

@@ -3,7 +3,7 @@ module "staging_access_gate" {
 
   source = "terraform.webbpulse.com/WebbPulse/platform-modules/aws//modules/staging-access-gate"
 
-  version = "~> 2.27"
+  version = "~> 2.45"
 
   name              = local.prefix
   cookie_domain     = local.domain_name
@@ -17,9 +17,10 @@ module "staging_access_gate" {
   viewer_request_handler_js = templatefile("${path.module}/cloudfront_functions/app_handler.js.tftpl", { domain = local.active_domain })
 
   identity_jwt = local.identity_jwt_gate_enforced ? {
-    issuer           = local.identity_issuer
-    audience         = local.identity_audience
-    api_key_prefixes = local.identity_api_key_prefixes
+    issuer              = local.identity_issuer
+    audience            = local.identity_audience
+    api_key_prefixes    = local.identity_api_key_prefixes
+    signing_public_keys = module.identity.signing_public_keys_pem
   } : null
 
   identity_jwt_route_keys = local.identity_jwt_gate_enforced ? module.api.identity_jwt_route_keys : []

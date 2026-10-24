@@ -135,6 +135,7 @@ EXPECTED_TOOLS = frozenset(
         "list_notifications",
         "list_project_relations",
         "list_project_milestones",
+        "list_project_activity",
         "list_project_updates",
         "list_projects",
         "list_statuses",

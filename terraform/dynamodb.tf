@@ -26,7 +26,7 @@ locals {
 module "dynamodb" {
   source = "terraform.webbpulse.com/WebbPulse/platform-modules/aws//modules/dynamodb-tables"
 
-  version = "~> 2.27"
+  version = "~> 2.45"
 
   name_prefix = local.prefix
   tables      = local.dynamodb_tables

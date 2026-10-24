@@ -1,6 +1,6 @@
 module "ses" {
   source  = "terraform.webbpulse.com/WebbPulse/platform-modules/aws//modules/ses-identity"
-  version = "~> 2.39"
+  version = "~> 2.45"
 
   configuration_set_name = "standupless-transactional"
 

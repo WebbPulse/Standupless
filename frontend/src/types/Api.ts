@@ -2523,6 +2523,38 @@ export interface ProjectUpdateListRead {
   next_cursor: string | null;
 }
 
+/** What one project activity row records. */
+export type ProjectActivityKind =
+  | 'created'
+  | 'field_changed'
+  | 'milestone_added'
+  | 'milestone_removed'
+  | 'milestone_changed';
+
+/**
+ * One recorded change to a project: a property a patch moved, with its old and
+ * new value, or a milestone added, renamed, redated or removed, named in `to`
+ * or, once removed, in `from`.
+ */
+export interface ProjectActivityRead {
+  activity_id: string;
+  project_id: string;
+  actor_id: string;
+  kind: ProjectActivityKind;
+  field: string | null;
+  from: unknown;
+  to: unknown;
+  milestone_id: string | null;
+  source?: ChangeSource | null;
+  created_at: string;
+}
+
+/** One page of a project's activity, newest first. */
+export interface ProjectActivityListRead {
+  activity: ProjectActivityRead[];
+  next_cursor: string | null;
+}
+
 /** A new project update. */
 export interface ProjectUpdateCreate {
   body: string;

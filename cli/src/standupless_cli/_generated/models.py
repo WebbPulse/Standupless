@@ -1369,6 +1369,23 @@ class ProgressRead(TypedDict):
     total: NotRequired[int]
 
 
+ProjectActivityRead = TypedDict(
+    "ProjectActivityRead",
+    {
+        "activity_id": str,
+        "actor_id": str,
+        "created_at": str,
+        "field": NotRequired[str | None],
+        "from": NotRequired[Any],
+        "kind": Literal["created", "field_changed", "milestone_added", "milestone_removed", "milestone_changed"],
+        "milestone_id": NotRequired[str | None],
+        "project_id": str,
+        "source": NotRequired[Literal["web", "mcp", "cli", "api", "github", "system"] | None],
+        "to": NotRequired[Any],
+    },
+)
+
+
 class ProjectBlueprint(TypedDict):
     color: NotRequired[str | None]
     description: NotRequired[str | None]
@@ -3544,6 +3561,11 @@ class MemberListRead(TypedDict):
 
 class MilestoneListRead(TypedDict):
     milestones: list[MilestoneRead]
+    next_cursor: NotRequired[str | None]
+
+
+class ProjectActivityListRead(TypedDict):
+    activity: list[ProjectActivityRead]
     next_cursor: NotRequired[str | None]
 
 
