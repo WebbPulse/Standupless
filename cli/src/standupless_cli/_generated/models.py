@@ -2760,7 +2760,10 @@ class UrlAttachmentCreate(TypedDict):
 
 
 class UserPreferencesUpdate(TypedDict):
+    auto_assign_to_self: NotRequired[bool | None]
     auto_grant_new_scopes: NotRequired[bool | None]
+    branch_copy_assigns: NotRequired[bool | None]
+    branch_copy_starts: NotRequired[bool | None]
     email_notifications: NotRequired[bool | None]
     font_size: NotRequired[Literal["small", "default", "large"] | None]
     home_view: NotRequired[Literal["home", "inbox", "my_issues", "projects", "pulse", "views"] | None]
@@ -2800,8 +2803,11 @@ class UserProfileUpdate(TypedDict):
 
 
 class UserRead(TypedDict):
+    auto_assign_to_self: NotRequired[bool]
     auto_grant_new_scopes: NotRequired[bool]
     avatar_url: NotRequired[str | None]
+    branch_copy_assigns: NotRequired[bool]
+    branch_copy_starts: NotRequired[bool]
     display_name: str
     email: str
     email_notifications: bool

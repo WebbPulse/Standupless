@@ -505,6 +505,16 @@ export const IssuePropertiesPanel: React.FC<IssuePropertiesPanelProps> = ({
           issueId={issue.id}
           issueKey={issue.key}
           title={issue.title}
+          {...(canEdit
+            ? {
+                branchStart: {
+                  issue,
+                  statuses,
+                  currentUserId,
+                  apply: onUpdate,
+                },
+              }
+            : {})}
         />
         <IssueReleasesSection
           workspaceId={workspaceId}

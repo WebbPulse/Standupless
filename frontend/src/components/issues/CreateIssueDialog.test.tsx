@@ -5,8 +5,9 @@
  * stored, the saved draft being restored, discarded and cleared on create
  * and left alone by a preset dialog, "Create more" keeping the
  * dialog open with the properties held, and a team switch clearing the team
- * scoped choices, and the similar issues strip offering to open a possible
- * duplicate or mark the new issue as one.
+ * scoped choices, the similar issues strip offering to open a possible
+ * duplicate or mark the new issue as one, and the auto-assign preference
+ * filling the creator in as assignee, which they can still clear.
  */
 
 import { render, screen, waitFor } from '@testing-library/react';
@@ -24,6 +25,7 @@ import type {
   TeamRead,
 } from '../../types/Api';
 import { readIssueDraft, writeIssueDraft } from '../../lib/issueDraft';
+import { DEFAULT_PREFERENCES, setPreferences } from '../../lib/preferences';
 import CreateIssueDialog, { type CreateIssuePreset } from './CreateIssueDialog';
 
 const createIssue = vi.fn<(body: IssueCreate) => Promise<IssueRead>>();
@@ -178,6 +180,7 @@ let counter = 0;
 beforeEach(() => {
   counter = 0;
   triage.on = false;
+  setPreferences(DEFAULT_PREFERENCES);
   for (const spy of [
     createIssue,
     listTeams,
@@ -700,5 +703,82 @@ describe('similar issues', () => {
     expect(onCreated).toHaveBeenCalledWith(
       expect.objectContaining({ key: 'ENG-1' })
     );
+  });
+});
+
+describe('auto-assign to self', () => {
+  const creator = { currentUserId: 'user-auto' };
+
+  it('leaves the assignee empty while the preference is off', async () => {
+    const user = userEvent.setup();
+    renderDialog(creator);
+
+    await user.type(screen.getByRole('textbox', { name: 'Title' }), 'Ship it');
+    await user.click(screen.getByRole('button', { name: /Create issue/ }));
+
+    await waitFor(() => {
+      expect(createIssue).toHaveBeenCalledWith({
+        team_id: 't-1',
+        title: 'Ship it',
+      });
+    });
+  });
+
+  it('files the issue assigned to the creator while it is on', async () => {
+    setPreferences({ ...DEFAULT_PREFERENCES, autoAssignToSelf: true });
+    const user = userEvent.setup();
+    renderDialog(creator);
+
+    expect(
+      screen.queryByRole('button', { name: 'Assignee: Assignee' })
+    ).not.toBeInTheDocument();
+    await user.type(screen.getByRole('textbox', { name: 'Title' }), 'Ship it');
+    await user.click(screen.getByRole('button', { name: /Create issue/ }));
+
+    await waitFor(() => {
+      expect(createIssue).toHaveBeenCalledWith({
+        team_id: 't-1',
+        title: 'Ship it',
+        assignee_id: 'user-auto',
+      });
+    });
+  });
+
+  it('keeps an assignee the preset names', async () => {
+    setPreferences({ ...DEFAULT_PREFERENCES, autoAssignToSelf: true });
+    const user = userEvent.setup();
+    renderDialog({ ...creator, preset: { assigneeId: 'user-other' } });
+
+    await user.type(screen.getByRole('textbox', { name: 'Title' }), 'Ship it');
+    await user.click(screen.getByRole('button', { name: /Create issue/ }));
+
+    await waitFor(() => {
+      expect(createIssue).toHaveBeenCalledWith(
+        expect.objectContaining({ assignee_id: 'user-other' })
+      );
+    });
+  });
+
+  it('lets the creator clear the filled in assignee', async () => {
+    setPreferences({ ...DEFAULT_PREFERENCES, autoAssignToSelf: true });
+    const user = userEvent.setup();
+    renderDialog(creator);
+
+    await user.type(screen.getByRole('textbox', { name: 'Title' }), 'Ship it');
+    await user.click(screen.getByRole('button', { name: /^Assignee:/ }));
+    await user.click(
+      await screen.findByRole('option', { name: /No assignee/ })
+    );
+    expect(
+      screen.getByRole('button', { name: 'Assignee: Assignee' })
+    ).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /Create issue/ }));
+
+    await waitFor(() => {
+      expect(createIssue).toHaveBeenCalledWith({
+        team_id: 't-1',
+        title: 'Ship it',
+      });
+    });
   });
 });

@@ -32,6 +32,24 @@ describe('preferences', () => {
     });
   });
 
+  it('reads the workflow switches, defaulting to the branch copy ones on', () => {
+    expect(DEFAULT_PREFERENCES.autoAssignToSelf).toBe(false);
+    expect(DEFAULT_PREFERENCES.branchCopyStarts).toBe(true);
+    expect(DEFAULT_PREFERENCES.branchCopyAssigns).toBe(true);
+    expect(
+      preferencesOf({
+        auto_assign_to_self: true,
+        branch_copy_starts: false,
+        branch_copy_assigns: false,
+      })
+    ).toEqual({
+      ...DEFAULT_PREFERENCES,
+      autoAssignToSelf: true,
+      branchCopyStarts: false,
+      branchCopyAssigns: false,
+    });
+  });
+
   it('opens a workspace on the chosen home view', () => {
     expect(homeViewPath('acme')).toBe('/w/acme');
     expect(homeViewPath('acme', 'my_issues')).toBe('/w/acme/issues');

@@ -77,6 +77,7 @@ import {
   copyBranchName,
   copyText,
   issueUrl,
+  type BranchStart,
 } from '../../../lib/copyIssue';
 import { allArchived } from '../../../lib/issueDisplay';
 import { boardStep } from '../../../lib/boardNav';
@@ -782,6 +783,20 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
       issues.length === 1 ? 'Issue ID copied' : 'Issue IDs copied'
     );
   };
+  const branchStart = (issue: OrderedIssueRead): BranchStart | undefined =>
+    canEdit
+      ? {
+          issue,
+          statuses: context.statuses.filter(
+            (status) =>
+              status.team_id === undefined || status.team_id === issue.team_id
+          ),
+          currentUserId: context.currentUserId ?? '',
+          apply: (patch) => {
+            update([issue.id], patch);
+          },
+        }
+      : undefined;
   const copyUrls = (issues: readonly OrderedIssueRead[]): void => {
     copyText(
       issues.map((issue) => issueUrl(slug, issue.key)).join('\n'),
@@ -878,7 +893,9 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
     enabled: single !== undefined,
     handler: (event) => {
       event?.preventDefault();
-      if (single !== undefined) copyBranchName(single.key, single.title);
+      if (single !== undefined) {
+        copyBranchName(single.key, single.title, branchStart(single));
+      }
     },
   });
   useShortcut({
@@ -1340,7 +1357,11 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
             menuSingle === undefined
               ? undefined
               : () => {
-                  copyBranchName(menuSingle.key, menuSingle.title);
+                  copyBranchName(
+                    menuSingle.key,
+                    menuSingle.title,
+                    branchStart(menuSingle)
+                  );
                 }
           }
           onOpen={

@@ -74,6 +74,7 @@ import {
   writeIssueDraft,
   type IssueDraft,
 } from '../../lib/issueDraft';
+import { usePreferences } from '../../lib/preferences';
 import {
   namesPending,
   pendingReference,
@@ -232,6 +233,16 @@ const presetDraft = (preset: CreateIssuePreset | undefined): Draft => ({
       ? null
       : { id: preset.parentId, key: preset.parentKey ?? 'Parent', title: '' },
 });
+
+/**
+ * The draft with the person as assignee when it has none and they asked for
+ * issues they create to start assigned to them, so the default sits under any
+ * preset or saved choice and the picker can still clear it.
+ */
+const withSelf = (draft: Draft, selfId: string | null): Draft =>
+  draft.assigneeId === null && selfId !== null
+    ? { ...draft, assigneeId: selfId }
+    : draft;
 
 /** The team scoped half of a draft, cleared when the team changes. */
 const clearTeamScoped = (draft: Draft): Draft => ({
@@ -487,6 +498,11 @@ export const CreateIssueDialog: React.FC<CreateIssueDialogProps> = ({
 }) => {
   const workspace = useContext(WorkspaceContext)?.workspace ?? null;
   const auth = useQueryAuth();
+  const { autoAssignToSelf } = usePreferences();
+  const selfAssignee =
+    autoAssignToSelf && currentUserId !== undefined && currentUserId !== ''
+      ? currentUserId
+      : null;
   const [saved] = useState(() => readIssueDraft(workspaceId, currentUserId));
   const restored = saved !== null && !hasPreset(preset) ? saved : null;
   const [heldDraft, setHeldDraft] = useState<IssueDraft | null>(
@@ -510,7 +526,9 @@ export const CreateIssueDialog: React.FC<CreateIssueDialogProps> = ({
   const [title, setTitle] = useState(restored?.title ?? '');
   const [body, setBody] = useState(restored?.body ?? '');
   const [draft, setDraft] = useState<Draft>(() =>
-    restored === null ? presetDraft(preset) : draftOfStored(restored)
+    restored === null
+      ? withSelf(presetDraft(preset), selfAssignee)
+      : draftOfStored(restored)
   );
   const [createMore, setCreateMore] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -631,7 +649,10 @@ export const CreateIssueDialog: React.FC<CreateIssueDialogProps> = ({
   const applyTemplate = (template: TemplateRead | null): void => {
     const fill: TemplatePrefill = template === null ? {} : prefillOf(template);
     const text = { title: fill.title ?? '', body: fill.body ?? '' };
-    const base = onHomeTeam ? presetDraft(preset) : EMPTY_DRAFT;
+    const base = withSelf(
+      onHomeTeam ? presetDraft(preset) : EMPTY_DRAFT,
+      selfAssignee
+    );
     setTemplateId(template?.id ?? null);
     setAnswers({});
     setDraft(withTemplate(base, fill));
@@ -731,8 +752,8 @@ export const CreateIssueDialog: React.FC<CreateIssueDialogProps> = ({
     if (teams === null || teams.length === 0) return;
     if (writable.some((team) => team.id === activeTeamId)) return;
     setActiveTeamId(teamId);
-    setDraft(clearTeamScoped);
-  }, [activeTeamId, teamId, workspace, teams, writable]);
+    setDraft((held) => withSelf(clearTeamScoped(held), selfAssignee));
+  }, [activeTeamId, teamId, workspace, teams, writable, selfAssignee]);
 
   const finish = useCallback((): void => {
     const current = state.current;
@@ -1061,7 +1082,7 @@ export const CreateIssueDialog: React.FC<CreateIssueDialogProps> = ({
             onChange={(team) => {
               pendingTemplate.current = { teamId: team.id, id: null };
               setActiveTeamId(team.id);
-              setDraft(clearTeamScoped);
+              setDraft((held) => withSelf(clearTeamScoped(held), selfAssignee));
               setTemplateId(null);
               setAnswers({});
               if (title === templateText.title) setTitle('');
