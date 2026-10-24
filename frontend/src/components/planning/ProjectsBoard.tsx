@@ -58,6 +58,7 @@ import UpdateDueBadge from './UpdateDueBadge';
 import { DatePicker, PriorityPicker } from '../issues/PropertyPickers';
 import { IconButton } from '../ui/button';
 import { Menu, MenuItem } from '../ui/menu';
+import { useTruncationTooltip } from '../ui/truncated-text';
 import type { PopoverTriggerProps } from '../ui/popover';
 import {
   asksAboutOpenIssues,
@@ -180,6 +181,7 @@ const BoardCard: React.FC<BoardCardProps> = ({
   onDragEnd,
 }) => {
   const card = useRef<HTMLLIElement>(null);
+  const nameTip = useTruncationTooltip<HTMLAnchorElement>();
   const percent = progressPercent(project);
   const projectTeams = teams.filter((team) =>
     project.team_ids.includes(team.id)
@@ -244,13 +246,16 @@ const BoardCard: React.FC<BoardCardProps> = ({
       <div className="flex min-w-0 items-center gap-2">
         <ProjectIcon icon={project.icon} color={project.color} />
         <Link
+          ref={nameTip.ref}
           to={projectPath(slug, project.project_id)}
           draggable={false}
           data-hover="parent"
+          {...nameTip.handlers}
           className="min-w-0 flex-1 truncate text-sm font-medium text-text after:absolute after:inset-0 after:rounded-md focus-visible:outline-none focus-visible:after:outline-2 focus-visible:after:outline-accent"
         >
           {project.name}
         </Link>
+        {nameTip.tip}
         {shown.includes('dependencies') && (
           <ProjectDependencyMarkers project={project} byId={byId} />
         )}
