@@ -73,6 +73,15 @@ PROJECT_RELATION_KEY_PREFIX = "project_relation#"
 relation row.
 """
 
+PROJECT_LABEL = "project_label"
+
+PROJECT_LABEL_KEY_PREFIX = "project_label#"
+"""Where the workspace's project labels are filed, one row per label.
+
+`begins_with("project#")` never matches it, so the project listing never reads a
+label row.
+"""
+
 INITIATIVE = "initiative"
 
 INITIATIVE_KEY_PREFIX = "initiative#"
@@ -203,6 +212,16 @@ CYCLE_RECOUNT_KEYS: tuple[str, ...] = COUNT_BUCKETS + POINT_BUCKETS + UNESTIMATE
 CYCLE_HISTORY = "cycle_history"
 """The kind of one daily scope snapshot of a cycle."""
 
+PROJECT_HISTORY = "project_history"
+"""The kind of one daily scope snapshot of a project."""
+
+PROJECT_HISTORY_KEY_PREFIX = "projecthist#"
+"""Where a project's daily snapshots are filed, one row per day it moved.
+
+`begins_with("project#")` never matches it, so the project listing never reads a
+snapshot row.
+"""
+
 
 def new_planning_id() -> str:
     """A fresh cycle or project id, time sortable so a listing reads in creation order."""
@@ -266,6 +285,11 @@ def project_relation_key(blocker_id: str, blocked_id: str) -> str:
     return f"{PROJECT_RELATION_KEY_PREFIX}{blocker_id}#{blocked_id}"
 
 
+def project_label_key(label_id: str) -> str:
+    """The sort key of one project label row."""
+    return f"{PROJECT_LABEL_KEY_PREFIX}{label_id}"
+
+
 def initiative_key(initiative_id: str) -> str:
     """The sort key of one initiative, filed under the workspace like a project."""
     return f"{INITIATIVE_KEY_PREFIX}{initiative_id}"
@@ -323,6 +347,16 @@ def cycle_history_prefix(team_id: str, cycle_id: str | None = None) -> str:
 def cycle_history_key(team_id: str, cycle_id: str, day: str) -> str:
     """The sort key of one cycle's snapshot for one day."""
     return f"{cycle_history_prefix(team_id, cycle_id)}{day}"
+
+
+def project_history_prefix(project_id: str) -> str:
+    """The sort key prefix of one project's daily snapshots."""
+    return f"{PROJECT_HISTORY_KEY_PREFIX}{project_id}#"
+
+
+def project_history_key(project_id: str, day: str) -> str:
+    """The sort key of one project's snapshot for one day, ordered by day."""
+    return f"{project_history_prefix(project_id)}{day}"
 
 
 def parse_cycle_key(planning_key: str) -> tuple[str, str] | None:
@@ -513,6 +547,7 @@ class Project(BaseModel):
     `icon`, `color`, `health`, `priority` and `member_ids` are the Linear project
     properties. Each defaults to empty, so a row stored before they existed reads
     back as an unprioritised project with no health, icon, colour or members.
+    `label_ids` are the workspace project labels it carries, empty by default.
     `update_interval_days` is the project's own update cadence; None follows the
     workspace default and 0 turns reminders off. `status_counts` is the rollup's
     count of open and closed issues per status id, beside the category buckets.
@@ -536,6 +571,7 @@ class Project(BaseModel):
     health: str | None = None
     priority: str = "none"
     member_ids: list[str] = Field(default_factory=list)
+    label_ids: list[str] = Field(default_factory=list)
     counts: RollupCounts = Field(default_factory=RollupCounts)
     points: RollupCounts = Field(default_factory=RollupCounts)
     estimating_teams: int = 0
@@ -669,6 +705,26 @@ class ProjectRelation(BaseModel):
     def involves(self, project_id: str) -> bool:
         """Whether one project is either end of this dependency."""
         return project_id in (self.project_id, self.target_project_id)
+
+
+class ProjectLabel(BaseModel):
+    """One label of the workspace that tags projects, apart from the labels issues carry."""
+
+    workspace_id: str
+    planning_key: str = ""
+    label_id: str = Field(default_factory=new_planning_id)
+    kind: str = PROJECT_LABEL
+    name: str
+    color: str
+    description: str | None = None
+    created_by: str
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
+
+    def model_post_init(self, _context: Any) -> None:
+        """Derive the sort key from the id when none was given."""
+        if not self.planning_key:
+            self.planning_key = project_label_key(self.label_id)
 
 
 class ProjectMilestone(BaseModel):
@@ -1080,6 +1136,37 @@ class CycleSnapshot(BaseModel):
         )
 
 
+class ProjectSnapshot(BaseModel):
+    """One project's recounted counters as they stood at the end of one day.
+
+    Written by the project recount whenever the project's counts change, so the
+    last write of a day is the day's closing value. `opening_*` is what the
+    project held before that day's first recount, which is the close of the day
+    before and, on the first snapshot ever written, what the earlier days read as.
+    """
+
+    day: str
+    counts: RollupCounts = Field(default_factory=RollupCounts)
+    points: RollupCounts = Field(default_factory=RollupCounts)
+    estimating_teams: int = 0
+    opening_counts: RollupCounts = Field(default_factory=RollupCounts)
+    opening_points: RollupCounts = Field(default_factory=RollupCounts)
+
+    @classmethod
+    def from_item(cls, item: Mapping[str, Any]) -> "ProjectSnapshot":
+        """One stored snapshot row, its counters floored at zero."""
+        opening = item.get("opening")
+        opening_map: Mapping[str, Any] = opening if isinstance(opening, Mapping) else {}
+        return cls(
+            day=str(item.get("day", "")),
+            counts=RollupCounts.from_item(item),
+            points=RollupCounts.from_item(item, POINT_PREFIX),
+            estimating_teams=estimating_teams_of(item),
+            opening_counts=RollupCounts.from_map(opening_map),
+            opening_points=RollupCounts.from_map(opening_map, POINT_PREFIX),
+        )
+
+
 class PlanningRepository:
     """Reads and writes `planning` rows, every method workspace first."""
 
@@ -1379,6 +1466,41 @@ class PlanningRepository:
             if row.involves(project_id)
         ]
         return self._repository.delete_many(keys) if keys else 0
+
+    def get_project_label(self, workspace_id: str, label_id: str) -> ProjectLabel | None:
+        """One project label of the workspace, or `None`."""
+        if not label_id:
+            return None
+        item = self._get(workspace_id, project_label_key(label_id))
+        if item is None or str(item.get("kind", "")) != PROJECT_LABEL:
+            return None
+        return ProjectLabel.model_validate(dict(item))
+
+    def list_project_labels(self, workspace_id: str, *, max_items: int = 1000) -> list[ProjectLabel]:
+        """Every project label of the workspace, by name."""
+        if not workspace_id:
+            return []
+        items = self._repository.iter_query(
+            Key("workspace_id").eq(workspace_id) & Key("planning_key").begins_with(PROJECT_LABEL_KEY_PREFIX),
+            max_items=max_items,
+        )
+        rows = [ProjectLabel.model_validate(dict(item)) for item in items if item.get("kind") == PROJECT_LABEL]
+        return sorted(rows, key=lambda row: (row.name.casefold(), row.label_id))
+
+    def put_project_label(self, label: ProjectLabel, *, create: bool) -> ProjectLabel:
+        """Store a new project label or write an edited one, raising `ConditionFailed` on a taken or missing key."""
+        item = label.model_dump(mode="json")
+        if item.get("description") is None:
+            item.pop("description", None)
+        condition = Attr("planning_key").not_exists() if create else Attr("planning_key").exists()
+        self._repository.put(item, condition=condition)
+        return label
+
+    def delete_project_label(self, workspace_id: str, label_id: str) -> None:
+        """Remove one project label row; the projects carrying it are cleared by the caller."""
+        if not workspace_id or not label_id:
+            return
+        self._repository.delete({"workspace_id": workspace_id, "planning_key": project_label_key(label_id)})
 
     def get_initiative(self, workspace_id: str, initiative_id: str) -> Initiative | None:
         """One initiative of the workspace, or `None`."""
@@ -1996,6 +2118,72 @@ class PlanningRepository:
         except ConditionFailed:
             return False
         return True
+
+    def write_project_snapshot(
+        self,
+        workspace_id: str,
+        project_id: str,
+        day: str,
+        *,
+        counts: Mapping[str, Any],
+        opening: Mapping[str, Any],
+    ) -> bool:
+        """Record one project's recounted counters as the day's latest value, returning whether it landed.
+
+        Unconditional on order, because each write is a whole recount rather than a
+        move, so the next recount heals a write that landed out of turn. `opening`
+        is written only by the first snapshot a day row ever gets.
+        """
+        if not workspace_id or not project_id or not day:
+            return False
+        self._repository.update(
+            {"workspace_id": workspace_id, "planning_key": project_history_key(project_id, day)},
+            update_expression=(
+                "SET #counts = :counts, #kind = :kind, #project = :project, #day = :day, "
+                "#opening = if_not_exists(#opening, :opening)"
+            ),
+            expression_names={
+                "#counts": "counts",
+                "#kind": "kind",
+                "#project": "project_id",
+                "#day": "day",
+                "#opening": "opening",
+            },
+            expression_values={
+                ":counts": {key: int(value or 0) for key, value in counts.items()},
+                ":kind": PROJECT_HISTORY,
+                ":project": project_id,
+                ":day": day,
+                ":opening": {key: int(value or 0) for key, value in opening.items()},
+            },
+        )
+        return True
+
+    def list_project_history(
+        self, workspace_id: str, project_id: str, *, max_items: int = 1200
+    ) -> list[ProjectSnapshot]:
+        """Every daily snapshot of one project, oldest day first, one query on its own prefix."""
+        if not workspace_id or not project_id:
+            return []
+        items = self._repository.iter_query(
+            Key("workspace_id").eq(workspace_id) & Key("planning_key").begins_with(project_history_prefix(project_id)),
+            max_items=max_items,
+        )
+        rows = [ProjectSnapshot.from_item(item) for item in items if str(item.get("kind", "")) == PROJECT_HISTORY]
+        return sorted(rows, key=lambda row: row.day)
+
+    def delete_project_history(self, workspace_id: str, project_id: str, *, limit: int = 100) -> int:
+        """Remove every daily snapshot of one project, returning how many went."""
+        if not workspace_id or not project_id:
+            return 0
+        removed = 0
+        while True:
+            page = self._query_prefix(workspace_id, project_history_prefix(project_id), limit, None)
+            if not page.items:
+                return removed
+            removed += self._repository.delete_many(
+                [{"workspace_id": workspace_id, "planning_key": item["planning_key"]} for item in page.items]
+            )
 
     def list_cycle_history(
         self, workspace_id: str, team_id: str, cycle_id: str, *, max_items: int = 400

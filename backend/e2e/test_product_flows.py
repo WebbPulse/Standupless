@@ -1007,6 +1007,12 @@ class TestPlanningDomain:
             rows = listed.json()["activity"]
             assert [row["kind"] for row in rows] == ["field_changed", "created"]
             assert (rows[0]["field"], rows[0]["from"], rows[0]["to"]) == ("status", "backlog", "in_progress")
+
+            history = api.get(f"{project_path}/history", params=scope)
+            assert history.status_code == 200, history.text[:400]
+            body = history.json()
+            assert body["project_id"] == created["id"]
+            assert body["days"] and body["days"][-1]["date"] == body["today"]
         finally:
             deleted = api.delete(project_path, params=scope)
             assert deleted.status_code in (200, 204), deleted.text[:400]

@@ -55,6 +55,7 @@ import {
   InitiativePicker,
   LeadPicker,
   MembersPicker,
+  ProjectLabelsPicker,
   ProjectLookPicker,
   ProjectStatusPicker,
   TeamsPicker,
@@ -73,6 +74,7 @@ import Menu, { MenuItem } from '../../components/ui/menu';
 import { SkeletonRows } from '../../components/ui/skeleton';
 import WorkspaceShell from '../../components/workspace/WorkspaceShell';
 import useCloseProjectPrompt from '../../hooks/useCloseProjectPrompt';
+import { useProjectLabels } from '../../hooks/useProjectLabels';
 import useCreateDocumentCommand from '../../hooks/useCreateDocumentCommand';
 import { useCreatePlannedIssue } from '../../hooks/useCreatePlannedIssue';
 import useDocumentTemplates from '../../hooks/useDocumentTemplates';
@@ -80,6 +82,7 @@ import { useInitiatives } from '../../hooks/useInitiatives';
 import { usePlanningIssues } from '../../hooks/usePlanningIssues';
 import { usePlanningTeamLists } from '../../hooks/usePlanningTeamLists';
 import { useProjectDependencies } from '../../hooks/useProjectDependencies';
+import { useProjectHistory } from '../../hooks/useProjectHistory';
 import { useProjectMilestones } from '../../hooks/useProjectMilestones';
 import { useProjectUpdates } from '../../hooks/useProjectUpdates';
 import { useShortcut } from '../../hooks/useShortcuts';
@@ -222,6 +225,7 @@ export const ProjectDetail: React.FC = () => {
   });
 
   const closePrompt = useCloseProjectPrompt({ workspaceId, project, update });
+  const projectLabels = useProjectLabels(workspaceId);
 
   const serverTeamIds = project?.team_ids;
   const teamIds = useMemo(() => serverTeamIds ?? [], [serverTeamIds]);
@@ -241,6 +245,7 @@ export const ProjectDetail: React.FC = () => {
   );
 
   const updates = useProjectUpdates(workspaceId, projectId, project !== null);
+  const history = useProjectHistory(workspaceId, projectId, project !== null);
   const dependencies = useProjectDependencies(workspaceId, project);
   const { projects: workspaceProjects } = useWorkspaceProjects(
     workspaceId,
@@ -471,6 +476,15 @@ export const ProjectDetail: React.FC = () => {
         disabled={!canEdit}
         onChange={(memberIds) => {
           void update({ member_ids: memberIds });
+        }}
+      />
+      <ProjectLabelsPicker
+        variant="chip"
+        value={project.label_ids ?? []}
+        labels={projectLabels.labels}
+        disabled={!canEdit}
+        onChange={(labelIds) => {
+          void update({ label_ids: labelIds });
         }}
       />
       <span className="inline-flex items-center gap-1">
@@ -776,6 +790,7 @@ export const ProjectDetail: React.FC = () => {
                 teams={teams}
                 initiatives={initiatives}
                 milestones={milestones.milestones}
+                projectLabels={projectLabels.labels}
                 updates={updates.updates}
                 updatesHaveMore={updates.hasMore}
                 onLoadMoreUpdates={updates.loadMore}
@@ -793,6 +808,7 @@ export const ProjectDetail: React.FC = () => {
               milestones={milestones.milestones}
               onOpenMilestone={openMilestoneIssues}
               latestUpdate={updates.latest}
+              history={history}
               {...(latestAuthor === undefined ? {} : { latestAuthor })}
               onOpenUpdates={() => {
                 setTab('updates');

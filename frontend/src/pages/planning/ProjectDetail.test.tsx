@@ -81,6 +81,15 @@ vi.mock('../../hooks/useAuth', () => ({
   }),
 }));
 
+vi.mock('../../api/projectLabels', () => ({
+  projectLabelsPath: (workspaceId: string) =>
+    `/workspaces/${workspaceId}/project-labels`,
+  listProjectLabels: () => Promise.resolve([]),
+  createProjectLabel: vi.fn(),
+  updateProjectLabel: vi.fn(),
+  deleteProjectLabel: vi.fn(),
+}));
+
 vi.mock('../../api/customers', () => ({
   listCustomers: () => Promise.resolve([]),
   listTargetRequests: () => Promise.resolve([]),
@@ -118,6 +127,17 @@ vi.mock('../../api/planning', () => ({
     listProjectUpdates(query),
   listProjectActivity: (_w: string, _p: string, query: unknown) =>
     listProjectActivity(query),
+  getProjectHistory: () =>
+    Promise.resolve({
+      project_id: 'prj-1',
+      start_date: null,
+      target_date: null,
+      today: '2026-03-01',
+      measure: 'issues',
+      recorded_since: null,
+      days: [],
+      projection: null,
+    }),
   createProjectUpdate: (_w: string, _p: string, body: unknown) =>
     createProjectUpdate(body),
   updateProjectUpdate: (_w: string, _p: string, id: string, body: unknown) =>

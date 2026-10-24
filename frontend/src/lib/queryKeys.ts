@@ -115,6 +115,12 @@ export const workspaceStatusesKey = (workspaceId: string): QueryKey => [
   workspaceId,
 ];
 
+/** The workspace's project labels. */
+export const projectLabelsKey = (workspaceId: string): QueryKey => [
+  'project-labels',
+  workspaceId,
+];
+
 /** The labels a workspace defines for every team. */
 export const workspaceLabelsKey = (workspaceId: string): QueryKey => [
   'workspace-labels',
@@ -377,6 +383,15 @@ export const projectActivityKey = (
   workspaceId: string,
   projectId: string
 ): QueryKey => ['project', workspaceId, projectId, 'activity'];
+
+/**
+ * One project's progress history. It sits under the project's own key, so a
+ * write that re-reads the project re-reads its graph too.
+ */
+export const projectHistoryKey = (
+  workspaceId: string,
+  projectId: string
+): QueryKey => ['project', workspaceId, projectId, 'history'];
 
 /** The workspace's initiative list, which varies on the status filter. */
 export const initiativesKey = (
