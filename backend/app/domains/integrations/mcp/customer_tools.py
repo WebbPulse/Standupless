@@ -243,8 +243,7 @@ CUSTOMER_TOOLS: tuple[Tool, ...] = (
     ),
     Tool(
         name="create_customer_request",
-        description="Record that a customer asked for an issue or a project, with an optional quote of what "
-        "they said.",
+        description="Record that a customer asked for an issue or a project, with an optional quote of what they said.",
         scopes=("projects:write",),
         schema=object_schema(
             {

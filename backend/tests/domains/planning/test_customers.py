@@ -124,9 +124,7 @@ def test_guests_reach_no_customer_data(client: TestClient, issues_client: TestCl
     assert client.post(f"{_base(workspace)}/customers", json={"name": "Nope"}).status_code == 403
     assert client.get(f"{_base(workspace)}/customers/{customer_id}").status_code == 403
     assert client.get(f"{_base(workspace)}/issues/{issue['id']}/customer-requests").status_code == 403
-    filed = client.post(
-        f"{_base(workspace)}/issues/{issue['id']}/customer-requests", json={"customer_id": customer_id}
-    )
+    filed = client.post(f"{_base(workspace)}/issues/{issue['id']}/customer-requests", json={"customer_id": customer_id})
     assert filed.status_code == 403
 
 
@@ -204,9 +202,7 @@ def test_only_the_author_or_an_admin_removes_a_request(
     assert client.get(f"{_base(workspace)}/issues/{issue['id']}/customer-requests").json()["requests"] == []
 
 
-def test_another_member_cannot_remove_a_request(
-    client: TestClient, issues_client: TestClient, workspace: str
-) -> None:
+def test_another_member_cannot_remove_a_request(client: TestClient, issues_client: TestClient, workspace: str) -> None:
     """A plain member who did not file a request may not remove it."""
     sign_in(client, ADMIN)
     sign_in(issues_client, ADMIN)
@@ -274,9 +270,7 @@ def test_a_customer_cannot_merge_into_itself(client: TestClient, workspace: str)
     sign_in(client, MEMBER)
     customer_id = _customer(client, workspace)["customer_id"]
 
-    refused = client.post(
-        f"{_base(workspace)}/customers/{customer_id}/merge", json={"into_customer_id": customer_id}
-    )
+    refused = client.post(f"{_base(workspace)}/customers/{customer_id}/merge", json={"into_customer_id": customer_id})
 
     assert refused.status_code == 422, refused.text
     assert client.get(f"{_base(workspace)}/customers/{customer_id}").status_code == 200

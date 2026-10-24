@@ -6,6 +6,7 @@
  * customers are for members.
  */
 
+import type { ReactNode } from 'react';
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
@@ -46,6 +47,24 @@ vi.mock('@webbpulse/auth/react', async () => {
     useQueryAuth: () => ({ waitForToken: () => Promise.resolve(null) }),
   };
 });
+
+vi.mock('../../components/workspace/WorkspaceShell', () => ({
+  default: ({
+    title,
+    actions,
+    children,
+  }: {
+    title?: ReactNode;
+    actions?: ReactNode;
+    children: ReactNode;
+  }) => (
+    <main>
+      <h1>{title}</h1>
+      {actions}
+      {children}
+    </main>
+  ),
+}));
 
 const useWorkspaceMock = vi.fn<() => WorkspaceContextType>();
 
