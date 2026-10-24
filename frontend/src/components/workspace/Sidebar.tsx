@@ -722,15 +722,27 @@ export const Sidebar: React.FC<SidebarProps> = ({ workspace, onNavigate }) => {
         </IconButton>
         {createIssue.canCreate && (
           <IconButton
-            label="Create issue"
+            label={
+              createIssue.hasDraft === true
+                ? 'Create issue, draft saved'
+                : 'Create issue'
+            }
             size="sm"
             variant="secondary"
+            className="relative"
             onClick={() => {
               onNavigate?.();
               createIssue.open();
             }}
           >
             <LuSquarePen className="h-3.5 w-3.5" />
+            {createIssue.hasDraft === true && (
+              <span
+                aria-hidden="true"
+                data-testid="issue-draft-dot"
+                className="absolute top-1 right-1 h-1.5 w-1.5 rounded-full bg-accent"
+              />
+            )}
           </IconButton>
         )}
       </div>
