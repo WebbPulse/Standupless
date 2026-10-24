@@ -21,6 +21,7 @@ from typing import Optional
 
 from app.common.api.dependencies.authz import AuthzContext
 from app.common.api.dependencies.repositories import Repositories
+from app.common.customer_index import require_customer_list_reader
 from app.common.db.dynamo.activity import TOMBSTONE_RETENTION
 from app.common.db.dynamo.base import utc_now
 from app.common.db.dynamo.issues import Issue
@@ -117,7 +118,8 @@ def list_issue_changes(
     newest = max([since, *stamps, *(normalize(row.created_at) for row in tombstones)])
     cursor = since if newest == since else max(since, newest - SYNC_OVERLAP)
 
-    wanted = resolve_issue_filter(repositories, context.workspace_id, teams, wanted)
+    require_customer_list_reader(context, wanted.needs_customers, sort)
+    wanted = resolve_issue_filter(repositories, context.workspace_id, teams, wanted, sort=sort)
     categories: dict[str, str] = {}
     if wanted.needs_categories and changed:
         for candidate in {issue.team_id for issue in changed}:
@@ -137,7 +139,7 @@ def list_issue_changes(
     removed.extend(row.issue_id for row in tombstones if row.issue_id not in latest)
 
     ranks = status_ranks(repositories, context.workspace_id, teams) if sort == "status_asc" else None
-    ordered = order_issues(kept, sort, reverse=reverse, ranks=ranks)
+    ordered = order_issues(kept, sort, reverse=reverse, ranks=ranks, customers=wanted.customer_index)
     return IssueChanges(issues=ordered, removed_ids=sorted(set(removed)), synced_at=cursor)
 
 

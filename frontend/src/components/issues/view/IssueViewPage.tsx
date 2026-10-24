@@ -44,6 +44,7 @@ import { useIssueCollection } from '../../../hooks/useIssueCollection';
 import { useIssueContext } from '../../../hooks/useIssueContext';
 import { useShortcut } from '../../../hooks/useShortcuts';
 import { useWorkspace } from '../../../hooks/useWorkspace';
+import { useCustomers } from '../../../hooks/useCustomers';
 import { cn } from '../../../lib/cn';
 import { errorMessage } from '../../../lib/errors';
 import { insightsFilters, narrowTo } from '../../../lib/insights';
@@ -504,6 +505,8 @@ export const IssueViewPage: React.FC<IssueViewPageProps> = ({
     workspaceId !== '' && teamIds.length > 0
   );
   const lists = useIssueContext(workspaceId, teamIds, user?.id);
+  const isMember = workspace !== null && workspace.role !== 'guest';
+  const { customers } = useCustomers(workspaceId, isMember);
   const filterContext = useMemo(
     () => ({
       ...lists.context,
@@ -512,8 +515,16 @@ export const IssueViewPage: React.FC<IssueViewPageProps> = ({
         name: team.name,
         key: team.key_prefix,
       })),
+      ...(isMember
+        ? {
+            customers: customers.map((customer) => ({
+              id: customer.customer_id,
+              name: customer.name,
+            })),
+          }
+        : {}),
     }),
-    [lists.context, teams]
+    [lists.context, teams, isMember, customers]
   );
   const viewLists = useMemo(
     () => ({ ...lists, context: filterContext }),
@@ -772,6 +783,7 @@ export const IssueViewPage: React.FC<IssueViewPageProps> = ({
           archive={archive}
           groupFields={fieldsFor(GROUP_FIELDS, filterContext)}
           teamDefault={teamDefaultActions}
+          customerSorts={isMember}
           onReset={
             !displayChanged
               ? undefined

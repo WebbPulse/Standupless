@@ -134,6 +134,7 @@ export interface IssueListFilters {
   /** Estimates such as `M` or `3`; `none` is unestimated. */
   estimate?: FilterValues;
   estimate_not?: FilterValues;
+  customer_id_not?: FilterValues;
   due_before?: string;
   due_after?: string;
   /** Issues completed on or after this day. */
@@ -156,6 +157,8 @@ export interface IssueListFilters {
   is_blocking?: 'true' | 'false';
   /** Issues holding a link of any of these types. */
   has_relation?: FilterValues<LinkType>;
+  /** Issues these customers asked for; `none` is issues no customer asked for. */
+  customer_id?: FilterValues;
   q?: string;
   /** True to list archived issues too, which the list leaves out by default. */
   include_archived?: boolean;

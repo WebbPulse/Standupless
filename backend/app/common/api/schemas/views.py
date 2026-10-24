@@ -33,6 +33,8 @@ SortField = Literal[
     "status_asc",
     "start_asc",
     "estimate_desc",
+    "customer_requests_desc",
+    "customer_revenue_desc",
 ]
 
 ViewKindField = Literal["list", "board"]
@@ -161,6 +163,8 @@ FILTER_FIELDS: frozenset[str] = frozenset(
         "content_not",
         "completed_after",
         "completed_before",
+        "customer_id",
+        "customer_id_not",
         "match",
         "groups",
     }
@@ -173,7 +177,7 @@ does nothing.
 """
 
 PROJECT_FILTER_FIELDS: frozenset[str] = frozenset(
-    {"team_id", "status", "lead_id", "sub_teams", "is_blocked", "is_blocking"}
+    {"team_id", "status", "lead_id", "sub_teams", "is_blocked", "is_blocking", "customer_id", "customer_id_not"}
 )
 """Every key a project view's filter may carry, the projects page's own filters.
 
@@ -182,6 +186,8 @@ it keeps, `lead_id` the leads it keeps, `none` standing for projects with no lea
 and `sub_teams` whether a parent team's page rolls up its sub-teams. `is_blocked`
 keeps projects an open blocker holds up, or with `false` the ones none does, and
 `is_blocking` open projects that hold another up, or with `false` the rest.
+`customer_id` and `customer_id_not` the customers whose requests it keeps or
+drops, `none` standing for projects no customer asked for.
 """
 
 PROJECT_FLAG_FILTER_FIELDS: frozenset[str] = frozenset({"sub_teams", "is_blocked", "is_blocking"})

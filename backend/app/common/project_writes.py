@@ -8,7 +8,7 @@ date rules a person's does.
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Optional
+from typing import Any, Optional, get_args
 
 from fastapi import HTTPException, status
 from webbpulse.dynamodb import ConditionFailed
@@ -16,13 +16,22 @@ from webbpulse.dynamodb import ConditionFailed
 from app.common import pulse
 from app.common.api.dependencies.authz import AuthzContext, require_scopes_present
 from app.common.api.dependencies.repositories import Repositories
-from app.common.api.pagination import decode_offset_cursor, encode_offset_cursor
+from app.common.api.pagination import decode_offset_cursor, digest_scope, encode_offset_cursor
 from app.common.api.schemas.planning import (
     ProjectCreate,
     ProjectMilestoneMarkerRead,
     ProjectOpenIssues,
     ProjectRead,
+    ProjectSortField,
     ProjectUpdate,
+)
+from app.common.customer_index import (
+    CUSTOMER_SORTS,
+    REVENUE_SORT,
+    CustomerIndex,
+    customer_match,
+    load_customer_index,
+    require_customer_list_reader,
 )
 from app.common.db.dynamo.base import utc_now
 from app.common.db.dynamo.issues import Issue
@@ -93,6 +102,28 @@ def milestone_markers(
     return markers
 
 
+PROJECT_DEFAULT_SORT = "target_asc"
+"""The projects list's own order: by target date, undated last."""
+
+PROJECT_SORTS: frozenset[str] = frozenset(get_args(ProjectSortField))
+"""Every order the projects list takes."""
+
+
+def customer_values(raw: Optional[list[str]]) -> frozenset[Optional[str]]:
+    """Customer filter values as a set, `none` standing for no customer request."""
+    values: set[Optional[str]] = set()
+    for item in raw or []:
+        value = str(item).strip()
+        if value:
+            values.add(None if value == "none" else value)
+    return frozenset(values)
+
+
+def customer_scope(values: frozenset[Optional[str]]) -> str:
+    """One customer filter set spelled stably for a cursor scope."""
+    return ",".join(sorted("none" if value is None else value for value in values))
+
+
 def list_projects(
     repositories: Repositories,
     context: AuthzContext,
@@ -105,6 +136,9 @@ def list_projects(
     include_sub_teams: bool = False,
     is_blocked: Optional[bool] = None,
     is_blocking: Optional[bool] = None,
+    customer_id: Optional[list[str]] = None,
+    customer_id_not: Optional[list[str]] = None,
+    sort: Optional[str] = None,
 ) -> tuple[list[ProjectRead], Optional[str]]:
     """One page of the workspace's projects the caller can see, and the next cursor.
 
@@ -117,6 +151,13 @@ def list_projects(
     the projects an open visible blocker holds up, or with false the rest, and
     `is_blocking` the open projects that hold a visible project up, or with false
     the rest, the same reading as the list's blocked and blocking flags.
+
+    `customer_id` keeps the projects one of the named customers asked for and
+    `customer_id_not` drops them, `none` standing for no request. `sort` set to
+    `customer_requests_desc` or `customer_revenue_desc` orders by request count or
+    the asking customers' summed revenue, highest first, target date breaking ties.
+    Either reads the workspace's requests once and fills `customer_request_count`,
+    and neither is open to a guest.
     """
     wanted_status = None if status_filter is None else normalise_project_status(status_filter)
     if status_filter is not None and status_filter not in STATUS_VALUES:
@@ -127,6 +168,15 @@ def list_projects(
         wanted_teams = set(listed_teams(repositories, context, team_id, include_sub_teams=include_sub_teams))
     if initiative_id is not None:
         require_initiative_access(context)
+    if sort is not None and sort not in PROJECT_SORTS:
+        raise unprocessable(f"Unknown project sort: {sort}")
+    wanted_customers = customer_values(customer_id)
+    unwanted_customers = customer_values(customer_id_not)
+    filtered = bool(wanted_customers or unwanted_customers)
+    require_customer_list_reader(context, filtered, sort)
+    index: Optional[CustomerIndex] = None
+    if filtered or sort in CUSTOMER_SORTS:
+        index = load_customer_index(repositories, context.workspace_id, with_revenue=sort == REVENUE_SORT)
 
     visible = set(visible_team_ids(repositories, context))
     default_days = workspace_interval(repositories.workspaces, context.workspace_id)
@@ -146,7 +196,20 @@ def list_projects(
             continue
         if initiative_id is not None and row.initiative_id != initiative_id:
             continue
-        bodies.append(ProjectRead.from_row(row, teams, default_interval_days=default_days))
+        if index is not None and not customer_match(
+            wanted_customers, unwanted_customers, index.customer_ids("project", row.project_id)
+        ):
+            continue
+        body = ProjectRead.from_row(row, teams, default_interval_days=default_days)
+        if index is not None:
+            body.customer_request_count = index.request_count("project", row.project_id)
+            if sort == REVENUE_SORT:
+                body.customer_revenue = index.revenue_of("project", row.project_id)
+        bodies.append(body)
+    if sort == "customer_requests_desc":
+        bodies.sort(key=lambda body: -(body.customer_request_count or 0))
+    elif sort == REVENUE_SORT:
+        bodies.sort(key=lambda body: -(body.customer_revenue or 0))
 
     dependencies = dependency_map(repositories.planning.list_project_relations(context.workspace_id), readable)
     if is_blocked is not None or is_blocking is not None:
@@ -156,9 +219,14 @@ def list_projects(
             if _dependency_flags_match(body.project_id, dependencies, closed, is_blocked, is_blocking)
         ]
     narrowed = f"{team_id}:subs" if include_sub_teams and team_id is not None else team_id or "all"
-    scope = f"projects:{context.workspace_id}:{narrowed}:{wanted_status or 'all'}:{initiative_id or 'all'}"
+    customers = f"{customer_scope(wanted_customers)}!{customer_scope(unwanted_customers)}"
+    scope = (
+        f"projects:{context.workspace_id}:{narrowed}:{wanted_status or 'all'}:{initiative_id or 'all'}"
+        f":{customers}:{sort or PROJECT_DEFAULT_SORT}"
+    )
     if is_blocked is not None or is_blocking is not None:
         scope = f"{scope}:{_flag_scope(is_blocked)}{_flag_scope(is_blocking)}"
+    scope = digest_scope(scope)
     offset = decode_offset_cursor(cursor, scope)
     window = [with_dependencies(body, dependencies) for body in bodies[offset : offset + limit]]
     markers = milestone_markers(repositories, context.workspace_id, {body.project_id for body in window})

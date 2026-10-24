@@ -19,6 +19,7 @@ import { cn } from '../../lib/cn';
 import {
   CLOSED_WINDOWS,
   CLOSED_WINDOW_LABELS,
+  CUSTOMER_PROJECT_ORDERINGS,
   PROJECT_GROUPINGS,
   PROJECT_GROUPING_LABELS,
   PROJECT_LAYOUTS,
@@ -55,6 +56,8 @@ export interface ProjectsDisplayMenuProps {
   /** The ordering, left out where rows keep a fixed order. */
   ordering?: ProjectOrdering;
   onOrderingChange?: (ordering: ProjectOrdering) => void;
+  /** True where the reader may see customers, so the customer requests ordering is offered. */
+  customerOrdering?: boolean;
   /** Which completed projects stay, left out where every project shows. */
   closed?: ClosedWindow;
   onClosedChange?: (closed: ClosedWindow) => void;
@@ -119,6 +122,7 @@ export const ProjectsDisplayMenu: React.FC<ProjectsDisplayMenuProps> = ({
   columns,
   onColumnsChange,
   onReset,
+  customerOrdering = false,
 }) => (
   <Popover
     label="Display options"
@@ -177,7 +181,12 @@ export const ProjectsDisplayMenu: React.FC<ProjectsDisplayMenuProps> = ({
           id="projects-order"
           label="Ordering"
           value={ordering}
-          choices={PROJECT_ORDERINGS}
+          choices={PROJECT_ORDERINGS.filter(
+            (choice) =>
+              customerOrdering ||
+              choice === ordering ||
+              !CUSTOMER_PROJECT_ORDERINGS.has(choice)
+          )}
           labels={PROJECT_ORDERING_LABELS}
           onChange={onOrderingChange}
         />

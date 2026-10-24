@@ -16,6 +16,7 @@ from dataclasses import dataclass, field, fields
 from datetime import datetime
 from typing import Any, Iterable, Iterator, Mapping, Optional
 
+from app.common.customer_index import CustomerIndex, customer_match
 from app.common.db.dynamo.issues import Issue
 from app.common.db.dynamo.relations import LINK_TYPES
 from app.common.db.dynamo.team_config import STATUS_CATEGORIES
@@ -307,10 +308,13 @@ class IssueFilter:
     is_blocked: Optional[bool] = None
     is_blocking: Optional[bool] = None
     has_relations: FilterValues = field(default_factory=frozenset)
+    customer_ids: FilterValues = field(default_factory=frozenset)
+    customer_ids_not: FilterValues = field(default_factory=frozenset)
     match: str = "all"
     groups: tuple[IssueFilter, ...] = ()
     relation_ids: Optional[Mapping[str, frozenset[str]]] = field(default=None, compare=False)
     subscribed_issue_ids: Optional[Mapping[str, frozenset[str]]] = field(default=None, compare=False)
+    customer_index: Optional[CustomerIndex] = field(default=None, compare=False)
 
     @property
     def needs_categories(self) -> bool:
@@ -329,6 +333,12 @@ class IssueFilter:
         """Whether matching needs the workspace's links, which costs one relations read."""
         own = bool(self.is_blocking is not None or self.has_relations)
         return own or any(group.needs_relations for group in self.groups)
+
+    @property
+    def needs_customers(self) -> bool:
+        """Whether matching needs the workspace's customer requests, which costs one planning query."""
+        own = bool(self.customer_ids or self.customer_ids_not)
+        return own or any(group.needs_customers for group in self.groups)
 
     @property
     def needs_cycles(self) -> bool:
@@ -369,7 +379,7 @@ class IssueFilter:
         """The filter as plain JSON values, groups included, for the fingerprint."""
         canonical: dict[str, Any] = {}
         for item in fields(self):
-            if item.name in ("relation_ids", "subscribed_issue_ids"):
+            if item.name in ("relation_ids", "subscribed_issue_ids", "customer_index"):
                 continue
             value = getattr(self, item.name)
             if isinstance(value, frozenset):
@@ -466,6 +476,9 @@ class IssueFilter:
             yield (open_now and self._linked("blocks", issue.issue_id)) == self.is_blocking
         if self.has_relations:
             yield any(kind is not None and self._linked(kind, issue.issue_id) for kind in self.has_relations)
+        if self.customer_ids or self.customer_ids_not:
+            held = self.customer_index.customer_ids("issue", issue.issue_id) if self.customer_index else frozenset()
+            yield customer_match(self.customer_ids, self.customer_ids_not, held)
         if self.content or self.content_not:
             yield _content_matches(self.content, self.content_not, issue)
         if self.query and self.query.strip():
@@ -633,6 +646,8 @@ def build_issue_filter(
     is_blocked: object = None,
     is_blocking: object = None,
     has_relation: Iterable[str] | str | None = None,
+    customer_id: Iterable[str] | str | None = None,
+    customer_id_not: Iterable[str] | str | None = None,
     match: object = None,
     groups: object = None,
 ) -> IssueFilter:
@@ -645,7 +660,9 @@ def build_issue_filter(
     category outside the fixed five, and its `UnknownSlaStatus` subclass for an
     SLA status outside the fixed four. `is_blocked` and `is_blocking` take a bool
     or `true` and `false`, and `has_relation` a link type, each refused with
-    `InvalidFilterValue` otherwise. Relative cycles, the link index and the
+    `InvalidFilterValue` otherwise. `customer_id` keeps the issues one of the
+    named customers asked for, and `customer_id_not` drops them, `none` standing
+    for an issue no customer asked for. Relative cycles, the link index and the
     subscription index are resolved later, by `resolve_issue_filter`, because each
     needs a read. `groups` takes a list of condition objects, or its JSON text,
     each built by these same names plus its own `match`; a group naming a key
@@ -699,6 +716,8 @@ def build_issue_filter(
         is_blocked=_boolean("is_blocked", is_blocked),
         is_blocking=_boolean("is_blocking", is_blocking),
         has_relations=_relation_types(has_relation),
+        customer_ids=_values(customer_id),
+        customer_ids_not=_values(customer_id_not),
         match=_match_mode(match),
         groups=tuple(_group_filter(user_id, item) for item in parse_groups(groups)),
     )

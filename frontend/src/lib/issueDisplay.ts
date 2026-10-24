@@ -41,6 +41,8 @@ export const SORTS: IssueSort[] = [
   'status_asc',
   'start_asc',
   'estimate_desc',
+  'customer_requests_desc',
+  'customer_revenue_desc',
 ];
 
 /** How a sort order reads in the interface. */
@@ -54,6 +56,8 @@ export const SORT_LABELS: Record<IssueSort, string> = {
   status_asc: 'Status',
   start_asc: 'Start date',
   estimate_desc: 'Estimate',
+  customer_requests_desc: 'Customer requests',
+  customer_revenue_desc: 'Customer revenue',
 };
 
 /** The link types a caller may write. The inverses arrive only on a read. */

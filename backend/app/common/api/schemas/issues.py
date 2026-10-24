@@ -57,6 +57,8 @@ SortField = Literal[
     "status_asc",
     "start_asc",
     "estimate_desc",
+    "customer_requests_desc",
+    "customer_revenue_desc",
 ]
 
 ISSUE_KEY_PATTERN = re.compile(r"^([A-Za-z][A-Za-z0-9]{1,5})-(\d+)$")

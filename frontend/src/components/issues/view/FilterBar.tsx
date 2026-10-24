@@ -16,6 +16,7 @@ import React, { useState } from 'react';
 import {
   LuBell,
   LuBox,
+  LuBuilding2,
   LuCalendar,
   LuCalendarCheck,
   LuCalendarClock,
@@ -114,6 +115,7 @@ const FIELD_ICONS: Record<FilterField, React.ReactNode> = {
   blocked: <BlockedGlyph className="h-3.5 w-3.5" />,
   blocking: <BlockingGlyph className="h-3.5 w-3.5" />,
   relation: <LuLink className="h-3.5 w-3.5" />,
+  customer: <LuBuilding2 className="h-3.5 w-3.5" />,
 };
 
 /** How each relative cycle reads in the cycle filter. */
@@ -544,6 +546,21 @@ const filterChoices = (
         },
         ids: [choice.value],
       }));
+    case 'customer':
+      return [
+        {
+          option: { value: NONE, label: 'No customer', icon: hollow },
+          ids: [NONE],
+        },
+        ...(context.customers ?? []).map((customer) => ({
+          option: {
+            value: customer.id,
+            label: customer.name,
+            icon: <LuBuilding2 className="h-3.5 w-3.5 text-text-muted" />,
+          },
+          ids: [customer.id],
+        })),
+      ];
   }
 };
 
