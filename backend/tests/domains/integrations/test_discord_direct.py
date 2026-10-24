@@ -22,7 +22,15 @@ from app.domains.integrations.discord import api, direct, install, people
 from app.domains.integrations.discord.api import DiscordError
 from tests.domains.helpers import MEMBER, OWNER, sign_in
 from tests.domains.integrations.conftest import WORKSPACE, sqs_record
-from tests.domains.integrations.test_discord import GUILD, FakeDiscord, _link, people_claims
+from tests.domains.integrations.test_discord import (
+    APPLICATION_ID,
+    BOT_TOKEN,
+    GUILD,
+    PUBLIC_KEY,
+    FakeDiscord,
+    _link,
+    people_claims,
+)
 
 LINK_PATH = f"/api/workspaces/{WORKSPACE}/discord/me"
 
@@ -45,8 +53,12 @@ class DirectDiscord(FakeDiscord):
 
 
 @pytest.fixture
-def discord(monkeypatch: pytest.MonkeyPatch, discord_env: None) -> DirectDiscord:
-    """Stand in for every call to Discord, DM channels included."""
+def discord(monkeypatch: pytest.MonkeyPatch) -> DirectDiscord:
+    """A configured Discord App whose every call, DM channels included, goes to a fake."""
+    monkeypatch.setenv("DISCORD_APPLICATION_ID", APPLICATION_ID)
+    monkeypatch.setenv("DISCORD_PUBLIC_KEY", PUBLIC_KEY)
+    monkeypatch.setenv("DISCORD_CLIENT_SECRET", "a-test-discord-client-secret")
+    monkeypatch.setenv("DISCORD_BOT_TOKEN", BOT_TOKEN)
     fake = DirectDiscord()
     monkeypatch.setattr(api, "bot", fake.bot)
     monkeypatch.setattr(api, "exchange_code", fake.exchange_code)
