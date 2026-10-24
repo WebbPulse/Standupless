@@ -531,9 +531,7 @@ def similar(
     search gives, because the dialog asks while the person is still typing.
     `team_id` is the draft's team, whose matches rank first.
     """
-    hits = find_similar(
-        repositories, context, title, limit=limit, exclude_issue_id=exclude_issue_id, team_id=team_id
-    )
+    hits = find_similar(repositories, context, title, limit=limit, exclude_issue_id=exclude_issue_id, team_id=team_id)
     return SimilarListRead(results=[_similar_read(hit) for hit in hits])
 
 
