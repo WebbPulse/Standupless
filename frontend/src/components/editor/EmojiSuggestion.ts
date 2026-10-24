@@ -179,7 +179,7 @@ const drawRows = (
       const selected = index === held.highlight;
       row.setAttribute('role', 'option');
       row.setAttribute('aria-selected', String(selected));
-      row.dataset.emoji = entry.emoji;
+      row.setAttribute('data-emoji', entry.emoji);
       row.className = [
         'flex cursor-pointer items-center gap-2 px-2 py-1.5 text-sm hover:bg-raised hover:text-text active:bg-line',
         selected ? 'bg-raised text-text' : 'text-text-muted',
@@ -213,6 +213,18 @@ const drawRows = (
   }
 };
 
+/** Where a position is drawn, or null when the view cannot say. */
+const caretBox = (
+  view: EditorView,
+  position: number
+): { bottom: number; left: number } | null => {
+  try {
+    return view.coordsAtPos(position);
+  } catch {
+    return null;
+  }
+};
+
 /** Places the menu under the shortcode's colon, inside the surface. */
 const placeMenu = (
   list: HTMLUListElement,
@@ -222,15 +234,12 @@ const placeMenu = (
   const host = (list.offsetParent ?? list.parentElement) as HTMLElement | null;
   if (host === null) return;
   const box = host.getBoundingClientRect();
-  let top = 0;
-  let left = 0;
-  try {
-    const caret = view.coordsAtPos(from);
-    top = caret.bottom - box.top + 4;
-    left = Math.max(0, Math.min(caret.left - box.left, box.width - MENU_WIDTH));
-  } catch {
-    top = 0;
-  }
+  const caret = caretBox(view, from);
+  const top = caret === null ? 0 : caret.bottom - box.top + 4;
+  const left =
+    caret === null
+      ? 0
+      : Math.max(0, Math.min(caret.left - box.left, box.width - MENU_WIDTH));
   list.style.top = `${String(top)}px`;
   list.style.left = `${String(left)}px`;
 };

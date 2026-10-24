@@ -163,10 +163,7 @@ export const loadShortcodeCatalog = (): Promise<EmojiEntry[]> => {
     import('emojibase-data/en/shortcodes/github.json'),
   ])
     .then(([rows, codes]) => {
-      loadedShortcodes = toCatalog(
-        rows.default,
-        codes.default as ShortcodesDataset
-      );
+      loadedShortcodes = toCatalog(rows.default, codes.default);
       return loadedShortcodes;
     })
     .catch((failure: unknown) => {
