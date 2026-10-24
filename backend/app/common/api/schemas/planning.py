@@ -656,6 +656,26 @@ class SkippedTemplateIssueRead(BaseModel):
     reason: str = Field(description="Why the issue rules refused it, as the 422 would have said")
 
 
+class ProjectMilestoneMarkerRead(BaseModel):
+    """One dated milestone of a project, as the timeline marks it on the project's lane."""
+
+    milestone_id: str
+    name: str
+    target_date: str
+    completed: bool = Field(description="Every issue in the milestone is finished, and it holds at least one")
+
+    @classmethod
+    def from_row(cls, milestone: ProjectMilestone) -> "ProjectMilestoneMarkerRead":
+        """Build the marker from a stored milestone that has a target date."""
+        progress = milestone.progress
+        return cls(
+            milestone_id=milestone.milestone_id,
+            name=milestone.name,
+            target_date=milestone.target_date or "",
+            completed=progress.scope > 0 and progress.done >= progress.scope,
+        )
+
+
 class ProjectRead(BaseModel):
     """One project as the API returns it, with its status stored rather than derived.
 
@@ -712,6 +732,10 @@ class ProjectRead(BaseModel):
     )
     blocking_project_ids: list[str] = Field(
         default_factory=list, description="The visible projects this one blocks, oldest link first"
+    )
+    milestone_markers: list[ProjectMilestoneMarkerRead] = Field(
+        default_factory=list,
+        description="The project's milestones that have a target date, earliest first, filled on the project list",
     )
     created_by: str
     created_at: datetime

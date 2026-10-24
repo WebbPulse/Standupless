@@ -103,3 +103,82 @@ export const dependencyPath = (line: DependencyLine): string => {
   const toX = String(line.toX);
   return `M ${fromX} ${String(line.fromY)} C ${String(line.fromX + reach)} ${String(line.fromY)} ${String(line.toX - reach)} ${String(line.toY)} ${toX} ${String(line.toY)}`;
 };
+
+/** A dependency drawn or removed on the timeline before the server answers. */
+export interface PendingLink {
+  blockerId: string;
+  blockedId: string;
+  /** True while the link is being removed rather than added. */
+  removing: boolean;
+}
+
+/** The key a dependency line is drawn under, blocker first. */
+export const linkKey = (blockerId: string, blockedId: string): string =>
+  `${blockerId}:${blockedId}`;
+
+/** One id list with an id added once, or taken off. */
+const adjust = (ids: string[], id: string, removing: boolean): string[] =>
+  removing
+    ? ids.filter((held) => held !== id)
+    : ids.includes(id)
+      ? ids
+      : [...ids, id];
+
+/**
+ * The groups as they read once the pending links land, so a link dragged on
+ * the timeline draws at once and a removed one goes at once.
+ */
+export const withPendingLinks = (
+  groups: ProjectGroup[],
+  pending: readonly PendingLink[]
+): ProjectGroup[] => {
+  if (pending.length === 0) return groups;
+  return groups.map((group) => ({
+    ...group,
+    rows: group.rows.map((project) => {
+      let blockedBy = project.blocked_by_project_ids ?? [];
+      let blocking = project.blocking_project_ids ?? [];
+      for (const link of pending) {
+        if (link.blockedId === project.project_id)
+          blockedBy = adjust(blockedBy, link.blockerId, link.removing);
+        if (link.blockerId === project.project_id)
+          blocking = adjust(blocking, link.blockedId, link.removing);
+      }
+      return {
+        ...project,
+        blocked_by_project_ids: blockedBy,
+        blocking_project_ids: blocking,
+      };
+    }),
+  }));
+};
+
+/** Which end of a bar a link is dragged from. */
+export type LinkSide = 'start' | 'end';
+
+/**
+ * The dependency a drag makes. Dragging from the end of a bar makes that
+ * project block the one it lands on, and dragging from the start makes it
+ * wait on that one.
+ */
+export const linkFromDrag = (
+  side: LinkSide,
+  sourceId: string,
+  targetId: string
+): { blockerId: string; blockedId: string } =>
+  side === 'end'
+    ? { blockerId: sourceId, blockedId: targetId }
+    : { blockerId: targetId, blockedId: sourceId };
+
+/** The SVG path of a link being dragged, from its bar end to the pointer. */
+export const draftPath = (
+  side: LinkSide,
+  fromX: number,
+  fromY: number,
+  toX: number,
+  toY: number
+): string => {
+  const reach = Math.max(16, Math.min(48, Math.abs(toX - fromX) / 2));
+  const out = side === 'end' ? reach : -reach;
+  return `M ${String(fromX)} ${String(fromY)} C ${String(fromX + out)} ${String(fromY)} ${String(toX - out)} ${String(toY)} ${String(toX)} ${String(toY)}`;
+};

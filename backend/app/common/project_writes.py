@@ -17,7 +17,13 @@ from app.common import pulse
 from app.common.api.dependencies.authz import AuthzContext, require_scopes_present
 from app.common.api.dependencies.repositories import Repositories
 from app.common.api.pagination import decode_offset_cursor, encode_offset_cursor
-from app.common.api.schemas.planning import ProjectCreate, ProjectOpenIssues, ProjectRead, ProjectUpdate
+from app.common.api.schemas.planning import (
+    ProjectCreate,
+    ProjectMilestoneMarkerRead,
+    ProjectOpenIssues,
+    ProjectRead,
+    ProjectUpdate,
+)
 from app.common.db.dynamo.base import utc_now
 from app.common.db.dynamo.issues import Issue
 from app.common.db.dynamo.planning import Project, new_planning_id, normalise_project_status, project_key
@@ -66,6 +72,25 @@ def merged_team_ids(project: Project, visible: list[str], requested: list[str]) 
     removed = [team_id for team_id in visible if team_id not in requested]
     merged = list(requested) + [team_id for team_id in hidden if team_id not in requested]
     return merged, added + removed
+
+
+def milestone_markers(
+    repositories: Repositories, workspace_id: str, project_ids: set[str]
+) -> dict[str, list[ProjectMilestoneMarkerRead]]:
+    """The dated milestones of each listed project, earliest first, from one workspace query.
+
+    Undated milestones are left out, since the timeline has nowhere to mark them.
+    """
+    if not project_ids:
+        return {}
+    markers: dict[str, list[ProjectMilestoneMarkerRead]] = {}
+    for milestone in repositories.planning.list_workspace_milestones(workspace_id):
+        if milestone.project_id not in project_ids or not milestone.target_date:
+            continue
+        markers.setdefault(milestone.project_id, []).append(ProjectMilestoneMarkerRead.from_row(milestone))
+    for rows in markers.values():
+        rows.sort(key=lambda marker: (marker.target_date, marker.milestone_id))
+    return markers
 
 
 def list_projects(
@@ -120,6 +145,9 @@ def list_projects(
     offset = decode_offset_cursor(cursor, scope)
     dependencies = dependency_map(repositories.planning.list_project_relations(context.workspace_id), readable)
     window = [with_dependencies(body, dependencies) for body in bodies[offset : offset + limit]]
+    markers = milestone_markers(repositories, context.workspace_id, {body.project_id for body in window})
+    for body in window:
+        body.milestone_markers = markers.get(body.project_id, [])
     next_offset = offset + len(window)
     next_cursor = encode_offset_cursor(next_offset, scope) if next_offset < len(bodies) else None
     return window, next_cursor

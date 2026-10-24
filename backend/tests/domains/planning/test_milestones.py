@@ -354,3 +354,27 @@ def test_deleting_a_milestone_detaches_its_issues_once(
     assert system[0]["to"] is None
 
     assert detach_milestone(repositories, WORKSPACE, project_id, milestone_id) == 0
+
+
+def test_the_project_list_marks_dated_milestones_earliest_first(client: TestClient, workspace: str) -> None:
+    """Each listed project carries its dated milestones by target date, and an undated one is left out."""
+    sign_in(client, MEMBER)
+    project = seed_project(client, workspace)
+    other = seed_project(client, workspace, name="Other")
+    late = _seed_milestone(client, workspace, project["project_id"], name="Beta", target_date="2026-12-01")
+    early = _seed_milestone(client, workspace, project["project_id"], name="Alpha", target_date="2026-11-01")
+    _seed_milestone(client, workspace, project["project_id"], name="Someday")
+
+    listed = {row["project_id"]: row for row in client.get(f"/api/workspaces/{workspace}/projects").json()["projects"]}
+
+    assert [marker["milestone_id"] for marker in listed[project["project_id"]]["milestone_markers"]] == [
+        early["milestone_id"],
+        late["milestone_id"],
+    ]
+    assert listed[project["project_id"]]["milestone_markers"][0] == {
+        "milestone_id": early["milestone_id"],
+        "name": "Alpha",
+        "target_date": "2026-11-01",
+        "completed": False,
+    }
+    assert listed[other["project_id"]]["milestone_markers"] == []

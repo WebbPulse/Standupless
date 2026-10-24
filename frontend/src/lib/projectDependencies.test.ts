@@ -2,7 +2,9 @@
  * The timeline's dependency lines: each runs from the end of the blocker's
  * bar to the start of the bar it holds up, sits on the lanes the way the
  * timeline stacks them, skips a folded group or an undated project, and is
- * late when the waiting project starts before its blocker ends.
+ * late when the waiting project starts before its blocker ends. A link
+ * dragged on the timeline reads in the direction of the end it left, and a
+ * pending link draws or goes before the server answers.
  */
 
 import { describe, expect, it } from 'vitest';
@@ -12,6 +14,8 @@ import {
   LANE_HEIGHT,
   dependencyLines,
   dependencyPath,
+  linkFromDrag,
+  withPendingLinks,
 } from './projectDependencies';
 import type { ProjectGroup } from './projectList';
 import { dayNumber } from './timeline';
@@ -118,5 +122,51 @@ describe('dependencyLines', () => {
     expect(lines[0]?.toY).toBe(
       GROUP_HEADER_HEIGHT * 3 + LANE_HEIGHT + LANE_HEIGHT + LANE_HEIGHT / 2
     );
+  });
+});
+
+describe('linkFromDrag', () => {
+  it('makes the source block the target from the end of its bar', () => {
+    expect(linkFromDrag('end', 'a', 'b')).toEqual({
+      blockerId: 'a',
+      blockedId: 'b',
+    });
+  });
+
+  it('makes the source wait on the target from the start of its bar', () => {
+    expect(linkFromDrag('start', 'a', 'b')).toEqual({
+      blockerId: 'b',
+      blockedId: 'a',
+    });
+  });
+});
+
+describe('withPendingLinks', () => {
+  const groups: ProjectGroup[] = [
+    {
+      key: 'all',
+      label: 'All',
+      kind: 'none',
+      rows: [
+        project('a', '2026-10-01', '2026-10-10'),
+        project('b', '2026-10-20', '2026-10-30', ['a']),
+        project('c', '2026-11-01', '2026-11-10'),
+      ],
+    },
+  ];
+
+  it('draws an added link and drops a removed one', () => {
+    const next = withPendingLinks(groups, [
+      { blockerId: 'b', blockedId: 'c', removing: false },
+      { blockerId: 'a', blockedId: 'b', removing: true },
+    ]);
+
+    expect(
+      dependencyLines(next, [], range, 10).map((line) => line.key)
+    ).toEqual(['b:c']);
+  });
+
+  it('hands back the same groups when nothing is pending', () => {
+    expect(withPendingLinks(groups, [])).toBe(groups);
   });
 });

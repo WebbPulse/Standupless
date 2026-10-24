@@ -2,7 +2,10 @@
  * The roadmap. Covers that it draws each dated project as a bar over its
  * dates, lists an undated one without a bar, narrows to a team from the URL,
  * moves a bar a day with the arrow keys and writes the new dates, switches
- * zoom levels, and groups lanes under foldable headers.
+ * zoom levels, and groups lanes under foldable headers. Also covers linking
+ * projects by dragging from a bar's dot or from a focused bar's menu, the
+ * server's refusal of a self link or a loop, hovering and removing a
+ * dependency line, and the diamonds dated milestones draw on their lanes.
  */
 
 import {
@@ -13,12 +16,16 @@ import {
   within,
 } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { ApiError } from '@webbpulse/api-client';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { WorkspaceContextType } from '../../contexts/WorkspaceContextDefinition';
+import { clearToasts, currentToasts } from '../../lib/toast';
 import type {
   ProjectListRead,
   ProjectRead,
+  ProjectRelationCreate,
+  ProjectRelationRead,
   ProjectUpdate,
   TeamRead,
   WorkspaceRead,
@@ -33,6 +40,14 @@ const listProjects =
 const updateProject =
   vi.fn<(id: string, patch: ProjectUpdate) => Promise<ProjectRead>>();
 const listTeams = vi.fn<() => Promise<TeamRead[]>>();
+const createProjectRelation =
+  vi.fn<
+    (id: string, body: ProjectRelationCreate) => Promise<ProjectRelationRead>
+  >();
+const listProjectRelations =
+  vi.fn<(id: string) => Promise<ProjectRelationRead[]>>();
+const deleteProjectRelation =
+  vi.fn<(id: string, relationId: string) => Promise<void>>();
 
 vi.mock('../../hooks/useAuth', () => ({
   useAuth: () => ({
@@ -51,6 +66,14 @@ vi.mock('../../api/planning', () => ({
     listProjects(query),
   updateProject: (_w: string, id: string, patch: ProjectUpdate) =>
     updateProject(id, patch),
+  createProjectRelation: (
+    _w: string,
+    id: string,
+    body: ProjectRelationCreate
+  ) => createProjectRelation(id, body),
+  listProjectRelations: (_w: string, id: string) => listProjectRelations(id),
+  deleteProjectRelation: (_w: string, id: string, relationId: string) =>
+    deleteProjectRelation(id, relationId),
 }));
 
 vi.mock('../../api/teams', () => ({
@@ -131,6 +154,61 @@ const rebrand: ProjectRead = {
   status: 'planned',
 };
 
+/** A second dated project on the first team, after Launch. */
+const ship: ProjectRead = {
+  ...launch,
+  project_id: 'prj-3',
+  name: 'Ship',
+  start_date: '2026-10-05',
+  target_date: '2026-10-20',
+};
+
+/** One stored relation as the server lists it. */
+const relation = (
+  type: ProjectRelationRead['type'],
+  projectId: string,
+  targetId: string
+): ProjectRelationRead => ({
+  relation_id: `rel-${projectId}-${targetId}`,
+  type,
+  project_id: projectId,
+  target_project_id: targetId,
+  created_by: 'user-1',
+  created_at: '2026-09-18T00:00:00Z',
+});
+
+/** The refusal the server answers a write it will not make with. */
+const refusal = (message: string): ApiError =>
+  new ApiError({
+    status: 422,
+    statusText: 'Unprocessable Entity',
+    body: { error_code: 'INVALID_RELATION', message },
+    url: '/api/workspaces/ws-1/projects/prj-1/relations',
+    method: 'POST',
+  });
+
+/** One project's lane on the timeline. */
+const lane = (projectId: string): HTMLElement => {
+  const node = document.querySelector<HTMLElement>(
+    `[data-timeline-project="${projectId}"]`
+  );
+  if (node === null) throw new Error(`no lane for ${projectId}`);
+  return node;
+};
+
+/** The dot at one end of a project's bar that a link is dragged from. */
+const handle = (projectId: string, side: 'start' | 'end'): HTMLElement => {
+  const node = lane(projectId).querySelector<HTMLElement>(
+    `[data-link-handle="${side}"]`
+  );
+  if (node === null) throw new Error(`no ${side} handle for ${projectId}`);
+  return node;
+};
+
+/** The drawn dependency line from one project to another, if any. */
+const line = (blockerId: string, blockedId: string): Element | null =>
+  document.querySelector(`[data-dependency="${blockerId}:${blockedId}"]`);
+
 const resolved = (role: WorkspaceRole): WorkspaceContextType => {
   const workspace: WorkspaceRead = {
     id: 'ws-1',
@@ -162,6 +240,7 @@ const renderPage = (entry = '/w/mine/roadmap') =>
 describe('Roadmap', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    clearToasts();
     useWorkspaceMock.mockReturnValue(resolved('admin'));
     listTeams.mockResolvedValue([engine, design]);
     listProjects.mockResolvedValue({
@@ -348,5 +427,251 @@ describe('Roadmap', () => {
     expect(bar).toHaveAttribute('data-color', '#ef4444');
     expect(bar.getAttribute('title')).toContain('Off track');
     expect(screen.getByRole('img', { name: 'Off track' })).toBeInTheDocument();
+  });
+
+  describe('dependency links', () => {
+    beforeEach(() => {
+      listProjects.mockResolvedValue({
+        projects: [launch, ship],
+        next_cursor: null,
+      });
+      createProjectRelation.mockReturnValue(new Promise(() => undefined));
+    });
+
+    it('makes the dragged-from project block the one dropped on', async () => {
+      renderPage();
+      await screen.findByRole('slider', { name: /^Ship/ });
+
+      fireEvent.pointerDown(handle('prj-1', 'end'), { button: 0 });
+      fireEvent.pointerEnter(lane('prj-3'));
+      fireEvent.pointerUp(window);
+
+      expect(line('prj-1', 'prj-3')).not.toBeNull();
+      await waitFor(() => {
+        expect(createProjectRelation).toHaveBeenCalledWith('prj-1', {
+          type: 'blocks',
+          target_project_id: 'prj-3',
+        });
+      });
+    });
+
+    it('makes the dragged-from project wait from its start dot', async () => {
+      renderPage();
+      await screen.findByRole('slider', { name: /^Ship/ });
+
+      fireEvent.pointerDown(handle('prj-3', 'start'), { button: 0 });
+      fireEvent.pointerEnter(lane('prj-1'));
+      fireEvent.pointerUp(window);
+
+      await waitFor(() => {
+        expect(createProjectRelation).toHaveBeenCalledWith('prj-3', {
+          type: 'blocked_by',
+          target_project_id: 'prj-1',
+        });
+      });
+    });
+
+    it('makes no link when the drag is dropped on no project', async () => {
+      renderPage();
+      await screen.findByRole('slider', { name: /^Ship/ });
+
+      fireEvent.pointerDown(handle('prj-1', 'end'), { button: 0 });
+      fireEvent.pointerEnter(lane('prj-3'));
+      fireEvent.pointerLeave(lane('prj-3'));
+      fireEvent.pointerUp(window);
+
+      expect(createProjectRelation).not.toHaveBeenCalled();
+    });
+
+    it('shows the server refusing a self link', async () => {
+      createProjectRelation.mockRejectedValue(
+        refusal('A project cannot block itself')
+      );
+      renderPage();
+      const bar = await screen.findByRole('slider', { name: /^Launch/ });
+
+      fireEvent.pointerDown(handle('prj-1', 'end'), { button: 0 });
+      fireEvent.pointerEnter(bar);
+      fireEvent.pointerUp(window);
+
+      await waitFor(() => {
+        expect(currentToasts().map((toast) => toast.message)).toEqual([
+          'A project cannot block itself',
+        ]);
+      });
+      expect(createProjectRelation).toHaveBeenCalledWith('prj-1', {
+        type: 'blocks',
+        target_project_id: 'prj-1',
+      });
+    });
+
+    it('undoes a link the server refuses as a loop', async () => {
+      createProjectRelation.mockRejectedValue(
+        refusal('That dependency would make the projects wait on each other')
+      );
+      const user = userEvent.setup();
+      renderPage();
+      const bar = await screen.findByRole('slider', { name: /^Launch/ });
+
+      fireEvent.keyDown(bar, { key: 'F10', shiftKey: true });
+      await user.click(
+        within(
+          screen.getByRole('menu', { name: 'Dependencies of Launch' })
+        ).getByRole('menuitem', { name: 'Blocks Ship' })
+      );
+
+      await waitFor(() => {
+        expect(currentToasts().map((toast) => toast.message)).toEqual([
+          'That dependency would make the projects wait on each other',
+        ]);
+      });
+      expect(line('prj-1', 'prj-3')).toBeNull();
+    });
+
+    it('links from a focused bar with the keyboard', async () => {
+      const user = userEvent.setup();
+      renderPage();
+      const bar = await screen.findByRole('slider', { name: /^Ship/ });
+
+      fireEvent.keyDown(bar, { key: 'ContextMenu' });
+      await user.click(
+        screen.getByRole('menuitem', { name: 'Blocked by Launch' })
+      );
+
+      await waitFor(() => {
+        expect(createProjectRelation).toHaveBeenCalledWith('prj-3', {
+          type: 'blocked_by',
+          target_project_id: 'prj-1',
+        });
+      });
+      expect(line('prj-1', 'prj-3')).not.toBeNull();
+    });
+
+    it('offers no link menu to a role that may not write', async () => {
+      useWorkspaceMock.mockReturnValue(resolved('guest'));
+      listTeams.mockResolvedValue(
+        [
+          { ...engine, role: 'member' },
+          { ...design, role: 'member' },
+        ].map(({ role: _role, ...rest }) => rest)
+      );
+      renderPage();
+      const bar = await screen.findByRole('slider', { name: /^Launch/ });
+
+      fireEvent.keyDown(bar, { key: 'F10', shiftKey: true });
+
+      expect(screen.queryByRole('menu')).toBeNull();
+      expect(lane('prj-1').querySelector('[data-link-handle]')).toBeNull();
+    });
+
+    describe('with a dependency drawn', () => {
+      beforeEach(() => {
+        listProjects.mockResolvedValue({
+          projects: [
+            { ...launch, blocking_project_ids: ['prj-3'] },
+            { ...ship, blocked_by_project_ids: ['prj-1'] },
+          ],
+          next_cursor: null,
+        });
+        listProjectRelations.mockResolvedValue([
+          relation('blocks', 'prj-1', 'prj-3'),
+        ]);
+        deleteProjectRelation.mockReturnValue(new Promise(() => undefined));
+      });
+
+      it('lights a line on hover and removes it from its menu', async () => {
+        const user = userEvent.setup();
+        renderPage();
+        await screen.findByRole('slider', { name: /^Ship/ });
+        const drawn = line('prj-1', 'prj-3');
+        const hit = drawn?.querySelector('[data-dependency-hit]');
+        if (drawn === null || hit === null || hit === undefined)
+          throw new Error('no line drawn');
+
+        fireEvent.pointerEnter(hit);
+        expect(drawn).toHaveAttribute('data-active', 'true');
+        fireEvent.click(hit);
+        const menu = screen.getByRole('menu', { name: 'Launch blocks Ship' });
+        await user.click(
+          within(menu).getByRole('menuitem', { name: 'Remove dependency' })
+        );
+
+        await waitFor(() => {
+          expect(deleteProjectRelation).toHaveBeenCalledWith(
+            'prj-1',
+            'rel-prj-1-prj-3'
+          );
+        });
+        expect(line('prj-1', 'prj-3')).toBeNull();
+      });
+
+      it('removes a link from a focused bar with the keyboard', async () => {
+        const user = userEvent.setup();
+        renderPage();
+        const bar = await screen.findByRole('slider', { name: /^Ship/ });
+
+        fireEvent.keyDown(bar, { key: 'F10', shiftKey: true });
+        expect(
+          screen.queryByRole('menuitem', { name: 'Blocked by Launch' })
+        ).toBeNull();
+        listProjectRelations.mockResolvedValue([
+          relation('blocked_by', 'prj-3', 'prj-1'),
+        ]);
+        await user.click(
+          screen.getByRole('menuitem', { name: 'Remove: blocked by Launch' })
+        );
+
+        await waitFor(() => {
+          expect(deleteProjectRelation).toHaveBeenCalledWith(
+            'prj-3',
+            'rel-prj-3-prj-1'
+          );
+        });
+        expect(listProjectRelations).toHaveBeenCalledWith('prj-3');
+      });
+    });
+  });
+
+  it('marks each dated milestone with a diamond on its lane', async () => {
+    listProjects.mockResolvedValue({
+      projects: [
+        {
+          ...launch,
+          milestone_markers: [
+            {
+              milestone_id: 'ms-1',
+              name: 'Beta',
+              target_date: '2026-09-25',
+              completed: true,
+            },
+            {
+              milestone_id: 'ms-2',
+              name: 'GA',
+              target_date: '2026-09-30',
+              completed: false,
+            },
+          ],
+        },
+        rebrand,
+      ],
+      next_cursor: null,
+    });
+    renderPage();
+    await screen.findByRole('slider', { name: /^Launch/ });
+
+    const beta = screen.getByRole('link', {
+      name: 'Milestone Beta, 2026-09-25',
+    });
+    expect(beta).toHaveAttribute('title', 'Beta · 2026-09-25');
+    expect(beta).toHaveAttribute('data-completed', 'true');
+    expect(beta).toHaveAttribute(
+      'href',
+      '/w/mine/projects/prj-1?tab=issues&f=milestone.is%3Ams-1'
+    );
+    expect(
+      screen.getByRole('link', { name: 'Milestone GA, 2026-09-30' })
+    ).toHaveAttribute('data-completed', 'false');
+    expect(lane('prj-1').querySelectorAll('[data-milestone]')).toHaveLength(2);
+    expect(lane('prj-2').querySelectorAll('[data-milestone]')).toHaveLength(0);
   });
 });

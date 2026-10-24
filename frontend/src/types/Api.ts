@@ -2183,9 +2183,20 @@ export interface ProjectRead {
   blocked_by_project_ids?: string[];
   /** The visible projects this one blocks, oldest link first. */
   blocking_project_ids?: string[];
+  /** The project's dated milestones, earliest first, filled on the project list. */
+  milestone_markers?: ProjectMilestoneMarkerRead[];
   created_by: string;
   created_at: string;
   updated_at: string;
+}
+
+/** One dated milestone of a project, as the timeline marks it on the lane. */
+export interface ProjectMilestoneMarkerRead {
+  milestone_id: string;
+  name: string;
+  target_date: string;
+  /** Every issue in the milestone is finished, and it holds at least one. */
+  completed: boolean;
 }
 
 /** One template issue a project created from a template left out, and why. */
