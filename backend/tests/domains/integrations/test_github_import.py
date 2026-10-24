@@ -20,6 +20,7 @@ from urllib.parse import parse_qs, urlparse
 import httpx
 import pytest
 from fastapi.testclient import TestClient
+from webbpulse.audit import AuditQuery
 from webbpulse.identity.oauth import OAuthLinkRecord
 
 from app.common import issue_import
@@ -28,6 +29,7 @@ from app.common.db.dynamo.github import IssueSync, issue_sync_key
 from app.domains.integrations import github_import, github_issues
 from app.domains.integrations.consumers import import_jobs
 from app.domains.integrations.issue_sync import BACKLINK_MARKER
+from app.domains.integrations.mcp.transport import INSUFFICIENT_SCOPE
 from tests.domains.helpers import ADMIN, MEMBER, OWNER, sign_in
 from tests.domains.integrations.conftest import (
     INSTALLATION_ID,
@@ -38,6 +40,8 @@ from tests.domains.integrations.conftest import (
     seed_issue,
     sqs_record,
 )
+from tests.domains.integrations.test_mcp import tool
+from tests.domains.integrations.test_mcp_tools import answer, mint_for, refusal
 
 BUCKET = "standupless-test-imports"
 
@@ -492,3 +496,45 @@ def test_a_queued_import_runs_a_page_per_message(
     assert job.created_count == 3
     assert github.issue_pages() == [1, 2]
     assert len(team_issues(repositories)) == 3
+
+
+def test_the_mcp_tools_list_repositories_and_import_their_issues(
+    client: TestClient, repositories: Any, github: FakeGitHub
+) -> None:
+    """An agent with an admin's key lists the installation's repositories, imports one and reads the job."""
+    github.issues = [github_issue(1), github_issue(2)]
+    secret = mint_for(repositories, OWNER, ("settings:read", "settings:write", "admin"))
+
+    listed = answer(tool(client, secret, "list_github_import_repositories", {}))
+    started = answer(tool(client, secret, "import_github_issues", {"repository_id": REPOSITORY_ID, "team_id": "ABC"}))
+    status = answer(tool(client, secret, "get_workspace_import", {"import_id": started["import_id"]}))
+    cancelled = answer(tool(client, secret, "cancel_workspace_import", {"import_id": started["import_id"]}))
+    uncovered = refusal(tool(client, secret, "import_github_issues", {"repository_id": "424242", "team_id": TEAM}))
+
+    assert listed == {
+        "repositories": [
+            {"repository_id": REPOSITORY_ID, "full_name": REPOSITORY_FULL_NAME, "private": True, "team_id": None}
+        ]
+    }
+    assert (started["kind"], started["team_id"], started["status"]) == ("github", TEAM, "completed")
+    assert status["import_id"] == started["import_id"]
+    assert status["created_count"] == 2
+    assert cancelled["status"] == "completed"
+    assert "cannot see" in uncovered
+    assert len(team_issues(repositories)) == 2
+    [row] = repositories.audit.list_events(WORKSPACE, AuditQuery(action="import.started")).events
+    assert row.target.label == REPOSITORY_FULL_NAME
+    assert row.after == {"preset": "github_api", "team_id": TEAM, "repository_id": REPOSITORY_ID}
+
+
+def test_a_member_key_cannot_import_github_issues_over_mcp(
+    client: TestClient, repositories: Any, github: FakeGitHub
+) -> None:
+    """The tools check the same admin capability the routes do."""
+    secret = mint_for(repositories, MEMBER, ("settings:read", "settings:write", "admin"))
+
+    refused = tool(client, secret, "import_github_issues", {"repository_id": REPOSITORY_ID, "team_id": TEAM})
+
+    assert refused.json()["error"]["code"] == INSUFFICIENT_SCOPE
+    assert issue_import.list_jobs(WORKSPACE) == []
+    assert github.requests == []

@@ -29,6 +29,7 @@ ANSWERS_AT_HOME: frozenset[str] = frozenset(
         "list_approved_domains",
         "remove_approved_domain",
         "list_audit_events",
+        "list_github_import_repositories",
     }
 )
 
@@ -73,6 +74,8 @@ def arguments(foreign: dict[str, str], home_issue: str) -> dict[str, dict[str, A
             "api_key": ISOLATION_LINEAR_KEY,
             "teams": [{"linear_team_id": "team-isolation", "team_id": foreign["team_id"]}],
         },
+        "list_github_import_repositories": {},
+        "import_github_issues": {"repository_id": "424242", "team_id": foreign["team_id"]},
         "get_workspace_import": {"import_id": FOREIGN_IMPORT_ID},
         "cancel_workspace_import": {"import_id": FOREIGN_IMPORT_ID},
     }

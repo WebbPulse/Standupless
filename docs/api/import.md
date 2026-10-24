@@ -229,3 +229,21 @@ each step and deleted when the job completes, fails or is cancelled. It never
 appears in the job, an answer, a log, an audit event or imported data. A key
 left behind by a lost job goes with the 7 day lifecycle rule on `imports/`.
 
+
+## Import from GitHub Issues
+
+A workspace owner or admin can import one repository's Issues through the
+workspace's installed GitHub App, with no key. They pick a repository the
+installation covers and the team its issues go into.
+
+| Surface | How |
+| --- | --- |
+| API | `GET /api/workspaces/{workspace_id}/imports/github/repositories`, `POST /api/workspaces/{workspace_id}/imports/github`, `POST /api/workspaces/{workspace_id}/imports/{import_id}/cancel`, and the `GET` routes above |
+| MCP | `list_github_import_repositories`, `import_github_issues`, `get_workspace_import`, `cancel_workspace_import` |
+
+`POST .../imports/github` takes `{"repository_id", "team_id"}` and answers 202
+with the job, which has `kind` `github`. A repository the installation does not
+cover, or an App that is suspended or not installed, answers 422, and a second
+import while one runs answers 409. Pull requests are skipped, and running the
+import again updates what an earlier run wrote. How each field maps is in the
+`app/domains/integrations/github_import.py` docstring.
