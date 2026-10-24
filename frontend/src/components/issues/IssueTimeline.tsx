@@ -13,6 +13,7 @@
 import React, {
   useCallback,
   useEffect,
+  useId,
   useMemo,
   useRef,
   useState,
@@ -449,10 +450,11 @@ export const IssueTimeline: React.FC<IssueTimelineProps> = ({
   }, [hash, comments.rows]);
 
   const loading = activity.isLoading || comments.isLoading;
+  const headingId = useId();
 
   return (
-    <section aria-labelledby="activity-heading" className="space-y-4">
-      <h2 id="activity-heading" className="text-sm font-semibold text-text">
+    <section aria-labelledby={headingId} className="space-y-4">
+      <h2 id={headingId} className="text-sm font-semibold text-text">
         Activity
       </h2>
 
