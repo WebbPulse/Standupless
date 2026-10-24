@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import re
 from datetime import date, datetime
-from typing import Literal, Optional
+from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 from webbpulse.http import cursor_page
@@ -25,6 +25,7 @@ from app.common.db.dynamo.planning import (
     InitiativeUpdateRow,
     ProgressMeasure,
     Project,
+    ProjectActivityRow,
     ProjectMilestone,
     ProjectUpdateRow,
     PulseEvent,
@@ -918,6 +919,56 @@ class ProjectUpdateRead(BaseModel):
 
 ProjectUpdateListRead = cursor_page(ProjectUpdateRead, "updates", model_name="ProjectUpdateListRead")
 """The body the project update feed answers with, items under `updates`, newest first."""
+
+ProjectActivityKindField = Literal[
+    "created", "field_changed", "milestone_added", "milestone_removed", "milestone_changed"
+]
+
+PROJECT_ACTIVITY_DEFAULT_LIMIT = 50
+"""How many activity rows one page of a project's feed holds when the caller names no limit."""
+
+
+class ProjectActivityRead(BaseModel):
+    """One recorded change to a project as the API returns it.
+
+    `from` and `to` are the wire names the issue activity uses, aliased off the
+    stored `from_value` and `to_value` because `from` is a Python keyword. A
+    milestone row carries the milestone's id and names it in `to`, or in `from`
+    once removed.
+    """
+
+    activity_id: str
+    project_id: str
+    actor_id: str
+    kind: ProjectActivityKindField
+    field: Optional[str] = None
+    from_: Any = Field(default=None, alias="from")
+    to: Any = None
+    milestone_id: Optional[str] = None
+    source: Optional[ChangeSource] = None
+    created_at: datetime
+
+    model_config = {"populate_by_name": True}
+
+    @classmethod
+    def from_row(cls, row: ProjectActivityRow) -> "ProjectActivityRead":
+        """Build the response shape from a stored project activity row."""
+        return cls(
+            activity_id=row.activity_id,
+            project_id=row.project_id,
+            actor_id=row.actor_id,
+            kind=row.event,  # pyright: ignore[reportArgumentType]
+            field=row.field,
+            **{"from": row.from_value},
+            to=row.to_value,
+            milestone_id=row.milestone_id,
+            source=row.source,  # pyright: ignore[reportArgumentType]
+            created_at=row.created_at,
+        )
+
+
+ProjectActivityListRead = cursor_page(ProjectActivityRead, "activity", model_name="ProjectActivityListRead")
+"""The body the project activity feed answers with, items under `activity`, newest first."""
 
 
 class MilestoneCreate(BaseModel):

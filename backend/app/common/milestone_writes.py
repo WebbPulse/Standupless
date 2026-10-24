@@ -13,6 +13,7 @@ from typing import Any
 from fastapi import HTTPException, status
 from webbpulse.dynamodb import ConditionFailed
 
+from app.common import project_activity
 from app.common.api.dependencies.authz import AuthzContext
 from app.common.api.dependencies.repositories import Repositories
 from app.common.api.schemas.planning import MilestoneCreate, MilestoneRead, MilestoneUpdate
@@ -79,6 +80,7 @@ def create_milestone(
             status_code=status.HTTP_409_CONFLICT,
             detail={"error_code": "CONFLICT", "message": "That milestone already exists"},
         ) from exc
+    project_activity.record_milestone_added(repositories, context, created)
     return MilestoneRead.from_row(created)
 
 
@@ -109,6 +111,7 @@ def update_milestone(
         stored = repositories.planning.replace_milestone(updated)
     except ConditionFailed as exc:
         raise not_found() from exc
+    project_activity.record_milestone_changes(repositories, context, existing, stored)
     return MilestoneRead.from_row(stored)
 
 
@@ -119,5 +122,9 @@ def delete_milestone(repositories: Repositories, context: AuthzContext, project_
     plan rather than any team's work.
     """
     _load_editable_project(repositories, context, project_id)
-    if not repositories.planning.delete(context.workspace_id, milestone_key(project_id, milestone_id)):
+    existing = repositories.planning.get_milestone(context.workspace_id, project_id, milestone_id)
+    if existing is None or not repositories.planning.delete(
+        context.workspace_id, milestone_key(project_id, milestone_id)
+    ):
         raise not_found()
+    project_activity.record_milestone_removed(repositories, context, existing)

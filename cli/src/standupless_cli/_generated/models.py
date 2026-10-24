@@ -143,6 +143,51 @@ class ArchiveSettingsUpdate(TypedDict):
     period_months: NotRequired[Literal[1, 3, 6, 9, 12] | None]
 
 
+class AsanaProjectChoice(TypedDict):
+    create_project: NotRequired[bool]
+    project_gid: str
+    status_field_gid: NotRequired[str | None]
+    statuses: NotRequired[dict[str, str]]
+    team_id: str
+
+
+class AsanaProjectMappingRead(TypedDict):
+    create_project: bool
+    name: str
+    project_gid: str
+    status_field_gid: NotRequired[str | None]
+    status_field_name: NotRequired[str | None]
+    statuses: NotRequired[dict[str, str]]
+    team_id: str
+
+
+class AsanaProjectRead(TypedDict):
+    archived: bool
+    completed: bool
+    gid: str
+    name: str
+    team_name: NotRequired[str | None]
+    url: NotRequired[str | None]
+    workspace_gid: str
+    workspace_name: str
+
+
+class AsanaStatusFieldRead(TypedDict):
+    gid: str
+    name: str
+    options: list[str]
+
+
+class AsanaStatusPlanRead(TypedDict):
+    source: str
+    status_id: str
+    status_name: str
+
+
+class AsanaTokenRequest(TypedDict):
+    token: str
+
+
 class AttachmentRead(TypedDict):
     attachment_id: str
     content_type: NotRequired[str | None]
@@ -1365,6 +1410,23 @@ class PipelineStageWrite(TypedDict):
 class ProgressRead(TypedDict):
     completed: NotRequired[int]
     total: NotRequired[int]
+
+
+ProjectActivityRead = TypedDict(
+    "ProjectActivityRead",
+    {
+        "activity_id": str,
+        "actor_id": str,
+        "created_at": str,
+        "field": NotRequired[str | None],
+        "from": NotRequired[Any],
+        "kind": Literal["created", "field_changed", "milestone_added", "milestone_removed", "milestone_changed"],
+        "milestone_id": NotRequired[str | None],
+        "project_id": str,
+        "source": NotRequired[Literal["web", "mcp", "cli", "api", "github", "system"] | None],
+        "to": NotRequired[Any],
+    },
+)
 
 
 class ProjectBlueprint(TypedDict):
@@ -3143,6 +3205,29 @@ class ApprovedDomainListRead(TypedDict):
     domains: list[ApprovedDomainRead]
 
 
+class AsanaImportRequest(TypedDict):
+    projects: list[AsanaProjectChoice]
+    token: str
+
+
+class AsanaProjectListRead(TypedDict):
+    items: list[AsanaProjectRead]
+
+
+class AsanaProjectPreviewRead(TypedDict):
+    completed_count: int
+    create_project: bool
+    name: str
+    project_gid: str
+    sections: list[str]
+    status_field_gid: NotRequired[str | None]
+    status_field_name: NotRequired[str | None]
+    status_fields: list[AsanaStatusFieldRead]
+    statuses: list[AsanaStatusPlanRead]
+    task_count: int
+    team_id: str
+
+
 class AttachmentListRead(TypedDict):
     attachments: list[AttachmentRead]
     next_cursor: NotRequired[str | None]
@@ -3412,6 +3497,7 @@ class IssueImportPreviewRead(TypedDict):
 
 
 class IssueImportRead(TypedDict):
+    asana_projects: NotRequired[list[AsanaProjectMappingRead]]
     counts: NotRequired[dict[str, int]]
     created_at: str
     created_count: int
@@ -3420,7 +3506,7 @@ class IssueImportRead(TypedDict):
     finished_at: NotRequired[str | None]
     github_repository_id: NotRequired[str | None]
     import_id: str
-    kind: NotRequired[Literal["csv", "linear", "github"]]
+    kind: NotRequired[Literal["csv", "linear", "github", "asana"]]
     labels_created: int
     linear_teams: NotRequired[list[LinearTeamMappingRead]]
     linked_count: NotRequired[int]
@@ -3536,6 +3622,11 @@ class MemberListRead(TypedDict):
 
 class MilestoneListRead(TypedDict):
     milestones: list[MilestoneRead]
+    next_cursor: NotRequired[str | None]
+
+
+class ProjectActivityListRead(TypedDict):
+    activity: list[ProjectActivityRead]
     next_cursor: NotRequired[str | None]
 
 
@@ -3819,6 +3910,10 @@ class WorkspaceExportListRead(TypedDict):
 
 class WorkspaceListRead(TypedDict):
     workspaces: list[WorkspaceRead]
+
+
+class AsanaImportPreviewRead(TypedDict):
+    projects: list[AsanaProjectPreviewRead]
 
 
 class CommentListRead(TypedDict):

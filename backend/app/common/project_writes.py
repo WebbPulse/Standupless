@@ -13,7 +13,7 @@ from typing import Any, Optional, get_args
 from fastapi import HTTPException, status
 from webbpulse.dynamodb import ConditionFailed
 
-from app.common import pulse
+from app.common import project_activity, pulse
 from app.common.api.dependencies.authz import AuthzContext, require_scopes_present
 from app.common.api.dependencies.repositories import Repositories
 from app.common.api.pagination import decode_offset_cursor, digest_scope, encode_offset_cursor
@@ -310,6 +310,7 @@ def create_project(repositories: Repositories, context: AuthzContext, payload: P
             status_code=status.HTTP_409_CONFLICT,
             detail={"error_code": "CONFLICT", "message": "That project already exists"},
         ) from exc
+    project_activity.record_project_created(repositories, context, created)
     body = ProjectRead.from_row(
         created, teams, default_interval_days=workspace_interval(repositories.workspaces, context.workspace_id)
     )
@@ -465,6 +466,7 @@ def update_project(
         stored = repositories.planning.replace_project(updated)
     except ConditionFailed as exc:
         raise not_found() from exc
+    project_activity.record_project_changes(repositories, context, existing, stored)
     if "health" in fields:
         pulse.record_health_change(
             repositories,
@@ -499,6 +501,7 @@ def delete_project(
     require_project_admin(repositories, context, project)
     repositories.planning.delete_project_milestones(context.workspace_id, project_id)
     repositories.planning.delete_project_updates(context.workspace_id, project_id)
+    repositories.planning.delete_project_activity(context.workspace_id, project_id)
     repositories.planning.delete_project_relations_for(context.workspace_id, project_id)
     repositories.documents.delete_for_parent(context.workspace_id, "project", project_id)
     repositories.planning.delete(context.workspace_id, project_key(project_id))
