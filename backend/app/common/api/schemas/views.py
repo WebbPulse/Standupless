@@ -177,7 +177,17 @@ does nothing.
 """
 
 PROJECT_FILTER_FIELDS: frozenset[str] = frozenset(
-    {"team_id", "status", "lead_id", "sub_teams", "is_blocked", "is_blocking", "customer_id", "customer_id_not", "label_id"}
+    {
+        "team_id",
+        "status",
+        "lead_id",
+        "sub_teams",
+        "is_blocked",
+        "is_blocking",
+        "customer_id",
+        "customer_id_not",
+        "label_id",
+    }
 )
 """Every key a project view's filter may carry, the projects page's own filters.
 

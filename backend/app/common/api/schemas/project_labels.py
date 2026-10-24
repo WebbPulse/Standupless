@@ -59,7 +59,7 @@ class ProjectLabelCreate(BaseModel):
 
 
 class ProjectLabelUpdate(BaseModel):
-    """The body a project label patch takes; a field left out keeps its value and a null or empty description clears it."""
+    """The body a project label patch takes; an omitted field keeps its value, a null or empty description clears it."""
 
     name: Optional[str] = Field(default=None, min_length=1, max_length=PROJECT_LABEL_NAME_MAX)
     color: Optional[str] = None

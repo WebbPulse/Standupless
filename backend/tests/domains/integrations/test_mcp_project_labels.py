@@ -51,7 +51,8 @@ def test_projects_take_labels_and_answer_a_short_id(client: TestClient, reposito
     label = answer(tool(client, admin, "create_project_label", {"name": "Growth", "color": "#5e6ad2"}))
     writer = mint_for(repositories, MEMBER, ("projects:write", "projects:read"))
 
-    tagged = answer(tool(client, writer, "create_project", {"name": "Tagged", "team_ids": [TEAM], "label_ids": ["growth"]}))
+    tagged_body = {"name": "Tagged", "team_ids": [TEAM], "label_ids": ["growth"]}
+    tagged = answer(tool(client, writer, "create_project", tagged_body))
     plain = answer(tool(client, writer, "create_project", {"name": "Plain", "team_ids": [TEAM]}))
     unknown = refusal(tool(client, writer, "create_project", {"name": "X", "team_ids": [TEAM], "label_ids": ["nope"]}))
     filtered = answer(tool(client, writer, "list_projects", {"label_id": "Growth"}))

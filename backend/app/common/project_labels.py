@@ -55,7 +55,8 @@ def _check_unique(labels: Iterable[ProjectLabel], name: str, exclude_label_id: O
 def _visible_projects(repositories: Repositories, context: AuthzContext) -> list[Project]:
     """The workspace's projects the caller can see on at least one team."""
     visible = set(visible_team_ids(repositories, context))
-    return [row for row in repositories.planning.list_projects(context.workspace_id) if visible_project_teams(row, visible)]
+    projects = repositories.planning.list_projects(context.workspace_id)
+    return [row for row in projects if visible_project_teams(row, visible)]
 
 
 def list_project_labels(repositories: Repositories, context: AuthzContext) -> ProjectLabelListRead:

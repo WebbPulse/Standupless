@@ -77,7 +77,7 @@ export interface ProjectActivityFeedProps {
   initiatives: ProjectActivityLookups['initiatives'];
   milestones: ProjectActivityLookups['milestones'];
   /** The workspace's project labels, naming label changes. */
-  projectLabels?: ProjectActivityLookups['projectLabels'];
+  projectLabels?: ProjectActivityLookups['projectLabels'] | undefined;
   /** The project's updates loaded so far, newest first. */
   updates: ProjectUpdateRead[];
   /** Whether older updates are still unread. */

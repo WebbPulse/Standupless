@@ -51,7 +51,7 @@ export interface ProjectActivityLookups {
   initiatives: { initiative_id: string; name: string }[];
   milestones: { milestone_id: string; name: string }[];
   /** The workspace's project labels, for label changes; a missing one reads "a label". */
-  projectLabels?: { id: string; name: string }[];
+  projectLabels?: { id: string; name: string }[] | undefined;
 }
 
 const text = (value: string): ProjectActivityPart => ({
