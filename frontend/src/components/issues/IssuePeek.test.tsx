@@ -3,17 +3,31 @@
  * title, properties and description, that a property change applies at once
  * through the same pickers as the rail, that an issue in a project can be
  * moved between the project's milestones, that it links to the full page and
- * to the issue's project and milestone, and that Escape and the close button
- * dismiss it while Escape inside a picker only closes the picker.
+ * to the issue's project and milestone, that Escape and the close button
+ * dismiss it while Escape inside a picker or the comment box does not, and
+ * that the issue's activity and comments show below the body, newest last,
+ * with a comment box that posts and offers to sync to a linked pull request.
  */
 
-import { render, screen, waitFor } from '@testing-library/react';
+import type { Editor } from '@tiptap/core';
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AuthContextType } from '../../contexts/AuthContextDefinition';
 import type { WorkspaceContextType } from '../../contexts/WorkspaceContextDefinition';
 import type {
+  ActivityListRead,
+  CommentListRead,
+  CommentRead,
+  GithubThreadTargetRead,
   IssueRead,
   StatusRead,
   TeamRead,
@@ -25,11 +39,51 @@ import IssuePeek from './IssuePeek';
 const getIssue = vi.fn<(id: string) => Promise<IssueRead>>();
 const updateIssue = vi.fn<(id: string, body: unknown) => Promise<IssueRead>>();
 const listTeams = vi.fn<() => Promise<TeamRead[]>>();
+const listActivity = vi.fn<() => Promise<ActivityListRead>>();
+const listComments = vi.fn<() => Promise<CommentListRead>>();
+const createComment = vi.fn<(body: unknown) => Promise<CommentRead>>();
+const listThreadTargets = vi.fn<() => Promise<GithubThreadTargetRead[]>>();
 
-vi.mock('../../api/issues', () => ({
-  getIssue: (_w: string, id: string) => getIssue(id),
-  updateIssue: (_w: string, id: string, body: unknown) => updateIssue(id, body),
-  listIssues: () => Promise.resolve({ issues: [], next_cursor: null }),
+vi.mock('../../api/issues', async () => {
+  const actual =
+    await vi.importActual<typeof import('../../api/issues')>(
+      '../../api/issues'
+    );
+  return {
+    ...actual,
+    getIssue: (_w: string, id: string) => getIssue(id),
+    updateIssue: (_w: string, id: string, body: unknown) =>
+      updateIssue(id, body),
+    listIssues: () => Promise.resolve({ issues: [], next_cursor: null }),
+    listActivity: () => listActivity(),
+  };
+});
+
+vi.mock('../../api/discussion', async () => {
+  const actual = await vi.importActual<typeof import('../../api/discussion')>(
+    '../../api/discussion'
+  );
+  return {
+    ...actual,
+    listComments: () => listComments(),
+    createComment: (_w: string, _i: string, body: unknown) =>
+      createComment(body),
+    listAttachments: () =>
+      Promise.resolve({ attachments: [], next_cursor: null }),
+    listReactions: () => Promise.resolve([]),
+  };
+});
+
+vi.mock('../../api/integrations', () => ({
+  listThreadTargets: () => listThreadTargets(),
+  syncThread: () => Promise.resolve({}),
+  unsyncThread: () => Promise.resolve(),
+}));
+
+vi.mock('../../api/drafts', () => ({
+  listIssueDrafts: () => Promise.resolve([]),
+  saveDraft: () => Promise.resolve({}),
+  deleteDraft: () => Promise.resolve(),
 }));
 
 const statuses: StatusRead[] = [
@@ -130,6 +184,48 @@ const issue: IssueRead = {
   updated_at: '2026-09-17T00:00:00Z',
 };
 
+/** A comment on the peeked issue. */
+const comment = (overrides: Partial<CommentRead> = {}): CommentRead => ({
+  comment_id: 'c-1',
+  issue_id: 'iss-1',
+  workspace_id: 'ws-1',
+  team_id: 't-1',
+  body: 'Looks good to me',
+  parent_comment_id: null,
+  author_id: 'user-2',
+  author: { user_id: 'user-2', display_name: 'Ada', email: 'ada@example.com' },
+  mentions: [],
+  reactions: [],
+  reply_count: 0,
+  created_at: '2026-09-17T02:00:00Z',
+  edited_at: null,
+  ...overrides,
+});
+
+/** A linked pull request a thread may sync to. */
+const target: GithubThreadTargetRead = {
+  kind: 'pull_request',
+  repository_id: 'repo-1',
+  full_name: 'acme/api',
+  number: 7,
+  title: 'Fix the login',
+  url: 'https://github.com/acme/api/pull/7',
+  private: true,
+  ref: 'acme/api#7',
+};
+
+/** The comment box once the lazy editor has arrived. */
+const findComposer = async (): Promise<HTMLElement> =>
+  screen.findByRole(
+    'textbox',
+    { name: 'Write a comment' },
+    { timeout: 10_000 }
+  );
+
+/** The Tiptap editor behind a surface. */
+const editorOf = (surface: HTMLElement): Editor =>
+  (surface as HTMLElement & { editor: Editor }).editor;
+
 /** A resolved workspace with the caller holding `role`. */
 const resolved = (role: WorkspaceRole): WorkspaceContextType => ({
   workspace: {
@@ -156,8 +252,20 @@ const renderPeek = () =>
   );
 
 beforeEach(() => {
-  for (const spy of [getIssue, updateIssue, listTeams, onClose])
+  for (const spy of [
+    getIssue,
+    updateIssue,
+    listTeams,
+    listActivity,
+    listComments,
+    createComment,
+    listThreadTargets,
+    onClose,
+  ])
     spy.mockReset();
+  listActivity.mockResolvedValue({ activity: [], next_cursor: null });
+  listComments.mockResolvedValue({ comments: [], next_cursor: null });
+  listThreadTargets.mockResolvedValue([]);
   clearToasts();
   useWorkspaceMock.mockReturnValue(resolved('member'));
   getIssue.mockResolvedValue(issue);
@@ -278,5 +386,116 @@ describe('IssuePeek', () => {
     expect(
       await screen.findByRole('button', { name: 'Status: Todo' })
     ).toBeDisabled();
+    expect(
+      await screen.findByRole('list', { name: 'Timeline' })
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Comment' })).toBeNull();
+  });
+});
+
+describe('the peek activity feed', () => {
+  it('shows activity and comments below the body, newest last', async () => {
+    listActivity.mockResolvedValue({
+      activity: [
+        {
+          activity_id: 'ac-2',
+          issue_id: 'iss-1',
+          kind: 'field_changed',
+          field: 'status_id',
+          from: 'st-1',
+          to: 'st-2',
+          actor_kind: 'github',
+          actor_id: 'gh-1',
+          created_at: '2026-09-17T03:00:00Z',
+        },
+        {
+          activity_id: 'ac-1',
+          issue_id: 'iss-1',
+          kind: 'created',
+          field: null,
+          from: null,
+          to: null,
+          actor_kind: 'github',
+          actor_id: 'gh-1',
+          created_at: '2026-09-17T01:00:00Z',
+        },
+      ],
+      next_cursor: null,
+    });
+    listComments.mockResolvedValue({
+      comments: [comment()],
+      next_cursor: null,
+    });
+    renderPeek();
+
+    const peek = await screen.findByRole('complementary', {
+      name: 'Issue ENG-7',
+    });
+    const timeline = await within(peek).findByRole('list', {
+      name: 'Timeline',
+    });
+    await waitFor(() => {
+      expect(timeline).toHaveTextContent('Looks good to me');
+    });
+    const text = timeline.textContent ?? '';
+    const created = text.indexOf('created the issue');
+    const commented = text.indexOf('Looks good to me');
+    const changed = text.indexOf('changed the status');
+    expect(created).toBeGreaterThanOrEqual(0);
+    expect(created).toBeLessThan(commented);
+    expect(commented).toBeLessThan(changed);
+
+    const body = within(peek).getByText('The long story');
+    expect(
+      body.compareDocumentPosition(timeline) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy();
+    expect(
+      within(peek).getByRole('heading', { name: 'Activity' })
+    ).toBeInTheDocument();
+  });
+
+  it('posts a comment from the composer in the peek', async () => {
+    createComment.mockResolvedValue(comment({ comment_id: 'c-2' }));
+    renderPeek();
+
+    const surface = await findComposer();
+    act(() => {
+      editorOf(surface).commands.setContent('On it');
+    });
+    const send = screen.getByRole('button', { name: 'Comment' });
+    await waitFor(() => {
+      expect(send).toBeEnabled();
+    });
+    act(() => {
+      fireEvent.click(send);
+    });
+
+    await waitFor(() => {
+      expect(createComment).toHaveBeenCalledWith(
+        expect.objectContaining({ body: 'On it' })
+      );
+    });
+  });
+
+  it('offers to sync a new thread to a linked pull request', async () => {
+    listThreadTargets.mockResolvedValue([target]);
+    renderPeek();
+
+    await findComposer();
+    expect(
+      await screen.findByRole('button', { name: /Sync to GitHub/ })
+    ).toBeInTheDocument();
+  });
+
+  it('keeps the peek open on Escape while typing a comment', async () => {
+    renderPeek();
+
+    const surface = await findComposer();
+    act(() => {
+      editorOf(surface).commands.setContent('Half a thought');
+    });
+    fireEvent.keyDown(surface, { key: 'Escape' });
+
+    expect(onClose).not.toHaveBeenCalled();
   });
 });
