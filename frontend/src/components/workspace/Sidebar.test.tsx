@@ -639,6 +639,25 @@ describe('creating from the sidebar', () => {
     );
 
     expect(open).toHaveBeenCalled();
+    expect(screen.queryByTestId('issue-draft-dot')).not.toBeInTheDocument();
+  });
+
+  it('marks the create issue button while a draft is saved', async () => {
+    renderSidebar('owner', '/w/mine', {
+      createIssue: {
+        open: vi.fn(),
+        close: vi.fn(),
+        isOpen: false,
+        canCreate: true,
+        request: null,
+        hasDraft: true,
+      },
+    });
+
+    expect(
+      await screen.findByRole('button', { name: 'Create issue, draft saved' })
+    ).toBeInTheDocument();
+    expect(screen.getByTestId('issue-draft-dot')).toBeInTheDocument();
   });
 
   it('lists the caller favorites in their own order with links to each', async () => {
