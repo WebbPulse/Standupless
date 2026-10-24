@@ -173,6 +173,9 @@ def test_the_contract_fixes_the_tool_set() -> None:
         "list_asana_projects",
         "preview_asana_import",
         "import_asana_workspace",
+        "list_jira_projects",
+        "preview_jira_import",
+        "import_jira_workspace",
         "cancel_workspace_import",
         "invite_member",
         "join_team",
@@ -334,7 +337,7 @@ def test_the_contract_fixes_the_tool_set() -> None:
         "save_agent_profile",
         "delete_agent_profile",
     }
-    assert len(TOOLS) == 220
+    assert len(TOOLS) == 223
 
 
 def test_a_notification_gets_no_body(client: TestClient, workspace: str, repositories: Any) -> None:

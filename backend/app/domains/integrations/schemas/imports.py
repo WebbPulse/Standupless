@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field
 from app.common.csv_import import MAX_CSV_BYTES, RowProblem
 from app.common.issue_import import ImportJob, ImportKind, ImportStatus, Preview, ResolvedRow
 from app.common.linear_import import phases
-from app.domains.integrations import asana_import, shortcut_import
+from app.domains.integrations import asana_import, jira_import, shortcut_import
 
 ImportPreset = Literal["generic", "jira", "linear", "asana", "shortcut", "pivotal", "trello"]
 
@@ -164,6 +164,18 @@ class AsanaProjectMappingRead(BaseModel):
     statuses: dict[str, str] = Field(default_factory=dict)
 
 
+class JiraProjectMappingRead(BaseModel):
+    """One Jira project or JQL filter a Jira import reads, the Standupless team it writes into, and how it maps."""
+
+    site_url: str
+    project_key: Optional[str] = None
+    jql: Optional[str] = None
+    name: str
+    team_id: str
+    epics_as: str
+    statuses: dict[str, str] = Field(default_factory=dict)
+
+
 class IssueImportRead(BaseModel):
     """One import job and how far it has got."""
 
@@ -204,8 +216,9 @@ class IssueImportRead(BaseModel):
         default=None, description="The repository a GitHub import reads; its full name is the file name."
     )
     asana_projects: list[AsanaProjectMappingRead] = Field(default_factory=list)
+    jira_projects: list[JiraProjectMappingRead] = Field(default_factory=list)
     phase: Optional[str] = Field(
-        default=None, description="What a running Linear, GitHub, Shortcut or Asana import is reading now."
+        default=None, description="What a running Linear, GitHub, Shortcut, Asana or Jira import is reading now."
     )
     phase_index: int = 0
     phase_count: int = 0
@@ -225,6 +238,8 @@ class IssueImportRead(BaseModel):
             steps = shortcut_import.phases(job)
         elif job.kind == "asana":
             steps = asana_import.phases(job)
+        elif job.kind == "jira":
+            steps = jira_import.phases(job)
         current = steps[job.phase_index] if job.phase_index < len(steps) else None
         return cls(
             import_id=job.import_id,
@@ -265,6 +280,18 @@ class IssueImportRead(BaseModel):
                     statuses=dict(mapping.statuses),
                 )
                 for mapping in job.asana_projects
+            ],
+            jira_projects=[
+                JiraProjectMappingRead(
+                    site_url=mapping.site_url,
+                    project_key=mapping.project_key or None,
+                    jql=mapping.jql or None,
+                    name=mapping.name,
+                    team_id=mapping.team_id,
+                    epics_as=mapping.epics_as,
+                    statuses=dict(mapping.statuses),
+                )
+                for mapping in job.jira_projects
             ],
             phase=current[0] if current is not None else None,
             phase_index=min(job.phase_index, len(steps)),
