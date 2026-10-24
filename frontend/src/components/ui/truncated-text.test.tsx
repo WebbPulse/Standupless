@@ -150,9 +150,8 @@ describe('TruncatedText', () => {
         <em>Full</em>
       </TruncatedText>
     );
-    const label = sized(screen.getByText('Full').parentElement as HTMLElement, {
-      scrollWidth: 240,
-    });
+    const span = screen.getByText('Full').parentElement as HTMLElement;
+    const label = sized(span, { scrollWidth: 240 });
 
     rest(label);
 
