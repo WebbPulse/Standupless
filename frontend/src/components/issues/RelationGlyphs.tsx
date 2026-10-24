@@ -1,8 +1,8 @@
 /**
  * The glyphs that stand for each kind of issue relation, drawn here on the same
  * 14px grid as the status and priority glyphs so they sit on a row's centre
- * line beside them. A blocked issue carries a flag with a hollow pennant and a
- * blocking one a solid flag, so the two differ in shape as well as colour,
+ * line beside them. A blocked issue carries a solid flag and a blocking one a
+ * flag with a hollow pennant, so the two differ in shape as well as colour,
  * which comes from the warning and danger tokens; related and duplicate
  * glyphs take the text colour they are given. Every glyph paints with
  * `currentColor` and cuts its holes with an even-odd fill, so a hover
@@ -26,7 +26,7 @@ const POLE =
 const PENNANT =
   'M3.2 2.1h8.25a.6.6 0 0 1 .47.97L9.95 5.6l1.97 2.53a.6.6 0 0 1-.47.97H3.2Z';
 
-/** The hollow a blocked flag has cut out of its pennant, leaving an outline. */
+/** The hollow a blocking flag has cut out of its pennant, leaving an outline. */
 const PENNANT_HOLE = 'M4.55 3.45h5.6L8.55 5.6l1.6 2.15h-5.6Z';
 
 /** Shared SVG frame: the 14px grid, decorative unless the caller names it. */
@@ -46,8 +46,16 @@ const Frame: React.FC<RelationGlyphProps & { children: React.ReactNode }> = ({
   </svg>
 );
 
-/** A hollow-pennant flag: this issue is blocked by another still open. */
+/** A solid flag: this issue is blocked by another that is still open. */
 export const BlockedGlyph: React.FC<RelationGlyphProps> = (props) => (
+  <Frame {...props}>
+    <path d={POLE} />
+    <path d={PENNANT} />
+  </Frame>
+);
+
+/** A flag with a hollow pennant: this issue blocks others. */
+export const BlockingGlyph: React.FC<RelationGlyphProps> = (props) => (
   <Frame {...props}>
     <path d={POLE} />
     <path
@@ -55,14 +63,6 @@ export const BlockedGlyph: React.FC<RelationGlyphProps> = (props) => (
       fillRule="evenodd"
       clipRule="evenodd"
     />
-  </Frame>
-);
-
-/** A solid flag: this issue blocks others. */
-export const BlockingGlyph: React.FC<RelationGlyphProps> = (props) => (
-  <Frame {...props}>
-    <path d={POLE} />
-    <path d={PENNANT} />
   </Frame>
 );
 
@@ -98,10 +98,10 @@ export const DuplicateGlyph: React.FC<RelationGlyphProps> = (props) => (
 );
 
 /** The colour class of the blocked glyph. */
-export const BLOCKED_TONE = 'text-warning';
+export const BLOCKED_TONE = 'text-danger';
 
 /** The colour class of the blocking glyph. */
-export const BLOCKING_TONE = 'text-danger';
+export const BLOCKING_TONE = 'text-warning';
 
 /** The blocked flag in its theme colour, for a menu or command icon slot. */
 export const BlockedIcon: React.FC<RelationGlyphProps> = ({
