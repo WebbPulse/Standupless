@@ -142,6 +142,76 @@ export const progressLabel = (row: MeasuredProgress): string => {
   return `${String(progress.done)} of ${String(scope)} ${measureUnit(progressMeasureOf(row), scope)}`;
 };
 
+/** How far along a milestone's glyph draws it: no issues, none done, some done, or all done. */
+export type MilestoneGlyphState = 'none' | 'empty' | 'partial' | 'complete';
+
+/**
+ * A milestone as any surface holds it: a full milestone row, or a timeline
+ * marker that may come from a server too old to send its counts.
+ */
+export interface MilestoneProgressSource {
+  name: string;
+  counts?: RollupCounts;
+  measure?: ProgressMeasure;
+  progress?: RollupCounts;
+  completed?: boolean;
+}
+
+/** A milestone's glyph state, its whole percent and the sentence it reads as. */
+export interface MilestoneProgress {
+  state: MilestoneGlyphState;
+  percent: number;
+  label: string;
+}
+
+/**
+ * How far through its scope a milestone is, in the project's measure. A
+ * partial milestone never rounds to 0 or 100, so the glyph only reads as
+ * empty or complete when it is.
+ */
+export const milestoneProgress = (
+  milestone: MilestoneProgressSource
+): MilestoneProgress => {
+  if (milestone.counts === undefined) {
+    const done = milestone.completed === true;
+    return {
+      state: done ? 'complete' : 'empty',
+      percent: done ? 100 : 0,
+      label: `${milestone.name}, ${done ? '100' : '0'}% complete`,
+    };
+  }
+  const row: MeasuredProgress = {
+    counts: milestone.counts,
+    ...(milestone.measure === undefined ? {} : { measure: milestone.measure }),
+    ...(milestone.progress === undefined
+      ? {}
+      : { progress: milestone.progress }),
+  };
+  const progress = progressOf(row);
+  const scope = progress.total - progress.cancelled;
+  const unit = measureUnit(progressMeasureOf(row), scope);
+  let state: MilestoneGlyphState;
+  let percent: number;
+  if (scope <= 0) {
+    state = 'none';
+    percent = 0;
+  } else if (progress.done >= scope) {
+    state = 'complete';
+    percent = 100;
+  } else if (progress.done <= 0) {
+    state = 'empty';
+    percent = 0;
+  } else {
+    state = 'partial';
+    percent = Math.min(99, Math.max(1, progressPercent(row)));
+  }
+  return {
+    state,
+    percent,
+    label: `${milestone.name}, ${String(percent)}% of ${String(Math.max(0, scope))} ${unit} complete`,
+  };
+};
+
 /** How a nullable date reads, with an explicit word where there is none. */
 export const dateLabel = (value: string | null, absent: string): string =>
   value === null || value === '' ? absent : value;

@@ -1486,8 +1486,11 @@ class ProjectCreate(TypedDict):
 
 class ProjectMilestoneMarkerRead(TypedDict):
     completed: bool
+    counts: NotRequired[CountsRead]
+    measure: NotRequired[Literal["points", "issues"]]
     milestone_id: str
     name: str
+    progress: NotRequired[CountsRead]
     target_date: str
 
 

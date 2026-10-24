@@ -11399,6 +11399,20 @@
             "title": "Completed",
             "type": "boolean"
           },
+          "counts": {
+            "$ref": "#/components/schemas/CountsRead",
+            "description": "The milestone's issue counts"
+          },
+          "measure": {
+            "default": "issues",
+            "description": "The unit `progress` reads in, points when a team on it estimates",
+            "enum": [
+              "points",
+              "issues"
+            ],
+            "title": "Measure",
+            "type": "string"
+          },
           "milestone_id": {
             "title": "Milestone Id",
             "type": "string"
@@ -11406,6 +11420,10 @@
           "name": {
             "title": "Name",
             "type": "string"
+          },
+          "progress": {
+            "$ref": "#/components/schemas/CountsRead",
+            "description": "The buckets scope and completion are measured by, in `measure`"
           },
           "target_date": {
             "title": "Target Date",
