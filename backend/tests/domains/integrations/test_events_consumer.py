@@ -1701,3 +1701,89 @@ def test_a_promotion_still_closes_a_key_from_a_commit_no_pull_request_links(
     merge_promotion(repositories, pr_commits, ["ABC-1 pushed before the App (#3)"])
 
     assert status_of(repositories, issue.issue_id) == preset["Done"]
+
+
+def test_a_merge_into_main_leaves_an_issue_the_pull_request_only_mentions(
+    repositories: Any,
+    workspace: str,
+    installed: str,
+    issue: Any,
+    preset: dict[str, str],
+    pr_commits: PullRequestCommits,
+    enqueued: list[tuple[str, Any]],
+    github_env: None,
+) -> None:
+    """A key named only in prose, in the body and in a commit body, links without moving, as TF-120 should have."""
+    fixed = seed_issue(repositories, workspace, TEAM, "01JB0000000000000000000IS7", "ABC", 2)
+    place(repositories, issue, preset["On Staging"])
+    pr_commits.messages = [
+        "ABC-2: Cap entries at 120 characters\n\nThe API lowered the cap to 120 in ABC-1 so the policy fits.",
+        "ABC-2: Note the cap in the README",
+    ]
+
+    events.handle_record(
+        repositories,
+        sqs_record(
+            merged_event(
+                "ABC-2: Cap entries at 120 characters",
+                base="main",
+                body="Matches the API, which ABC-1 (Other #312) changed.\n\nFixes ABC-2",
+            )
+        ),
+    )
+
+    assert status_of(repositories, issue.issue_id) == preset["On Staging"]
+    assert status_of(repositories, fixed.issue_id) == preset["Done"]
+    links = repositories.github.list_links_for_issue(WORKSPACE, issue.issue_id).items
+    assert len(links) == 1
+    assert links[0]["moves_status"] is False
+    assert links[0].get("magic_word") is None
+
+
+def test_a_promotion_leaves_an_issue_a_squash_body_only_mentions(
+    repositories: Any,
+    workspace: str,
+    installed: str,
+    issue: Any,
+    preset: dict[str, str],
+    pr_commits: PullRequestCommits,
+    enqueued: list[tuple[str, Any]],
+    github_env: None,
+) -> None:
+    """A shipped pull request that fixed one issue and mentioned another finishes only the one it fixed."""
+    fixed = seed_issue(repositories, workspace, TEAM, "01JB0000000000000000000IS7", "ABC", 2)
+    place(repositories, issue, preset["On Staging"])
+    merge_into_staging(
+        repositories,
+        number=10,
+        title="ABC-2 cap entries",
+        body="Matches the API, which ABC-1 changed.\n\nFixes ABC-2",
+        branch="abc-2-cap",
+    )
+
+    merge_promotion(
+        repositories,
+        pr_commits,
+        ["ABC-2 cap entries (#10)\n\n* ABC-2 cap entries\n\nThe API lowered the cap in ABC-1."],
+    )
+
+    assert status_of(repositories, issue.issue_id) == preset["On Staging"]
+    assert status_of(repositories, fixed.issue_id) == preset["Done"]
+
+
+def test_a_merge_into_main_still_closes_a_key_a_commit_body_fixes(
+    repositories: Any,
+    installed: str,
+    issue: Any,
+    preset: dict[str, str],
+    pr_commits: PullRequestCommits,
+    enqueued: list[tuple[str, Any]],
+    github_env: None,
+) -> None:
+    """A closing word in a commit body still moves its key, since that is not a bare mention."""
+    place(repositories, issue, preset["On Staging"])
+    pr_commits.messages = ["Tidy the cap\n\nFixes ABC-1"]
+
+    events.handle_record(repositories, sqs_record(merged_event("Tidy the cap", base="main")))
+
+    assert status_of(repositories, issue.issue_id) == preset["Done"]

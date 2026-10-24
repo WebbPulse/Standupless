@@ -8,9 +8,10 @@ team. And magic words count only in the pull request title and body, never in a
 commit message, so that a rebase which rewrites history cannot reclose an issue
 somebody deliberately reopened.
 
-As in Linear, only a key in the branch name, in the title, or right after a magic
-word moves an issue's status. A key the body mentions in passing still links the
-pull request to the issue, and moves nothing. A key named after `Refs` moves as the
+As in Linear, only a key in the branch name, in the title, in a commit's subject
+line, or right after a magic word moves an issue's status. A key the body or a
+commit's body mentions in passing still links the pull request to the issue, and
+moves nothing. A key named after `Refs` moves as the
 pull request opens but never on its merge, which only a closing word may trigger.
 """
 
@@ -120,6 +121,31 @@ def find_referencing(text: str, prefixes: Prefixes) -> dict[tuple[str, int], str
     return _keys_after(_REFERENCE_PATTERN, text, prefixes)
 
 
+_MERGE_COMMIT_SUBJECT = re.compile(r"^Merge pull request #\d+\b")
+"""The first line GitHub writes for a merge commit, whose next line is the pull request's title."""
+
+
+def commit_subject(message: str) -> tuple[str, str]:
+    """A commit message split into the subject that may move an issue and the body that only mentions.
+
+    The subject is the first line, as a squash merge writes the pull request's title
+    there. A merge commit's first line only names the branch and puts the title on
+    the next non-empty line, so that line belongs to the subject too.
+    """
+    lines = message.strip().splitlines()
+    if not lines:
+        return "", ""
+    subject = [lines[0]]
+    rest = lines[1:]
+    if _MERGE_COMMIT_SUBJECT.match(lines[0].strip()):
+        while rest and not rest[0].strip():
+            rest = rest[1:]
+        if rest:
+            subject.append(rest[0])
+            rest = rest[1:]
+    return "\n".join(subject), "\n".join(rest)
+
+
 def extract(
     prefixes: Prefixes,
     *,
@@ -133,10 +159,11 @@ def extract(
     The four sources are searched in the order design section 4 lists them and a key
     found twice is kept once. The magic word is read from the title and body only,
     which is what a commit message cannot contribute. A key moves its issue's status
-    when the branch, the title, a commit message or a magic word in the body names
-    it; a bare mention in the body only links. A key that a `Refs` style word names
-    and no closing word does holds on merge, even when the title or branch also
-    carries it, because `Refs` is how a pull request says it is only part of the work.
+    when the branch, the title, a commit's subject line, or a closing or `Refs` style
+    word in the body or a commit names it; a bare mention in the body or in a
+    commit's body only links. A key that a `Refs` style word names and no closing
+    word does holds on merge, even when the title or branch also carries it, because
+    `Refs` is how a pull request says it is only part of the work.
     """
     closing = {**find_closing(title, prefixes), **find_closing(body, prefixes)}
     referencing = {**find_referencing(title, prefixes), **find_referencing(body, prefixes)}
@@ -147,8 +174,11 @@ def extract(
     held = set(referencing) - closed_anywhere
 
     keys: dict[tuple[str, int], FoundKey] = {}
-    moving: set[tuple[str, int]] = set(closing) | set(referencing)
-    sources = [(branch, True), (title, True), (body, False), *((message, True) for message in commit_messages)]
+    moving: set[tuple[str, int]] = closed_anywhere | set(referencing)
+    sources = [(branch, True), (title, True), (body, False)]
+    for message in commit_messages:
+        subject, rest = commit_subject(message)
+        sources.extend([(subject, True), (rest, False)])
     for text, moves in sources:
         for found in find_keys(text, prefixes):
             ident = (found.team_id, found.number)

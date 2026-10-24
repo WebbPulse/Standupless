@@ -362,6 +362,8 @@ def _handle_pull_request(
 
     A key the body only mentions in passing links its issue and moves nothing. Once
     an edit names it in the title or after a magic word, it moves as a new link does.
+    A key a merged pull request's commits only mention in a commit body moves nothing
+    either, unless the merged pull request that commit cites closed it.
     """
     pull_request = body.get("pull_request")
     repository = body.get("repository")
@@ -443,10 +445,11 @@ def _handle_pull_request(
         match = next(row for row in found if row.key == key)
         link_id = f"{node_id}#{issue.issue_id}"
         previous = repositories.github.get_link(workspace_id, link_id)
-        issue_trigger = trigger if match.moves_status else None
         holds = promoted_holds.get(key, match.holds_on_merge)
+        moves = match.moves_status or promoted_holds.get(key) is False
+        issue_trigger = trigger if moves else None
         newly_moving = previous is None or not previous.moves_status
-        if match.moves_status and newly_moving and issue_trigger is None:
+        if moves and newly_moving and issue_trigger is None:
             issue_trigger = linking.trigger_for_new_link(
                 action,
                 state=str(pull_request.get("state", "")),
@@ -468,7 +471,7 @@ def _handle_pull_request(
                 pr_state=state,
                 author_login=author,
                 magic_word=match.magic_word,
-                moves_status=match.moves_status,
+                moves_status=moves,
                 holds_on_merge=holds,
                 applied_status_id=previous.applied_status_id if previous is not None else None,
                 comment_id=previous.comment_id if previous is not None else None,
