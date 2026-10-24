@@ -12,6 +12,7 @@ routes stay thin and every rule has one home.
 from __future__ import annotations
 
 from datetime import date
+from difflib import get_close_matches
 from typing import Any, Iterable
 
 from fastapi import HTTPException, status
@@ -149,8 +150,27 @@ def check_status(repositories: Repositories, workspace_id: str, team_id: str, st
     """
     row = repositories.team_config.get_status(workspace_id, team_id, status_id)
     if row is None:
-        raise unprocessable(f"No such status: {status_id}")
+        raise unprocessable(unknown_status_message(repositories, workspace_id, team_id, status_id))
     return row
+
+
+def unknown_status_message(repositories: Repositories, workspace_id: str, team_id: str, reference: str) -> str:
+    """The refusal for a status this team lacks, naming its statuses and the closest one.
+
+    A caller that guessed a name, such as `Canceled` for `Cancelled`, learns the
+    spelling and the id to send without a second call to list the statuses.
+    """
+    rows = repositories.team_config.list_statuses(workspace_id, team_id, include_hidden=False)
+    if not rows:
+        return f"No such status: {reference}. This team has no statuses."
+    listed = ", ".join(f"{row.name} ({row.status_id})" for row in rows)
+    message = f"No such status: {reference}. This team's statuses are: {listed}."
+    by_folded = {row.name.casefold(): row for row in rows}
+    closest = get_close_matches(reference.strip().casefold(), list(by_folded), n=1, cutoff=0.6)
+    if closest:
+        match = by_folded[closest[0]]
+        message += f" Did you mean {match.name} ({match.status_id})?"
+    return message
 
 
 def default_status(repositories: Repositories, workspace_id: str, team_id: str) -> Status:
