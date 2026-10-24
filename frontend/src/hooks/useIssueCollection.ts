@@ -213,7 +213,12 @@ const readCollection = async (
 
 /** The bulk patch a change becomes. A manual position is never bulk written. */
 const bulkPatch = (change: IssueChange): IssueBulkPatch => {
-  const { sort_order: _order, due_date: _due, ...patch } = change;
+  const {
+    sort_order: _order,
+    start_date: _start,
+    due_date: _due,
+    ...patch
+  } = change;
   return patch;
 };
 
@@ -392,7 +397,10 @@ export const useIssueCollection = (
 
       const oneByOne =
         planned.length === 1 ||
-        planned.some(({ change: own }) => own.due_date !== undefined);
+        planned.some(
+          ({ change: own }) =>
+            own.start_date !== undefined || own.due_date !== undefined
+        );
       if (oneByOne) {
         const writes = planned.map(({ issue, change: own }) =>
           updateIssue(workspaceId, issue.id, singlePatch(issue, own)).then(
