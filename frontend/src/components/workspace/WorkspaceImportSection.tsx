@@ -1,9 +1,9 @@
 /**
  * The issue import, led by an import assistant laid out like Linear's: one row
- * per provider, each opening its own flow. Linear reads a workspace through
- * Linear's API and GitHub reads a repository's Issues through the installed
- * App. Asana, Shortcut and Jira open the file flow with their export preset
- * chosen until their API importers land, and the file row takes any CSV
+ * per provider, each opening its own flow. Linear and Shortcut read a
+ * workspace through their APIs and GitHub reads a repository's Issues through
+ * the installed App. Asana and Jira open the file flow with their export
+ * preset chosen until their API importers land, and the file row takes any CSV
  * export or a Trello board's JSON. For a file the admin picks the tracker it
  * came from, a target team and the file, checks what every row would become,
  * adjusts the column mapping, and starts a job that writes the issues in the
@@ -56,6 +56,7 @@ import Spinner from '../ui/spinner';
 import GitHubImportForm from './GitHubImportForm';
 import ImportProviderIcon, { type ImportProvider } from './ImportProviderIcon';
 import LinearImportForm from './LinearImportForm';
+import ShortcutImportForm from './ShortcutImportForm';
 
 /** Props for WorkspaceImportSection: the workspace issues are imported into. */
 export interface WorkspaceImportSectionProps {
@@ -68,8 +69,8 @@ const ACTIVE_POLL_MS = 3000;
 /** How often the list is read once every job has settled. */
 const IDLE_POLL_MS = 60000;
 
-/** Where an import reads from: Linear through its API, GitHub through the App, or a file. */
-type Source = 'linear' | 'github' | 'csv';
+/** Where an import reads from: Linear or Shortcut through its API, GitHub through the App, or a file. */
+type Source = 'linear' | 'shortcut' | 'github' | 'csv';
 
 /** One row of the import assistant: what it is called, the flow it opens and the preset a file flow starts on. */
 interface ProviderRow {
@@ -94,10 +95,8 @@ const PROVIDERS: ProviderRow[] = [
   {
     value: 'shortcut',
     title: 'Shortcut',
-    detail: 'Stories exported as CSV',
-    source: 'csv',
-    preset: 'shortcut',
-    comingSoon: true,
+    detail: 'Teams, stories, epics and iterations through the Shortcut API',
+    source: 'shortcut',
   },
   {
     value: 'github',
@@ -198,6 +197,26 @@ const LINEAR_TALLIES: { name: LinearImportCount; noun: string }[] = [
   { name: 'project_relations', noun: 'project dependency link' },
 ];
 
+/** How each step of a Shortcut import reads while it runs. */
+const SHORTCUT_PHASE_LABELS: Record<string, string> = {
+  iterations: 'Reading iterations',
+  epics: 'Reading epics',
+  stories: 'Reading stories',
+};
+
+/** How many steps each Shortcut team takes, matching the server's phase list. */
+const SHORTCUT_TEAM_PHASES = 3;
+
+/** The tallies a finished Shortcut import lists, in order, with the noun each counts. */
+const SHORTCUT_TALLIES: { name: LinearImportCount; noun: string }[] = [
+  { name: 'comments', noun: 'comment' },
+  { name: 'labels', noun: 'new label' },
+  { name: 'sub_issues', noun: 'sub-issue link' },
+  { name: 'relations', noun: 'relation' },
+  { name: 'cycles', noun: 'cycle' },
+  { name: 'projects', noun: 'project' },
+];
+
 /** The tallies a finished GitHub import lists after its issue counts, in order. */
 const GITHUB_TALLIES: { name: GitHubImportCount; noun: string }[] = [
   { name: 'comments', noun: 'comment' },
@@ -282,6 +301,36 @@ const linearOutcome = (job: IssueImportRead): string => {
   return parts.join(', ');
 };
 
+/** The line under a running Shortcut job that says which step it is on. */
+const shortcutProgress = (job: IssueImportRead): string => {
+  if (job.status === 'queued') return 'Waiting to start';
+  const index = job.phase_index ?? 0;
+  const total = job.phase_count ?? 0;
+  const teams = job.source_teams ?? [];
+  const team =
+    index < teams.length * SHORTCUT_TEAM_PHASES
+      ? teams[Math.floor(index / SHORTCUT_TEAM_PHASES)]
+      : undefined;
+  const step = SHORTCUT_PHASE_LABELS[job.phase ?? ''] ?? 'Importing';
+  const parts = [team === undefined ? step : `${step} in ${team.name}`];
+  if (total > 0) parts.push(`step ${Math.min(index + 1, total)} of ${total}`);
+  parts.push(`${count(job.created_count, 'issue')} so far`);
+  return parts.join(', ');
+};
+
+/** The line under a finished Shortcut job that lists what it brought over. */
+const shortcutOutcome = (job: IssueImportRead): string => {
+  const counts = job.counts ?? {};
+  const parts = [`${count(job.created_count, 'issue')} created`];
+  const updated = job.updated_count ?? counts.issues_updated ?? 0;
+  if (updated > 0) parts.push(`${updated} updated`);
+  for (const { name, noun } of SHORTCUT_TALLIES) {
+    const n = counts[name] ?? 0;
+    if (n > 0) parts.push(count(n, noun));
+  }
+  return parts.join(', ');
+};
+
 /** The line under a running GitHub job that says how far it got. */
 const githubProgress = (job: IssueImportRead): string => {
   if (job.status === 'queued') return 'Waiting to start';
@@ -314,6 +363,10 @@ const jobSummary = (job: IssueImportRead): string => {
     if (job.status === 'completed') return linearOutcome(job);
     if (job.status !== 'failed') return linearProgress(job);
   }
+  if (job.kind === 'shortcut') {
+    if (job.status === 'completed') return shortcutOutcome(job);
+    if (job.status !== 'failed') return shortcutProgress(job);
+  }
   if (job.kind === 'github') {
     if (job.status === 'completed') return githubOutcome(job);
     if (job.status !== 'failed') return githubProgress(job);
@@ -333,7 +386,7 @@ const jobSummary = (job: IssueImportRead): string => {
   return `${job.processed_rows} of ${job.total_rows} rows`;
 };
 
-/** What a job row is called: the file or repository it read, or the Linear teams and where they went. */
+/** What a job row is called: the file or repository it read, or the Linear or Shortcut teams and where they went. */
 const jobTitle = (job: IssueImportRead, teams: TeamRead[]): string => {
   if (job.kind === 'linear') {
     const mapped = (job.linear_teams ?? []).map((row) => {
@@ -343,6 +396,15 @@ const jobTitle = (job: IssueImportRead, teams: TeamRead[]): string => {
         : `${row.linear_key} into ${target.name}`;
     });
     return mapped.length === 0 ? 'Linear' : `Linear ${mapped.join(', ')}`;
+  }
+  if (job.kind === 'shortcut') {
+    const mapped = (job.source_teams ?? []).map((row) => {
+      const target = teams.find((t) => t.id === row.team_id);
+      return target === undefined
+        ? row.name
+        : `${row.name} into ${target.name}`;
+    });
+    return mapped.length === 0 ? 'Shortcut' : `Shortcut ${mapped.join(', ')}`;
   }
   const target = teams.find((t) => t.id === job.team_id);
   if (job.kind === 'github') {
@@ -700,6 +762,15 @@ export const WorkspaceImportSection: React.FC<WorkspaceImportSectionProps> = ({
 
       {source === null ? null : source === 'linear' ? (
         <LinearImportForm
+          workspaceId={workspace.id}
+          teams={teamList}
+          importing={importing}
+          onStarted={() => {
+            invalidateQueries(queryKey);
+          }}
+        />
+      ) : source === 'shortcut' ? (
+        <ShortcutImportForm
           workspaceId={workspace.id}
           teams={teamList}
           importing={importing}

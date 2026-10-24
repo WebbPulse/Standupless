@@ -16,9 +16,10 @@ job a page at a time. Parsing and mapping are deterministic, with no model calls
 | MCP | `preview_issue_import`, `import_issues_from_file`, `get_workspace_import`, `cancel_workspace_import` |
 | UI | Workspace settings, Import tab, Import assistant |
 
-The Import assistant lists one row per source. Linear and GitHub open their API
-imports. Asana, Shortcut and Jira open the file import with that tool's preset
-chosen, until their API imports exist. "CSV or file" opens the file import with
+The Import assistant lists one row per source. Linear, Shortcut and GitHub open
+their API imports. Asana and Jira open the file import with that tool's preset
+chosen, until their API imports exist. The Shortcut CSV preset stays in the file
+import. "CSV or file" opens the file import with
 every preset, Trello included.
 
 The MCP tools take `team_id` (an id, key or name), `preset`, `file` (the file's
@@ -296,6 +297,55 @@ each step and deleted when the job completes, fails or is cancelled. It never
 appears in the job, an answer, a log, an audit event or imported data. A key
 left behind by a lost job goes with the 7 day lifecycle rule on `imports/`.
 
+## Import from Shortcut's API
+
+A workspace owner or admin can import straight from a Shortcut workspace. They
+paste a Shortcut API token, pick the Shortcut teams to bring over, map each one
+to a new or existing Standupless team, preview the import and start it. The UI
+creates new teams before the preview, because the preview reads the statuses
+and labels of each target team.
+
+| Surface | How |
+| --- | --- |
+| API | `POST /api/workspaces/{workspace_id}/imports/shortcut/teams`, `POST /api/workspaces/{workspace_id}/imports/shortcut/preview`, `POST /api/workspaces/{workspace_id}/imports/shortcut`, cancel, and the `GET` routes above |
+| MCP | `list_shortcut_teams`, `preview_shortcut_import`, `import_shortcut_workspace`, `get_workspace_import`, `cancel_workspace_import` |
+| UI | Workspace settings, Import tab, source Shortcut |
+
+`POST .../imports/shortcut/teams` takes `{"api_token": "..."}` and answers the
+teams the token can read that are not archived, with `key` being the team's
+mention name. A token Shortcut refuses answers 400 with code
+`SHORTCUT_TOKEN_REFUSED`, and Shortcut not answering is 502 with
+`SHORTCUT_UNAVAILABLE`. The preview and start routes take the token and
+`teams`, a list of `{"shortcut_team_id", "team_id"}`. The preview answers, per
+team, the story count (up to 1000, with `stories_capped`), epics, iterations,
+the status each workflow state lands in, new labels, and how many story owners
+match a member. The start answers 202 with the job, which has `kind`
+`shortcut` and `source_teams`. An unknown, archived or repeated Shortcut team
+answers 422, and a second import while one runs answers 409.
+
+Per mapped team the job reads iterations, then epics, then the team's stories
+25 at a time, each read in full. A 429 is waited out, honouring `Retry-After`,
+at most 60 seconds per wait and 5 attempts per request.
+
+- Stories become issues, iterations cycles and epics projects. An iteration or
+  epic that names no team goes into every mapped team.
+- A workflow state maps to the team status with the same name, else the first
+  status of its type's category, else the team default. No status is created.
+- Labels and the story type (Feature, Bug, Chore) become team labels. Owners
+  match members by email, the first match being the assignee. Estimates and
+  deadlines carry over. Priority is not mapped.
+- Tasks become a checklist in the description. Sub-task stories become
+  sub-issues, and the `blocks`, `duplicates` and `relates to` story links become
+  relations, written from whichever end is imported second.
+- A comment by someone who is not a member keeps a `shortcut:<name>` placeholder
+  author. No account or invite is created.
+
+Row ids derive from the workspace and the Shortcut id, and each issue keeps
+`sc-<id>` and its Shortcut URL in `external_ref`, so a rerun updates rows
+instead of duplicating them. The token is sealed beside the job as `key.json`
+under its own purpose, exactly as a Linear key is, and deleted when the job
+completes, fails or is cancelled. It never appears in the job, an answer, a
+log, an audit event or imported data.
 
 ## Import from GitHub Issues
 
