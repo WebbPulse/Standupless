@@ -3,11 +3,15 @@
  * against a team to see what every row would become, then starts a job that
  * writes the issues a page at a time and polls it until it finishes. A Linear
  * import reads a Linear workspace through its API with a pasted key instead,
- * which the server keeps only while the job runs.
+ * which the server keeps only while the job runs. A GitHub import reads one
+ * repository's Issues through the workspace's installed GitHub App.
  */
 
 import apiClient from './client';
 import type {
+  GitHubImportRepositoryListRead,
+  GitHubImportRepositoryRead,
+  GitHubImportRequest,
   IssueImportListRead,
   IssueImportPreviewRead,
   IssueImportRead,
@@ -103,6 +107,34 @@ export const startLinearImport = async (
 ): Promise<IssueImportRead> => {
   const response = await apiClient.post<IssueImportRead>(
     `${issueImportsPath(workspaceId)}/linear`,
+    body
+  );
+  return response.data;
+};
+
+/** The repository list body, any field of which may be missing. */
+type RepositoryList = Partial<GitHubImportRepositoryListRead>;
+
+/** Lists the repositories the installed GitHub App covers, empty when it is missing or suspended. */
+export const listGitHubImportRepositories = async (
+  workspaceId: string,
+  signal?: AbortSignal
+): Promise<GitHubImportRepositoryRead[]> => {
+  const response = await apiClient.get<RepositoryList>(
+    `${issueImportsPath(workspaceId)}/github/repositories`,
+    signalOptions(signal)
+  );
+  const items = response.data?.items;
+  return Array.isArray(items) ? items : [];
+};
+
+/** Starts a GitHub import. Refused with 409 while another is running in the workspace. */
+export const startGitHubImport = async (
+  workspaceId: string,
+  body: GitHubImportRequest
+): Promise<IssueImportRead> => {
+  const response = await apiClient.post<IssueImportRead>(
+    `${issueImportsPath(workspaceId)}/github`,
     body
   );
   return response.data;

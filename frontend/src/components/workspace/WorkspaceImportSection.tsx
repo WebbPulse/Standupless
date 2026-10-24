@@ -1,6 +1,7 @@
 /**
  * The issue import. An admin picks where the work comes from: a Linear
- * workspace read through Linear's API, or a CSV export. For a CSV they pick
+ * workspace read through Linear's API, a GitHub repository's Issues read
+ * through the installed GitHub App, or a CSV export. For a CSV they pick
  * the tracker it came from, a target team and the file, check what every row
  * would become, adjust the column mapping, and start a job that writes the
  * issues in the background.
@@ -12,7 +13,12 @@
  */
 
 import React, { useState } from 'react';
-import { LuFileSpreadsheet, LuKeyRound, LuUpload } from 'react-icons/lu';
+import {
+  LuFileSpreadsheet,
+  LuGithub,
+  LuKeyRound,
+  LuUpload,
+} from 'react-icons/lu';
 import { useQueryAuth } from '@webbpulse/auth/react';
 import {
   invalidateQueries,
@@ -30,6 +36,7 @@ import { useTeamsFor } from '../../hooks/useTeams';
 import { errorMessage } from '../../lib/errors';
 import { workspaceImportsKey } from '../../lib/queryKeys';
 import type {
+  GitHubImportCount,
   ImportField,
   ImportPreset,
   ImportStatus,
@@ -48,6 +55,7 @@ import Label from '../ui/label';
 import RelativeTime from '../ui/relative-time';
 import { Select, SelectField } from '../ui/select';
 import Spinner from '../ui/spinner';
+import GitHubImportForm from './GitHubImportForm';
 import LinearImportForm from './LinearImportForm';
 
 /** Props for WorkspaceImportSection: the workspace issues are imported into. */
@@ -61,8 +69,8 @@ const ACTIVE_POLL_MS = 3000;
 /** How often the list is read once every job has settled. */
 const IDLE_POLL_MS = 60000;
 
-/** Where an import reads from: a Linear workspace through its API, or a CSV file. */
-type Source = 'linear' | 'csv';
+/** Where an import reads from: Linear through its API, GitHub through the App, or a CSV file. */
+type Source = 'linear' | 'github' | 'csv';
 
 /** The sources the picker offers, in order, with the line under each. */
 const SOURCES: {
@@ -76,6 +84,12 @@ const SOURCES: {
     title: 'Linear',
     detail: 'Teams, issues, cycles and projects through the Linear API',
     icon: <LuKeyRound aria-hidden="true" className="h-4 w-4" />,
+  },
+  {
+    value: 'github',
+    title: 'GitHub Issues',
+    detail: "One repository's issues through the installed GitHub App",
+    icon: <LuGithub aria-hidden="true" className="h-4 w-4" />,
   },
   {
     value: 'csv',
@@ -150,6 +164,12 @@ const LINEAR_TALLIES: { name: LinearImportCount; noun: string }[] = [
   { name: 'project_relations', noun: 'project dependency link' },
 ];
 
+/** The tallies a finished GitHub import lists after its issue counts, in order. */
+const GITHUB_TALLIES: { name: GitHubImportCount; noun: string }[] = [
+  { name: 'comments', noun: 'comment' },
+  { name: 'labels', noun: 'new label' },
+];
+
 /** A file the admin picked, read as text. */
 interface PickedFile {
   name: string;
@@ -207,6 +227,29 @@ const linearOutcome = (job: IssueImportRead): string => {
   return parts.join(', ');
 };
 
+/** The line under a running GitHub job that says how far it got. */
+const githubProgress = (job: IssueImportRead): string => {
+  if (job.status === 'queued') return 'Waiting to start';
+  return `Reading issues, ${count(job.created_count, 'issue')} so far`;
+};
+
+/** The line under a finished GitHub job that lists what it brought over and skipped. */
+const githubOutcome = (job: IssueImportRead): string => {
+  const counts = job.counts ?? {};
+  const parts = [`${count(job.created_count, 'issue')} created`];
+  const updated = job.updated_count ?? counts.issues_updated ?? 0;
+  if (updated > 0) parts.push(`${updated} updated`);
+  for (const { name, noun } of GITHUB_TALLIES) {
+    const n = counts[name] ?? 0;
+    if (n > 0) parts.push(count(n, noun));
+  }
+  const synced = counts.already_synced ?? 0;
+  if (synced > 0) parts.push(`${synced} already synced`);
+  const pulls = counts.pull_requests_skipped ?? 0;
+  if (pulls > 0) parts.push(`${count(pulls, 'pull request')} skipped`);
+  return parts.join(', ');
+};
+
 /** The line under a job that says how far it got. */
 const jobSummary = (job: IssueImportRead): string => {
   if (job.status === 'cancelled') {
@@ -215,6 +258,10 @@ const jobSummary = (job: IssueImportRead): string => {
   if (job.kind === 'linear') {
     if (job.status === 'completed') return linearOutcome(job);
     if (job.status !== 'failed') return linearProgress(job);
+  }
+  if (job.kind === 'github') {
+    if (job.status === 'completed') return githubOutcome(job);
+    if (job.status !== 'failed') return githubProgress(job);
   }
   if (job.status === 'failed') {
     return `Stopped after ${count(job.created_count, 'issue')}. ${job.error ?? ''}`.trim();
@@ -231,7 +278,7 @@ const jobSummary = (job: IssueImportRead): string => {
   return `${job.processed_rows} of ${job.total_rows} rows`;
 };
 
-/** What a job row is called: the file it read, or the Linear teams and where they went. */
+/** What a job row is called: the file or repository it read, or the Linear teams and where they went. */
 const jobTitle = (job: IssueImportRead, teams: TeamRead[]): string => {
   if (job.kind === 'linear') {
     const mapped = (job.linear_teams ?? []).map((row) => {
@@ -243,6 +290,12 @@ const jobTitle = (job: IssueImportRead, teams: TeamRead[]): string => {
     return mapped.length === 0 ? 'Linear' : `Linear ${mapped.join(', ')}`;
   }
   const target = teams.find((t) => t.id === job.team_id);
+  if (job.kind === 'github') {
+    const repository = `GitHub ${job.file_name || 'repository'}`;
+    return target === undefined
+      ? repository
+      : `${repository} into ${target.name}`;
+  }
   const name = job.file_name || 'Untitled file';
   return target === undefined ? name : `${name} into ${target.name}`;
 };
@@ -499,7 +552,8 @@ export const WorkspaceImportSection: React.FC<WorkspaceImportSectionProps> = ({
       <div className="space-y-1">
         <h2 className="text-base font-semibold">Import issues</h2>
         <p className="text-sm text-text-muted">
-          Bring work over from Linear through its API, or from a CSV export of
+          Bring work over from Linear through its API, from a GitHub
+          repository's Issues through the GitHub App, or from a CSV export of
           Jira, Linear or any other tracker. Every issue gets a new key, and its
           old key is kept as its source reference, so importing again updates
           instead of duplicating. Statuses match by name or type, people by
@@ -511,7 +565,7 @@ export const WorkspaceImportSection: React.FC<WorkspaceImportSectionProps> = ({
       <div
         role="radiogroup"
         aria-label="Import from"
-        className="grid gap-2 sm:grid-cols-2"
+        className="grid gap-2 sm:grid-cols-3"
       >
         {SOURCES.map((option) => {
           const active = source === option.value;
@@ -548,6 +602,16 @@ export const WorkspaceImportSection: React.FC<WorkspaceImportSectionProps> = ({
       {source === 'linear' ? (
         <LinearImportForm
           workspaceId={workspace.id}
+          teams={teamList}
+          importing={importing}
+          onStarted={() => {
+            invalidateQueries(queryKey);
+          }}
+        />
+      ) : source === 'github' ? (
+        <GitHubImportForm
+          workspaceId={workspace.id}
+          workspaceSlug={workspace.slug}
           teams={teamList}
           importing={importing}
           onStarted={() => {
