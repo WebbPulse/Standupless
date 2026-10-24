@@ -71,6 +71,7 @@ def post_update(repositories: Any, project_id: str, author_id: str, health: str 
         "delete_cycle",
         "remove_issues_from_cycle",
         "delete_milestone",
+        "delete_project_link",
         "delete_project",
         "delete_project_update",
         "delete_project_relation",
@@ -95,6 +96,9 @@ def test_destructive_tools_say_so(name: str) -> None:
         ("create_milestone", ("milestones:write",)),
         ("update_milestone", ("milestones:write",)),
         ("delete_milestone", ("milestones:write",)),
+        ("create_project_link", ("projects:write",)),
+        ("update_project_link", ("projects:write",)),
+        ("delete_project_link", ("projects:write",)),
         ("delete_project", ("projects:write",)),
         ("update_project_update", ("projects:write",)),
         ("delete_project_update", ("projects:write",)),
@@ -307,6 +311,53 @@ def test_remove_issues_from_cycle_refuses_a_guest_outside_the_team(
 
     assert text == NOT_VISIBLE
     assert repositories.issues.get(WORKSPACE, SECOND_ISSUE).cycle_id == elsewhere["cycle_id"]
+
+
+def test_project_link_tools_add_retitle_and_remove_a_link(
+    client: TestClient, repositories: Any, planning: dict[str, str]
+) -> None:
+    """A link lands on the named project, reads back through get_project, and is named by its URL."""
+    secret = mint_for(repositories, MEMBER, PROJECTS)
+
+    created = answer(
+        tool(client, secret, "create_project_link", {"project_id": "home project", "url": "https://example.com/spec"})
+    )
+    assert created["project_id"] == planning["project_id"]
+    assert created["title"] is None
+
+    retitled = answer(
+        tool(
+            client,
+            secret,
+            "update_project_link",
+            {"project_id": "Home project", "link_id": "https://example.com/spec", "title": "Spec"},
+        )
+    )
+    assert retitled["link_id"] == created["link_id"]
+    assert retitled["title"] == "Spec"
+
+    project = answer(tool(client, secret, "get_project", {"project_id": planning["project_id"]}))
+    assert [(row["title"], row["url"]) for row in project["links"]] == [("Spec", "https://example.com/spec")]
+
+    removed = answer(
+        tool(client, secret, "delete_project_link", {"project_id": "Home project", "link_id": created["link_id"]})
+    )
+    assert removed["deleted"] is True
+    assert repositories.planning.list_project_links(WORKSPACE, planning["project_id"]) == []
+
+
+def test_create_project_link_refuses_a_non_web_url(
+    client: TestClient, repositories: Any, planning: dict[str, str]
+) -> None:
+    """Only http and https URLs are taken, as over HTTP."""
+    secret = mint_for(repositories, MEMBER, PROJECTS)
+
+    response = tool(
+        client, secret, "create_project_link", {"project_id": planning["project_id"], "url": "javascript:alert(1)"}
+    )
+
+    assert response.json()["result"]["isError"] is True
+    assert repositories.planning.list_project_links(WORKSPACE, planning["project_id"]) == []
 
 
 def test_create_milestone_accepts_a_project_name(

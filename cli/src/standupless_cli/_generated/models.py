@@ -1464,7 +1464,17 @@ ProjectActivityRead = TypedDict(
         "created_at": str,
         "field": NotRequired[str | None],
         "from": NotRequired[Any],
-        "kind": Literal["created", "field_changed", "milestone_added", "milestone_removed", "milestone_changed"],
+        "kind": Literal[
+            "created",
+            "field_changed",
+            "milestone_added",
+            "milestone_removed",
+            "milestone_changed",
+            "link_added",
+            "link_removed",
+            "link_changed",
+        ],
+        "link_id": NotRequired[str | None],
         "milestone_id": NotRequired[str | None],
         "project_id": str,
         "source": NotRequired[Literal["web", "mcp", "cli", "api", "github", "system"] | None],
@@ -1547,6 +1557,30 @@ class ProjectLabelUpdate(TypedDict):
     color: NotRequired[str | None]
     description: NotRequired[str | None]
     name: NotRequired[str | None]
+
+
+class ProjectLinkCreate(TypedDict):
+    sort_order: NotRequired[str | None]
+    title: NotRequired[str | None]
+    url: str
+
+
+class ProjectLinkRead(TypedDict):
+    created_at: str
+    created_by: str
+    link_id: str
+    project_id: str
+    sort_order: str
+    title: NotRequired[str | None]
+    updated_at: str
+    url: str
+    workspace_id: str
+
+
+class ProjectLinkUpdate(TypedDict):
+    sort_order: NotRequired[str | None]
+    title: NotRequired[str | None]
+    url: NotRequired[str | None]
 
 
 class ProjectMilestoneMarkerRead(TypedDict):
@@ -3802,6 +3836,11 @@ class ProjectLabelListRead(TypedDict):
     labels: list[ProjectLabelRead]
 
 
+class ProjectLinkListRead(TypedDict):
+    links: list[ProjectLinkRead]
+    next_cursor: NotRequired[str | None]
+
+
 class ProjectRead(TypedDict):
     blocked_by_project_ids: NotRequired[list[str]]
     blocking_project_ids: NotRequired[list[str]]
@@ -3819,6 +3858,7 @@ class ProjectRead(TypedDict):
     label_ids: NotRequired[list[str]]
     last_update_at: NotRequired[str | None]
     lead_id: NotRequired[str | None]
+    links: NotRequired[list[ProjectLinkRead] | None]
     measure: NotRequired[Literal["points", "issues"]]
     member_ids: NotRequired[list[str]]
     milestone_markers: NotRequired[list[ProjectMilestoneMarkerRead]]

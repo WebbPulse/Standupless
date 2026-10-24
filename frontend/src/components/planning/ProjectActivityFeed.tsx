@@ -1,7 +1,7 @@
 /**
- * The project overview's activity: who changed the project's properties and
- * milestones, interleaved with the updates posted on it, newest first, in the
- * compact rows the issue timeline uses.
+ * The project overview's activity: who changed the project's properties,
+ * milestones and Resources links, interleaved with the updates posted on it,
+ * newest first, in the compact rows the issue timeline uses.
  *
  * While either list has older pages unread, entries older than its oldest
  * loaded row are held back, so the feed never shows a gap that a later page
@@ -14,6 +14,7 @@ import {
   LuCalendar,
   LuCirclePlus,
   LuLayers,
+  LuLink,
   LuMessageSquare,
   LuMilestone,
   LuPencil,
@@ -66,6 +67,7 @@ const ICONS: Record<ProjectActivityIcon, IconType> = {
   initiative: LuTarget,
   labels: LuTag,
   milestone: LuMilestone,
+  link: LuLink,
 };
 
 /** Props for ProjectActivityFeed. */

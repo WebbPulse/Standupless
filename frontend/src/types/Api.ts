@@ -2365,6 +2365,8 @@ export interface ProjectRead {
   blocking_project_ids?: string[];
   /** The project's dated milestones, earliest first, filled on the project list. */
   milestone_markers?: ProjectMilestoneMarkerRead[];
+  /** The project's Resources links in their manual order, filled on a single project read. */
+  links?: ProjectLinkRead[] | null;
   /** How many customer requests name the project, set when the list was filtered or sorted by customer. */
   customer_request_count?: number | null;
   /** The summed revenue of the customers asking, set when the list was sorted by revenue. */
@@ -2584,6 +2586,42 @@ export interface MilestoneUpdate {
 }
 
 /**
+ * One external link in a project's Resources: a web URL and an optional title.
+ * Readers show the hostname when there is no title.
+ */
+export interface ProjectLinkRead {
+  link_id: string;
+  project_id: string;
+  workspace_id: string;
+  url: string;
+  title: string | null;
+  sort_order: string;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+}
+
+/** The body the link list answers with: the whole set, never paged. */
+export interface ProjectLinkListRead {
+  links: ProjectLinkRead[];
+  next_cursor: string | null;
+}
+
+/** A new link. Without a `sort_order` it lands after the last one. */
+export interface ProjectLinkCreate {
+  url: string;
+  title?: string | null;
+  sort_order?: string;
+}
+
+/** The editable fields on a link. A null title clears it. */
+export interface ProjectLinkUpdate {
+  url?: string;
+  title?: string | null;
+  sort_order?: string;
+}
+
+/**
  * One written status update on a project or an initiative: a Markdown body and
  * the health it judged the subject at. Posting one sets the subject's health.
  * `can_edit` says whether the caller may edit or delete it.
@@ -2619,12 +2657,15 @@ export type ProjectActivityKind =
   | 'field_changed'
   | 'milestone_added'
   | 'milestone_removed'
-  | 'milestone_changed';
+  | 'milestone_changed'
+  | 'link_added'
+  | 'link_removed'
+  | 'link_changed';
 
 /**
  * One recorded change to a project: a property a patch moved, with its old and
- * new value, or a milestone added, renamed, redated or removed, named in `to`
- * or, once removed, in `from`.
+ * new value, or a milestone or Resources link added, changed or removed, named
+ * in `to` or, once removed, in `from`.
  */
 export interface ProjectActivityRead {
   activity_id: string;
@@ -2635,6 +2676,8 @@ export interface ProjectActivityRead {
   from: unknown;
   to: unknown;
   milestone_id: string | null;
+  /** The Resources link a link row is about, null on every other row. */
+  link_id?: string | null;
   source?: ChangeSource | null;
   created_at: string;
 }

@@ -22,6 +22,9 @@ import type {
   MilestoneUpdate,
   ProjectCreate,
   ProjectHistoryRead,
+  ProjectLinkCreate,
+  ProjectLinkRead,
+  ProjectLinkUpdate,
   ProjectListQuery,
   ProjectListRead,
   ProjectRead,
@@ -62,6 +65,19 @@ export const milestonesPath = (
   workspaceId: string,
   projectId: string
 ): string => `${projectPath(workspaceId, projectId)}/milestones`;
+
+/** The route one project's Resources links are listed and created on. */
+export const projectLinksPath = (
+  workspaceId: string,
+  projectId: string
+): string => `${projectPath(workspaceId, projectId)}/links`;
+
+/** The route one Resources link is edited and deleted through. */
+export const projectLinkPath = (
+  workspaceId: string,
+  projectId: string,
+  linkId: string
+): string => `${projectLinksPath(workspaceId, projectId)}/${linkId}`;
 
 /** The route one milestone is edited and deleted through. */
 export const milestonePath = (
@@ -412,6 +428,45 @@ export const deleteMilestone = async (
   await apiClient.delete<void>(
     milestonePath(workspaceId, projectId, milestoneId)
   );
+};
+
+/** Adds a Resources link, after the last one unless a `sort_order` is given. */
+export const createProjectLink = async (
+  workspaceId: string,
+  projectId: string,
+  body: ProjectLinkCreate
+): Promise<ProjectLinkRead> => {
+  const response = await apiClient.post<ProjectLinkRead>(
+    projectLinksPath(workspaceId, projectId),
+    body
+  );
+  return response.data;
+};
+
+/**
+ * Edits a Resources link. A reorder is a patch of `sort_order` alone, so a
+ * move rewrites only the row that moved.
+ */
+export const updateProjectLink = async (
+  workspaceId: string,
+  projectId: string,
+  linkId: string,
+  body: ProjectLinkUpdate
+): Promise<ProjectLinkRead> => {
+  const response = await apiClient.patch<ProjectLinkRead>(
+    projectLinkPath(workspaceId, projectId, linkId),
+    body
+  );
+  return response.data;
+};
+
+/** Removes a Resources link from the project. */
+export const deleteProjectLink = async (
+  workspaceId: string,
+  projectId: string,
+  linkId: string
+): Promise<void> => {
+  await apiClient.delete<void>(projectLinkPath(workspaceId, projectId, linkId));
 };
 
 /**

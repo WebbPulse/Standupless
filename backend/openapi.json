@@ -11297,7 +11297,7 @@
         "type": "object"
       },
       "ProjectActivityRead": {
-        "description": "One recorded change to a project as the API returns it.\n\n`from` and `to` are the wire names the issue activity uses, aliased off the\nstored `from_value` and `to_value` because `from` is a Python keyword. A\nmilestone row carries the milestone's id and names it in `to`, or in `from`\nonce removed.",
+        "description": "One recorded change to a project as the API returns it.\n\n`from` and `to` are the wire names the issue activity uses, aliased off the\nstored `from_value` and `to_value` because `from` is a Python keyword. A\nmilestone row carries the milestone's id and names it in `to`, or in `from`\nonce removed. A Resources link row does the same with the link's id and its\ntitle or hostname; a `link_changed` row names the moved property in `field`.",
         "properties": {
           "activity_id": {
             "title": "Activity Id",
@@ -11332,10 +11332,24 @@
               "field_changed",
               "milestone_added",
               "milestone_removed",
-              "milestone_changed"
+              "milestone_changed",
+              "link_added",
+              "link_removed",
+              "link_changed"
             ],
             "title": "Kind",
             "type": "string"
+          },
+          "link_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Link Id"
           },
           "milestone_id": {
             "anyOf": [
@@ -11946,6 +11960,174 @@
         "title": "ProjectLabelUpdate",
         "type": "object"
       },
+      "ProjectLinkCreate": {
+        "description": "The body `POST /api/workspaces/{workspace_id}/projects/{project_id}/links` takes.\n\n`title` is optional, and a link without one reads as its hostname. `sort_order`\nis optional too: left out, the link is placed after the last one.",
+        "properties": {
+          "sort_order": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sort Order"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "What the link reads as, its hostname when blank",
+            "title": "Title"
+          },
+          "url": {
+            "description": "An absolute http or https URL",
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "url"
+        ],
+        "title": "ProjectLinkCreate",
+        "type": "object"
+      },
+      "ProjectLinkListRead": {
+        "properties": {
+          "links": {
+            "items": {
+              "$ref": "#/components/schemas/ProjectLinkRead"
+            },
+            "title": "Links",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "required": [
+          "links"
+        ],
+        "title": "ProjectLinkListRead",
+        "type": "object"
+      },
+      "ProjectLinkRead": {
+        "description": "One external link in a project's Resources section as the API returns it.",
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "created_by": {
+            "title": "Created By",
+            "type": "string"
+          },
+          "link_id": {
+            "title": "Link Id",
+            "type": "string"
+          },
+          "project_id": {
+            "title": "Project Id",
+            "type": "string"
+          },
+          "sort_order": {
+            "title": "Sort Order",
+            "type": "string"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "What the person typed, null when the link reads as its hostname",
+            "title": "Title"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          },
+          "workspace_id": {
+            "title": "Workspace Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "link_id",
+          "project_id",
+          "workspace_id",
+          "url",
+          "sort_order",
+          "created_by",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "ProjectLinkRead",
+        "type": "object"
+      },
+      "ProjectLinkUpdate": {
+        "description": "The body a Resources link patch takes; a reorder is a patch of `sort_order` alone.\n\nSetting the title to null or blank clears it, so the link reads as its hostname.",
+        "properties": {
+          "sort_order": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sort Order"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
+          }
+        },
+        "title": "ProjectLinkUpdate",
+        "type": "object"
+      },
       "ProjectListRead": {
         "properties": {
           "next_cursor": {
@@ -12246,6 +12428,21 @@
               }
             ],
             "title": "Lead Id"
+          },
+          "links": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/ProjectLinkRead"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The project's Resources links in manual order, filled on a single project read and left out of lists",
+            "title": "Links"
           },
           "measure": {
             "default": "issues",
@@ -40349,7 +40546,7 @@
         ]
       },
       "get": {
-        "description": "One project, or a 404 when the caller can see none of its teams.",
+        "description": "One project with its Resources links, or a 404 when the caller can see none of its teams.",
         "operationId": "read_project_api_workspaces__workspace_id__projects__project_id__get",
         "parameters": [
           {
@@ -41118,6 +41315,265 @@
           }
         ],
         "summary": "Read Project History",
+        "tags": [
+          "planning"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/projects/{project_id}/links": {
+      "get": {
+        "description": "Every Resources link of one project, in its manual order.\n\nA project holds a bounded set, so the list is answered whole and never pages.",
+        "operationId": "list_project_links_api_workspaces__workspace_id__projects__project_id__links_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectLinkListRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "List Project Links",
+        "tags": [
+          "planning"
+        ]
+      },
+      "post": {
+        "description": "Add a Resources link to a project, after the last one unless a position is given.",
+        "operationId": "create_project_link_api_workspaces__workspace_id__projects__project_id__links_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProjectLinkCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectLinkRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Create Project Link",
+        "tags": [
+          "planning"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/projects/{project_id}/links/{link_id}": {
+      "delete": {
+        "description": "Remove one Resources link; takes the same right as editing the project.",
+        "operationId": "delete_project_link_api_workspaces__workspace_id__projects__project_id__links__link_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "link_id",
+            "required": true,
+            "schema": {
+              "title": "Link Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Delete Project Link",
+        "tags": [
+          "planning"
+        ]
+      },
+      "patch": {
+        "description": "Retitle, repoint or reorder one Resources link.",
+        "operationId": "update_project_link_api_workspaces__workspace_id__projects__project_id__links__link_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "link_id",
+            "required": true,
+            "schema": {
+              "title": "Link Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProjectLinkUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectLinkRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Update Project Link",
         "tags": [
           "planning"
         ]

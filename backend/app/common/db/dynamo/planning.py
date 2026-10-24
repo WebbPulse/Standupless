@@ -82,6 +82,18 @@ PROJECT_LABEL_KEY_PREFIX = "project_label#"
 label row.
 """
 
+PROJECT_LINK = "project_link"
+
+PROJECT_LINK_KEY_PREFIX = "project_link#"
+"""Where each project's Resources links are filed, one row per link.
+
+`begins_with("project#")` never matches it, so the project listing never reads a
+link row.
+"""
+
+PROJECT_LINKS_MAX = 50
+"""How many Resources links one project may hold."""
+
 INITIATIVE = "initiative"
 
 INITIATIVE_KEY_PREFIX = "initiative#"
@@ -288,6 +300,16 @@ def project_relation_key(blocker_id: str, blocked_id: str) -> str:
 def project_label_key(label_id: str) -> str:
     """The sort key of one project label row."""
     return f"{PROJECT_LABEL_KEY_PREFIX}{label_id}"
+
+
+def project_link_prefix(project_id: str) -> str:
+    """The sort key prefix every Resources link of one project shares."""
+    return f"{PROJECT_LINK_KEY_PREFIX}{project_id}#"
+
+
+def project_link_key(project_id: str, link_id: str) -> str:
+    """The sort key of one Resources link of a project."""
+    return f"{project_link_prefix(project_id)}{link_id}"
 
 
 def initiative_key(initiative_id: str) -> str:
@@ -688,6 +710,7 @@ class ProjectActivityRow(BaseModel):
     from_value: Any = None
     to_value: Any = None
     milestone_id: str | None = None
+    link_id: str | None = None
     actor_id: str
     source: str | None = None
     created_at: datetime = Field(default_factory=utc_now)
@@ -728,6 +751,32 @@ class ProjectLabel(BaseModel):
         """Derive the sort key from the id when none was given."""
         if not self.planning_key:
             self.planning_key = project_label_key(self.label_id)
+
+
+class ProjectLink(BaseModel):
+    """One external link in a project's Resources section.
+
+    `title` is what the person typed and is None when they left it blank, in which
+    case readers show the link's hostname. `sort_order` is a base 62 fractional
+    key, so a reorder rewrites only the row that moved.
+    """
+
+    workspace_id: str
+    planning_key: str = ""
+    link_id: str = Field(default_factory=new_planning_id)
+    project_id: str
+    kind: str = PROJECT_LINK
+    url: str
+    title: str | None = None
+    sort_order: str
+    created_by: str
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
+
+    def model_post_init(self, _context: Any) -> None:
+        """Derive the sort key from the project and link ids when none was given."""
+        if not self.planning_key:
+            self.planning_key = project_link_key(self.project_id, self.link_id)
 
 
 class ProjectMilestone(BaseModel):
@@ -1499,6 +1548,48 @@ class PlanningRepository:
         condition = Attr("planning_key").not_exists() if create else Attr("planning_key").exists()
         self._repository.put(item, condition=condition)
         return label
+
+    def get_project_link(self, workspace_id: str, project_id: str, link_id: str) -> ProjectLink | None:
+        """One Resources link of one project, or `None`; the project is part of the key."""
+        if not project_id or not link_id:
+            return None
+        item = self._get(workspace_id, project_link_key(project_id, link_id))
+        if item is None or str(item.get("kind", "")) != PROJECT_LINK:
+            return None
+        return ProjectLink.model_validate(dict(item))
+
+    def list_project_links(self, workspace_id: str, project_id: str, *, max_items: int = 500) -> list[ProjectLink]:
+        """Every Resources link of one project, in its manual order."""
+        if not workspace_id or not project_id:
+            return []
+        items = self._repository.iter_query(
+            Key("workspace_id").eq(workspace_id) & Key("planning_key").begins_with(project_link_prefix(project_id)),
+            max_items=max_items,
+        )
+        rows = [ProjectLink.model_validate(dict(item)) for item in items if item.get("kind") == PROJECT_LINK]
+        return sorted(rows, key=lambda row: (row.sort_order, row.link_id))
+
+    def put_project_link(self, link: ProjectLink, *, create: bool) -> ProjectLink:
+        """Store a new Resources link or write an edited one, raising `ConditionFailed` on a taken or missing key."""
+        item = link.model_dump(mode="json")
+        if item.get("title") is None:
+            item.pop("title", None)
+        condition = Attr("planning_key").not_exists() if create else Attr("planning_key").exists()
+        self._repository.put(item, condition=condition)
+        return link
+
+    def delete_project_links(self, workspace_id: str, project_id: str, *, limit: int = 100) -> int:
+        """Remove every Resources link row of one project, returning how many went."""
+        if not workspace_id or not project_id:
+            return 0
+        removed = 0
+        while True:
+            page = self._query_prefix(workspace_id, project_link_prefix(project_id), limit, None)
+            if not page.items:
+                return removed
+            removed += self._repository.delete_many(
+                [{"workspace_id": workspace_id, "planning_key": item["planning_key"]} for item in page.items]
+            )
 
     def delete_project_label(self, workspace_id: str, label_id: str) -> None:
         """Remove one project label row; the projects carrying it are cleared by the caller."""

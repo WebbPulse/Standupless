@@ -1,8 +1,8 @@
 /**
  * One project. The overview leads with the name and a row of property chips
- * under it, then the description, the milestones and the issues, with a
- * side panel of progress: the numbers, a graph over the project's days and
- * each milestone's share done. The issues tab is the project's issues as a
+ * under it, then the description, the milestones, the Resources links and
+ * the issues, with a side panel of progress: the numbers, a graph over the
+ * project's days and each milestone's share done. The issues tab is the project's issues as a
  * list or board that groups and filters by milestone too. Every property
  * edits in place and shows at once, and a failed write is undone with a
  * notice. The chip row also names the projects this one is blocked by and
@@ -37,7 +37,14 @@ import {
   useParams,
   useSearchParams,
 } from 'react-router-dom';
-import { deleteProject, getProject, updateProject } from '../../api/planning';
+import {
+  createProjectLink,
+  deleteProject,
+  deleteProjectLink,
+  getProject,
+  updateProject,
+  updateProjectLink,
+} from '../../api/planning';
 import {
   DatePicker,
   PriorityPicker,
@@ -63,6 +70,7 @@ import {
 import ProjectPropertyKeys from '../../components/planning/ProjectPropertyKeys';
 import ProjectActivityFeed from '../../components/planning/ProjectActivityFeed';
 import ProjectProgressPanel from '../../components/planning/ProjectProgressPanel';
+import ProjectResources from '../../components/planning/ProjectResources';
 import ProjectUpdatesFeed from '../../components/planning/ProjectUpdatesFeed';
 import UpdateDueBadge from '../../components/planning/UpdateDueBadge';
 import { ErrorAlert } from '../../components/ui/alert';
@@ -102,7 +110,7 @@ import {
   projectDetailKey,
   projectsKey,
 } from '../../lib/queryKeys';
-import { showToast } from '../../lib/toast';
+import { showErrorToast, showToast } from '../../lib/toast';
 import FavoriteButton from '../../components/ui/FavoriteButton';
 import FollowButton from '../../components/planning/FollowButton';
 import type {
@@ -340,6 +348,19 @@ export const ProjectDetail: React.FC = () => {
     group: 'Project',
     enabled: mayPost,
   });
+
+  const linkWrite = async (
+    write: () => Promise<unknown>,
+    fallback: string
+  ): Promise<void> => {
+    try {
+      await write();
+    } catch (failure) {
+      showErrorToast(errorMessage(failure, fallback));
+      throw failure;
+    }
+    void refetch();
+  };
 
   const openMilestoneIssues = (milestoneId: string): void => {
     const held = new URLSearchParams(params);
@@ -748,6 +769,30 @@ export const ProjectDetail: React.FC = () => {
                 }}
                 onDelete={setDeletingMilestone}
                 onOpenIssues={openMilestoneIssues}
+              />
+              <ProjectResources
+                links={project.links ?? []}
+                canEdit={canEdit}
+                onCreate={(body) =>
+                  linkWrite(
+                    () => createProjectLink(workspaceId, projectId, body),
+                    'Could not add the link.'
+                  )
+                }
+                onUpdate={(linkId, patch) =>
+                  linkWrite(
+                    () =>
+                      updateProjectLink(workspaceId, projectId, linkId, patch),
+                    'Could not update the link.'
+                  )
+                }
+                onRemove={(link) =>
+                  linkWrite(
+                    () =>
+                      deleteProjectLink(workspaceId, projectId, link.link_id),
+                    'Could not remove the link.'
+                  ).catch(() => undefined)
+                }
               />
               <DocumentsSection
                 workspaceId={workspaceId}
