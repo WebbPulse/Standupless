@@ -24,6 +24,7 @@ import Avatar from '../ui/avatar';
 import { IconButton } from '../ui/button';
 import Menu, { MenuItem, MenuSeparator } from '../ui/menu';
 import StatusIcon from '../ui/StatusIcon';
+import { TruncatedText } from '../ui/truncated-text';
 import ViewIcon from '../views/ViewIcon';
 
 /** Props for FavoritesSection. */
@@ -249,11 +250,11 @@ export const FavoritesSection: React.FC<FavoritesSectionProps> = ({
                 }
               >
                 <FavoriteGlyph favorite={favorite} teams={teams} />
-                <span className="min-w-0 truncate">
+                <TruncatedText className="min-w-0">
                   {favorite.title === '' && favorite.issue_key
                     ? favorite.issue_key
                     : favorite.title}
-                </span>
+                </TruncatedText>
               </NavLink>
               <Menu
                 label={`${favorite.title} favorite actions`}

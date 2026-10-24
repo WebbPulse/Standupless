@@ -372,6 +372,7 @@ export const MetaChips: React.FC<MetaChipsProps> = ({
                 color={label.color}
                 name={label.name}
                 className="max-w-32 hover:border-line-strong"
+                reveal={false}
               />
             </FilterChipButton>
           )
