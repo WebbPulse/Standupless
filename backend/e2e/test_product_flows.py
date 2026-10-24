@@ -584,6 +584,34 @@ class TestDiscussionDomain:
         assert deleted.status_code in (200, 204), deleted.text[:400]
 
     @WRITES
+    def test_a_thread_resolves_and_reopens(
+        self, api: Any, run_scope: RunScope, workspace: "dict[str, Any]", issue: "dict[str, Any]", track: Any
+    ) -> None:
+        """A thread resolves to its root comment, reopens, and a reply reopens it too."""
+        thread = f"/api/workspaces/{workspace['id']}/issues/{issue['id']}/comments"
+        root = _created(api.post(thread, json={"body": run_scope.name("thread")}), "comment")
+        track(f"/api/workspaces/{workspace['id']}/comments/{root['id']}", {"issue_id": issue["id"]})
+        resolution = f"{thread}/{root['id']}/resolution"
+
+        resolved = api.put(resolution)
+        assert resolved.status_code == 200, resolved.text[:400]
+        assert resolved.json()["resolution"]["resolved_by"]
+
+        reopened = api.delete(resolution)
+        assert reopened.status_code == 200, reopened.text[:400]
+        assert reopened.json()["resolution"] is None
+
+        assert api.put(resolution).status_code == 200
+        reply = _created(
+            api.post(thread, json={"body": run_scope.name("reply"), "parent_comment_id": root["id"]}), "comment"
+        )
+        track(f"/api/workspaces/{workspace['id']}/comments/{reply['id']}", {"issue_id": issue["id"]})
+        listed = api.get(thread)
+        assert listed.status_code == 200, listed.text[:400]
+        stored = next(row for row in listed.json()["comments"] if row["comment_id"] == root["id"])
+        assert stored["resolution"] is None
+
+    @WRITES
     def test_a_comment_draft_is_saved_restored_and_discarded(
         self, api: Any, run_scope: RunScope, workspace: "dict[str, Any]", issue: "dict[str, Any]"
     ) -> None:

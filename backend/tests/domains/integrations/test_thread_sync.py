@@ -15,8 +15,9 @@ from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from webbpulse.identity.oauth import OAuthLinkRecord
 
+from app.common.db.dynamo.activity import as_activity
 from app.common.db.dynamo.base import as_item, utc_now
-from app.common.db.dynamo.comments import Comment, build_comment
+from app.common.db.dynamo.comments import Comment, ThreadResolution, build_comment
 from app.common.db.dynamo.github import IssueLink, IssueSync, issue_sync_key, link_key
 from app.common.db.dynamo.issues import Issue
 from app.domains.integrations import issue_sync, thread_sync
@@ -539,3 +540,42 @@ def test_the_mcp_tools_list_sync_and_unsync(client: TestClient, repositories: An
     assert unsynced["github_thread"] is None
     assert resynced["github_thread"]["number"] == PR_NUMBER
     assert "Unknown github_target" in unknown
+
+
+def test_a_github_reply_reopens_a_resolved_thread(
+    client: TestClient, repositories: Any, linked: Issue, github: FakeGithub, enqueued: list[tuple[str, Any]]
+) -> None:
+    """A reply arriving from GitHub clears the resolution, as a reply in the app does."""
+    root = new_root(repositories, linked)
+    sync(client, linked, root)
+    repositories.comments.set_resolution(
+        WORKSPACE, linked.issue_id, root.comment_id, ThreadResolution(resolved_by=MEMBER)
+    )
+
+    events.handle_record(repositories, sqs_record(pr_comment()))
+
+    assert len(replies(repositories, linked, root)) == 1
+    assert repositories.comments.get(WORKSPACE, linked.issue_id, root.comment_id).resolution is None
+    history = [as_activity(item) for item in repositories.activity.list_for_issue(WORKSPACE, linked.issue_id).items]
+    reopened = [row for row in history if row.kind == "thread_unresolved"]
+    assert [(row.field, row.actor_kind, row.to_value) for row in reopened] == [("reply", "github", root.comment_id)]
+
+
+def test_the_mcp_tools_resolve_and_unresolve(client: TestClient, repositories: Any, linked: Issue) -> None:
+    """An agent resolves a thread, resolves it again for free, and reopens it."""
+    secret = mint_for(repositories, MEMBER, ("issues:read", "comments:write"))
+    root = new_root(repositories, linked)
+    reply = new_reply(repositories, linked, root)
+    arguments = {"issue_id": "ABC-1", "comment_id": root.comment_id}
+
+    resolved = answer(tool(client, secret, "resolve_comment_thread", arguments))
+    again = answer(tool(client, secret, "resolve_comment_thread", arguments))
+    unresolved = answer(tool(client, secret, "unresolve_comment_thread", arguments))
+    refused = refusal(
+        tool(client, secret, "resolve_comment_thread", {"issue_id": "ABC-1", "comment_id": reply.comment_id})
+    )
+
+    assert resolved["resolution"]["resolved_by"] == MEMBER
+    assert again["resolution"] == resolved["resolution"]
+    assert unresolved["resolution"] is None
+    assert "first comment" in refused
