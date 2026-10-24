@@ -9,7 +9,9 @@ import { deleteDraft, listIssueDrafts, saveDraft } from './drafts';
 
 const get = vi.fn<(path: string, options?: unknown) => Promise<unknown>>();
 const put =
-  vi.fn<(path: string, body?: unknown, options?: unknown) => Promise<unknown>>();
+  vi.fn<
+    (path: string, body?: unknown, options?: unknown) => Promise<unknown>
+  >();
 const del = vi.fn<(path: string, options?: unknown) => Promise<unknown>>();
 
 vi.mock('./client', () => ({

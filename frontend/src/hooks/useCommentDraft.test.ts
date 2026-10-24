@@ -13,8 +13,11 @@ import { DRAFT_SAVE_DELAY_MS, useCommentDraft } from './useCommentDraft';
 
 const listIssueDrafts = vi.fn<() => Promise<DraftRead[]>>();
 const saveDraft =
-  vi.fn<(parent: string | null | undefined, body: string) => Promise<DraftRead>>();
-const deleteDraft = vi.fn<(parent: string | null | undefined) => Promise<void>>();
+  vi.fn<
+    (parent: string | null | undefined, body: string) => Promise<DraftRead>
+  >();
+const deleteDraft =
+  vi.fn<(parent: string | null | undefined) => Promise<void>>();
 
 vi.mock('../api/drafts', () => ({
   listIssueDrafts: () => listIssueDrafts(),
