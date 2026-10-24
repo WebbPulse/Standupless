@@ -52,6 +52,9 @@ ProjectHealthField = Literal["on_track", "at_risk", "off_track"]
 
 ProjectPriorityField = Literal["none", "urgent", "high", "medium", "low"]
 
+ProjectSortField = Literal["target_asc", "customer_requests_desc", "customer_revenue_desc"]
+"""The orders the projects list takes: target date, undated last, or the most customer requests or revenue first."""
+
 ProgressMeasureField = ProgressMeasure
 """The unit `progress` reads in: estimate points when a team on the work estimates, otherwise issues."""
 
@@ -736,6 +739,14 @@ class ProjectRead(BaseModel):
     milestone_markers: list[ProjectMilestoneMarkerRead] = Field(
         default_factory=list,
         description="The project's milestones that have a target date, earliest first, filled on the project list",
+    )
+    customer_request_count: Optional[int] = Field(
+        default=None,
+        description="Customer requests naming the project, answered by a list filtered or sorted by customer",
+    )
+    customer_revenue: Optional[int] = Field(
+        default=None,
+        description="Summed revenue of the customers asking for the project, answered by the revenue sort",
     )
     created_by: str
     created_at: datetime

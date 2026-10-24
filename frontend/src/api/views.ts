@@ -16,6 +16,8 @@ import type { IssueListFilters, IssueListSort } from './issues';
 import type {
   BoardQuery,
   BoardRead,
+  InboxClearResult,
+  InboxClearWrite,
   InboxCountRead,
   InboxReadResult,
   InboxReadWrite,
@@ -92,6 +94,7 @@ export interface ViewFilterNegations {
   groups?: SavedViewFilterGroup[];
   team_id_not?: string | string[];
   creator_id_not?: string | string[];
+  customer_id_not?: string | string[];
   status_id_not?: string | string[];
   status_category_not?: string | string[];
   assignee_id_not?: string | string[];
@@ -116,6 +119,8 @@ export interface ProjectViewFilter {
   sub_teams?: 'true' | 'false';
   is_blocked?: 'true' | 'false';
   is_blocking?: 'true' | 'false';
+  customer_id?: string | string[];
+  customer_id_not?: string | string[];
 }
 
 /** A stored filter with the negation keys, every key the issue list takes. */
@@ -355,6 +360,10 @@ export const inboxReadPath = (workspaceId: string): string =>
 /** The route rows are marked unread on. */
 export const inboxUnreadPath = (workspaceId: string): string =>
   `${inboxPath(workspaceId)}/unread`;
+
+/** The route the caller's rows are deleted in bulk on. */
+export const inboxClearPath = (workspaceId: string): string =>
+  `${inboxPath(workspaceId)}/clear`;
 
 /** The route rows are snoozed on. */
 export const inboxSnoozePath = (workspaceId: string): string =>
@@ -665,6 +674,21 @@ export const markRead = async (
 /** Marks every row read in one call. */
 export const markAllRead = async (workspaceId: string): Promise<number> =>
   markRead(workspaceId, { all: true });
+
+/**
+ * Deletes the caller's rows in bulk, read ones only or all of them, and
+ * reports how many went.
+ */
+export const clearInbox = async (
+  workspaceId: string,
+  body: InboxClearWrite
+): Promise<number> => {
+  const response = await apiClient.post<InboxClearResult>(
+    inboxClearPath(workspaceId),
+    body
+  );
+  return response.data?.deleted ?? 0;
+};
 
 /**
  * Marks rows unread again, which also ends any snooze on them. Ids already

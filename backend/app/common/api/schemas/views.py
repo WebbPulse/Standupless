@@ -33,6 +33,8 @@ SortField = Literal[
     "status_asc",
     "start_asc",
     "estimate_desc",
+    "customer_requests_desc",
+    "customer_revenue_desc",
 ]
 
 ViewKindField = Literal["list", "board"]
@@ -161,6 +163,8 @@ FILTER_FIELDS: frozenset[str] = frozenset(
         "content_not",
         "completed_after",
         "completed_before",
+        "customer_id",
+        "customer_id_not",
         "match",
         "groups",
     }
@@ -173,7 +177,7 @@ does nothing.
 """
 
 PROJECT_FILTER_FIELDS: frozenset[str] = frozenset(
-    {"team_id", "status", "lead_id", "sub_teams", "is_blocked", "is_blocking"}
+    {"team_id", "status", "lead_id", "sub_teams", "is_blocked", "is_blocking", "customer_id", "customer_id_not"}
 )
 """Every key a project view's filter may carry, the projects page's own filters.
 
@@ -182,6 +186,8 @@ it keeps, `lead_id` the leads it keeps, `none` standing for projects with no lea
 and `sub_teams` whether a parent team's page rolls up its sub-teams. `is_blocked`
 keeps projects an open blocker holds up, or with `false` the ones none does, and
 `is_blocking` open projects that hold another up, or with `false` the rest.
+`customer_id` and `customer_id_not` the customers whose requests it keeps or
+drops, `none` standing for projects no customer asked for.
 """
 
 PROJECT_FLAG_FILTER_FIELDS: frozenset[str] = frozenset({"sub_teams", "is_blocked", "is_blocking"})
@@ -204,6 +210,8 @@ INBOX_DEFAULT_LIMIT = 50
 INBOX_MAX_LIMIT = 100
 
 INBOX_READ_MAX_IDS = 100
+
+INBOX_CLEAR_MAX_KINDS = 50
 
 
 SCALAR_FILTER_FIELDS: frozenset[str] = frozenset(
@@ -698,6 +706,25 @@ class InboxReadResult(BaseModel):
     """How many notifications a mark-read actually moved."""
 
     updated: int = 0
+
+
+class InboxClearRequest(BaseModel):
+    """The body a bulk delete takes: which of the caller's notifications to remove.
+
+    `read_only` keeps to rows already read. Without it every row goes except those
+    still snoozed, unless `include_snoozed` takes them too. `kinds` keeps to those
+    notification kinds, matching the list's filter.
+    """
+
+    read_only: bool = False
+    include_snoozed: bool = False
+    kinds: list[str] = Field(default_factory=list, max_length=INBOX_CLEAR_MAX_KINDS)
+
+
+class InboxClearResult(BaseModel):
+    """How many notifications a bulk delete removed."""
+
+    deleted: int = 0
 
 
 class IssueReminderWrite(BaseModel):

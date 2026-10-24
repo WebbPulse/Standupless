@@ -1,15 +1,22 @@
 /**
- * The notification settings page: which kinds of notification reach the inbox
- * and which also send an email.
+ * The notification settings page: which kinds of notification reach the inbox,
+ * which also send an email, and which also arrive as a chat direct message in
+ * Slack or Discord.
  *
  * Preferences belong to the person, not to the workspace, so a change here
  * applies in every workspace they are a member of. Each switch saves as soon
  * as it flips, the way the rest of the settings pages do, and the page keeps
  * the answer the server returns rather than what it sent, so a refused change
  * does not leave the switch showing something that is not stored.
+ *
+ * The Slack and Discord links are the exception: they belong to this
+ * workspace, because each workspace connects its own Slack workspace and
+ * Discord server, and the Chat column stays locked until one link works. A
+ * Discord link returns here from Discord's consent screen with its outcome in
+ * `?discord_dm=`.
  */
 
-import React, { useId, useMemo, useState } from 'react';
+import React, { useCallback, useId, useMemo, useState } from 'react';
 import { useQueryAuth } from '@webbpulse/auth/react';
 import { invalidateQueries, usePolledQuery } from '@webbpulse/api-client/react';
 import {
@@ -17,20 +24,31 @@ import {
   getCurrentUser,
   updatePreferences,
 } from '../../api/notifications';
+import { getDiscordLink, getSlackLink } from '../../api/integrations';
 import { ErrorAlert } from '../../components/ui/alert';
 import Checkbox from '../../components/ui/checkbox';
 import { Select } from '../../components/ui/select';
 import Spinner from '../../components/ui/spinner';
+import DiscordDirectMessages from '../../components/workspace/DiscordDirectMessages';
+import ReturnToast from '../../components/workspace/ReturnToast';
 import SettingsNav from '../../components/workspace/SettingsNav';
+import SlackDirectMessages from '../../components/workspace/SlackDirectMessages';
 import WorkspaceShell from '../../components/workspace/WorkspaceShell';
+import { discordLinkOutcome } from '../../components/workspace/discordLinkOutcomes';
 import { useWorkspace } from '../../hooks/useWorkspace';
 import { errorMessage } from '../../lib/errors';
-import { CURRENT_USER_KEY } from '../../lib/queryKeys';
+import {
+  CURRENT_USER_KEY,
+  discordLinkKey,
+  slackLinkKey,
+} from '../../lib/queryKeys';
 import { browserTimezone } from '../../lib/viewerTimezone';
 import type {
+  DiscordLinkRead,
   NotificationChannels,
   NotificationKind,
   PulseDigest,
+  SlackLinkRead,
   UserPreferencesUpdate,
   UserRead,
 } from '../../types/Api';
@@ -108,8 +126,14 @@ const IN_APP_ONLY: ReadonlySet<NotificationKind> = new Set([
   'review_requested',
 ]);
 
+/** The kinds a chat direct message never carries: the standup digest is a digest already, and review requests stay in the inbox. */
+const NOT_IN_CHAT: ReadonlySet<NotificationKind> = new Set([
+  'standup_digest',
+  'review_requested',
+]);
+
 /** The switches a kind shows when the profile has no entry for it. */
-const ALL_ON: NotificationChannels = { in_app: true, email: true };
+const ALL_ON: NotificationChannels = { in_app: true, email: true, chat: true };
 
 /** Every timezone the browser knows, with `current` kept even when it is not among them. */
 const zoneChoices = (current: string): string[] => {
@@ -131,7 +155,7 @@ const DIGEST_CHOICES: { value: PulseDigest; label: string }[] = [
 
 /** The column layout the header and every row share. */
 const COLUMNS =
-  'grid grid-cols-[minmax(0,1fr)_4rem_4rem] items-center gap-3 px-3';
+  'grid grid-cols-[minmax(0,1fr)_4rem_4rem_4rem] items-center gap-3 px-3';
 
 /** Renders the caller's notification preferences and saves each change. */
 const NotificationsSettings: React.FC = () => {
@@ -140,13 +164,43 @@ const NotificationsSettings: React.FC = () => {
   const [saved, setSaved] = useState<UserRead | null>(null);
   const [saveError, setSaveError] = useState<unknown>(null);
   const [saving, setSaving] = useState(false);
+  const [linkSaved, setLinkSaved] = useState<SlackLinkRead | null>(null);
+  const [discordSaved, setDiscordSaved] = useState<DiscordLinkRead | null>(
+    null
+  );
+  const workspaceId = workspace?.id ?? '';
 
   const { data, error, isLoading } = usePolledQuery(
     ({ signal }) => getCurrentUser(signal),
     { intervalMs: POLL_MS, queryKey: CURRENT_USER_KEY, auth }
   );
 
+  const { data: linkData } = usePolledQuery(
+    ({ signal }) => getSlackLink(workspaceId, signal),
+    {
+      intervalMs: POLL_MS,
+      queryKey: slackLinkKey(workspaceId),
+      auth,
+      enabled: workspaceId !== '',
+    }
+  );
+
+  const { data: discordData } = usePolledQuery(
+    ({ signal }) => getDiscordLink(workspaceId, signal),
+    {
+      intervalMs: POLL_MS,
+      queryKey: discordLinkKey(workspaceId),
+      auth,
+      enabled: workspaceId !== '',
+    }
+  );
+
   const user = saved ?? data;
+  const slackLink = linkSaved ?? linkData ?? null;
+  const discordLink = discordSaved ?? discordData ?? null;
+  const delivers = (link: SlackLinkRead | DiscordLinkRead | null): boolean =>
+    link !== null && link.linked && (link.problem ?? '') === '';
+  const chatOn = delivers(slackLink) || delivers(discordLink);
   const emailOn = user?.email_notifications ?? true;
   const zoneId = useId();
   const digestId = useId();
@@ -173,6 +227,21 @@ const NotificationsSettings: React.FC = () => {
   const channelsOf = (kind: NotificationKind): NotificationChannels =>
     user?.notification_preferences?.[kind] ?? ALL_ON;
 
+  const onLinkChange = (stored: SlackLinkRead): void => {
+    setLinkSaved(stored);
+    invalidateQueries(slackLinkKey(workspaceId));
+  };
+
+  const onDiscordChange = (stored: DiscordLinkRead): void => {
+    setDiscordSaved(stored);
+    invalidateQueries(discordLinkKey(workspaceId));
+  };
+
+  const onDiscordReturn = useCallback((): void => {
+    setDiscordSaved(null);
+    invalidateQueries(discordLinkKey(workspaceId));
+  }, [workspaceId]);
+
   return (
     <WorkspaceShell
       title="Settings"
@@ -180,12 +249,19 @@ const NotificationsSettings: React.FC = () => {
         workspace === null ? undefined : <SettingsNav workspace={workspace} />
       }
     >
+      <ReturnToast
+        param="discord_dm"
+        describe={discordLinkOutcome}
+        onOutcome={onDiscordReturn}
+      />
       <div className="max-w-2xl space-y-6">
         <div className="space-y-1">
           <h2 className="text-base font-semibold">Notifications</h2>
           <p className="text-sm text-text-muted">
-            Choose what reaches your inbox and what also sends an email. These
-            settings are yours and apply in every workspace you belong to.
+            Choose what reaches your inbox, what also sends an email and what
+            also arrives in chat. These settings are yours and apply in every
+            workspace you belong to; your Slack and Discord links are for this
+            workspace.
           </p>
         </div>
 
@@ -284,6 +360,22 @@ const NotificationsSettings: React.FC = () => {
               </p>
             </div>
 
+            {slackLink !== null && slackLink.configured && (
+              <SlackDirectMessages
+                workspaceId={workspaceId}
+                link={slackLink}
+                onChange={onLinkChange}
+              />
+            )}
+
+            {discordLink !== null && discordLink.configured && (
+              <DiscordDirectMessages
+                workspaceId={workspaceId}
+                link={discordLink}
+                onChange={onDiscordChange}
+              />
+            )}
+
             <div className="rounded-md border border-line">
               <div
                 className={`${COLUMNS} h-8 border-b border-line bg-surface text-xs font-medium text-text-muted`}
@@ -291,6 +383,7 @@ const NotificationsSettings: React.FC = () => {
                 <span>Notify me when</span>
                 <span className="text-center">Inbox</span>
                 <span className="text-center">Email</span>
+                <span className="text-center">Chat</span>
               </div>
               <ul>
                 {NOTIFICATION_KINDS.map((kind) => {
@@ -336,6 +429,26 @@ const NotificationsSettings: React.FC = () => {
                             save({
                               notification_preferences: {
                                 [kind]: { email: event.target.checked },
+                              },
+                            });
+                          }}
+                        />
+                      </div>
+                      <div className="flex justify-center">
+                        <input
+                          type="checkbox"
+                          aria-label={`${copy.title} in chat`}
+                          className="h-3.5 w-3.5 rounded-xs border-line-strong"
+                          checked={
+                            chatOn &&
+                            channels.chat !== false &&
+                            !NOT_IN_CHAT.has(kind)
+                          }
+                          disabled={saving || !chatOn || NOT_IN_CHAT.has(kind)}
+                          onChange={(event) => {
+                            save({
+                              notification_preferences: {
+                                [kind]: { chat: event.target.checked },
                               },
                             });
                           }}

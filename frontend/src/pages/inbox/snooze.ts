@@ -13,6 +13,9 @@ export interface SnoozePreset {
   until: (now: Date) => Date;
 }
 
+/** The furthest out a snooze may land, matching the server's limit. */
+export const SNOOZE_MAX_DAYS = 90;
+
 /** The hour of the day a "morning" preset lands on, in local time. */
 const MORNING_HOUR = 9;
 
@@ -40,12 +43,30 @@ const nextWeekMorning = (now: Date): Date => {
   return next;
 };
 
+/**
+ * The same day of next month at nine in the morning, or that month's last day
+ * when it is shorter, so the 31st of January lands on the last of February.
+ */
+const nextMonthMorning = (now: Date): Date => {
+  const lastDay = new Date(now.getFullYear(), now.getMonth() + 2, 0).getDate();
+  return new Date(
+    now.getFullYear(),
+    now.getMonth() + 1,
+    Math.min(now.getDate(), lastDay),
+    MORNING_HOUR,
+    0,
+    0,
+    0
+  );
+};
+
 /** The presets in the order the snooze dialog lists them. */
 export const SNOOZE_PRESETS: SnoozePreset[] = [
   { id: 'hour', label: 'In 1 hour', until: (now) => hoursFrom(now, 1) },
   { id: 'later', label: 'In 3 hours', until: (now) => hoursFrom(now, 3) },
   { id: 'tomorrow', label: 'Tomorrow morning', until: tomorrowMorning },
   { id: 'week', label: 'Next week', until: nextWeekMorning },
+  { id: 'month', label: 'Next month', until: nextMonthMorning },
 ];
 
 /** A snooze moment as short local text, for the row that is waiting on it. */

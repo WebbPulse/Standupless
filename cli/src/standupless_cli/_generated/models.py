@@ -575,6 +575,21 @@ class DiscordInstallUrlRead(TypedDict):
     url: str
 
 
+class DiscordLinkRead(TypedDict):
+    available: bool
+    configured: bool
+    discord_user_id: NotRequired[str | None]
+    guild_name: NotRequired[str | None]
+    linked: NotRequired[bool]
+    linked_at: NotRequired[str | None]
+    problem: NotRequired[str | None]
+
+
+class DiscordLinkUrlRead(TypedDict):
+    expires_at: str
+    url: str
+
+
 class DisplayOptionsBody(TypedDict):
     completed_window: NotRequired[Literal["all", "past_week", "past_month", "none"] | None]
     group_by: NotRequired[
@@ -595,6 +610,8 @@ class DisplayOptionsBody(TypedDict):
             "status_asc",
             "start_asc",
             "estimate_desc",
+            "customer_requests_desc",
+            "customer_revenue_desc",
         ]
         | None
     ]
@@ -751,6 +768,40 @@ class GitHubImportRequest(TypedDict):
     team_id: str
 
 
+class GithubThread(TypedDict):
+    comment_url: NotRequired[str]
+    full_name: str
+    kind: NotRequired[str]
+    number: int
+    private: NotRequired[bool]
+    repository_id: str
+    synced_at: NotRequired[str]
+    synced_by: str
+    target_url: NotRequired[str]
+
+
+class GithubThreadRead(TypedDict):
+    comment_id: str
+    github_thread: NotRequired[GithubThread | None]
+    issue_id: str
+
+
+class GithubThreadTargetRead(TypedDict):
+    full_name: str
+    kind: Literal["pull_request", "issue"]
+    number: int
+    private: bool
+    ref: str
+    repository_id: str
+    title: str
+    url: str
+
+
+class GithubThreadWrite(TypedDict, closed=True):
+    number: int
+    repository_id: str
+
+
 class HealthBreakdownRead(TypedDict):
     at_risk: NotRequired[int]
     none: NotRequired[int]
@@ -788,6 +839,16 @@ class ImportRowRead(TypedDict):
     source_key: NotRequired[str | None]
     status_name: str
     title: str
+
+
+class InboxClearRequest(TypedDict):
+    include_snoozed: NotRequired[bool]
+    kinds: NotRequired[list[str]]
+    read_only: NotRequired[bool]
+
+
+class InboxClearResult(TypedDict):
+    deleted: NotRequired[int]
 
 
 class InboxCountRead(TypedDict):
@@ -928,20 +989,6 @@ class InsightsRead(TypedDict):
 class InstallUrlRead(TypedDict):
     expires_at: str
     url: str
-
-
-class InstallationRead(TypedDict):
-    account_login: str
-    account_type: str
-    avatar_url: NotRequired[str]
-    html_url: str
-    installation_id: str
-    installed_at: str
-    installed_by: str
-    manage_url: NotRequired[str]
-    repository_count: int
-    repository_selection: str
-    suspended: NotRequired[bool]
 
 
 class InviteAccept(TypedDict):
@@ -1107,6 +1154,7 @@ class JoinableWorkspaceRead(TypedDict):
 
 class LabelCreate(TypedDict):
     color: str
+    description: NotRequired[str | None]
     is_group: NotRequired[bool]
     name: str
     parent_id: NotRequired[str | None]
@@ -1118,6 +1166,7 @@ class LabelMerge(TypedDict):
 
 class LabelRead(TypedDict):
     color: str
+    description: NotRequired[str | None]
     hidden: NotRequired[bool]
     id: str
     inherited_name: NotRequired[str | None]
@@ -1127,8 +1176,20 @@ class LabelRead(TypedDict):
     scope: NotRequired[Literal["team", "parent", "workspace"]]
 
 
+class LabelSetRead(TypedDict):
+    enabled: NotRequired[bool]
+    include_public: NotRequired[bool]
+    queued: NotRequired[bool]
+
+
+class LabelSetWrite(TypedDict):
+    enabled: bool
+    include_public: NotRequired[bool]
+
+
 class LabelUpdate(TypedDict):
     color: NotRequired[str | None]
+    description: NotRequired[str | None]
     name: NotRequired[str | None]
     parent_id: NotRequired[str | None]
 
@@ -1241,11 +1302,13 @@ class MilestoneUpdate(TypedDict):
 
 
 class NotificationChannels(TypedDict):
+    chat: NotRequired[bool]
     email: bool
     in_app: bool
 
 
 class NotificationChannelsUpdate(TypedDict):
+    chat: NotRequired[bool | None]
     email: NotRequired[bool | None]
     in_app: NotRequired[bool | None]
 
@@ -1482,11 +1545,15 @@ class ProjectUpdateRead(TypedDict):
 
 
 class ProjectsDisplay(TypedDict):
-    closed: NotRequired[Literal["all", "week", "month", "quarter", "none"]]
+    closed: NotRequired[Literal["all", "fortnight", "month", "none"]]
     columns: NotRequired[str]
+    direction: NotRequired[Literal["asc", "desc"]]
+    empty: NotRequired[Literal["show", "hide"]]
     group: NotRequired[Literal["status", "health", "priority", "initiative", "lead", "team", "none"]]
     layout: NotRequired[Literal["list", "board", "timeline"]]
-    order: NotRequired[Literal["target", "start", "name", "priority", "progress", "created", "updated"]]
+    lead_team: NotRequired[Literal["all", "lead"]]
+    order: NotRequired[Literal["target", "start", "name", "priority", "progress", "created", "updated", "customers"]]
+    rows: NotRequired[Literal["status", "health", "priority", "initiative", "lead", "team", "none"]]
     zoom: NotRequired[Literal["week", "month", "quarter", "year"]]
 
 
@@ -1880,6 +1947,8 @@ class ShareLinkCreate(TypedDict):
             "status_asc",
             "start_asc",
             "estimate_desc",
+            "customer_requests_desc",
+            "customer_revenue_desc",
         ]
         | None
     ]
@@ -2002,6 +2071,16 @@ class SlackConnectionRead(TypedDict):
 class SlackInstallUrlRead(TypedDict):
     expires_at: str
     url: str
+
+
+class SlackLinkRead(TypedDict):
+    available: bool
+    configured: bool
+    linked: NotRequired[bool]
+    linked_at: NotRequired[str | None]
+    problem: NotRequired[str | None]
+    slack_team_name: NotRequired[str | None]
+    slack_user_id: NotRequired[str | None]
 
 
 class SsoConnectionRead(TypedDict):
@@ -2623,6 +2702,8 @@ class ViewCreate(TypedDict):
             "status_asc",
             "start_asc",
             "estimate_desc",
+            "customer_requests_desc",
+            "customer_revenue_desc",
         ]
         | None
     ]
@@ -2644,6 +2725,8 @@ class ViewCreate(TypedDict):
             "status_asc",
             "start_asc",
             "estimate_desc",
+            "customer_requests_desc",
+            "customer_revenue_desc",
         ]
     ]
     sub_group_by: NotRequired[
@@ -2733,6 +2816,8 @@ class ViewUpdate(TypedDict):
             "status_asc",
             "start_asc",
             "estimate_desc",
+            "customer_requests_desc",
+            "customer_revenue_desc",
         ]
         | None
     ]
@@ -2754,6 +2839,8 @@ class ViewUpdate(TypedDict):
             "status_asc",
             "start_asc",
             "estimate_desc",
+            "customer_requests_desc",
+            "customer_revenue_desc",
         ]
         | None
     ]
@@ -3091,6 +3178,7 @@ class CommentRead(TypedDict):
     comment_id: str
     created_at: str
     edited_at: NotRequired[str | None]
+    github_thread: NotRequired[GithubThread | None]
     issue_id: str
     mentions: NotRequired[list[str]]
     parent_comment_id: NotRequired[str | None]
@@ -3286,6 +3374,21 @@ class InitiativeUpdateListRead(TypedDict):
     updates: list[InitiativeUpdateRead]
 
 
+class InstallationRead(TypedDict):
+    account_login: str
+    account_type: str
+    avatar_url: NotRequired[str]
+    html_url: str
+    installation_id: str
+    installed_at: str
+    installed_by: str
+    label_set: NotRequired[LabelSetRead]
+    manage_url: NotRequired[str]
+    repository_count: int
+    repository_selection: str
+    suspended: NotRequired[bool]
+
+
 class InviteListRead(TypedDict):
     invites: list[InviteRead]
 
@@ -3444,6 +3547,8 @@ class ProjectRead(TypedDict):
     counts: CountsRead
     created_at: str
     created_by: str
+    customer_request_count: NotRequired[int | None]
+    customer_revenue: NotRequired[int | None]
     description: NotRequired[str | None]
     health: NotRequired[Literal["on_track", "at_risk", "off_track"] | None]
     icon: NotRequired[str | None]

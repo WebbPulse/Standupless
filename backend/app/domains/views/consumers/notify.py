@@ -53,6 +53,7 @@ from app.common.db.dynamo.notify_digests import DigestEntry
 from app.common.db.dynamo.planning import PROJECT_UPDATE, Project
 from app.common.issue_keys import display_key
 from app.common.team_privacy import person_can_see_team
+from app.domains.views.consumers.chat_digest import flush_due_chats, hold_for_chat, wants_chat
 from app.domains.views.consumers.digest import flush_due, is_digest_flush
 from app.domains.views.email import excerpt
 
@@ -178,32 +179,35 @@ def cap_recipients(recipients: list[str], *, workspace_id: str, source: str) -> 
     return recipients[:MAX_RECIPIENTS_PER_EVENT]
 
 
+def digest_entry(row: Notification, **fields: Any) -> DigestEntry:
+    """The held copy of one inbox row, carrying everything an email or chat line needs."""
+    return DigestEntry(
+        workspace_id=row.workspace_id,
+        recipient_id=row.recipient_id,
+        notification_id=row.notification_id,
+        kind=row.kind,
+        team_id=row.team_id,
+        actor_name=row.actor_name,
+        issue_id=row.issue_id,
+        issue_key=row.issue_key,
+        issue_title=row.issue_title,
+        project_id=row.project_id or "",
+        project_name=row.project_name or "",
+        initiative_id=row.initiative_id or "",
+        initiative_name=row.initiative_name or "",
+        due_state=row.due_state or "",
+        created_at=row.created_at,
+        **fields,
+    )
+
+
 def hold_for_digest(repositories: Repositories, row: Notification, **fields: Any) -> None:
     """Hold the email for one inbox row that was just written until its digest is flushed.
 
     Everything the email line needs is captured off the row now, so the flush reads
     only the recipient and the workspace.
     """
-    repositories.inbox.digests.add(
-        DigestEntry(
-            workspace_id=row.workspace_id,
-            recipient_id=row.recipient_id,
-            notification_id=row.notification_id,
-            kind=row.kind,
-            team_id=row.team_id,
-            actor_name=row.actor_name,
-            issue_id=row.issue_id,
-            issue_key=row.issue_key,
-            issue_title=row.issue_title,
-            project_id=row.project_id or "",
-            project_name=row.project_name or "",
-            initiative_id=row.initiative_id or "",
-            initiative_name=row.initiative_name or "",
-            due_state=row.due_state or "",
-            created_at=row.created_at,
-            **fields,
-        )
-    )
+    repositories.inbox.digests.add(digest_entry(row, **fields))
 
 
 def write_notification(
@@ -230,8 +234,8 @@ def write_notification(
 
     The recipient's preferences for this kind decide the rest. With the inbox off
     the row is still written but already read, so it never raises the badge and
-    still guards the email against a redelivery; with both channels off nothing is
-    written at all.
+    still guards the email and chat holds against a redelivery; with every channel
+    off nothing is written at all.
 
     The row's own `created_at` falls back to the clock so the inbox renders a
     sensible time, while the id keeps the record's stamp alone, so a record carrying
@@ -240,7 +244,8 @@ def write_notification(
     The email hangs off the conditional put answering true, not off reaching this
     function, which is what makes the mail as idempotent as the badge: a redelivered
     record writes no row and so holds no second copy. It is held for the recipient's
-    next digest rather than sent here, so a burst of activity becomes one email.
+    next digest rather than sent here, so a burst of activity becomes one email, and
+    a linked chat account gets the same row in its own shorter batch.
     """
     if not recipient_id or recipient_id == actor_id:
         return False
@@ -249,7 +254,8 @@ def write_notification(
     recipient = repositories.users.get(recipient_id)
     in_app = recipient.wants_notification(kind, "in_app") if recipient is not None else True
     email = recipient is not None and recipient.wants_notification(kind, "email")
-    if not in_app and not email:
+    chat = wants_chat(repositories, recipient, kind, workspace_id)
+    if not in_app and not email and not chat:
         return False
 
     stamped = created_at if created_at is not None else datetime.now(timezone.utc)
@@ -277,6 +283,8 @@ def write_notification(
 
     if email:
         hold_for_digest(repositories, row, headline_key=headline_key, excerpt=excerpt(comment_excerpt))
+    if chat:
+        hold_for_chat(repositories, row, headline_key=headline_key, excerpt=excerpt(comment_excerpt))
     return True
 
 
@@ -601,7 +609,8 @@ def write_project_update_notification(
     recipient = repositories.users.get(recipient_id)
     in_app = recipient.wants_notification(PROJECT_UPDATED, "in_app") if recipient is not None else True
     email = recipient is not None and recipient.wants_notification(PROJECT_UPDATED, "email")
-    if not in_app and not email:
+    chat = wants_chat(repositories, recipient, PROJECT_UPDATED, project.workspace_id)
+    if not in_app and not email and not chat:
         return False
 
     stamped = created_at if created_at is not None else datetime.now(timezone.utc)
@@ -627,6 +636,8 @@ def write_project_update_notification(
 
     if email:
         hold_for_digest(repositories, row, health=health, excerpt=excerpt(body))
+    if chat:
+        hold_for_chat(repositories, row, health=health, excerpt=excerpt(body))
     return True
 
 
@@ -707,7 +718,7 @@ def clear_comment_draft(repositories: Repositories, record: Mapping[str, Any]) -
 def handle_record(repositories: Repositories, record: Mapping[str, Any]) -> None:
     """Route one record to the handler for the table it came from.
 
-    The digest flush schedule's synthetic record runs the flush, the issue
+    The digest flush schedule's synthetic record runs the email and chat flushes, the issue
     reminders that have come due on every tick, the project update reminder
     sweep every quarter hour, the standup digest sweep every five minutes, and
     the issue due date and Pulse digest sweeps every hour, and nothing else. Each sweep
@@ -722,6 +733,7 @@ def handle_record(repositories: Repositories, record: Mapping[str, Any]) -> None
     repositories = _GRANT.narrow(repositories)
     if is_digest_flush(record):
         flush_due(repositories)
+        flush_due_chats(repositories)
         from app.domains.views.consumers import due_reminders, issue_reminders, pulse_digest, standups
         from app.domains.views.consumers.project_reminders import run_reminders, sweep_due
 

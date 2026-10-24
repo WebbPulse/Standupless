@@ -257,6 +257,103 @@ def set_repository_selection(repositories: Repositories, workspace_id: str, sele
     repositories.github.put_installation(installation.model_copy(update={"repository_selection": selection}))
 
 
+def _store_repository(
+    repositories: Repositories,
+    workspace_id: str,
+    installation_id: str,
+    entry: Mapping[str, Any],
+    previous: Repository_ | None,
+) -> Repository_:
+    """Store one repository row from GitHub's repository object, keeping the team and release source already set.
+
+    A public repository also drops a two way sync to one way, as every path that
+    learns a repository's visibility does.
+    """
+    repository_id = str(entry.get("id", ""))
+    stored = repositories.github.put_repository(
+        Repository_(
+            workspace_id=workspace_id,
+            github_key=repo_key(repository_id),
+            repository_id=repository_id,
+            installation_id=installation_id,
+            full_name=str(entry.get("full_name", "")),
+            name=str(entry.get("name", "")),
+            private=bool(entry.get("private", True)),
+            default_branch=str(entry.get("default_branch", "main") or "main"),
+            team_id=previous.team_id if previous is not None else None,
+            linked_at=previous.linked_at if previous is not None else utc_now(),
+            release_source=previous.release_source if previous is not None else RepositoryReleaseSource(),
+        )
+    )
+    if not bool(entry.get("private", True)):
+        demote_public_sync(repositories, workspace_id, repository_id)
+    return stored
+
+
+def _covers_every_repository(installation: Installation) -> bool:
+    """Whether an installation covers every repository of its account and is not suspended."""
+    return installation.repository_selection == "all" and installation.suspended_at is None
+
+
+def adopt_delivered_repository(
+    repositories: Repositories, workspace_id: str, installation_id: str, repository: Mapping[str, Any]
+) -> bool:
+    """Store a delivered repository the rows do not hold yet, when the installation covers every repository.
+
+    GitHub sends no `installation_repositories` event for a repository created
+    after an install that covers all of them, so the first delivery naming it,
+    a `repository` created event or any later one, is how its row is learned.
+    A delivery for a stored repository costs one read; a deleted repository is
+    not adopted. Returns whether a row was stored.
+    """
+    repository_id = str(repository.get("id", "") or "")
+    full_name = str(repository.get("full_name", "") or "")
+    if not repository_id or not full_name or not repository_id.isdigit():
+        return False
+    if repositories.github.get_repository(workspace_id, repository_id) is not None:
+        return False
+    installation = repositories.github.get_installation(workspace_id)
+    if installation is None or not _covers_every_repository(installation):
+        return False
+    if installation.installation_id != installation_id:
+        return False
+    entry = {**repository, "id": repository_id, "name": repository.get("name") or full_name.rsplit("/", 1)[-1]}
+    _store_repository(repositories, workspace_id, installation_id, entry, None)
+    _log.info("Stored a repository created after the install.", extra={"event": "integrations.repository_adopted"})
+    return True
+
+
+def find_live_repository(repositories: Repositories, workspace_id: str, reference: str) -> Repository_ | None:
+    """A repository the stored rows miss but the installation can see, read from GitHub and stored.
+
+    `reference` is a numeric id or an owner/name. Only an installation covering
+    every repository of its account is asked, and the repository's owner must be
+    that account: an installation token reads any public repository on GitHub,
+    so without both checks a pin could reach a repository the App does not cover.
+    Answers `None` when GitHub does not find it or cannot be asked.
+    """
+    from app.domains.integrations import github_issues
+
+    installation = repositories.github.get_installation(workspace_id)
+    if installation is None or not _covers_every_repository(installation):
+        return None
+    try:
+        token = github_issues.installation_token(installation.installation_id)
+        remote = github_issues.get_repository(token, reference)
+    except (github_api.GitHubError, ValueError):
+        _log.info("Could not read a repository from GitHub.", extra={"event": "integrations.repository_lookup_missed"})
+        return None
+    owner = remote.get("owner")
+    login = str(owner.get("login", "") or "") if isinstance(owner, Mapping) else ""
+    if not login or login.casefold() != installation.account_login.casefold():
+        return None
+    repository_id = str(remote.get("id", "") or "")
+    if not repository_id.isdigit():
+        return None
+    previous = repositories.github.get_repository(workspace_id, repository_id)
+    return _store_repository(repositories, workspace_id, installation.installation_id, remote, previous)
+
+
 def sync_repositories(
     repositories: Repositories,
     workspace_id: str,
@@ -295,24 +392,7 @@ def sync_repositories(
         if not repository_id:
             continue
         seen.add(repository_id)
-        previous = existing.get(repository_id)
-        repositories.github.put_repository(
-            Repository_(
-                workspace_id=workspace_id,
-                github_key=repo_key(repository_id),
-                repository_id=repository_id,
-                installation_id=installation_id,
-                full_name=str(entry.get("full_name", "")),
-                name=str(entry.get("name", "")),
-                private=bool(entry.get("private", True)),
-                default_branch=str(entry.get("default_branch", "main")),
-                team_id=previous.team_id if previous is not None else None,
-                linked_at=previous.linked_at if previous is not None else utc_now(),
-                release_source=previous.release_source if previous is not None else RepositoryReleaseSource(),
-            )
-        )
-        if not bool(entry.get("private", True)):
-            demote_public_sync(repositories, workspace_id, repository_id)
+        _store_repository(repositories, workspace_id, installation_id, entry, existing.get(repository_id))
 
     for repository_id in set(existing) - seen:
         repositories.github.delete_repository(workspace_id, repository_id)
@@ -338,23 +418,7 @@ def apply_repository_changes(
         if not repository_id:
             continue
         previous = repositories.github.get_repository(workspace_id, repository_id)
-        repositories.github.put_repository(
-            Repository_(
-                workspace_id=workspace_id,
-                github_key=repo_key(repository_id),
-                repository_id=repository_id,
-                installation_id=installation_id,
-                full_name=str(entry.get("full_name", "")),
-                name=str(entry.get("name", "")),
-                private=bool(entry.get("private", True)),
-                default_branch=str(entry.get("default_branch", "main")),
-                team_id=previous.team_id if previous is not None else None,
-                linked_at=previous.linked_at if previous is not None else utc_now(),
-                release_source=previous.release_source if previous is not None else RepositoryReleaseSource(),
-            )
-        )
-        if not bool(entry.get("private", True)):
-            demote_public_sync(repositories, workspace_id, repository_id)
+        _store_repository(repositories, workspace_id, installation_id, entry, previous)
 
     for entry in removed:
         repository_id = str(entry.get("id", ""))

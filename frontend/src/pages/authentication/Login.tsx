@@ -1,9 +1,9 @@
 /**
  * The sign in page: password, passkey and OAuth, with a second leg answered by
- * a TOTP code or a passkey. Inside the desktop app it also offers signing in
- * with the system browser, for the providers and passkeys the app window
- * cannot complete, and says why when a handoff the app started came back
- * refused.
+ * a TOTP code or a passkey. Inside the desktop and mobile apps it also offers
+ * signing in with the system browser, for the providers and passkeys the app
+ * window cannot complete, and says why when a handoff the app started came
+ * back refused.
  *
  * "Continue with SSO" asks only for an email address and hands the browser to
  * the identity provider its domain uses, falling back to the password form
@@ -42,6 +42,7 @@ import {
   describeDesktopHandoffFailure,
   desktopBrowserSignIn,
 } from '../../lib/desktop';
+import { mobileBrowserSignIn } from '../../lib/mobileHandoff';
 import { DESKTOP_HANDOFF_FAILED_PARAM } from '../../lib/paths';
 import { errorMessage } from '../../lib/errors';
 import { describePasskeyMfaFailure } from '../../lib/passkeyMfa';
@@ -84,7 +85,7 @@ const Login: React.FC = () => {
       ) ?? describeSsoError(searchParams.get(SSO_ERROR_PARAM))
   );
   const [ssoReturn] = useState(() => searchParams.get(SSO_LOGIN_PARAM) === '1');
-  const signInWithBrowser = desktopBrowserSignIn();
+  const signInWithBrowser = desktopBrowserSignIn() ?? mobileBrowserSignIn();
   const authorizeTarget = authorizeReturn(
     searchParams.get('returnTo'),
     identityOrigin()
@@ -399,7 +400,11 @@ const Login: React.FC = () => {
                   className="w-full"
                   onClick={() => {
                     setError(null);
-                    signInWithBrowser();
+                    void Promise.resolve(signInWithBrowser()).catch(() => {
+                      setError(
+                        'The browser could not be opened. Try again, or sign in with your password.'
+                      );
+                    });
                   }}
                   disabled={isSubmitting}
                   data-testid="login-desktop-browser"

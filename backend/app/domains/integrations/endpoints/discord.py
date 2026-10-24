@@ -6,8 +6,9 @@ cannot present one. The OAuth callback serves both the server install and a
 person linking their account, telling them apart by the audience of the `state`
 this product signed and trusting nothing else in the query. A `link` start ticket
 in place of a state is the short link a Discord button opens: it is turned into a
-fresh consent link and the browser is sent on to Discord. The interactions
-receiver verifies Discord's Ed25519 signature over the raw body before anything
+fresh consent link and the browser is sent on to Discord. A link a member starts
+from their notification settings returns there with `?discord_dm=<outcome>`. The
+interactions receiver verifies Discord's Ed25519 signature over the raw body before anything
 is parsed. Every public route answers 404 in an environment whose Discord App
 keys are not set, so the feature is simply off there.
 """
@@ -18,6 +19,7 @@ import json
 import logging
 from html import escape
 from typing import Annotated, Any, Mapping
+from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
@@ -27,9 +29,15 @@ from app.common.api.dependencies.authz import AuthzContext, Capability, require
 from app.common.api.dependencies.repositories import Repositories, get_repositories
 from app.common.core.config import settings
 from app.domains.integrations.chat.returns import return_url
-from app.domains.integrations.discord import api, commands, install, people, signature
+from app.domains.integrations.discord import api, commands, direct, install, people, signature
 from app.domains.integrations.install_state import StateError, mint_state, redeem_state, state_hint
-from app.domains.integrations.schemas.discord import DiscordConnectionRead, DiscordInstallUrlRead
+from app.domains.integrations.outbound.payloads import Links
+from app.domains.integrations.schemas.discord import (
+    DiscordConnectionRead,
+    DiscordInstallUrlRead,
+    DiscordLinkRead,
+    DiscordLinkUrlRead,
+)
 from app.domains.integrations.service import not_configured, not_found
 
 router = APIRouter()
@@ -43,6 +51,8 @@ PLATFORM_SCOPE = "_platform"
 INTERACTION_SCOPE = "discord-interaction"
 
 INTERACTION_TTL_SECONDS = 900.0
+
+SETTINGS_PARAMETER = "discord_dm"
 
 WorkspaceReader = Annotated[AuthzContext, Depends(require(Capability.WORKSPACE_READ))]
 
@@ -121,6 +131,52 @@ def delete_discord_connection(context: WorkspaceAdmin, repositories: Bundle) -> 
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
+def _link(repositories: Repositories, workspace_id: str, user_id: str) -> DiscordLinkRead:
+    """What the caller's notification settings show about their own Discord direct messages."""
+    if not settings.discord_configured:
+        return DiscordLinkRead(configured=False, available=False)
+    installation = repositories.github.discord.get(workspace_id)
+    guild_name = installation.guild_name if installation else None
+    route = repositories.inbox.chat_routes.get(workspace_id, user_id, direct.PROVIDER)
+    if route is None:
+        return DiscordLinkRead(configured=True, available=installation is not None, guild_name=guild_name)
+    return DiscordLinkRead(
+        configured=True,
+        available=installation is not None,
+        linked=True,
+        discord_user_id=route.external_user_id,
+        guild_name=guild_name,
+        linked_at=route.linked_at,
+        problem=direct.route_problem(route, installation) or None,
+    )
+
+
+@router.get("/{workspace_id}/discord/me", response_model=DiscordLinkRead)
+def get_my_discord_link(context: WorkspaceReader, repositories: Bundle) -> DiscordLinkRead:
+    """Whether the caller's personal notifications reach their Discord direct messages."""
+    return _link(repositories, context.workspace_id, context.user_id)
+
+
+@router.get("/{workspace_id}/discord/me/link-url", response_model=DiscordLinkUrlRead)
+def get_my_discord_link_url(context: WorkspaceReader, repositories: Bundle) -> DiscordLinkUrlRead:
+    """Where to send the caller to link their Discord account through Discord's `identify` consent."""
+    if not settings.discord_configured:
+        raise not_configured("Discord App")
+    installation = repositories.github.discord.get(context.workspace_id)
+    if installation is None:
+        raise not_found()
+    url, expires_at = people.settings_link_url(installation, context.user_id)
+    return DiscordLinkUrlRead(url=url, expires_at=expires_at)
+
+
+@router.delete("/{workspace_id}/discord/me", status_code=status.HTTP_204_NO_CONTENT)
+def unlink_my_discord(context: WorkspaceReader, repositories: Bundle) -> Response:
+    """Stop the caller's Discord direct messages and forget which Discord account they are."""
+    if not people.unlink(repositories, context.workspace_id, context.user_id):
+        raise not_found()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
 NOT_CONFIGURED_RESPONSE: dict[int | str, dict[str, Any]] = {
     status.HTTP_404_NOT_FOUND: {"description": "This environment has no Discord App."},
 }
@@ -135,6 +191,7 @@ SIGNED_RESPONSES: dict[int | str, dict[str, Any]] = {
 CALLBACK_RESPONSES: dict[int | str, dict[str, Any]] = {
     **NOT_CONFIGURED_RESPONSE,
     status.HTTP_200_OK: {"description": "A person's account link finished.", "content": {"text/html": {}}},
+    status.HTTP_302_FOUND: {"description": "Back to the settings page an install or a settings link started from."},
     status.HTTP_400_BAD_REQUEST: {"description": "A person's account link was refused.", "content": {"text/html": {}}},
 }
 
@@ -164,16 +221,38 @@ def _link_page(outcome: str) -> HTMLResponse:
     return HTMLResponse(page, status_code=code, headers={"Cache-Control": "no-store"})
 
 
-def _complete_link(repositories: Repositories, state: str, code: str, error: str) -> HTMLResponse:
-    """Finish one person linking their Discord account, answering the page that says how it went."""
+def _settings_page(repositories: Repositories, claims: Mapping[str, Any], outcome: str) -> RedirectResponse:
+    """A 302 to the notification settings page a settings link started from, carrying one outcome code."""
+    workspace_id = str(claims.get("workspace_id", ""))
+    query = urlencode({SETTINGS_PARAMETER: outcome})
+    if workspace_id and repositories.workspaces.get(workspace_id) is not None:
+        target = f"{Links(repositories, workspace_id).notification_settings()}?{query}"
+    else:
+        target = f"{settings.frontend_base_url}/workspaces?{query}"
+    return RedirectResponse(target, status_code=status.HTTP_302_FOUND, headers={"Cache-Control": "no-store"})
+
+
+def _complete_link(repositories: Repositories, state: str, code: str, error: str) -> Response:
+    """Finish one person linking their Discord account, answering where they land to see how it went.
+
+    A link started from a Discord command lands on a small page, and one started
+    from notification settings returns there with the outcome in the query.
+    """
+    hint = state_hint(state, audience=people.LINK_AUDIENCE)
+
+    def finish(outcome: str) -> Response:
+        if hint.get("origin") == people.SETTINGS_ORIGIN:
+            return _settings_page(repositories, hint, outcome)
+        return _link_page(outcome)
+
     try:
         claims = redeem_state(
             state, repositories.idempotency, audience=people.LINK_AUDIENCE, nonce_scope=people.LINK_NONCE_SCOPE
         )
     except StateError:
-        return _link_page("invalid_state")
+        return finish("invalid_state")
     if error or not code:
-        return _link_page("denied")
+        return finish("denied")
     try:
         answer = api.exchange_code(code)
     except api.DiscordError as refusal:
@@ -181,7 +260,7 @@ def _complete_link(repositories: Repositories, state: str, code: str, error: str
             "Discord refused a link code.",
             extra={"event": "integrations.discord.link_exchange_failed", "status": refusal.status_code},
         )
-        return _link_page("error")
+        return finish("error")
     try:
         people.complete_link(repositories, claims, str(answer.get("access_token", "")))
     except people.LinkRejected as rejection:
@@ -189,9 +268,9 @@ def _complete_link(repositories: Repositories, state: str, code: str, error: str
             "A Discord link was refused.",
             extra={"event": "integrations.discord.link_rejected", "reason": rejection.reason},
         )
-        return _link_page(rejection.reason)
+        return finish(rejection.reason)
     _log.info("Linked a Discord account.", extra={"event": "integrations.discord.linked"})
-    return _link_page("linked")
+    return finish("linked")
 
 
 def _start_link(repositories: Repositories, ticket: str) -> Response:

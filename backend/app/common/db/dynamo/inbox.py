@@ -23,8 +23,14 @@ from pydantic import BaseModel, Field
 from webbpulse.dynamodb import ConditionFailed, Page, Repository
 
 from app.common.db.dynamo.base import as_item, build_repository, delete_partition, utc_now
+from app.common.db.dynamo.chat_routes import ChatRouteStore
 from app.common.db.dynamo.issue_reminders import IssueReminderStore
-from app.common.db.dynamo.notify_digests import DigestStore
+from app.common.db.dynamo.notify_digests import (
+    CHAT_DIGEST_WINDOW,
+    CHAT_DUE_PARTITION,
+    CHAT_ENTRY_PREFIX,
+    DigestStore,
+)
 from app.common.db.dynamo.tables import INBOX
 
 NotificationKind = Literal[
@@ -233,9 +239,10 @@ class Notification(BaseModel):
 class InboxRepository:
     """Reads and writes `inbox` rows for exactly one recipient at a time.
 
-    `digests` holds the pending notification emails and `reminders` the issue
-    reminders members set for themselves, both sharing this table under
-    partitions no inbox can name.
+    `digests` holds the pending notification emails, `chat_digests` the pending
+    chat direct messages, `chat_routes` the chat accounts members linked and
+    `reminders` the issue reminders members set for themselves, all sharing this
+    table under partitions no inbox can name.
     """
 
     def __init__(self, repository: Repository | None = None) -> None:
@@ -243,10 +250,18 @@ class InboxRepository:
         self._repository = build_repository(INBOX, repository)
         self.digests = DigestStore(self._repository)
         self.reminders = IssueReminderStore(self._repository)
+        self.chat_digests = DigestStore(
+            self._repository,
+            prefix=CHAT_ENTRY_PREFIX,
+            due_partition=CHAT_DUE_PARTITION,
+            window=CHAT_DIGEST_WINDOW,
+        )
+        self.chat_routes = ChatRouteStore(self._repository)
 
     def delete_all(self, workspace_id: str, user_id: str) -> int:
-        """Delete one person's whole inbox in one workspace, reminders included, for the purges."""
+        """Delete one person's whole inbox in one workspace, reminders and chat routes included, for the purges."""
         self.reminders.delete_all(workspace_id, user_id)
+        self.chat_routes.delete_all(workspace_id, user_id)
         return delete_partition(self._repository, INBOX, inbox_partition(workspace_id, user_id))
 
     def get(self, workspace_id: str, user_id: str, notification_id: str) -> Notification | None:
@@ -533,6 +548,38 @@ class InboxRepository:
         if item is None:
             return None
         return int(item["slot"])
+
+    def delete_matching(
+        self,
+        workspace_id: str,
+        user_id: str,
+        *,
+        read_only: bool = False,
+        include_snoozed: bool = False,
+        kinds: Iterable[str] = (),
+        now: datetime | None = None,
+    ) -> int:
+        """Delete every notification of one member that matches, reporting how many went.
+
+        `read_only` keeps to rows already read, which a snoozed row never is. Without
+        it every row goes, except those still snoozed unless `include_snoozed` takes
+        them too. `kinds` keeps to those kinds. Reads only this member's partition, so
+        nothing outside their own inbox can match.
+        """
+        moment = now or utc_now()
+        partition = inbox_partition(workspace_id, user_id)
+        state: Any = Attr("unread_at").not_exists() if read_only else None if include_snoozed else _awake(moment)
+        wanted = list(kinds)
+        of_kind = Attr("kind").is_in(wanted) if wanted else None
+        filter_expression = None
+        for condition in (state, of_kind):
+            if condition is not None:
+                filter_expression = condition if filter_expression is None else filter_expression & condition
+        keys = [
+            {"ws_user": partition, "notification_id": str(item["notification_id"])}
+            for item in self._repository.iter_query(Key("ws_user").eq(partition), filter_expression=filter_expression)
+        ]
+        return self._repository.delete_many(keys)
 
     def delete(self, workspace_id: str, user_id: str, notification_id: str) -> bool:
         """Remove one notification, reporting whether one was there."""

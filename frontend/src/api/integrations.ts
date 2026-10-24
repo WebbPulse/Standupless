@@ -20,13 +20,21 @@ import type {
   ChannelUpdate,
   DiscordChannelRead,
   DiscordConnectionRead,
+  DiscordLinkRead,
+  DiscordLinkUrlRead,
   GithubInstallationRead,
   GithubIssueLinkRead,
+  GithubLabelSetRead,
+  GithubLabelSetWrite,
   GithubRepositoryRead,
+  GithubThreadRead,
+  GithubThreadTargetRead,
+  GithubThreadWrite,
   InstallUrlRead,
   IssueSyncRead,
   SlackChannelRead,
   SlackConnectionRead,
+  SlackLinkRead,
   TeamSyncRead,
   TeamSyncWrite,
   TransitionCreate,
@@ -117,6 +125,10 @@ export const slackConnectionPath = (workspaceId: string): string =>
 export const slackInstallUrlPath = (workspaceId: string): string =>
   `${slackConnectionPath(workspaceId)}/install-url`;
 
+/** The route the caller's own Slack direct message link is read, made and removed on. */
+export const slackLinkPath = (workspaceId: string): string =>
+  `${slackConnectionPath(workspaceId)}/me`;
+
 /** The route listing the Slack channels a team, or the workspace, can pick for the bot to post to. */
 export const slackChannelsPath = (
   workspaceId: string,
@@ -133,6 +145,14 @@ export const discordConnectionPath = (workspaceId: string): string =>
 /** The route that mints the Discord App install link. */
 export const discordInstallUrlPath = (workspaceId: string): string =>
   `${discordConnectionPath(workspaceId)}/install-url`;
+
+/** The route the caller's own Discord direct message link is read and removed on. */
+export const discordLinkPath = (workspaceId: string): string =>
+  `${discordConnectionPath(workspaceId)}/me`;
+
+/** The route that mints the consent link the caller follows to link their Discord account. */
+export const discordLinkUrlPath = (workspaceId: string): string =>
+  `${discordLinkPath(workspaceId)}/link-url`;
 
 /** The route listing the Discord channels a team, or the workspace, can pick for the bot to post to. */
 export const discordChannelsPath = (
@@ -312,6 +332,22 @@ export const linkRepository = async (
   return response.data;
 };
 
+/**
+ * Turns the workspace label set on or off. While it is on, every workspace
+ * label is kept on every repository the App can see, except a repository a
+ * team already syncs labels with.
+ */
+export const setLabelSet = async (
+  workspaceId: string,
+  body: GithubLabelSetWrite
+): Promise<GithubLabelSetRead> => {
+  const response = await apiClient.put<GithubLabelSetRead>(
+    `${installationPath(workspaceId)}/label-set`,
+    body
+  );
+  return response.data;
+};
+
 /** Lists the pull requests linked to one issue, newest first. */
 export const listIssueLinks = async (
   workspaceId: string,
@@ -460,6 +496,58 @@ export const getIssueSync = async (
     if (isApiErrorWithStatus(error) && error.status === 404) return null;
     throw error;
   }
+};
+
+/** The route an issue's thread sync targets are listed on. */
+export const threadTargetsPath = (
+  workspaceId: string,
+  issueId: string
+): string => `${issueSyncPath(workspaceId, issueId)}/thread-targets`;
+
+/** The route one root comment's thread sync is set and removed through. */
+export const threadSyncPath = (
+  workspaceId: string,
+  issueId: string,
+  commentId: string
+): string => `${issueSyncPath(workspaceId, issueId)}/threads/${commentId}`;
+
+/** Lists the linked pull requests and GitHub issue a thread may be synced to. */
+export const listThreadTargets = async (
+  workspaceId: string,
+  issueId: string,
+  signal?: AbortSignal
+): Promise<GithubThreadTargetRead[]> => {
+  const response = await apiClient.get<GithubThreadTargetRead[]>(
+    threadTargetsPath(workspaceId, issueId),
+    signalOptions(signal)
+  );
+  return Array.isArray(response.data) ? response.data : [];
+};
+
+/** Syncs one root comment's thread to a linked pull request or GitHub issue. */
+export const syncThread = async (
+  workspaceId: string,
+  issueId: string,
+  commentId: string,
+  payload: GithubThreadWrite
+): Promise<GithubThreadRead> => {
+  const response = await apiClient.put<GithubThreadRead>(
+    threadSyncPath(workspaceId, issueId, commentId),
+    payload
+  );
+  return response.data;
+};
+
+/** Stops mirroring one thread. Comments already copied stay on both sides. */
+export const unsyncThread = async (
+  workspaceId: string,
+  issueId: string,
+  commentId: string
+): Promise<GithubThreadRead> => {
+  const response = await apiClient.delete<GithubThreadRead>(
+    threadSyncPath(workspaceId, issueId, commentId)
+  );
+  return response.data;
 };
 
 /** Lists a scope's webhooks, without any secret. */
@@ -670,6 +758,37 @@ export const deleteSlackConnection = async (
   await apiClient.delete(slackConnectionPath(workspaceId));
 };
 
+/** Whether the caller's personal notifications reach their Slack direct messages in this workspace. */
+export const getSlackLink = async (
+  workspaceId: string,
+  signal?: AbortSignal
+): Promise<SlackLinkRead> => {
+  const response = await apiClient.get<SlackLinkRead>(
+    slackLinkPath(workspaceId),
+    signalOptions(signal)
+  );
+  return response.data;
+};
+
+/**
+ * Links the caller to the Slack account holding their confirmed email in the
+ * installed Slack workspace, replacing an earlier or broken link.
+ */
+export const linkSlack = async (
+  workspaceId: string
+): Promise<SlackLinkRead> => {
+  const response = await apiClient.put<SlackLinkRead>(
+    slackLinkPath(workspaceId),
+    {}
+  );
+  return response.data;
+};
+
+/** Stops the caller's Slack direct messages in this workspace. */
+export const unlinkSlack = async (workspaceId: string): Promise<void> => {
+  await apiClient.delete(slackLinkPath(workspaceId));
+};
+
 /** Lists the Slack channels the installed bot can post to, for the channel picker. */
 export const listSlackChannels = async (
   workspaceId: string,
@@ -716,6 +835,36 @@ export const deleteDiscordConnection = async (
   workspaceId: string
 ): Promise<void> => {
   await apiClient.delete(discordConnectionPath(workspaceId));
+};
+
+/** Whether the caller's own Discord account is linked for direct messages, and why it stopped if it did. */
+export const getDiscordLink = async (
+  workspaceId: string,
+  signal?: AbortSignal
+): Promise<DiscordLinkRead> => {
+  const response = await apiClient.get<DiscordLinkRead>(
+    discordLinkPath(workspaceId),
+    signalOptions(signal)
+  );
+  return response.data;
+};
+
+/**
+ * Mints the Discord consent link that links the caller's Discord account. It
+ * asks Discord only for `identify` and returns to notification settings.
+ */
+export const getDiscordLinkUrl = async (
+  workspaceId: string
+): Promise<DiscordLinkUrlRead> => {
+  const response = await apiClient.get<DiscordLinkUrlRead>(
+    discordLinkUrlPath(workspaceId)
+  );
+  return response.data;
+};
+
+/** Stops the caller's Discord direct messages in this workspace and forgets their Discord account. */
+export const unlinkDiscord = async (workspaceId: string): Promise<void> => {
+  await apiClient.delete(discordLinkPath(workspaceId));
 };
 
 /** Lists the Discord channels the installed bot can post to, for the channel picker. */

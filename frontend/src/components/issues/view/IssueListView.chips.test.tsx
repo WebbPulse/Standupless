@@ -1,8 +1,9 @@
 /**
  * The chips on a row or card act on a click: a project or cycle chip opens
- * its page, a label or estimate chip narrows the view, and a viewer who cannot
- * edit narrows by priority, status or assignee too. None of them opens the
- * issue under it, by pointer or by Enter.
+ * its page, a label or estimate chip opens its picker for an editor and
+ * narrows the view for a viewer, who narrows by priority, status or assignee
+ * too, and a date chip opens the date picker for an editor. None of them
+ * opens the issue under it, by pointer or by Enter.
  */
 
 import { fireEvent, render, screen } from '@testing-library/react';
@@ -67,7 +68,10 @@ const context: IssueContext = {
       team_id: 'team-2',
     },
   ],
-  labels: [{ id: 'lb-bug', name: 'bug', color: '#f00', team_id: 'team-1' }],
+  labels: [
+    { id: 'lb-bug', name: 'bug', color: '#f00', team_id: 'team-1' },
+    { id: 'lb-ui', name: 'ui', color: '#0f0', team_id: 'team-1' },
+  ],
   people: [
     { user_id: 'user-1', email: 'me@example.com', display_name: 'Me' },
     { user_id: 'user-2', email: 'ada@example.com', display_name: 'Ada' },
@@ -96,6 +100,7 @@ const lists: IssueContextState = {
 const LIST = '/w/mine/team/ENG/issues';
 
 let registry: ShortcutRegistry;
+let update: ReturnType<typeof vi.fn<IssueCollection['update']>>;
 let onStateChange: ReturnType<typeof vi.fn<(state: ViewState) => void>>;
 let listener: (event: KeyboardEvent) => void;
 
@@ -113,6 +118,7 @@ interface Options {
   layout?: 'list' | 'board';
   canEdit?: boolean;
   filterFields?: FilterField[];
+  dates?: Pick<OrderedIssueRead, 'start_date' | 'due_date'>;
 }
 
 /** Mounts the view over one issue with project and cycle shown. */
@@ -120,17 +126,21 @@ const renderView = ({
   layout = 'list',
   canEdit = true,
   filterFields,
+  dates,
 }: Options = {}) => {
   const collection: IssueCollection = {
-    issues: [issue],
+    issues: [{ ...issue, ...dates }],
     isLoading: false,
     error: null,
     truncated: false,
     queryKey: ['issues'],
-    update: vi.fn<IssueCollection['update']>(),
+    update,
   };
   const base = defaultViewState(layout);
-  const state: ViewState = { ...base, visible: [...base.visible, 'cycle'] };
+  const state: ViewState = {
+    ...base,
+    visible: [...base.visible, 'cycle', 'start_date'],
+  };
   render(
     <MemoryRouter initialEntries={[LIST]}>
       <ShortcutRegistryContext.Provider value={registry}>
@@ -170,6 +180,7 @@ const lastFilters = (): ViewState['filters'] => {
 
 beforeEach(() => {
   registry = createShortcutRegistry();
+  update = vi.fn<IssueCollection['update']>();
   onStateChange = vi.fn<(state: ViewState) => void>();
   listener = (event) => {
     registry.handleKey(event);
@@ -184,7 +195,7 @@ afterEach(() => {
 
 describe.each(['list', 'board'] as const)('chips on the %s', (layout) => {
   it('filters by a label without opening the issue', () => {
-    renderView({ layout });
+    renderView({ layout, canEdit: false });
 
     fireEvent.click(
       screen.getByRole('button', { name: 'Filter by label: bug' })
@@ -197,7 +208,7 @@ describe.each(['list', 'board'] as const)('chips on the %s', (layout) => {
   });
 
   it('filters by an estimate', () => {
-    renderView({ layout });
+    renderView({ layout, canEdit: false });
 
     fireEvent.click(
       screen.getByRole('button', { name: 'Filter by estimate: M' })
@@ -207,6 +218,91 @@ describe.each(['list', 'board'] as const)('chips on the %s', (layout) => {
       { field: 'estimate', op: 'is', values: ['M'] },
     ]);
     expect(where()).toBe(LIST);
+  });
+
+  it('opens the labels picker from a label chip for an editor', () => {
+    renderView({ layout });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Labels: bug' }));
+    fireEvent.click(screen.getByRole('option', { name: /ui/ }));
+
+    expect(update).toHaveBeenCalledWith(['iss-1'], {
+      add_label_ids: ['lb-ui'],
+    });
+    expect(onStateChange).not.toHaveBeenCalled();
+    expect(where()).toBe(LIST);
+  });
+
+  it('removes a label from the chip picker', () => {
+    renderView({ layout });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Labels: bug' }));
+    fireEvent.click(screen.getByRole('option', { name: /bug/ }));
+
+    expect(update).toHaveBeenCalledWith(['iss-1'], {
+      remove_label_ids: ['lb-bug'],
+    });
+  });
+
+  it('opens the estimate picker from the estimate chip for an editor', () => {
+    renderView({ layout });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Estimate: M' }));
+    fireEvent.click(screen.getByRole('option', { name: /^L/ }));
+
+    expect(update).toHaveBeenCalledWith(['iss-1'], { estimate: 'L' });
+    expect(onStateChange).not.toHaveBeenCalled();
+    expect(where()).toBe(LIST);
+  });
+
+  it('opens the due date picker from the due date chip for an editor', () => {
+    renderView({ layout, dates: { start_date: null, due_date: '2020-01-02' } });
+
+    const chip = screen.getByRole('button', { name: /^Due date:/ });
+    expect(chip).toHaveClass('text-danger');
+    fireEvent.click(chip);
+    fireEvent.click(screen.getByRole('option', { name: /Clear date/ }));
+
+    expect(update).toHaveBeenCalledWith(['iss-1'], { due_date: null });
+    expect(onStateChange).not.toHaveBeenCalled();
+    expect(where()).toBe(LIST);
+  });
+
+  it('refuses a start date after the due date', () => {
+    renderView({
+      layout,
+      dates: { start_date: '2020-01-01', due_date: '2020-01-02' },
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /^Start date:/ }));
+
+    expect(screen.getByRole('option', { name: /Today/ })).toHaveAttribute(
+      'aria-disabled',
+      'true'
+    );
+    expect(screen.getByLabelText('Custom date')).toHaveAttribute(
+      'max',
+      '2020-01-02'
+    );
+    fireEvent.click(screen.getByRole('option', { name: /Clear date/ }));
+    expect(update).toHaveBeenCalledWith(['iss-1'], { start_date: null });
+    expect(where()).toBe(LIST);
+  });
+
+  it('leaves the date chips inert for a viewer', () => {
+    renderView({
+      layout,
+      canEdit: false,
+      dates: { start_date: '2020-01-01', due_date: '2020-01-02' },
+    });
+
+    expect(
+      screen.queryByRole('button', { name: /^Due date:/ })
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: /^Start date:/ })
+    ).not.toBeInTheDocument();
+    expect(screen.getByTitle('Due date')).toHaveClass('text-danger');
   });
 
   it('opens the project page from the project chip', () => {
@@ -229,9 +325,31 @@ describe.each(['list', 'board'] as const)('chips on the %s', (layout) => {
 
 describe('chip keys and limits', () => {
   it('keeps Enter on a focused chip from opening the focused issue', () => {
-    renderView();
+    renderView({ canEdit: false });
     fireEvent.keyDown(document.body, { key: 'j' });
     const chip = screen.getByRole('button', { name: 'Filter by label: bug' });
+    chip.focus();
+
+    fireEvent.keyDown(chip, { key: 'Enter' });
+
+    expect(where()).toBe(LIST);
+  });
+
+  it('keeps Enter on a picker chip from opening the issue', () => {
+    renderView();
+    fireEvent.keyDown(document.body, { key: 'j' });
+    const chip = screen.getByRole('button', { name: 'Labels: bug' });
+    chip.focus();
+
+    fireEvent.keyDown(chip, { key: 'Enter' });
+
+    expect(where()).toBe(LIST);
+  });
+
+  it('keeps Enter on a date chip from opening the issue', () => {
+    renderView({ dates: { start_date: null, due_date: '2020-01-02' } });
+    fireEvent.keyDown(document.body, { key: 'j' });
+    const chip = screen.getByRole('button', { name: /^Due date:/ });
     chip.focus();
 
     fireEvent.keyDown(chip, { key: 'Enter' });
@@ -249,7 +367,7 @@ describe('chip keys and limits', () => {
   });
 
   it('leaves a chip inert for a field the view cannot filter on', () => {
-    renderView({ filterFields: ['status'] });
+    renderView({ canEdit: false, filterFields: ['status'] });
 
     expect(
       screen.queryByRole('button', { name: 'Filter by label: bug' })

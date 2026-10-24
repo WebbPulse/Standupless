@@ -15,6 +15,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { InstallationState } from '../../api/integrations';
 import type {
   GithubInstallationRead,
+  GithubLabelSetRead,
+  GithubLabelSetWrite,
   GithubRepositoryRead,
   TeamRead,
   WorkspaceRead,
@@ -29,6 +31,8 @@ const deleteInstallation = vi.fn<() => Promise<void>>();
 const linkRepository =
   vi.fn<(repositoryId: string, teamId: string | null) => Promise<unknown>>();
 const listTeams = vi.fn<() => Promise<TeamRead[]>>();
+const setLabelSet =
+  vi.fn<(body: GithubLabelSetWrite) => Promise<GithubLabelSetRead>>();
 
 vi.mock('../../api/integrations', async () => {
   const actual = await vi.importActual<typeof import('../../api/integrations')>(
@@ -42,6 +46,7 @@ vi.mock('../../api/integrations', async () => {
     deleteInstallation: () => deleteInstallation(),
     linkRepository: (_w: string, repositoryId: string, teamId: string | null) =>
       linkRepository(repositoryId, teamId),
+    setLabelSet: (_w: string, body: GithubLabelSetWrite) => setLabelSet(body),
   };
 });
 
@@ -87,6 +92,7 @@ const installation = (
     'https://github.com/organizations/WebbPulse/settings/installations/44551122',
   avatar_url: 'https://avatars.githubusercontent.com/u/1',
   suspended: false,
+  label_set: { enabled: false, include_public: false, queued: false },
   ...over,
 });
 
@@ -121,6 +127,7 @@ beforeEach(() => {
   deleteInstallation.mockReset();
   linkRepository.mockReset();
   listTeams.mockReset();
+  setLabelSet.mockReset();
   assign.mockReset();
   readInstallation.mockResolvedValue({
     status: 'installed',
@@ -133,6 +140,11 @@ beforeEach(() => {
   listRepositories.mockResolvedValue([repository()]);
   deleteInstallation.mockResolvedValue(undefined);
   linkRepository.mockResolvedValue(repository());
+  setLabelSet.mockResolvedValue({
+    enabled: true,
+    include_public: false,
+    queued: true,
+  });
   listTeams.mockResolvedValue([
     {
       id: 'proj-1',
@@ -195,6 +207,48 @@ describe('the GitHub section', () => {
 
     await waitFor(() => {
       expect(linkRepository).toHaveBeenCalledWith('9001', null);
+    });
+  });
+
+  it('turns the workspace label set on without public repositories', async () => {
+    renderSection();
+
+    const toggle = await screen.findByLabelText(
+      'Keep workspace labels on every repository'
+    );
+    expect(toggle).not.toBeChecked();
+    expect(
+      screen.queryByLabelText('Include public repositories')
+    ).not.toBeInTheDocument();
+
+    await userEvent.click(toggle);
+
+    await waitFor(() => {
+      expect(setLabelSet).toHaveBeenCalledWith({
+        enabled: true,
+        include_public: false,
+      });
+    });
+  });
+
+  it('keeps the set on when public repositories are added', async () => {
+    readInstallation.mockResolvedValue({
+      status: 'installed',
+      installation: installation({
+        label_set: { enabled: true, include_public: false, queued: false },
+      }),
+    });
+    renderSection();
+
+    await userEvent.click(
+      await screen.findByLabelText('Include public repositories')
+    );
+
+    await waitFor(() => {
+      expect(setLabelSet).toHaveBeenCalledWith({
+        enabled: true,
+        include_public: true,
+      });
     });
   });
 

@@ -103,8 +103,9 @@ uninstall webhook has not landed yet, has it cleared so a reinstall binds.
 
 No organization permissions and no account permissions. The App never reads
 members, never reads code content beyond what an event carries, and never writes
-anything but its own comment, its own check run, and the issues and issue
-comments of a repository a team syncs with.
+anything but its own comment, its own check run, the issues and issue
+comments of a repository a team syncs with, and the comments of a thread a
+person synced to a pull request or issue.
 
 ### Subscribed events
 
@@ -118,6 +119,7 @@ comments of a repository a team syncs with.
 - Check run
 - Create
 - Release
+- Label
 - Installation
 - Installation repositories
 
@@ -131,7 +133,12 @@ GitHub Releases, for a repository pinned to a team with that release source. A
 branch created, and a Release edited, deleted or saved as a draft, are answered
 200 without being queued. Both use Contents, which the App already has.
 
-The manifest names only the first ten: GitHub delivers installation and
+Label carries a rename made on GitHub to the team label a repository label
+mirrors, for a team that syncs labels, so issues keep carrying it. Edits by the
+App itself, and any other label change, are answered without a write. It uses
+Issues, which the App already has.
+
+The manifest names only the first eleven: GitHub delivers installation and
 installation repository events to every App without a subscription. Nothing else. An event that is not on this list is answered 200 and dropped by the
 receiver, so subscribing to more would only spend deliveries.
 
@@ -190,6 +197,19 @@ once:
 
 Until then a repository whose release source is tags or GitHub Releases records
 nothing live, and a release backfill still rebuilds its releases from its tags.
+
+## Adding label events to an existing App
+
+An App created before label definition sync does not subscribe to the label
+event. No permission changes, so no installation has to accept anything. Each
+environment's App is changed by hand, once:
+
+1. On the App's settings page, open Permissions & events.
+2. Under Subscribe to events, check Label.
+3. Save changes.
+
+Until then labels created, renamed, recoloured and deleted in Standupless still
+reach GitHub, and a rename made on GitHub is not carried back.
 
 ## Release sources
 
@@ -298,6 +318,71 @@ queue retries, and a backlink counts as posted only with a real comment id.
 
 Staging proves the sync against `WebbPulse/standupless-staging-e2e`, see the
 End-to-end section of `CLAUDE.md`.
+
+## Workspace label set
+
+A workspace admin can turn on "Keep workspace labels on every repository" in the
+workspace's GitHub settings (`PUT /api/workspaces/{id}/github/installation/label-set`).
+Every workspace label, with its GitHub name, color and description, is then
+written to each repository the installation can see, by the same per-label code
+a team's label sync uses.
+
+- Only workspace labels are pushed. Team overrides belong to their team, and a
+  repository a team syncs labels with is skipped, because that team's reconcile
+  already carries the inherited workspace labels.
+- Public repositories are left out unless the admin also ticks "Include public
+  repositories", since the push publishes the label names there.
+- Turning the set on, or widening it to public repositories, queues a push from
+  the first repository. A workspace label created, renamed, recolored or
+  deleted queues the same push, and a repository added to the installation
+  queues a push of just that repository.
+- The push runs as `github.label_set_push` jobs on the dispatch queue, ten
+  repositories per page in repository id order, each page inside a 20 second
+  GitHub call budget. A page queues the next one itself, held back until the
+  rate limit resets when GitHub or the budget says to stop.
+- The set's own `LabelSync` rows are stored with an empty team id. A label is
+  deleted on GitHub only when Standupless created it and its workspace label is
+  gone; turning the set off deletes nothing.
+- The setting lives on the installation's `labelset#settings` row, removed on
+  disconnect, and every change is audited as `github.label_set_updated`.
+
+### Synced comment threads
+
+One comment thread can be synced to a pull request linked to the issue, or to
+the GitHub issue a GitHub to Standupless link imported it from. A GitHub issue
+synced both ways is refused, because every comment on it already crosses. No
+new permission or event is needed: pull request comments are issue comments,
+written with Issues and Pull requests write and delivered as `issue_comment`.
+
+- Syncing marks the root comment with `github_thread` (repository, number,
+  visibility, who synced it, when). The App then posts an opening comment that
+  quotes the root and links the issue, and each reply written afterwards,
+  naming its author. Earlier replies are not replayed. An edit in Standupless
+  edits the App's copy.
+- A comment written on that pull request or issue after the sync lands in the
+  thread as a reply, showing the GitHub login or the member who linked that
+  account. With several threads synced to one place, a comment that links or
+  quotes one thread's comment goes there, and anything else goes to the most
+  recently synced thread. Edits and deletes of those comments follow. Only an
+  owner, member or collaborator of the repository, or someone who linked a
+  member account, writes into a thread.
+- The opening comment starts with `<!-- standupless:thread:<root_id> -->`. Its
+  own delivery is how the thread learns the opening comment's URL, which the
+  events consumer writes because the dispatch job may not write comments.
+- Echoes are stopped by the same guards as the issue sync: the App's own
+  deliveries are dropped, the backlink and thread markers are skipped, a
+  comment from GitHub is never posted back, and each pairing row
+  (`thrcmt#<issue>#<comment>`, with a `thrgh#<github_id>` pointer) records
+  which side wrote it first and is claimed before the post or the reply.
+- Unsyncing removes the mark and the pairing rows. Every comment stays where
+  it is on both sides.
+- A public repository can be synced, and the composer warns that the thread
+  will be published there.
+- REST: `GET .../issues/{issue_id}/github-sync/thread-targets`, and `PUT` or
+  `DELETE .../issues/{issue_id}/github-sync/threads/{comment_id}` with
+  `{repository_id, number}`. MCP: `add_comment` with `sync_to_github` and
+  `github_target`, `sync_comment_thread`, `unsync_comment_thread` and
+  `list_github_thread_targets`.
 
 ## After creating it
 

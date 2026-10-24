@@ -47,6 +47,7 @@ import {
   LuCopyPlus,
   LuCornerUpLeft,
   LuEllipsis,
+  LuGitBranch,
   LuHexagon,
   LuLink2,
   LuListTree,
@@ -87,8 +88,10 @@ import { useWorkspace } from '../../hooks/useWorkspace';
 import type { ActivityContext } from '../../lib/activityDisplay';
 import { canWriteIssues, isTeamAdmin } from '../../lib/capabilities';
 import {
+  COPY_BRANCH_KEYS,
   COPY_ISSUE_ID_KEYS,
   COPY_ISSUE_URL_KEYS,
+  copyBranchName,
   copyText,
 } from '../../lib/copyIssue';
 import { errorMessage } from '../../lib/errors';
@@ -737,6 +740,15 @@ export const IssueView: React.FC<IssueViewProps> = ({
             Copy link
             <MenuShortcut keys={COPY_ISSUE_URL_KEYS} />
           </MenuItem>
+          <MenuItem
+            onSelect={() => {
+              if (issue !== null) copyBranchName(issue.key, issue.title);
+            }}
+          >
+            <LuGitBranch aria-hidden="true" className="h-3.5 w-3.5" />
+            Copy git branch name
+            <MenuShortcut keys={COPY_BRANCH_KEYS} />
+          </MenuItem>
           {canAct && (
             <>
               <MenuSeparator />
@@ -984,14 +996,16 @@ export const IssueView: React.FC<IssueViewProps> = ({
 
                   {showSubIssues && (
                     <SubIssues
+                      workspaceId={workspaceId}
                       slug={slug}
+                      parent={issue}
                       rows={children.rows}
                       isLoading={children.isLoading}
                       error={children.error}
                       progress={issue.progress}
                       statuses={options.statuses}
                       people={options.people}
-                      {...(canAct ? { onAdd: addSubIssue } : {})}
+                      canEdit={canAct}
                     />
                   )}
                 </div>

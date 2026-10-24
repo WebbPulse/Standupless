@@ -13,6 +13,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.common.db.dynamo.base import utc_now
+from app.domains.integrations.mcp.tools import TOOLS_BY_NAME
 from tests.domains.helpers import ADMIN, MEMBER, OWNER, add_team_member
 from tests.domains.integrations.conftest import TEAM, WORKSPACE
 from tests.domains.integrations.test_mcp import tool
@@ -48,6 +49,26 @@ def test_a_team_members_new_issue_follows_the_switch(client: TestClient, reposit
     assert during["in_triage"] is True and during["status_id"] == "triage"
     assert placed["in_triage"] is False and placed["status"] == "Todo"
     assert after["in_triage"] is False and after["status"] == before["status"]
+
+
+def test_create_issue_says_and_does_what_triage_does_to_planned_work(
+    client: TestClient, repositories: Any, workspace: str
+) -> None:
+    """A member's issue with a project but no status waits in triage, naming Backlog skips it, and the tool says so."""
+    add_team_member(repositories, WORKSPACE, TEAM, OWNER, "admin")
+    owner = mint_for(repositories, OWNER, (*SCOPES, "projects:read", "projects:write"))
+    answer(tool(client, owner, "update_team_triage_settings", {"team_id": "ABC", "enabled": True}))
+    project = answer(tool(client, owner, "create_project", {"name": "Launch", "team_ids": [TEAM]}))["project_id"]
+
+    unplaced = _file(client, owner, "Planned", project_id=project)
+    placed = _file(client, owner, "Planned too", project_id=project, status_id="Backlog")
+    descriptor = TOOLS_BY_NAME["create_issue"].descriptor()
+
+    assert unplaced["in_triage"] is True and unplaced["status_id"] == "triage"
+    assert placed["in_triage"] is False and placed["status"] == "Backlog" and placed["project_id"] == project
+    assert "waits in triage even when project_id" in descriptor["description"]
+    assert "Backlog" in descriptor["description"]
+    assert "skips triage" in descriptor["inputSchema"]["properties"]["status_id"]["description"]
 
 
 def test_the_switch_routes_outside_issues_into_triage(client: TestClient, repositories: Any, workspace: str) -> None:

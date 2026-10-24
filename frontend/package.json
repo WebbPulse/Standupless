@@ -21,10 +21,12 @@
     "test:run": "vitest run",
     "test:ui": "vitest --ui",
     "test:coverage": "vitest --coverage",
-    "type-check": "tsc -b --noEmit"
+    "type-check": "tsc -b --noEmit",
+    "check:csp-hashes": "node --experimental-strip-types cspHashes.ts"
   },
   "dependencies": {
     "@capacitor/app": "^8.1.2",
+    "@capacitor/browser": "^8.0.5",
     "@capacitor/core": "^8.5.3",
     "@capacitor/splash-screen": "^8.0.2",
     "@tailwindcss/vite": "^4.3.3",

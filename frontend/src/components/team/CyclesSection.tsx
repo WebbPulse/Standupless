@@ -15,7 +15,6 @@ import { useQueryAuth } from '@webbpulse/auth/react';
 import {
   usePolledQuery,
   useMutationWithRefetch,
-  type QueryKey,
 } from '@webbpulse/api-client/react';
 import { Link } from 'react-router-dom';
 import { getCycleSettings, updateCycleSettings } from '../../api/teams';
@@ -34,7 +33,11 @@ import {
 } from '../../lib/cycleSettings';
 import { cn } from '../../lib/cn';
 import { errorMessage } from '../../lib/errors';
-import { cyclesKey, planningOptionsKey } from '../../lib/queryKeys';
+import {
+  cycleSettingsKey,
+  cyclesKey,
+  planningOptionsKey,
+} from '../../lib/queryKeys';
 import { showToast } from '../../lib/toast';
 import { ErrorAlert } from '../ui/alert';
 import Button from '../ui/button';
@@ -143,7 +146,7 @@ export const CyclesSection: React.FC<CyclesSectionProps> = ({
 }) => {
   const auth = useQueryAuth();
   const prefix = useId();
-  const queryKey: QueryKey = ['cycle-settings', workspaceId, teamId];
+  const queryKey = cycleSettingsKey(workspaceId, teamId);
   const [draft, setDraft] = useState<CycleSchedule | null>(null);
   const [today] = useState(() => new Date());
 

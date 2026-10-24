@@ -22,6 +22,7 @@ import { usePolledQuery } from '@webbpulse/api-client/react';
 import { LuChevronRight, LuGitBranch } from 'react-icons/lu';
 import { listIssueLinks } from '../../api/integrations';
 import { displayKeys, useShortcut } from '../../hooks/useShortcuts';
+import { COPY_BRANCH_KEYS, copyBranchName } from '../../lib/copyIssue';
 import { errorMessage } from '../../lib/errors';
 import { gitBranchName } from '../../lib/gitBranch';
 import { pullRequestStateStyle } from '../../lib/pullRequestState';
@@ -33,14 +34,10 @@ import {
   type StatusStyle,
 } from '../../lib/pullRequestStacks';
 import { githubLinksKey } from '../../lib/queryKeys';
-import { showErrorToast, showToast } from '../../lib/toast';
 import type { GithubIssueLinkRead } from '../../types/Api';
 import { ErrorAlert } from '../ui/alert';
 import { IconButton } from '../ui/button';
 import RailSection from './RailSection';
-
-/** The shortcut that copies the branch name. */
-export const COPY_BRANCH_KEYS = 'mod+shift+.';
 
 /** Props for GithubLinksSection: which issue's pull requests to show. */
 export interface GithubLinksSectionProps {
@@ -228,21 +225,8 @@ export const GithubLinksSection: React.FC<GithubLinksSectionProps> = ({
     issueKey === undefined ? null : gitBranchName(issueKey, title ?? '');
 
   const copyBranch = useCallback((): void => {
-    if (branch === null) return;
-    const clipboard = globalThis.navigator.clipboard as Clipboard | undefined;
-    if (clipboard === undefined) {
-      showErrorToast('Could not copy the branch name.');
-      return;
-    }
-    void clipboard
-      .writeText(branch)
-      .then(() => {
-        showToast(`Copied ${branch}`);
-      })
-      .catch(() => {
-        showErrorToast('Could not copy the branch name.');
-      });
-  }, [branch]);
+    if (issueKey !== undefined) copyBranchName(issueKey, title ?? '');
+  }, [issueKey, title]);
 
   useShortcut({
     keys: COPY_BRANCH_KEYS,

@@ -13,6 +13,7 @@ from typing import Any
 
 import pytest
 
+from app.common.issue_key_search import moving_commit_keys
 from app.domains.integrations import linking
 
 PREFIXES = {"p-abc": "ABC", "p-xyz": "XYZ"}
@@ -474,3 +475,17 @@ def test_a_commit_subject_splits_at_the_first_line() -> None:
         "\nbody",
     )
     assert linking.commit_subject("") == ("", "")
+
+
+def test_moving_commit_keys_skip_a_key_only_a_commit_body_mentions() -> None:
+    """Release automation reads the same rule as a merge: subjects and closing words count, prose does not."""
+    found = moving_commit_keys(
+        [
+            "ABC-2: Cap entries (#4)\n\nThe API lowered it in ABC-1 so it fits.",
+            "Merge pull request #5 from acme/work\n\nABC-3 a change\n\nSee ABC-4.",
+            "Tidy\n\nFixes ABC-5 and refs ABC-6",
+        ],
+        PREFIXES,
+    )
+
+    assert [row.key for row in found] == ["ABC-2", "ABC-3", "ABC-5", "ABC-6"]

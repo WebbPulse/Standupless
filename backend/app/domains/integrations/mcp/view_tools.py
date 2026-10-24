@@ -22,6 +22,7 @@ from app.common.api.schemas.views import (
     VIEW_ENTITIES,
     VISIBLE_PROPERTIES,
     GroupByField,
+    InboxClearRequest,
     InboxReadRequest,
     InboxSnoozeRequest,
     InboxUnreadRequest,
@@ -36,6 +37,7 @@ from app.common.api.schemas.views import (
 from app.common.db.dynamo.views import SavedView
 from app.common.inbox import (
     INBOX_KINDS,
+    clear_notifications,
     delete_notification,
     list_notifications,
     mark_read,
@@ -115,13 +117,16 @@ def _projects_display() -> dict[str, Any]:
             "columns": {
                 "type": "array",
                 "items": {"type": "string", "enum": list(PROJECTS_COLUMNS)},
-                "description": "The list columns shown beside the name; an empty list shows the name alone",
+                "description": "The properties shown beside the name; an empty list shows the name alone",
             },
         },
         "additionalProperties": False,
         "description": (
-            "Project views only: layout (list, board, timeline), group, order, closed (how far back completed "
-            "and canceled projects show), the timeline zoom and the list columns; a missing field takes the default"
+            "Project views only: layout (list, board, timeline), group and its direction, rows (a second "
+            "grouping inside each group), order, closed (all, fortnight by default, month or none: which "
+            "completed projects show, canceled ones only under all), "
+            "lead_team (lead keeps only projects the filtered team leads), empty (show or hide empty board "
+            "columns), the timeline zoom and the shown properties; a missing field takes the default"
         ),
     }
 
@@ -158,13 +163,14 @@ def _view_properties(*, clearable: bool) -> dict[str, Any]:
                 "status_category, assignee_id, creator_id, subscriber_id, label_id, label_id_all, priority, "
                 "parent_id, cycle_id, project_id, project_milestone_id, estimate, sla_status, has_relation, "
                 "due_before, due_after, created_after, created_before, updated_after, updated_before, "
-                "completed_after, completed_before, content, q and their _not forms, plus is_blocked, "
+                "completed_after, completed_before, customer_id, content, q and their _not forms, plus is_blocked, "
                 "is_blocking and has_sub_issues as true or false). Values are ids or lists of ids; assignee_id, "
                 "creator_id and subscriber_id may be 'me'. match is all (default) or any, and groups is a list "
                 "of condition objects with these same keys and their own match, each counting as one condition, "
                 "and a group may hold groups of its own, two levels at most. A project view's filter instead "
                 "takes team_id, status (project statuses such as planned or in_progress), lead_id (user ids, "
-                "'none' for no lead), sub_teams, and is_blocked and is_blocking, each as true or false."
+                "'none' for no lead), customer_id and customer_id_not (customer ids, 'none' for no customer "
+                "request), and sub_teams, is_blocked and is_blocking, each as true or false."
             ),
         },
         "sort": enum(SORTS, "Sort order"),
@@ -341,6 +347,17 @@ def _delete_notification(call: ToolCall) -> Any:
     return {"deleted": True, "notification_id": notification_id}
 
 
+def _clear_notifications(call: ToolCall) -> Any:
+    """Delete the caller's own notifications in bulk, the read ones or all of them."""
+    _workspace_member(call)
+    payload = InboxClearRequest(
+        read_only=_flag(call, "read_only"),
+        include_snoozed=_flag(call, "include_snoozed"),
+        kinds=filter_values(call.optional("kinds")) or [],
+    )
+    return {"deleted": clear_notifications(call.repositories, call.context, payload)}
+
+
 def _set_issue_reminder(call: ToolCall) -> Any:
     """Remind the caller about one issue at a moment, replacing any reminder already set on it."""
     _workspace_member(call)
@@ -484,6 +501,24 @@ VIEW_TOOLS: tuple[Tool, ...] = (
             {"notification_id": string("The notification_id to delete")}, required=("notification_id",)
         ),
         handler=_delete_notification,
+        destructive=True,
+    ),
+    Tool(
+        name="delete_all_notifications",
+        description=(
+            "Permanently delete your notifications in bulk. read_only=true deletes only read ones; otherwise "
+            "every one goes except those still snoozed, unless include_snoozed=true. kinds keeps to those kinds. "
+            "Answers how many were deleted. Issues are untouched."
+        ),
+        scopes=("notifications:write",),
+        schema=object_schema(
+            {
+                "read_only": _boolean("Only notifications already read"),
+                "include_snoozed": _boolean("Also delete notifications still snoozed"),
+                "kinds": one_or_many("One notification kind or a list, ORed: " + ", ".join(INBOX_KINDS)),
+            }
+        ),
+        handler=_clear_notifications,
         destructive=True,
     ),
     Tool(

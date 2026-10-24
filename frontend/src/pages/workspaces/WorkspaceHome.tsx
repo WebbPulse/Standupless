@@ -7,6 +7,10 @@
  * the cycles running now, the projects in flight, the latest project updates
  * and the newest unread notifications.
  *
+ * The focus rows are the issue list's own rows, so an editor changes the
+ * priority, status, labels, estimate, due date or assignee in place, written
+ * optimistically over the home read until the next poll catches up.
+ *
  * The whole page is one keyboard list: j and k move row by row across every
  * section, Shift+J and Shift+K jump between sections and Enter opens the row.
  * The last read is kept in memory, so a return visit draws at once.
@@ -22,7 +26,11 @@ import { LuCircleCheck, LuPlus } from 'react-icons/lu';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { browserTimezone, getHome } from '../../api/home';
 import { readInstallation } from '../../api/integrations';
-import IssueRow from '../../components/issues/IssueRow';
+import {
+  IssueViewEnvContext,
+  type IssueViewEnv,
+} from '../../components/issues/view/IssueViewContext';
+import { IssueListRow } from '../../components/issues/view/ListRows';
 import { ErrorAlert } from '../../components/ui/alert';
 import { Kbd } from '../../components/ui/badge';
 import Button from '../../components/ui/button';
@@ -34,11 +42,14 @@ import { useCreateIssue } from '../../hooks/useCreateIssue';
 import { useCreateTeam } from '../../hooks/useCreateTeam';
 import { useIssueContext } from '../../hooks/useIssueContext';
 import { useListKeyboardNav } from '../../hooks/useListKeyboardNav';
+import { useOptimisticIssues } from '../../hooks/useOptimisticIssues';
 import { useShortcut } from '../../hooks/useShortcuts';
 import { useTeams } from '../../hooks/useTeams';
 import { useWorkspace } from '../../hooks/useWorkspace';
 import { useWorkspaceMembers } from '../../hooks/useWorkspaceMembers';
+import { canWriteIssues } from '../../lib/capabilities';
 import { errorMessage } from '../../lib/errors';
+import { defaultViewState, type ViewState } from '../../lib/issueView';
 import {
   cyclePath,
   inboxPath,
@@ -52,6 +63,7 @@ import {
   teamCyclesPath,
 } from '../../lib/paths';
 import { installationKey } from '../../lib/queryKeys';
+import { estimateOptionsOf } from '../../lib/validation';
 import type { HomeRead, TeamRead } from '../../types/Api';
 import {
   CycleRow,
@@ -86,6 +98,27 @@ const POLL_MS = 30000;
 
 /** How often an admin's GitHub connection is re-read for the setup steps. */
 const INSTALL_POLL_MS = 300000;
+
+/** What a focus row shows: the issue list's row, trimmed to the home's width. */
+const FOCUS_ROW_STATE: ViewState = {
+  ...defaultViewState(),
+  visible: [
+    'priority',
+    'id',
+    'status',
+    'sub_issues',
+    'labels',
+    'estimate',
+    'due_date',
+    'assignee',
+  ],
+};
+
+/** The focus rows select nothing. */
+const NO_SELECTION: ReadonlySet<string> = new Set();
+
+/** The fewest characters the focus rows' key column is sized for. */
+const MIN_KEY_CH = 6;
 
 /** The setup steps for a workspace, done or not. */
 const setupSteps = ({
@@ -184,10 +217,14 @@ const WorkspaceHome: React.FC = () => {
     },
     [workspaceId, timezone, userId]
   );
+  const homeKey = useMemo(
+    () => ['home', workspaceId, timezone],
+    [workspaceId, timezone]
+  );
   const homeQuery = usePolledQuery(fetchHome, {
     intervalMs: POLL_MS,
     enabled,
-    queryKey: ['home', workspaceId, timezone],
+    queryKey: homeKey,
     auth,
   });
   const home = homeQuery.data ?? cachedHome(userId, workspaceId);
@@ -230,7 +267,29 @@ const WorkspaceHome: React.FC = () => {
     ],
     [groups]
   );
-  const { context } = useIssueContext(workspaceId, issueTeamIds, user?.id);
+  const { context, forTeam, createLabel } = useIssueContext(
+    workspaceId,
+    issueTeamIds,
+    user?.id
+  );
+
+  const focusRead = useMemo(
+    () => groups.flatMap((group) => group.issues),
+    [groups]
+  );
+  const focusWrites = useOptimisticIssues(workspaceId, focusRead, homeKey);
+  const focusById = useMemo(
+    () => new Map(focusWrites.issues.map((row) => [row.id, row])),
+    [focusWrites.issues]
+  );
+  const keyCh = useMemo(
+    () =>
+      focusRead.reduce(
+        (wide, row) => Math.max(wide, row.key.length),
+        MIN_KEY_CH
+      ),
+    [focusRead]
+  );
 
   const memberName = useMemo(() => {
     const names = new Map(
@@ -331,6 +390,56 @@ const WorkspaceHome: React.FC = () => {
       setActiveIndex(jumpSection(items, activeIndex, -1));
     },
   });
+
+  const activeItem = items[activeIndex];
+  const focusedId = activeItem?.section === 'focus' ? activeItem.id : null;
+  const canEditFocus = issueTeamIds.some((teamId) =>
+    canWriteIssues(workspace?.role, teamById.get(teamId)?.role)
+  );
+  const focusRow = useCallback(
+    (id: string) => {
+      const index = items.findIndex(
+        (item) => item.section === 'focus' && item.id === id
+      );
+      if (index >= 0) setActiveIndex(index);
+    },
+    [items, setActiveIndex]
+  );
+  const focusEnv = useMemo<IssueViewEnv>(
+    () => ({
+      slug,
+      state: FOCUS_ROW_STATE,
+      context,
+      forTeam,
+      scaleFor: (teamId) => teamById.get(teamId)?.estimate_scale ?? 'off',
+      estimateOptionsFor: (teamId) => estimateOptionsOf(teamById.get(teamId)),
+      teamNameFor: (teamId) => teamById.get(teamId)?.name,
+      canEdit: canEditFocus,
+      update: focusWrites.update,
+      createLabel,
+      focusedId,
+      selected: NO_SELECTION,
+      selectable: false,
+      peekedKey: null,
+      focus: focusRow,
+      toggleSelected: () => undefined,
+      peek: (row) => {
+        void navigate(issuePath(slug, row.key));
+      },
+    }),
+    [
+      slug,
+      context,
+      forTeam,
+      teamById,
+      canEditFocus,
+      focusWrites.update,
+      createLabel,
+      focusedId,
+      focusRow,
+      navigate,
+    ]
+  );
 
   const rowProps = (index: number) => ({
     isActive: activeIndex === index,
@@ -518,33 +627,35 @@ const WorkspaceHome: React.FC = () => {
                 }
               />
             ) : (
-              <ul aria-label="Your open issues" className="-mb-px">
-                {groups.map((group) => (
-                  <React.Fragment key={group.id}>
-                    <GroupHeading
-                      label={group.label}
-                      total={group.total}
-                      tone={group.tone}
-                    />
-                    {group.issues.map((issue) => {
-                      const index = focusIndex++;
-                      const name = teamById.get(issue.team_id)?.name;
-                      return (
-                        <IssueRow
-                          key={issue.id}
-                          issue={issue}
-                          slug={slug}
-                          statuses={context.statuses}
-                          labels={context.labels}
-                          people={context.people}
-                          {...(name === undefined ? {} : { teamName: name })}
-                          {...rowProps(index)}
-                        />
-                      );
-                    })}
-                  </React.Fragment>
-                ))}
-              </ul>
+              <IssueViewEnvContext.Provider value={focusEnv}>
+                <ul
+                  aria-label="Your open issues"
+                  className="-mb-px"
+                  style={
+                    { '--issue-key-ch': String(keyCh) } as React.CSSProperties
+                  }
+                >
+                  {groups.map((group) => (
+                    <React.Fragment key={group.id}>
+                      <GroupHeading
+                        label={group.label}
+                        total={group.total}
+                        tone={group.tone}
+                      />
+                      {group.issues.map((issue) => {
+                        const index = focusIndex++;
+                        return (
+                          <IssueListRow
+                            key={issue.id}
+                            issue={focusById.get(issue.id) ?? issue}
+                            rowRef={registerItem(index)}
+                          />
+                        );
+                      })}
+                    </React.Fragment>
+                  ))}
+                </ul>
+              </IssueViewEnvContext.Provider>
             )}
           </HomeSection>
 

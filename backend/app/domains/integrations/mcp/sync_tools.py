@@ -76,7 +76,13 @@ def _sync_json(call: ToolCall, team: Team, read: TeamSyncRead | None) -> dict[st
 
 
 def _repository(call: ToolCall, value: Any) -> Repository_:
-    """A repository by its numeric id or its owner/name, among the installation's repositories."""
+    """A repository by its numeric id or its owner/name, among the installation's repositories.
+
+    A miss asks GitHub before refusing, because an installation covering every
+    repository learns of one created after the install only from its deliveries.
+    """
+    from app.domains.integrations.installs import find_live_repository
+
     reference = str(value).strip()
     rows = call.repositories.github.list_repositories(call.context.workspace_id)
     by_id = [row for row in rows if row.repository_id == reference]
@@ -84,9 +90,13 @@ def _repository(call: ToolCall, value: Any) -> Repository_:
         return by_id[0]
     folded = reference.casefold()
     named = [row for row in rows if row.full_name.casefold() == folded]
-    if len(named) != 1:
-        raise ToolError(f"The GitHub App cannot see a repository named {reference}")
-    return named[0]
+    if len(named) == 1:
+        return named[0]
+    if not named and reference:
+        live = find_live_repository(call.repositories, call.context.workspace_id, reference)
+        if live is not None:
+            return live
+    raise ToolError(f"The GitHub App cannot see a repository named {reference}")
 
 
 def _repository_id(call: ToolCall, value: Any) -> str:

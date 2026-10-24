@@ -344,6 +344,12 @@ export const cyclesKey = (
   status: string
 ): QueryKey => ['cycles', workspaceId, teamId, status];
 
+/** A team's automatic cycle schedule. */
+export const cycleSettingsKey = (
+  workspaceId: string,
+  teamId: string
+): QueryKey => ['cycle-settings', workspaceId, teamId];
+
 /** One team's project list, which varies on the status filter applied. */
 export const projectsKey = (
   workspaceId: string,
@@ -466,6 +472,12 @@ export const teamSyncKey = (workspaceId: string, teamId: string): QueryKey => [
   teamId,
 ];
 
+/** The linked pull requests and GitHub issue an issue's threads may sync to. */
+export const threadTargetsKey = (
+  workspaceId: string,
+  issueId: string
+): QueryKey => ['github-thread-targets', workspaceId, issueId];
+
 /** The GitHub issue one issue mirrors. */
 export const issueSyncKey = (
   workspaceId: string,
@@ -499,6 +511,12 @@ export const slackChannelsKey = (
 /** Whether the workspace added the Discord App, and to which Discord server. */
 export const discordConnectionKey = (workspaceId: string): QueryKey => [
   'discord-connection',
+  workspaceId,
+];
+
+/** Whether the caller's Discord account is linked for direct messages in this workspace. */
+export const discordLinkKey = (workspaceId: string): QueryKey => [
+  'discord-link',
   workspaceId,
 ];
 
@@ -703,3 +721,9 @@ export const targetCustomerRequestsKey = (
   kind: 'issue' | 'project',
   targetId: string
 ): QueryKey => ['targetCustomerRequests', workspaceId, kind, targetId];
+
+/** Whether the caller's personal notifications reach their own Slack direct messages in one workspace. */
+export const slackLinkKey = (workspaceId: string): QueryKey => [
+  'slack-link',
+  workspaceId,
+];

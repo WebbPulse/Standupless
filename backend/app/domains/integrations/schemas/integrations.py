@@ -14,6 +14,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from app.common.db.dynamo.comments import GithubThread
 from app.common.db.dynamo.team_config import TRIGGERS
 
 RESOURCE_TYPE = Literal["issues", "comments", "projects", "project_updates", "cycles", "labels"]
@@ -107,6 +108,17 @@ class RepositoryRead(BaseModel):
     release_source: RepositoryReleaseSourceRead = Field(default_factory=RepositoryReleaseSourceRead)
 
 
+class LabelSetRead(BaseModel):
+    """Whether the workspace pushes its labels to every repository the installation can see.
+
+    `queued` is true on a write that turned the push on and queued the first run.
+    """
+
+    enabled: bool = False
+    include_public: bool = False
+    queued: bool = False
+
+
 class InstallationRead(BaseModel):
     """The GitHub App installation a workspace has, if any."""
 
@@ -121,6 +133,14 @@ class InstallationRead(BaseModel):
     installed_by: str
     installed_at: datetime
     repository_count: int
+    label_set: LabelSetRead = Field(default_factory=LabelSetRead)
+
+
+class LabelSetWrite(BaseModel):
+    """Turn the workspace label set push on or off, and choose whether public repositories get it."""
+
+    enabled: bool
+    include_public: bool = False
 
 
 class RepositoryLinkWrite(BaseModel):
@@ -439,3 +459,37 @@ class IssueSyncRead(BaseModel):
     url: str
     origin: Literal["github", "standupless"]
     synced_at: datetime
+
+
+class GithubThreadTargetRead(BaseModel):
+    """A pull request or GitHub issue one of an issue's comment threads may be synced to.
+
+    `private` is what the composer warns on: a thread synced to a public
+    repository is published there.
+    """
+
+    kind: Literal["pull_request", "issue"]
+    repository_id: str
+    full_name: str
+    number: int
+    title: str
+    url: str
+    private: bool
+    ref: str
+
+
+class GithubThreadWrite(BaseModel):
+    """Which linked pull request or GitHub issue to sync a thread to."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    repository_id: str = Field(min_length=1)
+    number: int = Field(ge=1)
+
+
+class GithubThreadRead(BaseModel):
+    """One root comment's thread sync, empty once it is unsynced."""
+
+    comment_id: str
+    issue_id: str
+    github_thread: GithubThread | None = None

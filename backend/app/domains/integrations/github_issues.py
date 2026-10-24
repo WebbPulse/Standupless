@@ -47,21 +47,26 @@ __all__ = [
     "GitHubError",
     "GitHubNotFound",
     "GitHubRateLimited",
+    "GitHubUnprocessable",
     "add_labels",
     "create_check_run",
     "create_comment",
     "create_issue",
     "create_label",
+    "delete_label",
     "get_issue",
     "get_pull_request",
+    "get_repository",
     "installation_token",
     "list_check_runs",
     "list_comments",
+    "list_labels",
     "pull_request_commit_messages",
     "remove_label",
     "repository_path",
     "update_comment",
     "update_issue",
+    "update_label",
     "user_login",
 ]
 
@@ -284,21 +289,103 @@ def get_pull_request(
     return _numbered(_request("GET", path, token=token, client=client), "pull request", "number")
 
 
-def create_label(token: str, repository_id: str, name: str, color: str, *, client: httpx.Client | None = None) -> bool:
+def _hex_color(color: str) -> str | None:
+    """A `#rrggbb` color as the six lowercase hex digits GitHub expects, or `None` when it is not one."""
+    hex_color = color.lstrip("#").lower()
+    if len(hex_color) == 6 and all(char in "0123456789abcdef" for char in hex_color):
+        return hex_color
+    return None
+
+
+def _label_body(color: str | None, description: str | None) -> dict[str, Any]:
+    """The color and description fields of a label create or update, leaving out what is not given."""
+    body: dict[str, Any] = {}
+    if color is not None:
+        hex_color = _hex_color(color)
+        if hex_color is not None:
+            body["color"] = hex_color
+    if description is not None:
+        body["description"] = description[:LABEL_DESCRIPTION_MAX]
+    return body
+
+
+LABEL_DESCRIPTION_MAX = 100
+"""The longest label description GitHub accepts."""
+
+LABEL_PAGE_SIZE = 100
+
+LABEL_PAGES = 20
+"""How many pages of repository labels a label sync reads."""
+
+
+def create_label(
+    token: str,
+    repository_id: str,
+    name: str,
+    color: str,
+    *,
+    description: str | None = None,
+    client: httpx.Client | None = None,
+) -> bool:
     """Create one repository label, answering `False` when a label of that name already exists.
 
     GitHub answers a taken name with a 422, which is the outcome the caller wanted,
     so it is not raised. The color is sent as the six hex digits GitHub expects.
     """
-    hex_color = color.lstrip("#").lower()
-    body: dict[str, Any] = {"name": name}
-    if len(hex_color) == 6 and all(char in "0123456789abcdef" for char in hex_color):
-        body["color"] = hex_color
+    body: dict[str, Any] = {"name": name, **_label_body(color, description)}
     try:
         _request("POST", f"{repository_path(repository_id)}/labels", token=token, json=body, client=client)
     except GitHubUnprocessable:
         return False
     return True
+
+
+def list_labels(token: str, repository_id: str, *, client: httpx.Client | None = None) -> list[Mapping[str, Any]]:
+    """Every label of one repository, up to `LABEL_PAGES` pages, raising on a page that is not a list."""
+    labels: list[Mapping[str, Any]] = []
+    base = f"{repository_path(repository_id)}/labels"
+    for page in range(1, LABEL_PAGES + 1):
+        body = _request("GET", f"{base}?per_page={LABEL_PAGE_SIZE}&page={page}", token=token, client=client)
+        if not isinstance(body, list):
+            raise GitHubError("the label list call answered no list")
+        batch = [entry for entry in body if isinstance(entry, Mapping)]
+        labels.extend(batch)
+        if len(batch) < LABEL_PAGE_SIZE:
+            break
+    return labels
+
+
+def update_label(
+    token: str,
+    repository_id: str,
+    name: str,
+    *,
+    new_name: str | None = None,
+    color: str | None = None,
+    description: str | None = None,
+    client: httpx.Client | None = None,
+) -> bool:
+    """Rename, recolor or describe one repository label, answering `False` when it is not there."""
+    body = _label_body(color, description)
+    if new_name is not None and new_name != name:
+        body["new_name"] = new_name
+    if not body:
+        return True
+    path = f"{repository_path(repository_id)}/labels/{quote(name, safe='')}"
+    try:
+        _request("PATCH", path, token=token, json=body, client=client)
+    except GitHubNotFound:
+        return False
+    return True
+
+
+def delete_label(token: str, repository_id: str, name: str, *, client: httpx.Client | None = None) -> None:
+    """Delete one repository label, treating one already gone as deleted."""
+    path = f"{repository_path(repository_id)}/labels/{quote(name, safe='')}"
+    try:
+        _request("DELETE", path, token=token, client=client)
+    except GitHubNotFound:
+        return
 
 
 def add_labels(
@@ -511,3 +598,21 @@ def user_login(token: str, github_user_id: str, *, client: httpx.Client | None =
     """
     body = _object(_request("GET", f"/user/{github_user_id}", token=token, client=client), "user")
     return str(body.get("login", ""))
+
+
+def get_repository(token: str, reference: str, *, client: httpx.Client | None = None) -> Mapping[str, Any]:
+    """One repository by its numeric id or its owner/name, as the installation's token can read it.
+
+    The owner/name form is the one lookup addressed as `/repos/{owner}/{name}`,
+    because a person naming a repository the rows have not learned has no id to
+    give; a renamed repository answers a redirect, which raises like any refusal.
+    """
+    text = str(reference).strip()
+    if text.isdigit():
+        path = repository_path(text)
+    else:
+        owner, _, name = text.partition("/")
+        if not owner or not name or "/" in name:
+            raise ValueError("a repository is a numeric id or owner/name")
+        path = f"/repos/{quote(owner, safe='')}/{quote(name, safe='')}"
+    return _numbered(_request("GET", path, token=token, client=client), "repository", "id")

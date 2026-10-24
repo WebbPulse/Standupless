@@ -1,14 +1,17 @@
 /**
  * The Display button of the projects list and the roadmap: the layout, how
- * rows group, what order they run in, which completed projects stay and
- * which list columns show. It
- * reads like the issue list's Display menu so every list is arranged the same
- * way, and it writes nothing itself. A page leaves out the choices it does
- * not offer.
+ * projects group and in which direction, the grouping inside each group,
+ * what order they run in, which closed projects stay, whether a team page
+ * keeps only the projects it leads, whether the board keeps empty columns,
+ * and which properties show. It reads like the issue list's Display menu so
+ * every list is arranged the same way, and it writes nothing itself. A page
+ * leaves out the choices it does not offer.
  */
 
 import React from 'react';
 import {
+  LuArrowDown,
+  LuArrowUp,
   LuCalendarRange,
   LuList,
   LuSlidersHorizontal,
@@ -19,6 +22,7 @@ import { cn } from '../../lib/cn';
 import {
   CLOSED_WINDOWS,
   CLOSED_WINDOW_LABELS,
+  CUSTOMER_PROJECT_ORDERINGS,
   PROJECT_GROUPINGS,
   PROJECT_GROUPING_LABELS,
   PROJECT_LAYOUTS,
@@ -26,9 +30,13 @@ import {
   PROJECT_ORDERINGS,
   PROJECT_ORDERING_LABELS,
   PROJECT_COLUMNS,
+  PROJECT_COLUMN_CHIPS,
   PROJECT_COLUMN_LABELS,
   parseDisplayField,
   type ClosedWindow,
+  type EmptyColumnsChoice,
+  type GroupDirection,
+  type LeadTeamChoice,
   type ProjectColumn,
   type ProjectGrouping,
   type ProjectLayout,
@@ -49,16 +57,30 @@ const LAYOUT_ICONS: Record<ProjectLayout, IconType> = {
 export interface ProjectsDisplayMenuProps {
   grouping: ProjectGrouping;
   onGroupingChange: (grouping: ProjectGrouping) => void;
+  /** The direction groups run in, left out where groups keep a fixed order. */
+  direction?: GroupDirection;
+  onDirectionChange?: (direction: GroupDirection) => void;
+  /** The grouping inside each group, left out where the layout has one level. */
+  rows?: ProjectGrouping;
+  onRowsChange?: (rows: ProjectGrouping) => void;
   /** The layout, left out where the page has only one. */
   layout?: ProjectLayout;
   onLayoutChange?: (layout: ProjectLayout) => void;
   /** The ordering, left out where rows keep a fixed order. */
   ordering?: ProjectOrdering;
   onOrderingChange?: (ordering: ProjectOrdering) => void;
+  /** True where the reader may see customers, so the customer requests ordering is offered. */
+  customerOrdering?: boolean;
   /** Which completed projects stay, left out where every project shows. */
   closed?: ClosedWindow;
   onClosedChange?: (closed: ClosedWindow) => void;
-  /** The shown list columns, left out where the layout draws no columns. */
+  /** Whether only the projects a team leads stay, left out off a team page. */
+  leadTeam?: LeadTeamChoice;
+  onLeadTeamChange?: (leadTeam: LeadTeamChoice) => void;
+  /** Whether empty board columns show, left out off the board. */
+  empty?: EmptyColumnsChoice;
+  onEmptyChange?: (empty: EmptyColumnsChoice) => void;
+  /** The shown properties, left out where the layout draws no columns. */
   columns?: readonly ProjectColumn[];
   onColumnsChange?: (columns: ProjectColumn[]) => void;
   /** Puts every choice back to the page's own, or undefined when they match. */
@@ -73,6 +95,9 @@ interface ChoiceRowProps<T extends string> {
   choices: readonly T[];
   labels: Record<T, string>;
   onChange: (value: T) => void;
+  /** Drawn before the select, such as a direction button. */
+  adornment?: React.ReactNode;
+  disabled?: boolean;
 }
 
 /** One labelled select row of the Display panel. */
@@ -83,32 +108,100 @@ const ChoiceRow = <T extends string>({
   choices,
   labels,
   onChange,
+  adornment,
+  disabled = false,
 }: ChoiceRowProps<T>): React.ReactElement => (
   <div className="flex items-center justify-between gap-4">
     <label htmlFor={id} className="text-xs text-text-muted">
       {label}
     </label>
-    <Select
-      id={id}
-      className="h-7 w-36 py-0 text-xs"
-      value={value}
-      onChange={(event) => {
-        const next = choices.find((choice) => choice === event.target.value);
-        if (next !== undefined) onChange(next);
-      }}
-    >
-      {choices.map((choice) => (
-        <option key={choice} value={choice}>
-          {labels[choice]}
-        </option>
-      ))}
-    </Select>
+    <div className="flex items-center gap-1">
+      {adornment}
+      <Select
+        id={id}
+        className="h-7 w-36 py-0 text-xs"
+        value={value}
+        disabled={disabled}
+        onChange={(event) => {
+          const next = choices.find((choice) => choice === event.target.value);
+          if (next !== undefined) onChange(next);
+        }}
+      >
+        {choices.map((choice) => (
+          <option key={choice} value={choice}>
+            {labels[choice]}
+          </option>
+        ))}
+      </Select>
+    </div>
   </div>
 );
 
-/** The Display button and its layout, grouping, ordering, window and column panel. */
+/** One on or off choice of the Display panel, drawn as a labelled switch. */
+const SwitchRow: React.FC<{
+  id: string;
+  label: string;
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+}> = ({ id, label, checked, onChange }) => (
+  <div className="flex items-center justify-between gap-4">
+    <label htmlFor={id} className="text-xs text-text-muted">
+      {label}
+    </label>
+    <input
+      id={id}
+      type="checkbox"
+      role="switch"
+      checked={checked}
+      onChange={(event) => {
+        onChange(event.target.checked);
+      }}
+      className="h-4 w-7 cursor-pointer accent-accent"
+    />
+  </div>
+);
+
+/** The button that flips the direction groups run in. */
+const DirectionButton: React.FC<{
+  direction: GroupDirection;
+  disabled: boolean;
+  onChange: (direction: GroupDirection) => void;
+}> = ({ direction, disabled, onChange }) => (
+  <button
+    type="button"
+    aria-label="Reverse grouping"
+    aria-pressed={direction === 'desc'}
+    title="Reverse grouping"
+    disabled={disabled}
+    onClick={() => {
+      onChange(direction === 'desc' ? 'asc' : 'desc');
+    }}
+    className={cn(
+      'flex h-7 w-7 items-center justify-center rounded-md border text-text-muted focus-visible:outline-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-50',
+      direction === 'desc'
+        ? 'border-line-strong bg-raised text-text'
+        : 'border-line hover:border-line-strong hover:text-text'
+    )}
+  >
+    {direction === 'desc' ? (
+      <LuArrowUp aria-hidden="true" className="h-3.5 w-3.5" />
+    ) : (
+      <LuArrowDown aria-hidden="true" className="h-3.5 w-3.5" />
+    )}
+  </button>
+);
+
+/** The Display button and its layout, grouping, ordering, window and property panel. */
 export const ProjectsDisplayMenu: React.FC<ProjectsDisplayMenuProps> = ({
   grouping,
+  direction,
+  onDirectionChange,
+  rows,
+  onRowsChange,
+  leadTeam,
+  onLeadTeamChange,
+  empty,
+  onEmptyChange,
   layout,
   ordering,
   closed,
@@ -119,6 +212,7 @@ export const ProjectsDisplayMenu: React.FC<ProjectsDisplayMenuProps> = ({
   columns,
   onColumnsChange,
   onReset,
+  customerOrdering = false,
 }) => (
   <Popover
     label="Display options"
@@ -171,13 +265,40 @@ export const ProjectsDisplayMenu: React.FC<ProjectsDisplayMenuProps> = ({
         choices={PROJECT_GROUPINGS}
         labels={PROJECT_GROUPING_LABELS}
         onChange={onGroupingChange}
+        adornment={
+          direction !== undefined && onDirectionChange !== undefined ? (
+            <DirectionButton
+              direction={direction}
+              disabled={grouping === 'none'}
+              onChange={onDirectionChange}
+            />
+          ) : undefined
+        }
       />
+      {rows !== undefined && onRowsChange !== undefined && (
+        <ChoiceRow
+          id="projects-rows"
+          label={layout === 'board' ? 'Rows' : 'Sub-grouping'}
+          value={grouping === 'none' || rows === grouping ? 'none' : rows}
+          choices={PROJECT_GROUPINGS.filter(
+            (choice) => choice === 'none' || choice !== grouping
+          )}
+          labels={PROJECT_GROUPING_LABELS}
+          disabled={grouping === 'none'}
+          onChange={onRowsChange}
+        />
+      )}
       {ordering !== undefined && onOrderingChange !== undefined && (
         <ChoiceRow
           id="projects-order"
           label="Ordering"
           value={ordering}
-          choices={PROJECT_ORDERINGS}
+          choices={PROJECT_ORDERINGS.filter(
+            (choice) =>
+              customerOrdering ||
+              choice === ordering ||
+              !CUSTOMER_PROJECT_ORDERINGS.has(choice)
+          )}
           labels={PROJECT_ORDERING_LABELS}
           onChange={onOrderingChange}
         />
@@ -185,11 +306,31 @@ export const ProjectsDisplayMenu: React.FC<ProjectsDisplayMenuProps> = ({
       {closed !== undefined && onClosedChange !== undefined && (
         <ChoiceRow
           id="projects-closed"
-          label="Completed projects"
+          label="Show closed projects"
           value={closed}
           choices={CLOSED_WINDOWS}
           labels={CLOSED_WINDOW_LABELS}
           onChange={onClosedChange}
+        />
+      )}
+      {leadTeam !== undefined && onLeadTeamChange !== undefined && (
+        <SwitchRow
+          id="projects-lead-team"
+          label="Only show lead team projects"
+          checked={leadTeam === 'lead'}
+          onChange={(checked) => {
+            onLeadTeamChange(checked ? 'lead' : 'all');
+          }}
+        />
+      )}
+      {empty !== undefined && onEmptyChange !== undefined && (
+        <SwitchRow
+          id="projects-empty"
+          label="Show empty columns"
+          checked={empty === 'show'}
+          onChange={(checked) => {
+            onEmptyChange(checked ? 'show' : 'hide');
+          }}
         />
       )}
     </div>
@@ -197,7 +338,7 @@ export const ProjectsDisplayMenu: React.FC<ProjectsDisplayMenuProps> = ({
       <div className="border-t border-line p-3">
         <p className="mb-2 text-xs text-text-muted">Display properties</p>
         <div className="flex flex-wrap gap-1.5">
-          {PROJECT_COLUMNS.map((column) => {
+          {PROJECT_COLUMN_CHIPS.map((column) => {
             const on = columns.includes(column);
             return (
               <button

@@ -6,7 +6,9 @@
  * list or board that groups and filters by milestone too. Every property
  * edits in place and shows at once, and a failed write is undone with a
  * notice. The chip row also names the projects this one is blocked by and
- * the ones it blocks, and links or unlinks them in place.
+ * the ones it blocks, and links or unlinks them in place. The chips answer
+ * the keyboard too: S status, P priority, A lead, M members, H health,
+ * Shift+S start date and Shift+D target date open the same pickers.
  *
  * The updates tab is the project's running account of itself: each update is
  * a short write up and a health call, newest first. `?tab=updates` opens it,
@@ -16,7 +18,7 @@
  * composer, and the command palette offers the same.
  */
 
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 import { useQueryAuth } from '@webbpulse/auth/react';
 import { usePolledQuery } from '@webbpulse/api-client/react';
 import {
@@ -57,6 +59,7 @@ import {
   ProjectStatusPicker,
   TeamsPicker,
 } from '../../components/planning/ProjectPickers';
+import ProjectPropertyKeys from '../../components/planning/ProjectPropertyKeys';
 import ProjectProgressPanel from '../../components/planning/ProjectProgressPanel';
 import ProjectUpdatesFeed from '../../components/planning/ProjectUpdatesFeed';
 import UpdateDueBadge from '../../components/planning/UpdateDueBadge';
@@ -64,6 +67,7 @@ import { ErrorAlert } from '../../components/ui/alert';
 import Button, { IconButton } from '../../components/ui/button';
 import Dialog from '../../components/ui/dialog';
 import EmptyState from '../../components/ui/empty-state';
+import LoadError from '../../components/ui/load-error';
 import Menu, { MenuItem } from '../../components/ui/menu';
 import { SkeletonRows } from '../../components/ui/skeleton';
 import WorkspaceShell from '../../components/workspace/WorkspaceShell';
@@ -83,7 +87,7 @@ import { useWorkspace } from '../../hooks/useWorkspace';
 import { useWorkspaceProjects } from '../../hooks/useWorkspaceProjects';
 import { canWriteIssues, isTeamAdmin } from '../../lib/capabilities';
 import { cn } from '../../lib/cn';
-import { errorMessage } from '../../lib/errors';
+import { errorMessage, hasStatus, NOT_FOUND } from '../../lib/errors';
 import { personLabel } from '../../lib/issuePeople';
 import { useOptimisticRecord } from '../../lib/optimistic';
 import { projectsPath } from '../../lib/paths';
@@ -194,6 +198,7 @@ export const ProjectDetail: React.FC = () => {
     data: server,
     error,
     isLoading,
+    refetch,
   } = usePolledQuery(read, {
     intervalMs: POLL_MS,
     enabled: workspaceId !== '' && projectId !== '',
@@ -276,6 +281,7 @@ export const ProjectDetail: React.FC = () => {
   }, [openCreate, createTeam, projectId]);
 
   const mayCreate = canCreate && createTeam !== undefined;
+  const propertiesRow = useRef<HTMLDivElement>(null);
   useShortcut({
     keys: 'c',
     label: 'New issue in this project',
@@ -364,14 +370,27 @@ export const ProjectDetail: React.FC = () => {
     );
   }
 
+  if (
+    project === null &&
+    error !== null &&
+    error !== undefined &&
+    !hasStatus(error, NOT_FOUND)
+  ) {
+    return (
+      <WorkspaceShell title="Project" leading={crumbs}>
+        <LoadError
+          message={errorMessage(error, 'Could not load this project.')}
+          onRetry={() => {
+            void refetch();
+          }}
+        />
+      </WorkspaceShell>
+    );
+  }
+
   if (project === null) {
     return (
       <WorkspaceShell title="Project not found" leading={crumbs}>
-        {error !== null && (
-          <ErrorAlert
-            message={errorMessage(error, 'Could not load this project.')}
-          />
-        )}
         <EmptyState message="That project does not exist, or you do not have access to it." />
       </WorkspaceShell>
     );
@@ -407,6 +426,7 @@ export const ProjectDetail: React.FC = () => {
 
   const properties = (
     <div
+      ref={propertiesRow}
       role="group"
       aria-label="Properties"
       className="flex flex-wrap items-center gap-1.5"
@@ -651,6 +671,10 @@ export const ProjectDetail: React.FC = () => {
                   }}
                 />
                 {properties}
+                <ProjectPropertyKeys
+                  container={propertiesRow}
+                  enabled={canEdit}
+                />
                 {nudge !== null && (
                   <div
                     role="status"

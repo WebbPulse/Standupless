@@ -12,7 +12,7 @@ from app.common.composition.wiring import build_domain_app
 from app.common.db.dynamo.inbox import NOTIFICATION_KINDS
 from tests.domains.helpers import OWNER, make_user, sign_in, sign_in_through_gate
 
-ALL_ON = {"in_app": True, "email": True}
+ALL_ON = {"in_app": True, "email": True, "chat": True}
 
 
 @pytest.fixture
@@ -58,10 +58,14 @@ def test_the_caller_reads_their_own_row(client: TestClient, repositories: Any) -
         "projects_display": {
             "layout": "list",
             "group": "status",
+            "direction": "asc",
+            "rows": "none",
             "order": "target",
-            "closed": "all",
+            "closed": "fortnight",
+            "lead_team": "all",
+            "empty": "show",
             "zoom": "month",
-            "columns": "health,priority,status,lead,start,target,teams,progress",
+            "columns": "summary,dependencies,health,priority,status,lead,start,target,teams,progress",
         },
         "auto_grant_new_scopes": False,
     }
@@ -161,16 +165,30 @@ def test_the_projects_display_is_kept_whole_and_refuses_unknown_choices(client: 
 
     response = client.patch(
         "/api/users/me/preferences",
-        json={"projects_display": {"layout": "board", "group": "health", "closed": "month"}},
+        json={
+            "projects_display": {
+                "layout": "board",
+                "group": "health",
+                "direction": "desc",
+                "rows": "lead",
+                "closed": "month",
+                "lead_team": "lead",
+                "empty": "hide",
+            }
+        },
     )
     assert response.status_code == 200
     assert response.json()["projects_display"] == {
         "layout": "board",
         "group": "health",
+        "direction": "desc",
+        "rows": "lead",
         "order": "target",
         "closed": "month",
+        "lead_team": "lead",
+        "empty": "hide",
         "zoom": "month",
-        "columns": "health,priority,status,lead,start,target,teams,progress",
+        "columns": "summary,dependencies,health,priority,status,lead,start,target,teams,progress",
     }
     assert repositories.users.get(OWNER).projects_display["group"] == "health"
     assert client.get("/api/users/me").json()["projects_display"]["layout"] == "board"
@@ -179,8 +197,13 @@ def test_the_projects_display_is_kept_whole_and_refuses_unknown_choices(client: 
         ("layout", "gallery"),
         ("group", "label"),
         ("closed", "year"),
+        ("closed", "quarter"),
         ("zoom", "day"),
-        ("columns", "health,milestones"),
+        ("direction", "up"),
+        ("rows", "label"),
+        ("lead_team", "yes"),
+        ("empty", "true"),
+        ("columns", "health,budget"),
     ):
         refused = client.patch("/api/users/me/preferences", json={"projects_display": {field: value}})
         assert refused.status_code == 422
@@ -203,10 +226,19 @@ def test_the_projects_list_columns_are_kept_in_the_list_order(client: TestClient
 def test_a_retired_projects_list_column_is_dropped_on_read(client: TestClient, repositories: Any) -> None:
     """A stored column the list no longer draws falls away and the others stay."""
     make_user(repositories, OWNER, "owner@example.com", display_name="Owner")
-    repositories.users.update(OWNER, projects_display={"columns": "members,issues,health"})
+    repositories.users.update(OWNER, projects_display={"rows": "none", "columns": "budget,issues,health"})
     sign_in(client, OWNER)
 
     assert client.get("/api/users/me").json()["projects_display"]["columns"] == "health,issues"
+
+
+def test_an_arrangement_saved_before_rows_keeps_summary_and_dependencies(client: TestClient, repositories: Any) -> None:
+    """Columns stored before summary and dependencies were choices read with both on, as the list then drew them."""
+    make_user(repositories, OWNER, "owner@example.com", display_name="Owner")
+    repositories.users.update(OWNER, projects_display={"columns": "issues,health"})
+    sign_in(client, OWNER)
+
+    assert client.get("/api/users/me").json()["projects_display"]["columns"] == "summary,dependencies,health,issues"
 
 
 def test_a_retired_projects_display_choice_reads_as_the_default(client: TestClient, repositories: Any) -> None:
@@ -230,7 +262,7 @@ def test_one_kind_can_be_turned_off_per_channel(client: TestClient, repositories
     )
     assert response.status_code == 200
     body = response.json()
-    assert body["notification_preferences"]["commented"] == {"in_app": True, "email": False}
+    assert body["notification_preferences"]["commented"] == {"in_app": True, "email": False, "chat": True}
     assert body["notification_preferences"]["mentioned"] == ALL_ON
     assert body["email_notifications"] is True
 

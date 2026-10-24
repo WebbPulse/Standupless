@@ -49,6 +49,9 @@ TeamRoleField = Literal["admin", "member"]
 
 COLOR_PATTERN = re.compile(r"^#[0-9a-fA-F]{6}$")
 
+LABEL_DESCRIPTION_MAX = 100
+"""The longest label description, which is what GitHub accepts on a repository label."""
+
 
 def _check_key_prefix(value: str) -> str:
     """Hold a key prefix to the contract's alphabet, uppercase only."""
@@ -352,11 +355,13 @@ class LabelCreate(BaseModel):
 
     `is_group` makes a label group, which holds child labels and is never put on
     an issue itself. `parent_id` puts the new label in an existing group of the
-    same scope. A group cannot sit in another group.
+    same scope. A group cannot sit in another group. `description` is what a
+    repository the team syncs with shows beside the label.
     """
 
     name: str = Field(min_length=1, max_length=60)
     color: str
+    description: Optional[str] = Field(default=None, max_length=LABEL_DESCRIPTION_MAX)
     is_group: bool = False
     parent_id: Optional[str] = Field(default=None, min_length=1)
 
@@ -374,11 +379,13 @@ class LabelUpdate(BaseModel):
     """The body a label patch takes.
 
     `parent_id` moves a label into a group of the same scope, and an explicit
-    null takes it out of its group. A field left out keeps its current value.
+    null takes it out of its group, and an explicit null or empty `description`
+    clears it. A field left out keeps its current value.
     """
 
     name: Optional[str] = Field(default=None, min_length=1, max_length=60)
     color: Optional[str] = None
+    description: Optional[str] = Field(default=None, max_length=LABEL_DESCRIPTION_MAX)
     parent_id: Optional[str] = Field(default=None, min_length=1)
 
     @field_validator("color")
@@ -402,6 +409,7 @@ class LabelRead(BaseModel):
     id: str
     name: str
     color: str
+    description: Optional[str] = None
     scope: ConfigScope = "team"
     hidden: bool = False
     inherited_name: Optional[str] = None
@@ -415,6 +423,7 @@ class LabelRead(BaseModel):
             id=label.label_id,
             name=label.name,
             color=label.color,
+            description=label.description,
             scope=label.scope,  # pyright: ignore[reportArgumentType]
             hidden=label.hidden,
             inherited_name=label.inherited_name,

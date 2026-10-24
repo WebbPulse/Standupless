@@ -60,7 +60,7 @@ from app.common.db.dynamo.releases import (
     release_key,
     release_prefix,
 )
-from app.common.issue_key_search import find_keys
+from app.common.issue_key_search import find_keys, moving_commit_keys
 from app.common.issue_move import find_issue_by_number
 from app.common.issue_rules import load_visible_issue, status_categories
 from app.common.planning_rules import (
@@ -209,14 +209,19 @@ def team_prefixes(repositories: Repositories, workspace_id: str, team_id: str) -
 def issues_from_messages(
     repositories: Repositories, workspace_id: str, team_id: str, messages: Sequence[str]
 ) -> list[Issue]:
-    """The team's issues whose keys appear in these commit messages, first named first."""
+    """The team's issues these commit messages name in a way that moves them, first named first.
+
+    The rule is the one a pull request merge follows: a key in a commit's subject
+    line, a merge commit's title, or after a closing or `Refs` style word counts,
+    and a key only a commit's body mentions in prose does not, so release stage
+    automation never moves it.
+    """
     prefixes = team_prefixes(repositories, workspace_id, team_id)
     if not prefixes or not messages:
         return []
     numbers: dict[int, None] = {}
-    for message in messages:
-        for found in find_keys(message, prefixes):
-            numbers.setdefault(found.number, None)
+    for found in moving_commit_keys(messages, prefixes):
+        numbers.setdefault(found.number, None)
     issues: dict[str, Issue] = {}
     for number in numbers:
         issue = find_issue_by_number(repositories, workspace_id, team_id, number)

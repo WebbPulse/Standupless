@@ -5,7 +5,11 @@
  * and text size, boot splash phase) and the ones src/prerender/document.ts writes (the
  * signed in resume redirect, and the stale guard of each of the seven
  * prerendered pages, whose hash embeds the page path). A change to any of them
- * changes its hash; under report_only that only logs a violation.
+ * changes its hash, and the frontend CI build fails until this list matches:
+ * frontend/cspHashes.ts hashes every inline script in the built documents.
+ *
+ * form-action allows GitHub because the GitHub App manifest flow posts the
+ * signed manifest to github.com.
  *
  * The API origin is spelled from the domain rather than read from module.api,
  * whose CORS origins already depend on this distribution.
@@ -24,7 +28,6 @@ locals {
   frontend_inline_script_hashes = [
     "'sha256-CA5GmqIxPIosCNhtIYRq2uallsAeWsW7SHiVQ3PjyOY='",
     "'sha256-OJ51BiuphfP+CCkdfbfEQjk0YXcMl7sov6F3sFWxcno='",
-    "'sha256-hPlJVYV04ts5jAK5M+zBzpirVVSdqVa4867rMqqtjSw='",
     "'sha256-7/80D4r4ucpgYeiI1HmNzb88iy+cYVm1gu3nv2axxH8='",
     "'sha256-aHeq0umUK6AtDNMDQ0RY0YvqRFR3YYji35k2ABaI/6M='",
     "'sha256-ChWfZNYpq0mUC+g91dI4j8XZsRTpPGYsqvn2r2hsON0='",
@@ -32,6 +35,7 @@ locals {
     "'sha256-PTuDwv46i7kmEzDGtfY2T+JFwNHS9Wxcpb2pOeAUMdY='",
     "'sha256-sPzfPNHQfqNsP+Y1/h5pToifvmVhLmykN+PjzZoRGls='",
     "'sha256-WzFm13Km/xTT5Nnqv/eZvRg5zFDyHXiRlwyFEtb6joo='",
+    "'sha256-hJDdZrhYO/Sz0zRsk7PDpi1eKISqDF3mDuMaO05uz8Q='",
   ]
 }
 
@@ -61,6 +65,7 @@ module "frontend" {
       connect_src = concat([local.api_origin], local.attachments_bucket_origins)
       img_src     = concat(["blob:", "https://avatars.githubusercontent.com"], local.attachments_bucket_origins)
       media_src   = concat(["blob:"], local.attachments_bucket_origins)
+      form_action = ["https://github.com"]
     }
   }
 

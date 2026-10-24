@@ -54,7 +54,18 @@ export interface DisplayMenuProps {
    * no team default or the caller cannot change it.
    */
   teamDefault?: TeamDefaultActions | undefined;
+  /**
+   * True where the list is sorted on the server and the reader may see
+   * customers, so the customer request and revenue orderings are offered.
+   */
+  customerSorts?: boolean;
 }
+
+/** The orderings that read the customers who asked for each issue. */
+const CUSTOMER_ORDERINGS: ReadonlySet<IssueListSort> = new Set([
+  'customer_requests_desc',
+  'customer_revenue_desc',
+]);
 
 /** What an admin can do with a team's default display from the menu. */
 export interface TeamDefaultActions {
@@ -115,6 +126,7 @@ export const DisplayMenu: React.FC<DisplayMenuProps> = ({
   groupFields = fieldsFor(GROUP_FIELDS, {}),
   archive = false,
   teamDefault,
+  customerSorts = false,
 }) => {
   const teamSave = teamDefault?.onSave;
   const teamClear = teamDefault?.onClear;
@@ -257,7 +269,12 @@ export const DisplayMenu: React.FC<DisplayMenuProps> = ({
                 });
               }}
             >
-              {ORDERINGS.map((ordering) => (
+              {ORDERINGS.filter(
+                (ordering) =>
+                  customerSorts ||
+                  !CUSTOMER_ORDERINGS.has(ordering) ||
+                  ordering === state.ordering
+              ).map((ordering) => (
                 <option key={ordering} value={ordering}>
                   {ORDERING_LABELS[ordering]}
                 </option>

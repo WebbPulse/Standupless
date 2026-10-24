@@ -32,6 +32,7 @@ from app.common.api.schemas.issues import (
 from app.common.change_source import CHANGE_SOURCES
 from app.common.comment_drafts import clear_posted_draft
 from app.common.comment_writes import comment_page, create_comment
+from app.common.customer_index import require_customer_list_reader
 from app.common.cycle_schedule import RELATIVE_CYCLES
 from app.common.db.dynamo.comments import Comment
 from app.common.db.dynamo.github import IssueLink
@@ -51,7 +52,8 @@ from app.common.issue_rules import TRIAGE_STATUS_ID, TRIAGE_STATUS_NAME, require
 from app.common.issue_subscribers import list_subscribers, subscribe, unsubscribe
 from app.common.issue_writes import bulk_update_issues, create_issue, list_issues, update_issue, walk_page
 from app.common.similar_issues import find_similar
-from app.domains.integrations import pr_status
+from app.domains.integrations import pr_status, thread_sync
+from app.domains.integrations.mcp.team_tools import boolean
 from app.domains.integrations.mcp.template_tools import template_ref
 from app.domains.integrations.mcp.toolkit import (
     PRIORITIES,
@@ -88,7 +90,9 @@ SORTS: tuple[str, ...] = get_args(SortField)
 SORT_HELP = (
     "The order, defaulting to updated_desc; sla_asc puts the soonest SLA breach first "
     "and issues without a running SLA last; status_asc follows the board's status order, "
-    "start_asc the earliest start date and estimate_desc the largest estimate"
+    "start_asc the earliest start date and estimate_desc the largest estimate; "
+    "customer_requests_desc puts the most customer requests first and customer_revenue_desc "
+    "the highest summed revenue of the customers asking"
 )
 
 REVERSE_HELP = "Turn the sort around, issues without the sorted value still last, default false"
@@ -166,6 +170,8 @@ FILTER_ARGUMENTS: tuple[str, ...] = (
     "project_id_not",
     "project_milestone_id_not",
     "cycle_id_not",
+    "customer_id",
+    "customer_id_not",
 )
 """The issue list filter arguments the tools take, by the HTTP list's query parameter names."""
 
@@ -238,6 +244,8 @@ def _filter_properties(*, with_assignee: bool = True) -> dict[str, Any]:
         "project_id_not": one_or_many("In none of these projects"),
         "project_milestone_id_not": one_or_many("In none of these project milestones"),
         "cycle_id_not": one_or_many("In none of these cycles"),
+        "customer_id": one_or_many("Requested by any of these customers; 'none' is issues no customer asked for"),
+        "customer_id_not": one_or_many("Requested by none of these customers; 'none' keeps requested issues only"),
         "due_before": string("Due before this day, YYYY-MM-DD, exclusive"),
         "due_after": string("Due after this day, YYYY-MM-DD, exclusive"),
         "created_after": string("Created after this day, YYYY-MM-DD, exclusive"),
@@ -433,6 +441,7 @@ def _search_issues(call: ToolCall) -> Any:
     else:
         teams = visible_team_ids(call.repositories, call.context)
 
+    require_customer_list_reader(call.context, wanted.needs_customers, None)
     wanted = resolve_issue_filter(call.repositories, call.context.workspace_id, teams, wanted)
     categories: dict[str, str] = {}
     if wanted.needs_categories:
@@ -641,13 +650,29 @@ def _comment_json(comment: Comment) -> dict[str, Any]:
         "source": comment.source,
         "created_at": comment.created_at.isoformat(),
         "edited_at": comment.edited_at.isoformat() if comment.edited_at else None,
+        "github_thread": comment.github_thread.model_dump(mode="json") if comment.github_thread else None,
     }
 
 
+def _sync_root(call: ToolCall, issue: Issue, comment_id: str) -> Comment:
+    """Sync one root comment's thread to the target `github_target` names, or the only one there is."""
+    target = call.optional("github_target")
+    return thread_sync.sync_thread(
+        call.repositories, call.context, issue.issue_id, comment_id, reference=str(target) if target else None
+    )
+
+
 def _add_comment(call: ToolCall) -> Any:
-    """Add a comment, or a reply to a top level comment, through the route's path."""
+    """Add a comment, or a reply to a top level comment, through the route's path.
+
+    With `sync_to_github` the thread is synced too: a reply's thread before the
+    reply is written, so the reply is posted, and a new thread once its root is.
+    """
     issue = issue_ref(call, call.require("issue_id"))
     parent = call.optional("parent_comment_id")
+    sync = call.optional("sync_to_github") is True
+    if sync and parent:
+        _sync_root(call, issue, str(parent))
     created = create_comment(
         call.repositories,
         call.context,
@@ -663,7 +688,30 @@ def _add_comment(call: ToolCall) -> Any:
         created.parent_comment_id,
         created.created_at,
     )
+    if sync and not parent:
+        created = _sync_root(call, issue, created.comment_id)
     return _comment_json(created)
+
+
+def _sync_comment_thread(call: ToolCall) -> Any:
+    """Sync a root comment's thread to a linked pull request or GitHub issue through the route's path."""
+    issue = issue_ref(call, call.require("issue_id"))
+    return thread_sync.thread_read(_sync_root(call, issue, str(call.require("comment_id"))))
+
+
+def _unsync_comment_thread(call: ToolCall) -> Any:
+    """Stop mirroring a thread to GitHub through the route's path, keeping every comment."""
+    issue = issue_ref(call, call.require("issue_id"))
+    comment = thread_sync.unsync_thread(
+        call.repositories, call.context, issue.issue_id, str(call.require("comment_id"))
+    )
+    return thread_sync.thread_read(comment)
+
+
+def _list_github_thread_targets(call: ToolCall) -> Any:
+    """Where an issue's threads may be synced, each with the ref `github_target` takes."""
+    issue = issue_ref(call, call.require("issue_id"))
+    return {"targets": thread_sync.thread_targets(call.repositories, issue)}
 
 
 def _list_comments(call: ToolCall) -> Any:
@@ -1092,8 +1140,11 @@ ISSUE_TOOLS: tuple[Tool, ...] = (
     Tool(
         name="create_issue",
         description=(
-            "Create an issue in a team, allocating its key. With no status_id it starts in the team's first status, "
-            "or in triage while the team has triage on; a sub-issue from a team member skips triage unless asked. "
+            "Create an issue in a team, allocating its key. With no status_id it starts in the team's first status "
+            "while the team has triage off. While triage is on, an issue with no status_id waits in triage even "
+            "when project_id or cycle_id is passed; a team member skips triage by naming a real status_id such as "
+            "Backlog or Todo, and a team member's sub-issue skips it unless asked. Issues from guests, people "
+            "outside the team and workspace keys always wait in triage while it is on. "
             "parent_id makes it a sub-issue; cycle_id, project_id and project_milestone_id place it. "
             "template_id fills every field not passed from one of the team's templates (see list_templates), "
             "and title may then be omitted when the template has one. A form template (one with form_fields) also "
@@ -1107,7 +1158,10 @@ ISSUE_TOOLS: tuple[Tool, ...] = (
                 "team_id": string("The team to create it in"),
                 "title": string("The issue title"),
                 "body": string("The issue body, in Markdown"),
-                "status_id": string("The starting status, by id or name; 'triage' files it into triage"),
+                "status_id": string(
+                    "The starting status, by id or name; a real status skips triage for a team member, "
+                    "'triage' files it into triage"
+                ),
                 "priority": enum(PRIORITIES, "The priority, defaulting to none"),
                 "assignee_id": string("Who to assign it to; 'me' is the caller"),
                 "label_ids": string_list("Labels of the same team, by id or name"),
@@ -1251,10 +1305,56 @@ ISSUE_TOOLS: tuple[Tool, ...] = (
                 "issue_id": string(ISSUE_REF),
                 "body": string("The comment body, in Markdown; @mentions notify"),
                 "parent_comment_id": string("A top level comment on the same issue to reply to"),
+                "sync_to_github": boolean(
+                    "Also sync the thread to a pull request or GitHub issue linked to this issue, so the App "
+                    "posts it there and GitHub replies land in the thread. A public repository publishes it"
+                ),
+                "github_target": string(
+                    "Which linked pull request or GitHub issue to sync to, as owner/repo#12 or its URL; "
+                    "needed when there is more than one"
+                ),
             },
             required=("issue_id", "body"),
         ),
         handler=_add_comment,
+    ),
+    Tool(
+        name="list_github_thread_targets",
+        description=(
+            "The linked pull requests and one way GitHub issue an issue's comment threads can be synced to, "
+            "each with ref, the name github_target takes, and private."
+        ),
+        scopes=("issues:read",),
+        schema=object_schema({"issue_id": string(ISSUE_REF)}, required=("issue_id",)),
+        handler=_list_github_thread_targets,
+    ),
+    Tool(
+        name="sync_comment_thread",
+        description=(
+            "Sync a top level comment's thread to a pull request or GitHub issue linked to the issue. The App "
+            "posts an opening comment quoting it, then each new reply, and GitHub comments written there land "
+            "in the thread. Idempotent on the same target."
+        ),
+        scopes=("comments:write",),
+        schema=object_schema(
+            {
+                "issue_id": string(ISSUE_REF),
+                "comment_id": string("The top level comment whose thread to sync"),
+                "github_target": string("owner/repo#12 or its URL; needed when more than one target is linked"),
+            },
+            required=("issue_id", "comment_id"),
+        ),
+        handler=_sync_comment_thread,
+    ),
+    Tool(
+        name="unsync_comment_thread",
+        description="Stop syncing a comment thread to GitHub. Comments already copied stay on both sides.",
+        scopes=("comments:write",),
+        schema=object_schema(
+            {"issue_id": string(ISSUE_REF), "comment_id": string("The top level comment whose thread to unsync")},
+            required=("issue_id", "comment_id"),
+        ),
+        handler=_unsync_comment_thread,
     ),
     Tool(
         name="list_issue_relations",

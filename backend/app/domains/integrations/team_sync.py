@@ -142,6 +142,10 @@ def save_team_sync(
         from app.domains.integrations.issue_sync import backfill_backlinks
 
         backfill_backlinks(repositories, workspace_id, team_id)
+    from app.domains.integrations.label_sync import queue_after_link, syncs_labels
+
+    if syncs_labels(row):
+        queue_after_link(workspace_id, team_id)
     return team_sync_read(row, repository_private=repository.private)
 
 

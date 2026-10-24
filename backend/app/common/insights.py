@@ -24,6 +24,7 @@ from app.common.api.schemas.insights import (
     InsightsRead,
 )
 from app.common.api.schemas.views import FILTER_FIELDS
+from app.common.customer_index import require_customer_list_reader
 from app.common.db.dynamo.issues import PRIORITY_ORDER, Issue, as_issue
 from app.common.db.dynamo.team_config import STATUS_CATEGORIES, status_order
 from app.common.estimates import estimate_points
@@ -169,6 +170,7 @@ def insight_rows(repositories: Repositories, context: AuthzContext, scope: Insig
     teams = scope.team_ids
     if not teams:
         return [], False
+    require_customer_list_reader(context, any(item.needs_customers for item in scope.filters), None)
     workspace_id = context.workspace_id
     first = scope.filters[0]
     archived_only = any(item.archived_only for item in scope.filters)

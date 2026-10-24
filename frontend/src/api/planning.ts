@@ -7,6 +7,7 @@
  * only checked against the project's teams.
  */
 
+import type { QueryValue } from '@webbpulse/api-client';
 import apiClient from './client';
 import type {
   CycleCreate,
@@ -90,7 +91,7 @@ export const projectUpdatePath = (
 export const roadmapPath = (workspaceId: string): string =>
   `/workspaces/${workspaceId}/roadmap`;
 
-type QueryBag = Record<string, string | number | boolean | undefined>;
+type QueryBag = Record<string, QueryValue>;
 
 const listOptions = (
   query: QueryBag,

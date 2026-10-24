@@ -5,11 +5,16 @@
   },
   "display_information": {
     "name": "Standupless",
-    "description": "Issue notifications, link previews and issue creation from Slack.",
-    "long_description": "Connect a Standupless workspace to post team notifications into the Slack channels you pick, preview pasted issue links, look up an issue with a slash command and file any message as an issue. Every action runs as the Standupless member whose confirmed email matches the Slack account, so it sees and writes exactly what that person can in the web app.",
+    "description": "Issue notifications, personal direct messages, link previews and issue creation from Slack.",
+    "long_description": "Connect a Standupless workspace to post team notifications into the Slack channels you pick, send each member who links their account their own notifications as direct messages, preview pasted issue links, look up an issue with a slash command and file any message as an issue. Every action runs as the Standupless member whose confirmed email matches the Slack account, so it sees and writes exactly what that person can in the web app.",
     "background_color": "#141518"
   },
   "features": {
+    "app_home": {
+      "home_tab_enabled": false,
+      "messages_tab_enabled": true,
+      "messages_tab_read_only_enabled": true
+    },
     "bot_user": {
       "display_name": "Standupless",
       "always_online": true

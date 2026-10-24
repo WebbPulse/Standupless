@@ -5,9 +5,11 @@
  * chips, changed from the keyboard or the issue itself. Each respects the
  * view's visible properties, so hiding a property hides it everywhere.
  *
- * Chips act on a click: a project or cycle chip opens its page, and a label
- * or estimate chip narrows the view to that value. Where a person cannot edit,
- * the priority, status and assignee glyphs narrow the view the same way.
+ * Chips act on a click: a project or cycle chip opens its page. For a person
+ * who can edit, the label, estimate and date chips open their pickers in
+ * place, as the glyphs do. Where a person cannot edit, the label and estimate
+ * chips and the priority, status and assignee glyphs narrow the view to their
+ * value instead, and the date chips stay inert.
  */
 
 import React from 'react';
@@ -40,6 +42,7 @@ import Avatar from '../../ui/avatar';
 import { LabelChip } from '../../ui/badge';
 import { PriorityGlyph } from '../../ui/glyphs';
 import { StatusIcon } from '../../ui/StatusIcon';
+import type { PopoverTriggerProps } from '../../ui/popover';
 import { Tooltip } from '../../ui/tooltip';
 import {
   CHIP_ACTION_CLASS,
@@ -49,6 +52,9 @@ import {
 import SlaBadge from '../SlaBadge';
 import {
   AssigneePicker,
+  DatePicker,
+  EstimatePicker,
+  LabelsPicker,
   PriorityPicker,
   StatusPicker,
 } from '../PropertyPickers';
@@ -223,6 +229,192 @@ const Chip: React.FC<{
 /** How many labels a row shows before folding the rest into a count. */
 const LABELS_SHOWN = 3;
 
+/** Props for ChipTrigger: the popover wiring, its name and the chips drawn. */
+interface ChipTriggerProps {
+  trigger: PopoverTriggerProps;
+  label: string;
+  children: React.ReactNode;
+  className?: string;
+}
+
+/**
+ * A row chip that opens a picker. The press stays on the chip, so neither the
+ * issue under it nor the list's own Enter opens, and on a touch screen taps
+ * pass through to the row as they do for the glyphs.
+ */
+const ChipTrigger: React.FC<ChipTriggerProps> = ({
+  trigger,
+  label,
+  children,
+  className,
+}) => (
+  <button
+    type="button"
+    aria-label={label}
+    aria-haspopup={trigger['aria-haspopup']}
+    aria-expanded={trigger['aria-expanded']}
+    aria-controls={trigger['aria-controls']}
+    draggable={false}
+    onClick={(event) => {
+      event.stopPropagation();
+      event.preventDefault();
+      trigger.onClick();
+    }}
+    onKeyDown={(event) => {
+      trigger.onKeyDown(event);
+      if (event.key === 'Enter' || event.key === ' ') event.stopPropagation();
+    }}
+    className={cn(ABOVE_LINK, CHIP_ACTION_CLASS, className)}
+  >
+    {children}
+  </button>
+);
+
+/** Props for the chip pickers: the issue and the wrapper's classes. */
+interface ChipPickerProps {
+  issue: OrderedIssueRead;
+  /** Classes for the wrapper, such as a breakpoint that hides the chips. */
+  className: string;
+}
+
+/**
+ * The issue's labels as chips that open the labels picker for its team, where
+ * several labels toggle in one visit and a new one can be created.
+ */
+const LabelChipsPicker: React.FC<ChipPickerProps> = ({ issue, className }) => {
+  const { update, forTeam, context, createLabel } = useIssueViewEnv();
+  const labels = labelsOf(issue, context);
+  const own = forTeam(issue.team_id).labels;
+  const names = labels.map((label) => label.name).join(', ');
+  return (
+    <span className={cn('shrink-0', className)}>
+      <LabelsPicker
+        labels={own}
+        value={issue.label_ids}
+        onCreate={(name) => createLabel(issue.team_id, name)}
+        onChange={(next) => {
+          const add = next.filter((id) => !issue.label_ids.includes(id));
+          const remove = issue.label_ids.filter((id) => !next.includes(id));
+          if (add.length === 0 && remove.length === 0) return;
+          update([issue.id], {
+            ...(add.length === 0 ? {} : { add_label_ids: add }),
+            ...(remove.length === 0 ? {} : { remove_label_ids: remove }),
+          });
+        }}
+        renderTrigger={(trigger) => (
+          <ChipTrigger
+            trigger={trigger}
+            label={`Labels: ${names}`}
+            className="inline-flex items-center gap-1.5 rounded-full"
+          >
+            {labels.slice(0, LABELS_SHOWN).map((label) => (
+              <LabelChip
+                key={label.id}
+                color={label.color}
+                name={label.name}
+                className="max-w-32"
+                reveal={false}
+              />
+            ))}
+            {labels.length > LABELS_SHOWN && (
+              <span className={CHIP_CLASS}>
+                +{labels.length - LABELS_SHOWN}
+              </span>
+            )}
+          </ChipTrigger>
+        )}
+      />
+    </span>
+  );
+};
+
+/** The issue's estimate as a chip opening the picker on its team's scale. */
+const EstimateChipPicker: React.FC<ChipPickerProps> = ({
+  issue,
+  className,
+}) => {
+  const { update, scaleFor, estimateOptionsFor } = useIssueViewEnv();
+  const options = estimateOptionsFor?.(issue.team_id) ?? {};
+  return (
+    <span className={cn('shrink-0', className)}>
+      <EstimatePicker
+        scale={scaleFor(issue.team_id)}
+        extended={options.extended ?? false}
+        allowZero={options.allowZero ?? false}
+        value={issue.estimate}
+        onChange={(estimate) => {
+          update([issue.id], { estimate });
+        }}
+        renderTrigger={(trigger) => (
+          <ChipTrigger
+            trigger={trigger}
+            label={`Estimate: ${issue.estimate ?? 'none'}`}
+            className={CHIP_CLASS}
+          >
+            <LuTriangle aria-hidden="true" className="h-3 w-3" />
+            <span className="truncate">{issue.estimate}</span>
+          </ChipTrigger>
+        )}
+      />
+    </span>
+  );
+};
+
+/** Props for DateChipPicker: the chip pickers' props and which date. */
+interface DateChipPickerProps extends ChipPickerProps {
+  field: 'start_date' | 'due_date';
+}
+
+/**
+ * One of the issue's dates as a chip opening the date picker. The start date
+ * may not fall after the due date, nor the due date before the start, as on
+ * the issue's own rail, and a past due date keeps its warning colour.
+ */
+const DateChipPicker: React.FC<DateChipPickerProps> = ({
+  issue,
+  field,
+  className,
+}) => {
+  const { update } = useIssueViewEnv();
+  const start = field === 'start_date';
+  const value = start ? issue.start_date : issue.due_date;
+  if (value === null) return null;
+  const name = start ? 'Start date' : 'Due date';
+  const min = start ? null : issue.start_date;
+  const max = start ? issue.due_date : null;
+  return (
+    <span className={cn('shrink-0', className)}>
+      <DatePicker
+        field={name}
+        value={value}
+        {...(min === null ? {} : { min })}
+        {...(max === null ? {} : { max })}
+        onChange={(next) => {
+          if (next === value) return;
+          update([issue.id], start ? { start_date: next } : { due_date: next });
+        }}
+        renderTrigger={(trigger) => (
+          <ChipTrigger
+            trigger={trigger}
+            label={`${name}: ${shortDateLabel(value)}`}
+            className={cn(
+              CHIP_CLASS,
+              !start && isPastDue(value) && 'border-danger/40 text-danger'
+            )}
+          >
+            {start ? (
+              <LuCalendarClock aria-hidden="true" className="h-3 w-3" />
+            ) : (
+              <LuCalendar aria-hidden="true" className="h-3 w-3" />
+            )}
+            <span className="truncate">{shortDateLabel(value)}</span>
+          </ChipTrigger>
+        )}
+      />
+    </span>
+  );
+};
+
 /** A timestamp as a short day. */
 const dayOf = (value: string): string => shortDateLabel(value.slice(0, 10));
 
@@ -322,7 +514,7 @@ export const MetaChips: React.FC<MetaChipsProps> = ({
   card = false,
   withProgress = true,
 }) => {
-  const { slug, state, context, teamNameFor, filterFor, milestones } =
+  const { slug, state, context, teamNameFor, filterFor, milestones, canEdit } =
     useIssueViewEnv();
   const filterLabel = filterFor?.('label');
   const filterEstimate = filterFor?.('estimate');
@@ -346,7 +538,14 @@ export const MetaChips: React.FC<MetaChipsProps> = ({
       {withProgress && shows('sub_issues') && issue.progress.total > 0 && (
         <SubIssueProgressChip progress={issue.progress} className={hide} />
       )}
-      {shows('labels') &&
+      {canEdit && shows('labels') && labels.length > 0 && (
+        <LabelChipsPicker
+          issue={issue}
+          className={card ? 'inline-flex' : hide}
+        />
+      )}
+      {!canEdit &&
+        shows('labels') &&
         labels.slice(0, LABELS_SHOWN).map((label) =>
           filterLabel === undefined ? (
             <LabelChip
@@ -374,7 +573,7 @@ export const MetaChips: React.FC<MetaChipsProps> = ({
             </FilterChipButton>
           )
         )}
-      {shows('labels') && labels.length > LABELS_SHOWN && (
+      {!canEdit && shows('labels') && labels.length > LABELS_SHOWN && (
         <Chip
           label={labels
             .slice(LABELS_SHOWN)
@@ -428,7 +627,14 @@ export const MetaChips: React.FC<MetaChipsProps> = ({
           {links}
         </Chip>
       )}
-      {shows('estimate') &&
+      {canEdit && shows('estimate') && issue.estimate !== null && (
+        <EstimateChipPicker
+          issue={issue}
+          className={card ? 'inline-flex' : hide}
+        />
+      )}
+      {!canEdit &&
+        shows('estimate') &&
         issue.estimate !== null &&
         (filterEstimate === undefined ? (
           <Chip
@@ -451,7 +657,14 @@ export const MetaChips: React.FC<MetaChipsProps> = ({
             <span className="truncate">{issue.estimate}</span>
           </FilterChipButton>
         ))}
-      {shows('start_date') && issue.start_date !== null && (
+      {canEdit && shows('start_date') && issue.start_date !== null && (
+        <DateChipPicker
+          issue={issue}
+          field="start_date"
+          className={card ? 'inline-flex' : hide}
+        />
+      )}
+      {!canEdit && shows('start_date') && issue.start_date !== null && (
         <Chip
           label="Start date"
           icon={<LuCalendarClock aria-hidden="true" className="h-3 w-3" />}
@@ -460,7 +673,14 @@ export const MetaChips: React.FC<MetaChipsProps> = ({
           {shortDateLabel(issue.start_date)}
         </Chip>
       )}
-      {shows('due_date') && issue.due_date !== null && (
+      {canEdit && shows('due_date') && issue.due_date !== null && (
+        <DateChipPicker
+          issue={issue}
+          field="due_date"
+          className={card ? 'inline-flex' : hide}
+        />
+      )}
+      {!canEdit && shows('due_date') && issue.due_date !== null && (
         <Chip
           label="Due date"
           icon={<LuCalendar aria-hidden="true" className="h-3 w-3" />}

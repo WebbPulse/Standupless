@@ -42,6 +42,7 @@ from app.common.composition.consumers import CONSUMERS
 from app.common.core.config import settings
 from app.common.db.dynamo.github import WebhookEndpoint
 from app.common.db.dynamo.planning import CYCLE, PROJECT, PROJECT_UPDATE
+from app.common.db.dynamo.team_config import WORKSPACE_LABEL_PREFIX
 from app.common.team_privacy import destination_can_carry
 from app.domains.integrations.channels import events as channel_events
 from app.domains.integrations.channels.events import DestinationCache
@@ -264,20 +265,82 @@ def queue_pr_labels(repositories: Repositories, record: Mapping[str, Any]) -> in
 
 
 def queue_comment_sync(repositories: Repositories, record: Mapping[str, Any]) -> bool:
-    """Queue a GitHub sync job for a new comment or an edited body."""
+    """Queue a GitHub sync job for a new comment, an edited body, or a thread newly synced.
+
+    One job serves the two way issue sync and a synced thread alike. A change to
+    only the link of a thread's opening comment queues nothing, since that is the
+    App's own post landing.
+    """
     from app.domains.integrations.issue_sync import enqueue_comment_sync
 
     if record.get("eventName") not in ("INSERT", "MODIFY"):
         return False
     new_image = deserialize_image(record, "NewImage")
     old_image = deserialize_image(record, "OldImage")
-    if not new_image or (old_image and old_image.get("body") == new_image.get("body")):
+    if not new_image:
         return False
+    body_changed = not old_image or old_image.get("body") != new_image.get("body")
     workspace_id = str(new_image.get("workspace_id", ""))
-    if not _team_writes_back(repositories, workspace_id, str(new_image.get("team_id", ""))):
+    issue_id = str(new_image.get("issue_id", ""))
+    wanted = body_changed and _team_writes_back(repositories, workspace_id, str(new_image.get("team_id", "")))
+    if not wanted:
+        wanted = _thread_changed(repositories, old_image, new_image, body_changed)
+    if not wanted:
         return False
-    enqueue_comment_sync(workspace_id, str(new_image.get("issue_id", "")), str(new_image.get("comment_id", "")))
+    enqueue_comment_sync(workspace_id, issue_id, str(new_image.get("comment_id", "")))
     return True
+
+
+def _thread_identity(image: Mapping[str, Any] | None) -> tuple[str, int, str] | None:
+    """Which synced thread a comment image names, ignoring the link of its opening comment."""
+    thread = (image or {}).get("github_thread")
+    if not isinstance(thread, Mapping):
+        return None
+    return str(thread.get("repository_id", "")), int(thread.get("number") or 0), str(thread.get("synced_at", ""))
+
+
+def _thread_changed(
+    repositories: Repositories,
+    old_image: Mapping[str, Any] | None,
+    new_image: Mapping[str, Any],
+    body_changed: bool,
+) -> bool:
+    """Whether a comment record has something for a synced thread to post."""
+    identity = _thread_identity(new_image)
+    if identity is not None:
+        return body_changed or identity != _thread_identity(old_image)
+    parent_id = str(new_image.get("parent_comment_id") or "")
+    if not body_changed or not parent_id or str(new_image.get("source") or "") == "github":
+        return False
+    parent = repositories.comments.get(
+        str(new_image.get("workspace_id", "")), str(new_image.get("issue_id", "")), parent_id
+    )
+    return parent is not None and parent.github_thread is not None
+
+
+def queue_label_sync(repositories: Repositories, record: Mapping[str, Any]) -> int:
+    """Queue a repository label reconcile for every team that syncs labels, when a label definition moved.
+
+    Every syncing team is queued rather than only the label's own, because a
+    workspace or parent team label reaches every team that inherits it, and a
+    reconcile with nothing to do makes no write. A workspace label also queues
+    the workspace label set push, when the workspace has it on.
+    """
+    from app.domains.integrations.label_set import queue_on_change
+    from app.domains.integrations.label_sync import definition_changed, queue_for_workspace
+
+    new_image = deserialize_image(record, "NewImage")
+    old_image = deserialize_image(record, "OldImage")
+    if not settings.WEBHOOK_DISPATCH_QUEUE_URL or not definition_changed(old_image, new_image):
+        return 0
+    image = new_image or old_image
+    workspace_id = str(image.get("workspace_id", ""))
+    queued = queue_for_workspace(repositories, workspace_id)
+    if str(image.get("config_key", "")).startswith(WORKSPACE_LABEL_PREFIX) and queue_on_change(
+        repositories, workspace_id
+    ):
+        queued += 1
+    return queued
 
 
 def handle_record(
@@ -321,6 +384,7 @@ def handle_record(
     elif physical == table_name("team_config", prefix):
         if _is_label(record):
             publish(repositories, payloads.LABEL, record, cache)
+            queue_label_sync(repositories, record)
     else:
         _log.warning(
             "Ignored a stream record from an unexpected table.",

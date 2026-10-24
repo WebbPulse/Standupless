@@ -51,8 +51,18 @@ export interface ProjectsDisplayPreference {
     | 'priority'
     | 'progress'
     | 'created'
-    | 'updated';
-  closed: 'all' | 'week' | 'month' | 'quarter' | 'none';
+    | 'updated'
+    | 'customers';
+  closed: 'all' | 'fortnight' | 'month' | 'none';
+  /** Whether groups run in their own order or reversed. */
+  direction?: 'asc' | 'desc';
+  /** The grouping inside each group. */
+  rows?:
+    'status' | 'health' | 'priority' | 'initiative' | 'lead' | 'team' | 'none';
+  /** Whether a team page keeps only the projects that team leads. */
+  lead_team?: 'all' | 'lead';
+  /** Whether the board shows columns that hold no project. */
+  empty?: 'show' | 'hide';
   zoom: 'week' | 'month' | 'quarter' | 'year';
   /** The shown list columns, comma separated, absent on a row saved before columns could be chosen. */
   columns?: string;
@@ -107,6 +117,8 @@ export interface WorkspaceDeletionRequest {
 export interface NotificationChannels {
   in_app: boolean;
   email: boolean;
+  /** Whether the kind also reaches a linked Slack or Discord account as a direct message. */
+  chat?: boolean;
 }
 
 /** A partial preferences change: only the switches sent are applied. */
@@ -642,6 +654,8 @@ export interface LabelRead {
   is_group?: boolean;
   /** The group this label sits in, or null outside one. */
   parent_id?: string | null;
+  /** A short description, carried to linked GitHub repositories. */
+  description?: string | null;
 }
 
 /** The body the labels route answers with. */
@@ -672,6 +686,8 @@ export interface LabelCreate {
   is_group?: boolean;
   /** The group to put the label in, of the same scope. */
   parent_id?: string | null;
+  /** A short description, up to 100 characters. */
+  description?: string | null;
 }
 
 /** The editable fields on a label. */
@@ -680,6 +696,8 @@ export interface LabelUpdate {
   color?: string;
   /** Moves the label into this group, or out of its group with null. */
   parent_id?: string | null;
+  /** A short description, or null to clear it. */
+  description?: string | null;
 }
 
 /**
@@ -709,7 +727,9 @@ export type IssueSort =
   | 'sla_asc'
   | 'status_asc'
   | 'start_asc'
-  | 'estimate_desc';
+  | 'estimate_desc'
+  | 'customer_requests_desc'
+  | 'customer_revenue_desc';
 
 /** The kinds of link a pair of issues may hold. */
 export type LinkType = 'blocks' | 'blocked_by' | 'relates_to' | 'duplicate_of';
@@ -1343,8 +1363,52 @@ export interface CommentRead {
   attachments?: AttachmentRead[];
   /** Which client made the change; absent on rows written before sources were recorded. */
   source?: ChangeSource | null;
+  /** Where a root comment's thread is mirrored on GitHub, when it is. */
+  github_thread?: GithubThread | null;
   created_at: string;
   edited_at: string | null;
+}
+
+/**
+ * Where a root comment's thread is mirrored on GitHub. `private` is the
+ * repository's visibility when it was synced, and `comment_url` is the App's
+ * opening comment there, empty until that post lands.
+ */
+export interface GithubThread {
+  kind: 'pull_request' | 'issue';
+  repository_id: string;
+  full_name: string;
+  number: number;
+  target_url: string;
+  private: boolean;
+  synced_by: string;
+  synced_at: string;
+  comment_url: string;
+}
+
+/** A linked pull request or GitHub issue a thread may be synced to. */
+export interface GithubThreadTargetRead {
+  kind: 'pull_request' | 'issue';
+  repository_id: string;
+  full_name: string;
+  number: number;
+  title: string;
+  url: string;
+  private: boolean;
+  ref: string;
+}
+
+/** Which linked pull request or GitHub issue to sync a thread to. */
+export interface GithubThreadWrite {
+  repository_id: string;
+  number: number;
+}
+
+/** One root comment's thread sync, with no thread once it is unsynced. */
+export interface GithubThreadRead {
+  comment_id: string;
+  issue_id: string;
+  github_thread?: GithubThread | null;
 }
 
 /** The body the comment list answers with, oldest first. */
@@ -1567,6 +1631,7 @@ export interface ViewFilter {
   is_blocked?: 'true' | 'false';
   is_blocking?: 'true' | 'false';
   has_relation?: string | string[];
+  customer_id?: string | string[];
   q?: string;
 }
 
@@ -1830,6 +1895,21 @@ export interface IssueReminderListRead {
 /** How many rows a mark-read call changed. */
 export interface InboxReadResult {
   updated: number;
+}
+
+/**
+ * Which of the caller's rows a bulk delete removes: read rows only, or every
+ * row, with snoozed rows only when asked, optionally narrowed to some kinds.
+ */
+export interface InboxClearWrite {
+  read_only?: boolean;
+  include_snoozed?: boolean;
+  kinds?: string[];
+}
+
+/** How many rows a bulk delete removed. */
+export interface InboxClearResult {
+  deleted: number;
 }
 
 /**
@@ -2228,6 +2308,10 @@ export interface ProjectRead {
   blocking_project_ids?: string[];
   /** The project's dated milestones, earliest first, filled on the project list. */
   milestone_markers?: ProjectMilestoneMarkerRead[];
+  /** How many customer requests name the project, set when the list was filtered or sorted by customer. */
+  customer_request_count?: number | null;
+  /** The summed revenue of the customers asking, set when the list was sorted by revenue. */
+  customer_revenue?: number | null;
   created_by: string;
   created_at: string;
   updated_at: string;
@@ -2643,9 +2727,18 @@ export interface ProjectListQuery {
   initiative_id?: string;
   /** With `team_id`, also list the projects of its sub-teams the caller can see. */
   include_sub_teams?: boolean;
+  /** Only the projects these customers asked for, `none` for projects no customer asked for. */
+  customer_id?: string[];
+  /** Leaves out the projects these customers asked for, `none` for projects no customer asked for. */
+  customer_id_not?: string[];
+  sort?: ProjectSortField;
   cursor?: string;
   limit?: number;
 }
+
+/** How the projects route orders its rows, target date first by default. */
+export type ProjectSortField =
+  'target_asc' | 'customer_requests_desc' | 'customer_revenue_desc';
 
 /**
  * One cycle or project as the roadmap draws it. A projection rather than the
@@ -2742,6 +2835,22 @@ export interface GithubInstallationRead {
   installed_by: string;
   installed_at: string;
   repository_count: number;
+  /** Whether the workspace labels are pushed to every repository the App sees. */
+  label_set: GithubLabelSetRead;
+}
+
+/** The workspace label set push: on or off, and whether public repositories get it. */
+export interface GithubLabelSetRead {
+  enabled: boolean;
+  include_public: boolean;
+  /** True on a write that turned the push on and queued the first run. */
+  queued: boolean;
+}
+
+/** Turns the workspace label set push on or off. */
+export interface GithubLabelSetWrite {
+  enabled: boolean;
+  include_public: boolean;
 }
 
 /** A linked pull request's review decision. */
@@ -3646,6 +3755,20 @@ export interface SlackConnectionRead {
   installed_at?: string | null;
 }
 
+/** Whether the caller's personal notifications reach their own Slack direct messages. */
+export interface SlackLinkRead {
+  /** Whether this environment has a Slack App at all. */
+  configured: boolean;
+  /** Whether this workspace installed the Slack App, so a link can be made. */
+  available: boolean;
+  linked: boolean;
+  slack_user_id?: string | null;
+  slack_team_name?: string | null;
+  linked_at?: string | null;
+  /** Why a linked account stopped receiving messages, or null while it works. */
+  problem?: string | null;
+}
+
 /** One Slack channel the installed bot can post to. */
 export interface SlackChannelRead {
   id: string;
@@ -3667,6 +3790,26 @@ export interface DiscordConnectionRead {
 export interface DiscordChannelRead {
   id: string;
   name: string;
+}
+
+/** Whether the caller's personal notifications reach their Discord direct messages. */
+export interface DiscordLinkRead {
+  /** Whether this environment has a Discord App at all. */
+  configured: boolean;
+  /** Whether this workspace added the Discord App to a server, so a link can be made. */
+  available: boolean;
+  linked: boolean;
+  discord_user_id?: string | null;
+  guild_name?: string | null;
+  linked_at?: string | null;
+  /** Why a linked account stopped receiving messages, or null while it works. */
+  problem?: string | null;
+}
+
+/** Where to send the caller to link their Discord account, and when that link stops working. */
+export interface DiscordLinkUrlRead {
+  url: string;
+  expires_at: string;
 }
 
 /** What a test message got back. */

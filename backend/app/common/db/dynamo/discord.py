@@ -88,6 +88,13 @@ class DiscordStore(BoundInstallStore[DiscordInstallation]):
         self._repository.put(as_item(link))
         return link
 
+    def delete_link(self, workspace_id: str, discord_user_id: str) -> bool:
+        """Forget one Discord person's link, answering whether it was there."""
+        if self.get_link(workspace_id, discord_user_id) is None:
+            return False
+        self._repository.delete(self._key(workspace_id, discord_user_key(discord_user_id)))
+        return True
+
     def _links(self, workspace_id: str) -> list[Mapping[str, Any]]:
         """Every link row of one workspace."""
         return list(

@@ -83,6 +83,11 @@ export interface PickerBaseProps {
   /** Which edge of the trigger the list lines up with. */
   align?: 'start' | 'end';
   className?: string;
+  /**
+   * Draws the control the list opens from in place of the picker's own, for a
+   * surface such as a row chip that keeps its look and gains the picker.
+   */
+  renderTrigger?: (trigger: PopoverTriggerProps) => React.ReactNode;
 }
 
 /** The value the "none" row carries in a list that can be cleared. */
@@ -181,24 +186,29 @@ const SinglePicker: React.FC<SinglePickerProps> = ({
   variant = 'rail',
   align = 'start',
   className = '',
+  renderTrigger,
 }) => (
   <Popover
     label={field}
     align={align}
     block={variant === 'rail'}
     contentClassName="w-64"
-    trigger={(trigger) => (
-      <PickerButton
-        trigger={trigger}
-        field={field}
-        icon={icon}
-        text={text}
-        empty={empty}
-        variant={variant}
-        disabled={disabled}
-        className={className}
-      />
-    )}
+    trigger={(trigger) =>
+      renderTrigger === undefined ? (
+        <PickerButton
+          trigger={trigger}
+          field={field}
+          icon={icon}
+          text={text}
+          empty={empty}
+          variant={variant}
+          disabled={disabled}
+          className={className}
+        />
+      ) : (
+        renderTrigger(trigger)
+      )
+    }
   >
     {(close) => (
       <Combobox
@@ -437,6 +447,7 @@ export const LabelsPicker: React.FC<LabelsPickerProps> = ({
   variant = 'rail',
   align = 'start',
   className = '',
+  renderTrigger,
 }) => {
   const latest = useRef(value);
   useEffect(() => {
@@ -509,19 +520,23 @@ export const LabelsPicker: React.FC<LabelsPickerProps> = ({
       align={align}
       block={variant === 'rail'}
       contentClassName="w-64"
-      trigger={(trigger) => (
-        <PickerButton
-          trigger={trigger}
-          field="Labels"
-          icon={icon}
-          text={text}
-          spoken={summary}
-          empty={chosen.length === 0}
-          variant={variant}
-          disabled={disabled}
-          className={className}
-        />
-      )}
+      trigger={(trigger) =>
+        renderTrigger === undefined ? (
+          <PickerButton
+            trigger={trigger}
+            field="Labels"
+            icon={icon}
+            text={text}
+            spoken={summary}
+            empty={chosen.length === 0}
+            variant={variant}
+            disabled={disabled}
+            className={className}
+          />
+        ) : (
+          renderTrigger(trigger)
+        )
+      }
     >
       <Combobox
         label="Labels"
@@ -794,6 +809,8 @@ export interface CustomDateProps {
   value: string | null;
   min?: string;
   max?: string;
+  /** Explains why a day is refused, in place of the generic range message. */
+  validate?: (value: string) => string | null;
   onPick: (value: string) => void;
 }
 
@@ -805,6 +822,7 @@ export const CustomDate: React.FC<CustomDateProps> = ({
   value,
   min,
   max,
+  validate,
   onPick,
 }) => {
   const [draft, setDraft] = useState(value ?? '');
@@ -828,8 +846,10 @@ export const CustomDate: React.FC<CustomDateProps> = ({
             return;
           }
           const refusal =
-            validateDateRange(min ?? '', next) ??
-            validateDateRange(next, max ?? '');
+            validate === undefined
+              ? (validateDateRange(min ?? '', next) ??
+                validateDateRange(next, max ?? ''))
+              : validate(next);
           setProblem(refusal);
           if (refusal === null) onPick(next);
         }}
@@ -858,6 +878,10 @@ export interface DatePickerProps extends PickerBaseProps {
   icon?: React.ReactNode;
   /** What an unset trigger reads, in place of the field's own phrase. */
   emptyLabel?: string;
+  /** False for a date that must stay set, which drops the clear row. */
+  clearable?: boolean;
+  /** Explains why a custom day is refused, in place of the range message. */
+  validate?: (value: string) => string | null;
 }
 
 /**
@@ -872,6 +896,8 @@ export const DatePicker: React.FC<DatePickerProps> = ({
   max,
   icon = <LuCalendar className="h-3.5 w-3.5" />,
   emptyLabel,
+  clearable = true,
+  validate,
   ...base
 }) => {
   const variant = base.variant ?? 'rail';
@@ -882,7 +908,7 @@ export const DatePicker: React.FC<DatePickerProps> = ({
     detail: shortDateLabel(preset.value, today),
     disabled: !dateInRange(preset.value, min, max),
   }));
-  if (value !== null) {
+  if (value !== null && clearable) {
     options.push({
       value: NONE,
       label: 'Clear date',
@@ -912,6 +938,7 @@ export const DatePicker: React.FC<DatePickerProps> = ({
           value={value}
           {...(min === undefined || min === '' ? {} : { min })}
           {...(max === undefined || max === '' ? {} : { max })}
+          {...(validate === undefined ? {} : { validate })}
           onPick={(picked) => {
             close();
             if (picked !== value) onChange(picked);

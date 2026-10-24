@@ -5,13 +5,17 @@
  * project on two teams shows under both, that health, priority and initiative
  * groups run in their own order, that the board keeps empty columns and moves
  * a card by the column's value, that the completed window keeps recent closes
- * only, and that the display reads the URL before the saved choice.
+ * only, that groups reverse, that the second grouping drops when it repeats
+ * the first, that a team page can keep only the projects it leads, and that
+ * the display reads the URL before the saved choice.
  */
 
 import { describe, expect, it } from 'vitest';
 import type { ProjectRead, TeamRead } from '../types/Api';
 import {
   DEFAULT_PROJECTS_DISPLAY,
+  directedGroups,
+  effectiveRows,
   groupPatch,
   groupProjects,
   inGroup,
@@ -20,6 +24,7 @@ import {
   resolveDisplay,
   sortProjects,
   withinClosedWindow,
+  withinLeadTeams,
 } from './projectList';
 
 const base: ProjectRead = {
@@ -238,6 +243,43 @@ describe('health, priority and initiative groups', () => {
   });
 });
 
+describe('group direction and second grouping', () => {
+  it('reverses the groups when descending', () => {
+    const groups = groupProjects([], 'health', [], [], { keepEmpty: true });
+    expect(directedGroups(groups, 'desc').map((group) => group.key)).toEqual([
+      'health:none',
+      'health:off_track',
+      'health:at_risk',
+      'health:on_track',
+    ]);
+    expect(directedGroups(groups, 'asc')).toBe(groups);
+  });
+
+  it('drops a second grouping that repeats the first or has no first', () => {
+    expect(effectiveRows('status', 'lead')).toBe('lead');
+    expect(effectiveRows('status', 'status')).toBe('none');
+    expect(effectiveRows('none', 'lead')).toBe('none');
+  });
+});
+
+describe('lead team projects', () => {
+  const led = project({ team_id: 't1', team_ids: ['t1', 't2'] });
+  const joined = project({ team_id: 't2', team_ids: ['t1', 't2'] });
+
+  it('keeps every project on the team by default', () => {
+    expect(withinLeadTeams(joined, 'all', ['t1'])).toBe(true);
+  });
+
+  it('keeps only the projects the team leads when asked', () => {
+    expect(withinLeadTeams(led, 'lead', ['t1'])).toBe(true);
+    expect(withinLeadTeams(joined, 'lead', ['t1'])).toBe(false);
+  });
+
+  it('keeps everything off a team page', () => {
+    expect(withinLeadTeams(joined, 'lead', null)).toBe(true);
+  });
+});
+
 describe('board moves', () => {
   const [onTrack, , , noUpdates] = groupProjects([], 'health', [], [], {
     keepEmpty: true,
@@ -261,26 +303,36 @@ describe('board moves', () => {
   });
 });
 
-describe('completed window', () => {
+describe('closed window', () => {
   const now = new Date('2026-10-21T00:00:00Z');
 
   it('keeps open projects whatever the window', () => {
     expect(withinClosedWindow(project({}), 'none', now)).toBe(true);
   });
 
-  it('keeps a recent close and drops an old one', () => {
+  it('keeps a recent completion and drops an old one', () => {
     const recent = project({
       status: 'completed',
-      completed_at: '2026-10-18T00:00:00Z',
+      completed_at: '2026-10-11T00:00:00Z',
     });
     const old = project({
-      status: 'canceled',
+      status: 'completed',
       completed_at: '2026-08-01T00:00:00Z',
     });
-    expect(withinClosedWindow(recent, 'week', now)).toBe(true);
+    expect(withinClosedWindow(recent, 'fortnight', now)).toBe(true);
     expect(withinClosedWindow(old, 'month', now)).toBe(false);
     expect(withinClosedWindow(old, 'all', now)).toBe(true);
     expect(withinClosedWindow(recent, 'none', now)).toBe(false);
+  });
+
+  it('keeps canceled projects only when all closed projects show', () => {
+    const canceled = project({
+      status: 'canceled',
+      completed_at: '2026-10-20T00:00:00Z',
+    });
+    expect(withinClosedWindow(canceled, 'fortnight', now)).toBe(false);
+    expect(withinClosedWindow(canceled, 'month', now)).toBe(false);
+    expect(withinClosedWindow(canceled, 'all', now)).toBe(true);
   });
 
   it('falls back to the last update before closes were recorded', () => {
@@ -288,7 +340,12 @@ describe('completed window', () => {
       status: 'completed',
       updated_at: '2026-10-20T00:00:00Z',
     });
-    expect(withinClosedWindow(closed, 'week', now)).toBe(true);
+    const stale = project({
+      status: 'completed',
+      updated_at: '2026-09-20T00:00:00Z',
+    });
+    expect(withinClosedWindow(closed, 'fortnight', now)).toBe(true);
+    expect(withinClosedWindow(stale, 'fortnight', now)).toBe(false);
   });
 });
 
@@ -304,6 +361,26 @@ describe('resolveDisplay', () => {
       ...DEFAULT_PROJECTS_DISPLAY,
       layout: 'board',
       group: 'health',
+    });
+  });
+
+  it('reads the direction, second grouping and team and board switches', () => {
+    const url: Record<string, string> = {
+      direction: 'desc',
+      rows: 'lead',
+      lead_team: 'lead',
+      empty: 'nope',
+    };
+    const display = resolveDisplay((field) => url[field] ?? null, {
+      ...DEFAULT_PROJECTS_DISPLAY,
+      empty: 'hide',
+    });
+    expect(display).toEqual({
+      ...DEFAULT_PROJECTS_DISPLAY,
+      direction: 'desc',
+      rows: 'lead',
+      lead_team: 'lead',
+      empty: 'hide',
     });
   });
 

@@ -45,6 +45,7 @@ from app.common.api.schemas.releases import ReleaseBackfill, ReleaseBackfillRead
 from app.common.db.dynamo.github import RELEASE_SOURCE_DEPLOYMENTS, IssueLink
 from app.common.db.dynamo.issues import Issue
 from app.common.db.dynamo.releases import PipelineStage, Release
+from app.common.issue_key_search import commit_subject
 from app.common.planning_rules import unprocessable
 
 _log = logging.getLogger(__name__)
@@ -130,7 +131,10 @@ class _GitHub:
         return self._with_pull_text(pairs)
 
     def _with_pull_text(self, pairs: list[tuple[str, str]]) -> list[tuple[str, str]]:
-        """Each commit's message, plus its pull request's title and branch when the message names no key.
+        """Each commit's message, with its pull request's title and branch added to the subject line.
+
+        They join the first line rather than the body, so a key they name counts as
+        a subject key does and release stage automation may move it.
 
         Pull requests already stored are read from `stored_pulls` first. With
         `best_effort_pulls` set, a read the call budget's deadline refuses ends the
@@ -171,7 +175,8 @@ class _GitHub:
             if pull is None:
                 result.append((commit_sha, message))
                 continue
-            result.append((commit_sha, f"{message}\n{pull.title}\n{pull.head_ref}"))
+            subject, _, rest = message.partition("\n")
+            result.append((commit_sha, f"{subject} {pull.title} {pull.head_ref}\n{rest}".rstrip("\n")))
         return result
 
     def _remember_stored(self, numbers: list[int]) -> None:
@@ -249,9 +254,13 @@ def _version_for(github: _GitHub, pull: Any, sha: str, ref: str | None) -> str |
 
 
 def _pull_number(message: str) -> int | None:
-    """The pull request a commit's subject names, when its message names no key to read it for."""
+    """The pull request a commit's subject names, when its subject names no key to read it for.
+
+    A key only the body mentions moves nothing, so it does not stand in for the
+    pull request's title and branch.
+    """
     match = _PULL_NUMBER.search(message.split("\n", 1)[0])
-    if match is None or _KEY_LIKE.search(message):
+    if match is None or _KEY_LIKE.search(commit_subject(message)[0]):
         return None
     return int(match.group(1) or match.group(2))
 
