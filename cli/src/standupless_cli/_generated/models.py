@@ -717,6 +717,18 @@ class FavoriteRef(TypedDict):
     team_id: NotRequired[str | None]
 
 
+class FormOption(TypedDict):
+    label_id: NotRequired[str | None]
+    priority: NotRequired[Literal["none", "urgent", "high", "medium", "low"] | None]
+    value: str
+
+
+class FormOptionBlueprint(TypedDict):
+    label_id: NotRequired[str | None]
+    priority: NotRequired[str | None]
+    value: str
+
+
 class GitHubAppStatus(TypedDict):
     app_name: str
     configured: bool
@@ -984,6 +996,7 @@ class IssueCreate(TypedDict):
     cycle_id: NotRequired[str | None]
     due_date: NotRequired[str | None]
     estimate: NotRequired[str | None]
+    form_answers: NotRequired[dict[str, str | bool] | None]
     label_ids: NotRequired[list[str]]
     parent_id: NotRequired[str | None]
     priority: NotRequired[Literal["none", "urgent", "high", "medium", "low"]]
@@ -2367,46 +2380,6 @@ class TeamUpdate(TypedDict):
     sync_pr_labels: NotRequired[bool | None]
 
 
-class TemplateCreate(TypedDict):
-    assignee_id: NotRequired[str | None]
-    body: NotRequired[str | None]
-    cycle_id: NotRequired[str | None]
-    estimate: NotRequired[str | None]
-    kind: NotRequired[Literal["issue", "project", "document"]]
-    label_ids: NotRequired[list[str]]
-    name: str
-    position: NotRequired[int | None]
-    priority: NotRequired[Literal["none", "urgent", "high", "medium", "low"] | None]
-    project: NotRequired[ProjectTemplateFields | None]
-    project_id: NotRequired[str | None]
-    project_milestone_id: NotRequired[str | None]
-    status_id: NotRequired[str | None]
-    title: NotRequired[str | None]
-
-
-class TemplateRead(TypedDict):
-    assignee_id: NotRequired[str | None]
-    body: NotRequired[str | None]
-    created_at: str
-    created_by: NotRequired[str | None]
-    cycle_id: NotRequired[str | None]
-    estimate: NotRequired[str | None]
-    id: str
-    kind: NotRequired[Literal["issue", "project", "document"]]
-    label_ids: NotRequired[list[str]]
-    name: str
-    position: NotRequired[int]
-    priority: NotRequired[Literal["none", "urgent", "high", "medium", "low"] | None]
-    project: NotRequired[ProjectBlueprint | None]
-    project_id: NotRequired[str | None]
-    project_milestone_id: NotRequired[str | None]
-    scope: NotRequired[Literal["team", "parent", "workspace"]]
-    status_id: NotRequired[str | None]
-    team_id: NotRequired[str | None]
-    title: NotRequired[str | None]
-    updated_at: str
-
-
 class TemplateSettingsRead(TypedDict):
     default_document_template_id: NotRequired[str | None]
     default_project_template_id: NotRequired[str | None]
@@ -2424,22 +2397,6 @@ class TemplateSettingsUpdate(TypedDict):
     default_project_template_id: NotRequired[str | None]
     default_template_id: NotRequired[str | None]
     default_update_template_id: NotRequired[str | None]
-
-
-class TemplateUpdate(TypedDict):
-    assignee_id: NotRequired[str | None]
-    body: NotRequired[str | None]
-    cycle_id: NotRequired[str | None]
-    estimate: NotRequired[str | None]
-    label_ids: NotRequired[list[str] | None]
-    name: NotRequired[str | None]
-    position: NotRequired[int | None]
-    priority: NotRequired[Literal["none", "urgent", "high", "medium", "low"] | None]
-    project: NotRequired[ProjectTemplateFields | None]
-    project_id: NotRequired[str | None]
-    project_milestone_id: NotRequired[str | None]
-    status_id: NotRequired[str | None]
-    title: NotRequired[str | None]
 
 
 class TransitionCreate(TypedDict, closed=True):
@@ -3149,12 +3106,6 @@ class DocumentListRead(TypedDict):
     next_cursor: NotRequired[str | None]
 
 
-class DocumentTemplateListRead(TypedDict):
-    default_document_template_id: NotRequired[str | None]
-    default_update_template_id: NotRequired[str | None]
-    templates: list[TemplateRead]
-
-
 class DocumentVersionListRead(TypedDict):
     next_cursor: NotRequired[str | None]
     versions: list[DocumentVersionRead]
@@ -3189,6 +3140,24 @@ class FavoriteRead(TypedDict):
     team_id: NotRequired[str | None]
     team_key_prefix: NotRequired[str | None]
     title: str
+
+
+class FormField(TypedDict):
+    description: NotRequired[str | None]
+    key: NotRequired[str | None]
+    label: str
+    options: NotRequired[list[FormOption]]
+    required: NotRequired[bool]
+    type: NotRequired[Literal["short_text", "long_text", "select", "checkbox"]]
+
+
+class FormFieldBlueprint(TypedDict):
+    description: NotRequired[str | None]
+    key: str
+    label: str
+    options: NotRequired[list[FormOptionBlueprint]]
+    required: NotRequired[bool]
+    type: str
 
 
 class HomeAttentionItem(TypedDict):
@@ -3637,9 +3606,63 @@ class TeamMemberListRead(TypedDict):
     members: list[TeamMemberRead]
 
 
-class TemplateListRead(TypedDict):
-    default_template_id: NotRequired[str | None]
-    templates: list[TemplateRead]
+class TemplateCreate(TypedDict):
+    assignee_id: NotRequired[str | None]
+    body: NotRequired[str | None]
+    cycle_id: NotRequired[str | None]
+    estimate: NotRequired[str | None]
+    form_fields: NotRequired[list[FormField]]
+    kind: NotRequired[Literal["issue", "project", "document"]]
+    label_ids: NotRequired[list[str]]
+    name: str
+    position: NotRequired[int | None]
+    priority: NotRequired[Literal["none", "urgent", "high", "medium", "low"] | None]
+    project: NotRequired[ProjectTemplateFields | None]
+    project_id: NotRequired[str | None]
+    project_milestone_id: NotRequired[str | None]
+    status_id: NotRequired[str | None]
+    title: NotRequired[str | None]
+
+
+class TemplateRead(TypedDict):
+    assignee_id: NotRequired[str | None]
+    body: NotRequired[str | None]
+    created_at: str
+    created_by: NotRequired[str | None]
+    cycle_id: NotRequired[str | None]
+    estimate: NotRequired[str | None]
+    form_fields: NotRequired[list[FormFieldBlueprint]]
+    id: str
+    kind: NotRequired[Literal["issue", "project", "document"]]
+    label_ids: NotRequired[list[str]]
+    name: str
+    position: NotRequired[int]
+    priority: NotRequired[Literal["none", "urgent", "high", "medium", "low"] | None]
+    project: NotRequired[ProjectBlueprint | None]
+    project_id: NotRequired[str | None]
+    project_milestone_id: NotRequired[str | None]
+    scope: NotRequired[Literal["team", "parent", "workspace"]]
+    status_id: NotRequired[str | None]
+    team_id: NotRequired[str | None]
+    title: NotRequired[str | None]
+    updated_at: str
+
+
+class TemplateUpdate(TypedDict):
+    assignee_id: NotRequired[str | None]
+    body: NotRequired[str | None]
+    cycle_id: NotRequired[str | None]
+    estimate: NotRequired[str | None]
+    form_fields: NotRequired[list[FormField] | None]
+    label_ids: NotRequired[list[str] | None]
+    name: NotRequired[str | None]
+    position: NotRequired[int | None]
+    priority: NotRequired[Literal["none", "urgent", "high", "medium", "low"] | None]
+    project: NotRequired[ProjectTemplateFields | None]
+    project_id: NotRequired[str | None]
+    project_milestone_id: NotRequired[str | None]
+    status_id: NotRequired[str | None]
+    title: NotRequired[str | None]
 
 
 class TriageSummaryRead(TypedDict):
@@ -3674,6 +3697,12 @@ class ConnectedAppListRead(TypedDict):
 class CursorPageIssueLinkRead(TypedDict):
     items: list[IssueLinkRead]
     next_cursor: NotRequired[str | None]
+
+
+class DocumentTemplateListRead(TypedDict):
+    default_document_template_id: NotRequired[str | None]
+    default_update_template_id: NotRequired[str | None]
+    templates: list[TemplateRead]
 
 
 class FavoriteListRead(TypedDict):
@@ -3740,3 +3769,8 @@ class StandupDigest(TypedDict):
     timezone: str
     window_end: str
     window_start: str
+
+
+class TemplateListRead(TypedDict):
+    default_template_id: NotRequired[str | None]
+    templates: list[TemplateRead]

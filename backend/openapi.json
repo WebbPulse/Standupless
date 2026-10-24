@@ -4767,6 +4767,198 @@
         "title": "FavoriteRef",
         "type": "object"
       },
+      "FormField": {
+        "description": "One question a form template asks.\n\nA field without a key is given one, `f1` onwards. Only a select field takes\noptions, and it needs at least one.",
+        "properties": {
+          "description": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "key": {
+            "anyOf": [
+              {
+                "maxLength": 40,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Key"
+          },
+          "label": {
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Label",
+            "type": "string"
+          },
+          "options": {
+            "items": {
+              "$ref": "#/components/schemas/FormOption"
+            },
+            "maxItems": 25,
+            "title": "Options",
+            "type": "array"
+          },
+          "required": {
+            "default": false,
+            "title": "Required",
+            "type": "boolean"
+          },
+          "type": {
+            "default": "short_text",
+            "enum": [
+              "short_text",
+              "long_text",
+              "select",
+              "checkbox"
+            ],
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "label"
+        ],
+        "title": "FormField",
+        "type": "object"
+      },
+      "FormFieldBlueprint": {
+        "description": "One question a form template asks: short or long text, a select of options, or a checkbox.\n\n`key` names the field in the answers a create sends, so a label can be\nrenamed without breaking a client that files through the form.",
+        "properties": {
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "options": {
+            "items": {
+              "$ref": "#/components/schemas/FormOptionBlueprint"
+            },
+            "title": "Options",
+            "type": "array"
+          },
+          "required": {
+            "default": false,
+            "title": "Required",
+            "type": "boolean"
+          },
+          "type": {
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "label",
+          "type"
+        ],
+        "title": "FormFieldBlueprint",
+        "type": "object"
+      },
+      "FormOption": {
+        "description": "One option of a select field; choosing it puts `label_id` and `priority` on the issue when set.",
+        "properties": {
+          "label_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label Id"
+          },
+          "priority": {
+            "anyOf": [
+              {
+                "enum": [
+                  "none",
+                  "urgent",
+                  "high",
+                  "medium",
+                  "low"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Priority"
+          },
+          "value": {
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Value",
+            "type": "string"
+          }
+        },
+        "required": [
+          "value"
+        ],
+        "title": "FormOption",
+        "type": "object"
+      },
+      "FormOptionBlueprint": {
+        "description": "One choice of a form's select field, and the label and priority choosing it puts on the issue.",
+        "properties": {
+          "label_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label Id"
+          },
+          "priority": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Priority"
+          },
+          "value": {
+            "title": "Value",
+            "type": "string"
+          }
+        },
+        "required": [
+          "value"
+        ],
+        "title": "FormOptionBlueprint",
+        "type": "object"
+      },
       "GitHubAppStatus": {
         "description": "Whether this environment can create an App, and whether it already has one.",
         "properties": {
@@ -6985,7 +7177,7 @@
         "type": "object"
       },
       "IssueCreate": {
-        "description": "The body `POST /api/workspaces/{workspace_id}/issues` takes.\n\n`team_id` is a field rather than a path segment because issues are workspace\nscoped, which is what lets a link and a \"my issues\" read cross teams.\n`template_id` fills every field the body leaves out from a template the team\noffers, so `title` may be left out only when a template is named.",
+        "description": "The body `POST /api/workspaces/{workspace_id}/issues` takes.\n\n`team_id` is a field rather than a path segment because issues are workspace\nscoped, which is what lets a link and a \"my issues\" read cross teams.\n`template_id` fills every field the body leaves out from a template the team\noffers, so `title` may be left out only when a template is named.\n`form_answers` answers a form template's fields by key: text for a text or\nselect field and a boolean for a checkbox.",
         "properties": {
           "assignee_id": {
             "anyOf": [
@@ -7041,6 +7233,28 @@
               }
             ],
             "title": "Estimate"
+          },
+          "form_answers": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "boolean"
+                    }
+                  ]
+                },
+                "maxProperties": 50,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Form Answers"
           },
           "label_ids": {
             "items": {
@@ -17266,7 +17480,7 @@
         "type": "object"
       },
       "TemplateCreate": {
-        "description": "The body a template create takes: a name and any of the issue fields.\n\n`kind` \"project\" makes a project template, which fills `project` and leaves\nthe issue fields unset. `kind` \"document\" makes a document template, which\ntakes only `title` and `body`.",
+        "description": "The body a template create takes: a name and any of the issue fields.\n\n`kind` \"project\" makes a project template, which fills `project` and leaves\nthe issue fields unset. `kind` \"document\" makes a document template, which\ntakes only `title` and `body`. `form_fields` makes an issue template a form.",
         "properties": {
           "assignee_id": {
             "anyOf": [
@@ -17312,6 +17526,14 @@
               }
             ],
             "title": "Estimate"
+          },
+          "form_fields": {
+            "items": {
+              "$ref": "#/components/schemas/FormField"
+            },
+            "maxItems": 20,
+            "title": "Form Fields",
+            "type": "array"
           },
           "kind": {
             "default": "issue",
@@ -17458,7 +17680,7 @@
         "type": "object"
       },
       "TemplateRead": {
-        "description": "One template as the API returns it.\n\n`scope` says where it comes from as the team in the path sees it: the team's\nown, its parent team's, or the workspace's. `team_id` is `None` for a\nworkspace template. `project` is set on a project template only, and a\ndocument template sets only `title` and `body`.",
+        "description": "One template as the API returns it.\n\n`scope` says where it comes from as the team in the path sees it: the team's\nown, its parent team's, or the workspace's. `team_id` is `None` for a\nworkspace template. `project` is set on a project template only, and a\ndocument template sets only `title` and `body`. `form_fields` is set on a\nform, an issue template whose issues answer its questions and land in triage.",
         "properties": {
           "assignee_id": {
             "anyOf": [
@@ -17519,6 +17741,13 @@
               }
             ],
             "title": "Estimate"
+          },
+          "form_fields": {
+            "items": {
+              "$ref": "#/components/schemas/FormFieldBlueprint"
+            },
+            "title": "Form Fields",
+            "type": "array"
           },
           "id": {
             "title": "Id",
@@ -17858,6 +18087,21 @@
               }
             ],
             "title": "Estimate"
+          },
+          "form_fields": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/FormField"
+                },
+                "maxItems": 20,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Form Fields"
           },
           "label_ids": {
             "anyOf": [

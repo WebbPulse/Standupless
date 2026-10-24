@@ -13,7 +13,7 @@ import re
 from datetime import date, datetime
 from typing import Any, Literal, Optional
 
-from pydantic import BaseModel, Field, StrictBool, field_validator, model_validator
+from pydantic import BaseModel, Field, StrictBool, StrictStr, field_validator, model_validator
 from webbpulse.http import cursor_page
 
 from app.common.api.schemas.planning import ProjectRead
@@ -137,6 +137,10 @@ def _check_order(start_date: Optional[str], due_date: Optional[str]) -> None:
         raise ValueError("due_date must not be before start_date")
 
 
+FORM_ANSWERS_MAX = 50
+"""How many answers one create may carry, comfortably above the most questions a form asks."""
+
+
 class IssueCreate(BaseModel):
     """The body `POST /api/workspaces/{workspace_id}/issues` takes.
 
@@ -144,6 +148,8 @@ class IssueCreate(BaseModel):
     scoped, which is what lets a link and a "my issues" read cross teams.
     `template_id` fills every field the body leaves out from a template the team
     offers, so `title` may be left out only when a template is named.
+    `form_answers` answers a form template's fields by key: text for a text or
+    select field and a boolean for a checkbox.
     """
 
     team_id: str = Field(min_length=1)
@@ -163,6 +169,7 @@ class IssueCreate(BaseModel):
     project_milestone_id: Optional[str] = None
     sort_order: Optional[str] = None
     triage: StrictBool = False
+    form_answers: Optional[dict[str, StrictStr | StrictBool]] = Field(default=None, max_length=FORM_ANSWERS_MAX)
 
     @field_validator("title")
     @classmethod
@@ -200,6 +207,8 @@ class IssueCreate(BaseModel):
         _check_order(self.start_date, self.due_date)
         if not self.title and not self.template_id:
             raise ValueError("title must not be blank")
+        if self.form_answers is not None and not self.template_id:
+            raise ValueError("form_answers needs a form template_id")
         return self
 
 

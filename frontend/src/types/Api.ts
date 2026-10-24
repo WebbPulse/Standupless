@@ -893,7 +893,7 @@ export interface IssueCreate {
   team_id: string;
   title: string;
   body?: string | null;
-  status_id?: string;
+  status_id?: string | null;
   priority?: IssuePriority;
   assignee_id?: string | null;
   label_ids?: string[];
@@ -904,6 +904,10 @@ export interface IssueCreate {
   cycle_id?: string | null;
   project_id?: string | null;
   project_milestone_id?: string | null;
+  /** A template that fills the fields left out; the create dialog sends it only for a form. */
+  template_id?: string | null;
+  /** A form template's answers by field key: text, or true and false for a checkbox. */
+  form_answers?: Record<string, string | boolean> | null;
 }
 
 /** What a template fills: a new issue, a new project, or a new document or update. */
@@ -971,6 +975,34 @@ export interface ProjectBlueprint extends ProjectTemplateFields {
   issues: ProjectBlueprintIssue[];
 }
 
+/** The answer a form field takes. */
+export type FormFieldType = 'short_text' | 'long_text' | 'select' | 'checkbox';
+
+/** One choice of a select field; choosing it puts its label and priority on the issue. */
+export interface FormOption {
+  value: string;
+  label_id?: string | null;
+  priority?: IssuePriority | null;
+}
+
+/** One question a form template asks. A field sent without a key is given one, `f1` onwards. */
+export interface FormField {
+  key?: string | null;
+  label: string;
+  type?: FormFieldType;
+  required?: boolean;
+  description?: string | null;
+  options?: FormOption[];
+}
+
+/** A saved form field, which always has its key, type and options. */
+export interface FormFieldRead extends FormField {
+  key: string;
+  type: FormFieldType;
+  required: boolean;
+  options: FormOption[];
+}
+
 /** The issue fields a template fills, every one optional. */
 export interface TemplateFields {
   title?: string | null;
@@ -993,6 +1025,8 @@ export interface TemplateCreate extends TemplateFields {
   /** A project template sends `project` and none of the issue fields. */
   kind?: TemplateKind;
   project?: ProjectTemplateFields | null;
+  /** The questions that make an issue template a form. */
+  form_fields?: FormField[];
 }
 
 /** A template patch: only the fields sent change, and null clears one. */
@@ -1001,6 +1035,8 @@ export interface TemplateUpdate extends TemplateFields {
   label_ids?: string[] | null;
   /** Replaces a project template's whole blueprint. */
   project?: ProjectTemplateFields | null;
+  /** Replaces a form's questions; null or an empty list turns the form off. */
+  form_fields?: FormField[] | null;
 }
 
 /**
@@ -1026,6 +1062,8 @@ export interface TemplateRead {
   kind?: TemplateKind;
   /** A project template's blueprint; null on an issue template. */
   project?: ProjectBlueprint | null;
+  /** A form template's questions; empty, or absent on an older answer, on any other template. */
+  form_fields?: FormFieldRead[];
   position: number;
   created_by: string | null;
   created_at: string;

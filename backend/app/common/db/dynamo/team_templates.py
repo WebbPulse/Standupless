@@ -99,6 +99,29 @@ class IssueBlueprint(BaseModel):
     parent_key: Optional[str] = None
 
 
+class FormOptionBlueprint(BaseModel):
+    """One choice of a form's select field, and the label and priority choosing it puts on the issue."""
+
+    value: str
+    label_id: Optional[str] = None
+    priority: Optional[str] = None
+
+
+class FormFieldBlueprint(BaseModel):
+    """One question a form template asks: short or long text, a select of options, or a checkbox.
+
+    `key` names the field in the answers a create sends, so a label can be
+    renamed without breaking a client that files through the form.
+    """
+
+    key: str
+    label: str
+    type: str
+    required: bool = False
+    description: Optional[str] = None
+    options: list[FormOptionBlueprint] = Field(default_factory=list)
+
+
 class ProjectBlueprint(BaseModel):
     """What a project template fills: the project's fields, its milestones and its issues.
 
@@ -125,7 +148,8 @@ class IssueTemplate(BaseModel):
     `team_id` is `None` for a workspace template. `position` orders a scope's
     templates in the picker and the settings page. A project template carries
     `project` and leaves the issue fields unset, and a document template sets
-    only `title` and `body`.
+    only `title` and `body`. An issue template with `form_fields` is a form: an
+    issue filed from it answers each field and lands in the team's triage.
     """
 
     workspace_id: str
@@ -145,6 +169,7 @@ class IssueTemplate(BaseModel):
     project_milestone_id: Optional[str] = None
     cycle_id: Optional[str] = None
     project: Optional[ProjectBlueprint] = None
+    form_fields: list[FormFieldBlueprint] = Field(default_factory=list)
     position: int = 0
     created_by: Optional[str] = None
     created_at: datetime = Field(default_factory=utc_now)

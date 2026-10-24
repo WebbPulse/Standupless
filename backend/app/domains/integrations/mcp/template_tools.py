@@ -17,11 +17,14 @@ from app.common import issue_templates
 from app.common.api.dependencies.authz import Capability, check_capability, missing_scopes
 from app.common.api.schemas.planning import ProjectIconField, ProjectPriorityField, ProjectStatusField
 from app.common.api.schemas.templates import (
+    FORM_FIELDS_MAX,
+    FORM_OPTIONS_MAX,
     OFFSET_MAX_DAYS,
     POSITION_MAX,
     ROW_KINDS,
     TEMPLATE_ISSUES_MAX,
     TEMPLATE_MILESTONES_MAX,
+    FormFieldType,
     TemplateCreate,
     TemplateRead,
     TemplateUpdate,
@@ -64,6 +67,7 @@ _FIELDS = (
     "project_milestone_id",
     "cycle_id",
     "position",
+    "form_fields",
 )
 
 
@@ -299,6 +303,43 @@ PROJECT_TEMPLATE_PROPERTY: dict[str, Any] = {
     },
 }
 
+FORM_FIELDS_PROPERTY: dict[str, Any] = {
+    "type": ["array", "null"],
+    "maxItems": FORM_FIELDS_MAX,
+    "description": (
+        "For an issue template: the questions that make it a form. An issue filed from a form answers them in "
+        "create_issue's form_answers, the answers land in its body, and it goes to the team's triage. On update "
+        "it replaces the whole set, and null or an empty list turns the form off."
+    ),
+    "items": {
+        "type": "object",
+        "additionalProperties": False,
+        "required": ["label"],
+        "properties": {
+            "key": string("A short key form_answers names it by; defaults to f1, f2 and on"),
+            "label": string("The question"),
+            "type": enum(get_args(FormFieldType), "The answer type; defaults to short_text"),
+            "required": {"type": "boolean", "description": "Whether an issue cannot be filed without an answer"},
+            "description": string("Help text shown under the question"),
+            "options": {
+                "type": "array",
+                "maxItems": FORM_OPTIONS_MAX,
+                "description": "For a select field, the choices, in order",
+                "items": {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "required": ["value"],
+                    "properties": {
+                        "value": string("The choice as shown and answered"),
+                        "label_id": string("A label choosing it puts on the issue"),
+                        "priority": enum(PRIORITIES, "A priority choosing it sets on the issue"),
+                    },
+                },
+            },
+        },
+    },
+}
+
 TEMPLATE_TOOLS: tuple[Tool, ...] = (
     Tool(
         name="list_templates",
@@ -321,7 +362,8 @@ TEMPLATE_TOOLS: tuple[Tool, ...] = (
             "Markdown body that new documents and updates start from. With team_id it belongs to that team and its "
             "sub-teams and needs team membership; without it every team offers it and it needs workspace admin. "
             "Pass its id or name as template_id to create_issue, to create_project for a project template, or to "
-            "create_document, create_project_update or create_initiative_update for a document template."
+            "create_document, create_project_update or create_initiative_update for a document template. "
+            "form_fields turns an issue template into a form whose answers create_issue takes as form_answers."
         ),
         scopes=("teams:write",),
         schema=object_schema(
@@ -331,6 +373,7 @@ TEMPLATE_TOOLS: tuple[Tool, ...] = (
                 "name": string("The template name shown in the picker"),
                 **_field_properties(patch=False),
                 "project": PROJECT_TEMPLATE_PROPERTY,
+                "form_fields": FORM_FIELDS_PROPERTY,
             },
             required=("name",),
         ),
@@ -351,6 +394,7 @@ TEMPLATE_TOOLS: tuple[Tool, ...] = (
                 "name": string("A new name"),
                 **_field_properties(patch=True),
                 "project": PROJECT_TEMPLATE_PROPERTY,
+                "form_fields": FORM_FIELDS_PROPERTY,
             },
             required=("template",),
         ),
