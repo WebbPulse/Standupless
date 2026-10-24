@@ -101,10 +101,9 @@ def issue_team(template: IssueTemplate, project: Project) -> str:
 
 def skip_reason(exc: HTTPException) -> str:
     """The message a refused template issue's 422 carried, as the create response reports it."""
-    detail = exc.detail
-    if isinstance(detail, dict) and isinstance(detail.get("message"), str):
-        return detail["message"]
-    return str(detail)
+    detail: Any = exc.detail
+    message = detail.get("message") if isinstance(detail, dict) else None
+    return message if isinstance(message, str) else str(detail)
 
 
 def add_template_rows(
