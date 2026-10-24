@@ -1,14 +1,27 @@
 /**
- * The sub-issues rail section. Covers changing a child's status from its row,
- * the header count following that change before the rollup lands, filing
- * children one after another from the inline row, Escape leaving it, a failed
- * create giving the title back, and a read only caller seeing no controls.
+ * The sub-issues section. Covers changing a child's status, priority and
+ * assignee from its row, the header count following a status change before
+ * the rollup lands, reordering by drag and by Alt+arrow under manual ordering,
+ * j and k moving focus and p opening the focused row's picker, hiding
+ * completed sub-issues behind an expandable count remembered for the viewer,
+ * filing children one after another from the inline row, Escape leaving it, a
+ * failed create giving the title back, and a read only caller seeing no
+ * controls.
  */
 
-import { render, screen, waitFor, within } from '@testing-library/react';
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { OrderedIssueRead } from '../../api/issues';
+import type { Assignable } from '../../lib/issuePeople';
+import { SUB_ISSUE_DISPLAY_KEY } from '../../lib/subIssues';
 import type { IssueRead, StatusRead } from '../../types/Api';
 import { clearToasts } from '../../lib/toast';
 import SubIssues, { type SubIssuesProps } from './SubIssues';
@@ -79,10 +92,42 @@ const renderSection = (props: Partial<SubIssuesProps> = {}) =>
     </MemoryRouter>
   );
 
+const people: Assignable[] = [
+  {
+    user_id: 'u-1',
+    email: 'olive@example.com',
+    display_name: 'Olive Owner',
+    avatar_url: null,
+  },
+];
+
+/** Answers each write with the row it was asked for, changed. */
+const echoWrites = (rows: IssueRead[]): void => {
+  updateIssue.mockImplementation((id, body) => {
+    const row = rows.find((each) => each.id === id);
+    return Promise.resolve({
+      ...(row as IssueRead),
+      ...(body as Partial<IssueRead>),
+      updated_at: '2026-10-24T00:00:05Z',
+    });
+  });
+};
+
+/** The rows of the list, in the order they show. */
+const shownTitles = (): string[] =>
+  within(screen.getByRole('list', { name: 'Sub-issues' }))
+    .getAllByRole('link')
+    .map((link) => link.textContent ?? '');
+
+const dragData = (): { dataTransfer: Partial<DataTransfer> } => ({
+  dataTransfer: { setData: vi.fn(), effectAllowed: 'all', dropEffect: 'none' },
+});
+
 beforeEach(() => {
   updateIssue.mockReset();
   createIssue.mockReset();
   clearToasts();
+  globalThis.localStorage.clear();
 });
 
 describe('changing a sub-issue status', () => {
@@ -198,5 +243,158 @@ describe('a read only caller', () => {
     expect(
       screen.queryByRole('button', { name: 'Add sub-issue' })
     ).not.toBeInTheDocument();
+  });
+});
+
+describe('editing a sub-issue in place', () => {
+  it('writes the priority picked on the row', async () => {
+    const row = child('2', 'A child');
+    echoWrites([row]);
+    const user = userEvent.setup();
+    renderSection({ rows: [row], progress: { total: 1, completed: 0 } });
+
+    await user.click(
+      screen.getByRole('button', { name: 'Priority: No priority' })
+    );
+    await user.keyboard('2');
+
+    expect(updateIssue).toHaveBeenCalledWith('2', { priority: 'high' });
+    expect(
+      await screen.findByRole('button', { name: 'Priority: High' })
+    ).toBeInTheDocument();
+  });
+
+  it('writes the assignee picked on the row', async () => {
+    const row = child('2', 'A child');
+    echoWrites([row]);
+    const user = userEvent.setup();
+    renderSection({
+      rows: [row],
+      people,
+      progress: { total: 1, completed: 0 },
+    });
+
+    await user.click(
+      screen.getByRole('button', { name: 'Assignee: No assignee' })
+    );
+    await user.click(
+      within(screen.getByRole('dialog', { name: 'Assignee' })).getByText(
+        'Olive Owner'
+      )
+    );
+
+    expect(updateIssue).toHaveBeenCalledWith('2', { assignee_id: 'u-1' });
+  });
+});
+
+describe('reordering sub-issues', () => {
+  it('writes the manual order a drop lands on and shows it at once', async () => {
+    const rows = [child('2', 'First'), child('3', 'Second')];
+    echoWrites(rows);
+    renderSection({ rows, progress: { total: 2, completed: 0 } });
+    expect(shownTitles()).toEqual(['ENG-2First', 'ENG-3Second']);
+
+    const list = screen.getByRole('list', { name: 'Sub-issues' });
+    const first = screen.getByText('First').closest('li') as HTMLElement;
+    fireEvent.dragStart(first, dragData());
+    fireEvent.dragOver(list, { ...dragData(), clientY: 1000 });
+    fireEvent.drop(list, { ...dragData(), clientY: 1000 });
+
+    await waitFor(() => {
+      expect(updateIssue).toHaveBeenCalledTimes(2);
+    });
+    const keys = new Map(
+      updateIssue.mock.calls.map(([id, body]) => [
+        id,
+        (body as { sort_order: string }).sort_order,
+      ])
+    );
+    expect((keys.get('3') ?? '') < (keys.get('2') ?? '')).toBe(true);
+    expect(shownTitles()).toEqual(['ENG-3Second', 'ENG-2First']);
+  });
+
+  it('moves the focused row down a step on Alt+Down', async () => {
+    const rows: OrderedIssueRead[] = [
+      { ...child('2', 'First'), sort_order: 'a' },
+      { ...child('3', 'Second'), sort_order: 'b' },
+    ];
+    echoWrites(rows);
+    const user = userEvent.setup();
+    renderSection({ rows, progress: { total: 2, completed: 0 } });
+
+    screen.getByText('First').closest('a')?.focus();
+    await user.keyboard('{Alt>}{ArrowDown}{/Alt}');
+
+    expect(updateIssue).toHaveBeenCalledTimes(1);
+    const [id, body] = updateIssue.mock.calls[0] ?? [];
+    expect(id).toBe('2');
+    expect((body as { sort_order: string }).sort_order > 'b').toBe(true);
+    expect(shownTitles()).toEqual(['ENG-3Second', 'ENG-2First']);
+  });
+
+  it('asks for manual ordering before a keyboard move', async () => {
+    globalThis.localStorage.setItem(
+      SUB_ISSUE_DISPLAY_KEY,
+      JSON.stringify({ ordering: 'priority_desc', showCompleted: true })
+    );
+    const rows = [child('2', 'First'), child('3', 'Second')];
+    const user = userEvent.setup();
+    renderSection({ rows, progress: { total: 2, completed: 0 } });
+
+    screen.getByText('First').closest('a')?.focus();
+    await user.keyboard('{Alt>}{ArrowDown}{/Alt}');
+
+    expect(updateIssue).not.toHaveBeenCalled();
+  });
+});
+
+describe('the sub-issue keyboard', () => {
+  it('moves focus with j and k and opens the focused row picker with p', async () => {
+    const rows = [child('2', 'First'), child('3', 'Second')];
+    const user = userEvent.setup();
+    renderSection({ rows, progress: { total: 2, completed: 0 } });
+
+    const first = screen.getByText('First').closest('a') as HTMLElement;
+    const second = screen.getByText('Second').closest('a') as HTMLElement;
+    first.focus();
+    await user.keyboard('j');
+    expect(second).toHaveFocus();
+    await user.keyboard('k');
+    expect(first).toHaveFocus();
+
+    await user.keyboard('p');
+    const row = first.closest('li') as HTMLElement;
+    expect(
+      await within(row).findByRole('dialog', { name: 'Priority' })
+    ).toBeInTheDocument();
+  });
+});
+
+describe('hiding completed sub-issues', () => {
+  it('folds them into a count that expands, and remembers the choice', async () => {
+    const rows = [child('2', 'Open one'), child('3', 'Done one', 'st-4')];
+    const user = userEvent.setup();
+    const { unmount } = renderSection({
+      rows,
+      progress: { total: 2, completed: 1 },
+    });
+
+    await user.click(
+      screen.getByRole('button', { name: 'Sub-issue display options' })
+    );
+    await user.click(screen.getByRole('switch', { name: 'Show completed' }));
+
+    expect(screen.queryByText('Done one')).not.toBeInTheDocument();
+    expect(screen.getByText('Open one')).toBeInTheDocument();
+    expect(
+      JSON.parse(globalThis.localStorage.getItem(SUB_ISSUE_DISPLAY_KEY) ?? '{}')
+    ).toMatchObject({ showCompleted: false });
+
+    unmount();
+    renderSection({ rows, progress: { total: 2, completed: 1 } });
+    expect(screen.queryByText('Done one')).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: '1 completed' }));
+    expect(screen.getByText('Done one')).toBeInTheDocument();
   });
 });

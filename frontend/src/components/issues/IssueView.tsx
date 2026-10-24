@@ -967,6 +967,7 @@ export const IssueView: React.FC<IssueViewProps> = ({
                       statuses={options.statuses}
                       people={options.people}
                       canEdit={canAct}
+                      currentUserId={currentUserId}
                     />
                   )}
                 </div>
