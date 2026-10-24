@@ -1,8 +1,8 @@
 /**
  * Vite build configuration. Every dependency lands in one `vendor` chunk except
- * two that load on demand: the emoji dataset, which the reaction picker imports
- * on first open, and the rich text editor, which loads when a description is
- * shown. Each stays a chunk of its own rather than weighing down every page.
+ * three that load on demand: the emoji dataset, which the reaction picker
+ * imports on first open, the rich text editor, which loads when a description
+ * is shown, and the syntax highlighter, which loads with the first code block. Each stays a chunk of its own rather than weighing down every page.
  * After the bundle is written, the public pages are prerendered to static HTML.
  * The dev server proxies `/api` to the backend `VITE_BACKEND` names.
  */
@@ -174,6 +174,20 @@ const mobileAssociations = (): Plugin => ({
 const EDITOR_MODULES =
   /node_modules[\\/](@tiptap|prosemirror-[^\\/]+|marked|linkifyjs|orderedmap|rope-sequence|w3c-keyname|@floating-ui|fast-equals|use-sync-external-store)[\\/]/;
 
+/**
+ * The syntax highlighter and its languages. They load on demand the first time
+ * a code block is shown, so they stay out of both the vendor chunk and the
+ * editor chunk and land in the lazy chunk that imports them.
+ */
+const HIGHLIGHT_MODULES =
+  /node_modules[\\/](lowlight|highlight\.js|devlop)[\\/]/;
+
+/**
+ * The highlighter's core, which the editor's code block and the language chunk
+ * both import. It is a small chunk of its own so neither carries a copy.
+ */
+const HIGHLIGHT_CORE = /node_modules[\\/]highlight\.js[\\/]lib[\\/]core\.js$/;
+
 export default defineConfig(({ mode }) => {
   const env = { ...loadEnv(mode, process.cwd(), ''), ...process.env };
   const watch = devWatch(env);
@@ -204,13 +218,19 @@ export default defineConfig(({ mode }) => {
                 test: (id: string) =>
                   id.includes('node_modules') &&
                   !id.includes('emojibase-data') &&
-                  !EDITOR_MODULES.test(id),
+                  !EDITOR_MODULES.test(id) &&
+                  !HIGHLIGHT_MODULES.test(id),
                 priority: 2,
               },
               {
                 name: 'editor',
                 test: EDITOR_MODULES,
                 priority: 1,
+              },
+              {
+                name: 'highlight-core',
+                test: HIGHLIGHT_CORE,
+                priority: 3,
               },
             ],
           },

@@ -19,6 +19,9 @@
  *   keep blank lines, so repeated blank lines collapse as they do in Linear
  *   and no entity reaches a reader that shows it as text.
  *
+ * Code blocks are highlighted, with a language picker and a copy button on
+ * each, and keep the fence language they were read with.
+ *
  * Images and videos are the one image node, shown through the page's media
  * tokens, and a link may point at an attachment's content path as well as the
  * web.
@@ -39,6 +42,7 @@ import type { Node as ProseMirrorNode } from '@tiptap/pm/model';
 import StarterKit from '@tiptap/starter-kit';
 import { Marked, type Token } from 'marked';
 import { isLinkTarget } from '../../lib/markdown';
+import { HighlightedCodeBlock } from './codeBlock';
 import { EditorShortcuts } from './editorShortcuts';
 import { MediaImage, MediaUpload } from './mediaNodes';
 
@@ -295,10 +299,12 @@ export const markdownExtensions = (
       link: false,
       hardBreak: false,
       paragraph: false,
+      codeBlock: false,
       heading: { levels: [1, 2, 3, 4, 5, 6] },
     }),
     CollapsingParagraph,
     NewlineBreak,
+    HighlightedCodeBlock,
     BoundedLink.configure({
       openOnClick: false,
       autolink: true,
