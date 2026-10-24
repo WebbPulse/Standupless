@@ -298,6 +298,13 @@ export const favoritesKey = (workspaceId: string): QueryKey => [
   workspaceId,
 ];
 
+/** The caller's favorite folders, read beside the favorites by the sidebar. */
+export const favoriteFoldersKey = (workspaceId: string): QueryKey => [
+  'favorites',
+  workspaceId,
+  'folders',
+];
+
 /** The caller's Reviews list, read by the page and the sidebar badge alike. */
 export const reviewsKey = (workspaceId: string): QueryKey => [
   'reviews',

@@ -7,8 +7,16 @@
 import { describe, expect, it } from 'vitest';
 import {
   EMOJI_GROUP_NAMES,
+  findShortcode,
+  labelShortcode,
   loadEmojiCatalog,
+  loadShortcodeCatalog,
+  recentEmoji,
+  RECENT_EMOJI_LIMIT,
+  RECENT_EMOJI_STORAGE_KEY,
+  rememberEmoji,
   searchEmoji,
+  searchShortcodes,
   sectionsOf,
   type EmojiEntry,
 } from './emojiCatalog';
@@ -78,5 +86,86 @@ describe('the dataset', () => {
 
   it('shares one load between callers', () => {
     expect(loadEmojiCatalog()).toBe(loadEmojiCatalog());
+  });
+});
+
+const coded = (
+  emoji: string,
+  shortcodes: string[],
+  keywords: string[] = []
+): EmojiEntry => ({
+  ...entry(emoji, shortcodes[0] ?? '', keywords),
+  shortcodes,
+});
+
+const codedSample = [
+  coded('🚀', ['rocket'], ['launch']),
+  coded('🪨', ['rock']),
+  coded('🎉', ['tada', 'party_popper'], ['celebrate']),
+  coded('👍', ['+1', 'thumbsup']),
+];
+
+describe('shortcodes', () => {
+  it('reads a label as a shortcode', () => {
+    expect(labelShortcode('face with tears of joy')).toBe(
+      'face_with_tears_of_joy'
+    );
+    expect(labelShortcode('thumbs up: medium skin tone')).toBe(
+      'thumbs_up_medium_skin_tone'
+    );
+  });
+
+  it('puts an exact shortcode before one that starts with the query', () => {
+    expect(
+      searchShortcodes(codedSample, 'rock').map((row) => row.emoji)
+    ).toEqual(['🪨', '🚀']);
+  });
+
+  it('matches a word of a shortcode and then a keyword', () => {
+    expect(
+      searchShortcodes(codedSample, 'party').map((row) => row.emoji)
+    ).toEqual(['🎉']);
+    expect(
+      searchShortcodes(codedSample, 'launch').map((row) => row.emoji)
+    ).toEqual(['🚀']);
+  });
+
+  it('ranks recently used emoji first', () => {
+    expect(
+      searchShortcodes(codedSample, 'roc', ['🚀']).map((row) => row.emoji)
+    ).toEqual(['🚀', '🪨']);
+  });
+
+  it('finds an exact shortcode in any case', () => {
+    expect(findShortcode(codedSample, 'TADA')?.emoji).toBe('🎉');
+    expect(findShortcode(codedSample, 'tad')).toBeUndefined();
+  });
+
+  it("loads GitHub's shortcodes with the dataset", async () => {
+    const catalog = await loadShortcodeCatalog();
+    expect(findShortcode(catalog, 'tada')?.label).toBe('party popper');
+    expect(findShortcode(catalog, '+1')?.label).toBe('thumbs up');
+    expect(findShortcode(catalog, 'rocket')?.label).toBe('rocket');
+    expect(findShortcode(catalog, 'party_popper')?.label).toBe('party popper');
+  });
+});
+
+describe('recently used emoji', () => {
+  it('keeps the newest first without repeats, up to the limit', () => {
+    rememberEmoji('🚀');
+    rememberEmoji('🎉');
+    rememberEmoji('🚀');
+    expect(recentEmoji()).toEqual(['🚀', '🎉']);
+    for (let index = 0; index < RECENT_EMOJI_LIMIT + 4; index += 1) {
+      rememberEmoji(String(index));
+    }
+    expect(recentEmoji()).toHaveLength(RECENT_EMOJI_LIMIT);
+  });
+
+  it('reads anything unreadable as an empty list', () => {
+    globalThis.localStorage.setItem(RECENT_EMOJI_STORAGE_KEY, '{not json');
+    expect(recentEmoji()).toEqual([]);
+    globalThis.localStorage.setItem(RECENT_EMOJI_STORAGE_KEY, '{"a":1}');
+    expect(recentEmoji()).toEqual([]);
   });
 });
