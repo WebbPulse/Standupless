@@ -657,8 +657,10 @@ export const CreateIssueDialog: React.FC<CreateIssueDialogProps> = ({
   useEffect(() => {
     const id = focusRow.current;
     if (id === null) return;
+    const input = subInputs.current.get(id);
+    if (input === undefined) return;
     focusRow.current = null;
-    subInputs.current.get(id)?.focus();
+    input.focus();
   });
 
   const addSubIssue = (after?: string): void => {
