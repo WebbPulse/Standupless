@@ -18,7 +18,7 @@ from app.common.api.schemas.teams import LabelUpdate
 from app.common.db.dynamo.base import as_item
 from app.common.db.dynamo.github import IssueSync, TeamSync, issue_sync_key, team_sync_key
 from app.common.db.dynamo.team_config import Label, label_key
-from app.domains.integrations import label_sync
+from app.domains.integrations import label_sync, pr_labels
 from app.domains.integrations.consumers import dispatch, events, stream
 from tests.domains.helpers import ADMIN
 from tests.domains.integrations.conftest import (
@@ -30,6 +30,7 @@ from tests.domains.integrations.conftest import (
     WORKSPACE,
     sqs_record,
 )
+from tests.domains.integrations.test_pr_labels import put_link
 
 SERIALIZER = TypeSerializer()
 
@@ -215,9 +216,12 @@ def test_a_rename_in_standupless_renames_the_repository_label(
             "OldImage": {key: SERIALIZER.serialize(value) for key, value in as_item(before).items()},
         },
     }
-    assert stream.queue_label_sync(repositories, record) == 1
+    assert stream.queue_label_sync(repositories, record) == 2
     assert jobs_of(enqueued, label_sync.LABEL_SYNC_JOB) == [
         {"kind": label_sync.LABEL_SYNC_JOB, "workspace_id": WORKSPACE, "team_id": TEAM}
+    ]
+    assert jobs_of(enqueued, pr_labels.PR_LABELS_SWEEP_JOB) == [
+        {"kind": pr_labels.PR_LABELS_SWEEP_JOB, "workspace_id": WORKSPACE}
     ]
 
     github.calls.clear()
@@ -330,3 +334,36 @@ def test_nothing_is_written_without_label_sync(
 
     assert github.calls == []
     assert github.labels == {}
+
+
+def test_a_standupless_rename_moves_the_name_the_pull_request_mirror_applied(
+    repositories: Any, linked: TeamSync, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """GitHub renames the label on every pull request, so the App keeps owning it under the new name."""
+    fake_labels(monkeypatch)
+    add_label(repositories, "bug-label", "bug", "#ff0000")
+    reconcile(repositories)
+    link_id = put_link(repositories, "01JB0000000000000000000IS1", applied=["bug", "ui"])
+
+    team_workflow.update_label(repositories, WORKSPACE, TEAM, "bug-label", LabelUpdate(name="defect"))
+    reconcile(repositories)
+
+    assert repositories.github.get_link(WORKSPACE, link_id).applied_labels == ["defect", "ui"]
+
+
+def test_a_github_rename_moves_the_name_the_pull_request_mirror_applied(
+    repositories: Any, linked: TeamSync, monkeypatch: pytest.MonkeyPatch, enqueued: list[tuple[str, Any]]
+) -> None:
+    """A rename made on GitHub moves the applied name too, and leaves other repositories' links alone."""
+    github = fake_labels(monkeypatch)
+    add_label(repositories, "bug-label", "bug", "#ff0000")
+    reconcile(repositories)
+    link_id = put_link(repositories, "01JB0000000000000000000IS1", applied=["bug"])
+    other = put_link(repositories, "01JB0000000000000000000IS2", applied=["bug"], repository_id="999")
+
+    github.update_label("ghs_test", REPOSITORY_ID, "bug", new_name="defect")
+    events.handle_record(repositories, sqs_record(label_delivery("bug", "defect")))
+    dispatch.handle_record(repositories, sqs_record(jobs_of(enqueued, label_sync.LABEL_RENAME_JOB)[0]))
+
+    assert repositories.github.get_link(WORKSPACE, link_id).applied_labels == ["defect"]
+    assert repositories.github.get_link(WORKSPACE, other).applied_labels == ["bug"]

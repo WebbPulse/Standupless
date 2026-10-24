@@ -4,7 +4,9 @@ Everything here is deterministic text handling with no reads or writes, so the
 dry run and the import job turn the same file into the same rows. A preset is a
 list of header names to look for per field, so a Jira or Linear export maps
 itself and a hand-made file maps whatever headers it shares with the generic
-preset. A field mapped to a header that appears more than once, such as Jira's
+preset. Asana, Shortcut and Pivotal Tracker exports map themselves the same way,
+and a Trello board's JSON is first turned into CSV by `app.common.trello_import`
+so it takes the same path. A field mapped to a header that appears more than once, such as Jira's
 repeated `Labels` columns, reads every column of that name.
 
 The conversion to a team's statuses, labels, members and estimates lives in
@@ -26,9 +28,9 @@ from typing import Literal, Mapping, Optional, Sequence
 
 from pydantic import BaseModel
 
-Preset = Literal["generic", "jira", "linear"]
+Preset = Literal["generic", "jira", "linear", "asana", "shortcut", "pivotal", "trello"]
 
-PRESETS: tuple[str, ...] = ("generic", "jira", "linear")
+PRESETS: tuple[str, ...] = ("generic", "jira", "linear", "asana", "shortcut", "pivotal", "trello")
 
 ImportField = Literal[
     "title",
@@ -42,6 +44,7 @@ ImportField = Literal[
     "source_key",
     "created_at",
     "parent",
+    "completed",
 ]
 
 IMPORT_FIELDS: tuple[str, ...] = (
@@ -56,6 +59,7 @@ IMPORT_FIELDS: tuple[str, ...] = (
     "source_key",
     "created_at",
     "parent",
+    "completed",
 )
 """Every issue field a column can map to, in the order the mapping screen lists them."""
 
@@ -71,6 +75,7 @@ GENERIC_HEADERS: dict[str, tuple[str, ...]] = {
     "source_key": ("id", "key", "issue key", "identifier"),
     "created_at": ("created", "created at", "created_at"),
     "parent": ("parent", "parent key", "parent issue", "parent id"),
+    "completed": ("completed at", "completed"),
 }
 
 PRESET_HEADERS: dict[str, dict[str, tuple[str, ...]]] = {
@@ -100,6 +105,58 @@ PRESET_HEADERS: dict[str, dict[str, tuple[str, ...]]] = {
         "source_key": ("id",),
         "created_at": ("created",),
         "parent": ("parent issue", "parent"),
+    },
+    "asana": {
+        "title": ("name",),
+        "description": ("notes",),
+        "status": ("section/column", "section"),
+        "assignee": ("assignee email", "assignee"),
+        "labels": ("tags",),
+        "estimate": ("story points", "points", "estimate"),
+        "due_date": ("due date",),
+        "source_key": ("task id",),
+        "created_at": ("created at",),
+        "parent": ("parent task",),
+        "completed": ("completed at",),
+    },
+    "shortcut": {
+        "title": ("name",),
+        "description": ("description",),
+        "status": ("state",),
+        "priority": ("priority",),
+        "assignee": ("owners", "owner"),
+        "labels": ("labels",),
+        "estimate": ("estimate",),
+        "due_date": ("due_date", "deadline"),
+        "source_key": ("id",),
+        "created_at": ("created_at",),
+        "parent": ("parent_story_id", "parent"),
+        "completed": ("completed_at", "is_completed"),
+    },
+    "pivotal": {
+        "title": ("title",),
+        "description": ("description",),
+        "status": ("current state",),
+        "priority": ("priority",),
+        "assignee": ("owned by",),
+        "labels": ("labels",),
+        "estimate": ("estimate",),
+        "due_date": ("deadline",),
+        "source_key": ("id",),
+        "created_at": ("created at",),
+        "completed": ("accepted at",),
+    },
+    "trello": {
+        "title": ("name",),
+        "description": ("description",),
+        "status": ("list",),
+        "assignee": ("members",),
+        "labels": ("labels",),
+        "due_date": ("due",),
+        "source_key": ("card id",),
+        "created_at": ("created",),
+        "parent": ("parent",),
+        "completed": ("completed",),
     },
 }
 """Per preset, the header names each field is found under, best match first, compared without case."""
@@ -133,20 +190,24 @@ PRIORITY_WORDS: dict[str, str] = {
     "blocker": "urgent",
     "critical": "urgent",
     "p0": "urgent",
+    "p0 - critical": "urgent",
     "2": "high",
     "high": "high",
     "major": "high",
     "p1": "high",
+    "p1 - high": "high",
     "3": "medium",
     "medium": "medium",
     "normal": "medium",
     "p2": "medium",
+    "p2 - medium": "medium",
     "4": "low",
     "low": "low",
     "lowest": "low",
     "minor": "low",
     "trivial": "low",
     "p3": "low",
+    "p3 - low": "low",
     "p4": "low",
 }
 """Source priority words and Linear's 0 to 4 numbers, as the five priorities."""
@@ -155,6 +216,7 @@ STATUS_CATEGORY_WORDS: dict[str, str] = {
     "backlog": "backlog",
     "icebox": "backlog",
     "triage": "backlog",
+    "unscheduled": "backlog",
     "todo": "unstarted",
     "to do": "unstarted",
     "open": "unstarted",
@@ -162,6 +224,8 @@ STATUS_CATEGORY_WORDS: dict[str, str] = {
     "ready": "unstarted",
     "selected for development": "unstarted",
     "unstarted": "unstarted",
+    "planned": "unstarted",
+    "ready for development": "unstarted",
     "in progress": "started",
     "doing": "started",
     "started": "started",
@@ -173,6 +237,10 @@ STATUS_CATEGORY_WORDS: dict[str, str] = {
     "in qa": "started",
     "qa": "started",
     "blocked": "started",
+    "finished": "started",
+    "delivered": "started",
+    "ready for review": "started",
+    "ready for deploy": "started",
     "done": "completed",
     "closed": "completed",
     "resolved": "completed",
@@ -181,6 +249,8 @@ STATUS_CATEGORY_WORDS: dict[str, str] = {
     "fixed": "completed",
     "shipped": "completed",
     "released": "completed",
+    "accepted": "completed",
+    "deployed": "completed",
     "cancelled": "cancelled",
     "canceled": "cancelled",
     "won't do": "cancelled",
@@ -201,9 +271,13 @@ DATE_FORMATS: tuple[str, ...] = (
     "%m/%d/%Y",
     "%m/%d/%Y %H:%M",
     "%Y/%m/%d",
+    "%Y/%m/%d %H:%M:%S",
+    "%b %d, %Y",
+    "%b %d, %Y %I:%M %p",
     "%a %b %d %Y %H:%M:%S GMT%z",
 )
-"""Date shapes tried after ISO 8601: Jira's `12/Oct/26 3:45 PM`, US slashes, and a JavaScript date string."""
+"""Date shapes tried after ISO 8601: Jira's `12/Oct/26 3:45 PM`, US slashes, Shortcut's `2026/10/12 14:05:00`,
+Pivotal Tracker's `Oct 12, 2026`, and a JavaScript date string."""
 
 Severity = Literal["error", "warning"]
 
@@ -249,6 +323,7 @@ class RawRow:
     source_key: Optional[str] = None
     created_at: Optional[datetime] = None
     parent: Optional[str] = None
+    completed: bool = False
     aliases: list[str] = field(default_factory=list)
     problems: list[RowProblem] = field(default_factory=list)
 
@@ -345,6 +420,28 @@ def split_labels(values: Sequence[str]) -> list[str]:
     return list(seen.values())
 
 
+FALSE_WORDS: frozenset[str] = frozenset({"false", "no", "0", "n"})
+
+
+def parse_completed(value: str) -> bool:
+    """Whether a completion cell marks the row finished: any value but an explicit false."""
+    text = value.strip().lower()
+    return bool(text) and text not in FALSE_WORDS
+
+
+_EMAIL = re.compile(r"[^\s,;<>]+@[^\s,;<>]+")
+
+
+def first_assignee(value: str) -> str:
+    """The one person a cell names: the first email when it lists several, else the cell itself."""
+    text = value.strip()
+    if ("," in text or ";" in text) and "@" in text:
+        found = _EMAIL.search(text)
+        if found:
+            return found.group(0)
+    return text
+
+
 def parse_priority(value: str) -> Optional[str]:
     """One of the five priorities, or `None` for a word no tracker uses."""
     return PRIORITY_WORDS.get(value.strip().lower())
@@ -429,7 +526,7 @@ def read_row(line: int, row: Sequence[str], headers: Sequence[str], mapping: Map
         priority = "none"
     raw.priority = priority
 
-    raw.assignee = _cell(row, headers, mapping.get("assignee"))
+    raw.assignee = first_assignee(_cell(row, headers, mapping.get("assignee")))
     raw.labels = split_labels(_cells(row, headers, mapping.get("labels")))
     raw.estimate = normalise_estimate(_cell(row, headers, mapping.get("estimate")))
 
@@ -445,6 +542,7 @@ def read_row(line: int, row: Sequence[str], headers: Sequence[str], mapping: Map
     raw.source_key = source_key[:SOURCE_KEY_MAX] or None
 
     raw.parent = _cell(row, headers, mapping.get("parent"))[:TITLE_MAX] or None
+    raw.completed = parse_completed(_cell(row, headers, mapping.get("completed")))
     raw.aliases = [
         value
         for header in dict.fromkeys(name for name in headers if name.strip().lower() in ALIAS_HEADERS)

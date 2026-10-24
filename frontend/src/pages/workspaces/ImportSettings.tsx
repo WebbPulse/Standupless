@@ -11,7 +11,7 @@ import WorkspaceShell from '../../components/workspace/WorkspaceShell';
 import { useWorkspace } from '../../hooks/useWorkspace';
 import { canManageMembers } from '../../lib/capabilities';
 
-/** Renders the CSV issue import for an admin. */
+/** Renders the import assistant and the issue import for an admin. */
 const ImportSettings: React.FC = () => {
   const { workspace } = useWorkspace();
 

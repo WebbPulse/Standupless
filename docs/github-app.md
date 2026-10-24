@@ -319,6 +319,30 @@ queue retries, and a backlink counts as posted only with a real comment id.
 Staging proves the sync against `WebbPulse/standupless-staging-e2e`, see the
 End-to-end section of `CLAUDE.md`.
 
+## Labels on GitHub
+
+Three paths carry Standupless labels to GitHub. Each runs as jobs on the
+dispatch queue, so a failed GitHub call is retried and then dead-lettered, and
+the App ignores `label` deliveries it sent itself.
+
+- **Label definitions.** A team syncing with a repository, with "Sync labels"
+  on, keeps that repository's labels matching its own: name (`Group/Child` for a
+  grouped label), color and description. A rename on GitHub renames the team
+  label. A label is deleted on GitHub only when Standupless created it.
+- **Pull request labels.** With the team's "Sync issue labels to linked pull requests"
+  setting on (the default), a linked open pull request carries the labels of its
+  issues. The App removes only labels it added itself, recorded on the link as
+  `applied_labels`, and creates a missing repository label with the Standupless
+  color and description.
+- **Workspace label set.** Below.
+
+A label whose GitHub name changes (a rename or a regroup) queues one
+`github.pr_labels_sweep` job, which queues the pull request label job for every
+open pull request the App labelled, five a second. Repositories a team syncs
+label definitions with are skipped: that reconcile renames the repository label,
+GitHub carries the new name onto every pull request, and the link's
+`applied_labels` moves with it, as it does for a rename made on GitHub.
+
 ## Workspace label set
 
 A workspace admin can turn on "Keep workspace labels on every repository" in the

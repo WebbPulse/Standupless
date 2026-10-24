@@ -26,6 +26,14 @@ deliveries, and those actions queue nothing; a delivery the App's bot sent queue
 nothing either, the same sender check issue sync uses. And the job writes only
 the `github` table, which the stream consumer does not read, so applying labels
 never raises the issue write that would queue another job.
+
+A label renamed or regrouped in Standupless changes its GitHub name without any
+issue write, so the stream consumer queues one `github.pr_labels_sweep` job, which
+queues a label sync for every open pull request the App labelled, spread out on
+the dispatch queue. A repository a team syncs label definitions with is left out,
+because that reconcile renames the repository label and GitHub carries the new
+name onto every pull request; the reconcile, and a rename made on GitHub, move
+the name in `applied_labels` instead, so the App keeps owning the label.
 """
 
 from __future__ import annotations
@@ -43,6 +51,15 @@ _log = logging.getLogger(__name__)
 
 PR_LABELS_JOB = "github.pr_labels"
 
+PR_LABELS_SWEEP_JOB = "github.pr_labels_sweep"
+"""The dispatch job that queues a label sync for every open pull request the App labelled."""
+
+SWEEP_PER_SECOND = 5
+"""How many pull request jobs one sweep queues for each second of delay, to pace GitHub calls."""
+
+SWEEP_MAX_DELAY = 900
+"""The longest delay SQS allows on one message."""
+
 DELIVERY_ACTIONS = frozenset({"opened", "edited", "synchronize", "reopened", "ready_for_review"})
 """The pull request actions that queue a label sync. `labeled` and `unlabeled` are absent on purpose."""
 
@@ -54,7 +71,7 @@ def pr_node_id(link_id: str) -> str:
     return link_id.rsplit("#", 1)[0]
 
 
-def enqueue_pr_labels(workspace_id: str, node_id: str) -> None:
+def enqueue_pr_labels(workspace_id: str, node_id: str, *, delay_seconds: int = 0) -> None:
     """Queue a label sync for one pull request, when this environment has a dispatch queue."""
     from webbpulse.events import EventEnvelope, enqueue
 
@@ -67,7 +84,95 @@ def enqueue_pr_labels(workspace_id: str, node_id: str) -> None:
             payload={"kind": PR_LABELS_JOB, "workspace_id": workspace_id, "pr_node_id": node_id},
             scope=workspace_id,
         ),
+        delay_seconds=delay_seconds or None,
     )
+
+
+def github_name_moved(old_image: Mapping[str, Any] | None, new_image: Mapping[str, Any] | None) -> bool:
+    """Whether a label or label override row changed the name the label carries on GitHub."""
+    if not old_image or not new_image:
+        return False
+    return any(old_image.get(field) != new_image.get(field) for field in ("name", "parent_id"))
+
+
+def queue_sweep(repositories: Repositories, workspace_id: str) -> bool:
+    """Queue a sweep of the workspace's labelled pull requests, answering whether one was queued.
+
+    Nothing is queued without a dispatch queue, a live installation, or a team
+    that mirrors labels onto pull requests.
+    """
+    from webbpulse.events import EventEnvelope, enqueue
+
+    if not settings.WEBHOOK_DISPATCH_QUEUE_URL or not workspace_id:
+        return False
+    installation = repositories.github.get_installation(workspace_id)
+    if installation is None or installation.suspended_at is not None:
+        return False
+    if not any(team.sync_pr_labels for team in repositories.teams.list_for_workspace(workspace_id)):
+        return False
+    enqueue(
+        settings.WEBHOOK_DISPATCH_QUEUE_URL,
+        EventEnvelope(
+            name=PR_LABELS_SWEEP_JOB,
+            payload={"kind": PR_LABELS_SWEEP_JOB, "workspace_id": workspace_id},
+            scope=workspace_id,
+        ),
+    )
+    return True
+
+
+def sweep(repositories: Repositories, job: Mapping[str, Any]) -> int:
+    """Queue a label sync for every open pull request the App labelled, answering how many.
+
+    A pull request in a repository a team syncs label definitions with is left to
+    that reconcile. Each job is held back a little more than the one before, so a
+    large workspace reaches GitHub at a steady pace.
+    """
+    from app.domains.integrations.label_sync import syncs_labels
+
+    workspace_id = str(job.get("workspace_id", ""))
+    installation = repositories.github.get_installation(workspace_id) if workspace_id else None
+    if installation is None or installation.suspended_at is not None:
+        return 0
+    synced = [config for config in repositories.github.list_team_syncs(workspace_id) if syncs_labels(config)]
+    synced_ids = {config.repository_id for config in synced}
+    synced_names = {config.full_name.lower() for config in synced}
+    nodes: set[str] = set()
+    for link in repositories.github.iter_links(workspace_id):
+        if not link.applied_labels or link.pr_state in FINISHED_STATES:
+            continue
+        if link.repository_id in synced_ids or link.repository_full_name.lower() in synced_names:
+            continue
+        nodes.add(pr_node_id(link.link_id))
+    for index, node_id in enumerate(sorted(nodes)):
+        enqueue_pr_labels(workspace_id, node_id, delay_seconds=min(SWEEP_MAX_DELAY, index // SWEEP_PER_SECOND))
+    if nodes:
+        _log.info(
+            "Queued a label sync for labelled pull requests.",
+            extra={"event": "integrations.pr_labels.swept", "queued": len(nodes)},
+        )
+    return len(nodes)
+
+
+def rename_applied(repositories: Repositories, workspace_id: str, repository_id: str, old: str, new: str) -> int:
+    """Move one applied label name on every link of one repository, answering how many links moved.
+
+    Called when the repository label itself was renamed, which GitHub carries onto
+    every pull request, so the App still owns the label under its new name.
+    """
+    lowered = old.lower()
+    if not workspace_id or not repository_id or not old or not new or old == new:
+        return 0
+    moved = 0
+    for link in repositories.github.iter_links(workspace_id):
+        if link.repository_id != repository_id:
+            continue
+        if not any(name.lower() == lowered for name in link.applied_labels):
+            continue
+        renamed = sorted({new if name.lower() == lowered else name for name in link.applied_labels})
+        repositories.github.update_link(workspace_id, link.link_id, applied_labels=renamed)
+        moved += 1
+    return moved
 
 
 def after_delivery(
@@ -133,8 +238,11 @@ def _repository_id(repositories: Repositories, workspace_id: str, links: Sequenc
 
 def _wanted(
     repositories: Repositories, workspace_id: str, links: Sequence[IssueLink]
-) -> tuple[dict[str, tuple[str, str]], bool]:
+) -> tuple[dict[str, tuple[str, str, str]], bool]:
     """The labels the pull request should carry, keyed by lowered name, and whether any team syncs them.
+
+    Each label is its GitHub name, color and description, so a repository label
+    the job creates matches the one label definition sync would write.
 
     Every link counts towards whether a team has the sync on, so a pull request
     whose last issue was detached still sheds the labels that issue brought.
@@ -147,17 +255,18 @@ def _wanted(
             team = repositories.teams.get(workspace_id, issue.team_id)
             enabled[issue.team_id] = team is not None and team.sync_pr_labels
     named = {link.issue_id for link in links if not link.detached}
-    wanted: dict[str, tuple[str, str]] = {}
-    palettes: dict[str, dict[str, tuple[str, str]]] = {}
+    wanted: dict[str, tuple[str, str, str]] = {}
+    palettes: dict[str, dict[str, tuple[str, str, str]]] = {}
     for issue_id in sorted(named):
         issue = issues.get(issue_id)
         if issue is None or not enabled.get(issue.team_id) or not issue.label_ids:
             continue
         if issue.team_id not in palettes:
             labels = repositories.team_config.list_labels(workspace_id, issue.team_id)
-            colors = {label.label_id: label.color for label in labels}
+            by_id = {label.label_id: label for label in labels}
             palettes[issue.team_id] = {
-                label_id: (name, colors[label_id]) for label_id, name in github_label_names(labels).items()
+                label_id: (name, by_id[label_id].color, by_id[label_id].description or "")
+                for label_id, name in github_label_names(labels).items()
             }
         for label_id in issue.label_ids:
             entry = palettes[issue.team_id].get(label_id)
@@ -206,9 +315,9 @@ def push_pr_labels(repositories: Repositories, job: Mapping[str, Any]) -> None:
 
     added = [wanted[key] for key in sorted(wanted) if key not in carried]
     removed = [carried[key] for key in sorted(applied) if key not in wanted and key in carried]
-    for name, color in added:
-        github_issues.create_label(token, repository_id, name, color)
-    github_issues.add_labels(token, repository_id, newest.pr_number, [name for name, _ in added])
+    for name, color, description in added:
+        github_issues.create_label(token, repository_id, name, color, description=description)
+    github_issues.add_labels(token, repository_id, newest.pr_number, [name for name, _, _ in added])
     for name in removed:
         github_issues.remove_label(token, repository_id, newest.pr_number, name)
 

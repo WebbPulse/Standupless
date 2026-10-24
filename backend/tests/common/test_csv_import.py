@@ -6,12 +6,14 @@ is checked against the file, Jira's repeated label columns are read together,
 the date and priority shapes other trackers write are understood, a row with
 no title is an error while a bad optional value is only a warning, and a parent
 column resolves against the other rows by key, tracker id or unique title, with
-every link it cannot make left as a warning.
+every link it cannot make left as a warning. The Asana, Shortcut and Pivotal
+Tracker presets are read against a small fixture export of each tool.
 """
 
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from pathlib import Path
 
 import pytest
 
@@ -20,7 +22,9 @@ from app.common.csv_import import (
     CsvRejected,
     ParentPlan,
     auto_mapping,
+    first_assignee,
     normalise_estimate,
+    parse_completed,
     parse_csv,
     parse_date,
     parse_datetime,
@@ -37,6 +41,14 @@ JIRA = (
     "Custom field (Story Points),Description\n"
     "Fix login,PROJ-12,10012,In Progress,Highest,ada@example.com,auth,web,12/Oct/26 3:45 PM,20/Oct/26,3.0,Broken\n"
 )
+
+FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "imports"
+
+
+def fixture(name: str) -> str:
+    """One fixture export's text."""
+    return (FIXTURES / name).read_text(encoding="utf-8")
+
 
 LINEAR = (
     "ID,Team,Title,Description,Status,Estimate,Priority,Project,Creator,Assignee,Labels,Created,Due Date\n"
@@ -84,6 +96,7 @@ def test_the_jira_preset_maps_a_jira_export() -> None:
         "source_key": "Issue key",
         "created_at": "Created",
         "parent": None,
+        "completed": None,
     }
 
 
@@ -333,3 +346,88 @@ def test_sub_issues_stay_one_level_deep_and_loops_are_refused() -> None:
     assert set(plan.problems) == {4, 5, 6, 7}
     assert "one level deep" in plan.problems[4].message
     assert "own parent" in plan.problems[7].message
+
+
+def test_the_asana_preset_maps_an_asana_export() -> None:
+    """Asana's task export maps its section, notes, tags, parent task and completion columns."""
+    parsed = parse_csv(fixture("asana.csv"))
+    mapping = auto_mapping(parsed.headers, "asana")
+
+    assert mapping == {
+        "title": "Name",
+        "description": "Notes",
+        "status": "Section/Column",
+        "priority": None,
+        "assignee": "Assignee Email",
+        "labels": "Tags",
+        "estimate": "Story Points",
+        "due_date": "Due Date",
+        "source_key": "Task ID",
+        "created_at": "Created At",
+        "parent": "Parent task",
+        "completed": "Completed At",
+    }
+    first, second, third = read_rows(parsed, mapping)
+    assert (first.title, first.status, first.assignee) == ("Plan the launch", "In Progress", "member@example.com")
+    assert first.labels == ["Launch", "Marketing"]
+    assert (first.estimate, first.due_date, first.source_key) == ("5", "2026-10-15", "1205000000000001")
+    assert first.created_at == datetime(2026, 9, 1, tzinfo=UTC)
+    assert not first.completed
+    assert second.completed
+    assert second.parent == "Plan the launch"
+    assert plan_parent_links([first, second, third]).links == {3: 2, 4: 2}
+
+
+def test_the_shortcut_preset_maps_a_shortcut_export() -> None:
+    """Shortcut's story export maps its state, owners, labels and completion, in Shortcut's date shape."""
+    parsed = parse_csv(fixture("shortcut.csv"))
+    mapping = auto_mapping(parsed.headers, "shortcut")
+
+    assert (mapping["title"], mapping["status"], mapping["assignee"]) == ("name", "state", "owners")
+    assert (mapping["source_key"], mapping["parent"], mapping["completed"]) == ("id", "parent_story_id", "completed_at")
+    first, second = read_rows(parsed, mapping)
+    assert first.assignee == "member@example.com"
+    assert first.labels == ["auth", "web"]
+    assert first.priority == "high"
+    assert status_category(first.status) == "started"
+    assert first.created_at == datetime(2026, 9, 1, 10, 0, tzinfo=UTC)
+    assert first.due_date == "2026-10-20"
+    assert not first.completed
+    assert second.completed
+    assert plan_parent_links([first, second]).links == {3: 2}
+
+
+def test_the_pivotal_preset_maps_a_pivotal_tracker_export() -> None:
+    """Pivotal Tracker's export maps its current state, owner, deadline and acceptance."""
+    parsed = parse_csv(fixture("pivotal.csv"))
+    mapping = auto_mapping(parsed.headers, "pivotal")
+
+    assert (mapping["title"], mapping["status"], mapping["assignee"]) == ("Title", "Current State", "Owned By")
+    assert (mapping["due_date"], mapping["completed"], mapping["source_key"]) == ("Deadline", "Accepted at", "Id")
+    first, second, third = read_rows(parsed, mapping)
+    assert first.assignee == "Mel Member"
+    assert first.priority == "high"
+    assert first.labels == ["onboarding", "web"]
+    assert first.due_date == "2026-10-12"
+    assert first.created_at == datetime(2026, 9, 1, tzinfo=UTC)
+    assert status_category(first.status) == "started"
+    assert second.priority == "low"
+    assert second.completed
+    assert status_category(second.status) == "completed"
+    assert status_category(third.status) == "backlog"
+    assert all(row.importable for row in (first, second, third))
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [("2026-09-05", True), ("TRUE", True), ("true", True), ("FALSE", False), ("no", False), ("", False)],
+)
+def test_a_completion_cell_is_any_value_but_an_explicit_false(value: str, expected: bool) -> None:
+    """A completion date or a true flag finishes the row; an empty cell or a false flag does not."""
+    assert parse_completed(value) is expected
+
+
+def test_a_cell_listing_several_people_names_the_first_email() -> None:
+    """An issue has one assignee, so a list of owners keeps its first."""
+    assert first_assignee("member@example.com, admin@example.com") == "member@example.com"
+    assert first_assignee("Mel Member") == "Mel Member"

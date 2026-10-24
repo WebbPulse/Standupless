@@ -4067,7 +4067,8 @@ export interface WorkspaceExportListRead {
 }
 
 /** The tracker an import file came from, which picks the default column mapping. */
-export type ImportPreset = 'generic' | 'jira' | 'linear';
+export type ImportPreset =
+  'generic' | 'jira' | 'linear' | 'asana' | 'shortcut' | 'pivotal' | 'trello';
 
 /** The issue fields a CSV column can map to. */
 export type ImportField =
@@ -4081,7 +4082,8 @@ export type ImportField =
   | 'due_date'
   | 'source_key'
   | 'created_at'
-  | 'parent';
+  | 'parent'
+  | 'completed';
 
 /** The body both the dry run and the import take. A null mapping value unmaps that field. */
 export interface IssueImportRequest {
