@@ -76,9 +76,9 @@ vi.mock('../../api/imports', () => ({
 }));
 
 vi.mock('../../api/integrations', async () => {
-  const actual = await vi.importActual<
-    typeof import('../../api/integrations')
-  >('../../api/integrations');
+  const actual = await vi.importActual<typeof import('../../api/integrations')>(
+    '../../api/integrations'
+  );
   return { ...actual, readInstallation: () => readInstallation() };
 });
 
@@ -200,7 +200,8 @@ const installation = (
   account_type: 'Organization',
   repository_selection: 'selected',
   html_url: 'https://github.com/WebbPulse',
-  manage_url: 'https://github.com/organizations/WebbPulse/settings/installations/42',
+  manage_url:
+    'https://github.com/organizations/WebbPulse/settings/installations/42',
   avatar_url: '',
   suspended: false,
   installed_by: 'user-1',

@@ -117,8 +117,8 @@ export const GitHubImportForm: React.FC<GitHubImportFormProps> = ({
   if (state?.status === 'not_configured') {
     return (
       <Notice title="GitHub is not available here">
-        This environment has no GitHub App configured, so repositories cannot
-        be read.
+        This environment has no GitHub App configured, so repositories cannot be
+        read.
       </Notice>
     );
   }
