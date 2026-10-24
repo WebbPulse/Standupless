@@ -17,13 +17,14 @@ from fastapi import HTTPException, status
 from app.common.api.dependencies.authz import AuthzContext, require_scopes_present
 from app.common.api.dependencies.repositories import Repositories
 from app.common.api.schemas.issues import IssueCreate
-from app.common.api.schemas.planning import ProjectCreate, ProjectRead
-from app.common.db.dynamo.planning import ProjectMilestone, milestone_key, new_planning_id
+from app.common.api.schemas.planning import ProjectCreate, SkippedTemplateIssueRead
+from app.common.db.dynamo.issues import Issue
+from app.common.db.dynamo.planning import Project, ProjectMilestone, milestone_key, new_planning_id
 from app.common.db.dynamo.team_templates import PROJECT_TEMPLATE, IssueBlueprint, IssueTemplate, ProjectBlueprint
 from app.common.db.dynamo.teams import Team
 from app.common.issue_rules import check_assignee, check_estimate, check_status, unprocessable
 from app.common.issue_templates import find_template, kept_labels, lenient
-from app.common.issue_writes import create_issue
+from app.common.issue_writes import FreshRows, create_issue
 from app.common.milestone_writes import sort_order_after
 
 PROJECT_FIELDS: tuple[str, ...] = ("description", "lead_id", "member_ids", "status", "priority", "icon", "color")
@@ -91,26 +92,37 @@ def _issue_values(repositories: Repositories, workspace_id: str, team: Team, ite
     return {name: value for name, value in values.items() if value is not None}
 
 
-def issue_team(template: IssueTemplate, project: ProjectRead) -> str:
+def issue_team(template: IssueTemplate, project: Project) -> str:
     """The team a template's issues land in: the template's own when it is on the project, else the first."""
     if template.team_id and template.team_id in project.team_ids:
         return template.team_id
     return project.team_ids[0]
 
 
+def skip_reason(exc: HTTPException) -> str:
+    """The message a refused template issue's 422 carried, as the create response reports it."""
+    detail = exc.detail
+    if isinstance(detail, dict) and isinstance(detail.get("message"), str):
+        return detail["message"]
+    return str(detail)
+
+
 def add_template_rows(
-    repositories: Repositories, context: AuthzContext, project: ProjectRead, template: IssueTemplate, today: date
-) -> None:
-    """Add a template's milestones and then its issues to a project just created from it.
+    repositories: Repositories, context: AuthzContext, project: Project, template: IssueTemplate, today: date
+) -> list[SkippedTemplateIssueRead]:
+    """Add a template's milestones and then its issues to a project just created from it, answering any left out.
 
     The milestones are written directly, in the template's order, since the
-    project is new and holds none. Issues are added in the template's order, so a parent always exists before
-    its sub-issues. One the issue rules refuse, such as a sub-issue too deep, is
-    left out rather than failing the rest.
+    project is new and holds none. Issues are added in the template's order, so
+    a parent always exists before its sub-issues. The project, milestones and
+    parents were written moments ago, so each issue is checked against them as
+    written rather than through reads that can lag the writes. One the issue
+    rules still refuse, such as a sub-issue too deep, is left out rather than
+    failing the rest, and named in the answer.
     """
     blueprint = template.project
     if blueprint is None:
-        return
+        return []
     if blueprint.issues:
         require_scopes_present(context, ("issues:write",))
     workspace_id = context.workspace_id
@@ -134,26 +146,38 @@ def add_template_rows(
         )
         milestones[milestone.key] = milestone_id
     if not blueprint.issues:
-        return
+        return []
     team_id = issue_team(template, project)
     team = repositories.teams.get(workspace_id, team_id)
     if team is None:
-        return
-    issues: dict[str, str] = {}
+        return [
+            SkippedTemplateIssueRead(key=item.key, title=item.title, reason=f"No such team: {team_id}")
+            for item in blueprint.issues
+        ]
+    issues: dict[str, Issue] = {}
+    skipped: list[SkippedTemplateIssueRead] = []
     for item in blueprint.issues:
+        parent = issues.get(item.parent_key or "")
         payload = IssueCreate.model_validate(
             {
                 **_issue_values(repositories, workspace_id, team, item),
                 "team_id": team_id,
                 "project_id": project.project_id,
                 "project_milestone_id": milestones.get(item.milestone_key or ""),
-                "parent_id": issues.get(item.parent_key or ""),
+                "parent_id": parent.issue_id if parent is not None else None,
             }
         )
+        fresh = FreshRows(
+            project=project,
+            milestones={project.project_id: frozenset(milestones.values())},
+            issues={row.issue_id: row for row in issues.values()},
+        )
         try:
-            created = create_issue(repositories, context, payload)
+            created = create_issue(repositories, context, payload, fresh=fresh)
         except HTTPException as exc:
             if exc.status_code != status.HTTP_422_UNPROCESSABLE_ENTITY:
                 raise
+            skipped.append(SkippedTemplateIssueRead(key=item.key, title=item.title, reason=skip_reason(exc)))
             continue
-        issues[item.key] = created.issue_id
+        issues[item.key] = created
+    return skipped
