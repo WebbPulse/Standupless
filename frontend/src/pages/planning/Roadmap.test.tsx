@@ -579,6 +579,43 @@ describe('Roadmap', () => {
         deleteProjectRelation.mockReturnValue(new Promise(() => undefined));
       });
 
+      it('hides the lines and link dots from the Display menu', async () => {
+        const user = userEvent.setup();
+        renderPage();
+        await screen.findByRole('slider', { name: /^Ship/ });
+        expect(line('prj-1', 'prj-3')).not.toBeNull();
+
+        await user.click(screen.getByRole('button', { name: 'Display' }));
+        const toggle = screen.getByRole('switch', {
+          name: 'Show dependencies',
+        });
+        expect(toggle).toBeChecked();
+        await user.click(toggle);
+
+        expect(toggle).not.toBeChecked();
+        expect(line('prj-1', 'prj-3')).toBeNull();
+        expect(screen.queryByTestId('timeline-dependencies')).toBeNull();
+        expect(lane('prj-1').querySelector('[data-link-handle]')).toBeNull();
+
+        await user.click(toggle);
+
+        expect(line('prj-1', 'prj-3')).not.toBeNull();
+        expect(handle('prj-1', 'end')).toBeInTheDocument();
+      });
+
+      it('keeps the lines hidden when the URL says so', async () => {
+        const user = userEvent.setup();
+        renderPage('/w/mine/roadmap?dependencies=hide');
+        await screen.findByRole('slider', { name: /^Ship/ });
+
+        expect(line('prj-1', 'prj-3')).toBeNull();
+        expect(lane('prj-3').querySelector('[data-link-handle]')).toBeNull();
+        await user.click(screen.getByRole('button', { name: 'Display' }));
+        expect(
+          screen.getByRole('switch', { name: 'Show dependencies' })
+        ).not.toBeChecked();
+      });
+
       it('lights a line on hover and removes it from its menu', async () => {
         const user = userEvent.setup();
         renderPage();

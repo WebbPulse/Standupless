@@ -67,6 +67,8 @@ export interface ProjectsDisplayPreference {
   /** Whether the board shows columns that hold no project. */
   empty?: 'show' | 'hide';
   zoom: 'week' | 'month' | 'quarter' | 'year';
+  /** Whether the timeline draws the lines between blocking and blocked projects. */
+  dependencies?: 'show' | 'hide';
   /** The shown list columns, comma separated, absent on a row saved before columns could be chosen. */
   columns?: string;
 }

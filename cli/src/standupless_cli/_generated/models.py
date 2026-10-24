@@ -1687,6 +1687,7 @@ class ProjectUpdateRead(TypedDict):
 class ProjectsDisplay(TypedDict):
     closed: NotRequired[Literal["all", "fortnight", "month", "none"]]
     columns: NotRequired[str]
+    dependencies: NotRequired[Literal["show", "hide"]]
     direction: NotRequired[Literal["asc", "desc"]]
     empty: NotRequired[Literal["show", "hide"]]
     group: NotRequired[Literal["status", "health", "priority", "initiative", "lead", "team", "none"]]

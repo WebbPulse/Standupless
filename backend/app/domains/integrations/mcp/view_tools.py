@@ -169,7 +169,8 @@ def _view_properties(*, clearable: bool) -> dict[str, Any]:
             "grouping inside each group), order, closed (all, fortnight by default, month or none: which "
             "completed projects show, canceled ones only under all), "
             "lead_team (lead keeps only projects the filtered team leads), empty (show or hide empty board "
-            "columns), the timeline zoom and the shown properties; a missing field takes the default"
+            "columns), the timeline zoom, dependencies (show or hide the timeline lines between blocking and "
+            "blocked projects) and the shown properties; a missing field takes the default"
         ),
         "icon": {"type": ["string", "null"] if clearable else "string", "description": "Icon name for the view"},
         "color": {
