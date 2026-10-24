@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from typing import Any, Mapping
 
 import pytest
@@ -481,6 +481,103 @@ def test_the_dispatch_consumer_announces_a_queued_update_due_once(
     dispatch.handle_record(repositories, sqs_record(job))
     dispatch.handle_record(repositories, sqs_record(job))
     dispatch.handle_record(repositories, sqs_record({**job, "due_at": "not a date"}))
+
+    assert len({queued["delivery_id"] for queued in queue.jobs}) == 1
+
+
+STANDUP_DAY = date(2026, 10, 6)
+
+
+def standup_note(repositories: Any, day: date = STANDUP_DAY) -> None:
+    """Leave the guest's note on the team's digest of `day`, which gives the digest content."""
+    repositories.team_config.put_standup_note(WORKSPACE, TEAM, day.isoformat(), GUEST, "Shipped the importer.")
+
+
+def test_a_standup_digest_posts_once_per_channel_and_date(repositories: Any, workspace: str, queue: Queue) -> None:
+    """A digest with content posts to the opted in channel, and a second announcement posts nothing more."""
+    make_channel(repositories, events_=["standup_digest"], url=DISCORD_URL)
+    make_channel(repositories, events_=["issue_created"])
+    standup_note(repositories)
+
+    assert events.announce_standup_digest(repositories, WORKSPACE, TEAM, STANDUP_DAY) == 1
+    events.announce_standup_digest(repositories, WORKSPACE, TEAM, STANDUP_DAY)
+
+    assert len({job["delivery_id"] for job in queue.jobs}) == 1
+    embed = delivery_body(repositories, queue.jobs[0])["embeds"][0]
+    assert embed["title"] == "ABC Abc standup"
+    assert embed["url"].endswith("/team/ABC/standup?date=2026-10-06")
+    assert "Gus Guest\\: left a note" in embed["description"]
+    fake = FakeSender()
+    assert [delivery.run_attempt(repositories, job, sender=fake) for job in queue.jobs][-1] == "duplicate"
+    assert len(fake.sent) == 1
+
+
+def test_each_digest_date_posts_its_own_message(repositories: Any, workspace: str, queue: Queue) -> None:
+    """The seed is the team and date, so the next day's digest is a new post."""
+    make_channel(repositories, events_=["standup_digest"])
+    standup_note(repositories)
+    standup_note(repositories, date(2026, 10, 7))
+
+    events.announce_standup_digest(repositories, WORKSPACE, TEAM, STANDUP_DAY)
+    events.announce_standup_digest(repositories, WORKSPACE, TEAM, date(2026, 10, 7))
+
+    assert len({job["delivery_id"] for job in queue.jobs}) == 2
+
+
+def test_an_empty_standup_digest_posts_nothing(repositories: Any, workspace: str, queue: Queue) -> None:
+    """A digest with nothing in it is not posted, and a channel that did not opt in gets nothing."""
+    make_channel(repositories, events_=["standup_digest"])
+
+    assert events.announce_standup_digest(repositories, WORKSPACE, TEAM, STANDUP_DAY) == 0
+
+    standup_note(repositories)
+    make_channel(repositories, events_=["issue_created"], team_id=OTHER_TEAM)
+    assert events.announce_standup_digest(repositories, WORKSPACE, OTHER_TEAM, STANDUP_DAY) == 0
+    assert queue.jobs == []
+
+
+def test_a_standup_message_counts_sections_and_lists_people() -> None:
+    """The post carries a total per non-empty section and one line per person."""
+    from app.common.standup import StandupDigest, StandupItem, StandupPerson
+
+    item = StandupItem(issue_id="I1", key="ABC-1", title="One", status_id="S1")
+    moment = datetime(2026, 10, 6, 9, tzinfo=UTC)
+    digest = StandupDigest(
+        team_id=TEAM,
+        team_key="ABC",
+        team_name="Abc",
+        date="2026-10-06",
+        cadence="daily",
+        timezone="UTC",
+        send_time="09:00",
+        window_start=moment,
+        window_end=moment,
+        generated_at=moment,
+        people=[
+            StandupPerson(user_id="U1", display_name="Ann", completed=[item], blocked=[item]),
+            StandupPerson(user_id="U2", display_name="Bo"),
+        ],
+    )
+
+    message = events.standup_message(digest, "https://app.test", moment)
+
+    assert message is not None
+    assert message.summary == "Daily standup for Tue Oct 6, 2026."
+    assert message.fields == (("Completed", "1"), ("Blocked", "1"))
+    assert message.detail == "Ann: 1 completed, 1 blocked"
+    assert events.standup_message(digest.model_copy(update={"people": digest.people[1:]}), "", moment) is None
+
+
+def test_the_dispatch_consumer_posts_a_queued_standup_once(repositories: Any, workspace: str, queue: Queue) -> None:
+    """The digest sweep's queued job posts to the opted in channel, and a redelivery posts nothing more."""
+    make_channel(repositories, events_=["standup_digest"])
+    standup_note(repositories)
+    job = {"kind": "channel.standup_digest", "workspace_id": WORKSPACE, "team_id": TEAM, "date": "2026-10-06"}
+
+    dispatch.handle_record(repositories, sqs_record(job))
+    dispatch.handle_record(repositories, sqs_record(job))
+    dispatch.handle_record(repositories, sqs_record({**job, "date": "not a date"}))
+    dispatch.handle_record(repositories, sqs_record({**job, "team_id": ""}))
 
     assert len({queued["delivery_id"] for queued in queue.jobs}) == 1
 

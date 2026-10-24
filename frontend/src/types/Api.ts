@@ -3464,6 +3464,7 @@ export const CHANNEL_EVENTS = [
   'comment_created',
   'project_update_posted',
   'project_update_due',
+  'standup_digest',
 ] as const;
 
 /** One event a team channel may post. */

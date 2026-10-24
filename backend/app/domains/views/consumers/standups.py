@@ -14,6 +14,9 @@ row id and the conditional inbox put turning each repeat into a no-op and the
 email hanging off that put. An empty digest is marked and not sent. A send time
 more than `SEND_WINDOW` in the past is left alone, so turning a schedule on in
 the afternoon does not mail that morning's digest late.
+
+Once a digest with content is marked sent, its team and date are queued for the
+dispatch consumer, which posts it to the team channels that take `standup_digest`.
 """
 
 from __future__ import annotations
@@ -26,7 +29,14 @@ from app.common.api.dependencies.repositories import Repositories
 from app.common.db.dynamo.inbox import Notification, expires_at, inbox_partition
 from app.common.db.dynamo.team_config import StandupSettings
 from app.common.email import deliver
-from app.common.standup import StandupDigest, StandupWindowError, build_digest, parse_send_time, resolve_zone
+from app.common.standup import (
+    StandupDigest,
+    StandupWindowError,
+    build_digest,
+    parse_send_time,
+    queue_standup_announcement,
+    resolve_zone,
+)
 from app.domains.views.consumers.notify import can_receive, notification_id
 from app.domains.views.consumers.sweeps import claim_pass
 from app.domains.views.email import STANDUP_DIGEST, render_standup_digest
@@ -52,6 +62,7 @@ class StandupSummary:
     sent: int = 0
     empty: int = 0
     notified: int = 0
+    announced: int = 0
 
 
 def sweep_due(repositories: Repositories, now: datetime) -> bool:
@@ -136,6 +147,22 @@ def write_standup(
     return True
 
 
+def announce(workspace_id: str, team_id: str, day: date) -> bool:
+    """Queue the team channel post of one sent digest, logging rather than raising on failure.
+
+    A queue that cannot be reached must not hold back the members' digests or the
+    marker, so the channel post is the one part of a digest that may be lost.
+    """
+    try:
+        return queue_standup_announcement(workspace_id, team_id, day)
+    except Exception:
+        _log.exception(
+            "Could not queue a standup digest announcement.",
+            extra={"event": "views.notify.standup_announce_failed", "workspace_id": workspace_id, "team_id": team_id},
+        )
+        return False
+
+
 def deliver_team(
     repositories: Repositories,
     *,
@@ -154,7 +181,8 @@ def deliver_team(
         return
     summary.due += 1
     digest = build_digest(repositories, workspace_id, settings.team_id, day, settings=settings, now=now)
-    if all(person.is_empty for person in digest.people):
+    empty = all(person.is_empty for person in digest.people)
+    if empty:
         summary.empty += 1
     else:
         summary.sent += 1
@@ -176,6 +204,8 @@ def deliver_team(
                 )
             )
     repositories.inbox.mark_standup_sent(workspace_id, settings.team_id, key, now)
+    if not empty:
+        summary.announced += int(announce(workspace_id, settings.team_id, day))
 
 
 def run_standups(repositories: Repositories, now: datetime | None = None) -> StandupSummary:
@@ -222,6 +252,7 @@ def run_standups(repositories: Repositories, now: datetime | None = None) -> Sta
                 "sent": summary.sent,
                 "empty": summary.empty,
                 "notified": summary.notified,
+                "announced": summary.announced,
             },
         )
     return summary

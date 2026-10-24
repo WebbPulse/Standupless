@@ -12,19 +12,22 @@ weekly one. Times are resolved in the team's IANA timezone, so a window across a
 daylight saving change is one hour shorter or longer in UTC, never shifted.
 
 Shared because the REST route and the MCP tool both live in the integrations
-image and must return the same digest.
+image and must return the same digest, and because the views sweep that sends a
+digest hands it to the integrations dispatch consumer for the team channels.
 """
 
 from __future__ import annotations
 
 from datetime import UTC, date, datetime, time, timedelta
-from typing import Any, Iterable
+from typing import Any, Callable, Iterable
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import BaseModel, Field
+from webbpulse.events import EventEnvelope, enqueue
 
 from app.common import issue_keys
 from app.common.api.dependencies.repositories import Repositories
+from app.common.core.config import settings as app_settings
 from app.common.db.dynamo.activity import Activity
 from app.common.db.dynamo.base import utc_now
 from app.common.db.dynamo.issues import Issue
@@ -421,3 +424,36 @@ def _project_updates(
         )
         found.extend((row, project) for row in rows if start <= row.created_at < end)
     return found
+
+
+CHANNEL_STANDUP_JOB = "channel.standup_digest"
+"""The dispatch job kind that posts a sent standup digest to the team channels."""
+
+
+def queue_standup_announcement(
+    workspace_id: str, team_id: str, day: date, *, send: Callable[..., Any] | None = None
+) -> bool:
+    """Queue the channel post of one sent digest, answering whether a job was queued.
+
+    The digest sweep runs in the views image, which neither imports the
+    integrations domain nor holds its channel tables, so it names the workspace,
+    team and date and the dispatch consumer rebuilds the digest and posts it. The
+    channel delivery ids derive from the team and date, so a job queued twice
+    posts once. Nothing is queued in an environment without the dispatch queue.
+    """
+    if not app_settings.WEBHOOK_DISPATCH_QUEUE_URL:
+        return False
+    (send or enqueue)(
+        app_settings.WEBHOOK_DISPATCH_QUEUE_URL,
+        EventEnvelope(
+            name=CHANNEL_STANDUP_JOB,
+            payload={
+                "kind": CHANNEL_STANDUP_JOB,
+                "workspace_id": workspace_id,
+                "team_id": team_id,
+                "date": day.isoformat(),
+            },
+            scope=workspace_id,
+        ),
+    )
+    return True
