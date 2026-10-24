@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 from app.common.csv_import import MAX_CSV_BYTES, RowProblem
 from app.common.issue_import import ImportJob, ImportKind, ImportStatus, Preview, ResolvedRow
 from app.common.linear_import import phases
+from app.domains.integrations import shortcut_import
 
 ImportPreset = Literal["generic", "jira", "linear", "asana", "shortcut", "pivotal", "trello"]
 
@@ -142,6 +143,15 @@ class LinearTeamMappingRead(BaseModel):
     team_id: str
 
 
+class SourceTeamMappingRead(BaseModel):
+    """One team of the source tool an API import reads, such as a Shortcut team, and the team it writes into."""
+
+    source_id: str
+    key: str
+    name: str
+    team_id: str
+
+
 class IssueImportRead(BaseModel):
     """One import job and how far it has got."""
 
@@ -175,10 +185,15 @@ class IssueImportRead(BaseModel):
         description="A Linear import's tallies: issues, comments, labels, cycles, projects, milestones and more.",
     )
     linear_teams: list[LinearTeamMappingRead] = Field(default_factory=list)
+    source_teams: list[SourceTeamMappingRead] = Field(
+        default_factory=list, description="The teams a Shortcut import reads and the teams each writes into."
+    )
     github_repository_id: Optional[str] = Field(
         default=None, description="The repository a GitHub import reads; its full name is the file name."
     )
-    phase: Optional[str] = Field(default=None, description="What a running Linear or GitHub import is reading now.")
+    phase: Optional[str] = Field(
+        default=None, description="What a running Linear, GitHub or Shortcut import is reading now."
+    )
     phase_index: int = 0
     phase_count: int = 0
 
@@ -188,7 +203,13 @@ class IssueImportRead(BaseModel):
 
         A list leaves the row problems out, since each job may hold hundreds.
         """
-        steps = phases(job) if job.kind == "linear" else GITHUB_PHASES if job.kind == "github" else []
+        steps: list[tuple[str, Optional[int]]] = []
+        if job.kind == "linear":
+            steps = phases(job)
+        elif job.kind == "github":
+            steps = GITHUB_PHASES
+        elif job.kind == "shortcut":
+            steps = shortcut_import.phases(job)
         current = steps[job.phase_index] if job.phase_index < len(steps) else None
         return cls(
             import_id=job.import_id,
@@ -216,6 +237,7 @@ class IssueImportRead(BaseModel):
             updated_count=job.updated_count,
             counts=dict(job.counts),
             linear_teams=[LinearTeamMappingRead(**mapping.model_dump()) for mapping in job.linear_teams],
+            source_teams=[SourceTeamMappingRead(**mapping.model_dump()) for mapping in job.source_teams],
             github_repository_id=job.github_repository_id or None,
             phase=current[0] if current is not None else None,
             phase_index=min(job.phase_index, len(steps)),
@@ -283,3 +305,59 @@ class GitHubImportRequest(BaseModel):
 
     repository_id: str = Field(min_length=1, max_length=32, pattern=r"^[0-9]+$")
     team_id: str = Field(min_length=1, max_length=64)
+
+
+class ShortcutTokenRequest(BaseModel):
+    """A Shortcut API token, used for this request only and never stored."""
+
+    api_token: str = Field(min_length=1, max_length=200, description="A Shortcut API token from Settings, API Tokens.")
+
+
+class ShortcutTeamRead(BaseModel):
+    """One team the token can read in Shortcut."""
+
+    id: str
+    key: str = Field(description="The team's mention name in Shortcut.")
+    name: str
+
+
+class ShortcutTeamListRead(BaseModel):
+    """Every team the token can read in Shortcut that is not archived."""
+
+    items: list[ShortcutTeamRead]
+
+
+class ShortcutTeamChoice(BaseModel):
+    """One Shortcut team to import and the Standupless team it goes into."""
+
+    shortcut_team_id: str = Field(min_length=1, max_length=64)
+    team_id: str = Field(min_length=1, max_length=64)
+
+
+class ShortcutImportRequest(BaseModel):
+    """A Shortcut import or its preview: the token, sealed while the job runs and deleted after, and the team mapping."""
+
+    api_token: str = Field(min_length=1, max_length=200, description="A Shortcut API token from Settings, API Tokens.")
+    teams: list[ShortcutTeamChoice] = Field(min_length=1, max_length=50)
+
+
+class ShortcutPreviewTeamRead(BaseModel):
+    """What importing one Shortcut team would bring over."""
+
+    shortcut_team_id: str
+    name: str
+    team_id: str
+    stories: int
+    stories_capped: bool = Field(description="Whether the team holds more stories than the preview counts.")
+    epics: int
+    iterations: int
+    statuses: list[StatusMappingRead]
+    new_labels: list[str]
+    matched_owners: int = Field(description="Story owners who match a member by email.")
+    unmatched_owners: int = Field(description="Story owners who match no member, whose stories are left unassigned.")
+
+
+class ShortcutImportPreviewRead(BaseModel):
+    """What a Shortcut import would do, team by team, computed without writing anything."""
+
+    teams: list[ShortcutPreviewTeamRead]

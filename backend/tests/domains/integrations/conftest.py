@@ -374,3 +374,22 @@ def no_linear(monkeypatch: pytest.MonkeyPatch) -> None:
         "client_factory",
         lambda api_key: LinearClient(api_key=api_key, transport=httpx.MockTransport(refused)),
     )
+
+
+@pytest.fixture(autouse=True)
+def no_shortcut(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Build every Shortcut client on a transport that refuses every token, so no test reaches Shortcut."""
+    import httpx
+
+    from app.domains.integrations import shortcut_import
+    from app.domains.integrations.shortcut_api import ShortcutClient
+
+    def refused(request: httpx.Request) -> httpx.Response:
+        """Answer as Shortcut does for a token it does not know."""
+        return httpx.Response(401, json={"message": "Unauthorized"})
+
+    monkeypatch.setattr(
+        shortcut_import,
+        "client_factory",
+        lambda token: ShortcutClient(token=token, transport=httpx.MockTransport(refused), sleep=lambda seconds: None),
+    )

@@ -7954,7 +7954,8 @@
             "enum": [
               "csv",
               "linear",
-              "github"
+              "github",
+              "shortcut"
             ],
             "title": "Kind",
             "type": "string"
@@ -7985,7 +7986,7 @@
                 "type": "null"
               }
             ],
-            "description": "What a running Linear or GitHub import is reading now.",
+            "description": "What a running Linear, GitHub or Shortcut import is reading now.",
             "title": "Phase"
           },
           "phase_count": {
@@ -8028,6 +8029,14 @@
           "skipped_count": {
             "title": "Skipped Count",
             "type": "integer"
+          },
+          "source_teams": {
+            "description": "The teams a Shortcut import reads and the teams each writes into.",
+            "items": {
+              "$ref": "#/components/schemas/SourceTeamMappingRead"
+            },
+            "title": "Source Teams",
+            "type": "array"
           },
           "started_at": {
             "anyOf": [
@@ -15658,6 +15667,205 @@
         "title": "SharedViewPage",
         "type": "object"
       },
+      "ShortcutImportPreviewRead": {
+        "description": "What a Shortcut import would do, team by team, computed without writing anything.",
+        "properties": {
+          "teams": {
+            "items": {
+              "$ref": "#/components/schemas/ShortcutPreviewTeamRead"
+            },
+            "title": "Teams",
+            "type": "array"
+          }
+        },
+        "required": [
+          "teams"
+        ],
+        "title": "ShortcutImportPreviewRead",
+        "type": "object"
+      },
+      "ShortcutImportRequest": {
+        "description": "A Shortcut import or its preview: the token, sealed while the job runs and deleted after, and the team mapping.",
+        "properties": {
+          "api_token": {
+            "description": "A Shortcut API token from Settings, API Tokens.",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Api Token",
+            "type": "string"
+          },
+          "teams": {
+            "items": {
+              "$ref": "#/components/schemas/ShortcutTeamChoice"
+            },
+            "maxItems": 50,
+            "minItems": 1,
+            "title": "Teams",
+            "type": "array"
+          }
+        },
+        "required": [
+          "api_token",
+          "teams"
+        ],
+        "title": "ShortcutImportRequest",
+        "type": "object"
+      },
+      "ShortcutPreviewTeamRead": {
+        "description": "What importing one Shortcut team would bring over.",
+        "properties": {
+          "epics": {
+            "title": "Epics",
+            "type": "integer"
+          },
+          "iterations": {
+            "title": "Iterations",
+            "type": "integer"
+          },
+          "matched_owners": {
+            "description": "Story owners who match a member by email.",
+            "title": "Matched Owners",
+            "type": "integer"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "new_labels": {
+            "items": {
+              "type": "string"
+            },
+            "title": "New Labels",
+            "type": "array"
+          },
+          "shortcut_team_id": {
+            "title": "Shortcut Team Id",
+            "type": "string"
+          },
+          "statuses": {
+            "items": {
+              "$ref": "#/components/schemas/StatusMappingRead"
+            },
+            "title": "Statuses",
+            "type": "array"
+          },
+          "stories": {
+            "title": "Stories",
+            "type": "integer"
+          },
+          "stories_capped": {
+            "description": "Whether the team holds more stories than the preview counts.",
+            "title": "Stories Capped",
+            "type": "boolean"
+          },
+          "team_id": {
+            "title": "Team Id",
+            "type": "string"
+          },
+          "unmatched_owners": {
+            "description": "Story owners who match no member, whose stories are left unassigned.",
+            "title": "Unmatched Owners",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "shortcut_team_id",
+          "name",
+          "team_id",
+          "stories",
+          "stories_capped",
+          "epics",
+          "iterations",
+          "statuses",
+          "new_labels",
+          "matched_owners",
+          "unmatched_owners"
+        ],
+        "title": "ShortcutPreviewTeamRead",
+        "type": "object"
+      },
+      "ShortcutTeamChoice": {
+        "description": "One Shortcut team to import and the Standupless team it goes into.",
+        "properties": {
+          "shortcut_team_id": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Shortcut Team Id",
+            "type": "string"
+          },
+          "team_id": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Team Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "shortcut_team_id",
+          "team_id"
+        ],
+        "title": "ShortcutTeamChoice",
+        "type": "object"
+      },
+      "ShortcutTeamListRead": {
+        "description": "Every team the token can read in Shortcut that is not archived.",
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ShortcutTeamRead"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "ShortcutTeamListRead",
+        "type": "object"
+      },
+      "ShortcutTeamRead": {
+        "description": "One team the token can read in Shortcut.",
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "key": {
+            "description": "The team's mention name in Shortcut.",
+            "title": "Key",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "key",
+          "name"
+        ],
+        "title": "ShortcutTeamRead",
+        "type": "object"
+      },
+      "ShortcutTokenRequest": {
+        "description": "A Shortcut API token, used for this request only and never stored.",
+        "properties": {
+          "api_token": {
+            "description": "A Shortcut API token from Settings, API Tokens.",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Api Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "api_token"
+        ],
+        "title": "ShortcutTokenRequest",
+        "type": "object"
+      },
       "SimilarIssueRead": {
         "description": "One possible duplicate of a draft title: enough to render a row and open it.",
         "properties": {
@@ -16123,6 +16331,35 @@
           "available"
         ],
         "title": "SlackLinkRead",
+        "type": "object"
+      },
+      "SourceTeamMappingRead": {
+        "description": "One team of the source tool an API import reads, such as a Shortcut team, and the team it writes into.",
+        "properties": {
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "source_id": {
+            "title": "Source Id",
+            "type": "string"
+          },
+          "team_id": {
+            "title": "Team Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source_id",
+          "key",
+          "name",
+          "team_id"
+        ],
+        "title": "SourceTeamMappingRead",
         "type": "object"
       },
       "SsoConnectionRead": {
@@ -30292,6 +30529,183 @@
           }
         ],
         "summary": "Preview Issue Import",
+        "tags": [
+          "integrations"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/imports/shortcut": {
+      "post": {
+        "description": "Queue an import of Shortcut teams into Standupless teams, refusing a second while one is running.",
+        "operationId": "start_shortcut_import_api_workspaces__workspace_id__imports_shortcut_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ShortcutImportRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IssueImportRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Start Shortcut Import",
+        "tags": [
+          "integrations"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/imports/shortcut/preview": {
+      "post": {
+        "description": "What importing the chosen Shortcut teams would bring over, team by team, writing nothing.",
+        "operationId": "preview_shortcut_import_api_workspaces__workspace_id__imports_shortcut_preview_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ShortcutImportRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ShortcutImportPreviewRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Preview Shortcut Import",
+        "tags": [
+          "integrations"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/imports/shortcut/teams": {
+      "post": {
+        "description": "The Shortcut teams an API token can read, to choose from; the token is not kept.",
+        "operationId": "list_shortcut_teams_api_workspaces__workspace_id__imports_shortcut_teams_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ShortcutTokenRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ShortcutTeamListRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "List Shortcut Teams",
         "tags": [
           "integrations"
         ]

@@ -17,6 +17,8 @@ FOREIGN_IMPORT_ID = "01JB0000000000000000IMPRT9"
 
 ISOLATION_LINEAR_KEY = "lin_api_isolation_fake_0000000000000000"
 
+ISOLATION_SHORTCUT_TOKEN = "00000000-0000-4000-8000-0000000150a7"
+
 ANSWERS_AT_HOME: frozenset[str] = frozenset(
     {
         "get_workspace",
@@ -76,6 +78,15 @@ def arguments(foreign: dict[str, str], home_issue: str) -> dict[str, dict[str, A
         },
         "preview_issue_import": {"team_id": foreign["team_id"], "preset": "generic", "file": "Title\nIsolation\n"},
         "import_issues_from_file": {"team_id": foreign["team_id"], "preset": "generic", "file": "Title\nIsolation\n"},
+        "list_shortcut_teams": {"api_token": ISOLATION_SHORTCUT_TOKEN},
+        "preview_shortcut_import": {
+            "api_token": ISOLATION_SHORTCUT_TOKEN,
+            "teams": [{"shortcut_team_id": "team-isolation", "team_id": foreign["team_id"]}],
+        },
+        "import_shortcut_workspace": {
+            "api_token": ISOLATION_SHORTCUT_TOKEN,
+            "teams": [{"shortcut_team_id": "team-isolation", "team_id": foreign["team_id"]}],
+        },
         "list_github_import_repositories": {},
         "import_github_issues": {"repository_id": "424242", "team_id": foreign["team_id"]},
         "get_workspace_import": {"import_id": FOREIGN_IMPORT_ID},
