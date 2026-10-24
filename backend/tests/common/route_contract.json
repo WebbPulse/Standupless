@@ -1880,6 +1880,12 @@
   {
     "auth": "workspace:read",
     "domain": "views",
+    "method": "POST",
+    "path": "/api/workspaces/{workspace_id}/inbox/clear"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "views",
     "method": "GET",
     "path": "/api/workspaces/{workspace_id}/inbox/count"
   },
