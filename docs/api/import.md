@@ -16,9 +16,9 @@ job a page at a time. Parsing and mapping are deterministic, with no model calls
 | MCP | `preview_issue_import`, `import_issues_from_file`, `get_workspace_import`, `cancel_workspace_import` |
 | UI | Workspace settings, Import tab, Import assistant |
 
-The Import assistant lists one row per source. Linear and GitHub open their API
-imports. Asana, Shortcut and Jira open the file import with that tool's preset
-chosen, until their API imports exist. "CSV or file" opens the file import with
+The Import assistant lists one row per source. Linear, Asana, Jira and GitHub
+open their API imports. Shortcut opens the file import with its preset chosen,
+until its API import exists. "CSV or file" opens the file import with
 every preset, Trello included.
 
 The MCP tools take `team_id` (an id, key or name), `preset`, `file` (the file's
@@ -363,6 +363,86 @@ The token is sealed beside the job like a Linear key, under its own purpose so
 it never opens as one, and deleted when the job completes, fails or is
 cancelled. It never appears in the job, an answer, a log, an audit event or
 imported data.
+
+
+## Import from Jira's API
+
+A workspace owner or admin can import Jira Cloud projects straight from Jira,
+with no export file. They enter the Jira site, the Atlassian account email and
+an API token, pick Jira projects or write a JQL filter, choose the existing
+Standupless team each one goes into and whether epics become projects or
+parent issues, preview where the issues land, then start the import.
+
+| Surface | How |
+| --- | --- |
+| API | `POST /api/workspaces/{workspace_id}/imports/jira/projects`, `POST /api/workspaces/{workspace_id}/imports/jira/preview`, `POST /api/workspaces/{workspace_id}/imports/jira`, `POST /api/workspaces/{workspace_id}/imports/{import_id}/cancel`, and the `GET` routes above |
+| MCP | `list_jira_projects`, `preview_jira_import`, `import_jira_workspace`, `get_workspace_import`, `cancel_workspace_import` |
+| UI | Workspace settings, Import tab, source Jira, Connect via API |
+
+Every route takes `{"site_url", "email", "token"}`. The site must be a Jira
+Cloud site, `https://<site>.atlassian.net`, given with or without the scheme;
+anything else answers 422 before a request is sent, so the credentials cannot
+be pointed at another host. `POST .../imports/jira/projects` answers every
+project the account can browse. Credentials Jira refuses answer 400 with code
+`JIRA_CREDENTIALS_REFUSED`, and Jira not answering is 502 with
+`JIRA_UNAVAILABLE`. The preview and the import also take `projects`, a list of
+`{"project_key", "jql", "team_id", "epics_as", "statuses"}`: a project key, a
+JQL filter, or both, which narrows the project to the filter. `epics_as` is
+`projects` (the default) or `parents`. The preview answers, per choice, its
+issue and done counts, the story point and sprint fields it found, and the team
+status each Jira status lands in, writing nothing. The import answers 202 with
+the job, which has `kind` `jira`. A project the account cannot browse, one
+chosen twice, a JQL filter Jira refuses, or a mapped status the team lacks
+answers 422, and a second import while one runs answers 409.
+
+### What is read
+
+Per choice, three phases: `epics`, which writes each epic as a Standupless
+project when `epics_as` is `projects`, then `issues`, which reads the issues
+20 at a time in id order, each with its comments, then `links`, which writes
+sub-issue parents and issue links once every issue exists. Searches use Jira's
+enhanced JQL search, paged by issue id, and comments are paged 100 at a time.
+A 429 is waited out for its `Retry-After`, at most 60 seconds per wait and 5
+attempts per request, and a 5xx is retried the same way.
+
+### How values map
+
+- `statuses` maps any Jira status name to a team status id. Anything unmapped
+  lands in the team status with the same name, else the first team status in
+  the Jira status category: To Do to unstarted, In Progress to started and
+  Done to completed.
+- Jira priorities Highest, High, Medium, Low and Lowest become urgent, high,
+  medium, low and low.
+- The issue type and the Jira labels become team labels, created when missing.
+- Epics become projects with the epic's summary, description, assignee as
+  lead, due date and status, and the issues under an epic join its project.
+  With `parents`, an epic is an issue its children hang off instead.
+- Sub-tasks become sub-issues. A parent that cannot be one here, such as a
+  sub-task's parent that has a parent of its own, is left off with a warning.
+- The newest sprint with dates becomes a team cycle with its name, dates and
+  goal. A sprint with no dates yet is left out with a warning.
+- Story points become the estimate when the team's scale has that value.
+- Blocks and Duplicate links become `blocks` and `duplicate_of` relations read
+  from the outward side, and every other link type becomes `relates_to`. A link
+  to an issue outside the import is skipped.
+- Assignee, reporter and comment author are matched to members by email. A
+  person who is not a member, or who hides their email, keeps a `jira:<name>`
+  placeholder comment author and leaves the issue unassigned. No account or
+  invite is created.
+- Descriptions and comments convert from Atlassian Document Format to markdown.
+  Attachments stay in Jira and become a placeholder naming the file.
+
+Every row gets an id derived from the workspace and the Jira id, and each issue
+keeps the Jira key and the issue's URL in `external_ref`, so running the import
+again updates what the earlier run wrote. An issue an earlier import wrote into
+a different team is left there with a warning.
+
+### The credentials
+
+The email and token are sealed beside the job like a Linear key, under their
+own purpose so they never open as one, and deleted when the job completes,
+fails or is cancelled. They are never stored after the job, and the token never
+appears in the job, an answer, a log, an audit event or imported data.
 
 
 ## Import from GitHub Issues

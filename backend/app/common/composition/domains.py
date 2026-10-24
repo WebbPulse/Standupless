@@ -314,6 +314,7 @@ def _integrations_routers() -> "Sequence[RouterSpec]":
         discord,
         imports,
         install,
+        jira_imports,
         links,
         release_backfill,
         reviews,
@@ -340,6 +341,7 @@ def _integrations_routers() -> "Sequence[RouterSpec]":
         (release_backfill.router, "/workspaces", ("integrations",)),
         (imports.router, "/workspaces", ("integrations",)),
         (asana_imports.router, "/workspaces", ("integrations",)),
+        (jira_imports.router, "/workspaces", ("integrations",)),
     ]
 
 

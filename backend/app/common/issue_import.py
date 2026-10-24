@@ -27,6 +27,8 @@ installed GitHub App; its steps live with the App in the integrations domain and
 register themselves in `PAGE_RUNNERS`. An Asana import, kind `asana`, reads
 chosen Asana projects through Asana's REST API with a pasted personal access
 token sealed beside the job the way a Linear key is, and registers itself too.
+A Jira import, kind `jira`, reads chosen Jira Cloud projects or JQL filters
+through Jira's REST API with an account email and API token sealed the same way.
 A job may be cancelled while it runs: every step reads the job again before it
 saves its progress and keeps a cancel it finds.
 
@@ -132,9 +134,9 @@ IMPORT_READ_REPOSITORIES: tuple[str, ...] = ("workspaces", "memberships", "users
 
 ImportStatus = Literal["queued", "running", "completed", "failed", "cancelled"]
 
-ImportKind = Literal["csv", "linear", "github", "asana"]
+ImportKind = Literal["csv", "linear", "github", "asana", "jira"]
 
-SEALED_KEY_KINDS: set[str] = {"linear", "asana"}
+SEALED_KEY_KINDS: set[str] = {"linear", "asana", "jira"}
 """The import kinds that keep a sealed token beside the job, deleted when the job fails or is cancelled."""
 
 PAGE_RUNNERS: dict[str, Callable[[Any, "ImportJob"], "ImportJob"]] = {}
@@ -172,6 +174,20 @@ class AsanaProjectMapping(BaseModel):
     created_at: str = ""
 
 
+class JiraProjectMapping(BaseModel):
+    """One Jira project or JQL filter a Jira import reads, the team it writes into, and how its issues map."""
+
+    site_url: str
+    project_key: str = ""
+    jql: str = ""
+    name: str = ""
+    team_id: str
+    epics_as: Literal["projects", "parents"] = "projects"
+    statuses: dict[str, str] = Field(default_factory=dict)
+    estimate_fields: list[str] = Field(default_factory=list)
+    sprint_field: str = ""
+
+
 class ImportJob(BaseModel):
     """One import: who asked, into which team, how the file maps, and how far it has got."""
 
@@ -184,6 +200,7 @@ class ImportJob(BaseModel):
     linear_teams: list[LinearTeamMapping] = Field(default_factory=list)
     github_repository_id: str = ""
     asana_projects: list[AsanaProjectMapping] = Field(default_factory=list)
+    jira_projects: list[JiraProjectMapping] = Field(default_factory=list)
     phase_index: int = 0
     after: Optional[str] = None
     counts: dict[str, int] = Field(default_factory=dict)
