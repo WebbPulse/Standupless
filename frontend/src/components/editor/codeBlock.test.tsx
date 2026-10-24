@@ -80,7 +80,7 @@ const codeBlockShortcut = (editor: Editor, key: string): boolean => {
     'addKeyboardShortcuts',
     {
       name: extension.name,
-      options: extension.options,
+      options: extension.options as Record<string, unknown>,
       editor,
       type: editor.schema.nodes['codeBlock'],
     }
