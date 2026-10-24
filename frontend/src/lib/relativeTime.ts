@@ -75,3 +75,35 @@ export const compactAge = (value: string, now: Date = new Date()): string => {
   if (days < 365) return `${String(Math.floor(days / 30))}mo`;
   return `${String(Math.floor(days / 365))}y`;
 };
+
+const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+/** The local calendar day a timestamp falls on, as YYYY-MM-DD, or the value itself when it does not parse. */
+export const localDay = (value: string): string => {
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return value;
+  const month = String(parsed.getMonth() + 1).padStart(2, '0');
+  const day = String(parsed.getDate()).padStart(2, '0');
+  return `${String(parsed.getFullYear())}-${month}-${day}`;
+};
+
+/**
+ * The heading a feed groups a timestamp's day under: "Today", "Yesterday",
+ * then the weekday and date, with the year only when it is not the current
+ * one. A value that does not parse is returned as it came.
+ */
+export const dayHeading = (value: string, now: Date = new Date()): string => {
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return value;
+  const day = localDay(value);
+  if (day === localDay(now.toISOString())) return 'Today';
+  const yesterday = new Date(now);
+  yesterday.setDate(now.getDate() - 1);
+  if (day === localDay(yesterday.toISOString())) return 'Yesterday';
+  const weekday = WEEKDAYS[parsed.getDay()] ?? '';
+  const month = MONTHS[parsed.getMonth()] ?? '';
+  const date = `${weekday}, ${month} ${String(parsed.getDate())}`;
+  return parsed.getFullYear() === now.getFullYear()
+    ? date
+    : `${date}, ${String(parsed.getFullYear())}`;
+};

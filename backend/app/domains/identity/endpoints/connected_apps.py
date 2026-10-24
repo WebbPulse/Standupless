@@ -31,12 +31,14 @@ from app.common.api.dependencies.authz import (
     AuthzContext,
     Capability,
     caller_subject,
+    client_ip_of,
     refuse_api_key_actor,
     request_context,
     require,
     require_person,
 )
 from app.common.api.dependencies.repositories import Repositories, get_repositories
+from app.common.session_audit import Revoker, revoked_by
 from app.domains.identity.connected_apps import (
     AuthorizationServer,
     ConnectedApp,
@@ -223,7 +225,8 @@ def revoke_my_connected_app(
     A client the caller never authorized is a 404 rather than a silent success, so
     the page can tell a stale row from a revocation that happened.
     """
-    revocation = server.service.revoke_authorization(subject, client_id)
+    with revoked_by(Revoker(id=subject, ip=client_ip_of(request), reason="connected_app_revoked")):
+        revocation = server.service.revoke_authorization(subject, client_id)
     if not revocation.consents:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=NOT_FOUND)
     label = _client_label(server, client_id)
@@ -278,7 +281,16 @@ def revoke_workspace_connected_app(
     workspace and never to another workspace the same person granted the client.
     """
     refuse_api_key_actor(context)
-    revocation = server.service.revoke_authorization(user_id, client_id, tenant_id=context.workspace_id)
+    revoker = Revoker(
+        id=context.user_id,
+        kind=context.actor.value,
+        source=context.source,
+        ip=context.ip,
+        reason="connected_app_revoked",
+        workspace_ids=(context.workspace_id,),
+    )
+    with revoked_by(revoker):
+        revocation = server.service.revoke_authorization(user_id, client_id, tenant_id=context.workspace_id)
     if not revocation.consents:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=NOT_FOUND)
     audit.record(

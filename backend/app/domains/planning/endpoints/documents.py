@@ -3,7 +3,8 @@
 A document is listed and created through its parent and reached afterwards by its
 own id, so a link to it survives a rename and the page needs nothing but the id.
 The rules, the version history and the backlinks live in `app.common.documents`,
-which the MCP tools share.
+which the MCP tools share. A parent also lists the document templates its new
+documents and updates may start from, which `app.common.document_templates` reads.
 """
 
 from __future__ import annotations
@@ -12,6 +13,7 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Path, Response, status
 
+from app.common import document_templates
 from app.common.api.dependencies.authz import AuthzContext, Capability, require
 from app.common.api.dependencies.repositories import Repositories, get_repositories
 from app.common.api.schemas.documents import (
@@ -21,6 +23,7 @@ from app.common.api.schemas.documents import (
     DocumentRead,
     DocumentVersionListRead,
 )
+from app.common.api.schemas.templates import DocumentTemplateListRead, TemplateRead
 from app.common.documents import (
     create_document,
     delete_document,
@@ -31,8 +34,40 @@ from app.common.documents import (
     list_workspace_documents,
     update_document,
 )
+from app.common.initiative_writes import initiative_template_offer
 
 router = APIRouter()
+
+
+def _offer_read(offer: document_templates.Offer) -> DocumentTemplateListRead:
+    """The response shape of the document templates one parent offers."""
+    return DocumentTemplateListRead(
+        templates=[TemplateRead.from_row(row) for row in offer.templates],
+        default_document_template_id=offer.default_document_template_id,
+        default_update_template_id=offer.default_update_template_id,
+    )
+
+
+@router.get("/{workspace_id}/projects/{project_id}/document-templates", response_model=DocumentTemplateListRead)
+def list_project_document_templates(
+    context: Annotated[AuthzContext, Depends(require(Capability.WORKSPACE_READ))],
+    repositories: Annotated[Repositories, Depends(get_repositories)],
+    workspace_id: Annotated[str, Path()],
+    project_id: Annotated[str, Path()],
+) -> DocumentTemplateListRead:
+    """The document templates a project's new documents and updates may start from, and its defaults."""
+    return _offer_read(document_templates.project_offer(repositories, context, project_id))
+
+
+@router.get("/{workspace_id}/initiatives/{initiative_id}/document-templates", response_model=DocumentTemplateListRead)
+def list_initiative_document_templates(
+    context: Annotated[AuthzContext, Depends(require(Capability.WORKSPACE_READ))],
+    repositories: Annotated[Repositories, Depends(get_repositories)],
+    workspace_id: Annotated[str, Path()],
+    initiative_id: Annotated[str, Path()],
+) -> DocumentTemplateListRead:
+    """The workspace document templates an initiative's new documents and updates may start from."""
+    return _offer_read(initiative_template_offer(repositories, context, initiative_id))
 
 
 @router.get("/{workspace_id}/projects/{project_id}/documents", response_model=DocumentListRead)

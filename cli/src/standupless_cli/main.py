@@ -31,6 +31,7 @@ from standupless_cli._generated.models import (
     CycleSettingsUpdate,
     DocumentCreate,
     DocumentPatch,
+    FormFieldBlueprint,
     InitiativeCreate,
     InitiativeUpdate,
     IssueCreate,
@@ -725,10 +726,18 @@ def issue_create(
         str | None,
         typer.Option("--template", help="Template name or id; fills every field not passed, the title included."),
     ] = None,
+    answer: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--answer",
+            "-A",
+            help="A form template's answer as FIELD=VALUE, by field key or question; repeat for several.",
+        ),
+    ] = None,
     web: Annotated[bool, typer.Option("--web", help="Open the new issue in the browser.")] = False,
     as_json: JsonFlag = False,
 ) -> None:
-    """Create an issue and print its key, optionally starting from a template."""
+    """Create an issue and print its key, optionally starting from a template or answering a form template."""
     context = _state(ctx).context()
     if team:
         chosen = context.team(team)
@@ -740,6 +749,7 @@ def issue_create(
     text = _read_body(body, body_file)
     team_id = chosen["id"]
     found_template = _find_template(context, team_id, template) if template else None
+    form_answers = _form_answers(found_template, answer or [])
     if title is None and not (found_template and found_template.get("title")):
         title = typer.prompt("Title")
     assignee_id = _assignee_id(context, assignee) if assignee else None
@@ -758,6 +768,7 @@ def issue_create(
             "due_date": due,
             "parent_id": context.issue(parent)["id"] if parent else None,
             "template_id": found_template["id"] if found_template else None,
+            "form_answers": form_answers,
         }
     )
     created = context.client.create_issue(context.workspace_id, cast(IssueCreate, payload))
@@ -3496,6 +3507,81 @@ def standup_settings(
 
 
 TEMPLATE_COLUMNS = ["NAME", "TITLE", "SCOPE", "DEFAULT", "ID"]
+
+
+CHECKBOX_ANSWERS: dict[str, bool] = {
+    "yes": True,
+    "y": True,
+    "true": True,
+    "1": True,
+    "on": True,
+    "no": False,
+    "n": False,
+    "false": False,
+    "0": False,
+    "off": False,
+}
+"""The words a checkbox answer takes on the command line."""
+
+
+def _form_field(fields: list[FormFieldBlueprint], ref: str) -> FormFieldBlueprint:
+    """One question of a form by its key or its label, or a ConfigError naming the questions."""
+    folded = ref.strip().casefold()
+    for field_row in fields:
+        if field_row["key"].casefold() == folded or field_row["label"].strip().casefold() == folded:
+            return field_row
+    known = ", ".join(f"{row['key']} ({row['label']})" for row in fields)
+    raise ConfigError(f"The form has no question {ref}. Its questions: {known}.")
+
+
+def _form_answer(field_row: FormFieldBlueprint, value: str) -> str | bool:
+    """One answer typed on the command line, a checkbox's as true or false."""
+    if field_row.get("type") != "checkbox":
+        return value
+    choice = CHECKBOX_ANSWERS.get(value.strip().casefold())
+    if choice is None:
+        raise ConfigError(f"{field_row['label']} is a checkbox; answer yes or no.")
+    return choice
+
+
+def _form_answers(template: TemplateRead | None, answers: list[str]) -> dict[str, str | bool] | None:
+    """The `--answer` options as a form's answers by key, or a ConfigError naming what a form still needs.
+
+    A template that is not a form takes no answers, and a form refuses a create
+    that leaves a required question unanswered before it is sent.
+    """
+    fields = list(template.get("form_fields") or []) if template else []
+    if not fields:
+        if answers:
+            name = template["name"] if template else None
+            raise ConfigError(
+                f"{name} is not a form template, so it takes no --answer."
+                if name
+                else "--answer needs a form template; pass --template."
+            )
+        return None
+    held: dict[str, str | bool] = {}
+    for raw in answers:
+        ref, sep, value = raw.partition("=")
+        if not sep or not ref.strip():
+            raise ConfigError(f"Pass --answer as FIELD=VALUE, not {raw}.")
+        field_row = _form_field(fields, ref)
+        held[field_row["key"]] = _form_answer(field_row, value)
+    missing = [
+        row
+        for row in fields
+        if row.get("required")
+        and (
+            held.get(row["key"]) is not True
+            if row.get("type") == "checkbox"
+            else not str(held.get(row["key"], "")).strip()
+        )
+    ]
+    if missing:
+        needed = " ".join(f'--answer "{row["key"]}=..."' for row in missing)
+        names = ", ".join(row["label"] for row in missing)
+        raise ConfigError(f"{template['name'] if template else 'The form'} is a form; answer {names} with {needed}.")
+    return held
 
 
 def _find_template(context: Context, team_id: str | None, ref: str) -> TemplateRead:

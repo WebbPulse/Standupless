@@ -18,6 +18,7 @@ from webbpulse.events import register_stream_consumer
 
 from app.common import issue_import
 from app.common.api.dependencies.repositories import Repositories, build_bundle
+from app.domains.integrations import github_import
 
 _log = logging.getLogger(__name__)
 
@@ -58,6 +59,7 @@ def build_router(repositories: Repositories | None = None) -> APIRouter:
             read_only=issue_import.IMPORT_READ_REPOSITORIES,
         )
     )
+    issue_import.PAGE_RUNNERS[github_import.KIND] = github_import.run_github_page
     router = APIRouter()
 
     def consume(record: Mapping[str, Any]) -> None:

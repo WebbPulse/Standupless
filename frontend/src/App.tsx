@@ -58,6 +58,8 @@ import CycleDetail from './pages/planning/CycleDetail';
 import Cycles from './pages/planning/Cycles';
 import Standup from './pages/teams/Standup';
 import DocumentDetail from './pages/planning/DocumentDetail';
+import CustomerDetail from './pages/planning/CustomerDetail';
+import Customers from './pages/planning/Customers';
 import InitiativeDetail from './pages/planning/InitiativeDetail';
 import Initiatives from './pages/planning/Initiatives';
 import ProjectDetail from './pages/planning/ProjectDetail';
@@ -226,12 +228,15 @@ const App: React.FC = () => (
             element={<ReleaseDetail />}
           />
           <Route path="team/:keyPrefix/standup" element={<Standup />} />
+          <Route path="team/:keyPrefix/views" element={<Views />} />
           <Route path="team/:keyPrefix/settings" element={<TeamSettings />} />
 
           <Route path="projects" element={<Projects />} />
           <Route path="projects/:id" element={<ProjectDetail />} />
           <Route path="initiatives" element={<Initiatives />} />
           <Route path="initiatives/:id" element={<InitiativeDetail />} />
+          <Route path="customers" element={<Customers />} />
+          <Route path="customers/:customerId" element={<CustomerDetail />} />
           <Route path="documents/:documentId" element={<DocumentDetail />} />
 
           <Route path="issues" element={<MyIssues />} />

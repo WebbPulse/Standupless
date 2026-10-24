@@ -296,7 +296,20 @@ def remove_access(repositories: Repositories, workspace_id: str, row: ScimUserRo
                 before={"kind": key.kind, "prefix": key.prefix},
                 after={"via": "scim"},
             )
-    sessions.revoke_refresh_families(user_id)
+    from webbpulse.audit import SYSTEM_ACTOR
+
+    from app.common.session_audit import Revoker
+
+    sessions.revoke_refresh_families(
+        user_id,
+        revoker=Revoker(
+            id=SCIM_ACTOR_ID,
+            kind=SYSTEM_ACTOR.kind,
+            source=SCIM_SOURCE,
+            reason="directory_deprovisioned",
+            workspace_ids=(workspace_id,),
+        ),
+    )
 
 
 def _label(repositories: Repositories, user_id: str) -> str:

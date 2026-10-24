@@ -74,6 +74,18 @@ export const projectTemplatesKey = (teamId: string): QueryKey => [
   teamId,
 ];
 
+/** The document templates one team offers, with its default. */
+export const documentTemplatesKey = (teamId: string): QueryKey => [
+  'document-templates',
+  teamId,
+];
+
+/** The document templates a project or initiative offers, with its defaults. */
+export const parentDocumentTemplatesKey = (
+  parentKind: 'project' | 'initiative',
+  parentId: string
+): QueryKey => ['document-templates', parentKind, parentId];
+
 /** One team's recurring issues. */
 export const recurringKey = (teamId: string): QueryKey => [
   'recurring-issues',
@@ -91,6 +103,11 @@ export const workspaceProjectTemplatesKey = (workspaceId: string): QueryKey => [
   'workspace-project-templates',
   workspaceId,
 ];
+
+/** The document templates a workspace offers every team. */
+export const workspaceDocumentTemplatesKey = (
+  workspaceId: string
+): QueryKey => ['workspace-document-templates', workspaceId];
 
 /** The statuses a workspace defines for every team. */
 export const workspaceStatusesKey = (workspaceId: string): QueryKey => [
@@ -655,3 +672,28 @@ export const workspaceAuditLogKey = (
   filters.since ?? '',
   filters.until ?? '',
 ];
+
+/** The workspace's customers, by name. */
+export const customersKey = (workspaceId: string): QueryKey => [
+  'customers',
+  workspaceId,
+];
+
+/** One customer. */
+export const customerKey = (
+  workspaceId: string,
+  customerId: string
+): QueryKey => ['customer', workspaceId, customerId];
+
+/** One customer's requests, newest first. */
+export const customerRequestsKey = (
+  workspaceId: string,
+  customerId: string
+): QueryKey => ['customerRequests', workspaceId, customerId];
+
+/** The customer requests naming one issue or project, newest first. */
+export const targetCustomerRequestsKey = (
+  workspaceId: string,
+  kind: 'issue' | 'project',
+  targetId: string
+): QueryKey => ['targetCustomerRequests', workspaceId, kind, targetId];

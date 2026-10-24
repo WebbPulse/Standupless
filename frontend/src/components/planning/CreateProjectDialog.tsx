@@ -19,6 +19,7 @@ import { createProject } from '../../api/planning';
 import { listTeamTemplates } from '../../api/templates';
 import { usePlanningTeamLists } from '../../hooks/usePlanningTeamLists';
 import { errorMessage } from '../../lib/errors';
+import { showToast } from '../../lib/toast';
 import {
   projectTemplateHint,
   projectTemplatePrefill,
@@ -31,6 +32,7 @@ import type {
   ProjectIconName,
   ProjectRead,
   ProjectStatus,
+  SkippedTemplateIssueRead,
   TeamRead,
   TemplateListRead,
   TemplateRead,
@@ -103,6 +105,23 @@ const listProjectTemplates = async (
 const sameIds = (left: readonly string[], right: readonly string[]): boolean =>
   left.length === right.length &&
   left.every((value, index) => value === right[index]);
+
+/**
+ * Raises a notice naming the template issues the server left out of a new
+ * project, so a skipped issue is never lost without a word.
+ */
+const announceSkipped = (
+  skipped: readonly SkippedTemplateIssueRead[]
+): void => {
+  const first = skipped[0];
+  if (first === undefined) return;
+  const titles = skipped.map((row) => row.title).join(', ');
+  const message =
+    skipped.length === 1
+      ? `Left out template issue "${first.title}": ${first.reason}`
+      : `Left out ${String(skipped.length)} template issues: ${titles}`;
+  showToast(message, 'error');
+};
 
 /** The dialog that creates a project. */
 export const CreateProjectDialog: React.FC<CreateProjectDialogProps> = ({
@@ -209,6 +228,7 @@ export const CreateProjectDialog: React.FC<CreateProjectDialogProps> = ({
     createProject(workspaceId, body).then(
       (project) => {
         setIsSaving(false);
+        announceSkipped(project.skipped_template_issues ?? []);
         onCreated(project);
       },
       (failure: unknown) => {

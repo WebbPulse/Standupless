@@ -8,6 +8,14 @@
  * beneath its own, read only, because they are kept where they are defined.
  * Order is the picker's order, so each own template moves up or down a place
  * and the new order is written back as positions.
+ *
+ * The same editor keeps document templates, which are a name, a title and a
+ * Markdown body with none of the issue properties, so the new document flow
+ * and the update composer start from text a team agreed on.
+ *
+ * An issue template can also be a form: a list of questions the create dialog
+ * asks in place of a free description, whose answers land in the body and
+ * whose issues go to the team's triage.
  */
 
 import React, { useState } from 'react';
@@ -20,11 +28,16 @@ import {
 } from 'react-icons/lu';
 import { errorMessage } from '../../lib/errors';
 import type { Assignable } from '../../lib/issuePeople';
-import { TEMPLATE_GROUPS } from '../../lib/issueTemplates';
+import {
+  isFormTemplate,
+  needsAnswers,
+  TEMPLATE_GROUPS,
+} from '../../lib/issueTemplates';
 import type { EstimateOptions } from '../../lib/validation';
 import type {
   CycleRead,
   EstimateScale,
+  FormField,
   IssuePriority,
   LabelRead,
   ProjectRead,
@@ -45,8 +58,10 @@ import {
 import { ErrorAlert } from '../ui/alert';
 import { Badge } from '../ui/badge';
 import Button, { IconButton } from '../ui/button';
+import { Checkbox } from '../ui/checkbox';
 import { Input, Textarea } from '../ui/input';
 import Label from '../ui/label';
+import { FormFieldsEditor, formFieldsComplete } from './FormFieldsEditor';
 
 /** The lists the form's pickers choose from. Planning lists are team only. */
 export interface TemplateEditorOptions {
@@ -78,7 +93,12 @@ export interface TemplateEditorProps {
   defaultTemplateId?: string | null;
   /** Opens a recurring schedule for a template; the button shows when set. */
   onMakeRecurring?: (template: TemplateRead) => void;
+  /** What the templates fill: a new issue, or a new document or update. */
+  kind?: EditorKind;
 }
+
+/** The template kinds this editor keeps; project templates have their own. */
+export type EditorKind = 'issue' | 'document';
 
 /** The form's working copy of one template. */
 interface FormState {
@@ -92,6 +112,8 @@ interface FormState {
   estimate: string | null;
   projectId: string | null;
   cycleId: string | null;
+  isForm: boolean;
+  formFields: FormField[];
 }
 
 const EMPTY_FORM: FormState = {
@@ -105,6 +127,8 @@ const EMPTY_FORM: FormState = {
   estimate: null,
   projectId: null,
   cycleId: null,
+  isForm: false,
+  formFields: [],
 };
 
 /** The form a saved template opens into. */
@@ -119,7 +143,24 @@ const formOf = (template: TemplateRead): FormState => ({
   estimate: template.estimate,
   projectId: template.project_id,
   cycleId: template.cycle_id,
+  isForm: (template.form_fields ?? []).length > 0,
+  formFields: template.form_fields ?? [],
 });
+
+/** The questions a write sends: none unless the template is a form. */
+const formFieldsOf = (form: FormState): FormField[] =>
+  form.isForm
+    ? form.formFields.map((field) => ({
+        ...field,
+        description: field.description?.trim() ? field.description : null,
+      }))
+    : [];
+
+/** Whether the form can be saved: a name, and a complete set of questions when it is a form. */
+const savable = (form: FormState): boolean =>
+  form.name.trim() !== '' &&
+  (!form.isForm ||
+    (form.formFields.length > 0 && formFieldsComplete(form.formFields)));
 
 /** Every field of the form as a write sends it, blanks as null. */
 const fieldsOf = (form: FormState) => ({
@@ -132,12 +173,23 @@ const fieldsOf = (form: FormState) => ({
   estimate: form.estimate,
   project_id: form.projectId,
   cycle_id: form.cycleId,
+  form_fields: formFieldsOf(form),
+});
+
+/** The fields a document template carries, blanks as null. */
+const documentFieldsOf = (form: FormState) => ({
+  title: form.title.trim() === '' ? null : form.title,
+  body: form.body.trim() === '' ? null : form.body,
 });
 
 /** The create body, leaving out every field still empty. */
-const createBodyOf = (form: FormState): TemplateCreate => {
-  const body: TemplateCreate = { name: form.name.trim() };
-  for (const [name, value] of Object.entries(fieldsOf(form))) {
+const createBodyOf = (form: FormState, kind: EditorKind): TemplateCreate => {
+  const body: TemplateCreate =
+    kind === 'document'
+      ? { name: form.name.trim(), kind: 'document' }
+      : { name: form.name.trim() };
+  const fields = kind === 'document' ? documentFieldsOf(form) : fieldsOf(form);
+  for (const [name, value] of Object.entries(fields)) {
     if (value === null) continue;
     if (Array.isArray(value) && value.length === 0) continue;
     Object.assign(body, { [name]: value });
@@ -150,6 +202,16 @@ const createBodyOf = (form: FormState): TemplateCreate => {
  * milestone dropped when the project changed under it.
  */
 const updateBodyOf = (
+  template: TemplateRead,
+  form: FormState,
+  kind: EditorKind
+): TemplateUpdate =>
+  kind === 'document'
+    ? { name: form.name.trim(), ...documentFieldsOf(form) }
+    : issueUpdateBodyOf(template, form);
+
+/** The patch body of an issue template. */
+const issueUpdateBodyOf = (
   template: TemplateRead,
   form: FormState
 ): TemplateUpdate => ({
@@ -168,7 +230,35 @@ interface TemplateFormProps {
   submitLabel: string;
   onSubmit: (form: FormState) => Promise<unknown>;
   onCancel: () => void;
+  kind: EditorKind;
 }
+
+/** The copy the form shows for each kind it keeps. */
+const FORM_COPY: Record<
+  EditorKind,
+  {
+    namePlaceholder: string;
+    titleLabel: string;
+    titlePlaceholder: string;
+    bodyLabel: string;
+    bodyPlaceholder: string;
+  }
+> = {
+  issue: {
+    namePlaceholder: 'Bug report',
+    titleLabel: 'Issue title',
+    titlePlaceholder: 'Left empty, the title is typed each time',
+    bodyLabel: 'Description',
+    bodyPlaceholder: 'Steps to reproduce, expected and actual results',
+  },
+  document: {
+    namePlaceholder: 'Spec',
+    titleLabel: 'Document title',
+    titlePlaceholder: 'Left empty, a new document starts Untitled',
+    bodyLabel: 'Body',
+    bodyPlaceholder: '## Goal\n\n## Plan\n\n## Open questions',
+  },
+};
 
 /** The name, default text and default properties of one template. */
 const TemplateForm: React.FC<TemplateFormProps> = ({
@@ -178,6 +268,7 @@ const TemplateForm: React.FC<TemplateFormProps> = ({
   submitLabel,
   onSubmit,
   onCancel,
+  kind,
 }) => {
   const [form, setForm] = useState<FormState>(initial);
   const [saving, setSaving] = useState(false);
@@ -186,6 +277,7 @@ const TemplateForm: React.FC<TemplateFormProps> = ({
     setForm((held) => ({ ...held, ...change }));
   };
   const team = scope === 'team';
+  const copy = FORM_COPY[kind];
 
   return (
     <form
@@ -193,7 +285,7 @@ const TemplateForm: React.FC<TemplateFormProps> = ({
       className="space-y-3 rounded-md border border-line p-3"
       onSubmit={(event) => {
         event.preventDefault();
-        if (form.name.trim() === '' || saving) return;
+        if (!savable(form) || saving) return;
         setSaving(true);
         setError(null);
         onSubmit(form)
@@ -216,117 +308,145 @@ const TemplateForm: React.FC<TemplateFormProps> = ({
           id="template-name"
           value={form.name}
           maxLength={80}
-          placeholder="Bug report"
+          placeholder={copy.namePlaceholder}
           onChange={(event) => {
             set({ name: event.target.value });
           }}
         />
       </div>
       <div className="space-y-1">
-        <Label htmlFor="template-title">Issue title</Label>
+        <Label htmlFor="template-title">{copy.titleLabel}</Label>
         <Input
           id="template-title"
           value={form.title}
-          placeholder="Left empty, the title is typed each time"
+          placeholder={copy.titlePlaceholder}
           onChange={(event) => {
             set({ title: event.target.value });
           }}
         />
       </div>
+      {kind === 'issue' && (
+        <div className="space-y-2">
+          <Checkbox
+            label="Ask questions with a form"
+            checked={form.isForm}
+            onChange={(event) => {
+              set({ isForm: event.target.checked });
+            }}
+          />
+          {form.isForm && (
+            <>
+              <p className="text-xs text-text-muted">
+                The create dialog asks these questions, the answers land in the
+                description, and the issue goes to the team&apos;s triage.
+              </p>
+              <FormFieldsEditor
+                fields={form.formFields}
+                labels={options.labels}
+                onChange={(formFields) => {
+                  set({ formFields });
+                }}
+              />
+            </>
+          )}
+        </div>
+      )}
       <div className="space-y-1">
-        <Label htmlFor="template-body">Description</Label>
+        <Label htmlFor="template-body">{copy.bodyLabel}</Label>
         <Textarea
           id="template-body"
-          rows={5}
+          rows={kind === 'document' ? 8 : 5}
           value={form.body}
-          placeholder="Steps to reproduce, expected and actual results"
+          placeholder={copy.bodyPlaceholder}
           onChange={(event) => {
             set({ body: event.target.value });
           }}
         />
       </div>
-      <div
-        role="group"
-        aria-label="Template properties"
-        className="flex flex-wrap items-center gap-1.5"
-      >
-        <StatusPicker
-          variant="chip"
-          statuses={options.statuses}
-          value={form.statusId}
-          onChange={(statusId) => {
-            set({ statusId });
-          }}
-        />
-        {form.statusId !== null && (
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={() => {
-              set({ statusId: null });
-            }}
-          >
-            Default status
-          </Button>
-        )}
-        <PriorityPicker
-          variant="chip"
-          value={form.priority}
-          onChange={(priority) => {
-            set({ priority });
-          }}
-        />
-        {team && (
-          <AssigneePicker
+      {kind === 'issue' && (
+        <div
+          role="group"
+          aria-label="Template properties"
+          className="flex flex-wrap items-center gap-1.5"
+        >
+          <StatusPicker
             variant="chip"
-            people={options.people ?? []}
-            value={form.assigneeId}
-            onChange={(assigneeId) => {
-              set({ assigneeId });
+            statuses={options.statuses}
+            value={form.statusId}
+            onChange={(statusId) => {
+              set({ statusId });
             }}
           />
-        )}
-        <LabelsPicker
-          variant="chip"
-          labels={options.labels}
-          value={form.labelIds}
-          onChange={(labelIds) => {
-            set({ labelIds });
-          }}
-        />
-        {team && (options.estimateScale ?? 'off') !== 'off' && (
-          <EstimatePicker
+          {form.statusId !== null && (
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => {
+                set({ statusId: null });
+              }}
+            >
+              Default status
+            </Button>
+          )}
+          <PriorityPicker
             variant="chip"
-            scale={options.estimateScale ?? 'off'}
-            extended={options.estimateOptions?.extended ?? false}
-            allowZero={options.estimateOptions?.allowZero ?? false}
-            value={form.estimate}
-            onChange={(estimate) => {
-              set({ estimate });
+            value={form.priority}
+            onChange={(priority) => {
+              set({ priority });
             }}
           />
-        )}
-        {team && (
-          <ProjectPicker
+          {team && (
+            <AssigneePicker
+              variant="chip"
+              people={options.people ?? []}
+              value={form.assigneeId}
+              onChange={(assigneeId) => {
+                set({ assigneeId });
+              }}
+            />
+          )}
+          <LabelsPicker
             variant="chip"
-            projects={options.projects ?? []}
-            value={form.projectId}
-            onChange={(projectId) => {
-              set({ projectId });
+            labels={options.labels}
+            value={form.labelIds}
+            onChange={(labelIds) => {
+              set({ labelIds });
             }}
           />
-        )}
-        {team && (
-          <CyclePicker
-            variant="chip"
-            cycles={options.cycles ?? []}
-            value={form.cycleId}
-            onChange={(cycleId) => {
-              set({ cycleId });
-            }}
-          />
-        )}
-      </div>
+          {team && (options.estimateScale ?? 'off') !== 'off' && (
+            <EstimatePicker
+              variant="chip"
+              scale={options.estimateScale ?? 'off'}
+              extended={options.estimateOptions?.extended ?? false}
+              allowZero={options.estimateOptions?.allowZero ?? false}
+              value={form.estimate}
+              onChange={(estimate) => {
+                set({ estimate });
+              }}
+            />
+          )}
+          {team && (
+            <ProjectPicker
+              variant="chip"
+              projects={options.projects ?? []}
+              value={form.projectId}
+              onChange={(projectId) => {
+                set({ projectId });
+              }}
+            />
+          )}
+          {team && (
+            <CyclePicker
+              variant="chip"
+              cycles={options.cycles ?? []}
+              value={form.cycleId}
+              onChange={(cycleId) => {
+                set({ cycleId });
+              }}
+            />
+          )}
+        </div>
+      )}
       <div className="flex justify-end gap-2">
         <Button variant="ghost" onClick={onCancel}>
           Cancel
@@ -334,7 +454,7 @@ const TemplateForm: React.FC<TemplateFormProps> = ({
         <Button
           type="submit"
           variant="primary"
-          disabled={form.name.trim() === '' || saving}
+          disabled={!savable(form) || saving}
         >
           {saving ? 'Saving' : submitLabel}
         </Button>
@@ -343,7 +463,7 @@ const TemplateForm: React.FC<TemplateFormProps> = ({
   );
 };
 
-/** Lists and edits a set of issue templates. */
+/** Lists and edits a set of issue or document templates. */
 export const TemplateEditor: React.FC<TemplateEditorProps> = ({
   templates,
   scope,
@@ -352,6 +472,7 @@ export const TemplateEditor: React.FC<TemplateEditorProps> = ({
   actions,
   defaultTemplateId = null,
   onMakeRecurring,
+  kind = 'issue',
 }) => {
   const [editing, setEditing] = useState<string | null>(null);
   const [confirming, setConfirming] = useState<string | null>(null);
@@ -362,6 +483,8 @@ export const TemplateEditor: React.FC<TemplateEditorProps> = ({
   const inherited = templates.filter(
     (template) => scope === 'team' && template.scope !== 'team'
   );
+  const recurrable = (template: TemplateRead): boolean =>
+    onMakeRecurring !== undefined && !needsAnswers(template);
 
   const run = (write: Promise<unknown>): void => {
     setError(null);
@@ -400,7 +523,11 @@ export const TemplateEditor: React.FC<TemplateEditorProps> = ({
       {own.length === 0 && editing !== 'new' && (
         <p className="text-sm text-text-muted">
           No templates yet.
-          {canEdit ? ' Add one to prefill new issues.' : ''}
+          {canEdit
+            ? kind === 'document'
+              ? ' Add one to start new documents and updates.'
+              : ' Add one to prefill new issues.'
+            : ''}
         </p>
       )}
 
@@ -414,12 +541,13 @@ export const TemplateEditor: React.FC<TemplateEditorProps> = ({
                   scope={scope}
                   options={options}
                   submitLabel="Save template"
+                  kind={kind}
                   onCancel={() => {
                     setEditing(null);
                   }}
                   onSubmit={(form) =>
                     actions
-                      .update(template, updateBodyOf(template, form))
+                      .update(template, updateBodyOf(template, form, kind))
                       .then(() => {
                         setEditing(null);
                       })
@@ -436,6 +564,9 @@ export const TemplateEditor: React.FC<TemplateEditorProps> = ({
                     {template.name}
                     {template.id === defaultTemplateId && (
                       <Badge tone="accent">Default</Badge>
+                    )}
+                    {(template.form_fields ?? []).length > 0 && (
+                      <Badge>Form</Badge>
                     )}
                   </p>
                   {template.title !== null && (
@@ -476,12 +607,12 @@ export const TemplateEditor: React.FC<TemplateEditorProps> = ({
                     </div>
                   ) : (
                     <div className="flex items-center gap-0.5">
-                      {onMakeRecurring !== undefined && (
+                      {recurrable(template) && (
                         <IconButton
                           size="sm"
                           label={`Make ${template.name} recurring`}
                           onClick={() => {
-                            onMakeRecurring(template);
+                            onMakeRecurring?.(template);
                           }}
                         >
                           <LuRepeat className="h-3.5 w-3.5" />
@@ -540,11 +671,12 @@ export const TemplateEditor: React.FC<TemplateEditorProps> = ({
             scope={scope}
             options={options}
             submitLabel="Create template"
+            kind={kind}
             onCancel={() => {
               setEditing(null);
             }}
             onSubmit={(form) =>
-              actions.create(createBodyOf(form)).then(() => {
+              actions.create(createBodyOf(form, kind)).then(() => {
                 setEditing(null);
               })
             }
@@ -575,13 +707,14 @@ export const TemplateEditor: React.FC<TemplateEditorProps> = ({
                 {template.id === defaultTemplateId && (
                   <Badge tone="accent">Default</Badge>
                 )}
+                {isFormTemplate(template) && <Badge>Form</Badge>}
                 <Badge>{TEMPLATE_GROUPS[template.scope]}</Badge>
-                {canEdit && onMakeRecurring !== undefined && (
+                {canEdit && recurrable(template) && (
                   <IconButton
                     size="sm"
                     label={`Make ${template.name} recurring`}
                     onClick={() => {
-                      onMakeRecurring(template);
+                      onMakeRecurring?.(template);
                     }}
                   >
                     <LuRepeat className="h-3.5 w-3.5" />

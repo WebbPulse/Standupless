@@ -115,15 +115,16 @@ def workspace_of(record: Mapping[str, Any]) -> str:
     return ""
 
 
-def recount(repositories: Any, workspace_id: str, parent_id: str) -> None:
-    """Write one parent's counts from the children the index reports right now.
+def recount(repositories: Any, workspace_id: str, parent_id: str, *, write: bool = True) -> bool:
+    """Write one parent's counts from the children the index reports right now, answering whether they drifted.
 
     Nothing is written when the parent is gone: a delete removes the parent before
-    its children are reparented, and a recount then has nothing to correct.
+    its children are reparented, and a recount then has nothing to correct. With
+    `write` off the drift is reported and nothing is written.
     """
     parent = repositories.issues.get(workspace_id, parent_id)
     if parent is None:
-        return
+        return False
 
     children = repositories.issues.iter_children(workspace_id, parent_id)
     categories = {
@@ -132,8 +133,10 @@ def recount(repositories: Any, workspace_id: str, parent_id: str) -> None:
     total = len(children)
     completed = sum(1 for child in children if categories.get(child.status_id) in COMPLETED_CATEGORIES)
     if parent.progress.total == total and parent.progress.completed == completed:
-        return
-    repositories.issues.set_progress(workspace_id, parent_id, total, completed)
+        return False
+    if write:
+        repositories.issues.set_progress(workspace_id, parent_id, total, completed)
+    return True
 
 
 SYSTEM_ACTOR = "system"

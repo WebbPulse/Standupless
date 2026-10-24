@@ -7,8 +7,9 @@ one page of one Linear connection and writes what it found. The job walks a
 fixed list of phases, per mapped team its cycles, its projects with their
 milestones and updates, its issues with their comments, and then a second walk
 over the issues for sub-issue and relation links, and finally the workspace's
-initiatives. `phase_index` and `after` say where it is, and `cursor` counts the
-steps so the queue's duplicate guard works unchanged.
+initiatives and the dependencies between its projects. `phase_index` and
+`after` say where it is, and `cursor` counts the steps so the queue's
+duplicate guard works unchanged.
 
 Every row an import writes gets an id derived from the workspace and the Linear
 id, with the Linear creation time as its time part, so a step that runs twice,
@@ -53,10 +54,13 @@ from app.common.linear_api import (
     ISSUE_LINKS_QUERY,
     ISSUES_QUERY,
     PROJECT_MILESTONES_QUERY,
+    PROJECT_RELATIONS_QUERY,
     PROJECT_UPDATES_QUERY,
     PROJECTS_QUERY,
     LinearAuthFailed,
     LinearClient,
+    LinearError,
+    LinearRateLimited,
     Page,
 )
 
@@ -88,6 +92,7 @@ COUNT_NAMES: tuple[str, ...] = (
     "initiatives",
     "sub_issues",
     "relations",
+    "project_relations",
 )
 """The tallies a Linear import keeps, which the status read and the summary show."""
 
@@ -120,6 +125,15 @@ INITIATIVE_STATUSES = frozenset({"planned", "active", "completed"})
 
 RELATION_TYPES: dict[str, str] = {"blocks": "blocks", "related": "relates_to", "duplicate": "duplicate_of"}
 """Linear's issue relation types as Standupless link types. Linear's `similar` has no counterpart."""
+
+TRANSIENT_CODES = frozenset({"unreachable", "unavailable"})
+"""Linear failures a page retry can fix, which an optional phase passes on rather than skips."""
+
+PROJECT_DEPENDENCY_TYPES = frozenset({"dependency", "blocks"})
+"""The Linear project relation types that are a dependency between two projects."""
+
+WORKSPACE_PHASES: tuple[str, ...] = ("initiatives", "project_relations")
+"""What the import reads once for the workspace after every team: dependencies need every project written."""
 
 CROCKFORD = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
 
@@ -267,11 +281,11 @@ def team_mappings(api_key: str, choices: list[tuple[str, str]]) -> list[LinearTe
 
 
 def phases(job: Any) -> list[tuple[str, Optional[int]]]:
-    """Every phase of one job in order: each mapped team's walk, then the initiatives."""
+    """Every phase of one job in order: each mapped team's walk, then the workspace's initiatives and dependencies."""
     steps: list[tuple[str, Optional[int]]] = [
         (phase, index) for index in range(len(job.linear_teams)) for phase in TEAM_PHASES
     ]
-    steps.append(("initiatives", None))
+    steps.extend((phase, None) for phase in WORKSPACE_PHASES)
     return steps
 
 
@@ -510,6 +524,8 @@ def run_step(repositories: Any, job: Any, client: LinearClient) -> StepResult:
     phase, index = steps[job.phase_index]
     if phase == "initiatives":
         return _initiatives_step(repositories, job, client)
+    if phase == "project_relations":
+        return _project_relations_step(repositories, job, client)
     mapping = job.linear_teams[index]
     context = _team_context(repositories, job.workspace_id, mapping.team_id)
     handlers = {
@@ -1075,6 +1091,97 @@ def _initiatives_step(repositories: Any, job: Any, client: LinearClient) -> Step
                 row.model_copy(update={"initiative_id": initiative_id, "import_batch_id": job.import_id}),
                 keep_import_batch=True,
             )
+    result.next_after = page.end_cursor if page.has_next else None
+    return result
+
+
+def _dependency_ends(node: dict[str, Any]) -> Optional[tuple[dict[str, Any], dict[str, Any]]]:
+    """The blocking and the blocked Linear project of one dependency, or `None` when it is not one.
+
+    Linear anchors each end of a dependency at a project's start or end. The
+    project whose start waits on the other's end is the blocked one; any other
+    pairing reads as `project` blocking `relatedProject`.
+    """
+    if str(node.get("type") or "").strip().lower() not in PROJECT_DEPENDENCY_TYPES:
+        return None
+    project, related = _ref(node.get("project")), _ref(node.get("relatedProject"))
+    if project is None or related is None:
+        return None
+    anchor = str(node.get("anchorType") or "").strip().lower()
+    related_anchor = str(node.get("relatedAnchorType") or "").strip().lower()
+    if anchor == "start" and related_anchor == "end":
+        return related, project
+    return project, related
+
+
+def _project_relations_step(repositories: Any, job: Any, client: LinearClient) -> StepResult:
+    """Write one page of the Linear workspace's project dependencies as blocks links between imported projects.
+
+    A dependency is kept only when both projects were imported. One already
+    stored is left as it is, and one that would make projects wait on each other
+    is left out with a warning, the same rule a dependency drawn by hand follows.
+    The phase is fail-soft: a query Linear rejects, such as a field its schema
+    no longer has, ends the phase with a warning and the import still completes.
+    A refused key, a rate limit and a transient failure are raised as usual.
+    """
+    from app.common.db.dynamo.planning import ProjectRelation, project_relation_key
+    from app.common.project_relations import would_loop
+
+    result = StepResult()
+    try:
+        page = _page(client, PROJECT_RELATIONS_QUERY, ("projectRelations",), {}, job.after)
+    except (LinearAuthFailed, LinearRateLimited):
+        raise
+    except LinearError as exc:
+        if exc.code in TRANSIENT_CODES:
+            raise
+        _log.warning(
+            "Linear rejected the project dependencies query, so the import goes on without them.",
+            extra={
+                "event": "issue.import.linear_project_relations_skipped",
+                "import_id": job.import_id,
+                "code": exc.code,
+            },
+        )
+        result.warn("project_relations", f"Linear would not list project dependencies ({exc.code}), left out")
+        return result
+    relations = repositories.planning.list_project_relations(job.workspace_id) if page.nodes else []
+    for node in page.nodes:
+        ends = _dependency_ends(node)
+        if ends is None:
+            continue
+        blocker_id, blocked_id = (
+            linear_row_id(job.workspace_id, "project", str(end["id"]), end.get("createdAt")) for end in ends
+        )
+        if blocker_id == blocked_id:
+            continue
+        blocker = repositories.planning.get_project(job.workspace_id, blocker_id)
+        blocked = repositories.planning.get_project(job.workspace_id, blocked_id)
+        if blocker is None or blocked is None:
+            continue
+        if any(row.project_id == blocker_id and row.target_project_id == blocked_id for row in relations):
+            continue
+        if would_loop(relations, blocker_id, blocked_id):
+            result.warn(
+                "project_relations",
+                f"{blocker.name} blocking {blocked.name} would make the projects wait on each other, left out",
+            )
+            continue
+        relation = ProjectRelation(
+            workspace_id=job.workspace_id,
+            planning_key=project_relation_key(blocker_id, blocked_id),
+            relation_id=linear_row_id(job.workspace_id, "project_relation", str(node["id"]), node.get("createdAt")),
+            project_id=blocker_id,
+            target_project_id=blocked_id,
+            created_by=job.requested_by,
+            created_at=_instant(node.get("createdAt")) or utc_now(),
+        )
+        try:
+            repositories.planning.create_project_relation(relation)
+        except ConditionFailed:
+            continue
+        relations.append(relation)
+        result.add("project_relations")
     result.next_after = page.end_cursor if page.has_next else None
     return result
 

@@ -35,6 +35,8 @@ export interface UserRead {
   font_size?: FontSize;
   /** How the projects page is laid out, grouped, ordered and windowed. */
   projects_display?: ProjectsDisplayPreference;
+  /** Whether a connected app that took every scope gets scopes added later at its next refresh. */
+  auto_grant_new_scopes?: boolean;
 }
 
 /** The projects page arrangement an account saves, every field filled. */
@@ -52,6 +54,8 @@ export interface ProjectsDisplayPreference {
     | 'updated';
   closed: 'all' | 'week' | 'month' | 'quarter' | 'none';
   zoom: 'week' | 'month' | 'quarter' | 'year';
+  /** The shown list columns, comma separated, absent on a row saved before columns could be chosen. */
+  columns?: string;
 }
 
 /** The page a workspace opens on when the person enters it. */
@@ -119,6 +123,7 @@ export interface UserPreferencesUpdate {
   font_size?: FontSize;
   /** Replaces the saved projects page arrangement whole. */
   projects_display?: ProjectsDisplayPreference;
+  auto_grant_new_scopes?: boolean;
 }
 
 /** A role held at the workspace level. */
@@ -890,7 +895,7 @@ export interface IssueCreate {
   team_id: string;
   title: string;
   body?: string | null;
-  status_id?: string;
+  status_id?: string | null;
   priority?: IssuePriority;
   assignee_id?: string | null;
   label_ids?: string[];
@@ -901,10 +906,14 @@ export interface IssueCreate {
   cycle_id?: string | null;
   project_id?: string | null;
   project_milestone_id?: string | null;
+  /** A template that fills the fields left out; the create dialog sends it only for a form. */
+  template_id?: string | null;
+  /** A form template's answers by field key: text, or true and false for a checkbox. */
+  form_answers?: Record<string, string | boolean> | null;
 }
 
-/** What a template fills: a new issue, or a new project. */
-export type TemplateKind = 'issue' | 'project';
+/** What a template fills: a new issue, a new project, or a new document or update. */
+export type TemplateKind = 'issue' | 'project' | 'document';
 
 /** One milestone a project template adds, its target counted from the creation day. */
 export interface ProjectTemplateMilestone {
@@ -968,6 +977,34 @@ export interface ProjectBlueprint extends ProjectTemplateFields {
   issues: ProjectBlueprintIssue[];
 }
 
+/** The answer a form field takes. */
+export type FormFieldType = 'short_text' | 'long_text' | 'select' | 'checkbox';
+
+/** One choice of a select field; choosing it puts its label and priority on the issue. */
+export interface FormOption {
+  value: string;
+  label_id?: string | null;
+  priority?: IssuePriority | null;
+}
+
+/** One question a form template asks. A field sent without a key is given one, `f1` onwards. */
+export interface FormField {
+  key?: string | null;
+  label: string;
+  type?: FormFieldType;
+  required?: boolean;
+  description?: string | null;
+  options?: FormOption[];
+}
+
+/** A saved form field, which always has its key, type and options. */
+export interface FormFieldRead extends FormField {
+  key: string;
+  type: FormFieldType;
+  required: boolean;
+  options: FormOption[];
+}
+
 /** The issue fields a template fills, every one optional. */
 export interface TemplateFields {
   title?: string | null;
@@ -990,6 +1027,8 @@ export interface TemplateCreate extends TemplateFields {
   /** A project template sends `project` and none of the issue fields. */
   kind?: TemplateKind;
   project?: ProjectTemplateFields | null;
+  /** The questions that make an issue template a form. */
+  form_fields?: FormField[];
 }
 
 /** A template patch: only the fields sent change, and null clears one. */
@@ -998,6 +1037,8 @@ export interface TemplateUpdate extends TemplateFields {
   label_ids?: string[] | null;
   /** Replaces a project template's whole blueprint. */
   project?: ProjectTemplateFields | null;
+  /** Replaces a form's questions; null or an empty list turns the form off. */
+  form_fields?: FormField[] | null;
 }
 
 /**
@@ -1023,6 +1064,8 @@ export interface TemplateRead {
   kind?: TemplateKind;
   /** A project template's blueprint; null on an issue template. */
   project?: ProjectBlueprint | null;
+  /** A form template's questions; empty, or absent on an older answer, on any other template. */
+  form_fields?: FormFieldRead[];
   position: number;
   created_by: string | null;
   created_at: string;
@@ -1042,12 +1085,29 @@ export interface TemplateSettingsRead {
   effective_default_template_id: string | null;
   default_project_template_id?: string | null;
   effective_default_project_template_id?: string | null;
+  default_document_template_id?: string | null;
+  effective_default_document_template_id?: string | null;
+  default_update_template_id?: string | null;
+  effective_default_update_template_id?: string | null;
 }
 
 /** The body that sets or clears a team's defaults; only the fields sent change. */
 export interface TemplateSettingsUpdate {
   default_template_id?: string | null;
   default_project_template_id?: string | null;
+  default_document_template_id?: string | null;
+  default_update_template_id?: string | null;
+}
+
+/**
+ * The document templates a project or initiative offers: its teams' and the
+ * workspace's, or the workspace's alone for an initiative, with the ones its
+ * new document flow and update composer open with.
+ */
+export interface DocumentTemplateListRead {
+  templates: TemplateRead[];
+  default_document_template_id: string | null;
+  default_update_template_id: string | null;
 }
 
 /** How often a recurring issue repeats. */
@@ -2160,9 +2220,60 @@ export interface ProjectRead {
   open_issue_count?: number | null;
   /** When the project last became completed or canceled, null while it is open. */
   completed_at?: string | null;
+  /** Template issues left out, answered by a create from a project template, empty when none were. */
+  skipped_template_issues?: SkippedTemplateIssueRead[] | null;
+  /** The visible projects that block this one, oldest link first. */
+  blocked_by_project_ids?: string[];
+  /** The visible projects this one blocks, oldest link first. */
+  blocking_project_ids?: string[];
+  /** The project's dated milestones, earliest first, filled on the project list. */
+  milestone_markers?: ProjectMilestoneMarkerRead[];
   created_by: string;
   created_at: string;
   updated_at: string;
+}
+
+/** One dated milestone of a project, as the timeline marks it on the lane. */
+export interface ProjectMilestoneMarkerRead {
+  milestone_id: string;
+  name: string;
+  target_date: string;
+  /** Every issue in the milestone is finished, and it holds at least one. */
+  completed: boolean;
+}
+
+/** One template issue a project created from a template left out, and why. */
+export interface SkippedTemplateIssueRead {
+  /** The issue's key within the template. */
+  key: string;
+  title: string;
+  /** Why the issue rules refused it. */
+  reason: string;
+}
+
+/** How a project dependency reads from the project it is listed on. */
+export type ProjectRelationType = 'blocks' | 'blocked_by';
+
+/** One dependency between two projects, read from the side of `project_id`. */
+export interface ProjectRelationRead {
+  relation_id: string;
+  type: ProjectRelationType;
+  project_id: string;
+  target_project_id: string;
+  created_by: string;
+  created_at: string;
+}
+
+/** A dependency to add between a project and another one. */
+export interface ProjectRelationCreate {
+  type: ProjectRelationType;
+  target_project_id: string;
+}
+
+/** The body the project relation list answers with, whole and never paged. */
+export interface ProjectRelationListRead {
+  relations: ProjectRelationRead[];
+  next_cursor: string | null;
 }
 
 /** What a project close does with the issues still open in it. */
@@ -3888,7 +3999,8 @@ export type LinearImportCount =
   | 'project_updates'
   | 'initiatives'
   | 'sub_issues'
-  | 'relations';
+  | 'relations'
+  | 'project_relations';
 
 /** One Linear team a Linear import reads and the Standupless team it writes into. */
 export interface LinearTeamMappingRead {
@@ -4078,8 +4190,11 @@ export interface DocumentRead extends DocumentSummaryRead {
 
 /** The body a document create takes; the parent comes from the path. */
 export interface DocumentCreate {
-  title: string;
+  /** Required unless `template_id` is sent, whose title fills it. */
+  title?: string;
   body?: string;
+  /** A document template the parent offers, filling what was left out. */
+  template_id?: string;
 }
 
 /**
@@ -4173,4 +4288,79 @@ export interface DraftListRead {
 /** The body a draft save takes, replacing what the thread's draft held. */
 export interface DraftWrite {
   body: string;
+}
+
+/** The two kinds of record a customer request can name. */
+export type CustomerTargetKind = 'issue' | 'project';
+
+/**
+ * One customer of the workspace, with how many requests this caller can see
+ * from it. `can_edit` and `can_delete` say what this caller may do with it.
+ */
+export interface CustomerRead {
+  customer_id: string;
+  workspace_id: string;
+  name: string;
+  domains: string[];
+  tier: string | null;
+  owner_id: string | null;
+  revenue: number | null;
+  size: number | null;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+  request_count: number;
+  can_edit: boolean;
+  can_delete: boolean;
+}
+
+/** The body a customer create takes; only the name is required. */
+export interface CustomerCreate {
+  name: string;
+  domains?: string[];
+  tier?: string | null;
+  owner_id?: string | null;
+  revenue?: number | null;
+  size?: number | null;
+}
+
+/** The body a customer edit takes; a field left out is kept and null clears it. */
+export type CustomerPatch = Partial<CustomerCreate>;
+
+/** The workspace's customers, by name. */
+export interface CustomerListRead {
+  customers: CustomerRead[];
+  next_cursor: string | null;
+}
+
+/**
+ * One customer request: a customer asking for an issue or a project, with an
+ * optional quote. `target_key` is the issue key and empty for a project.
+ */
+export interface CustomerRequestRead {
+  request_id: string;
+  workspace_id: string;
+  customer_id: string;
+  customer_name: string;
+  target_kind: CustomerTargetKind;
+  target_id: string;
+  target_key: string;
+  target_title: string;
+  body: string;
+  author_id: string;
+  source?: string | null;
+  created_at: string;
+  can_delete: boolean;
+}
+
+/** The body a request create takes; the issue or project comes from the path. */
+export interface CustomerRequestCreate {
+  customer_id: string;
+  body?: string;
+}
+
+/** A list of customer requests, newest first. */
+export interface CustomerRequestListRead {
+  requests: CustomerRequestRead[];
+  next_cursor: string | null;
 }

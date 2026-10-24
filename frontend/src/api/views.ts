@@ -105,14 +105,17 @@ export interface ViewFilterNegations {
 
 /**
  * The keys a view of projects stores: the team narrowed to, the project
- * statuses, the lead (a user id or `none`), and whether a parent team rolls up
- * its sub-teams' projects, which an absent key reads as doing.
+ * statuses, the lead (a user id or `none`), whether projects must or must not
+ * be blocked or blocking, and whether a parent team rolls up its sub-teams'
+ * projects, which an absent key reads as doing.
  */
 export interface ProjectViewFilter {
   team_id?: string;
   status?: ProjectStatus | ProjectStatus[];
   lead_id?: string | string[];
   sub_teams?: 'true' | 'false';
+  is_blocked?: 'true' | 'false';
+  is_blocking?: 'true' | 'false';
 }
 
 /** A stored filter with the negation keys, every key the issue list takes. */

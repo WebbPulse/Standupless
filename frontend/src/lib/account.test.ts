@@ -34,6 +34,21 @@ describe('session labels', () => {
     expect(sessionLabel(blank)).toBe('Desktop');
   });
 
+  it('names a browser by its family and platform', () => {
+    expect(
+      sessionLabel({ ...blank, browser: 'Chrome', platform: 'macOS' })
+    ).toBe('Chrome on macOS');
+    expect(sessionLabel({ ...blank, browser: 'Firefox' })).toBe('Firefox');
+    expect(
+      sessionLabel({
+        ...blank,
+        client: 'Standupless',
+        browser: 'Chrome',
+        platform: 'macOS',
+      })
+    ).toBe('Standupless desktop on macOS');
+  });
+
   it('names the desktop app, the mobile app and the CLI', () => {
     expect(
       sessionLabel({ ...blank, client: 'Standupless', platform: 'Windows' })

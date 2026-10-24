@@ -9,6 +9,7 @@ a principal for.
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from typing import Iterable
 
 KEY_KINDS: tuple[str, ...] = ("user", "workspace")
@@ -54,6 +55,55 @@ API_KEY_SCOPES: tuple[str, ...] = (
 Exported so the route validation, the MCP tool table, the authorization server and
 the frontend's checkbox list all read one definition rather than several that drift.
 """
+
+_FIRST_SCOPES = ("issues:read", "issues:write", "comments:write", "teams:read", "views:read")
+
+_SPLIT_SCOPES_AT = "2026-09-28T04:55:47Z"
+
+_RELEASE_SCOPES_AT = "2026-10-07T09:00:41Z"
+
+SCOPE_INTRODUCED_AT: dict[str, str] = {
+    **{scope: "" for scope in _FIRST_SCOPES},
+    **{scope: _SPLIT_SCOPES_AT for scope in API_KEY_SCOPES if scope not in _FIRST_SCOPES},
+    "releases:read": _RELEASE_SCOPES_AT,
+    "releases:write": _RELEASE_SCOPES_AT,
+}
+"""When each scope joined `API_KEY_SCOPES`, as the UTC time its change merged.
+
+An empty time means the scope was offered from the start. The record lets a grant be
+read against the scopes offered when it was given, so a grant that took everything on
+offer then can be told from one the person narrowed. Each time is the merge into
+`staging`, which is no later than the deploy, so a grant given between the two is read
+as narrower than it was and is never widened by mistake. A scope added to
+`API_KEY_SCOPES` needs an entry here, and a test holds the two to the same set.
+"""
+
+
+def scopes_offered_at(moment: str) -> tuple[str, ...]:
+    """The scopes on offer at an RFC 3339 time, in fixed order.
+
+    A time that cannot be read is taken as now, so a grant of unknown age is held to
+    every scope there is and never counts as having taken all of a smaller set.
+    """
+    at = _parse(moment)
+    if at is None:
+        return API_KEY_SCOPES
+    return tuple(scope for scope in API_KEY_SCOPES if (_parse(SCOPE_INTRODUCED_AT.get(scope, "")) or _EPOCH) <= at)
+
+
+_EPOCH = datetime(1970, 1, 1, tzinfo=timezone.utc)
+
+
+def _parse(moment: str) -> datetime | None:
+    """An RFC 3339 string as an aware datetime, or `None` for an empty or unreadable one."""
+    if not moment:
+        return None
+    try:
+        parsed = datetime.fromisoformat(moment.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=timezone.utc)
+
 
 LEGACY_SCOPE_ALIASES: dict[str, str] = {
     "members:read": "teams:read",

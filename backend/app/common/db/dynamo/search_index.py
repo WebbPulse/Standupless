@@ -262,6 +262,16 @@ class SearchIndexRepository:
         for item in items:
             yield str(item["term_doc"]).split("#", 1)[1]
 
+    def iter_team(self, workspace_id: str, team_id: str) -> Iterator[tuple[str, str]]:
+        """Every posting of one team as `(term, doc)`, for a reindex to compare against what it should hold."""
+        if not workspace_id or not team_id:
+            return
+        items = self._repository.iter_query(Key("ws_team").eq(search_partition(workspace_id, team_id)))
+        for item in items:
+            term, separator, doc = str(item["term_doc"]).partition("#")
+            if separator and term and doc:
+                yield term, doc
+
     def add(self, workspace_id: str, team_id: str, term: str, issue_id: str) -> None:
         """Post one issue under one term, a single put with no read before it."""
         self._repository.put({"ws_team": search_partition(workspace_id, team_id), "term_doc": term_doc(term, issue_id)})

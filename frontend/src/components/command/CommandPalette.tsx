@@ -45,6 +45,7 @@ import {
   LuArrowLeftRight,
   LuArrowRight,
   LuBot,
+  LuBuilding2,
   LuChevronLeft,
   LuCircleDot,
   LuFileText,
@@ -96,6 +97,7 @@ import { cn } from '../../lib/cn';
 import {
   accountSecuritySettingsPath,
   cliSetupPath,
+  customersPath,
   cyclePath,
   documentPath,
   inboxPath,
@@ -120,12 +122,14 @@ import {
   teamCyclesPath,
   teamPath,
   teamReleasesPath,
+  teamViewsPath,
   teamSettingsPath,
   teamTriagePath,
   viewsPath,
 } from '../../lib/paths';
 import { COPY_ISSUE_URL_KEYS } from '../../lib/copyIssue';
 import { favoriteHref } from '../../lib/favorites';
+import { isFormTemplate } from '../../lib/issueTemplates';
 import ProjectIcon from '../planning/ProjectIcon';
 import {
   matchesTerm,
@@ -694,6 +698,13 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
         icon: <LuGoal className={ICON} />,
         to: initiativesPath(slug),
       });
+      built.push({
+        id: 'nav-customers',
+        label: 'Customers',
+        keywords: 'accounts companies requests feedback',
+        icon: <LuBuilding2 className={ICON} />,
+        to: customersPath(slug),
+      });
     }
     if (team !== undefined) {
       built.push({
@@ -726,6 +737,13 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
         keywords: 'releases deploys deployments shipped',
         icon: <LuRocket className={ICON} />,
         to: teamReleasesPath(slug, team.key_prefix),
+      });
+      built.push({
+        id: 'nav-team-views',
+        label: `${team.name} views`,
+        keywords: 'views saved filters go to views',
+        icon: <LuLayers className={ICON} />,
+        to: teamViewsPath(slug, team.key_prefix),
       });
       built.push({
         id: 'nav-archive',
@@ -969,7 +987,9 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
           keywords: template.title ?? '',
           ...(template.id === templateList?.default_template_id
             ? { hint: 'Default' }
-            : {}),
+            : isFormTemplate(template)
+              ? { hint: 'Form' }
+              : {}),
           icon: <LuFileText className={ICON} />,
           run: () => {
             createIssue.open({

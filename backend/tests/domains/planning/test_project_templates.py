@@ -4,7 +4,9 @@ A project template is an issue template row of another kind, so the lists keep
 the two apart and a team keeps one default of each. Saving holds every key and
 reference strictly; creating a project fills only the fields the create left
 out, resolves every date from the creation day, and adds the template's
-milestones and issues, sub-issues under their parents.
+milestones and issues, sub-issues under their parents. The rows it has just
+written are trusted as written, so read lag never drops an issue, and an issue
+the rules still refuse is named in the create's answer.
 """
 
 from __future__ import annotations
@@ -215,3 +217,75 @@ def test_a_template_none_of_the_projects_teams_offer_is_refused(
     )
 
     assert response.status_code == 422, response.text
+
+
+def test_read_lag_on_the_new_project_milestones_and_parents_skips_no_issue(
+    client: TestClient, teams: TestClient, workspace: str, repositories: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Reads that cannot yet see the rows just written still leave every template issue created and placed."""
+    sign_in(teams, OWNER)
+    template = _save(teams, workspace)
+    sign_in(client, MEMBER)
+
+    def lagging(*_args: Any, **_kwargs: Any) -> None:
+        """A read made before the write it looks for has propagated."""
+        return None
+
+    with monkeypatch.context() as patch:
+        patch.setattr(repositories.planning, "get_project", lagging)
+        patch.setattr(repositories.planning, "get_milestone", lagging)
+        patch.setattr(repositories.issues, "get", lagging)
+        response = client.post(
+            f"{_base(workspace)}/projects",
+            json={"team_ids": [TEAM], "name": "Lagging launch", "template_id": template["id"]},
+        )
+
+    assert response.status_code == 201, response.text
+    project = response.json()
+    assert project["skipped_template_issues"] == []
+    milestones = client.get(f"{_base(workspace)}/projects/{project['project_id']}/milestones").json()["milestones"]
+    by_name = {row["name"]: row["milestone_id"] for row in milestones}
+    issues = {row.title: row for row in repositories.issues.iter_for_project(workspace, TEAM, project["project_id"])}
+    assert set(issues) == {"Write the plan", "Review the plan", "Announce"}
+    assert issues["Write the plan"].project_milestone_id == by_name["Alpha"]
+    assert issues["Review the plan"].parent_id == issues["Write the plan"].issue_id
+    assert issues["Review the plan"].project_milestone_id == by_name["Alpha"]
+    assert issues["Announce"].project_milestone_id == by_name["Beta"]
+
+
+def test_a_template_issue_the_rules_refuse_is_reported_in_the_answer(
+    client: TestClient, teams: TestClient, workspace: str, repositories: Any
+) -> None:
+    """A sub-issue nested a level too deep is left out and named, and the rest are created."""
+    sign_in(teams, OWNER)
+    nested = {
+        "issues": [
+            {"key": "top", "title": "Top"},
+            {"key": "child", "title": "Child", "parent_key": "top"},
+            {"key": "grandchild", "title": "Grandchild", "parent_key": "child"},
+        ]
+    }
+    template = _save(teams, workspace, project=nested)
+    sign_in(client, OWNER)
+
+    response = client.post(
+        f"{_base(workspace)}/projects", json={"team_ids": [TEAM], "name": "Deep", "template_id": template["id"]}
+    )
+
+    assert response.status_code == 201, response.text
+    assert response.json()["skipped_template_issues"] == [
+        {"key": "grandchild", "title": "Grandchild", "reason": "Sub-issues are one level deep"}
+    ]
+    project_id = response.json()["project_id"]
+    titles = {row.title for row in repositories.issues.iter_for_project(workspace, TEAM, project_id)}
+    assert titles == {"Top", "Child"}
+
+
+def test_a_project_created_without_a_template_reports_no_skipped_issues(client: TestClient, workspace: str) -> None:
+    """The skipped list is answered only by a create from a template."""
+    sign_in(client, OWNER)
+
+    response = client.post(f"{_base(workspace)}/projects", json={"team_ids": [TEAM], "name": "Plain"})
+
+    assert response.status_code == 201, response.text
+    assert response.json()["skipped_template_issues"] is None

@@ -73,6 +73,7 @@ def post_update(repositories: Any, project_id: str, author_id: str, health: str 
         "delete_milestone",
         "delete_project",
         "delete_project_update",
+        "delete_project_relation",
     ],
 )
 def test_destructive_tools_say_so(name: str) -> None:
@@ -97,6 +98,9 @@ def test_destructive_tools_say_so(name: str) -> None:
         ("delete_project", ("projects:write",)),
         ("update_project_update", ("projects:write",)),
         ("delete_project_update", ("projects:write",)),
+        ("list_project_relations", ("projects:read",)),
+        ("create_project_relation", ("projects:write",)),
+        ("delete_project_relation", ("projects:write",)),
     ],
 )
 def test_each_tool_takes_its_routes_scope(name: str, scopes: tuple[str, ...]) -> None:
@@ -773,3 +777,72 @@ def test_update_project_refuses_a_malformed_open_issues_choice(
     text = refusal(tool(client, secret, "update_project", closing))
 
     assert "open_issues" in text
+
+
+def test_project_dependencies_round_trip_over_mcp(
+    client: TestClient, repositories: Any, planning: dict[str, str]
+) -> None:
+    """An agent links two projects by name, reads the link from both sides and removes it by the other project."""
+    secret = mint_for(repositories, MEMBER, PROJECTS)
+    second = answer(tool(client, secret, "create_project", {"name": "Second project", "team_ids": [TEAM]}))
+
+    created = answer(
+        tool(
+            client,
+            secret,
+            "create_project_relation",
+            {"project_id": "Second project", "type": "blocked_by", "target_project_id": "Home project"},
+        )
+    )
+    home = answer(tool(client, secret, "get_project", {"project_id": planning["project_id"]}))
+    listed = answer(tool(client, secret, "list_project_relations", {"project_id": planning["project_id"]}))
+    looped = refusal(
+        tool(
+            client,
+            secret,
+            "create_project_relation",
+            {"project_id": "Second project", "type": "blocks", "target_project_id": "Home project"},
+        )
+    )
+    removed = answer(
+        tool(
+            client,
+            secret,
+            "delete_project_relation",
+            {"project_id": "Home project", "target_project_id": second["project_id"]},
+        )
+    )
+
+    assert created["type"] == "blocked_by"
+    assert home["blocking_project_ids"] == [second["project_id"]]
+    assert [(row["type"], row["target_project_id"]) for row in listed["relations"]] == [
+        ("blocks", second["project_id"])
+    ]
+    assert looped
+    assert removed["relation_id"] == created["relation_id"]
+    assert answer(tool(client, secret, "list_project_relations", {"project_id": "Home project"}))["relations"] == []
+
+
+def test_list_projects_filters_by_blocked_and_blocking(
+    client: TestClient, repositories: Any, planning: dict[str, str]
+) -> None:
+    """list_projects takes the projects page's blocked and blocking filters and refuses a non boolean."""
+    secret = mint_for(repositories, MEMBER, PROJECTS)
+    second = answer(tool(client, secret, "create_project", {"name": "Second project", "team_ids": [TEAM]}))
+    answer(
+        tool(
+            client,
+            secret,
+            "create_project_relation",
+            {"project_id": "Second project", "type": "blocked_by", "target_project_id": "Home project"},
+        )
+    )
+
+    def listed(arguments: dict[str, Any]) -> set[str]:
+        """The project ids list_projects answers for these arguments."""
+        return {row["project_id"] for row in answer(tool(client, secret, "list_projects", arguments))["projects"]}
+
+    assert listed({"is_blocked": True}) == {second["project_id"]}
+    assert listed({"is_blocking": True}) == {planning["project_id"]}
+    assert listed({"is_blocked": False, "is_blocking": False}) == set()
+    assert "is_blocked" in refusal(tool(client, secret, "list_projects", {"is_blocked": "yes"}))

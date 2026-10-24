@@ -17,7 +17,13 @@ from app.common import pulse
 from app.common.api.dependencies.authz import AuthzContext, require_scopes_present
 from app.common.api.dependencies.repositories import Repositories
 from app.common.api.pagination import decode_offset_cursor, encode_offset_cursor
-from app.common.api.schemas.planning import ProjectCreate, ProjectOpenIssues, ProjectRead, ProjectUpdate
+from app.common.api.schemas.planning import (
+    ProjectCreate,
+    ProjectMilestoneMarkerRead,
+    ProjectOpenIssues,
+    ProjectRead,
+    ProjectUpdate,
+)
 from app.common.db.dynamo.base import utc_now
 from app.common.db.dynamo.issues import Issue
 from app.common.db.dynamo.planning import Project, new_planning_id, normalise_project_status, project_key
@@ -38,6 +44,7 @@ from app.common.planning_rules import (
     visible_team_ids,
 )
 from app.common.project_cadence import workspace_interval
+from app.common.project_relations import Dependencies, dependency_map, fill_one, with_dependencies
 from app.common.project_templates import add_template_rows, fill_project, find_project_template
 from app.common.relation_effects import cancelled_status, categories_for
 from app.common.sub_teams import listed_teams
@@ -67,6 +74,25 @@ def merged_team_ids(project: Project, visible: list[str], requested: list[str]) 
     return merged, added + removed
 
 
+def milestone_markers(
+    repositories: Repositories, workspace_id: str, project_ids: set[str]
+) -> dict[str, list[ProjectMilestoneMarkerRead]]:
+    """The dated milestones of each listed project, earliest first, from one workspace query.
+
+    Undated milestones are left out, since the timeline has nowhere to mark them.
+    """
+    if not project_ids:
+        return {}
+    markers: dict[str, list[ProjectMilestoneMarkerRead]] = {}
+    for milestone in repositories.planning.list_workspace_milestones(workspace_id):
+        if milestone.project_id not in project_ids or not milestone.target_date:
+            continue
+        markers.setdefault(milestone.project_id, []).append(ProjectMilestoneMarkerRead.from_row(milestone))
+    for rows in markers.values():
+        rows.sort(key=lambda marker: (marker.target_date, marker.milestone_id))
+    return markers
+
+
 def list_projects(
     repositories: Repositories,
     context: AuthzContext,
@@ -77,6 +103,8 @@ def list_projects(
     limit: int,
     initiative_id: Optional[str] = None,
     include_sub_teams: bool = False,
+    is_blocked: Optional[bool] = None,
+    is_blocking: Optional[bool] = None,
 ) -> tuple[list[ProjectRead], Optional[str]]:
     """One page of the workspace's projects the caller can see, and the next cursor.
 
@@ -85,7 +113,10 @@ def list_projects(
     ones in that initiative, which a guest may not filter by. The rows are read whole
     and paged over the filtered order, so a page is never left short by projects
     the caller cannot see. `include_sub_teams` widens `team_id` to the team and
-    its sub-teams the caller may read, as the issue list does.
+    its sub-teams the caller may read, as the issue list does. `is_blocked` keeps
+    the projects an open visible blocker holds up, or with false the rest, and
+    `is_blocking` the open projects that hold a visible project up, or with false
+    the rest, the same reading as the list's blocked and blocking flags.
     """
     wanted_status = None if status_filter is None else normalise_project_status(status_filter)
     if status_filter is not None and status_filter not in STATUS_VALUES:
@@ -100,10 +131,15 @@ def list_projects(
     visible = set(visible_team_ids(repositories, context))
     default_days = workspace_interval(repositories.workspaces, context.workspace_id)
     bodies: list[ProjectRead] = []
+    readable: set[str] = set()
+    closed: set[str] = set()
     for row in repositories.planning.list_projects(context.workspace_id):
         teams = visible_project_teams(row, visible)
         if not teams:
             continue
+        readable.add(row.project_id)
+        if normalise_project_status(row.status) in CLOSED_STATUSES:
+            closed.add(row.project_id)
         if wanted_teams is not None and wanted_teams.isdisjoint(teams):
             continue
         if wanted_status is not None and row.status != wanted_status:
@@ -112,13 +148,46 @@ def list_projects(
             continue
         bodies.append(ProjectRead.from_row(row, teams, default_interval_days=default_days))
 
+    dependencies = dependency_map(repositories.planning.list_project_relations(context.workspace_id), readable)
+    if is_blocked is not None or is_blocking is not None:
+        bodies = [
+            body
+            for body in bodies
+            if _dependency_flags_match(body.project_id, dependencies, closed, is_blocked, is_blocking)
+        ]
     narrowed = f"{team_id}:subs" if include_sub_teams and team_id is not None else team_id or "all"
     scope = f"projects:{context.workspace_id}:{narrowed}:{wanted_status or 'all'}:{initiative_id or 'all'}"
+    if is_blocked is not None or is_blocking is not None:
+        scope = f"{scope}:{_flag_scope(is_blocked)}{_flag_scope(is_blocking)}"
     offset = decode_offset_cursor(cursor, scope)
-    window = bodies[offset : offset + limit]
+    window = [with_dependencies(body, dependencies) for body in bodies[offset : offset + limit]]
+    markers = milestone_markers(repositories, context.workspace_id, {body.project_id for body in window})
+    for body in window:
+        body.milestone_markers = markers.get(body.project_id, [])
     next_offset = offset + len(window)
     next_cursor = encode_offset_cursor(next_offset, scope) if next_offset < len(bodies) else None
     return window, next_cursor
+
+
+def _flag_scope(flag: Optional[bool]) -> str:
+    """One dependency filter as a letter of the cursor scope, so a cursor never crosses filters."""
+    return "a" if flag is None else ("y" if flag else "n")
+
+
+def _dependency_flags_match(
+    project_id: str,
+    dependencies: Dependencies,
+    closed: set[str],
+    is_blocked: Optional[bool],
+    is_blocking: Optional[bool],
+) -> bool:
+    """Whether a project's blocked and blocking state is the one each set filter asks for."""
+    blockers, held = dependencies.get(project_id, ([], []))
+    blocked = any(blocker not in closed for blocker in blockers)
+    blocking = project_id not in closed and bool(held)
+    if is_blocked is not None and blocked != is_blocked:
+        return False
+    return is_blocking is None or blocking == is_blocking
 
 
 def create_project(repositories: Repositories, context: AuthzContext, payload: ProjectCreate) -> ProjectRead:
@@ -127,7 +196,8 @@ def create_project(repositories: Repositories, context: AuthzContext, payload: P
     The caller must be able to write in every team named, since a project put on a
     team appears in that team's planning. A named project template fills the
     fields left out before anything is checked, and its milestones and issues
-    are added once the project exists, its dates counted from today.
+    are added once the project exists, its dates counted from today. Any
+    template issue left out is named in `skipped_template_issues`.
     """
     teams = payload.teams
     require_team_changes(repositories, context, teams)
@@ -176,7 +246,7 @@ def create_project(repositories: Repositories, context: AuthzContext, payload: P
         created, teams, default_interval_days=workspace_interval(repositories.workspaces, context.workspace_id)
     )
     if template is not None:
-        add_template_rows(repositories, context, body, template, today)
+        body.skipped_template_issues = add_template_rows(repositories, context, created, template, today)
     return body
 
 
@@ -341,6 +411,7 @@ def update_project(
         visible_project_teams(stored, visible),
         default_interval_days=workspace_interval(repositories.workspaces, context.workspace_id),
     )
+    fill_one(repositories, context, body)
     if closed and ("status" in fields or choice is not None):
         body.open_issue_count = len(open_issues) - store_open_issues(repositories, context, planned)
     return body
@@ -349,7 +420,9 @@ def update_project(
 def delete_project(
     repositories: Repositories, context: AuthzContext, project_id: str, team_id: Optional[str] = None
 ) -> None:
-    """Delete a project with its milestones, updates and documents, leaving every issue that pointed at it in place.
+    """Delete a project with its milestones, updates, documents and dependencies.
+
+    Every issue that pointed at it stays in place.
 
     Takes an administrator of every one of the project's teams, because the
     delete detaches issues in each of them.
@@ -358,5 +431,6 @@ def delete_project(
     require_project_admin(repositories, context, project)
     repositories.planning.delete_project_milestones(context.workspace_id, project_id)
     repositories.planning.delete_project_updates(context.workspace_id, project_id)
+    repositories.planning.delete_project_relations_for(context.workspace_id, project_id)
     repositories.documents.delete_for_parent(context.workspace_id, "project", project_id)
     repositories.planning.delete(context.workspace_id, project_key(project_id))

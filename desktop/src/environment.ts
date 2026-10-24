@@ -22,6 +22,8 @@ export interface Environment {
   scheme: string;
   /** Whether this build checks the `desktop-latest` release for updates. */
   autoUpdate: boolean;
+  /** The refresh cookie, whose arrival or removal means a sign-in or sign-out. */
+  refreshCookie: string;
 }
 
 /** The two hosted environments. */
@@ -32,6 +34,7 @@ export const ENVIRONMENTS: Readonly<Record<EnvironmentName, Environment>> = {
     apiOrigin: 'https://api.standupless.dev',
     scheme: 'standupless',
     autoUpdate: true,
+    refreshCookie: 'wp_refresh',
   },
   staging: {
     name: 'staging',
@@ -39,6 +42,7 @@ export const ENVIRONMENTS: Readonly<Record<EnvironmentName, Environment>> = {
     apiOrigin: 'https://api.staging.standupless.dev',
     scheme: 'standupless-staging',
     autoUpdate: false,
+    refreshCookie: 'wp_refresh_staging',
   },
 };
 

@@ -66,6 +66,14 @@ vi.mock('../../api/drafts', () => ({
   deleteDraft: () => Promise.resolve(),
 }));
 
+vi.mock('../../api/customers', () => ({
+  listCustomers: () => Promise.resolve([]),
+  listTargetRequests: () => Promise.resolve([]),
+  createCustomer: vi.fn(),
+  createCustomerRequest: vi.fn(),
+  deleteCustomerRequest: vi.fn(),
+}));
+
 vi.mock('../../api/documents', () => ({
   listDocuments: () => Promise.resolve([]),
   listIssueDocuments: () => Promise.resolve([]),

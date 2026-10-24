@@ -34,7 +34,7 @@ from app.common.db.dynamo.github import IssueLink, PullRequestState, link_key, s
 from app.common.issue_key_search import find_keys
 from app.common.issue_move import find_issue_by_number
 from app.common.sla import apply_sla
-from app.domains.integrations import linking, pr_labels, pr_status
+from app.domains.integrations import linking, pr_labels, pr_resync, pr_status
 from app.domains.integrations.pr_summary import refresh_for_pr
 from app.domains.integrations.service import effective_transitions
 
@@ -205,6 +205,11 @@ def handle_record(repositories: Repositories, record: Mapping[str, Any]) -> None
         )
         return
 
+    if event == pr_resync.RESYNC_EVENT:
+        pr_resync.handle_resync(repositories, workspace_id, body)
+        return
+    pr_resync.maybe_sweep(repositories, workspace_id)
+
     repository = body.get("repository")
     if event in NAMED_REPOSITORY_EVENTS and isinstance(repository, Mapping):
         from app.domains.integrations.installs import refresh_repository_names, refresh_repository_visibility
@@ -215,9 +220,7 @@ def handle_record(repositories: Repositories, record: Mapping[str, Any]) -> None
         return
 
     if event == "pull_request":
-        recorded = _handle_pull_request(repositories, workspace_id, body, _event_time(record, payload))
-        _track_reviewers(repositories, workspace_id, body, _event_time(record, payload), recorded=recorded)
-        _reconcile_on_close(repositories, workspace_id, body, installation_id)
+        fold_pull_request(repositories, workspace_id, body, _event_time(record, payload))
     elif event == "push":
         _handle_push(repositories, workspace_id, body, _event_time(record, payload))
     elif event == "issues":
@@ -246,6 +249,20 @@ def handle_record(repositories: Repositories, record: Mapping[str, Any]) -> None
         from app.domains.integrations.tag_releases import handle_release
 
         handle_release(repositories, workspace_id, body)
+
+
+def fold_pull_request(
+    repositories: Repositories,
+    workspace_id: str,
+    body: Mapping[str, Any],
+    event_at: datetime,
+) -> None:
+    """Fold one `pull_request` delivery, whether GitHub sent it or a read back rebuilt it."""
+    installation = body.get("installation")
+    installation_id = str(installation.get("id", "")) if isinstance(installation, Mapping) else ""
+    recorded = _handle_pull_request(repositories, workspace_id, body, event_at)
+    _track_reviewers(repositories, workspace_id, body, event_at, recorded=recorded)
+    _reconcile_on_close(repositories, workspace_id, body, installation_id)
 
 
 def _reconcile_on_close(
@@ -345,6 +362,8 @@ def _handle_pull_request(
 
     A key the body only mentions in passing links its issue and moves nothing. Once
     an edit names it in the title or after a magic word, it moves as a new link does.
+    A key a merged pull request's commits only mention in a commit body moves nothing
+    either, unless the merged pull request that commit cites closed it.
     """
     pull_request = body.get("pull_request")
     repository = body.get("repository")
@@ -426,12 +445,11 @@ def _handle_pull_request(
         match = next(row for row in found if row.key == key)
         link_id = f"{node_id}#{issue.issue_id}"
         previous = repositories.github.get_link(workspace_id, link_id)
-        issue_trigger = trigger if match.moves_status else None
         holds = promoted_holds.get(key, match.holds_on_merge)
-        if issue_trigger == "pr_merged" and holds:
-            issue_trigger = None
+        moves = match.moves_status or promoted_holds.get(key) is False
+        issue_trigger = trigger if moves else None
         newly_moving = previous is None or not previous.moves_status
-        if match.moves_status and newly_moving and issue_trigger is None:
+        if moves and newly_moving and issue_trigger is None:
             issue_trigger = linking.trigger_for_new_link(
                 action,
                 state=str(pull_request.get("state", "")),
@@ -453,7 +471,7 @@ def _handle_pull_request(
                 pr_state=state,
                 author_login=author,
                 magic_word=match.magic_word,
-                moves_status=match.moves_status,
+                moves_status=moves,
                 holds_on_merge=holds,
                 applied_status_id=previous.applied_status_id if previous is not None else None,
                 comment_id=previous.comment_id if previous is not None else None,
@@ -481,6 +499,7 @@ def _handle_pull_request(
                 issue,
                 issue_trigger,
                 closes=match.magic_word is not None,
+                holds=holds,
                 base_branch=base_branch,
                 event_at=event_at,
             )
@@ -860,6 +879,7 @@ def _apply_transition(
     closes: bool,
     event_at: datetime,
     base_branch: str = "",
+    holds: bool = False,
 ) -> str | None:
     """Move one issue if a rule says to and nobody has moved it since.
 
@@ -869,7 +889,10 @@ def _apply_transition(
     one for the branch the pull request targets, so a `Fixes` merge into `staging`
     lands in that branch's status rather than closing the issue. Opening, readying
     and merging only ever move an issue forward, so a promotion naming issues already
-    on staging leaves them there.
+    on staging leaves them there. A merge that holds its issue, because the pull
+    request only said `Refs`, still takes a branch rule into a status that is not
+    finished, so partial work merged into `staging` reaches On Staging, but it never
+    takes a rule for any branch or one that would finish the issue.
     """
     if not linking.may_apply(getattr(issue, "updated_at", None), event_at):
         _log.info(
@@ -888,6 +911,8 @@ def _apply_transition(
     target = rule.status_id
 
     if not target or target == issue.status_id:
+        return None
+    if holds and trigger == "pr_merged" and not _held_merge_may_take(rule, statuses):
         return None
     if trigger in linking.FORWARD_ONLY_TRIGGERS:
         by_id = {status.status_id: status for status in statuses}
@@ -918,6 +943,14 @@ def _apply_transition(
         )
     )
     return target
+
+
+def _held_merge_may_take(rule: Any, statuses: Sequence[Any]) -> bool:
+    """Whether a merge that holds its issue may still take `rule`: a branch rule into an unfinished status."""
+    if not rule.branch_pattern:
+        return False
+    target = next((status for status in statuses if status.status_id == rule.status_id), None)
+    return target is None or target.category not in linking.FINISHED_CATEGORIES
 
 
 def _enqueue_writeback(

@@ -7,18 +7,24 @@
  * Attachments belong to issues, so an update carries text only and the
  * paperclip comments offer is left out.
  *
+ * When document templates are offered, a template menu beside the health row
+ * replaces the text with a template's body, so a team's usual headings are a
+ * click away. The composer may also open on a default template's body.
+ *
  * The editor is its own lazily loaded chunk, so a stand in with the same shape
  * shows until it arrives.
  */
 
 import React, { Suspense, lazy, useRef, useState } from 'react';
+import { LuChevronDown, LuFileText } from 'react-icons/lu';
 import { cn } from '../../lib/cn';
 import type { Assignable } from '../../lib/issuePeople';
 import { submitKeysLabel } from '../../lib/platform';
 import { PROJECT_HEALTHS, PROJECT_HEALTH_LABELS } from '../../lib/projectLook';
-import type { ProjectHealth } from '../../types/Api';
+import type { ProjectHealth, TemplateRead } from '../../types/Api';
 import type { RichMarkdownHandle } from '../editor/RichMarkdownEditor';
 import Button from '../ui/button';
+import Menu, { MenuItem } from '../ui/menu';
 import ProjectHealthGlyph from './ProjectHealthGlyph';
 
 const RichMarkdownEditor = lazy(() => import('../editor/RichMarkdownEditor'));
@@ -84,6 +90,8 @@ export interface ProjectUpdateEditorProps {
   onCancel?: () => void;
   /** Clears the text after a successful submit, for a composer that stays open. */
   clearOnSubmit?: boolean;
+  /** The document templates the menu offers; the menu hides when empty. */
+  templates?: TemplateRead[];
 }
 
 /** A Markdown box and a health chooser that submit together. */
@@ -99,6 +107,7 @@ export const ProjectUpdateEditor: React.FC<ProjectUpdateEditorProps> = ({
   onSubmit,
   onCancel,
   clearOnSubmit = false,
+  templates = [],
 }) => {
   const [draft, setDraft] = useState(initialBody);
   const [health, setHealth] = useState<ProjectHealth>(initialHealth);
@@ -120,6 +129,16 @@ export const ProjectUpdateEditor: React.FC<ProjectUpdateEditorProps> = ({
       }
     });
   };
+
+  const applyTemplate = (template: TemplateRead): void => {
+    const body = template.body ?? '';
+    editor.current?.setMarkdown(body);
+    setDraft(body);
+  };
+
+  const usable = templates.filter(
+    (template) => (template.body ?? '').trim() !== ''
+  );
 
   const textClass = 'min-h-24 px-3 pt-3 pb-1 text-sm leading-5.5';
 
@@ -156,6 +175,30 @@ export const ProjectUpdateEditor: React.FC<ProjectUpdateEditorProps> = ({
       </Suspense>
       <div className="flex flex-wrap items-center gap-2 px-2 pb-2">
         <HealthChooser value={health} onChange={setHealth} disabled={busy} />
+        {usable.length > 0 && (
+          <Menu
+            label="Update templates"
+            trigger={(trigger) => (
+              <Button variant="ghost" size="sm" disabled={busy} {...trigger}>
+                <LuFileText aria-hidden="true" className="h-3.5 w-3.5" />
+                Template
+                <LuChevronDown aria-hidden="true" className="h-3 w-3" />
+              </Button>
+            )}
+          >
+            {usable.map((template) => (
+              <MenuItem
+                key={template.id}
+                textValue={template.name}
+                onSelect={() => {
+                  applyTemplate(template);
+                }}
+              >
+                {template.name}
+              </MenuItem>
+            ))}
+          </Menu>
+        )}
         <div className="ml-auto flex items-center gap-1.5">
           {onCancel !== undefined && (
             <Button variant="ghost" size="sm" onClick={onCancel}>

@@ -1,12 +1,12 @@
-"""MCP tools for issue and project templates: a team's, its parent team's and the workspace's.
+"""MCP tools for issue, project and document templates: a team's, its parent team's and the workspace's.
 
 A template is named by its id or its name, and a tool given `team_id` works on
 that team's templates while one without it works on the workspace's. The tools
 run the same `app.common.issue_templates` functions as the routes, so a team's
 templates are held to team membership and the workspace's to workspace admin,
 and a narrowed credential needs the `admin` scope for a workspace template
-exactly as the route's scope table asks. `kind` picks issue or project
-templates; the write tools find a template of either kind by its id or name.
+exactly as the route's scope table asks. `kind` picks issue, project or document
+templates; the write tools find a template of any kind by its id or name.
 """
 
 from __future__ import annotations
@@ -17,16 +17,19 @@ from app.common import issue_templates
 from app.common.api.dependencies.authz import Capability, check_capability, missing_scopes
 from app.common.api.schemas.planning import ProjectIconField, ProjectPriorityField, ProjectStatusField
 from app.common.api.schemas.templates import (
+    FORM_FIELDS_MAX,
+    FORM_OPTIONS_MAX,
     OFFSET_MAX_DAYS,
     POSITION_MAX,
     ROW_KINDS,
     TEMPLATE_ISSUES_MAX,
     TEMPLATE_MILESTONES_MAX,
+    FormFieldType,
     TemplateCreate,
     TemplateRead,
     TemplateUpdate,
 )
-from app.common.db.dynamo.team_templates import ISSUE_TEMPLATE, PROJECT_TEMPLATE, IssueTemplate
+from app.common.db.dynamo.team_templates import DOCUMENT_TEMPLATE, ISSUE_TEMPLATE, PROJECT_TEMPLATE, IssueTemplate
 from app.domains.integrations.mcp.toolkit import (
     NOT_VISIBLE,
     PRIORITIES,
@@ -45,7 +48,10 @@ TEMPLATE_TEAM_ARGUMENT = "Team: id, key such as ENG, or name; omit for a workspa
 
 TEMPLATE_ARGUMENT = "The template: its id or its name"
 
-KIND_ARGUMENT = "issue for an issue template, the default, or project for a project template"
+KIND_ARGUMENT = (
+    "issue for an issue template, the default, project for a project template, or document for a document "
+    "template that starts new documents and project or initiative updates"
+)
 
 KINDS: tuple[str, ...] = tuple(ROW_KINDS)
 
@@ -61,6 +67,7 @@ _FIELDS = (
     "project_milestone_id",
     "cycle_id",
     "position",
+    "form_fields",
 )
 
 
@@ -95,9 +102,9 @@ def project_template_ref(call: ToolCall, team_ids: list[str], value: Any) -> Iss
 
 
 def _own_ref(call: ToolCall, team_id: Optional[str], value: Any) -> IssueTemplate:
-    """One template of either kind of the team itself, or of the workspace with no team, for the write tools."""
+    """One template of any kind of the team itself, or of the workspace with no team, for the write tools."""
     rows: list[IssueTemplate] = []
-    for kind in (ISSUE_TEMPLATE, PROJECT_TEMPLATE):
+    for kind in (ISSUE_TEMPLATE, PROJECT_TEMPLATE, DOCUMENT_TEMPLATE):
         if team_id:
             found = issue_templates.team_templates(call.repositories, call.context, team_id, kind)
             rows += [row for row in found if row.team_id == team_id]
@@ -162,7 +169,7 @@ def _list_templates(call: ToolCall) -> Any:
     team_id = call.optional("team_id")
     kind = ROW_KINDS.get(str(call.optional("kind", "issue")))
     if kind is None:
-        raise ToolError("kind must be issue or project")
+        raise ToolError("kind must be issue, project or document")
     if team_id:
         rows, default = issue_templates.list_team_templates(call.repositories, call.context, team_id, kind)
         return {"templates": [_json(row, team_id) for row in rows], "default_template_id": default}
@@ -214,8 +221,8 @@ def _field_properties(*, patch: bool) -> dict[str, Any]:
     """The template field arguments, nullable on a patch so a null clears one."""
     value = nullable if patch else string
     return {
-        "title": value("The default issue title"),
-        "body": value("The default issue body, in Markdown"),
+        "title": value("The default issue title, or a document template's document title"),
+        "body": value("The default issue body, or a document template's body, in Markdown"),
         "status_id": value("A status of the team, or a workspace status for a workspace template"),
         "priority": enum(PRIORITIES, "The default priority"),
         "assignee_id": value("The default assignee; 'me' is the caller"),
@@ -296,13 +303,51 @@ PROJECT_TEMPLATE_PROPERTY: dict[str, Any] = {
     },
 }
 
+FORM_FIELDS_PROPERTY: dict[str, Any] = {
+    "type": ["array", "null"],
+    "maxItems": FORM_FIELDS_MAX,
+    "description": (
+        "For an issue template: the questions that make it a form. An issue filed from a form answers them in "
+        "create_issue's form_answers, the answers land in its body, and it goes to the team's triage. On update "
+        "it replaces the whole set, and null or an empty list turns the form off."
+    ),
+    "items": {
+        "type": "object",
+        "additionalProperties": False,
+        "required": ["label"],
+        "properties": {
+            "key": string("A short key form_answers names it by; defaults to f1, f2 and on"),
+            "label": string("The question"),
+            "type": enum(get_args(FormFieldType), "The answer type; defaults to short_text"),
+            "required": {"type": "boolean", "description": "Whether an issue cannot be filed without an answer"},
+            "description": string("Help text shown under the question"),
+            "options": {
+                "type": "array",
+                "maxItems": FORM_OPTIONS_MAX,
+                "description": "For a select field, the choices, in order",
+                "items": {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "required": ["value"],
+                    "properties": {
+                        "value": string("The choice as shown and answered"),
+                        "label_id": string("A label choosing it puts on the issue"),
+                        "priority": enum(PRIORITIES, "A priority choosing it sets on the issue"),
+                    },
+                },
+            },
+        },
+    },
+}
+
 TEMPLATE_TOOLS: tuple[Tool, ...] = (
     Tool(
         name="list_templates",
         description=(
-            "The issue or project templates a team offers, its own, its parent team's and the workspace's, each "
-            "tagged with its scope, and the default its create dialog opens with. Without team_id, the "
-            "workspace templates. kind picks issue templates, the default, or project templates."
+            "The issue, project or document templates a team offers, its own, its parent team's and the "
+            "workspace's, each tagged with its scope, and the default its create dialog opens with. Without "
+            "team_id, the workspace templates. kind picks issue templates, the default, project or document "
+            "templates."
         ),
         scopes=("teams:read",),
         schema=object_schema({"team_id": string(TEMPLATE_TEAM_ARGUMENT), "kind": enum(KINDS, KIND_ARGUMENT)}),
@@ -313,9 +358,12 @@ TEMPLATE_TOOLS: tuple[Tool, ...] = (
         description=(
             "Save an issue template that prefills new issues: a name and any default fields. With kind project "
             "it is a project template instead, whose project argument holds the project fields and the "
-            "milestones and issues a new project starts with. With team_id it belongs to that team and its "
+            "milestones and issues a new project starts with. With kind document it holds only a title and a "
+            "Markdown body that new documents and updates start from. With team_id it belongs to that team and its "
             "sub-teams and needs team membership; without it every team offers it and it needs workspace admin. "
-            "Pass its id or name as template_id to create_issue, or to create_project for a project template."
+            "Pass its id or name as template_id to create_issue, to create_project for a project template, or to "
+            "create_document, create_project_update or create_initiative_update for a document template. "
+            "form_fields turns an issue template into a form whose answers create_issue takes as form_answers."
         ),
         scopes=("teams:write",),
         schema=object_schema(
@@ -325,6 +373,7 @@ TEMPLATE_TOOLS: tuple[Tool, ...] = (
                 "name": string("The template name shown in the picker"),
                 **_field_properties(patch=False),
                 "project": PROJECT_TEMPLATE_PROPERTY,
+                "form_fields": FORM_FIELDS_PROPERTY,
             },
             required=("name",),
         ),
@@ -333,7 +382,7 @@ TEMPLATE_TOOLS: tuple[Tool, ...] = (
     Tool(
         name="update_template",
         description=(
-            "Change, clear or move one issue or project template; only the fields named are written and null "
+            "Change, clear or move one issue, project or document template; only the fields named are written and null "
             "clears one. With team_id it edits that team's own template, without it a workspace template "
             "(workspace admin)."
         ),
@@ -345,6 +394,7 @@ TEMPLATE_TOOLS: tuple[Tool, ...] = (
                 "name": string("A new name"),
                 **_field_properties(patch=True),
                 "project": PROJECT_TEMPLATE_PROPERTY,
+                "form_fields": FORM_FIELDS_PROPERTY,
             },
             required=("template",),
         ),
@@ -354,8 +404,9 @@ TEMPLATE_TOOLS: tuple[Tool, ...] = (
     Tool(
         name="delete_template",
         description=(
-            "Permanently delete one issue or project template. What was created from it keeps its fields. With "
-            "team_id it deletes that team's own template, without it a workspace template (workspace admin)."
+            "Permanently delete one issue, project or document template. What was created from it keeps its "
+            "fields. With team_id it deletes that team's own template, without it a workspace template "
+            "(workspace admin)."
         ),
         scopes=("teams:write",),
         schema=object_schema(

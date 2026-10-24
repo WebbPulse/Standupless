@@ -1,6 +1,7 @@
 /**
  * The pickers a project's own properties are edited with: status, health,
- * lead, members, teams, update cadence and its icon and colour. They draw the same `rail` and `chip` triggers as the issue property
+ * lead, members, teams, update cadence, the projects it waits on or holds up,
+ * and its icon and colour. They draw the same `rail` and `chip` triggers as the issue property
  * pickers, so a project reads and edits the way an issue does, and like those
  * they are controlled and write nothing themselves.
  */
@@ -36,11 +37,19 @@ import {
   PROJECT_ICON_NAMES,
   healthLabel,
 } from '../../lib/projectLook';
+import {
+  BLOCKED_TONE,
+  BLOCKING_TONE,
+  BlockedGlyph,
+  BlockingGlyph,
+} from '../issues/RelationGlyphs';
 import type {
   InitiativeRead,
   InitiativeStatus,
   ProjectHealth,
   ProjectIconName,
+  ProjectRead,
+  ProjectRelationType,
   ProjectStatus,
   ProjectUpdateInterval,
   TeamRead,
@@ -377,6 +386,95 @@ export const TeamsPicker: React.FC<TeamsPickerProps> = ({
               : [...value, picked]
           );
         }}
+      />
+    </Popover>
+  );
+};
+
+/** Props for DependencyPicker: which side, the linked projects and the candidates. */
+export interface DependencyPickerProps extends ProjectPickerBaseProps {
+  /** `blocked_by` for the projects this one waits on, `blocks` for the ones it holds up. */
+  type: ProjectRelationType;
+  /** The linked project ids on this side. */
+  value: string[];
+  /** Every project that may be linked, the project itself already left out. */
+  candidates: ProjectRead[];
+  /** The project ids linked the other way, offered disabled. */
+  opposite?: string[];
+  /** Links the picked project, or unlinks it when it is already linked. */
+  onToggle: (projectId: string) => void;
+}
+
+/**
+ * Picks the projects this one is blocked by, or the ones it blocks, several at
+ * once. A project already linked the other way is offered disabled, since the
+ * same pair cannot wait on each other.
+ */
+export const DependencyPicker: React.FC<DependencyPickerProps> = ({
+  type,
+  value,
+  candidates,
+  opposite = [],
+  onToggle,
+  disabled = false,
+  variant = 'chip',
+  align = 'start',
+  className = '',
+}) => {
+  const field = type === 'blocked_by' ? 'Blocked by' : 'Blocking';
+  const Glyph = type === 'blocked_by' ? BlockedGlyph : BlockingGlyph;
+  const tone = type === 'blocked_by' ? BLOCKED_TONE : BLOCKING_TONE;
+  const chosen = candidates.filter((project) =>
+    value.includes(project.project_id)
+  );
+  const options: ComboboxOption[] = candidates.map((project) => ({
+    value: project.project_id,
+    label: project.name,
+    detail: PROJECT_STATUS_LABELS[project.status],
+    icon: <ProjectIcon icon={project.icon} color={project.color} />,
+    disabled: opposite.includes(project.project_id),
+  }));
+  const count = value.length;
+  const text =
+    count === 0
+      ? variant === 'chip'
+        ? field
+        : type === 'blocked_by'
+          ? 'Not blocked'
+          : 'Blocks nothing'
+      : count === 1
+        ? `${field} ${chosen[0]?.name ?? '1 project'}`
+        : `${field} ${String(count)} projects`;
+  return (
+    <Popover
+      label={field}
+      align={align}
+      block={variant === 'rail'}
+      contentClassName="w-72"
+      trigger={(trigger) => (
+        <Trigger
+          trigger={trigger}
+          field={field}
+          icon={<Glyph className={cn('h-3.5 w-3.5', count > 0 && tone)} />}
+          text={text}
+          empty={count === 0}
+          variant={variant}
+          disabled={disabled}
+          className={className}
+        />
+      )}
+    >
+      <Combobox
+        label={field}
+        placeholder={
+          type === 'blocked_by'
+            ? 'Mark as blocked by a project'
+            : 'Mark as blocking a project'
+        }
+        multiple
+        options={options}
+        selected={value}
+        onSelect={onToggle}
       />
     </Popover>
   );

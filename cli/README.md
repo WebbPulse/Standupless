@@ -47,6 +47,8 @@ standupless issue activity ENG-12 [--source mcp]      # history, with the client
 standupless issue create --title "Fix login" [-t ENG] [-b TEXT | -F FILE] [-a me] [-s Todo]
                          [-l Bug] [--priority high] [-c current] [-p Launch] [--estimate 3]
                          [--due 2026-10-01] [--parent ENG-1] [--web]
+standupless issue create --template "Bug report" -A severity=High -A "Steps=Open the app"
+                                                      # a form template takes each answer as FIELD=VALUE
 standupless issue edit ENG-12 [--title ...] [-s started] [-a none] [--add-label UI]
                               [--remove-label Bug] [-c none] [-p none] [--due none]
 standupless issue close ENG-12 [--reason completed|canceled] [-m "Shipped in #42"]

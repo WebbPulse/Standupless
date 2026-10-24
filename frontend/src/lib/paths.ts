@@ -148,6 +148,14 @@ export const initiativesPath = (slug: string): string =>
 export const initiativePath = (slug: string, initiativeId: string): string =>
   `${initiativesPath(slug)}/${initiativeId}`;
 
+/** Every customer of the workspace. */
+export const customersPath = (slug: string): string =>
+  `${workspacePath(slug)}/customers`;
+
+/** One customer, reached by its id. */
+export const customerPath = (slug: string, customerId: string): string =>
+  `${customersPath(slug)}/${customerId}`;
+
 /** One cycle of a team. */
 export const cyclePath = (
   slug: string,
@@ -214,6 +222,10 @@ export const viewPath = (slug: string, viewId: string): string =>
 /** The projects list filtered to one team. */
 export const teamProjectsPath = (slug: string, keyPrefix: string): string =>
   `${projectsPath(slug)}?team=${encodeURIComponent(keyPrefix)}`;
+
+/** The saved views shared with one team. */
+export const teamViewsPath = (slug: string, keyPrefix: string): string =>
+  `${teamPath(slug, keyPrefix)}/views`;
 
 /** The workspace settings page that lists every team. */
 export const settingsTeamsPath = (slug: string): string =>

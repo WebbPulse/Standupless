@@ -31,6 +31,8 @@ from app.common.api.schemas.planning import (
     ProjectOpenIssuesAction,
     ProjectPriorityField,
     ProjectRead,
+    ProjectRelationCreate,
+    ProjectRelationRead,
     ProjectUpdate,
     ProjectUpdateCreate,
     ProjectUpdatePatch,
@@ -51,6 +53,7 @@ from app.common.planning_rules import (
     require_team_reader,
 )
 from app.common.project_cadence import INTERVAL_OPTIONS, workspace_interval
+from app.common.project_relations import create_relation, delete_relation, fill_one, list_relations
 from app.common.project_updates import (
     create_project_update,
     delete_project_update,
@@ -216,7 +219,14 @@ def _project_json(project: ProjectRead) -> dict[str, Any]:
         "update_interval_inherited": project.update_interval_inherited,
         "next_update_due_at": project.next_update_due_at.isoformat() if project.next_update_due_at else None,
         "update_due_state": project.update_due_state,
+        "blocked_by_project_ids": project.blocked_by_project_ids,
+        "blocking_project_ids": project.blocking_project_ids,
         **({} if project.open_issue_count is None else {"open_issue_count": project.open_issue_count}),
+        **(
+            {}
+            if project.skipped_template_issues is None
+            else {"skipped_template_issues": [row.model_dump() for row in project.skipped_template_issues]}
+        ),
         "updated_at": project.updated_at.isoformat(),
     }
 
@@ -400,8 +410,18 @@ def _list_projects(call: ToolCall) -> Any:
         cursor=call.optional("cursor"),
         limit=limit(call.optional("limit")),
         include_sub_teams=call.optional("include_sub_teams", False) is True,
+        is_blocked=_optional_flag(call, "is_blocked"),
+        is_blocking=_optional_flag(call, "is_blocking"),
     )
     return {"projects": [_project_json(row) for row in rows], "next_cursor": next_cursor}
+
+
+def _optional_flag(call: ToolCall, name: str) -> Optional[bool]:
+    """One optional true or false argument, None when absent, refusing anything else."""
+    value = call.optional(name)
+    if value is None or isinstance(value, bool):
+        return value
+    raise ToolError(f"{name} must be true or false")
 
 
 def _get_project(call: ToolCall) -> Any:
@@ -409,7 +429,10 @@ def _get_project(call: ToolCall) -> Any:
     project_id = _project_id(call, call.require("project_id"))
     project, visible = load_readable_project(call.repositories, call.context, project_id)
     default_days = workspace_interval(call.repositories.workspaces, call.context.workspace_id)
-    body = _project_json(ProjectRead.from_row(project, visible, default_interval_days=default_days))
+    read = fill_one(
+        call.repositories, call.context, ProjectRead.from_row(project, visible, default_interval_days=default_days)
+    )
+    body = _project_json(read)
     milestones = call.repositories.planning.list_milestones(call.context.workspace_id, project.project_id)
     body["milestones"] = [_milestone_json(MilestoneRead.from_row(row)) for row in milestones]
     return body
@@ -514,6 +537,54 @@ def _delete_project(call: ToolCall) -> Any:
     return {"deleted": True, "project_id": project_id}
 
 
+def _project_relation_json(relation: ProjectRelationRead) -> dict[str, Any]:
+    """One project dependency as the tools answer it, read from the named project's side."""
+    return {
+        "relation_id": relation.relation_id,
+        "project_id": relation.project_id,
+        "type": relation.type,
+        "target_project_id": relation.target_project_id,
+        "created_at": relation.created_at.isoformat(),
+    }
+
+
+def _list_project_relations(call: ToolCall) -> Any:
+    """Every dependency of a visible project whose other end is visible too."""
+    project_id = _project_id(call, call.require("project_id"))
+    rows = list_relations(call.repositories, call.context, project_id)
+    return {"relations": [_project_relation_json(row) for row in rows]}
+
+
+def _create_project_relation(call: ToolCall) -> Any:
+    """Make one project block, or be blocked by, another, idempotently on the same pair."""
+    project_id = _project_id(call, call.require("project_id"))
+    target_id = _project_id(call, call.require("target_project_id"))
+    payload = ProjectRelationCreate.model_validate({"type": call.require("type"), "target_project_id": target_id})
+    relation, _ = create_relation(call.repositories, call.context, project_id, payload)
+    return _project_relation_json(relation)
+
+
+def _delete_project_relation(call: ToolCall) -> Any:
+    """Remove a dependency of a project, named by its id or by the project at its other end."""
+    project_id = _project_id(call, call.require("project_id"))
+    relation_id = call.optional("relation_id")
+    if not relation_id:
+        target = call.optional("target_project_id")
+        if target is None:
+            raise ToolError("Name the dependency by relation_id or by target_project_id")
+        target_id = _project_id(call, target)
+        matches = [
+            row.relation_id
+            for row in list_relations(call.repositories, call.context, project_id)
+            if row.target_project_id == target_id
+        ]
+        if not matches:
+            raise ToolError("Those projects are not linked")
+        relation_id = matches[0]
+    other = delete_relation(call.repositories, call.context, project_id, str(relation_id))
+    return {"deleted": True, "relation_id": str(relation_id), "project_id": project_id, "target_project_id": other}
+
+
 def _list_project_milestones(call: ToolCall) -> Any:
     """Every milestone of a visible project, in its manual order."""
     project, _ = load_readable_project(call.repositories, call.context, _project_id(call, call.require("project_id")))
@@ -571,9 +642,12 @@ def _list_project_updates(call: ToolCall) -> Any:
 
 
 def _create_project_update(call: ToolCall) -> Any:
-    """Post an update on a project the caller may edit, setting the project's health."""
+    """Post an update on a project the caller may edit, setting the project's health, from a template if named."""
     project_id = _project_id(call, call.require("project_id"))
-    payload = ProjectUpdateCreate.model_validate({"body": call.require("body"), "health": call.require("health")})
+    fields = {"body": call.optional("body"), "template_id": call.optional("template_id")}
+    payload = ProjectUpdateCreate.model_validate(
+        {"health": call.require("health"), **{name: value for name, value in fields.items() if value is not None}}
+    )
     return _project_update_json(create_project_update(call.repositories, call.context, project_id, payload))
 
 
@@ -755,6 +829,14 @@ PLANNING_TOOLS: tuple[Tool, ...] = (
                     "type": "boolean",
                     "description": "With team_id, also list the projects of that team's sub-teams, default false",
                 },
+                "is_blocked": {
+                    "type": "boolean",
+                    "description": "true for projects an open project blocks, false for the rest",
+                },
+                "is_blocking": {
+                    "type": "boolean",
+                    "description": "true for open projects that block another project, false for the rest",
+                },
                 **page_properties(),
             }
         ),
@@ -775,7 +857,8 @@ PLANNING_TOOLS: tuple[Tool, ...] = (
         description=(
             "Create a project on one or more teams. The status defaults to backlog. template_id names a project "
             "template one of the teams offers: it fills every field not given, dates counted from today, and "
-            "adds its milestones and issues."
+            "adds its milestones and issues. A template issue the issue rules refuse is left out and listed in "
+            "skipped_template_issues."
         ),
         scopes=("projects:write",),
         schema=object_schema(
@@ -831,6 +914,48 @@ PLANNING_TOOLS: tuple[Tool, ...] = (
         scopes=("projects:write",),
         schema=object_schema({"project_id": string(PROJECT_HELP)}, required=("project_id",)),
         handler=_delete_project,
+        destructive=True,
+    ),
+    Tool(
+        name="list_project_relations",
+        description=(
+            "Every dependency of a project, read from its side: blocks when it holds the other project up, "
+            "blocked_by when it waits on it."
+        ),
+        scopes=("projects:read",),
+        schema=object_schema({"project_id": string(PROJECT_HELP)}, required=("project_id",)),
+        handler=_list_project_relations,
+    ),
+    Tool(
+        name="create_project_relation",
+        description=(
+            "Make a project block, or be blocked by, another project. Linking a pair already linked the same way "
+            "answers the stored link; a link to itself or one that closes a loop is refused."
+        ),
+        scopes=("projects:write",),
+        schema=object_schema(
+            {
+                "project_id": string(PROJECT_HELP),
+                "type": enum(("blocks", "blocked_by"), "blocks when project_id holds the target up"),
+                "target_project_id": string(f"{PROJECT_HELP} at the other end"),
+            },
+            required=("project_id", "type", "target_project_id"),
+        ),
+        handler=_create_project_relation,
+    ),
+    Tool(
+        name="delete_project_relation",
+        description="Remove a dependency between two projects, named by its relation_id or by the other project.",
+        scopes=("projects:write",),
+        schema=object_schema(
+            {
+                "project_id": string(PROJECT_HELP),
+                "relation_id": string("The dependency, from list_project_relations"),
+                "target_project_id": string(f"{PROJECT_HELP} at the other end, instead of relation_id"),
+            },
+            required=("project_id",),
+        ),
+        handler=_delete_project_relation,
         destructive=True,
     ),
     Tool(
@@ -899,16 +1024,20 @@ PLANNING_TOOLS: tuple[Tool, ...] = (
         name="create_project_update",
         description=(
             "Post a status update on a project, in Markdown, with its health. "
-            "Posting sets the project's health and notifies its lead and members."
+            "Posting sets the project's health and notifies its lead and members. "
+            "Give template_id instead of body to post a document template's body."
         ),
         scopes=("projects:write",),
         schema=object_schema(
             {
                 "project_id": string(PROJECT_HELP),
-                "body": string("The update, in Markdown"),
+                "body": string("The update, in Markdown. Required unless template_id is given"),
                 "health": enum(PROJECT_HEALTHS, "How the project stands"),
+                "template_id": string(
+                    "A document template whose body the update takes when body is left out: id or name"
+                ),
             },
-            required=("project_id", "body", "health"),
+            required=("project_id", "health"),
         ),
         handler=_create_project_update,
     ),

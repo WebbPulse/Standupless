@@ -223,6 +223,7 @@ class TestSessions:
                 "last_ip",
                 "client",
                 "platform",
+                "browser",
                 "client_id",
                 "started_at",
                 "last_active_at",
@@ -247,6 +248,30 @@ class TestSessions:
 
         unknown = client.delete("/api/auth/sessions/not-a-session")
         assert unknown.status_code == 404, f"an unknown session answered {unknown.status_code}."
+
+    @WRITES
+    def test_signing_out_other_sessions_keeps_only_this_one(self, anon: Any, account: Account) -> None:
+        """Every other sign in ends in one call, and the calling session stays signed in."""
+        login(anon, account.user.credentials.email, account.user.credentials.password)
+        login(anon, account.user.credentials.email, account.user.credentials.password)
+        client = account.session.client
+
+        before = client.get("/api/auth/sessions").json()["sessions"]
+        assert len(before) >= 3, f"expected at least three sessions, found {len(before)}."
+
+        response = client.post("/api/auth/sessions/revoke-others")
+        assert response.status_code == 200, f"revoke-others answered {response.status_code}: {response.text[:300]}"
+        assert response.json()["revoked"] >= 2
+
+        after = client.get("/api/auth/sessions")
+        assert after.status_code == 200, f"the current session was signed out: {after.status_code}."
+        remaining = after.json()["sessions"]
+        assert len(remaining) == 1 and remaining[0]["current"], "another session survived revoke-others."
+
+    def test_anonymous_revoke_others_is_refused(self, anon: Any) -> None:
+        """Signing out other sessions needs a session of its own."""
+        response = anon.post("/api/auth/sessions/revoke-others")
+        assert response.status_code in (401, 403), f"an anonymous revoke-others answered {response.status_code}."
 
     def test_anonymous_list_is_refused(self, anon: Any) -> None:
         """The list names devices and addresses, so it never answers without a session."""

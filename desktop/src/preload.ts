@@ -16,6 +16,7 @@ const NAVIGATE = 'standupless:navigate';
 const NAVIGATE_READY = 'standupless:navigate-ready';
 const SIGN_IN_WITH_BROWSER = 'standupless:sign-in-with-browser';
 const OPEN_EXTERNAL = 'standupless:open-external';
+const OPEN_IN_NEW_TAB = 'standupless:open-in-new-tab';
 
 /** The prefix the main process passes the app version under. */
 const VERSION_ARG = '--standupless-version=';
@@ -55,6 +56,7 @@ contextBridge.exposeInMainWorld(
     platform: process.platform,
     version,
     passkeys: process.platform === 'win32',
+    tabs: true,
     setBadgeCount(count: number): void {
       ipcRenderer.send(BADGE, {
         count,
@@ -83,6 +85,9 @@ contextBridge.exposeInMainWorld(
     },
     openExternal(url: string): void {
       ipcRenderer.send(OPEN_EXTERNAL, url);
+    },
+    openInNewTab(path: string): void {
+      ipcRenderer.send(OPEN_IN_NEW_TAB, path);
     },
   })
 );

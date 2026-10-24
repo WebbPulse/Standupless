@@ -172,15 +172,22 @@ list query, and a key the list does not accept would be a filter that silently
 does nothing.
 """
 
-PROJECT_FILTER_FIELDS: frozenset[str] = frozenset({"team_id", "status", "lead_id", "sub_teams"})
+PROJECT_FILTER_FIELDS: frozenset[str] = frozenset(
+    {"team_id", "status", "lead_id", "sub_teams", "is_blocked", "is_blocking"}
+)
 """Every key a project view's filter may carry, the projects page's own filters.
 
 `team_id` is the one team the page is narrowed to, `status` the project statuses
 it keeps, `lead_id` the leads it keeps, `none` standing for projects with no lead,
-and `sub_teams` whether a parent team's page rolls up its sub-teams.
+and `sub_teams` whether a parent team's page rolls up its sub-teams. `is_blocked`
+keeps projects an open blocker holds up, or with `false` the ones none does, and
+`is_blocking` open projects that hold another up, or with `false` the rest.
 """
 
-PROJECT_SCALAR_FILTER_FIELDS: frozenset[str] = frozenset({"team_id", "sub_teams"})
+PROJECT_FLAG_FILTER_FIELDS: frozenset[str] = frozenset({"sub_teams", "is_blocked", "is_blocking"})
+"""The project filter keys that hold `true` or `false`."""
+
+PROJECT_SCALAR_FILTER_FIELDS: frozenset[str] = frozenset({"team_id", *PROJECT_FLAG_FILTER_FIELDS})
 """The project filter keys that hold one value rather than a list."""
 
 VIEW_NAME_MAX = 80
@@ -337,8 +344,9 @@ def unknown_filter_keys(value: Mapping[str, Any] | None) -> list[str]:
 def invalid_project_filter_keys(value: Mapping[str, Any] | None) -> list[str]:
     """Every key of a project view's filter that is unknown or holds a value the projects page cannot apply.
 
-    A status must be one the projects page offers, and `sub_teams` `true` or
-    `false`, so a stored view never names a filter the page would quietly drop.
+    A status must be one the projects page offers, and `sub_teams`, `is_blocked`
+    and `is_blocking` `true` or `false`, so a stored view never names a filter the
+    page would quietly drop.
     """
     if not value:
         return []
@@ -354,7 +362,7 @@ def _project_entry_well_formed(key: str, entry: Any) -> bool:
     """Whether one project filter value has the shape its key takes."""
     if entry is None:
         return True
-    if key == "sub_teams":
+    if key in PROJECT_FLAG_FILTER_FIELDS:
         return entry in ("true", "false")
     values = [entry] if isinstance(entry, str) else entry
     if not isinstance(values, list) or not all(isinstance(item, str) and item for item in values):

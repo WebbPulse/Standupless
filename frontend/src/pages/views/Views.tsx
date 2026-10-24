@@ -5,7 +5,8 @@
  * the composer, which is the issue list itself, so there is no form to fill
  * before seeing what a view would show. Views of issues and views of
  * projects sit under their own tabs; New view on the projects tab opens the
- * projects page, which saves its arrangement as a view.
+ * projects page, which saves its arrangement as a view. Under a team's route
+ * the list narrows to the views shared with that team.
  */
 
 import React, { useMemo, useState } from 'react';
@@ -20,7 +21,7 @@ import {
   LuStar,
   LuTrash2,
 } from 'react-icons/lu';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import { getInsights } from '../../api/insights';
 import {
   createView,
@@ -45,6 +46,7 @@ import { Menu, MenuItem, MenuSeparator } from '../../components/ui/menu';
 import { Select } from '../../components/ui/select';
 import { SkeletonRows } from '../../components/ui/skeleton';
 import ViewIcon from '../../components/views/ViewIcon';
+import TeamTitle from '../../components/workspace/TeamTitle';
 import WorkspaceShell from '../../components/workspace/WorkspaceShell';
 import { useTeam } from '../../hooks/useTeam';
 import { useAuth } from '../../hooks/useAuth';
@@ -53,7 +55,12 @@ import { useWorkspaceMembers } from '../../hooks/useWorkspaceMembers';
 import { cn } from '../../lib/cn';
 import { errorMessage } from '../../lib/errors';
 import { sharedChange, viewVisibility } from '../../lib/issueView';
-import { newViewPath, projectsPath, viewPath } from '../../lib/paths';
+import {
+  newViewPath,
+  projectsPath,
+  teamProjectsPath,
+  viewPath,
+} from '../../lib/paths';
 import {
   favoritesKey,
   viewCountKey,
@@ -177,11 +184,12 @@ type Pending =
   | { kind: 'delete'; view: SavedViewDisplayRead }
   | null;
 
-/** The saved views list. */
+/** The saved views list, across the workspace or for the team in the route. */
 export const Views: React.FC = () => {
+  const { keyPrefix } = useParams<{ keyPrefix: string }>();
   const { workspace } = useWorkspace();
   const { user } = useAuth();
-  const { teams } = useTeam(undefined);
+  const { team, teams, notFound } = useTeam(keyPrefix);
   const auth = useQueryAuth();
   const navigate = useNavigate();
   const [scope, setScope] = useState<ViewListScope>('all');
@@ -191,13 +199,22 @@ export const Views: React.FC = () => {
   const workspaceId = workspace?.id ?? '';
   const slug = workspace?.slug ?? '';
   const members = useWorkspaceMembers(workspaceId);
+  const teamId = team?.id ?? '';
+  const scoped = keyPrefix !== undefined;
 
   const { data, error, isLoading } = usePolledQuery(
-    (context) => listViews(workspaceId, { scope }, context),
+    (context) =>
+      listViews(
+        workspaceId,
+        scoped ? { scope: 'team', team_id: teamId } : { scope },
+        context
+      ),
     {
       intervalMs: LOOKUP_POLL_MS,
-      enabled: workspaceId !== '',
-      queryKey: viewsKey(workspaceId, scope, ''),
+      enabled: workspaceId !== '' && (!scoped || teamId !== ''),
+      queryKey: scoped
+        ? viewsKey(workspaceId, 'team', teamId)
+        : viewsKey(workspaceId, scope, ''),
       auth,
     }
   );
@@ -284,9 +301,28 @@ export const Views: React.FC = () => {
     }
   };
 
+  if (scoped && notFound) {
+    return (
+      <WorkspaceShell title="Views">
+        <EmptyState message="That team does not exist, or you are not a member of it." />
+      </WorkspaceShell>
+    );
+  }
+
+  const newProjectsView =
+    team === null
+      ? projectsPath(slug)
+      : teamProjectsPath(slug, team.key_prefix);
+
   return (
     <WorkspaceShell
-      title="Views"
+      title={
+        team === null ? (
+          'Views'
+        ) : (
+          <TeamTitle name={`${team.name} views`} keyPrefix={team.key_prefix} />
+        )
+      }
       actions={
         <Button
           size="sm"
@@ -294,7 +330,7 @@ export const Views: React.FC = () => {
           className="gap-1.5"
           onClick={() => {
             void navigate(
-              entity === 'projects' ? projectsPath(slug) : newViewPath(slug)
+              entity === 'projects' ? newProjectsView : newViewPath(slug)
             );
           }}
         >
@@ -329,20 +365,22 @@ export const Views: React.FC = () => {
               </button>
             ))}
           </div>
-          <Select
-            aria-label="Which views"
-            value={scope}
-            className="h-7 w-auto text-xs"
-            onChange={(event) => {
-              setScope(event.target.value as ViewListScope);
-            }}
-          >
-            {SCOPES.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </Select>
+          {!scoped && (
+            <Select
+              aria-label="Which views"
+              value={scope}
+              className="h-7 w-auto text-xs"
+              onChange={(event) => {
+                setScope(event.target.value as ViewListScope);
+              }}
+            >
+              {SCOPES.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </Select>
+          )}
         </div>
       }
       flush
@@ -353,15 +391,19 @@ export const Views: React.FC = () => {
         </div>
       )}
       <div className="min-h-0 flex-1 overflow-y-auto">
-        {isLoading || listed === null ? (
+        {isLoading || listed === null || (scoped && team === null) ? (
           <SkeletonRows />
         ) : listed.length === 0 ? (
           <EmptyState
             icon={<LuLayers />}
             message={
-              entity === 'projects'
-                ? 'No saved views of projects yet. Arrange the projects page and save it as a view.'
-                : 'No saved views yet. Compose one with New view, or save any issue list as a view.'
+              scoped
+                ? entity === 'projects'
+                  ? 'No project views are shared with this team yet. Arrange its projects and save them as a team view.'
+                  : 'No views are shared with this team yet. Compose one with New view and file it under this team.'
+                : entity === 'projects'
+                  ? 'No saved views of projects yet. Arrange the projects page and save it as a view.'
+                  : 'No saved views yet. Compose one with New view, or save any issue list as a view.'
             }
             className="py-16"
           />

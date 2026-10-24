@@ -283,3 +283,41 @@ export const stepZoom = (zoom: TimelineZoom, step: number): TimelineZoom => {
     zoom
   );
 };
+
+/** One milestone diamond on a project's lane, in lane pixels. */
+export interface MilestoneMark {
+  milestoneId: string;
+  name: string;
+  date: string;
+  completed: boolean;
+  x: number;
+}
+
+/**
+ * Where each dated milestone sits on its project's lane: the middle of its
+ * target day. A milestone outside the drawn range has nowhere to go and is
+ * left out.
+ */
+export const milestoneMarks = (
+  markers: readonly {
+    milestone_id: string;
+    name: string;
+    target_date: string;
+    completed: boolean;
+  }[],
+  range: TimelineRange,
+  pxPerDay: number
+): MilestoneMark[] =>
+  markers.flatMap((marker) => {
+    const day = dayNumber(marker.target_date);
+    if (day === null || day < range.start || day >= range.end) return [];
+    return [
+      {
+        milestoneId: marker.milestone_id,
+        name: marker.name,
+        date: marker.target_date,
+        completed: marker.completed,
+        x: (day - range.start + 0.5) * pxPerDay,
+      },
+    ];
+  });

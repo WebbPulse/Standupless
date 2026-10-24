@@ -35,6 +35,7 @@ import React, {
 } from 'react';
 import {
   LuActivity,
+  LuBuilding2,
   LuChevronRight,
   LuChevronsUpDown,
   LuEllipsis,
@@ -69,6 +70,7 @@ import {
   inboxPath,
   myIssuesPath,
   projectsPath,
+  customersPath,
   initiativesPath,
   pulsePath,
   reviewsPath,
@@ -83,6 +85,7 @@ import {
   teamReleasesPath,
   teamSettingsPath,
   teamTriagePath,
+  teamViewsPath,
   viewsPath,
   workspacePath,
   accountSecuritySettingsPath,
@@ -475,6 +478,15 @@ const TeamSection: React.FC<TeamSectionProps> = ({
           <LuTarget className={SUB_ICON} aria-hidden="true" />
           Projects
         </Link>
+        <NavLink
+          to={teamViewsPath(slug, team.key_prefix)}
+          end
+          className={subItemClass}
+          onClick={onNavigate}
+        >
+          <LuLayers className={SUB_ICON} aria-hidden="true" />
+          Views
+        </NavLink>
       </div>
     </div>
   );
@@ -797,6 +809,16 @@ export const Sidebar: React.FC<SidebarProps> = ({ workspace, onNavigate }) => {
               >
                 <LuGoal className={ICON} aria-hidden="true" />
                 Initiatives
+              </NavLink>
+            )}
+            {workspace.role !== 'guest' && (
+              <NavLink
+                to={customersPath(slug)}
+                className={itemClass}
+                onClick={onNavigate}
+              >
+                <LuBuilding2 className={ICON} aria-hidden="true" />
+                Customers
               </NavLink>
             )}
             <NavLink

@@ -2,7 +2,8 @@
  * Project templates in the new project dialog: the team's default prefills
  * the form as it opens and says what it adds, the create names the template
  * and leaves out what it still holds for the server to fill, an edited field
- * is sent, and going back to no template sends every field without it.
+ * is sent, going back to no template sends every field without it, and a
+ * template issue the server left out raises a notice.
  */
 
 import { render, screen, waitFor } from '@testing-library/react';
@@ -117,6 +118,12 @@ const created = (body: ProjectCreate): ProjectRead => ({
 
 const onCreated = vi.fn();
 
+const showToast = vi.fn<(message: string, tone?: string) => number>();
+
+vi.mock('../../lib/toast', () => ({
+  showToast: (message: string, tone?: string) => showToast(message, tone),
+}));
+
 const renderDialog = () =>
   render(
     <CreateProjectDialog
@@ -139,6 +146,7 @@ beforeEach(() => {
     default_template_id: 'tp-1',
   });
   onCreated.mockReset();
+  showToast.mockReset();
 });
 
 describe('project templates in the new project dialog', () => {
@@ -237,5 +245,58 @@ describe('project templates in the new project dialog', () => {
       priority: 'none',
       status: 'planned',
     });
+  });
+
+  it('raises a notice for a template issue the server left out', async () => {
+    const user = userEvent.setup();
+    createProject.mockImplementation((body) =>
+      Promise.resolve({
+        ...created(body),
+        skipped_template_issues: [
+          {
+            key: 'i1',
+            title: 'Write the plan',
+            reason: 'Sub-issues are one level deep',
+          },
+        ],
+      })
+    );
+    renderDialog();
+
+    await waitFor(() => {
+      expect(summaryBox()).toHaveValue('Ship the feature');
+    });
+    await user.type(
+      screen.getByRole('textbox', { name: 'Project name' }),
+      'Search'
+    );
+    await user.click(screen.getByRole('button', { name: 'Create project' }));
+
+    await waitFor(() => {
+      expect(onCreated).toHaveBeenCalledTimes(1);
+    });
+    expect(showToast).toHaveBeenCalledWith(
+      'Left out template issue "Write the plan": Sub-issues are one level deep',
+      'error'
+    );
+  });
+
+  it('raises no notice when every template issue was added', async () => {
+    const user = userEvent.setup();
+    renderDialog();
+
+    await waitFor(() => {
+      expect(summaryBox()).toHaveValue('Ship the feature');
+    });
+    await user.type(
+      screen.getByRole('textbox', { name: 'Project name' }),
+      'Search'
+    );
+    await user.click(screen.getByRole('button', { name: 'Create project' }));
+
+    await waitFor(() => {
+      expect(onCreated).toHaveBeenCalledTimes(1);
+    });
+    expect(showToast).not.toHaveBeenCalled();
   });
 });
