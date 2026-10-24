@@ -691,3 +691,47 @@ describe('the team default display', () => {
     ).not.toBeInTheDocument();
   });
 });
+
+describe('the presets', () => {
+  it('narrows the active preset to the unstarted and started categories', async () => {
+    renderPage('/w/mine/team/ENG?scope=active');
+
+    await waitFor(() => {
+      expect(listIssues).toHaveBeenCalledWith(
+        expect.objectContaining({
+          team_id: 'team-1',
+          status_category: ['unstarted', 'started'],
+        })
+      );
+    });
+    expect(screen.getByRole('link', { name: 'Active' })).toHaveAttribute(
+      'aria-current',
+      'page'
+    );
+  });
+
+  it('narrows the backlog preset to the backlog category', async () => {
+    renderPage('/w/mine/team/ENG?scope=backlog');
+
+    await waitFor(() => {
+      expect(listIssues).toHaveBeenCalledWith(
+        expect.objectContaining({
+          team_id: 'team-1',
+          status_category: 'backlog',
+        })
+      );
+    });
+  });
+
+  it('reopens a preset in the display the viewer last left it in', async () => {
+    localStorage.setItem(
+      'standupless-team-scope-display:team-1:list:active',
+      'group=priority'
+    );
+    renderPage('/w/mine/team/ENG?scope=active');
+
+    expect(
+      await screen.findByRole('region', { name: 'High' })
+    ).toBeInTheDocument();
+  });
+});

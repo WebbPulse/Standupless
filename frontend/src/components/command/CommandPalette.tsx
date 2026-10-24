@@ -152,6 +152,7 @@ import {
   MIN_TERM,
 } from '../../lib/searchTerms';
 import { teamTree } from '../../lib/teamOrder';
+import { teamScopePath } from '../../lib/teamIssueScope';
 import type { Theme } from '../../lib/theme';
 import {
   currentOrFirstTeam,
@@ -727,6 +728,22 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
         hint: 'G then E',
         icon: <LuList className={ICON} />,
         to: teamPath(slug, team.key_prefix),
+      });
+      built.push({
+        id: 'nav-team-active',
+        label: 'Go to active issues',
+        keywords: `${team.name} active started unstarted in progress todo`,
+        hint: team.key_prefix,
+        icon: <LuList className={ICON} />,
+        to: teamScopePath(slug, team.key_prefix, 'active'),
+      });
+      built.push({
+        id: 'nav-team-backlog',
+        label: 'Go to backlog',
+        keywords: `${team.name} backlog`,
+        hint: team.key_prefix,
+        icon: <LuList className={ICON} />,
+        to: teamScopePath(slug, team.key_prefix, 'backlog'),
       });
       built.push({
         id: 'nav-cycles',
