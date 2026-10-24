@@ -26,6 +26,7 @@ import { SelectField } from '../../components/ui/select';
 import Spinner from '../../components/ui/spinner';
 import { useCursorPages, type CursorPage } from '../../hooks/useCursorPages';
 import { useWorkspace } from '../../hooks/useWorkspace';
+import { signInMethodLabel } from '../../lib/amr';
 import { canManageMembers } from '../../lib/capabilities';
 import { downloadText, todayStamp } from '../../lib/download';
 import { errorMessage } from '../../lib/errors';
@@ -128,6 +129,8 @@ const AuditRow: React.FC<{ row: AuditEventRead }> = ({ row }) => {
   const changes = changeLines(row);
   const meta = [SOURCE_LABELS[row.source] ?? row.source];
   if (row.ip) meta.push(row.ip);
+  const methods = signInMethodLabel(row.amr ?? []);
+  if (methods) meta.push(methods);
   return (
     <li className="space-y-1 px-3 py-2">
       <div className="flex flex-wrap items-baseline justify-between gap-2">

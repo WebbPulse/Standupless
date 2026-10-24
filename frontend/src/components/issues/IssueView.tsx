@@ -124,6 +124,7 @@ import { IconButton } from '../ui/button';
 import { LINK_CLASS } from '../ui/link';
 import Menu, { MenuItem, MenuSeparator, MenuShortcut } from '../ui/menu';
 import Spinner from '../ui/spinner';
+import { useTruncationTooltip } from '../ui/truncated-text';
 import { Toaster } from '../ui/toast';
 import AddLinkDialog from './AddLinkDialog';
 import AddRelationDialog from './AddRelationDialog';
@@ -406,6 +407,7 @@ export const IssueView: React.FC<IssueViewProps> = ({
   const attachFiles = useAttachFiles(workspaceId, issueId);
   const subscription = useIssueSubscription(workspaceId, issueId);
   const reminder = useIssueReminder(workspaceId, issueId);
+  const teamTip = useTruncationTooltip<HTMLAnchorElement>();
   const remindKeys = embedded ? '' : REMIND_ME_KEYS;
 
   const team = teams?.find((item) => item.id === teamId);
@@ -567,11 +569,14 @@ export const IssueView: React.FC<IssueViewProps> = ({
       {team !== undefined && (
         <>
           <Link
+            ref={teamTip.ref}
             to={teamPath(slug, team.key_prefix)}
             className={TEAM_LINK_CLASS}
+            {...teamTip.handlers}
           >
             {team.name}
           </Link>
+          {teamTip.tip}
           <LuChevronRight
             aria-hidden="true"
             className="h-3.5 w-3.5 shrink-0 text-text-faint"

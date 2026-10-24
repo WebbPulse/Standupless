@@ -12,7 +12,8 @@ import {
   getIdentityClient,
   type IdentityClient,
 } from '../../api/identityClient';
-import { deviceLabel, methodLabel } from '../../lib/account';
+import { deviceLabel } from '../../lib/account';
+import { signInMethodLabel } from '../../lib/amr';
 import { errorMessage } from '../../lib/errors';
 import { showErrorToast, showToast } from '../../lib/toast';
 import { ErrorAlert } from '../ui/alert';
@@ -42,7 +43,7 @@ const SessionRow: React.FC<{
   busy: boolean;
   onRevoke: () => void;
 }> = ({ session, busy, onRevoke }) => {
-  const method = methodLabel(session.amr);
+  const method = signInMethodLabel(session.amr);
   return (
     <li
       className="flex min-h-row items-center gap-3 px-3 py-2"
