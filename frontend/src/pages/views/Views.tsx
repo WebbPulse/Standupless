@@ -330,18 +330,18 @@ export const Views: React.FC = () => {
             ))}
           </div>
           <Select
-          aria-label="Which views"
-          value={scope}
-          className="h-7 w-auto text-xs"
-          onChange={(event) => {
-            setScope(event.target.value as ViewListScope);
-          }}
-        >
-          {SCOPES.map((option) => (
-            <option key={option.value} value={option.value}>
-              {option.label}
-            </option>
-          ))}
+            aria-label="Which views"
+            value={scope}
+            className="h-7 w-auto text-xs"
+            onChange={(event) => {
+              setScope(event.target.value as ViewListScope);
+            }}
+          >
+            {SCOPES.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
           </Select>
         </div>
       }
