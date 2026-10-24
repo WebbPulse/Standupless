@@ -196,7 +196,9 @@ def label_names(repositories: Any, label_ids: list[str]) -> set[str]:
 
 def comments_of(repositories: Any, issue_id: str) -> list[Any]:
     """Every comment on one issue, oldest first."""
-    return list(repositories.comments.list_for_issue(WORKSPACE, issue_id).items)
+    from app.common.db.dynamo.comments import Comment
+
+    return [Comment.model_validate(row) for row in repositories.comments.list_for_issue(WORKSPACE, issue_id).items]
 
 
 def link_github_account(repositories: Any, github_id: int, user_id: str) -> None:

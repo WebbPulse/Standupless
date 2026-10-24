@@ -132,6 +132,8 @@ ROUTE_SCOPES: Mapping[tuple[str, str], tuple[str, ...]] = {
     ("POST", "/{workspace_id}/imports/{import_id}/cancel"): SETTINGS_WRITE_ADMIN,
     ("POST", "/{workspace_id}/imports/linear/teams"): SETTINGS_WRITE_ADMIN,
     ("POST", "/{workspace_id}/imports/linear"): SETTINGS_WRITE_ADMIN,
+    ("GET", "/{workspace_id}/imports/github/repositories"): SETTINGS_READ_ADMIN,
+    ("POST", "/{workspace_id}/imports/github"): SETTINGS_WRITE_ADMIN,
     ("GET", "/joinable"): NO_KEY_ACCESS,
     ("POST", "/{workspace_id}/join"): NO_KEY_ACCESS,
     ("GET", "/{workspace_id}/approved-domains"): MEMBERS_READ_ADMIN,
