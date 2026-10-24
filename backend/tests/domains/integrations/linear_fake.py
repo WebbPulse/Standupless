@@ -47,6 +47,7 @@ class FakeLinear:
     projects: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
     issues: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
     initiatives: list[dict[str, Any]] = field(default_factory=list)
+    project_relations: list[dict[str, Any]] = field(default_factory=list)
     nested_page_size: int = 50
     rate_limit_next: int = 0
     requests: list[Request] = field(default_factory=list)
@@ -238,6 +239,11 @@ class FakeLinear:
             for initiative in self.initiatives
         ]
         return {"initiatives": self._connection(nodes, variables.get("first"), variables.get("after"))}
+
+    def _op_ProjectRelations(self, variables: dict[str, Any]) -> dict[str, Any]:
+        """The workspace's project dependencies."""
+        relations = list(self.project_relations)
+        return {"projectRelations": self._connection(relations, variables.get("first"), variables.get("after"))}
 
 
 def ref(node: dict[str, Any]) -> dict[str, Any]:

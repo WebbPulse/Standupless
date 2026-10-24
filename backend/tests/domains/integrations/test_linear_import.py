@@ -27,7 +27,7 @@ from app.domains.integrations.consumers import import_jobs
 from app.domains.integrations.mcp.transport import INSUFFICIENT_SCOPE
 from tests.domains.helpers import ADMIN, MEMBER, OWNER, sign_in
 from tests.domains.integrations.conftest import TEAM, WORKSPACE, sqs_record
-from tests.domains.integrations.linear_fake import FAKE_KEY, FakeLinear, sample
+from tests.domains.integrations.linear_fake import FAKE_KEY, FakeLinear, ref, sample
 from tests.domains.integrations.test_mcp import tool
 from tests.domains.integrations.test_mcp_tools import answer, mint_for, refusal
 
@@ -348,7 +348,7 @@ def test_an_import_carries_comments_links_and_planning(
     }
     assert (job["created_count"], job["linked_count"], job["labels_created"]) == (4, 1, 3)
     assert job["phase"] is None
-    assert job["phase_index"] == job["phase_count"] == 5
+    assert job["phase_index"] == job["phase_count"] == 6
 
 
 def test_no_account_or_invite_is_made_for_unmatched_people(
@@ -451,6 +451,68 @@ def test_a_second_import_updates_instead_of_duplicating(
     assert sorted(names) == ["Bug", "Frontend", "Type"]
 
 
+def add_dependent_projects(fake: FakeLinear) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Give the sample team a second project the first blocks, plus a loop and a link to a project not imported."""
+    [first] = fake.projects[LINEAR_TEAM]
+    second = {
+        **{key: value for key, value in first.items() if key not in ("milestones", "updates")},
+        "id": "project-2",
+        "name": "Rollout ENG",
+        "createdAt": "2026-08-03T09:00:00.000Z",
+        "milestones": [],
+        "updates": [],
+    }
+    fake.projects[LINEAR_TEAM].append(second)
+    elsewhere = {"id": "project-elsewhere", "createdAt": "2026-08-04T09:00:00.000Z"}
+
+    def dependency(linear_id: str, project: Any, anchor: str, related: Any, related_anchor: str) -> dict[str, Any]:
+        """One Linear project dependency."""
+        return {
+            "id": linear_id,
+            "type": "dependency",
+            "anchorType": anchor,
+            "relatedAnchorType": related_anchor,
+            "createdAt": "2026-08-05T09:00:00.000Z",
+            "project": ref(project),
+            "relatedProject": ref(related),
+        }
+
+    fake.project_relations = [
+        dependency("relation-1", second, "start", first, "end"),
+        dependency("relation-2", second, "end", first, "start"),
+        dependency("relation-3", first, "end", elsewhere, "start"),
+    ]
+    return first, second
+
+
+def test_project_dependencies_become_blocks_links_without_loops(
+    client: TestClient, repositories: Any, workspace: str, bucket: str, linear: FakeLinear
+) -> None:
+    """A Linear dependency links the imported projects, a loop is left out with a warning, and a re-run adds none."""
+    first, second = add_dependent_projects(linear)
+    blocker = row_id("project", first["id"], first["createdAt"])
+    blocked = row_id("project", second["id"], second["createdAt"])
+
+    job = start(client).json()
+
+    assert job["status"] == "completed"
+    [relation] = repositories.planning.list_project_relations(WORKSPACE)
+    assert (relation.project_id, relation.target_project_id) == (blocker, blocked)
+    assert relation.relation_id == row_id("project_relation", "relation-1", "2026-08-05T09:00:00.000Z")
+    assert relation.created_by == ADMIN
+    assert job["counts"]["project_relations"] == 1
+    problems = {(problem["field"], problem["message"]) for problem in job["problems"]}
+    assert (
+        "project_relations",
+        "Rollout ENG blocking Importer ENG would make the projects wait on each other, left out",
+    ) in problems
+
+    again = start(client).json()
+
+    assert again["counts"].get("project_relations", 0) == 0
+    assert len(repositories.planning.list_project_relations(WORKSPACE)) == 1
+
+
 def test_the_queue_runs_a_linear_import_a_step_at_a_time(
     client: TestClient, repositories: Any, workspace: str, queued: list[tuple[str, Any]], linear: FakeLinear
 ) -> None:
@@ -463,7 +525,7 @@ def test_the_queue_runs_a_linear_import_a_step_at_a_time(
     middle = client.get(f"/api/workspaces/{WORKSPACE}/imports/{job['import_id']}").json()
     assert middle["status"] == "running"
     assert middle["phase"] == "projects"
-    assert (middle["phase_index"], middle["phase_count"]) == (1, 5)
+    assert (middle["phase_index"], middle["phase_count"]) == (1, 6)
 
     drain(repositories, queued)
 

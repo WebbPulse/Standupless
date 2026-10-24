@@ -188,7 +188,8 @@ one as it is.
 
 Per mapped team, in order: cycles, projects with their milestones and updates,
 issues with their comments, then a second pass over the issues for sub-issue
-links and relations. Initiatives come last, once for the workspace. Every
+links and relations. Initiatives and then project dependencies come last, once
+for the workspace. Every
 connection is paged 50 at a time. Linear's rate limit, a 429 or a `RATELIMITED`
 error, is waited out until the reset time it gives, at most 60 seconds per wait
 and 5 attempts per request. The job's `phase`, `phase_index` and `phase_count`
@@ -211,6 +212,10 @@ say where it is, and `counts` holds the tallies the summary shows.
   links are added to the end of the description; only http and https links are
   kept.
 - An unnamed Linear cycle is named after its number, such as `Cycle 7`.
+- A Linear project dependency becomes a blocks link between the two imported
+  projects: the project whose start waits on the other's end is the blocked
+  one. A dependency on a project that was not imported is skipped, and one that
+  would make projects wait on each other is left out with a warning.
 
 Every row gets an id derived from the workspace and the Linear id, and each
 issue keeps its Linear identifier and URL in `external_ref`, so running the
