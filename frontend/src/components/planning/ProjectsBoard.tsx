@@ -12,7 +12,10 @@
  * Dragging a card to another column changes the field the columns are by, and
  * to another lane the field the lanes are by, so one drop can change both.
  * Team columns and lanes show where a project sits but take no drops, since a
- * project can be on several teams.
+ * project can be on several teams. Dropping a card among the others in its own
+ * cell reorders it, writing the shared manual rank and switching the page to
+ * manual ordering; under manual ordering a drop into another cell lands where
+ * it was dropped too.
  *
  * A column header's menu creates a project already in that column, collapses
  * the column to a narrow strip that still takes drops, hides it, or hides
@@ -63,16 +66,19 @@ import {
 } from '../../hooks/useCloseProjectPrompt';
 import { useStoredSet } from '../../hooks/useStoredSet';
 import { cn } from '../../lib/cn';
+import { slotIndex } from '../../lib/dropSlot';
 import type { Assignable } from '../../lib/issuePeople';
 import { projectPath } from '../../lib/paths';
 import { progressPercent } from '../../lib/planningDisplay';
 import { canEditProject } from '../../lib/planningModel';
 import {
-  dropPatch,
+  cellChange,
+  manualPlacements,
   type ProjectColumn,
   type ProjectGroup,
   type ProjectGrouping,
   type ProjectMove,
+  type ProjectOrdering,
 } from '../../lib/projectList';
 import { shortDateLabel } from '../../lib/propertyOptions';
 import type {
@@ -439,11 +445,21 @@ export interface ProjectsBoardProps {
   ) => void;
   /** The create action for a column, or undefined where it offers none. */
   createIn?: ((column: ProjectGroup) => (() => void) | undefined) | undefined;
+  /** The ordering in force, which decides whether a drop keeps its position. */
+  ordering?: ProjectOrdering | undefined;
+  /** Switches the page's ordering, called with manual after a reorder. */
+  onOrderingChange?: ((ordering: ProjectOrdering) => void) | undefined;
 }
 
 /** A card being dragged. */
 interface BoardDrag {
   projectId: string;
+}
+
+/** Where a dragged card would land: its cell and its index among the other cards. */
+interface BoardSlot {
+  cell: string;
+  index: number;
 }
 
 /** A close waiting on the open issue question. */
@@ -475,9 +491,12 @@ export const ProjectsBoard: React.FC<ProjectsBoardProps> = ({
   workspaceRole,
   onMove,
   createIn,
+  ordering,
+  onOrderingChange,
 }) => {
   const [drag, setDrag] = useState<BoardDrag | null>(null);
   const [over, setOver] = useState<string | null>(null);
+  const [slot, setSlot] = useState<BoardSlot | null>(null);
   const [closing, setClosing] = useState<PendingClose | null>(null);
   const [menu, setMenu] = useState<OpenMenu | null>(null);
   const [forced, setForced] = useState<ForcedField | null>(null);
@@ -526,9 +545,31 @@ export const ProjectsBoard: React.FC<ProjectsBoardProps> = ({
     lane: ProjectGroup
   ): ProjectGroup[] => (lane.key === ONE_LANE ? [column] : [column, lane]);
 
-  const accepts = (column: ProjectGroup, lane: ProjectGroup): boolean =>
-    dragged !== undefined &&
-    dropPatch(dragged, cellGroups(column, lane)) !== null;
+  const reorders = onOrderingChange !== undefined;
+
+  const accepts = (column: ProjectGroup, lane: ProjectGroup): boolean => {
+    if (dragged === undefined) return false;
+    const patch = cellChange(dragged, cellGroups(column, lane));
+    if (patch === null) return false;
+    return Object.keys(patch).length > 0 || reorders;
+  };
+
+  const placesAt = (column: ProjectGroup, lane: ProjectGroup): boolean => {
+    if (dragged === undefined || !reorders) return false;
+    const patch = cellChange(dragged, cellGroups(column, lane));
+    return (
+      patch !== null &&
+      (Object.keys(patch).length === 0 || ordering === 'manual')
+    );
+  };
+
+  const cellCards = (
+    column: ProjectGroup,
+    ids: ReadonlySet<string> | null
+  ): ProjectRead[] =>
+    ids === null
+      ? column.rows
+      : column.rows.filter((project) => ids.has(project.project_id));
 
   const change = (project: ProjectRead, patch: ProjectMove): void => {
     if (
@@ -541,14 +582,44 @@ export const ProjectsBoard: React.FC<ProjectsBoardProps> = ({
     onMove(project, patch);
   };
 
-  const drop = (column: ProjectGroup, lane: ProjectGroup): void => {
+  const drop = (
+    column: ProjectGroup,
+    lane: ProjectGroup,
+    ids: ReadonlySet<string> | null,
+    index: number | null
+  ): void => {
     const project = dragged;
+    const positioned = placesAt(column, lane);
     setDrag(null);
     setOver(null);
+    setSlot(null);
     if (project === undefined) return;
-    const patch = dropPatch(project, cellGroups(column, lane));
+    const patch = cellChange(project, cellGroups(column, lane));
     if (patch === null) return;
-    change(project, patch);
+    const moves = Object.keys(patch).length > 0;
+    if (!positioned || index === null) {
+      if (moves) change(project, patch);
+      return;
+    }
+    const cards = cellCards(column, ids);
+    const rows = cards.some((card) => card.project_id === project.project_id)
+      ? cards
+      : [...cards, project];
+    const placements = manualPlacements(rows, project.project_id, index) ?? [];
+    const own = placements.find(
+      (placement) => placement.projectId === project.project_id
+    );
+    for (const placement of placements) {
+      if (placement === own) continue;
+      const other = byId.get(placement.projectId);
+      if (other !== undefined)
+        onMove(other, { sort_order: placement.sort_order });
+    }
+    const merged =
+      own === undefined ? patch : { ...patch, sort_order: own.sort_order };
+    if (Object.keys(merged).length > 0) change(project, merged);
+    if (!moves && placements.length > 0 && ordering !== 'manual')
+      onOrderingChange?.('manual');
   };
 
   const showOnly = (column: ProjectGroup): void => {
@@ -563,14 +634,26 @@ export const ProjectsBoard: React.FC<ProjectsBoardProps> = ({
   }, []);
   const menuProject = menu === null ? undefined : byId.get(menu.projectId);
 
-  const dropHandlers = (column: ProjectGroup, lane: ProjectGroup) => {
+  const dropHandlers = (
+    column: ProjectGroup,
+    lane: ProjectGroup,
+    ids: ReadonlySet<string> | null
+  ) => {
     const cell = `${lane.key}|${column.key}`;
+    const index = slot?.cell === cell ? slot.index : null;
     return {
-      onDragOver: (event: React.DragEvent) => {
+      onDragOver: (event: React.DragEvent<HTMLElement>) => {
         if (!accepts(column, lane)) return;
         event.preventDefault();
         event.dataTransfer.dropEffect = 'move';
         if (over !== cell) setOver(cell);
+        if (dragged === undefined || !placesAt(column, lane)) return;
+        const next = slotIndex(
+          event.currentTarget,
+          dragged.project_id,
+          event.clientY
+        );
+        if (index !== next) setSlot({ cell, index: next });
       },
       onDragLeave: (event: React.DragEvent) => {
         if (
@@ -578,13 +661,24 @@ export const ProjectsBoard: React.FC<ProjectsBoardProps> = ({
           !event.currentTarget.contains(event.relatedTarget as Node)
         ) {
           setOver(null);
+          setSlot(null);
         }
       },
-      onDrop: (event: React.DragEvent) => {
+      onDrop: (event: React.DragEvent<HTMLElement>) => {
         event.preventDefault();
-        drop(column, lane);
+        const at =
+          dragged === undefined
+            ? index
+            : (index ??
+              slotIndex(
+                event.currentTarget,
+                dragged.project_id,
+                event.clientY
+              ));
+        drop(column, lane, ids, at);
       },
       isTarget: over === cell && accepts(column, lane),
+      index,
     };
   };
 
@@ -593,15 +687,26 @@ export const ProjectsBoard: React.FC<ProjectsBoardProps> = ({
     lane: ProjectGroup,
     ids: ReadonlySet<string> | null
   ): React.ReactNode => {
-    const { isTarget, ...handlers } = dropHandlers(column, lane);
+    const { isTarget, index, ...handlers } = dropHandlers(column, lane, ids);
     const label =
       lane.key === ONE_LANE
         ? `${column.label} projects`
         : `${column.label}, ${lane.label} projects`;
-    const cards =
-      ids === null
-        ? column.rows
-        : column.rows.filter((project) => ids.has(project.project_id));
+    const cards = cellCards(column, ids);
+    const others = cards.filter(
+      (project) => project.project_id !== drag?.projectId
+    );
+    const marker =
+      isTarget && index !== null && placesAt(column, lane)
+        ? (others[index]?.project_id ?? null)
+        : undefined;
+    const placeholder = (
+      <li
+        key="drop-placeholder"
+        aria-hidden="true"
+        className="h-10 shrink-0 rounded-md border border-dashed border-accent bg-accent-soft/40"
+      />
+    );
     if (stored.has(collapsedKey(column.key))) {
       return (
         <div
@@ -638,38 +743,42 @@ export const ProjectsBoard: React.FC<ProjectsBoardProps> = ({
         )}
       >
         {cards.map((project) => (
-          <BoardCard
-            key={project.project_id}
-            project={project}
-            byId={byId}
-            shown={shown}
-            slug={slug}
-            teams={teams}
-            people={people}
-            projectLabels={projectLabels}
-            editable={canEditProject(workspaceRole, project, teams)}
-            dimmed={drag?.projectId === project.project_id}
-            forced={forced?.projectId === project.project_id ? forced : null}
-            onChange={(patch) => {
-              change(project, patch);
-            }}
-            onMenu={(x, y) => {
-              setMenu({ projectId: project.project_id, x, y });
-            }}
-            onForcedDone={() => {
-              setForced(null);
-            }}
-            onDragStart={(event) => {
-              event.dataTransfer.effectAllowed = 'move';
-              event.dataTransfer.setData('text/plain', project.name);
-              setDrag({ projectId: project.project_id });
-            }}
-            onDragEnd={() => {
-              setDrag(null);
-              setOver(null);
-            }}
-          />
+          <React.Fragment key={project.project_id}>
+            {marker === project.project_id && placeholder}
+            <BoardCard
+              project={project}
+              byId={byId}
+              shown={shown}
+              slug={slug}
+              teams={teams}
+              people={people}
+              projectLabels={projectLabels}
+              editable={canEditProject(workspaceRole, project, teams)}
+              dimmed={drag?.projectId === project.project_id}
+              forced={forced?.projectId === project.project_id ? forced : null}
+              onChange={(patch) => {
+                change(project, patch);
+              }}
+              onMenu={(x, y) => {
+                setMenu({ projectId: project.project_id, x, y });
+              }}
+              onForcedDone={() => {
+                setForced(null);
+              }}
+              onDragStart={(event) => {
+                event.dataTransfer.effectAllowed = 'move';
+                event.dataTransfer.setData('text/plain', project.name);
+                setDrag({ projectId: project.project_id });
+              }}
+              onDragEnd={() => {
+                setDrag(null);
+                setOver(null);
+                setSlot(null);
+              }}
+            />
+          </React.Fragment>
         ))}
+        {marker === null && placeholder}
       </ul>
     );
   };
