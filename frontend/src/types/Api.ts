@@ -4248,8 +4248,9 @@ export interface IssueImportPreviewRead {
 export type ImportStatus =
   'queued' | 'running' | 'completed' | 'failed' | 'cancelled';
 
-/** What an import reads: an uploaded CSV, a Linear, Shortcut or Asana workspace through its API, or a GitHub repository's Issues. */
-export type ImportKind = 'csv' | 'linear' | 'shortcut' | 'asana' | 'github';
+/** What an import reads: an uploaded CSV, a Linear, Shortcut, Asana or Jira workspace through its API, or a GitHub repository's Issues. */
+export type ImportKind =
+  'csv' | 'linear' | 'shortcut' | 'asana' | 'jira' | 'github';
 
 /** The tallies a Linear import keeps, by name. */
 export type LinearImportCount =
@@ -4283,6 +4284,31 @@ export type AsanaImportCount =
   | 'labels'
   | 'projects'
   | 'sub_issues';
+
+/** The tallies a Jira import keeps, by name. */
+export type JiraImportCount =
+  | 'issues_created'
+  | 'issues_updated'
+  | 'comments'
+  | 'labels'
+  | 'projects'
+  | 'cycles'
+  | 'sub_issues'
+  | 'relations';
+
+/** How a Jira import writes epics: as Standupless projects, or as parent issues. */
+export type JiraEpicsAs = 'projects' | 'parents';
+
+/** One Jira project or JQL filter a Jira import reads, the team it writes into, and how it maps. */
+export interface JiraProjectMappingRead {
+  site_url: string;
+  project_key?: string | null;
+  jql?: string | null;
+  name: string;
+  team_id: string;
+  epics_as: JiraEpicsAs;
+  statuses?: Record<string, string>;
+}
 
 /** One Asana project an Asana import reads, the team it writes into, and how its tasks map. */
 export interface AsanaProjectMappingRead {
@@ -4338,12 +4364,19 @@ export interface IssueImportRead {
   /** How many issues a Linear import found already imported and updated. */
   updated_count?: number;
   counts?: Partial<
-    Record<LinearImportCount | AsanaImportCount | GitHubImportCount, number>
+    Record<
+      | LinearImportCount
+      | AsanaImportCount
+      | JiraImportCount
+      | GitHubImportCount,
+      number
+    >
   >;
   linear_teams?: LinearTeamMappingRead[];
   /** The teams a Shortcut import reads, in the order it reads them. */
   source_teams?: SourceTeamMappingRead[];
   asana_projects?: AsanaProjectMappingRead[];
+  jira_projects?: JiraProjectMappingRead[];
   /** The repository a GitHub import reads; its full name is the file name. */
   github_repository_id?: string | null;
   /** What a running Linear or GitHub import is reading now. */
@@ -4493,6 +4526,74 @@ export interface AsanaProjectPreviewRead {
 /** What an Asana import would do, project by project, writing nothing. */
 export interface AsanaImportPreviewRead {
   projects: AsanaProjectPreviewRead[];
+}
+
+/** The Jira Cloud site and account an import signs in with. The token is used for the job only. */
+export interface JiraCredentials {
+  site_url: string;
+  email: string;
+  token: string;
+}
+
+/** One project a Jira Cloud account can browse. */
+export interface JiraProjectRead {
+  id: string;
+  key: string;
+  name: string;
+  project_type?: string | null;
+  team_managed: boolean;
+  archived: boolean;
+  url?: string | null;
+}
+
+/** Every project a Jira Cloud account can browse, with the site they are on. */
+export interface JiraProjectListRead {
+  site_url: string;
+  items: JiraProjectRead[];
+}
+
+/** One Jira project or JQL filter to import, the team it goes into, and how its issues map. */
+export interface JiraProjectChoice {
+  project_key?: string | null;
+  /** A JQL filter narrowing the project, or naming the issues on its own. */
+  jql?: string | null;
+  team_id: string;
+  epics_as?: JiraEpicsAs;
+  /** Jira status name to the id of the team status it lands in. */
+  statuses?: Record<string, string>;
+}
+
+/** The body a Jira import or its preview takes. */
+export interface JiraImportRequest extends JiraCredentials {
+  projects: JiraProjectChoice[];
+}
+
+/** Where one Jira status lands. */
+export interface JiraStatusPlanRead {
+  source: string;
+  category?: string | null;
+  status_id: string;
+  status_name: string;
+}
+
+/** What importing one Jira project or filter would do. */
+export interface JiraProjectPreviewRead {
+  project_key?: string | null;
+  jql?: string | null;
+  name: string;
+  team_id: string;
+  epics_as: JiraEpicsAs;
+  issue_count: number;
+  done_count: number;
+  estimate_field?: string | null;
+  sprint_field?: string | null;
+  statuses: JiraStatusPlanRead[];
+}
+
+/** What a Jira import would do, choice by choice, writing nothing. */
+export interface JiraImportPreviewRead {
+  site_url: string;
+  projects: JiraProjectPreviewRead[];
 }
 
 /** One repository the workspace's installed GitHub App covers, to import the Issues of. */
