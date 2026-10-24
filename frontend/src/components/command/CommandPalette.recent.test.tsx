@@ -1,14 +1,16 @@
 /**
  * The recently opened issues the palette offers: they head an empty palette
  * with their status glyph, key and title, Enter opens the newest, a typed term
- * narrows them, the issue in view is left out, and only the open workspace's
- * list shows.
+ * narrows them, the issue in view is left out, its own actions come before
+ * them, and only the open workspace's list shows.
  */
 
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import React from 'react';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { useShortcut } from '../../hooks/useShortcuts';
 import { issuePath } from '../../lib/paths';
 import { recordRecentIssue } from '../../lib/recentIssues';
 import ShortcutProvider from '../shortcuts/ShortcutProvider';
@@ -57,11 +59,27 @@ const remember = (workspaceId: string, key: string, title: string): void => {
   });
 };
 
+/** Registers one focused-issue shortcut, as an issue page would. */
+const IssueShortcut: React.FC<{ run: () => void }> = ({ run }) => {
+  useShortcut({
+    keys: 's',
+    label: 'Change status',
+    scope: 'issue',
+    handler: run,
+  });
+  return null;
+};
+
 /** Renders the open palette for the viewer in a workspace at a path. */
-const renderPalette = (workspaceId = 'ws-1', path = '/w/mine'): void => {
+const renderPalette = (
+  workspaceId = 'ws-1',
+  path = '/w/mine',
+  issueAction?: () => void
+): void => {
   render(
     <MemoryRouter initialEntries={[path]}>
       <ShortcutProvider>
+        {issueAction === undefined ? null : <IssueShortcut run={issueAction} />}
         <CommandPalette
           open
           onClose={vi.fn()}
@@ -133,5 +151,40 @@ describe('recent issues in the palette', () => {
     const rows = within(group).getAllByRole('option');
     expect(rows).toHaveLength(1);
     expect(rows[0]).toHaveTextContent('ENG-1');
+  });
+
+  it('puts the issue actions in view above the recent issues', async () => {
+    remember('ws-1', 'ENG-1', 'Rotate the signing keys');
+    const changeStatus = vi.fn();
+    renderPalette('ws-1', issuePath('mine', 'ENG-2'), changeStatus);
+
+    const first = screen.getAllByRole('option')[0];
+    expect(first).toHaveTextContent('Change status');
+    const groups = screen
+      .getAllByRole('group')
+      .map((group) => group.getAttribute('aria-label'));
+    expect(groups.indexOf('ENG-2')).toBeLessThan(
+      groups.indexOf('Recent issues')
+    );
+
+    await userEvent.keyboard('{Enter}');
+
+    expect(changeStatus).toHaveBeenCalledTimes(1);
+    expect(navigate).not.toHaveBeenCalled();
+  });
+
+  it('keeps the recent issues first with no issue in view', async () => {
+    remember('ws-1', 'ENG-1', 'Rotate the signing keys');
+    const changeStatus = vi.fn();
+    renderPalette('ws-1', '/w/mine', changeStatus);
+
+    expect(screen.getAllByRole('option')[0]).toHaveTextContent(
+      'Rotate the signing keys'
+    );
+
+    await userEvent.keyboard('{Enter}');
+
+    expect(navigate).toHaveBeenCalledWith(issuePath('mine', 'ENG-1'));
+    expect(changeStatus).not.toHaveBeenCalled();
   });
 });

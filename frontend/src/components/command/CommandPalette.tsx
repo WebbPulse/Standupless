@@ -31,7 +31,9 @@
  *
  * The issues the viewer opened most recently in this workspace head the top
  * level, so an empty palette is one Enter away from the issue seen a minute
- * ago, and a typed term narrows them along with everything else.
+ * ago, and a typed term narrows them along with everything else. With an issue
+ * in view its own actions come first and the recent issues follow them, so
+ * Enter runs the first action rather than leaving the issue.
  */
 
 import React, {
@@ -1102,6 +1104,18 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
       });
     }
 
+    const current = issueActions.filter((command) =>
+      matches(command, deferred)
+    );
+    const currentGroup: CommandGroup | null =
+      current.length === 0
+        ? null
+        : {
+            heading: issueKey === null ? 'Current issue' : issueKey,
+            commands: current,
+          };
+    if (currentGroup !== null && issueKey !== null) built.push(currentGroup);
+
     const viewing = issueKey?.toUpperCase() ?? null;
     const recent = recents
       .filter((row) => row.key.toUpperCase() !== viewing)
@@ -1117,16 +1131,7 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
       built.push({ heading: 'Recent issues', commands: recent });
     }
     const shownRecent = new Set(recent.map((command) => command.id));
-
-    const current = issueActions.filter((command) =>
-      matches(command, deferred)
-    );
-    if (current.length > 0) {
-      built.push({
-        heading: issueKey === null ? 'Current issue' : issueKey,
-        commands: current,
-      });
-    }
+    if (currentGroup !== null && issueKey === null) built.push(currentGroup);
 
     for (const group of pageActions) {
       const here = group.commands.filter((command) =>
