@@ -16,7 +16,13 @@ from webbpulse.integrations.github import GitHubNotFound
 from app.common.db.dynamo.base import utc_now
 from app.domains.integrations import pr_resync
 from app.domains.integrations.consumers import events
-from tests.domains.integrations.conftest import INSTALLATION_ID, REPOSITORY_FULL_NAME, REPOSITORY_ID, WORKSPACE, sqs_record
+from tests.domains.integrations.conftest import (
+    INSTALLATION_ID,
+    REPOSITORY_FULL_NAME,
+    REPOSITORY_ID,
+    WORKSPACE,
+    sqs_record,
+)
 from tests.domains.integrations.test_events_consumer import preset, pull_request_event, status_ids, status_of
 
 __all__ = ["preset", "status_ids"]
@@ -343,7 +349,9 @@ def test_the_plan_reads_each_pull_request_once_newest_first() -> None:
 
     now = utc_now()
 
-    def row(node: str, issue_id: str, number: int, *, state: str = "open", age: float = 2, detached: bool = False) -> Any:
+    def row(
+        node: str, issue_id: str, number: int, *, state: str = "open", age: float = 2, detached: bool = False
+    ) -> Any:
         """One link row of `age` hours."""
         return IssueLink.model_construct(
             link_id=f"{node}#{issue_id}",
