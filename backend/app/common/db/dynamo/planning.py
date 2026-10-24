@@ -212,6 +212,16 @@ CYCLE_RECOUNT_KEYS: tuple[str, ...] = COUNT_BUCKETS + POINT_BUCKETS + UNESTIMATE
 CYCLE_HISTORY = "cycle_history"
 """The kind of one daily scope snapshot of a cycle."""
 
+PROJECT_HISTORY = "project_history"
+"""The kind of one daily scope snapshot of a project."""
+
+PROJECT_HISTORY_KEY_PREFIX = "projecthist#"
+"""Where a project's daily snapshots are filed, one row per day it moved.
+
+`begins_with("project#")` never matches it, so the project listing never reads a
+snapshot row.
+"""
+
 
 def new_planning_id() -> str:
     """A fresh cycle or project id, time sortable so a listing reads in creation order."""
@@ -337,6 +347,16 @@ def cycle_history_prefix(team_id: str, cycle_id: str | None = None) -> str:
 def cycle_history_key(team_id: str, cycle_id: str, day: str) -> str:
     """The sort key of one cycle's snapshot for one day."""
     return f"{cycle_history_prefix(team_id, cycle_id)}{day}"
+
+
+def project_history_prefix(project_id: str) -> str:
+    """The sort key prefix of one project's daily snapshots."""
+    return f"{PROJECT_HISTORY_KEY_PREFIX}{project_id}#"
+
+
+def project_history_key(project_id: str, day: str) -> str:
+    """The sort key of one project's snapshot for one day, ordered by day."""
+    return f"{project_history_prefix(project_id)}{day}"
 
 
 def parse_cycle_key(planning_key: str) -> tuple[str, str] | None:
@@ -1113,6 +1133,37 @@ class CycleSnapshot(BaseModel):
             opening_counts=RollupCounts.from_map(opening_map),
             opening_points=RollupCounts.from_map(opening_map, POINT_PREFIX),
             opening_unestimated=RollupCounts.from_map(opening_map, UNESTIMATED_PREFIX),
+        )
+
+
+class ProjectSnapshot(BaseModel):
+    """One project's recounted counters as they stood at the end of one day.
+
+    Written by the project recount whenever the project's counts change, so the
+    last write of a day is the day's closing value. `opening_*` is what the
+    project held before that day's first recount, which is the close of the day
+    before and, on the first snapshot ever written, what the earlier days read as.
+    """
+
+    day: str
+    counts: RollupCounts = Field(default_factory=RollupCounts)
+    points: RollupCounts = Field(default_factory=RollupCounts)
+    estimating_teams: int = 0
+    opening_counts: RollupCounts = Field(default_factory=RollupCounts)
+    opening_points: RollupCounts = Field(default_factory=RollupCounts)
+
+    @classmethod
+    def from_item(cls, item: Mapping[str, Any]) -> "ProjectSnapshot":
+        """One stored snapshot row, its counters floored at zero."""
+        opening = item.get("opening")
+        opening_map: Mapping[str, Any] = opening if isinstance(opening, Mapping) else {}
+        return cls(
+            day=str(item.get("day", "")),
+            counts=RollupCounts.from_item(item),
+            points=RollupCounts.from_item(item, POINT_PREFIX),
+            estimating_teams=estimating_teams_of(item),
+            opening_counts=RollupCounts.from_map(opening_map),
+            opening_points=RollupCounts.from_map(opening_map, POINT_PREFIX),
         )
 
 
@@ -2067,6 +2118,72 @@ class PlanningRepository:
         except ConditionFailed:
             return False
         return True
+
+    def write_project_snapshot(
+        self,
+        workspace_id: str,
+        project_id: str,
+        day: str,
+        *,
+        counts: Mapping[str, Any],
+        opening: Mapping[str, Any],
+    ) -> bool:
+        """Record one project's recounted counters as the day's latest value, returning whether it landed.
+
+        Unconditional on order, because each write is a whole recount rather than a
+        move, so the next recount heals a write that landed out of turn. `opening`
+        is written only by the first snapshot a day row ever gets.
+        """
+        if not workspace_id or not project_id or not day:
+            return False
+        self._repository.update(
+            {"workspace_id": workspace_id, "planning_key": project_history_key(project_id, day)},
+            update_expression=(
+                "SET #counts = :counts, #kind = :kind, #project = :project, #day = :day, "
+                "#opening = if_not_exists(#opening, :opening)"
+            ),
+            expression_names={
+                "#counts": "counts",
+                "#kind": "kind",
+                "#project": "project_id",
+                "#day": "day",
+                "#opening": "opening",
+            },
+            expression_values={
+                ":counts": {key: int(value or 0) for key, value in counts.items()},
+                ":kind": PROJECT_HISTORY,
+                ":project": project_id,
+                ":day": day,
+                ":opening": {key: int(value or 0) for key, value in opening.items()},
+            },
+        )
+        return True
+
+    def list_project_history(
+        self, workspace_id: str, project_id: str, *, max_items: int = 1200
+    ) -> list[ProjectSnapshot]:
+        """Every daily snapshot of one project, oldest day first, one query on its own prefix."""
+        if not workspace_id or not project_id:
+            return []
+        items = self._repository.iter_query(
+            Key("workspace_id").eq(workspace_id) & Key("planning_key").begins_with(project_history_prefix(project_id)),
+            max_items=max_items,
+        )
+        rows = [ProjectSnapshot.from_item(item) for item in items if str(item.get("kind", "")) == PROJECT_HISTORY]
+        return sorted(rows, key=lambda row: row.day)
+
+    def delete_project_history(self, workspace_id: str, project_id: str, *, limit: int = 100) -> int:
+        """Remove every daily snapshot of one project, returning how many went."""
+        if not workspace_id or not project_id:
+            return 0
+        removed = 0
+        while True:
+            page = self._query_prefix(workspace_id, project_history_prefix(project_id), limit, None)
+            if not page.items:
+                return removed
+            removed += self._repository.delete_many(
+                [{"workspace_id": workspace_id, "planning_key": item["planning_key"]} for item in page.items]
+            )
 
     def list_cycle_history(
         self, workspace_id: str, team_id: str, cycle_id: str, *, max_items: int = 400

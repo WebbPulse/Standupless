@@ -21,6 +21,7 @@ import type {
   MilestoneRead,
   MilestoneUpdate,
   ProjectCreate,
+  ProjectHistoryRead,
   ProjectListQuery,
   ProjectListRead,
   ProjectRead,
@@ -411,6 +412,27 @@ export const deleteMilestone = async (
   await apiClient.delete<void>(
     milestonePath(workspaceId, projectId, milestoneId)
   );
+};
+
+/**
+ * Reads a project's daily progress history and its projected finish. With
+ * nothing recorded yet `recorded_since` is null and `days` holds today alone.
+ */
+export const getProjectHistory = async (
+  workspaceId: string,
+  projectId: string,
+  signal?: AbortSignal
+): Promise<ProjectHistoryRead> => {
+  const response = await apiClient.get<ProjectHistoryRead>(
+    `${projectPath(workspaceId, projectId)}/history`,
+    listOptions({}, signal)
+  );
+  const body = response.data;
+  return {
+    ...body,
+    days: Array.isArray(body?.days) ? body.days : [],
+    projection: body?.projection ?? null,
+  };
 };
 
 /** Lists one project's recorded changes, newest first, a cursor page at a time. */

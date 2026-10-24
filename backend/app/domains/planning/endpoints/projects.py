@@ -1,4 +1,4 @@
-"""Project routes: list, create, read, patch and delete.
+"""Project routes: list, create, read, patch and delete, plus progress history.
 
 A project is workspace level and belongs to one or more teams, as in Linear, so
 every route reaches it by its own id and decides visibility against its whole team
@@ -12,6 +12,7 @@ narrow nothing else.
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from typing import Annotated, Optional
 
 from fastapi import APIRouter, Depends, Path, Query, Response, status
@@ -22,8 +23,11 @@ from app.common.api.dependencies.repositories import Repositories, get_repositor
 from app.common.api.schemas.planning import (
     DEFAULT_LIMIT,
     MAX_LIMIT,
+    CycleHistoryPoint,
     ProjectCreate,
+    ProjectHistoryRead,
     ProjectListRead,
+    ProjectProjectionRead,
     ProjectRead,
     ProjectRelationCreate,
     ProjectRelationListRead,
@@ -38,6 +42,7 @@ from app.common.project_writes import create_project as create_project_row
 from app.common.project_writes import delete_project as delete_project_row
 from app.common.project_writes import list_projects as list_project_page
 from app.common.project_writes import update_project as update_project_row
+from app.domains.planning.project_history import project_burn_up, project_projection
 
 router = APIRouter()
 
@@ -126,6 +131,43 @@ def read_project(
     project, teams = load_readable_project(repositories, context, project_id, team_id)
     default_days = workspace_interval(repositories.workspaces, context.workspace_id)
     return fill_one(repositories, context, ProjectRead.from_row(project, teams, default_interval_days=default_days))
+
+
+@router.get("/{workspace_id}/projects/{project_id}/history", response_model=ProjectHistoryRead)
+def read_project_history(
+    context: Annotated[AuthzContext, Depends(require(Capability.WORKSPACE_READ))],
+    repositories: Annotated[Repositories, Depends(get_repositories)],
+    workspace_id: Annotated[str, Path()],
+    project_id: Annotated[str, Path()],
+    team_id: Annotated[Optional[str], Query()] = None,
+) -> ProjectHistoryRead:
+    """A project's daily scope, started and completed figures, and its projected finish.
+
+    Read from the daily snapshots the rollup writes, one query on the project's
+    own prefix, so no read of the `issues` table. Today always reads the live
+    counts. The projection extends the recent completion rate over the remaining
+    scope, in the project's measure, and says how far its finish lands from the
+    target date.
+    """
+    project, _ = load_readable_project(repositories, context, project_id, team_id)
+    today = datetime.now(timezone.utc).date().isoformat()
+    snapshots = repositories.planning.list_project_history(context.workspace_id, project_id)
+    history = project_burn_up(project, snapshots, today)
+    projection = (
+        project_projection(history.days, project.measure, project.target_date, today)
+        if history.recorded_since is not None
+        else None
+    )
+    return ProjectHistoryRead(
+        project_id=project.project_id,
+        start_date=history.days[0].date if history.days else None,
+        target_date=project.target_date,
+        today=today,
+        measure=project.measure,
+        recorded_since=history.recorded_since,
+        days=[CycleHistoryPoint(**vars(day)) for day in history.days],
+        projection=ProjectProjectionRead(**vars(projection)) if projection is not None else None,
+    )
 
 
 @router.patch("/{workspace_id}/projects/{project_id}", response_model=ProjectRead)

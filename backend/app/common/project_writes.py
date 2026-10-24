@@ -506,7 +506,7 @@ def update_project(
 def delete_project(
     repositories: Repositories, context: AuthzContext, project_id: str, team_id: Optional[str] = None
 ) -> None:
-    """Delete a project with its milestones, updates, documents and dependencies.
+    """Delete a project with its milestones, updates, history, documents and dependencies.
 
     Every issue that pointed at it stays in place.
 
@@ -518,6 +518,7 @@ def delete_project(
     repositories.planning.delete_project_milestones(context.workspace_id, project_id)
     repositories.planning.delete_project_updates(context.workspace_id, project_id)
     repositories.planning.delete_project_activity(context.workspace_id, project_id)
+    repositories.planning.delete_project_history(context.workspace_id, project_id)
     repositories.planning.delete_project_relations_for(context.workspace_id, project_id)
     repositories.documents.delete_for_parent(context.workspace_id, "project", project_id)
     repositories.planning.delete(context.workspace_id, project_key(project_id))

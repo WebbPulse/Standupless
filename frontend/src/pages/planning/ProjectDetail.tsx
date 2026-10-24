@@ -82,6 +82,7 @@ import { useInitiatives } from '../../hooks/useInitiatives';
 import { usePlanningIssues } from '../../hooks/usePlanningIssues';
 import { usePlanningTeamLists } from '../../hooks/usePlanningTeamLists';
 import { useProjectDependencies } from '../../hooks/useProjectDependencies';
+import { useProjectHistory } from '../../hooks/useProjectHistory';
 import { useProjectMilestones } from '../../hooks/useProjectMilestones';
 import { useProjectUpdates } from '../../hooks/useProjectUpdates';
 import { useShortcut } from '../../hooks/useShortcuts';
@@ -244,6 +245,7 @@ export const ProjectDetail: React.FC = () => {
   );
 
   const updates = useProjectUpdates(workspaceId, projectId, project !== null);
+  const history = useProjectHistory(workspaceId, projectId, project !== null);
   const dependencies = useProjectDependencies(workspaceId, project);
   const { projects: workspaceProjects } = useWorkspaceProjects(
     workspaceId,
@@ -806,6 +808,7 @@ export const ProjectDetail: React.FC = () => {
               milestones={milestones.milestones}
               onOpenMilestone={openMilestoneIssues}
               latestUpdate={updates.latest}
+              history={history}
               {...(latestAuthor === undefined ? {} : { latestAuthor })}
               onOpenUpdates={() => {
                 setTab('updates');

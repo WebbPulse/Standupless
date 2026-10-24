@@ -11,11 +11,15 @@
  * The y axis is labelled in whole numbers, each once, and a cycle whose scope
  * has been empty on every day so far says so instead of drawing an axis
  * stretched over nothing.
+ *
+ * A project's graph turns the target pace off and instead passes a forecast,
+ * a dashed line from today to a named day, and its target date, drawn as a
+ * marker on the day it falls.
  */
 
 import React from 'react';
 import { useElementWidth } from '../../hooks/useElementWidth';
-import type { BurnUpPoint } from '../../lib/planningModel';
+import type { BurnUpPoint, ProjectForecast } from '../../lib/planningModel';
 
 /** Props for BurnUpChart: the series so far and every day of the cycle. */
 export interface BurnUpChartProps {
@@ -30,6 +34,12 @@ export interface BurnUpChartProps {
   emptyMessage?: string;
   /** Whether the series is still loading, so a placeholder shows instead. */
   isLoading?: boolean;
+  /** Completed work projected onto a named day of `days`, drawn dashed from today. */
+  forecast?: ProjectForecast | null;
+  /** A day of `days` to mark as the target date. */
+  targetDate?: string | null;
+  /** Whether to draw the pace that finishes the scope on the last day. */
+  showPace?: boolean;
 }
 
 const WIDTH = 640;
@@ -84,6 +94,9 @@ export const BurnUpChart: React.FC<BurnUpChartProps> = ({
   unit = 'issues',
   emptyMessage = 'Nothing is in scope yet, so there is nothing to chart.',
   isLoading = false,
+  forecast = null,
+  targetDate = null,
+  showPace = true,
 }) => {
   const [measureRef, width] = useElementWidth<HTMLDivElement>(WIDTH);
   const count = Math.max(days.length, 1);
@@ -105,6 +118,13 @@ export const BurnUpChart: React.FC<BurnUpChartProps> = ({
       ? 'The cycle has not started yet.'
       : `Scope ${String(last.scope)}, started ${String(last.started)}, completed ${String(last.completed)} ${unit} as of ${last.date}.${projection === null ? '' : ` Projected to complete ${String(projection)} by the last day.`}`;
   const showProjection = projection !== null && last !== undefined;
+  const forecastIndex = forecast === null ? -1 : days.indexOf(forecast.date);
+  const showForecast =
+    forecast !== null && last !== undefined && forecastIndex >= 0;
+  const targetIndex = targetDate === null ? -1 : days.indexOf(targetDate);
+  const fullSummary = showForecast
+    ? `${summary} Projected to complete ${String(forecast.value)} by ${forecast.date}.`
+    : summary;
 
   if (isLoading) {
     return (
@@ -135,7 +155,7 @@ export const BurnUpChart: React.FC<BurnUpChartProps> = ({
           viewBox={`0 0 ${String(width)} ${String(HEIGHT)}`}
           className="block max-w-full"
           role="img"
-          aria-label={`Burn-up chart. ${summary}`}
+          aria-label={`Burn-up chart. ${fullSummary}`}
         >
           {ticks.map((tick) => (
             <g key={tick}>
@@ -173,7 +193,7 @@ export const BurnUpChart: React.FC<BurnUpChartProps> = ({
               </text>
             ) : null
           )}
-          {last !== undefined && (
+          {showPace && last !== undefined && (
             <line
               x1={x(0)}
               y1={y(0)}
@@ -221,6 +241,18 @@ export const BurnUpChart: React.FC<BurnUpChartProps> = ({
                   data-testid="burn-up-projection"
                 />
               )}
+              {showForecast && (
+                <line
+                  x1={x(points.length)}
+                  y1={y(last.completed)}
+                  x2={x(forecastIndex + 1)}
+                  y2={y(forecast.value)}
+                  stroke="var(--accent)"
+                  strokeWidth="1.5"
+                  strokeDasharray="4 3"
+                  data-testid="burn-up-forecast"
+                />
+              )}
               <line
                 x1={x(points.length)}
                 x2={x(points.length)}
@@ -231,6 +263,28 @@ export const BurnUpChart: React.FC<BurnUpChartProps> = ({
                 opacity="0.5"
               />
             </>
+          )}
+          {targetIndex >= 0 && (
+            <g data-testid="burn-up-target">
+              <line
+                x1={x(targetIndex + 1)}
+                x2={x(targetIndex + 1)}
+                y1={PAD_TOP}
+                y2={PAD_TOP + plotHeight}
+                stroke="var(--text-muted)"
+                strokeWidth="1"
+                strokeDasharray="2 2"
+              />
+              <text
+                x={x(targetIndex + 1) - 3}
+                y={PAD_TOP + FONT_SIZE - 2}
+                textAnchor="end"
+                fontSize={FONT_SIZE}
+                fill="var(--text-muted)"
+              >
+                Target
+              </text>
+            </g>
           )}
         </svg>
       </div>
@@ -256,13 +310,33 @@ export const BurnUpChart: React.FC<BurnUpChartProps> = ({
           />
           Completed
         </span>
-        <span className="inline-flex items-center gap-1.5">
-          <span
-            aria-hidden="true"
-            className="h-0 w-3 border-t border-dashed border-text-faint"
-          />
-          Target pace
-        </span>
+        {showPace && (
+          <span className="inline-flex items-center gap-1.5">
+            <span
+              aria-hidden="true"
+              className="h-0 w-3 border-t border-dashed border-text-faint"
+            />
+            Target pace
+          </span>
+        )}
+        {showForecast && (
+          <span className="inline-flex items-center gap-1.5">
+            <span
+              aria-hidden="true"
+              className="h-0 w-3 border-t border-dashed border-accent"
+            />
+            Projected
+          </span>
+        )}
+        {targetIndex >= 0 && (
+          <span className="inline-flex items-center gap-1.5">
+            <span
+              aria-hidden="true"
+              className="h-3 w-0 border-l border-dashed border-text-muted"
+            />
+            Target date
+          </span>
+        )}
         {showProjection && (
           <span className="inline-flex items-center gap-1.5">
             <span

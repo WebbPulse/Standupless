@@ -439,6 +439,36 @@ class CycleHistoryRead(BaseModel):
     days: list[CycleHistoryPoint]
 
 
+class ProjectProjectionRead(BaseModel):
+    """Where the recent completion rate takes a project's remaining scope.
+
+    `rate_per_day` is in the project's `measure`. `expected_date` is None when
+    nothing was completed over the window or the finish is out of sight, and
+    `days_past_target` is negative when the finish lands before the target date.
+    """
+
+    rate_per_day: float
+    expected_date: Optional[str] = None
+    days_past_target: Optional[int] = None
+
+
+class ProjectHistoryRead(BaseModel):
+    """A project's daily scope, started and completed figures, from the day its series opens to today.
+
+    `recorded_since` is the first day the snapshots recorded, None while the
+    project has no history yet and `days` holds today alone.
+    """
+
+    project_id: str
+    start_date: Optional[str] = None
+    target_date: Optional[str] = None
+    today: str
+    measure: ProgressMeasureField
+    recorded_since: Optional[str] = None
+    days: list[CycleHistoryPoint]
+    projection: Optional[ProjectProjectionRead] = None
+
+
 class VelocityCycleRead(BaseModel):
     """One completed cycle's delivered work, frozen at its end date."""
 
