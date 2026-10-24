@@ -131,8 +131,7 @@ DRAFT_TOOLS: tuple[Tool, ...] = (
     Tool(
         name="delete_comment_draft",
         description=(
-            "Discard your draft on an issue, or on a reply thread with parent_comment_id. A no-op when there is "
-            "none."
+            "Discard your draft on an issue, or on a reply thread with parent_comment_id. A no-op when there is none."
         ),
         scopes=("comments:write",),
         schema=object_schema(

@@ -45,9 +45,7 @@ def listed(client: TestClient, workspace: str, **params: str) -> "list[dict[str,
     return response.json()["drafts"]
 
 
-def test_a_draft_is_saved_read_and_replaced(
-    client: TestClient, issues_client: TestClient, workspace: str
-) -> None:
+def test_a_draft_is_saved_read_and_replaced(client: TestClient, issues_client: TestClient, workspace: str) -> None:
     """Saving twice keeps one draft holding the latest body and the first save's time."""
     sign_in(issues_client, MEMBER)
     issue = seed_issue(issues_client, workspace, title="Fix the login")
@@ -138,9 +136,7 @@ def test_a_blank_draft_is_refused(client: TestClient, issues_client: TestClient,
     assert response.status_code == 422
 
 
-def test_a_guest_cannot_draft_outside_their_team(
-    client: TestClient, issues_client: TestClient, workspace: str
-) -> None:
+def test_a_guest_cannot_draft_outside_their_team(client: TestClient, issues_client: TestClient, workspace: str) -> None:
     """A team the guest is outside answers exactly as an issue that does not exist."""
     sign_in(issues_client, OWNER)
     issue = seed_issue(issues_client, workspace, team_id=OTHER_TEAM)
@@ -308,6 +304,4 @@ def test_the_purges_remove_a_teams_and_a_members_drafts(workspace: str, reposito
     by_member = repositories.views.delete_drafts_for_user(workspace, MEMBER)
 
     assert (by_team, by_member) == (2, 1)
-    assert [row.issue_id for row in repositories.views.list_drafts(workspace, OWNER)] == [
-        "01JB000000000000000000ISS4"
-    ]
+    assert [row.issue_id for row in repositories.views.list_drafts(workspace, OWNER)] == ["01JB000000000000000000ISS4"]
