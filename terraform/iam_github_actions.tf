@@ -100,7 +100,7 @@ locals {
 
 module "github_actions_role" {
   source  = "terraform.webbpulse.com/WebbPulse/platform-modules/aws//modules/github-actions-role"
-  version = "~> 2.39"
+  version = "~> 2.45"
 
   role_name = "${local.prefix}-github-actions-deploy"
   subjects  = ["repo:WebbPulse@185014056/Standupless@1375434030:environment:${var.environment}"]
@@ -143,7 +143,7 @@ module "github_actions_role" {
 
 module "github_actions_ci_role" {
   source  = "terraform.webbpulse.com/WebbPulse/platform-modules/aws//modules/github-actions-role"
-  version = "~> 2.27"
+  version = "~> 2.45"
 
   role_name        = "${local.prefix}-github-actions-ci"
   role_description = "Read only CodeArtifact access for pull request CI in WebbPulse/Standupless. Deploy permissions live on the separate github-actions-deploy role."
