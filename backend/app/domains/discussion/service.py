@@ -140,6 +140,9 @@ GITHUB_AUTHOR_PREFIX = "github:"
 LINEAR_AUTHOR_PREFIX = "linear:"
 """The author id prefix of a comment imported from Linear whose author matched no member."""
 
+ASANA_AUTHOR_PREFIX = "asana:"
+"""The author id prefix of a comment imported from Asana whose author matched no member."""
+
 
 def authors_for(repositories: Repositories, user_ids: Iterable[str]) -> dict[str, AuthorRead]:
     """The author block for each named user, in one batched read.
@@ -152,7 +155,8 @@ def authors_for(repositories: Repositories, user_ids: Iterable[str]) -> dict[str
     A comment synced from GitHub by someone with no linked account is authored as
     `github:<login>` and renders under that login, without a user lookup. A
     comment imported from Linear by someone who is not a member is authored as
-    `linear:<name>` and renders the same way.
+    `linear:<name>` and renders the same way, as does one imported from Asana
+    under `asana:<name>`.
     """
     wanted = [user_id for user_id in dict.fromkeys(user_ids) if user_id]
     if not wanted:
@@ -168,6 +172,11 @@ def authors_for(repositories: Repositories, user_ids: Iterable[str]) -> dict[str
             resolved[user_id] = AuthorRead(
                 user_id=user_id,
                 display_name=f"{user_id.removeprefix(LINEAR_AUTHOR_PREFIX)} (Linear)",
+            )
+        elif user_id.startswith(ASANA_AUTHOR_PREFIX):
+            resolved[user_id] = AuthorRead(
+                user_id=user_id,
+                display_name=f"{user_id.removeprefix(ASANA_AUTHOR_PREFIX)} (Asana)",
             )
     wanted = [user_id for user_id in wanted if user_id not in resolved]
     users = repositories.users.get_many(wanted) if wanted else {}
