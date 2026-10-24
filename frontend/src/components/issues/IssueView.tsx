@@ -134,6 +134,7 @@ import AddRelationDialog from './AddRelationDialog';
 import IssueBody from './IssueBody';
 import IssuePageCommands from './IssuePageCommands';
 import IssuePropertiesPanel from './IssuePropertiesPanel';
+import { RelationMarkers } from './BlockedMarker';
 import { RELATION_COMMANDS } from './RelationGlyphs';
 import IssueSubscribeButton from './IssueSubscribeButton';
 import RemindMeDialog from './RemindMeDialog';
@@ -546,6 +547,7 @@ export const IssueView: React.FC<IssueViewProps> = ({
         </>
       )}
       <span className="font-mono text-text-muted">{shownKey}</span>
+      {issue !== null && <RelationMarkers issue={issue} />}
     </span>
   );
 
