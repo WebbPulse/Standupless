@@ -113,7 +113,12 @@ def build_router(settings: "Settings") -> "APIRouter":
 
     identity_settings = build_identity_settings(settings)
 
-    from app.domains.identity.oauth_server_glue import build_oauth_server_stores, refresh_allowed, resolve_tenants
+    from app.domains.identity.oauth_server_glue import (
+        build_oauth_server_stores,
+        build_refresh_guard,
+        refresh_allowed,
+        resolve_tenants,
+    )
 
     oauth_server_stores = build_oauth_server_stores(settings) if identity_settings.mcp_oauth_enabled else None
 
@@ -140,7 +145,7 @@ def build_router(settings: "Settings") -> "APIRouter":
         oauth_client_secrets=build_oauth_client_secrets(settings),
         oauth_server_stores=oauth_server_stores,
         session_tenant_resolver=partial(resolve_tenants, has_two_factor=hooks.has_two_factor),
-        refresh_guard=refresh_allowed,
+        refresh_guard=refresh_allowed if oauth_server_stores is None else build_refresh_guard(oauth_server_stores),
         consent_theme=build_consent_theme(),
         sso=build_sso_service(identity_settings, hooks, stores),
     )

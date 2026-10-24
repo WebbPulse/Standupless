@@ -11,9 +11,13 @@ at a time. A workspace's membership is bounded, and a platform table change for 
 admin view nobody opens often would cost more than the reads it saves.
 
 A grant is never widened behind the person's back. A scope the product adds after a
-client was authorized is offered as a new permission, and only the person's own
-"Grant new permissions" adds it to the stored consent, which the client's next
-refresh then carries. Nothing is added at refresh or check time.
+client was authorized is offered as a new permission, and the person's own "Grant new
+permissions" adds it to the stored consent, which the client's next refresh then
+carries. The one other way is the person's standing opt-in, `auto_grant_new_scopes`
+on their account, off by default: with it on, a grant that took every scope on offer
+when it was given gains the scopes added since at the client's next refresh, each
+widening recorded in the workspace audit log. Nothing is added at check time, and
+every request still intersects the token's scopes with the live role ceiling.
 """
 
 from __future__ import annotations
@@ -24,7 +28,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING
 
-from app.common.db.dynamo.api_keys import satisfies
+from app.common.db.dynamo.api_keys import satisfies, scopes_offered_at
 from app.domains.identity.oauth_server_glue import MCP_SCOPES
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -97,8 +101,9 @@ def build_authorization_server(settings: "Settings") -> AuthorizationServer | No
     authorization server either, and its settings are not read.
 
     Built with the refresh token flows so a revocation reaches the refresh families
-    as well as the consents. The stores and settings are the ones `package_glue`
-    mounts the server with, so both halves read the same tables.
+    as well as the consents. The stores, settings and refresh guard are the ones
+    `package_glue` mounts the server with, so both halves read the same tables and
+    refresh the same way.
     """
     from webbpulse.identity import (
         IdentityStores,
@@ -110,7 +115,7 @@ def build_authorization_server(settings: "Settings") -> AuthorizationServer | No
 
     from app.common.session_audit import client_names_from, refresh_token_store
     from app.domains.identity.identity_hooks import StanduplessIdentityHooks
-    from app.domains.identity.oauth_server_glue import build_oauth_server_stores
+    from app.domains.identity.oauth_server_glue import build_oauth_server_stores, build_refresh_guard
     from app.domains.identity.package_glue import build_identity_settings
 
     if not (settings.IDENTITY_ISSUER or os.environ.get("IDENTITY_ISSUER")):
@@ -128,7 +133,9 @@ def build_authorization_server(settings: "Settings") -> AuthorizationServer | No
         tokens,
     )
     return AuthorizationServer(
-        service=OAuthServerService(identity_settings, stores, tokens, flows=flows),
+        service=OAuthServerService(
+            identity_settings, stores, tokens, flows=flows, refresh_guard=build_refresh_guard(stores)
+        ),
         stores=stores,
     )
 
@@ -196,6 +203,76 @@ def add_scopes(
         stores.consents.put(updated)
         changes.append((record, updated))
     return changes
+
+
+def took_every_scope(record: "ConsentRecord") -> bool:
+    """Whether a grant holds every scope that was on offer when it was first given.
+
+    Read against `granted_at`, which survives re-authorization and every widening, so a
+    grant the person narrowed at consent never counts however long ago it was given. A
+    legacy alias counts as holding the finer scope split out of it.
+    """
+    held = tuple(record.scopes)
+    return all(satisfies(held, scope) for scope in scopes_offered_at(record.granted_at))
+
+
+def widen_to_new_scopes(stores: "OAuthServerStores", record: "ConsentRecord") -> "ConsentRecord | None":
+    """Add every scope offered since to a grant that took all of them, or `None` when nothing changes.
+
+    The consent keeps its id, its times and its refresh families. `updated_at` is left
+    alone because it marks the last authorization a session made, which the workspace's
+    authentication policy is judged against, and no session made this one. The write
+    goes through `replace_scopes` where the store has it, so the change is not audited
+    as a new authorization.
+    """
+    if not took_every_scope(record):
+        return None
+    added = _uncovered(record.scopes)
+    if not added:
+        return None
+    held = set(record.scopes) | set(added)
+    merged = tuple(scope for scope in MCP_SCOPES if scope in held) + tuple(sorted(held - set(MCP_SCOPES)))
+    updated = replace(record, scopes=merged)
+    write = getattr(stores.consents, "replace_scopes", stores.consents.put)
+    write(updated)
+    return updated
+
+
+def auto_grant_new_scopes(stores: "OAuthServerStores", record: "ConsentRecord") -> "ConsentRecord | None":
+    """Widen a grant about to refresh when its holder opted in, auditing the change.
+
+    Read from the person's own account row on every refresh, so turning the setting off
+    stops the next widening at once. Scopes already added stay, as any other granted
+    scope does, until the person revokes the app.
+    """
+    from app.common.db.dynamo.users import UserRepository
+
+    user = UserRepository().get(record.user_id)
+    if user is None or not user.auto_grant_new_scopes:
+        return None
+    updated = widen_to_new_scopes(stores, record)
+    if updated is not None and updated.tenant_id:
+        from app.common import audit
+        from app.common.api.dependencies.repositories import build_bundle
+
+        client = stores.clients.get(record.client_id)
+        audit.record_system(
+            build_bundle(("audit",), name="identity-consents"),
+            updated.tenant_id,
+            "connected_app.scopes_auto_granted",
+            actor_id=record.user_id,
+            actor_kind="user",
+            source="mcp",
+            target_type="connected_app",
+            target_id=record.client_id,
+            target_label=client.client_name if client is not None and client.client_name else record.client_id,
+            before={"scopes": list(record.scopes)},
+            after={
+                "scopes": list(updated.scopes),
+                "added": [scope for scope in updated.scopes if scope not in record.scopes],
+            },
+        )
+    return updated
 
 
 def _uncovered(scopes: Iterable[str]) -> tuple[str, ...]:

@@ -71,7 +71,9 @@ def workspaces(repositories: Any) -> None:
     add_member(repositories, WORKSPACE_ONE, ADMIN, "admin")
 
 
-def grant(server: Any, user_id: str, client_id: str, workspace_id: str) -> str:
+def grant(
+    server: Any, user_id: str, client_id: str, workspace_id: str, scope: str = "issues:read issues:write"
+) -> str:
     """Authorize `client_id` for `user_id` in one workspace, returning its refresh token."""
     verifier, challenge = pkce_pair()
     request = server.service.parse_authorization_request(
@@ -80,7 +82,7 @@ def grant(server: Any, user_id: str, client_id: str, workspace_id: str) -> str:
             "client_id": client_id,
             "redirect_uri": REDIRECT,
             "resource": RESOURCE,
-            "scope": "issues:read issues:write",
+            "scope": scope,
             "code_challenge": challenge,
             "code_challenge_method": "S256",
         }
@@ -320,3 +322,167 @@ def test_a_delegated_credential_cannot_grant_itself_scopes(client: TestClient, w
     sign_in(client, OWNER, scope="issues:read")
     response = client.post(f"/api/users/me/connected-apps/{CLAUDE}/scopes", json={"scopes": ["releases:read"]})
     assert response.status_code == 403
+
+
+BEFORE_RELEASES = "2026-10-01T00:00:00Z"
+
+
+def every_scope_before_releases() -> tuple[str, ...]:
+    """Every scope the server offered on `BEFORE_RELEASES`, which is all but the two release scopes."""
+    from app.common.db.dynamo.api_keys import API_KEY_SCOPES
+
+    return tuple(scope for scope in API_KEY_SCOPES if not scope.startswith("releases:"))
+
+
+def backdate(server: Any, user_id: str, client_id: str, workspace_id: str) -> Any:
+    """Move a grant's `granted_at` to before the release scopes shipped, returning the stored record."""
+    from dataclasses import replace
+
+    record = next(
+        consent
+        for consent in server.stores.consents.list_for_user(user_id)
+        if consent.client_id == client_id and consent.tenant_id == workspace_id
+    )
+    moved = replace(record, granted_at=BEFORE_RELEASES)
+    server.stores.consents.replace_scopes(moved)
+    return moved
+
+
+def grant_everything_before_releases(server: Any, workspace_id: str = WORKSPACE_ONE) -> str:
+    """An owner's all-scope Claude grant dated before the release scopes, returning its refresh token."""
+    token = grant(server, OWNER, CLAUDE, workspace_id, scope=" ".join(every_scope_before_releases()))
+    backdate(server, OWNER, CLAUDE, workspace_id)
+    return token
+
+
+def opt_in(client: TestClient) -> None:
+    """Turn the owner's automatic grant setting on through the preferences route."""
+    sign_in(client, OWNER)
+    response = client.patch("/api/users/me/preferences", json={"auto_grant_new_scopes": True})
+    assert response.status_code == 200, response.text
+    assert response.json()["auto_grant_new_scopes"] is True
+
+
+def test_the_scope_ledger_dates_every_offered_scope() -> None:
+    """A scope added to the product without a date in the ledger fails here, not silently."""
+    from app.common.db.dynamo.api_keys import API_KEY_SCOPES, SCOPE_INTRODUCED_AT
+
+    assert set(SCOPE_INTRODUCED_AT) == set(API_KEY_SCOPES)
+
+
+def test_scopes_offered_at_follows_the_ledger() -> None:
+    """The original five scopes are always offered, later ones from their merge time on."""
+    from app.common.db.dynamo.api_keys import API_KEY_SCOPES, scopes_offered_at
+
+    early = scopes_offered_at("2026-09-01T00:00:00Z")
+    assert set(early) == {"issues:read", "issues:write", "comments:write", "teams:read", "views:read"}
+    assert scopes_offered_at(BEFORE_RELEASES) == every_scope_before_releases()
+    assert scopes_offered_at("2026-10-07T09:00:41Z") == API_KEY_SCOPES
+    assert scopes_offered_at("") == API_KEY_SCOPES
+    assert scopes_offered_at("not a time") == API_KEY_SCOPES
+
+
+def test_a_grant_took_every_scope_only_when_it_held_all_offered_then() -> None:
+    """All scopes means everything offered at `granted_at`, with legacy aliases counted as held."""
+    from webbpulse.identity import ConsentRecord
+
+    from app.domains.identity.connected_apps import took_every_scope
+
+    def consent(scopes: tuple[str, ...], granted_at: str) -> ConsentRecord:
+        return ConsentRecord(
+            consent_id="c",
+            user_id=OWNER,
+            client_id=CLAUDE,
+            tenant_id=WORKSPACE_ONE,
+            resource=RESOURCE,
+            scopes=scopes,
+            granted_at=granted_at,
+        )
+
+    assert took_every_scope(consent(every_scope_before_releases(), BEFORE_RELEASES))
+    assert not took_every_scope(consent(("issues:read", "issues:write"), BEFORE_RELEASES))
+    first = ("issues:read", "issues:write", "comments:write", "teams:read", "views:read")
+    assert took_every_scope(consent(first, "2026-09-20T00:00:00Z"))
+    assert not took_every_scope(consent(first, BEFORE_RELEASES))
+
+
+def test_the_setting_defaults_off_and_leaves_the_refresh_alone(
+    client: TestClient, server: Any, workspaces: None, repositories: Any
+) -> None:
+    """With the setting off an all-scope grant refreshes with exactly what it holds."""
+    token = grant_everything_before_releases(server)
+    sign_in(client, OWNER)
+    assert client.get("/api/users/me").json()["auto_grant_new_scopes"] is False
+
+    refreshed = server.service.refresh({"refresh_token": token, "client_id": CLAUDE})
+
+    assert "releases:read" not in refreshed["scope"].split()
+    events = repositories.audit.list_events(WORKSPACE_ONE).events
+    assert not [event for event in events if event.action == "connected_app.scopes_auto_granted"]
+
+
+def test_an_opted_in_all_scope_grant_refreshes_with_the_new_scopes(
+    client: TestClient, server: Any, workspaces: None
+) -> None:
+    """The next refresh carries the scopes offered since, and the grant keeps its times."""
+    token = grant_everything_before_releases(server)
+    before = backdate(server, OWNER, CLAUDE, WORKSPACE_ONE)
+    opt_in(client)
+
+    refreshed = server.service.refresh({"refresh_token": token, "client_id": CLAUDE})
+
+    scopes = refreshed["scope"].split()
+    assert "releases:read" in scopes and "releases:write" in scopes
+    stored = server.stores.consents.get(before.consent_id)
+    assert stored.granted_at == before.granted_at
+    assert stored.updated_at == before.updated_at
+    app = client.get("/api/users/me/connected-apps").json()["apps"][0]
+    assert app["new_scopes"] == []
+
+
+def test_an_automatic_widening_is_audited_once(
+    client: TestClient, server: Any, workspaces: None, repositories: Any
+) -> None:
+    """The workspace log records the scopes before and after and what was added, and only the first time."""
+    token = grant_everything_before_releases(server)
+    opt_in(client)
+
+    first = server.service.refresh({"refresh_token": token, "client_id": CLAUDE})
+    server.service.refresh({"refresh_token": first["refresh_token"], "client_id": CLAUDE})
+
+    events = repositories.audit.list_events(WORKSPACE_ONE).events
+    widened = [event for event in events if event.action == "connected_app.scopes_auto_granted"]
+    assert len(widened) == 1
+    assert widened[0].target.id == CLAUDE
+    assert widened[0].after is not None and widened[0].after["added"] == ["releases:read", "releases:write"]
+    assert widened[0].before is not None and "releases:read" not in widened[0].before["scopes"]
+
+
+def test_a_narrowed_grant_is_never_widened(client: TestClient, server: Any, workspaces: None) -> None:
+    """A grant that left scopes out keeps its choice even with the setting on."""
+    token = grant(server, OWNER, CLAUDE, WORKSPACE_ONE)
+    backdate(server, OWNER, CLAUDE, WORKSPACE_ONE)
+    opt_in(client)
+
+    refreshed = server.service.refresh({"refresh_token": token, "client_id": CLAUDE})
+
+    assert refreshed["scope"].split() == ["issues:read", "issues:write"]
+
+
+def test_turning_the_setting_off_stops_the_next_widening(client: TestClient, server: Any, workspaces: None) -> None:
+    """The setting is read on every refresh, so switching it off takes effect at once."""
+    token = grant_everything_before_releases(server)
+    opt_in(client)
+    client.patch("/api/users/me/preferences", json={"auto_grant_new_scopes": False})
+
+    refreshed = server.service.refresh({"refresh_token": token, "client_id": CLAUDE})
+
+    assert "releases:read" not in refreshed["scope"].split()
+
+
+def test_an_automatic_widening_is_still_capped_by_the_role(server: Any, workspaces: None) -> None:
+    """A widened grant spends no more than the holder's role allows when it is used."""
+    from app.common.api.dependencies.authz import live_scopes_for, missing_scopes
+
+    widened = ("issues:read", "releases:write", "admin")
+    assert missing_scopes(live_scopes_for("member", MEMBER), widened) == ["admin"]

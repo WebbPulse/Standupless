@@ -89,6 +89,10 @@ class User(BaseModel):
     `projects_display` is how the person last arranged the projects list, its
     layout, grouping, ordering, closed window and timeline zoom, kept as plain
     strings that the read falls back from when a choice is retired.
+
+    `auto_grant_new_scopes` is the person's opt-in, off by default, to have a scope
+    the product adds later join every connected app grant that took every scope on
+    offer when it was given, at that app's next token refresh.
     """
 
     id: str = Field(default_factory=new_user_id)
@@ -107,6 +111,7 @@ class User(BaseModel):
     name_display: str = "username"
     font_size: str = "default"
     projects_display: dict[str, str] = Field(default_factory=dict)
+    auto_grant_new_scopes: bool = False
     disabled: bool = False
     is_admin: bool = False
     created_at: datetime = Field(default_factory=utc_now)

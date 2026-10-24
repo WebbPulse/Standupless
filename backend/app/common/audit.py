@@ -79,6 +79,7 @@ EVENTS: dict[str, str] = {
     "connected_app.authorized": "Connected app authorized",
     "connected_app.revoked": "Connected app revoked",
     "connected_app.scopes_granted": "Connected app permissions granted",
+    "connected_app.scopes_auto_granted": "Connected app given new permissions automatically",
     "export.started": "Workspace export started",
     "import.started": "Issue import started",
     "import.cancelled": "Issue import cancelled",

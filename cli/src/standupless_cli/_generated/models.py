@@ -2468,6 +2468,7 @@ class UrlAttachmentCreate(TypedDict):
 
 
 class UserPreferencesUpdate(TypedDict):
+    auto_grant_new_scopes: NotRequired[bool | None]
     email_notifications: NotRequired[bool | None]
     font_size: NotRequired[Literal["small", "default", "large"] | None]
     home_view: NotRequired[Literal["home", "inbox", "my_issues", "projects", "pulse", "views"] | None]
@@ -2507,6 +2508,7 @@ class UserProfileUpdate(TypedDict):
 
 
 class UserRead(TypedDict):
+    auto_grant_new_scopes: NotRequired[bool]
     avatar_url: NotRequired[str | None]
     display_name: str
     email: str
