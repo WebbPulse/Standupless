@@ -1,7 +1,9 @@
 /**
  * The new issue dialog. Covers the title first flow, the property chips
  * setting only what was chosen, Cmd or Ctrl and Enter submitting, Escape
- * closing an empty draft but guarding typed text, "Create more" keeping the
+ * keeping typed text as a saved draft, or guarding it when no draft can be
+ * stored, the saved draft being restored, discarded and cleared on create
+ * and left alone by a preset dialog, "Create more" keeping the
  * dialog open with the properties held, and a team switch clearing the team
  * scoped choices, and the similar issues strip offering to open a possible
  * duplicate or mark the new issue as one.
@@ -21,7 +23,8 @@ import type {
   StatusRead,
   TeamRead,
 } from '../../types/Api';
-import CreateIssueDialog from './CreateIssueDialog';
+import { readIssueDraft, writeIssueDraft } from '../../lib/issueDraft';
+import CreateIssueDialog, { type CreateIssuePreset } from './CreateIssueDialog';
 
 const createIssue = vi.fn<(body: IssueCreate) => Promise<IssueRead>>();
 const listTeams = vi.fn<() => Promise<TeamRead[]>>();
@@ -150,7 +153,9 @@ const onCreated = vi.fn<(issue: IssueRead) => void>();
 const onClose = vi.fn<() => void>();
 const onCreatedMore = vi.fn<(issue: IssueRead) => void>();
 
-const renderDialog = () =>
+const renderDialog = (
+  extra: { currentUserId?: string; preset?: CreateIssuePreset } = {}
+) =>
   render(
     <WorkspaceContext.Provider value={workspace}>
       <CreateIssueDialog
@@ -163,6 +168,7 @@ const renderDialog = () =>
         onCreated={onCreated}
         onClose={onClose}
         onCreatedMore={onCreatedMore}
+        {...extra}
       />
     </WorkspaceContext.Provider>
   );
@@ -342,7 +348,7 @@ describe('closing', () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
-  it('guards typed text, and discards only on confirmation', async () => {
+  it('guards typed text when no draft can be stored', async () => {
     const user = userEvent.setup();
     renderDialog();
 
@@ -374,6 +380,183 @@ describe('closing', () => {
 
     expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
     expect(onClose).not.toHaveBeenCalled();
+  });
+});
+
+describe('drafts', () => {
+  const viewer = { currentUserId: 'user-1' };
+
+  it('keeps a dirty draft on Escape without asking, and restores it', async () => {
+    const user = userEvent.setup();
+    const first = renderDialog(viewer);
+
+    await user.type(screen.getByRole('textbox', { name: 'Title' }), 'Draft');
+    await user.type(
+      screen.getByRole('textbox', { name: 'Description' }),
+      'Some notes'
+    );
+    await user.click(
+      screen.getByRole('button', { name: 'Priority: Priority' })
+    );
+    await user.click(await screen.findByRole('option', { name: /High/ }));
+    await user.keyboard('{Escape}');
+
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(readIssueDraft('ws-1', 'user-1')).toMatchObject({
+      teamId: 't-1',
+      title: 'Draft',
+      body: 'Some notes',
+      priority: 'high',
+    });
+
+    first.unmount();
+    renderDialog(viewer);
+
+    expect(screen.getByRole('textbox', { name: 'Title' })).toHaveValue('Draft');
+    expect(screen.getByRole('textbox', { name: 'Description' })).toHaveValue(
+      'Some notes'
+    );
+    expect(
+      screen.getByRole('button', { name: 'Priority: High' })
+    ).toBeInTheDocument();
+  });
+
+  it('keeps drafts apart per viewer', async () => {
+    const user = userEvent.setup();
+    const first = renderDialog(viewer);
+
+    await user.type(screen.getByRole('textbox', { name: 'Title' }), 'Mine');
+    await user.keyboard('{Escape}');
+    first.unmount();
+    renderDialog({ currentUserId: 'user-2' });
+
+    expect(screen.getByRole('textbox', { name: 'Title' })).toHaveValue('');
+  });
+
+  it('discards the draft only when asked', async () => {
+    const user = userEvent.setup();
+    const first = renderDialog(viewer);
+
+    await user.type(screen.getByRole('textbox', { name: 'Title' }), 'Draft');
+    await user.click(screen.getByRole('button', { name: 'Discard draft' }));
+
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(readIssueDraft('ws-1', 'user-1')).toBeNull();
+
+    first.unmount();
+    renderDialog(viewer);
+    expect(screen.getByRole('textbox', { name: 'Title' })).toHaveValue('');
+  });
+
+  it('clears the draft once the issue is created', async () => {
+    const user = userEvent.setup();
+    renderDialog(viewer);
+
+    await user.type(screen.getByRole('textbox', { name: 'Title' }), 'Ship it');
+    expect(readIssueDraft('ws-1', 'user-1')).not.toBeNull();
+    await user.click(screen.getByRole('button', { name: /Create issue/ }));
+
+    await waitFor(() => {
+      expect(onCreated).toHaveBeenCalled();
+    });
+    expect(readIssueDraft('ws-1', 'user-1')).toBeNull();
+  });
+
+  it('leaves a saved draft alone when opened with presets, until restored', async () => {
+    const user = userEvent.setup();
+    const saved = {
+      teamId: 't-1',
+      title: 'Saved work',
+      body: 'Kept notes',
+      templateId: null,
+      templateTitle: '',
+      templateBody: '',
+      answers: {},
+      statusId: '',
+      priority: 'low' as const,
+      assigneeId: null,
+      labelIds: [],
+      estimate: null,
+      projectId: null,
+      projectMilestoneId: null,
+      cycleId: null,
+      startDate: null,
+      dueDate: null,
+      parent: null,
+      subIssues: [],
+    };
+    writeIssueDraft('ws-1', 'user-1', saved);
+    renderDialog({ ...viewer, preset: { statusId: 'st-2' } });
+
+    expect(screen.getByRole('textbox', { name: 'Title' })).toHaveValue('');
+    expect(
+      screen.getByRole('status', { name: 'Saved draft' })
+    ).toHaveTextContent('Saved work');
+
+    await user.type(screen.getByRole('textbox', { name: 'Title' }), 'Other');
+    expect(readIssueDraft('ws-1', 'user-1')).toMatchObject({
+      title: 'Saved work',
+    });
+    await user.keyboard('{Escape}');
+    expect(onClose).not.toHaveBeenCalled();
+    expect(
+      screen.getByRole('alertdialog', { name: 'Discard this issue?' })
+    ).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Keep editing' }));
+
+    await user.click(screen.getByRole('button', { name: 'Restore draft' }));
+
+    expect(screen.getByRole('textbox', { name: 'Title' })).toHaveValue(
+      'Saved work'
+    );
+    expect(screen.getByRole('textbox', { name: 'Description' })).toHaveValue(
+      'Kept notes'
+    );
+    expect(
+      screen.getByRole('button', { name: 'Priority: Low' })
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole('status', { name: 'Saved draft' })
+    ).not.toBeInTheDocument();
+  });
+
+  it('starts fresh when the saved draft is set aside', async () => {
+    const user = userEvent.setup();
+    writeIssueDraft('ws-1', 'user-1', {
+      teamId: 't-1',
+      title: 'Saved work',
+      body: '',
+      templateId: null,
+      templateTitle: '',
+      templateBody: '',
+      answers: {},
+      statusId: '',
+      priority: 'none',
+      assigneeId: null,
+      labelIds: [],
+      estimate: null,
+      projectId: null,
+      projectMilestoneId: null,
+      cycleId: null,
+      startDate: null,
+      dueDate: null,
+      parent: null,
+      subIssues: [],
+    });
+    renderDialog({ ...viewer, preset: { statusId: 'st-2' } });
+
+    await user.click(
+      screen.getByRole('button', { name: 'Discard saved draft' })
+    );
+    await user.type(screen.getByRole('textbox', { name: 'Title' }), 'New');
+    await user.keyboard('{Escape}');
+
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(readIssueDraft('ws-1', 'user-1')).toMatchObject({
+      title: 'New',
+      statusId: 'st-2',
+    });
   });
 });
 

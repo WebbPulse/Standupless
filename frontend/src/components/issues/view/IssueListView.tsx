@@ -67,6 +67,7 @@ import {
   type FilterField,
   type IssueGroup,
   type ViewState,
+  withinStatusCategories,
   withLayout,
 } from '../../../lib/issueView';
 import {
@@ -91,7 +92,11 @@ import { showToast } from '../../../lib/toast';
 import { foldedParentKey, parentRefOf, treeRows } from '../../../lib/issueTree';
 import { issuePath } from '../../../lib/paths';
 import type { EstimateOptions } from '../../../lib/validation';
-import type { EstimateScale, LinkType } from '../../../types/Api';
+import type {
+  EstimateScale,
+  LinkType,
+  StatusCategory,
+} from '../../../types/Api';
 import { ErrorAlert } from '../../ui/alert';
 import { Kbd } from '../../ui/badge';
 import { Button } from '../../ui/button';
@@ -144,6 +149,11 @@ export interface IssueListViewProps {
    * filter menu offers.
    */
   filterFields?: readonly FilterField[] | undefined;
+  /**
+   * The status categories the view's scope covers. Status groups and board
+   * columns outside them are left out. Left out, every category shows.
+   */
+  statusCategories?: readonly StatusCategory[] | undefined;
 }
 
 /** The palette label of each property command. */
@@ -212,6 +222,7 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
   emptyMessage = 'No issues match this view.',
   collapseKey,
   filterFields,
+  statusCategories,
 }) => {
   const navigate = useNavigate();
   const location = useLocation();
@@ -282,18 +293,21 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
       state.layout === 'board' && state.groupBy === 'none'
         ? 'status'
         : state.groupBy;
-    return groupIssues(sorted, field, context, state.showEmpty).map(
-      (group) => ({
-        group,
-        subs:
-          state.subGroupBy === 'none' || field === 'none'
-            ? null
-            : groupIssues(group.issues, state.subGroupBy, context, false),
-      })
-    );
+    return withinStatusCategories(
+      groupIssues(sorted, field, context, state.showEmpty),
+      field,
+      statusCategories
+    ).map((group) => ({
+      group,
+      subs:
+        state.subGroupBy === 'none' || field === 'none'
+          ? null
+          : groupIssues(group.issues, state.subGroupBy, context, false),
+    }));
   }, [
     sorted,
     context,
+    statusCategories,
     state.groupBy,
     state.subGroupBy,
     state.showEmpty,
@@ -1138,6 +1152,7 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
         onToggle={onToggle}
         onStateChange={onStateChange}
         createIn={createIn}
+        statusCategories={statusCategories}
       />
     );
   } else {

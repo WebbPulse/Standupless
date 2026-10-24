@@ -43,6 +43,7 @@ import { stateToTeamDisplay, teamDefaultState } from '../../../lib/teamDisplay';
 import {
   parseTeamIssueScope,
   scopeDisplayKey,
+  teamScopeCategories,
   teamScopeEmptyMessage,
   teamScopeFilters,
 } from '../../../lib/teamIssueScope';
@@ -250,6 +251,7 @@ export const TeamIssuesPage: React.FC<TeamIssuesPageProps> = ({
       canEdit={canWriteIssues(workspace?.role, team.role)}
       homeTeam={team}
       emptyMessage={teamScopeEmptyMessage(preset, team.name)}
+      statusCategories={teamScopeCategories(preset)}
     />
   );
 };

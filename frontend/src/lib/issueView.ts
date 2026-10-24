@@ -378,6 +378,7 @@ export const ORDERINGS: IssueListSort[] = [
   'priority_desc',
   'updated_desc',
   'created_desc',
+  'completed_desc',
   'start_asc',
   'due_asc',
   'estimate_desc',
@@ -393,6 +394,7 @@ export const ORDERING_LABELS: Record<IssueListSort, string> = {
   priority_desc: 'Priority',
   updated_desc: 'Last updated',
   created_desc: 'Created',
+  completed_desc: 'Completed',
   due_asc: 'Due date',
   sla_asc: 'SLA breach',
   key_asc: 'Issue ID',
@@ -1380,6 +1382,8 @@ export interface IssueGroup {
   person?: string;
   /** The milestone's rolled up progress as a whole percent, for its header. */
   progress?: number;
+  /** The milestone itself, for a milestone group's progress glyph. */
+  milestone?: MilestoneRead;
   issues: OrderedIssueRead[];
 }
 
@@ -1706,6 +1710,7 @@ const groupShells = (
             field,
             label: milestone.name,
             progress: progressPercent(milestone),
+            milestone,
           })),
         { key: NONE, field, label: 'No milestone' },
       ];
@@ -1826,6 +1831,23 @@ export const groupIssues = (
 };
 
 /**
+ * The groups left once status groups outside a set of categories are dropped,
+ * so a view scoped to some categories never shows columns the scope cannot
+ * fill. Groups of any other field, or any set left out, pass through.
+ */
+export const withinStatusCategories = (
+  groups: IssueGroup[],
+  field: GroupField,
+  categories: readonly StatusCategory[] | undefined
+): IssueGroup[] =>
+  categories === undefined || field !== 'status'
+    ? groups
+    : groups.filter(
+        (group) =>
+          group.category === undefined || categories.includes(group.category)
+      );
+
+/**
  * When an issue's SLA breaches, in milliseconds, or null when it has no
  * timer, so the SLA ordering can put those last. A paused timer sorts by the
  * deadline it would have if it resumed now.
@@ -1910,6 +1932,8 @@ const lacksValue = (
       return (issue.start_date ?? null) === null;
     case 'estimate_desc':
       return isUnestimated(issue.estimate);
+    case 'completed_desc':
+      return (issue.completed_at ?? null) === null;
     default:
       return false;
   }
@@ -1954,6 +1978,11 @@ export const sortIssues = (
         return right.updated_at.localeCompare(left.updated_at);
       case 'created_desc':
         return right.created_at.localeCompare(left.created_at);
+      case 'completed_desc':
+        return (
+          (right.completed_at ?? '').localeCompare(left.completed_at ?? '') ||
+          right.id.localeCompare(left.id)
+        );
       case 'due_asc':
         return (left.due_date ?? '').localeCompare(right.due_date ?? '');
       case 'sla_asc':

@@ -28,6 +28,12 @@
  * An exact issue key resolves without the index, the same way the search page
  * does, since the index does not hold keys and a key is the most common thing
  * anyone types here.
+ *
+ * The issues the viewer opened most recently in this workspace head the top
+ * level, so an empty palette is one Enter away from the issue seen a minute
+ * ago, and a typed term narrows them along with everything else. With an issue
+ * in view its own actions come first and the recent issues follow them, so
+ * Enter runs the first action rather than leaving the issue.
  */
 
 import React, {
@@ -82,9 +88,11 @@ import { useQueryAuth } from '@webbpulse/auth/react';
 import { listWorkspaceDocuments } from '../../api/documents';
 import { listFavorites } from '../../api/favorites';
 import { listCycles, listProjects } from '../../api/planning';
+import { listStatuses } from '../../api/teams';
 import { listTeamTemplates } from '../../api/templates';
 import { listViews, search } from '../../api/views';
 import ViewIcon from '../views/ViewIcon';
+import { StatusIcon } from '../ui/StatusIcon';
 import { useCreateIssue } from '../../hooks/useCreateIssue';
 import { useCreatePlanning } from '../../hooks/useCreatePlanning';
 import { useCreateTeam } from '../../hooks/useCreateTeam';
@@ -141,6 +149,7 @@ import {
   favoritesKey,
   projectsKey,
   searchKey,
+  statusesKey,
   templatesKey,
   viewsKey,
   workspaceDocumentsKey,
@@ -151,7 +160,9 @@ import {
   isPartialIssueKey,
   MIN_TERM,
 } from '../../lib/searchTerms';
+import { readRecentIssues, type RecentIssue } from '../../lib/recentIssues';
 import { teamTree } from '../../lib/teamOrder';
+import { TRIAGE_STATUS } from '../../lib/triageStatus';
 import { teamScopePath } from '../../lib/teamIssueScope';
 import type { Theme } from '../../lib/theme';
 import {
@@ -185,6 +196,8 @@ export interface CommandPaletteProps {
   onShowShortcuts?: () => void;
   /** The picker to open on instead of the top level, or null for the top level. */
   picker?: PalettePicker | null;
+  /** The viewer, whose recently opened issues head the top level. */
+  currentUserId?: string | undefined;
 }
 
 /**
@@ -293,6 +306,29 @@ const pickerCycles = (cycles: readonly CycleRead[]): CycleRead[] =>
       : -dates;
   });
 
+/** A recently opened issue's status glyph, read from its team's statuses. */
+const RecentIssueIcon: React.FC<{
+  workspaceId: string;
+  issue: RecentIssue;
+}> = ({ workspaceId, issue }) => {
+  const auth = useQueryAuth();
+  const { data: statuses } = usePolledQuery(
+    (context) => listStatuses(workspaceId, issue.team_id, context),
+    {
+      intervalMs: LOOKUP_POLL_MS,
+      enabled: workspaceId !== '' && issue.team_id !== '',
+      queryKey: statusesKey(issue.team_id),
+      auth,
+    }
+  );
+  const known = statuses ?? [];
+  const status =
+    issue.in_triage === true
+      ? TRIAGE_STATUS
+      : known.find((row) => row.id === issue.status_id);
+  return <StatusIcon status={status} statuses={known} className={ICON} />;
+};
+
 /** A shortcut as a row hint, such as "G then I". */
 const shortcutHint = (keys: string): string =>
   displayKeys(keys).join(keys.includes(' ') ? ' then ' : ' ');
@@ -334,6 +370,7 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
   teams = [],
   onShowShortcuts,
   picker = null,
+  currentUserId,
 }) => {
   const navigate = useNavigate();
   const location = useLocation();
@@ -355,6 +392,9 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
 
   const workspaceId = workspace.id;
   const slug = workspace.slug;
+  const [recents] = useState(() =>
+    readRecentIssues(workspaceId, currentUserId)
+  );
   const routePrefix = routeTeamPrefix(location.pathname, location.search);
   const issueKey = routeIssueKey(location.pathname);
   const team = currentOrFirstTeam(teams, routePrefix);
@@ -1067,12 +1107,31 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
     const current = issueActions.filter((command) =>
       matches(command, deferred)
     );
-    if (current.length > 0) {
-      built.push({
-        heading: issueKey === null ? 'Current issue' : issueKey,
-        commands: current,
-      });
+    const currentGroup: CommandGroup | null =
+      current.length === 0
+        ? null
+        : {
+            heading: issueKey === null ? 'Current issue' : issueKey,
+            commands: current,
+          };
+    if (currentGroup !== null && issueKey !== null) built.push(currentGroup);
+
+    const viewing = issueKey?.toUpperCase() ?? null;
+    const recent = recents
+      .filter((row) => row.key.toUpperCase() !== viewing)
+      .map((row) => ({
+        id: `recent-${row.id}`,
+        label: row.title,
+        hint: row.key,
+        icon: <RecentIssueIcon workspaceId={workspaceId} issue={row} />,
+        to: issuePath(slug, row.key),
+      }))
+      .filter((command) => matches(command, deferred));
+    if (recent.length > 0) {
+      built.push({ heading: 'Recent issues', commands: recent });
     }
+    const shownRecent = new Set(recent.map((command) => command.id));
+    if (currentGroup !== null && issueKey === null) built.push(currentGroup);
 
     for (const group of pageActions) {
       const here = group.commands.filter((command) =>
@@ -1082,7 +1141,9 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
         built.push({ heading: group.heading, commands: here });
     }
 
-    const results = data ?? [];
+    const results = (data ?? []).filter(
+      (result) => !shownRecent.has(`recent-${result.issue_id}`)
+    );
     if (!isKey && enabled && results.length > 0) {
       built.push({
         heading: 'Issues',
@@ -1168,6 +1229,8 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
     routePrefix,
     deferred,
     isKey,
+    recents,
+    workspaceId,
     issueActions,
     pageActions,
     issueKey,

@@ -732,7 +732,8 @@ export type IssueSort =
   | 'start_asc'
   | 'estimate_desc'
   | 'customer_requests_desc'
-  | 'customer_revenue_desc';
+  | 'customer_revenue_desc'
+  | 'completed_desc';
 
 /** The kinds of link a pair of issues may hold. */
 export type LinkType = 'blocks' | 'blocked_by' | 'relates_to' | 'duplicate_of';
@@ -2416,6 +2417,12 @@ export interface ProjectMilestoneMarkerRead {
   target_date: string;
   /** Every issue in the milestone is finished, and it holds at least one. */
   completed: boolean;
+  /** The milestone's issue counts. */
+  counts?: RollupCounts;
+  /** The unit `progress` reads in: points when a team on it estimates, otherwise issues. */
+  measure?: 'points' | 'issues';
+  /** The buckets scope and completion are measured by, in `measure`. */
+  progress?: RollupCounts;
 }
 
 /** One template issue a project created from a template left out, and why. */

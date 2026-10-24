@@ -747,6 +747,13 @@ class ProjectMilestoneMarkerRead(BaseModel):
     name: str
     target_date: str
     completed: bool = Field(description="Every issue in the milestone is finished, and it holds at least one")
+    counts: CountsRead = Field(default_factory=CountsRead, description="The milestone's issue counts")
+    measure: ProgressMeasureField = Field(
+        default="issues", description="The unit `progress` reads in, points when a team on it estimates"
+    )
+    progress: CountsRead = Field(
+        default_factory=CountsRead, description="The buckets scope and completion are measured by, in `measure`"
+    )
 
     @classmethod
     def from_row(cls, milestone: ProjectMilestone) -> "ProjectMilestoneMarkerRead":
@@ -757,6 +764,9 @@ class ProjectMilestoneMarkerRead(BaseModel):
             name=milestone.name,
             target_date=milestone.target_date or "",
             completed=progress.scope > 0 and progress.done >= progress.scope,
+            counts=CountsRead.from_counts(milestone.counts),
+            measure=milestone.measure,
+            progress=CountsRead.from_counts(milestone.progress),
         )
 
 

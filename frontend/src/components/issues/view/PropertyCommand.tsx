@@ -7,13 +7,7 @@
  */
 
 import React, { useMemo, useState } from 'react';
-import {
-  LuBox,
-  LuCalendar,
-  LuIterationCw,
-  LuMilestone,
-  LuX,
-} from 'react-icons/lu';
+import { LuBox, LuCalendar, LuIterationCw, LuX } from 'react-icons/lu';
 import type { OrderedIssueRead } from '../../../api/issues';
 import { NONE } from '../../../api/issues';
 import { useTriageTeamIds } from '../../../hooks/useTriageTeams';
@@ -51,6 +45,7 @@ import { Combobox, type ComboboxOption } from '../../ui/combobox';
 import Dialog from '../../ui/dialog';
 import { PriorityGlyph } from '../../ui/glyphs';
 import { StatusIcon } from '../../ui/StatusIcon';
+import MilestoneGlyph from '../../planning/MilestoneGlyph';
 import { CustomDate } from '../PropertyPickers';
 import { useIssueViewEnv } from './IssueViewContext';
 import type { CommandProperty } from './propertyKeys';
@@ -360,7 +355,7 @@ export const PropertyCommand: React.FC<PropertyCommandProps> = ({
         ...milestones.map((milestone) => ({
           value: milestone.milestone_id,
           label: milestone.name,
-          icon: <LuMilestone className="h-3.5 w-3.5 text-text-muted" />,
+          icon: <MilestoneGlyph milestone={milestone} decorative />,
         })),
       ];
       selected = shared(

@@ -659,6 +659,7 @@ class DisplayOptionsBody(TypedDict):
             "estimate_desc",
             "customer_requests_desc",
             "customer_revenue_desc",
+            "completed_desc",
         ]
         | None
     ]
@@ -1550,8 +1551,11 @@ class ProjectLabelUpdate(TypedDict):
 
 class ProjectMilestoneMarkerRead(TypedDict):
     completed: bool
+    counts: NotRequired[CountsRead]
+    measure: NotRequired[Literal["points", "issues"]]
     milestone_id: str
     name: str
+    progress: NotRequired[CountsRead]
     target_date: str
 
 
@@ -2086,6 +2090,7 @@ class ShareLinkCreate(TypedDict):
             "estimate_desc",
             "customer_requests_desc",
             "customer_revenue_desc",
+            "completed_desc",
         ]
         | None
     ]
@@ -2873,6 +2878,7 @@ class ViewCreate(TypedDict):
             "estimate_desc",
             "customer_requests_desc",
             "customer_revenue_desc",
+            "completed_desc",
         ]
         | None
     ]
@@ -2896,6 +2902,7 @@ class ViewCreate(TypedDict):
             "estimate_desc",
             "customer_requests_desc",
             "customer_revenue_desc",
+            "completed_desc",
         ]
     ]
     sub_group_by: NotRequired[
@@ -2987,6 +2994,7 @@ class ViewUpdate(TypedDict):
             "estimate_desc",
             "customer_requests_desc",
             "customer_revenue_desc",
+            "completed_desc",
         ]
         | None
     ]
@@ -3010,6 +3018,7 @@ class ViewUpdate(TypedDict):
             "estimate_desc",
             "customer_requests_desc",
             "customer_revenue_desc",
+            "completed_desc",
         ]
         | None
     ]

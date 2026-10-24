@@ -35,6 +35,7 @@ SortField = Literal[
     "estimate_desc",
     "customer_requests_desc",
     "customer_revenue_desc",
+    "completed_desc",
 ]
 
 ViewKindField = Literal["list", "board"]

@@ -95,6 +95,7 @@ import {
   copyText,
 } from '../../lib/copyIssue';
 import { errorMessage } from '../../lib/errors';
+import { useRecordRecentIssue } from '../../lib/recentIssues';
 import { timestampLabel } from '../../lib/issueDisplay';
 import {
   CONVERT_TO_PROJECT_LABEL,
@@ -256,6 +257,7 @@ export const IssueView: React.FC<IssueViewProps> = ({
     write: (patch) => updateIssue(workspaceId, issueId, patch),
     invalidate: [activityKey(issueId)],
   });
+  useRecordRecentIssue(workspaceId, user?.id, issueRef, issue, error);
 
   const teamId = issue?.team_id ?? '';
   const planningEnabled = workspaceId !== '' && teamId !== '';
@@ -965,6 +967,7 @@ export const IssueView: React.FC<IssueViewProps> = ({
                       statuses={options.statuses}
                       people={options.people}
                       canEdit={canAct}
+                      currentUserId={currentUserId}
                     />
                   )}
                 </div>

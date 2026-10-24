@@ -376,5 +376,8 @@ def test_the_project_list_marks_dated_milestones_earliest_first(client: TestClie
         "name": "Alpha",
         "target_date": "2026-11-01",
         "completed": False,
+        "counts": {"todo": 0, "in_progress": 0, "done": 0, "cancelled": 0, "total": 0},
+        "measure": "issues",
+        "progress": {"todo": 0, "in_progress": 0, "done": 0, "cancelled": 0, "total": 0},
     }
     assert listed[other["project_id"]]["milestone_markers"] == []

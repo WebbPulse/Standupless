@@ -7,9 +7,15 @@
  * it belongs.
  *
  * The keyboard carries the whole flow. Cmd or Ctrl and Enter files the issue,
- * Escape closes, and typed text is guarded so a stray Escape does not throw a
- * paragraph away. "Create more" keeps the dialog open with the chosen
+ * Escape closes, and "Create more" keeps the dialog open with the chosen
  * properties held, for filing a run of related issues in one sitting.
+ *
+ * What is typed is kept as a draft in this browser, per workspace and viewer,
+ * so closing the dialog never loses it and opening it again brings it back.
+ * "Discard draft" is the one way to throw it away, and filing the issue clears
+ * it. A dialog opened with presets, such as from a board column or a parent,
+ * starts fresh and offers the saved draft instead of overwriting it. When the
+ * draft cannot be stored, closing over typed text asks first.
  *
  * A template prefills the draft. The team's default is applied as the dialog
  * opens and fills only what the caller did not preset, and picking one in the
@@ -61,6 +67,13 @@ import { useTriageOn } from '../../hooks/useTriageTeams';
 import { canWriteIssues } from '../../lib/capabilities';
 import { dragHasFiles, filesFrom } from '../../lib/attachments';
 import { cn } from '../../lib/cn';
+import {
+  clearIssueDraft,
+  issueDraftStorageKey,
+  readIssueDraft,
+  writeIssueDraft,
+  type IssueDraft,
+} from '../../lib/issueDraft';
 import {
   namesPending,
   pendingReference,
@@ -256,6 +269,33 @@ const withTemplate = (draft: Draft, fill: TemplatePrefill): Draft => {
   };
 };
 
+/** Whether a caller preset anything on the dialog. */
+const hasPreset = (preset: CreateIssuePreset | undefined): boolean =>
+  preset !== undefined &&
+  Object.values(preset).some((value) => value !== undefined);
+
+/** The draft properties a saved draft holds. */
+const draftOfStored = (stored: IssueDraft): Draft => ({
+  statusId: stored.statusId,
+  assigneeId: stored.assigneeId,
+  labelIds: stored.labelIds,
+  estimate: stored.estimate,
+  projectId: stored.projectId,
+  projectMilestoneId: stored.projectMilestoneId,
+  cycleId: stored.cycleId,
+  priority: stored.priority,
+  startDate: stored.startDate,
+  dueDate: stored.dueDate,
+  parent: stored.parent,
+});
+
+/** The sub-issue rows a saved draft holds, with ids of their own. */
+const rowsOfStored = (stored: IssueDraft, prefix: string): SubIssueRow[] =>
+  stored.subIssues.map((text, index) => ({
+    id: `${prefix}${String(index)}`,
+    title: text,
+  }));
+
 /** The title and description a template wrote, compared to spot edits. */
 interface TemplateText {
   title: string;
@@ -447,17 +487,31 @@ export const CreateIssueDialog: React.FC<CreateIssueDialogProps> = ({
 }) => {
   const workspace = useContext(WorkspaceContext)?.workspace ?? null;
   const auth = useQueryAuth();
-  const [activeTeamId, setActiveTeamId] = useState(teamId);
-  const [templateId, setTemplateId] = useState<string | null>(null);
-  const [templateText, setTemplateText] = useState<TemplateText>(NO_TEXT);
-  const [answers, setAnswers] = useState<FormAnswers>({});
-  const pendingTemplate = useRef<{ teamId: string; id: string | null } | null>({
-    teamId,
-    id: preset?.templateId ?? null,
-  });
-  const [title, setTitle] = useState('');
-  const [body, setBody] = useState('');
-  const [draft, setDraft] = useState<Draft>(() => presetDraft(preset));
+  const [saved] = useState(() => readIssueDraft(workspaceId, currentUserId));
+  const restored = saved !== null && !hasPreset(preset) ? saved : null;
+  const [heldDraft, setHeldDraft] = useState<IssueDraft | null>(
+    restored === null ? saved : null
+  );
+  const discarded = useRef(false);
+  const draftKey = issueDraftStorageKey(workspaceId, currentUserId);
+  const [activeTeamId, setActiveTeamId] = useState(restored?.teamId ?? teamId);
+  const [templateId, setTemplateId] = useState<string | null>(
+    restored?.templateId ?? null
+  );
+  const [templateText, setTemplateText] = useState<TemplateText>(
+    restored === null
+      ? NO_TEXT
+      : { title: restored.templateTitle, body: restored.templateBody }
+  );
+  const [answers, setAnswers] = useState<FormAnswers>(restored?.answers ?? {});
+  const pendingTemplate = useRef<{ teamId: string; id: string | null } | null>(
+    restored === null ? { teamId, id: preset?.templateId ?? null } : null
+  );
+  const [title, setTitle] = useState(restored?.title ?? '');
+  const [body, setBody] = useState(restored?.body ?? '');
+  const [draft, setDraft] = useState<Draft>(() =>
+    restored === null ? presetDraft(preset) : draftOfStored(restored)
+  );
   const [createMore, setCreateMore] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<unknown>(null);
@@ -471,7 +525,9 @@ export const CreateIssueDialog: React.FC<CreateIssueDialogProps> = ({
       ? similar
       : [duplicateOf, ...similar];
   const [expanded, setExpanded] = useState(false);
-  const [subIssues, setSubIssues] = useState<SubIssueRow[]>([]);
+  const [subIssues, setSubIssues] = useState<SubIssueRow[]>(() =>
+    restored === null ? [] : rowsOfStored(restored, 'sub-saved-')
+  );
   const [attached, setAttached] = useState<HeldFile[]>([]);
   const [dragging, setDragging] = useState(false);
   const nextId = useRef(0);
@@ -611,19 +667,72 @@ export const CreateIssueDialog: React.FC<CreateIssueDialogProps> = ({
     setBody((held) => (held.trim() === '' ? text.body : held));
   }, [activeTeamId, templateList, teamStatuses, teamLabels, teamPeople]);
 
-  const state = useRef({ dirty, confirming, lastCreated, onCreated, onClose });
+  const stored: IssueDraft = {
+    teamId: activeTeamId,
+    title,
+    body,
+    templateId,
+    templateTitle: templateText.title,
+    templateBody: templateText.body,
+    answers,
+    statusId: draft.statusId,
+    priority: draft.priority,
+    assigneeId: draft.assigneeId,
+    labelIds: draft.labelIds,
+    estimate: draft.estimate,
+    projectId: draft.projectId,
+    projectMilestoneId: draft.projectMilestoneId,
+    cycleId: draft.cycleId,
+    startDate: draft.startDate,
+    dueDate: draft.dueDate,
+    parent: draft.parent,
+    subIssues: subIssues.map((row) => row.title),
+  };
+  const storedJson = JSON.stringify(stored);
+  const persisting = heldDraft === null && draftKey !== null;
+
+  const state = useRef({
+    dirty,
+    confirming,
+    lastCreated,
+    onCreated,
+    onClose,
+    persisting,
+    stored,
+  });
   useEffect(() => {
-    state.current = { dirty, confirming, lastCreated, onCreated, onClose };
+    state.current = {
+      dirty,
+      confirming,
+      lastCreated,
+      onCreated,
+      onClose,
+      persisting,
+      stored,
+    };
   });
 
+  const saveDraft = useCallback((): boolean => {
+    const current = state.current;
+    if (discarded.current || !current.persisting) return false;
+    if (!current.dirty) {
+      clearIssueDraft(workspaceId, currentUserId);
+      return true;
+    }
+    return writeIssueDraft(workspaceId, currentUserId, current.stored);
+  }, [workspaceId, currentUserId]);
+
   useEffect(() => {
-    const frame = requestAnimationFrame(() => {
-      titleInput.current?.focus();
-    });
-    return () => {
-      cancelAnimationFrame(frame);
-    };
-  }, []);
+    saveDraft();
+  }, [storedJson, dirty, persisting, saveDraft]);
+
+  useEffect(() => {
+    if (activeTeamId === teamId || workspace === null) return;
+    if (teams === null || teams.length === 0) return;
+    if (writable.some((team) => team.id === activeTeamId)) return;
+    setActiveTeamId(teamId);
+    setDraft(clearTeamScoped);
+  }, [activeTeamId, teamId, workspace, teams, writable]);
 
   const finish = useCallback((): void => {
     const current = state.current;
@@ -638,12 +747,12 @@ export const CreateIssueDialog: React.FC<CreateIssueDialogProps> = ({
       titleInput.current?.focus();
       return;
     }
-    if (current.dirty) {
+    if (current.dirty && !saveDraft()) {
       setConfirming(true);
       return;
     }
     finish();
-  }, [finish]);
+  }, [finish, saveDraft]);
 
   const patch = (change: Partial<Draft>): void => {
     setDraft((current) => ({ ...current, ...change }));
@@ -653,6 +762,45 @@ export const CreateIssueDialog: React.FC<CreateIssueDialogProps> = ({
     nextId.current += 1;
     return `${prefix}${String(nextId.current)}`;
   };
+
+  const restoreHeld = (): void => {
+    const held = heldDraft;
+    if (held === null) return;
+    pendingTemplate.current = null;
+    setActiveTeamId(held.teamId);
+    setTemplateId(held.templateId);
+    setTemplateText({ title: held.templateTitle, body: held.templateBody });
+    setAnswers(held.answers);
+    setTitle(held.title);
+    setBody(held.body);
+    setDraft(draftOfStored(held));
+    setSubIssues(rowsOfStored(held, `${localId('sub-saved-')}-`));
+    setAttached([]);
+    setConfirming(false);
+    setHeldDraft(null);
+    titleInput.current?.focus();
+  };
+
+  const discardHeld = (): void => {
+    clearIssueDraft(workspaceId, currentUserId);
+    setHeldDraft(null);
+    titleInput.current?.focus();
+  };
+
+  const discardDraft = (): void => {
+    discarded.current = true;
+    if (heldDraft === null) clearIssueDraft(workspaceId, currentUserId);
+    finish();
+  };
+
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => {
+      titleInput.current?.focus();
+    });
+    return () => {
+      cancelAnimationFrame(frame);
+    };
+  }, []);
 
   useEffect(() => {
     const id = focusRow.current;
@@ -819,6 +967,10 @@ export const CreateIssueDialog: React.FC<CreateIssueDialogProps> = ({
         }
         setDuplicateOf(null);
         if (!createMore) {
+          discarded.current = true;
+          if (state.current.persisting) {
+            clearIssueDraft(workspaceId, currentUserId);
+          }
           onCreated(issue);
           return;
         }
@@ -953,6 +1105,27 @@ export const CreateIssueDialog: React.FC<CreateIssueDialogProps> = ({
             </IconButton>
           </span>
         </div>
+
+        {heldDraft !== null && (
+          <div
+            role="status"
+            aria-label="Saved draft"
+            className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-line bg-raised px-3 py-2"
+          >
+            <p className="min-w-0 truncate text-sm text-text-muted">
+              You have a saved draft
+              {heldDraft.title.trim() === '' ? '' : `: ${heldDraft.title}`}
+            </p>
+            <div className="flex shrink-0 gap-1">
+              <Button variant="ghost" size="sm" onClick={discardHeld}>
+                Discard saved draft
+              </Button>
+              <Button variant="secondary" size="sm" onClick={restoreHeld}>
+                Restore draft
+              </Button>
+            </div>
+          </div>
+        )}
 
         {error !== null && (
           <ErrorAlert
@@ -1305,6 +1478,11 @@ export const CreateIssueDialog: React.FC<CreateIssueDialogProps> = ({
                 >
                   <LuPlus aria-hidden="true" className="mr-1 h-3.5 w-3.5" />
                   Add sub-issues
+                </Button>
+              )}
+              {dirty && (
+                <Button variant="ghost" size="sm" onClick={discardDraft}>
+                  Discard draft
                 </Button>
               )}
             </div>

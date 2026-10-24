@@ -34,9 +34,6 @@ ME = "me"
 CATEGORY_ALIASES: dict[str, str] = {"canceled": "cancelled"}
 """Spellings accepted for a category, because clients carry both and neither is wrong."""
 
-CLOSED_CATEGORIES: frozenset[str] = frozenset({"completed", "cancelled"})
-"""The categories a blocker stops counting in, the rule the blocked marker keeps too."""
-
 BOOLEAN_VALUES: dict[str, bool] = {"true": True, "false": False}
 """The spellings a boolean filter takes, since a saved view stores every value as text."""
 
@@ -320,18 +317,14 @@ class IssueFilter:
     def needs_categories(self) -> bool:
         """Whether matching needs each status's category, which costs a config read."""
         own = bool(
-            self.status_categories
-            or self.status_categories_not
-            or self.is_blocking is not None
-            or self.completed_before
-            or self.completed_after
+            self.status_categories or self.status_categories_not or self.completed_before or self.completed_after
         )
         return own or any(group.needs_categories for group in self.groups)
 
     @property
     def needs_relations(self) -> bool:
         """Whether matching needs the workspace's links, which costs one relations read."""
-        own = bool(self.is_blocking is not None or self.has_relations)
+        own = bool(self.has_relations)
         return own or any(group.needs_relations for group in self.groups)
 
     @property
@@ -472,8 +465,7 @@ class IssueFilter:
         if self.is_blocked is not None:
             yield (issue.blocked_by_open_count > 0) == self.is_blocked
         if self.is_blocking is not None:
-            open_now = category not in CLOSED_CATEGORIES
-            yield (open_now and self._linked("blocks", issue.issue_id)) == self.is_blocking
+            yield (issue.blocking_count > 0) == self.is_blocking
         if self.has_relations:
             yield any(kind is not None and self._linked(kind, issue.issue_id) for kind in self.has_relations)
         if self.customer_ids or self.customer_ids_not:
