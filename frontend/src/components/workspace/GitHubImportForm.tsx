@@ -78,7 +78,7 @@ export const GitHubImportForm: React.FC<GitHubImportFormProps> = ({
     ({ signal }) => readInstallation(workspaceId, signal),
     { intervalMs: POLL_MS, queryKey: installationKey(workspaceId), auth }
   );
-  const state = installation.data;
+  const state = installation.data ?? null;
   const live = state?.status === 'installed' && !state.installation.suspended;
 
   const repositories = usePolledQuery(
@@ -101,7 +101,7 @@ export const GitHubImportForm: React.FC<GitHubImportFormProps> = ({
 
   const settingsPath = `/w/${workspaceSlug}/settings/integrations`;
 
-  if (installation.isLoading && state === undefined) {
+  if (installation.isLoading && state === null) {
     return <Spinner label="Checking the GitHub App" />;
   }
   if (installation.error !== null && installation.error !== undefined) {
@@ -122,7 +122,7 @@ export const GitHubImportForm: React.FC<GitHubImportFormProps> = ({
       </Notice>
     );
   }
-  if (state === undefined || state.status === 'not_installed') {
+  if (state === null || state.status === 'not_installed') {
     return (
       <Notice title="The GitHub App is not installed">
         Install it from{' '}
@@ -177,7 +177,7 @@ export const GitHubImportForm: React.FC<GitHubImportFormProps> = ({
 
   return (
     <div className="space-y-6">
-      {repositories.isLoading && repositories.data === undefined ? (
+      {repositories.isLoading && repositoryList.length === 0 ? (
         <Spinner label="Loading repositories" />
       ) : repositories.error !== null && repositories.error !== undefined ? (
         <ErrorAlert
