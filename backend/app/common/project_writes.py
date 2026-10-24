@@ -355,7 +355,9 @@ def update_project(
 def delete_project(
     repositories: Repositories, context: AuthzContext, project_id: str, team_id: Optional[str] = None
 ) -> None:
-    """Delete a project with its milestones, updates, documents and dependencies, leaving every issue that pointed at it in place.
+    """Delete a project with its milestones, updates, documents and dependencies.
+
+    Every issue that pointed at it stays in place.
 
     Takes an administrator of every one of the project's teams, because the
     delete detaches issues in each of them.

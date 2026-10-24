@@ -53,13 +53,13 @@ from app.common.planning_rules import (
     require_team_reader,
 )
 from app.common.project_cadence import INTERVAL_OPTIONS, workspace_interval
+from app.common.project_relations import create_relation, delete_relation, fill_one, list_relations
 from app.common.project_updates import (
     create_project_update,
     delete_project_update,
     list_project_updates,
     update_project_update,
 )
-from app.common.project_relations import create_relation, delete_relation, fill_one, list_relations
 from app.common.project_writes import create_project, delete_project, list_projects, update_project
 from app.domains.integrations.mcp.template_tools import project_template_ref
 from app.domains.integrations.mcp.toolkit import (
