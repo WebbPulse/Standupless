@@ -56,6 +56,7 @@ __all__ = [
     "delete_label",
     "get_issue",
     "get_pull_request",
+    "get_repository",
     "installation_token",
     "list_check_runs",
     "list_comments",
@@ -597,3 +598,21 @@ def user_login(token: str, github_user_id: str, *, client: httpx.Client | None =
     """
     body = _object(_request("GET", f"/user/{github_user_id}", token=token, client=client), "user")
     return str(body.get("login", ""))
+
+
+def get_repository(token: str, reference: str, *, client: httpx.Client | None = None) -> Mapping[str, Any]:
+    """One repository by its numeric id or its owner/name, as the installation's token can read it.
+
+    The owner/name form is the one lookup addressed as `/repos/{owner}/{name}`,
+    because a person naming a repository the rows have not learned has no id to
+    give; a renamed repository answers a redirect, which raises like any refusal.
+    """
+    text = str(reference).strip()
+    if text.isdigit():
+        path = repository_path(text)
+    else:
+        owner, _, name = text.partition("/")
+        if not owner or not name or "/" in name:
+            raise ValueError("a repository is a numeric id or owner/name")
+        path = f"/repos/{quote(owner, safe='')}/{quote(name, safe='')}"
+    return _numbered(_request("GET", path, token=token, client=client), "repository", "id")
