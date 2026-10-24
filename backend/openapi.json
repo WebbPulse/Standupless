@@ -2617,6 +2617,442 @@
         "title": "CursorPage[IssueLinkRead]",
         "type": "object"
       },
+      "CustomerCreate": {
+        "description": "The body a customer create takes; only the name is required.",
+        "properties": {
+          "domains": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Domains",
+            "type": "array"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "owner_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner Id"
+          },
+          "revenue": {
+            "anyOf": [
+              {
+                "maximum": 1000000000000000.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Revenue"
+          },
+          "size": {
+            "anyOf": [
+              {
+                "maximum": 1000000000000000.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Size"
+          },
+          "tier": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tier"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "CustomerCreate",
+        "type": "object"
+      },
+      "CustomerListRead": {
+        "properties": {
+          "customers": {
+            "items": {
+              "$ref": "#/components/schemas/CustomerRead"
+            },
+            "title": "Customers",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "required": [
+          "customers"
+        ],
+        "title": "CustomerListRead",
+        "type": "object"
+      },
+      "CustomerMerge": {
+        "description": "The body a merge takes: the customer the one in the path folds into.",
+        "properties": {
+          "into_customer_id": {
+            "title": "Into Customer Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "into_customer_id"
+        ],
+        "title": "CustomerMerge",
+        "type": "object"
+      },
+      "CustomerPatch": {
+        "description": "The body a customer patch takes; a field left out is kept, and `null` clears any but the name.",
+        "properties": {
+          "domains": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Domains"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "owner_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner Id"
+          },
+          "revenue": {
+            "anyOf": [
+              {
+                "maximum": 1000000000000000.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Revenue"
+          },
+          "size": {
+            "anyOf": [
+              {
+                "maximum": 1000000000000000.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Size"
+          },
+          "tier": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tier"
+          }
+        },
+        "title": "CustomerPatch",
+        "type": "object"
+      },
+      "CustomerRead": {
+        "description": "One customer with how many requests this caller can see from it.\n\n`can_edit` and `can_delete` say what this caller may do, so a client draws\nthe controls without repeating the rules.",
+        "properties": {
+          "can_delete": {
+            "default": false,
+            "title": "Can Delete",
+            "type": "boolean"
+          },
+          "can_edit": {
+            "default": false,
+            "title": "Can Edit",
+            "type": "boolean"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "created_by": {
+            "title": "Created By",
+            "type": "string"
+          },
+          "customer_id": {
+            "title": "Customer Id",
+            "type": "string"
+          },
+          "domains": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Domains",
+            "type": "array"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "owner_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner Id"
+          },
+          "request_count": {
+            "default": 0,
+            "title": "Request Count",
+            "type": "integer"
+          },
+          "revenue": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Revenue"
+          },
+          "size": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Size"
+          },
+          "tier": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tier"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "workspace_id": {
+            "title": "Workspace Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "customer_id",
+          "workspace_id",
+          "name",
+          "created_by",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "CustomerRead",
+        "type": "object"
+      },
+      "CustomerRequestCreate": {
+        "description": "The body a request create takes; the issue or project comes from the path.",
+        "properties": {
+          "body": {
+            "default": "",
+            "title": "Body",
+            "type": "string"
+          },
+          "customer_id": {
+            "title": "Customer Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "customer_id"
+        ],
+        "title": "CustomerRequestCreate",
+        "type": "object"
+      },
+      "CustomerRequestListRead": {
+        "properties": {
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          },
+          "requests": {
+            "items": {
+              "$ref": "#/components/schemas/CustomerRequestRead"
+            },
+            "title": "Requests",
+            "type": "array"
+          }
+        },
+        "required": [
+          "requests"
+        ],
+        "title": "CustomerRequestListRead",
+        "type": "object"
+      },
+      "CustomerRequestRead": {
+        "description": "One request, with the names a list draws beside it.\n\n`target_key` is the issue key for an issue and empty for a project.",
+        "properties": {
+          "author_id": {
+            "title": "Author Id",
+            "type": "string"
+          },
+          "body": {
+            "default": "",
+            "title": "Body",
+            "type": "string"
+          },
+          "can_delete": {
+            "default": false,
+            "title": "Can Delete",
+            "type": "boolean"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "customer_id": {
+            "title": "Customer Id",
+            "type": "string"
+          },
+          "customer_name": {
+            "default": "",
+            "title": "Customer Name",
+            "type": "string"
+          },
+          "request_id": {
+            "title": "Request Id",
+            "type": "string"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "enum": [
+                  "web",
+                  "mcp",
+                  "cli",
+                  "api",
+                  "github",
+                  "system"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source"
+          },
+          "target_id": {
+            "title": "Target Id",
+            "type": "string"
+          },
+          "target_key": {
+            "default": "",
+            "title": "Target Key",
+            "type": "string"
+          },
+          "target_kind": {
+            "enum": [
+              "issue",
+              "project"
+            ],
+            "title": "Target Kind",
+            "type": "string"
+          },
+          "target_title": {
+            "default": "",
+            "title": "Target Title",
+            "type": "string"
+          },
+          "workspace_id": {
+            "title": "Workspace Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "request_id",
+          "workspace_id",
+          "customer_id",
+          "target_kind",
+          "target_id",
+          "author_id",
+          "created_at"
+        ],
+        "title": "CustomerRequestRead",
+        "type": "object"
+      },
       "CycleCapacityRead": {
         "description": "The active or next cycle's current scope, which capacity guidance weighs.",
         "properties": {
@@ -3522,21 +3958,42 @@
         "type": "object"
       },
       "DocumentCreate": {
-        "description": "The body a document create takes; the parent comes from the path.",
+        "description": "The body a document create takes; the parent comes from the path.\n\n`template_id` names a document template the parent offers. Its title fills\na left out `title`, and its body a left out `body`; a create without either\na title or a template is refused.",
         "properties": {
           "body": {
-            "default": "",
-            "title": "Body",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Body"
+          },
+          "template_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Template Id"
           },
           "title": {
-            "title": "Title",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
           }
         },
-        "required": [
-          "title"
-        ],
         "title": "DocumentCreate",
         "type": "object"
       },
@@ -3830,6 +4287,45 @@
           "updated_at"
         ],
         "title": "DocumentSummaryRead",
+        "type": "object"
+      },
+      "DocumentTemplateListRead": {
+        "description": "The document templates a project or initiative offers, and the ones its composers open with.\n\n`default_document_template_id` is what a new document starts from and\n`default_update_template_id` what the update composer opens with, each the\nfirst of the project's teams to set one and always one of `templates`. An\ninitiative belongs to no team, so it carries neither.",
+        "properties": {
+          "default_document_template_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Document Template Id"
+          },
+          "default_update_template_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Update Template Id"
+          },
+          "templates": {
+            "items": {
+              "$ref": "#/components/schemas/TemplateRead"
+            },
+            "title": "Templates",
+            "type": "array"
+          }
+        },
+        "required": [
+          "templates"
+        ],
+        "title": "DocumentTemplateListRead",
         "type": "object"
       },
       "DocumentVersionListRead": {
@@ -4269,6 +4765,198 @@
           "target_id"
         ],
         "title": "FavoriteRef",
+        "type": "object"
+      },
+      "FormField": {
+        "description": "One question a form template asks.\n\nA field without a key is given one, `f1` onwards. Only a select field takes\noptions, and it needs at least one.",
+        "properties": {
+          "description": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "key": {
+            "anyOf": [
+              {
+                "maxLength": 40,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Key"
+          },
+          "label": {
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Label",
+            "type": "string"
+          },
+          "options": {
+            "items": {
+              "$ref": "#/components/schemas/FormOption"
+            },
+            "maxItems": 25,
+            "title": "Options",
+            "type": "array"
+          },
+          "required": {
+            "default": false,
+            "title": "Required",
+            "type": "boolean"
+          },
+          "type": {
+            "default": "short_text",
+            "enum": [
+              "short_text",
+              "long_text",
+              "select",
+              "checkbox"
+            ],
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "label"
+        ],
+        "title": "FormField",
+        "type": "object"
+      },
+      "FormFieldBlueprint": {
+        "description": "One question a form template asks: short or long text, a select of options, or a checkbox.\n\n`key` names the field in the answers a create sends, so a label can be\nrenamed without breaking a client that files through the form.",
+        "properties": {
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "options": {
+            "items": {
+              "$ref": "#/components/schemas/FormOptionBlueprint"
+            },
+            "title": "Options",
+            "type": "array"
+          },
+          "required": {
+            "default": false,
+            "title": "Required",
+            "type": "boolean"
+          },
+          "type": {
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "label",
+          "type"
+        ],
+        "title": "FormFieldBlueprint",
+        "type": "object"
+      },
+      "FormOption": {
+        "description": "One option of a select field; choosing it puts `label_id` and `priority` on the issue when set.",
+        "properties": {
+          "label_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label Id"
+          },
+          "priority": {
+            "anyOf": [
+              {
+                "enum": [
+                  "none",
+                  "urgent",
+                  "high",
+                  "medium",
+                  "low"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Priority"
+          },
+          "value": {
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Value",
+            "type": "string"
+          }
+        },
+        "required": [
+          "value"
+        ],
+        "title": "FormOption",
+        "type": "object"
+      },
+      "FormOptionBlueprint": {
+        "description": "One choice of a form's select field, and the label and priority choosing it puts on the issue.",
+        "properties": {
+          "label_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Label Id"
+          },
+          "priority": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Priority"
+          },
+          "value": {
+            "title": "Value",
+            "type": "string"
+          }
+        },
+        "required": [
+          "value"
+        ],
+        "title": "FormOptionBlueprint",
         "type": "object"
       },
       "GitHubAppStatus": {
@@ -5551,11 +6239,18 @@
         "type": "object"
       },
       "InitiativeUpdateCreate": {
-        "description": "The body `POST /api/workspaces/{workspace_id}/initiatives/{initiative_id}/updates` takes.",
+        "description": "The body `POST /api/workspaces/{workspace_id}/initiatives/{initiative_id}/updates` takes.\n\n`body` may be left out when `template_id` names a workspace document\ntemplate, whose body the update then takes.",
         "properties": {
           "body": {
-            "title": "Body",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Body"
           },
           "health": {
             "enum": [
@@ -5565,10 +6260,20 @@
             ],
             "title": "Health",
             "type": "string"
+          },
+          "template_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Template Id"
           }
         },
         "required": [
-          "body",
           "health"
         ],
         "title": "InitiativeUpdateCreate",
@@ -6472,7 +7177,7 @@
         "type": "object"
       },
       "IssueCreate": {
-        "description": "The body `POST /api/workspaces/{workspace_id}/issues` takes.\n\n`team_id` is a field rather than a path segment because issues are workspace\nscoped, which is what lets a link and a \"my issues\" read cross teams.\n`template_id` fills every field the body leaves out from a template the team\noffers, so `title` may be left out only when a template is named.",
+        "description": "The body `POST /api/workspaces/{workspace_id}/issues` takes.\n\n`team_id` is a field rather than a path segment because issues are workspace\nscoped, which is what lets a link and a \"my issues\" read cross teams.\n`template_id` fills every field the body leaves out from a template the team\noffers, so `title` may be left out only when a template is named.\n`form_answers` answers a form template's fields by key: text for a text or\nselect field and a boolean for a checkbox.",
         "properties": {
           "assignee_id": {
             "anyOf": [
@@ -6528,6 +7233,28 @@
               }
             ],
             "title": "Estimate"
+          },
+          "form_answers": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "boolean"
+                    }
+                  ]
+                },
+                "maxProperties": 50,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Form Answers"
           },
           "label_ids": {
             "items": {
@@ -9568,6 +10295,36 @@
         "title": "ProjectListRead",
         "type": "object"
       },
+      "ProjectMilestoneMarkerRead": {
+        "description": "One dated milestone of a project, as the timeline marks it on the project's lane.",
+        "properties": {
+          "completed": {
+            "description": "Every issue in the milestone is finished, and it holds at least one",
+            "title": "Completed",
+            "type": "boolean"
+          },
+          "milestone_id": {
+            "title": "Milestone Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "target_date": {
+            "title": "Target Date",
+            "type": "string"
+          }
+        },
+        "required": [
+          "milestone_id",
+          "name",
+          "target_date",
+          "completed"
+        ],
+        "title": "ProjectMilestoneMarkerRead",
+        "type": "object"
+      },
       "ProjectOpenIssues": {
         "description": "What a patch that completes or cancels a project does with the issues still open in it.\n\n`keep` leaves them in the project, `move` moves them to the project named by\n`project_id`, and `cancel` moves each to its team's first canceled status.",
         "properties": {
@@ -9602,6 +10359,22 @@
       "ProjectRead": {
         "description": "One project as the API returns it, with its status stored rather than derived.\n\n`team_ids` holds only the teams the caller can see, so a guest learns nothing\nabout the rest of the workspace from a shared project. `team_id` is the first\nof them, kept for a single-team reader.",
         "properties": {
+          "blocked_by_project_ids": {
+            "description": "The visible projects that block this one, oldest link first",
+            "items": {
+              "type": "string"
+            },
+            "title": "Blocked By Project Ids",
+            "type": "array"
+          },
+          "blocking_project_ids": {
+            "description": "The visible projects this one blocks, oldest link first",
+            "items": {
+              "type": "string"
+            },
+            "title": "Blocking Project Ids",
+            "type": "array"
+          },
           "color": {
             "anyOf": [
               {
@@ -9725,6 +10498,14 @@
               "type": "string"
             },
             "title": "Member Ids",
+            "type": "array"
+          },
+          "milestone_markers": {
+            "description": "The project's milestones that have a target date, earliest first, filled on the project list",
+            "items": {
+              "$ref": "#/components/schemas/ProjectMilestoneMarkerRead"
+            },
+            "title": "Milestone Markers",
             "type": "array"
           },
           "name": {
@@ -9895,6 +10676,105 @@
           "updated_at"
         ],
         "title": "ProjectRead",
+        "type": "object"
+      },
+      "ProjectRelationCreate": {
+        "description": "A dependency to add between the path project and another one.",
+        "properties": {
+          "target_project_id": {
+            "description": "The other project",
+            "minLength": 1,
+            "title": "Target Project Id",
+            "type": "string"
+          },
+          "type": {
+            "description": "`blocks` when the path project blocks the target",
+            "enum": [
+              "blocks",
+              "blocked_by"
+            ],
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "target_project_id"
+        ],
+        "title": "ProjectRelationCreate",
+        "type": "object"
+      },
+      "ProjectRelationListRead": {
+        "properties": {
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          },
+          "relations": {
+            "items": {
+              "$ref": "#/components/schemas/ProjectRelationRead"
+            },
+            "title": "Relations",
+            "type": "array"
+          }
+        },
+        "required": [
+          "relations"
+        ],
+        "title": "ProjectRelationListRead",
+        "type": "object"
+      },
+      "ProjectRelationRead": {
+        "description": "One dependency read from the path project's side.",
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "created_by": {
+            "title": "Created By",
+            "type": "string"
+          },
+          "project_id": {
+            "description": "The path project",
+            "title": "Project Id",
+            "type": "string"
+          },
+          "relation_id": {
+            "title": "Relation Id",
+            "type": "string"
+          },
+          "target_project_id": {
+            "description": "The project at the other end",
+            "title": "Target Project Id",
+            "type": "string"
+          },
+          "type": {
+            "enum": [
+              "blocks",
+              "blocked_by"
+            ],
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "relation_id",
+          "type",
+          "project_id",
+          "target_project_id",
+          "created_by",
+          "created_at"
+        ],
+        "title": "ProjectRelationRead",
         "type": "object"
       },
       "ProjectTemplateFields": {
@@ -10288,11 +11168,18 @@
         "type": "object"
       },
       "ProjectUpdateCreate": {
-        "description": "The body `POST /api/workspaces/{workspace_id}/projects/{project_id}/updates` takes.\n\nHealth is required, as in Linear, because an update is the report of how the\nproject stands and posting one is what sets the project's health.",
+        "description": "The body `POST /api/workspaces/{workspace_id}/projects/{project_id}/updates` takes.\n\nHealth is required, as in Linear, because an update is the report of how the\nproject stands and posting one is what sets the project's health. `body`\nmay be left out when `template_id` names a document template, whose body\nthe update then takes.",
         "properties": {
           "body": {
-            "title": "Body",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Body"
           },
           "health": {
             "enum": [
@@ -10302,10 +11189,20 @@
             ],
             "title": "Health",
             "type": "string"
+          },
+          "template_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Template Id"
           }
         },
         "required": [
-          "body",
           "health"
         ],
         "title": "ProjectUpdateCreate",
@@ -10465,7 +11362,7 @@
         "type": "object"
       },
       "ProjectsDisplay": {
-        "description": "How the person arranges the workspace projects list.\n\n`closed` is how far back completed and canceled projects show: all of them,\nthose closed in the past week, month or quarter, or none. `zoom` is the\ntimeline layout's scale. Every field has the list's own default, so an\naccount that never arranged the list reads as the list opens.",
+        "description": "How the person arranges the workspace projects list.\n\n`closed` is how far back completed and canceled projects show: all of them,\nthose closed in the past week, month or quarter, or none. `zoom` is the\ntimeline layout's scale. `columns` names the list columns shown beside the\nproject name, comma separated in the list's own order, and empty shows the\nname alone; a list of names is accepted and stored the same way. Every field\nhas the list's own default, so an account that never arranged the list reads\nas the list opens.",
         "properties": {
           "closed": {
             "default": "all",
@@ -10477,6 +11374,11 @@
               "none"
             ],
             "title": "Closed",
+            "type": "string"
+          },
+          "columns": {
+            "default": "health,priority,status,lead,start,target,teams,progress",
+            "title": "Columns",
             "type": "string"
           },
           "group": {
@@ -16621,7 +17523,7 @@
         "type": "object"
       },
       "TemplateCreate": {
-        "description": "The body a template create takes: a name and any of the issue fields.\n\n`kind` \"project\" makes a project template, which fills `project` and leaves\nthe issue fields unset.",
+        "description": "The body a template create takes: a name and any of the issue fields.\n\n`kind` \"project\" makes a project template, which fills `project` and leaves\nthe issue fields unset. `kind` \"document\" makes a document template, which\ntakes only `title` and `body`. `form_fields` makes an issue template a form.",
         "properties": {
           "assignee_id": {
             "anyOf": [
@@ -16668,11 +17570,20 @@
             ],
             "title": "Estimate"
           },
+          "form_fields": {
+            "items": {
+              "$ref": "#/components/schemas/FormField"
+            },
+            "maxItems": 20,
+            "title": "Form Fields",
+            "type": "array"
+          },
           "kind": {
             "default": "issue",
             "enum": [
               "issue",
-              "project"
+              "project",
+              "document"
             ],
             "title": "Kind",
             "type": "string"
@@ -16812,7 +17723,7 @@
         "type": "object"
       },
       "TemplateRead": {
-        "description": "One template as the API returns it.\n\n`scope` says where it comes from as the team in the path sees it: the team's\nown, its parent team's, or the workspace's. `team_id` is `None` for a\nworkspace template. `project` is set on a project template only.",
+        "description": "One template as the API returns it.\n\n`scope` says where it comes from as the team in the path sees it: the team's\nown, its parent team's, or the workspace's. `team_id` is `None` for a\nworkspace template. `project` is set on a project template only, and a\ndocument template sets only `title` and `body`. `form_fields` is set on a\nform, an issue template whose issues answer its questions and land in triage.",
         "properties": {
           "assignee_id": {
             "anyOf": [
@@ -16874,6 +17785,13 @@
             ],
             "title": "Estimate"
           },
+          "form_fields": {
+            "items": {
+              "$ref": "#/components/schemas/FormFieldBlueprint"
+            },
+            "title": "Form Fields",
+            "type": "array"
+          },
           "id": {
             "title": "Id",
             "type": "string"
@@ -16882,7 +17800,8 @@
             "default": "issue",
             "enum": [
               "issue",
-              "project"
+              "project",
+              "document"
             ],
             "title": "Kind",
             "type": "string"
@@ -17012,8 +17931,19 @@
         "type": "object"
       },
       "TemplateSettingsRead": {
-        "description": "A team's template settings as the API returns them.\n\n`default_template_id` is what the team saved and `effective_default_template_id`\nwhat its issue create dialog opens with, which falls back to the parent team's.\nThe two project fields are the same for the new project dialog.",
+        "description": "A team's template settings as the API returns them.\n\n`default_template_id` is what the team saved and `effective_default_template_id`\nwhat its issue create dialog opens with, which falls back to the parent team's.\nThe project fields are the same for the new project dialog, the document\nfields for a new document of a project the team is on, and the update fields\nfor the project update composer.",
         "properties": {
+          "default_document_template_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Document Template Id"
+          },
           "default_project_template_id": {
             "anyOf": [
               {
@@ -17035,6 +17965,28 @@
               }
             ],
             "title": "Default Template Id"
+          },
+          "default_update_template_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Update Template Id"
+          },
+          "effective_default_document_template_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Effective Default Document Template Id"
           },
           "effective_default_project_template_id": {
             "anyOf": [
@@ -17058,6 +18010,17 @@
             ],
             "title": "Effective Default Template Id"
           },
+          "effective_default_update_template_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Effective Default Update Template Id"
+          },
           "team_id": {
             "title": "Team Id",
             "type": "string"
@@ -17070,8 +18033,19 @@
         "type": "object"
       },
       "TemplateSettingsUpdate": {
-        "description": "The body a team's template settings patch takes: only the defaults sent change, and null clears one.",
+        "description": "The body a team's template settings patch takes: only the defaults sent change, and null clears one.\n\nThe document and update defaults both name a document template.",
         "properties": {
+          "default_document_template_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Document Template Id"
+          },
           "default_project_template_id": {
             "anyOf": [
               {
@@ -17093,6 +18067,17 @@
               }
             ],
             "title": "Default Template Id"
+          },
+          "default_update_template_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Update Template Id"
           }
         },
         "title": "TemplateSettingsUpdate",
@@ -17145,6 +18130,21 @@
               }
             ],
             "title": "Estimate"
+          },
+          "form_fields": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/FormField"
+                },
+                "maxItems": 20,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Form Fields"
           },
           "label_ids": {
             "anyOf": [
@@ -17706,8 +18706,19 @@
         "type": "object"
       },
       "UserPreferencesUpdate": {
-        "description": "The preferences a person may change on their own account.\n\nEvery field is optional, so the global email switch, one kind's channels and\nthe timezone can each be changed without restating the others. `timezone` is\nthe IANA zone due date reminders are judged in, which the browser captures on\nsign in and the person can change. `pulse_digest` is how often the Pulse\ndigest email comes, `off` by default. `home_view`, `week_start`,\n`name_display` and `font_size` are the interface preferences the account\nPreferences page sets, kept on the row so they follow the person to every\ndevice. `projects_display` replaces how the projects list is arranged as a\nwhole. Deliberately not a settings\ndomain of its own: a few values on the row the product already owns are cheaper\nthan a table and a second read on every notification.",
+        "description": "The preferences a person may change on their own account.\n\nEvery field is optional, so the global email switch, one kind's channels and\nthe timezone can each be changed without restating the others. `timezone` is\nthe IANA zone due date reminders are judged in, which the browser captures on\nsign in and the person can change. `pulse_digest` is how often the Pulse\ndigest email comes, `off` by default. `home_view`, `week_start`,\n`name_display` and `font_size` are the interface preferences the account\nPreferences page sets, kept on the row so they follow the person to every\ndevice. `projects_display` replaces how the projects list is arranged as a\nwhole. `auto_grant_new_scopes` lets scopes the product adds later reach the\nconnected apps that were given every scope. Deliberately not a settings\ndomain of its own: a few values on the row the product already owns are cheaper\nthan a table and a second read on every notification.",
         "properties": {
+          "auto_grant_new_scopes": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Auto Grant New Scopes"
+          },
           "email_notifications": {
             "anyOf": [
               {
@@ -17896,6 +18907,11 @@
       "UserRead": {
         "description": "The caller's own account, in the shape the frontend's `UserRead` expects.",
         "properties": {
+          "auto_grant_new_scopes": {
+            "default": false,
+            "title": "Auto Grant New Scopes",
+            "type": "boolean"
+          },
           "avatar_url": {
             "anyOf": [
               {
@@ -25373,6 +26389,471 @@
         ]
       }
     },
+    "/api/workspaces/{workspace_id}/customers": {
+      "get": {
+        "description": "Every customer of the workspace by name, each with its visible request count.",
+        "operationId": "list_all_customers_api_workspaces__workspace_id__customers_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CustomerListRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "List All Customers",
+        "tags": [
+          "planning"
+        ]
+      },
+      "post": {
+        "description": "Add a customer, as a workspace member who is not a guest.",
+        "operationId": "add_customer_api_workspaces__workspace_id__customers_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CustomerCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CustomerRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Add Customer",
+        "tags": [
+          "planning"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/customers/{customer_id}": {
+      "delete": {
+        "description": "Delete a customer with its requests, as its creator or a workspace admin.",
+        "operationId": "remove_customer_api_workspaces__workspace_id__customers__customer_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "customer_id",
+            "required": true,
+            "schema": {
+              "title": "Customer Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Remove Customer",
+        "tags": [
+          "planning"
+        ]
+      },
+      "get": {
+        "description": "One customer with its visible request count.",
+        "operationId": "read_customer_api_workspaces__workspace_id__customers__customer_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "customer_id",
+            "required": true,
+            "schema": {
+              "title": "Customer Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CustomerRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Read Customer",
+        "tags": [
+          "planning"
+        ]
+      },
+      "patch": {
+        "description": "Edit a customer; a field left out is kept and `null` clears it.",
+        "operationId": "edit_customer_api_workspaces__workspace_id__customers__customer_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "customer_id",
+            "required": true,
+            "schema": {
+              "title": "Customer Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CustomerPatch"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CustomerRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Edit Customer",
+        "tags": [
+          "planning"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/customers/{customer_id}/merge": {
+      "post": {
+        "description": "Fold this customer into another, moving its requests and domains, and answer the survivor.",
+        "operationId": "merge_customer_api_workspaces__workspace_id__customers__customer_id__merge_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "customer_id",
+            "required": true,
+            "schema": {
+              "title": "Customer Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CustomerMerge"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CustomerRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Merge Customer",
+        "tags": [
+          "planning"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/customers/{customer_id}/requests": {
+      "get": {
+        "description": "A customer's requests whose issue or project the caller can see, newest first.",
+        "operationId": "list_requests_of_customer_api_workspaces__workspace_id__customers__customer_id__requests_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "customer_id",
+            "required": true,
+            "schema": {
+              "title": "Customer Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CustomerRequestListRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "List Requests Of Customer",
+        "tags": [
+          "planning"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/customers/{customer_id}/requests/{request_id}": {
+      "delete": {
+        "description": "Remove one request, as its author or a workspace admin.",
+        "operationId": "remove_request_api_workspaces__workspace_id__customers__customer_id__requests__request_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "customer_id",
+            "required": true,
+            "schema": {
+              "title": "Customer Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "title": "Request Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Remove Request",
+        "tags": [
+          "planning"
+        ]
+      }
+    },
     "/api/workspaces/{workspace_id}/cycles": {
       "get": {
         "description": "One page of a team's cycles, by start date ascending.\n\nThe team is required rather than optional: a workspace-wide cycle list is\nwhat the roadmap answers, and it answers it in date order across both entities\nrather than as an undated pile of one of them.\n\nThe status filter is applied after the read because status is derived, so no\nindex can carry it. `include_sub_teams` rolls in the cycles of the team's\nsub-teams the caller may read, so a private sub-team stays out for outsiders.",
@@ -28899,6 +30380,64 @@
           }
         ],
         "summary": "Update Initiative Row",
+        "tags": [
+          "planning"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/initiatives/{initiative_id}/document-templates": {
+      "get": {
+        "description": "The workspace document templates an initiative's new documents and updates may start from.",
+        "operationId": "list_initiative_document_templates_api_workspaces__workspace_id__initiatives__initiative_id__document_templates_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "initiative_id",
+            "required": true,
+            "schema": {
+              "title": "Initiative Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentTemplateListRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "List Initiative Document Templates",
         "tags": [
           "planning"
         ]
@@ -32733,6 +34272,130 @@
         ]
       }
     },
+    "/api/workspaces/{workspace_id}/issues/{issue_id}/customer-requests": {
+      "get": {
+        "description": "The customer requests naming one issue, newest first.",
+        "operationId": "list_issue_requests_api_workspaces__workspace_id__issues__issue_id__customer_requests_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "issue_id",
+            "required": true,
+            "schema": {
+              "title": "Issue Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CustomerRequestListRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "List Issue Requests",
+        "tags": [
+          "planning"
+        ]
+      },
+      "post": {
+        "description": "File a customer's request for an issue, as a writer on its team.",
+        "operationId": "add_issue_request_api_workspaces__workspace_id__issues__issue_id__customer_requests_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "issue_id",
+            "required": true,
+            "schema": {
+              "title": "Issue Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CustomerRequestCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CustomerRequestRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Add Issue Request",
+        "tags": [
+          "planning"
+        ]
+      }
+    },
     "/api/workspaces/{workspace_id}/issues/{issue_id}/documents": {
       "get": {
         "description": "The documents that mention one issue, for its page.",
@@ -34373,7 +36036,7 @@
     },
     "/api/workspaces/{workspace_id}/projects": {
       "get": {
-        "description": "One page of the workspace's projects the caller can see, by target date, undated last.\n\nA project is listed when the caller can see at least one of its teams, and\n`team_id` narrows to the projects that team is on and `initiative_id` to the\nones in that initiative. The rows are read whole and paged over the filtered\norder, so a page is never left short by projects the caller cannot see.\nUndated projects sort last, because an absent target is a project nobody has\ncommitted to yet. `include_sub_teams` with `team_id` also lists the projects\nof the team's sub-teams the caller may read, so a private sub-team stays out\nfor outsiders.",
+        "description": "One page of the workspace's projects the caller can see, by target date, undated last.\n\nA project is listed when the caller can see at least one of its teams, and\n`team_id` narrows to the projects that team is on and `initiative_id` to the\nones in that initiative. The rows are read whole and paged over the filtered\norder, so a page is never left short by projects the caller cannot see.\nUndated projects sort last, because an absent target is a project nobody has\ncommitted to yet. `include_sub_teams` with `team_id` also lists the projects\nof the team's sub-teams the caller may read, so a private sub-team stays out\nfor outsiders. `is_blocked` keeps the projects an open blocker holds up and\n`is_blocking` the open projects holding another up, each false for the rest.",
         "operationId": "list_projects_api_workspaces__workspace_id__projects_get",
         "parameters": [
           {
@@ -34470,6 +36133,38 @@
               "default": false,
               "title": "Include Sub Teams",
               "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "is_blocked",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Is Blocked"
+            }
+          },
+          {
+            "in": "query",
+            "name": "is_blocking",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Is Blocking"
             }
           }
         ],
@@ -34763,6 +36458,188 @@
           }
         ],
         "summary": "Update Project",
+        "tags": [
+          "planning"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/projects/{project_id}/customer-requests": {
+      "get": {
+        "description": "The customer requests naming one project, newest first.",
+        "operationId": "list_project_requests_api_workspaces__workspace_id__projects__project_id__customer_requests_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CustomerRequestListRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "List Project Requests",
+        "tags": [
+          "planning"
+        ]
+      },
+      "post": {
+        "description": "File a customer's request for a project, as a writer on one of its teams.",
+        "operationId": "add_project_request_api_workspaces__workspace_id__projects__project_id__customer_requests_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CustomerRequestCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CustomerRequestRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Add Project Request",
+        "tags": [
+          "planning"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/projects/{project_id}/document-templates": {
+      "get": {
+        "description": "The document templates a project's new documents and updates may start from, and its defaults.",
+        "operationId": "list_project_document_templates_api_workspaces__workspace_id__projects__project_id__document_templates_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentTemplateListRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "List Project Document Templates",
         "tags": [
           "planning"
         ]
@@ -35316,6 +37193,190 @@
           }
         ],
         "summary": "Update Milestone",
+        "tags": [
+          "planning"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/projects/{project_id}/relations": {
+      "get": {
+        "description": "Every dependency of one project, read from its side, whose other end the caller may see.\n\nA project holds few dependencies, so the list is answered whole and never pages.",
+        "operationId": "list_project_relations_api_workspaces__workspace_id__projects__project_id__relations_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectRelationListRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "List Project Relations",
+        "tags": [
+          "planning"
+        ]
+      },
+      "post": {
+        "description": "Make the project block, or be blocked by, another project.\n\nA pair already linked the same way answers the stored link with a 200, and a\nlink back to the project itself or one that closes a loop is a 422.",
+        "operationId": "create_project_relation_api_workspaces__workspace_id__projects__project_id__relations_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProjectRelationCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectRelationRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Create Project Relation",
+        "tags": [
+          "planning"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/projects/{project_id}/relations/{relation_id}": {
+      "delete": {
+        "description": "Remove one dependency of the project, from either side.",
+        "operationId": "delete_project_relation_api_workspaces__workspace_id__projects__project_id__relations__relation_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "relation_id",
+            "required": true,
+            "schema": {
+              "title": "Relation Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Delete Project Relation",
         "tags": [
           "planning"
         ]
@@ -41756,7 +43817,7 @@
         ]
       },
       "patch": {
-        "description": "Set or clear the templates the team's issue and project create dialogs open with.",
+        "description": "Set or clear the templates the team's issue, project, document and update composers open with.",
         "operationId": "update_template_settings_api_workspaces__workspace_id__teams__team_id__template_settings_patch",
         "parameters": [
           {
@@ -41829,16 +43890,17 @@
             }
           },
           {
-            "description": "Which templates to list: issue or project",
+            "description": "Which templates to list: issue, project or document",
             "in": "query",
             "name": "kind",
             "required": false,
             "schema": {
               "default": "issue",
-              "description": "Which templates to list: issue or project",
+              "description": "Which templates to list: issue, project or document",
               "enum": [
                 "issue",
-                "project"
+                "project",
+                "document"
               ],
               "title": "Kind",
               "type": "string"
@@ -43184,16 +45246,17 @@
             }
           },
           {
-            "description": "Which templates to list: issue or project",
+            "description": "Which templates to list: issue, project or document",
             "in": "query",
             "name": "kind",
             "required": false,
             "schema": {
               "default": "issue",
-              "description": "Which templates to list: issue or project",
+              "description": "Which templates to list: issue, project or document",
               "enum": [
                 "issue",
-                "project"
+                "project",
+                "document"
               ],
               "title": "Kind",
               "type": "string"

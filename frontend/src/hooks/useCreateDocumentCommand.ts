@@ -3,6 +3,8 @@
  * initiative page, under the page's own group heading. It creates the document
  * untitled and opens it, the same as the plus on the Documents section, but
  * from any tab of the page, since the section only shows on the overview.
+ * When the parent sets a default document template, the new document starts
+ * from it.
  *
  * It registers a `'page'` shortcut with no key of its own, which is how the
  * palette learns of an action without declaring it.
@@ -12,6 +14,7 @@ import { useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { documentPath } from '../lib/paths';
 import type { DocumentParentKind } from '../types/Api';
+import useDocumentTemplates from './useDocumentTemplates';
 import useDocuments from './useDocuments';
 import { useShortcut } from './useShortcuts';
 
@@ -41,6 +44,12 @@ export const useCreateDocumentCommand = ({
 }: CreateDocumentCommandOptions): void => {
   const navigate = useNavigate();
   const { create } = useDocuments(workspaceId, parentKind, parentId, false);
+  const { defaultDocument } = useDocumentTemplates(
+    workspaceId,
+    parentKind,
+    parentId,
+    enabled
+  );
   const busy = useRef(false);
 
   useShortcut({
@@ -52,7 +61,11 @@ export const useCreateDocumentCommand = ({
     handler: () => {
       if (busy.current) return;
       busy.current = true;
-      void create(UNTITLED).then((made) => {
+      const body =
+        defaultDocument === null
+          ? UNTITLED
+          : { template_id: defaultDocument.id };
+      void create(body).then((made) => {
         busy.current = false;
         if (made !== null) void navigate(documentPath(slug, made.document_id));
       });

@@ -21,6 +21,7 @@ import {
 } from '../lib/queryKeys';
 import { showErrorToast } from '../lib/toast';
 import type {
+  DocumentCreate,
   DocumentParentKind,
   DocumentRead,
   DocumentSummaryRead,
@@ -34,8 +35,11 @@ export interface ParentDocuments {
   documents: DocumentSummaryRead[];
   isLoading: boolean;
   error: unknown;
-  /** Writes a new document and answers it, or null when the write failed. */
-  create: (title: string) => Promise<DocumentRead | null>;
+  /**
+   * Writes a new document and answers it, or null when the write failed. A
+   * title starts a blank document; a create body may name a template instead.
+   */
+  create: (title: string | DocumentCreate) => Promise<DocumentRead | null>;
   /** Renames one document. Resolves false when the write failed. */
   rename: (documentId: string, title: string) => Promise<boolean>;
   /** Deletes one document. Resolves false when the write failed. */
@@ -76,11 +80,14 @@ export const useDocuments = (
   );
 
   const create = useCallback(
-    async (title: string): Promise<DocumentRead | null> => {
+    async (title: string | DocumentCreate): Promise<DocumentRead | null> => {
       try {
-        const made = await createDocument(workspaceId, parentKind, parentId, {
-          title,
-        });
+        const made = await createDocument(
+          workspaceId,
+          parentKind,
+          parentId,
+          typeof title === 'string' ? { title } : title
+        );
         refreshDocumentLists(workspaceId, parentKind, parentId);
         return made;
       } catch (problem) {

@@ -88,10 +88,11 @@ AUDIT_TOOLS: tuple[Tool, ...] = (
     Tool(
         name="list_audit_events",
         description="The workspace audit log, newest first: member joins, removals and role changes, invites, "
-        "authentication policy, API keys, connected apps, exports, imports, settings, plan and team changes, team "
-        "privacy and team membership, share links, outgoing webhooks, Slack, Discord and webhook channels, GitHub "
-        "sync, transition and pinned repository settings, and workspace creation, each with event_label, actor, "
-        "client, IP, target and before and after values. Filter by actor, event and a date range. Needs "
+        "sign-ins, revoked sessions, failed sign-ins, authentication policy, API keys, connected apps, exports, "
+        "imports, settings, plan and team changes, team privacy and team membership, share links, outgoing "
+        "webhooks, Slack, Discord and webhook channels, GitHub sync, transition and pinned repository settings, "
+        "and workspace creation, each with event_label, actor, client, IP, target and before and after values. "
+        "Filter by actor, event and a date range. Needs "
         "workspace owner or admin and the Business plan.",
         scopes=("settings:read", "admin"),
         schema=object_schema(

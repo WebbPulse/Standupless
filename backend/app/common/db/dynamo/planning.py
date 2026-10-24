@@ -55,6 +55,15 @@ PROJECT_UPDATE = "project_update"
 
 PROJECT_UPDATE_KEY_PREFIX = "project_update#"
 
+PROJECT_RELATION = "project_relation"
+
+PROJECT_RELATION_KEY_PREFIX = "project_relation#"
+"""Where project to project dependencies are filed, one row per pair in the blocks direction.
+
+`begins_with("project#")` never matches it, so the project listing never reads a
+relation row.
+"""
+
 INITIATIVE = "initiative"
 
 INITIATIVE_KEY_PREFIX = "initiative#"
@@ -179,6 +188,9 @@ def progress_measure(estimating_teams: int) -> ProgressMeasure:
 COUNTER_KEYS: frozenset[str] = frozenset(COUNT_BUCKETS + POINT_BUCKETS + UNESTIMATED_BUCKETS + CARRY_COUNTERS)
 """Every key a rollup may move inside a planning row's `counts` map."""
 
+CYCLE_RECOUNT_KEYS: tuple[str, ...] = COUNT_BUCKETS + POINT_BUCKETS + UNESTIMATED_BUCKETS
+"""The cycle counters a recount can rebuild from the issues a cycle holds now, carry counters excluded."""
+
 CYCLE_HISTORY = "cycle_history"
 """The kind of one daily scope snapshot of a cycle."""
 
@@ -224,6 +236,15 @@ def project_update_prefix(project_id: str) -> str:
 def project_update_key(project_id: str, update_id: str) -> str:
     """The sort key of one project update, time sortable by its ULID."""
     return f"{project_update_prefix(project_id)}{update_id}"
+
+
+def project_relation_key(blocker_id: str, blocked_id: str) -> str:
+    """The sort key of one dependency, read as `blocker_id` blocks `blocked_id`.
+
+    One row per pair in one direction, so a link and its inverse can never both
+    be stored and a repeat link lands on the key that is already there.
+    """
+    return f"{PROJECT_RELATION_KEY_PREFIX}{blocker_id}#{blocked_id}"
 
 
 def initiative_key(initiative_id: str) -> str:
@@ -590,6 +611,23 @@ class ProjectUpdateRow(BaseModel):
     import_batch_id: str | None = None
 
 
+class ProjectRelation(BaseModel):
+    """One dependency between two projects of a workspace: `project_id` blocks `target_project_id`."""
+
+    workspace_id: str
+    planning_key: str
+    relation_id: str = Field(default_factory=new_planning_id)
+    project_id: str
+    target_project_id: str
+    kind: str = PROJECT_RELATION
+    created_by: str
+    created_at: datetime = Field(default_factory=utc_now)
+
+    def involves(self, project_id: str) -> bool:
+        """Whether one project is either end of this dependency."""
+        return project_id in (self.project_id, self.target_project_id)
+
+
 class ProjectMilestone(BaseModel):
     """One ordered stage of a project, with its own target date and counters.
 
@@ -902,6 +940,16 @@ def as_milestone(item: Mapping[str, Any]) -> ProjectMilestone:
     return ProjectMilestone.model_validate(fields)
 
 
+def is_project_relation(item: Mapping[str, Any]) -> bool:
+    """Whether one stored row is a dependency between two projects."""
+    return str(item.get("kind", "")) == PROJECT_RELATION
+
+
+def as_project_relation(item: Mapping[str, Any]) -> ProjectRelation:
+    """One stored item as a `ProjectRelation`."""
+    return ProjectRelation.model_validate(dict(item))
+
+
 def is_milestone(item: Mapping[str, Any]) -> bool:
     """Whether one stored row is a project milestone."""
     return str(item.get("kind", "")) == MILESTONE
@@ -1027,6 +1075,21 @@ class PlanningRepository:
             return []
         items = self._repository.iter_query(
             Key("workspace_id").eq(workspace_id) & Key("planning_key").begins_with(milestone_prefix(project_id)),
+            max_items=max_items,
+        )
+        rows = [as_milestone(item) for item in items if is_milestone(item)]
+        return sorted(rows, key=milestone_order)
+
+    def list_workspace_milestones(self, workspace_id: str, *, max_items: int = 10_000) -> list[ProjectMilestone]:
+        """Every milestone of every project in the workspace, in one query under the milestone prefix.
+
+        The project list reads this once to mark milestones on the timeline rather
+        than reading each project's milestones in turn.
+        """
+        if not workspace_id:
+            return []
+        items = self._repository.iter_query(
+            Key("workspace_id").eq(workspace_id) & Key("planning_key").begins_with(MILESTONE_KEY_PREFIX),
             max_items=max_items,
         )
         rows = [as_milestone(item) for item in items if is_milestone(item)]
@@ -1175,6 +1238,46 @@ class PlanningRepository:
             removed += self._repository.delete_many(
                 [{"workspace_id": workspace_id, "planning_key": item["planning_key"]} for item in page.items]
             )
+
+    def list_project_relations(self, workspace_id: str, *, max_items: int = 10_000) -> list[ProjectRelation]:
+        """Every dependency between the workspace's projects, oldest first.
+
+        One query under the relation prefix. Dependencies are a bounded set people
+        draw by hand, so a reader takes them whole and filters by visibility.
+        """
+        if not workspace_id:
+            return []
+        items = self._repository.iter_query(
+            Key("workspace_id").eq(workspace_id) & Key("planning_key").begins_with(PROJECT_RELATION_KEY_PREFIX),
+            max_items=max_items,
+        )
+        rows = [as_project_relation(item) for item in items if is_project_relation(item)]
+        return sorted(rows, key=lambda row: row.relation_id)
+
+    def get_project_relation(self, workspace_id: str, blocker_id: str, blocked_id: str) -> ProjectRelation | None:
+        """The dependency of `blocker_id` blocking `blocked_id`, or `None`."""
+        if not blocker_id or not blocked_id:
+            return None
+        item = self._get(workspace_id, project_relation_key(blocker_id, blocked_id))
+        if item is None or not is_project_relation(item):
+            return None
+        return as_project_relation(item)
+
+    def create_project_relation(self, relation: ProjectRelation) -> ProjectRelation:
+        """Store a new dependency, raising `ConditionFailed` when the pair is already linked."""
+        self._repository.put(relation.model_dump(mode="json"), condition=Attr("planning_key").not_exists())
+        return relation
+
+    def delete_project_relations_for(self, workspace_id: str, project_id: str) -> int:
+        """Remove every dependency either end of which is one project, returning how many went."""
+        if not workspace_id or not project_id:
+            return 0
+        keys = [
+            {"workspace_id": workspace_id, "planning_key": row.planning_key}
+            for row in self.list_project_relations(workspace_id)
+            if row.involves(project_id)
+        ]
+        return self._repository.delete_many(keys) if keys else 0
 
     def get_initiative(self, workspace_id: str, initiative_id: str) -> Initiative | None:
         """One initiative of the workspace, or `None`."""
@@ -1613,6 +1716,51 @@ class PlanningRepository:
         except ConditionFailed:
             return False
         return True
+
+    def read_cycle_counters(self, workspace_id: str, planning_key: str) -> tuple[dict[str, int], int] | None:
+        """One cycle's raw `counts` map and rollup revision, unfloored, or `None` when the row is gone."""
+        item = self._get(workspace_id, planning_key)
+        if item is None:
+            return None
+        values = item.get("counts")
+        source: Mapping[str, Any] = values if isinstance(values, Mapping) else {}
+        return {str(key): int(value or 0) for key, value in source.items()}, int(item.get("rollup_rev", 0) or 0)
+
+    def set_cycle_counts(
+        self, workspace_id: str, planning_key: str, counts: Mapping[str, int], *, rev: int
+    ) -> Mapping[str, Any] | None:
+        """Write one cycle's recounted issue, point and unestimated buckets, returning the row after.
+
+        Conditional on the rollup revision still being `rev`, so a counter move
+        that landed after the caller read the row is never overwritten; the
+        revision is bumped so the snapshot that follows orders after it. The carry
+        counters are left alone. `None` when the row is gone or moved on.
+        """
+        wanted = {bucket: value for bucket, value in counts.items() if bucket in CYCLE_RECOUNT_KEYS}
+        if not workspace_id or not planning_key or not wanted:
+            return None
+        names: dict[str, str] = {"#counts": "counts", "#rev": "rollup_rev"}
+        values: dict[str, Any] = {":next": rev + 1}
+        clauses: list[str] = ["#rev = :next"]
+        for index, (bucket, value) in enumerate(sorted(wanted.items())):
+            names[f"#b{index}"] = bucket
+            values[f":v{index}"] = int(value)
+            clauses.append(f"#counts.#b{index} = :v{index}")
+        held = Attr("rollup_rev").eq(rev)
+        if rev == 0:
+            held = held | Attr("rollup_rev").not_exists()
+        try:
+            item = self._repository.update(
+                {"workspace_id": workspace_id, "planning_key": planning_key},
+                update_expression="SET " + ", ".join(clauses),
+                expression_names=names,
+                expression_values=values,
+                condition=Attr("planning_key").exists() & Attr("counts").exists() & held,
+                return_values="ALL_NEW",
+            )
+        except ConditionFailed:
+            return None
+        return item if item is not None else {}
 
     def delete(self, workspace_id: str, planning_key: str) -> bool:
         """Remove one planning row, reporting whether one was there."""

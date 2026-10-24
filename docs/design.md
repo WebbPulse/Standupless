@@ -133,6 +133,17 @@ Scopes: `issues:read`, `issues:write`, `comments:write`, `teams:read`, `views:re
 
 MVP tools: `search_issues`, `get_issue`, `create_issue`, `update_issue`, `add_comment`, `list_teams`, `list_statuses`, `assign_issue`. Deliberately no delete tool and no workspace administration.
 
+### New scopes for all-scope grants
+
+When the product adds a scope, an existing grant does not carry it. A person widens a grant from Connected apps with Grant new permissions, or opts in to having it done for them.
+
+- **All scopes.** A grant took every scope when its scopes satisfy, legacy aliases included, every scope offered at its `granted_at`. `SCOPE_INTRODUCED_AT` in `app/common/db/dynamo/api_keys.py` dates each scope by its merge into staging, and `scopes_offered_at` reads it. A test holds the ledger to `API_KEY_SCOPES`, so a new scope cannot ship undated. A grant that left any scope out is never widened.
+- **The setting.** `auto_grant_new_scopes` on the person's user row, off by default, set through `PATCH /api/users/me/preferences` and the checkbox on the Connected apps page. It is the person's own choice and applies to all their grants in every workspace.
+- **When it applies.** The refresh guard (`build_refresh_guard`) runs before each MCP token refresh. After the authentication policy check passes, it adds the scopes offered since to an opted-in all-scope grant, and the package mints the refreshed token from that grant, so this refresh carries them. `updated_at` is unchanged because the policy is judged against it. Every request still cuts the token to the role's live ceiling, so a member never spends `admin`. A failed widening is logged and the refresh goes ahead as before.
+- **Audit.** Each widening writes one `connected_app.scopes_auto_granted` row to the grant's workspace log, with the person as actor, source `mcp`, the client as target, `before.scopes`, `after.scopes` and `after.added`. The write skips the `connected_app.authorized` row a new consent records.
+
+A REST `INSUFFICIENT_SCOPE` refusal carries the same hint as the MCP error, under `details`: `missing`, `grant_url` for the workspace's Connected apps page, and `api_keys_url`, or a role message and no links when the role cannot hold the scope.
+
 ## 6. Platform gaps to fill upstream
 
 Verified against `webbpulse` 0.40.2. The package is consume-only for events, an OAuth *client* not an authorization server, and has no API key or webhook surface at all.

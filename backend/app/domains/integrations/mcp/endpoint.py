@@ -40,7 +40,7 @@ from webbpulse.identity.api_keys import TENANT_CLAIM
 from app.common.api.dependencies.authz import (
     AuthzContext,
     bearer_claims_of,
-    live_scopes_for,
+    insufficient_scope_detail,
     missing_scopes,
     resolve_context,
 )
@@ -300,28 +300,11 @@ def _insufficient_scope(
     an OAuth client is pointed at the connected apps page, where "Grant new
     permissions" adds the scope to the existing grant and the client's next token
     refresh carries it, and an API key at the API keys page, since a key's scopes are
-    fixed when it is created.
+    fixed when it is created. The body is the one a REST route refuses with.
     """
-    names = ", ".join(missing)
-    data: dict[str, Any] = {"error_code": "INSUFFICIENT_SCOPE", "required": list(required), "missing": missing}
-    if missing_scopes(live_scopes_for(context.role, context.user_id), missing):
-        return ProtocolError(
-            INSUFFICIENT_SCOPE,
-            f"Missing scope: {names}. Your role in this workspace does not allow it.",
-            data=data,
-        )
-    workspace = repositories.workspaces.get(context.workspace_id)
-    settings_url = f"{settings.frontend_base_url}/w/{workspace.slug}/settings" if workspace is not None else ""
-    grant_url = f"{settings_url}/connected-apps" if settings_url else ""
-    api_keys_url = f"{settings_url}/api-keys" if settings_url else ""
-    data["grant_url"] = grant_url
-    data["api_keys_url"] = api_keys_url
-    message = (
-        f"Missing scope: {names}. For an OAuth client, grant it without signing in again "
-        f"{f'at {grant_url}' if grant_url else 'under Settings, Connected apps'}: choose Grant new "
-        "permissions on this app, and the client's next token refresh carries it. For an API key, "
-        f"create a key that carries it {f'at {api_keys_url}' if api_keys_url else 'under Settings, API keys'}."
-    )
+    detail = insufficient_scope_detail(context, missing, repositories)
+    message = str(detail.pop("message"))
+    data: dict[str, Any] = {"error_code": detail.pop("error_code"), "required": list(required), **detail}
     return ProtocolError(INSUFFICIENT_SCOPE, message, data=data)
 
 

@@ -1,6 +1,7 @@
 /**
  * The Display button of the projects list and the roadmap: the layout, how
- * rows group, what order they run in and which completed projects stay. It
+ * rows group, what order they run in, which completed projects stay and
+ * which list columns show. It
  * reads like the issue list's Display menu so every list is arranged the same
  * way, and it writes nothing itself. A page leaves out the choices it does
  * not offer.
@@ -24,8 +25,11 @@ import {
   PROJECT_LAYOUT_LABELS,
   PROJECT_ORDERINGS,
   PROJECT_ORDERING_LABELS,
+  PROJECT_COLUMNS,
+  PROJECT_COLUMN_LABELS,
   parseDisplayField,
   type ClosedWindow,
+  type ProjectColumn,
   type ProjectGrouping,
   type ProjectLayout,
   type ProjectOrdering,
@@ -54,6 +58,9 @@ export interface ProjectsDisplayMenuProps {
   /** Which completed projects stay, left out where every project shows. */
   closed?: ClosedWindow;
   onClosedChange?: (closed: ClosedWindow) => void;
+  /** The shown list columns, left out where the layout draws no columns. */
+  columns?: readonly ProjectColumn[];
+  onColumnsChange?: (columns: ProjectColumn[]) => void;
   /** Puts every choice back to the page's own, or undefined when they match. */
   onReset?: (() => void) | undefined;
 }
@@ -99,7 +106,7 @@ const ChoiceRow = <T extends string>({
   </div>
 );
 
-/** The Display button and its layout, grouping, ordering and window panel. */
+/** The Display button and its layout, grouping, ordering, window and column panel. */
 export const ProjectsDisplayMenu: React.FC<ProjectsDisplayMenuProps> = ({
   grouping,
   layout,
@@ -109,6 +116,8 @@ export const ProjectsDisplayMenu: React.FC<ProjectsDisplayMenuProps> = ({
   onLayoutChange,
   onOrderingChange,
   onClosedChange,
+  columns,
+  onColumnsChange,
   onReset,
 }) => (
   <Popover
@@ -184,6 +193,38 @@ export const ProjectsDisplayMenu: React.FC<ProjectsDisplayMenuProps> = ({
         />
       )}
     </div>
+    {columns !== undefined && onColumnsChange !== undefined && (
+      <div className="border-t border-line p-3">
+        <p className="mb-2 text-xs text-text-muted">Display properties</p>
+        <div className="flex flex-wrap gap-1.5">
+          {PROJECT_COLUMNS.map((column) => {
+            const on = columns.includes(column);
+            return (
+              <button
+                key={column}
+                type="button"
+                aria-pressed={on}
+                onClick={() => {
+                  onColumnsChange(
+                    PROJECT_COLUMNS.filter((item) =>
+                      item === column ? !on : columns.includes(item)
+                    )
+                  );
+                }}
+                className={cn(
+                  'h-6 rounded-full border px-2 text-2xs focus-visible:outline-2 focus-visible:outline-accent',
+                  on
+                    ? 'border-line-strong bg-raised text-text'
+                    : 'border-line text-text-faint hover:text-text-muted'
+                )}
+              >
+                {PROJECT_COLUMN_LABELS[column]}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    )}
     {onReset !== undefined && (
       <div className="flex justify-end border-t border-line px-3 py-2">
         <Button variant="ghost" size="sm" onClick={onReset}>

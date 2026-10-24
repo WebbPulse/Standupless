@@ -53,6 +53,7 @@ __all__ = [
     "create_issue",
     "create_label",
     "get_issue",
+    "get_pull_request",
     "installation_token",
     "list_check_runs",
     "list_comments",
@@ -273,6 +274,14 @@ def get_issue(token: str, repository_id: str, number: int, *, client: httpx.Clie
     """One issue or pull request as the issues API answers it, its state and labels included."""
     path = f"{repository_path(repository_id)}/issues/{_identifier(number, 'number')}"
     return _numbered(_request("GET", path, token=token, client=client), "issue", "number")
+
+
+def get_pull_request(
+    token: str, repository_id: str, number: int, *, client: httpx.Client | None = None
+) -> Mapping[str, Any]:
+    """One pull request as the pulls API answers it, with its merge state, base repository and author association."""
+    path = f"{repository_path(repository_id)}/pulls/{_identifier(number, 'number')}"
+    return _numbered(_request("GET", path, token=token, client=client), "pull request", "number")
 
 
 def create_label(token: str, repository_id: str, name: str, color: str, *, client: httpx.Client | None = None) -> bool:

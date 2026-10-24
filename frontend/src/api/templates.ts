@@ -1,13 +1,16 @@
 /**
- * The issue and project template routes: a team's templates, which include
+ * The issue, project and document template routes: a team's templates, which include
  * its parent team's and the workspace's, the defaults its create dialogs open
  * with, and the workspace templates every team offers. A team's templates are
  * kept by its members, its defaults by a team admin and the workspace's by a
  * workspace admin. Each list reads one kind, issue unless asked otherwise.
+ * A project or initiative also answers the document templates it offers, so
+ * its new document flow and update composer need no team of their own.
  */
 
 import apiClient, { type RequestOptions } from './client';
 import type {
+  DocumentTemplateListRead,
   TemplateCreate,
   TemplateKind,
   TemplateListRead,
@@ -182,4 +185,30 @@ export const deleteWorkspaceTemplate = async (
   await apiClient.delete<void>(
     `${workspaceTemplatesPath(workspaceId)}/${templateId}`
   );
+};
+
+/** A document template offer with its arrays guaranteed, whatever the body held. */
+const normalisedOffer = (
+  body: DocumentTemplateListRead | undefined
+): DocumentTemplateListRead => ({
+  templates: Array.isArray(body?.templates) ? body.templates : [],
+  default_document_template_id: body?.default_document_template_id ?? null,
+  default_update_template_id: body?.default_update_template_id ?? null,
+});
+
+/**
+ * Lists the document templates a project or initiative offers, with the
+ * templates its new document flow and update composer open with.
+ */
+export const listParentDocumentTemplates = async (
+  workspaceId: string,
+  parentKind: 'project' | 'initiative',
+  parentId: string,
+  signal?: AbortSignal
+): Promise<DocumentTemplateListRead> => {
+  const response = await apiClient.get<DocumentTemplateListRead>(
+    `/workspaces/${workspaceId}/${parentKind}s/${parentId}/document-templates`,
+    signalOptions(signal)
+  );
+  return normalisedOffer(response.data);
 };

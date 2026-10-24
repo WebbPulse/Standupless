@@ -98,44 +98,60 @@ def build_router(settings: "Settings") -> "APIRouter":
 
     Which route groups mount depends on what is supplied: credentials mount the
     flow routes, an email sender and token store the email routes, and so on.
+    The refresh token and login attempt stores are the audited ones, and every
+    route captures its request, so sign-ins, revoked sessions and failed sign-ins
+    reach the workspace audit log with the address and client that made them.
     """
-    from webbpulse.identity import build_identity_router, dynamo_login_attempts, signing_client
+    from dataclasses import replace
 
+    from fastapi import APIRouter, Depends
+    from webbpulse.identity import build_identity_router, signing_client
+
+    from app.common.session_audit import capture_request, client_names_from, login_attempt_store, refresh_token_store
     from app.domains.identity.consent_theme import build_consent_theme
     from app.domains.identity.identity_hooks import StanduplessIdentityHooks
 
     identity_settings = build_identity_settings(settings)
 
-    stores = build_identity_stores(settings)
-
-    from app.domains.identity.oauth_server_glue import build_oauth_server_stores, refresh_allowed, resolve_tenants
+    from app.domains.identity.oauth_server_glue import (
+        build_oauth_server_stores,
+        build_refresh_guard,
+        refresh_allowed,
+        resolve_tenants,
+    )
 
     oauth_server_stores = build_oauth_server_stores(settings) if identity_settings.mcp_oauth_enabled else None
+
+    client_names = client_names_from(oauth_server_stores.clients) if oauth_server_stores is not None else None
+    stores = replace(
+        build_identity_stores(settings),
+        refresh_tokens=refresh_token_store(settings, client_names=client_names),
+    )
 
     hooks = StanduplessIdentityHooks(
         totp_factors=stores.totp_factors if identity_settings.totp_enabled else None,
         passkeys=stores.passkeys if passkey_second_factor(identity_settings) else None,
     )
 
-    return build_identity_router(
+    router = build_identity_router(
         identity_settings,
         hooks,
         stores,
         kms_client=signing_client(identity_settings),
         service="standupless-identity",
         version=IDENTITY_ROUTER_VERSION,
-        attempts=dynamo_login_attempts(
-            settings.dynamodb_table_prefix,
-            endpoint_url=settings.DYNAMODB_ENDPOINT_URL or None,
-        ),
+        attempts=login_attempt_store(settings),
         email_sender=build_email_sender(identity_settings),
         oauth_client_secrets=build_oauth_client_secrets(settings),
         oauth_server_stores=oauth_server_stores,
         session_tenant_resolver=partial(resolve_tenants, has_two_factor=hooks.has_two_factor),
-        refresh_guard=refresh_allowed,
+        refresh_guard=refresh_allowed if oauth_server_stores is None else build_refresh_guard(oauth_server_stores),
         consent_theme=build_consent_theme(),
         sso=build_sso_service(identity_settings, hooks, stores),
     )
+    audited = APIRouter()
+    audited.include_router(router, dependencies=[Depends(capture_request)])
+    return audited
 
 
 def build_sso_service(identity_settings: Any, hooks: Any, stores: Any) -> Any:

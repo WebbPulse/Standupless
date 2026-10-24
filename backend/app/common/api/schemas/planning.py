@@ -656,6 +656,26 @@ class SkippedTemplateIssueRead(BaseModel):
     reason: str = Field(description="Why the issue rules refused it, as the 422 would have said")
 
 
+class ProjectMilestoneMarkerRead(BaseModel):
+    """One dated milestone of a project, as the timeline marks it on the project's lane."""
+
+    milestone_id: str
+    name: str
+    target_date: str
+    completed: bool = Field(description="Every issue in the milestone is finished, and it holds at least one")
+
+    @classmethod
+    def from_row(cls, milestone: ProjectMilestone) -> "ProjectMilestoneMarkerRead":
+        """Build the marker from a stored milestone that has a target date."""
+        progress = milestone.progress
+        return cls(
+            milestone_id=milestone.milestone_id,
+            name=milestone.name,
+            target_date=milestone.target_date or "",
+            completed=progress.scope > 0 and progress.done >= progress.scope,
+        )
+
+
 class ProjectRead(BaseModel):
     """One project as the API returns it, with its status stored rather than derived.
 
@@ -706,6 +726,16 @@ class ProjectRead(BaseModel):
     skipped_template_issues: Optional[list[SkippedTemplateIssueRead]] = Field(
         default=None,
         description="Template issues left out, answered by a create from a project template, empty when none were",
+    )
+    blocked_by_project_ids: list[str] = Field(
+        default_factory=list, description="The visible projects that block this one, oldest link first"
+    )
+    blocking_project_ids: list[str] = Field(
+        default_factory=list, description="The visible projects this one blocks, oldest link first"
+    )
+    milestone_markers: list[ProjectMilestoneMarkerRead] = Field(
+        default_factory=list,
+        description="The project's milestones that have a target date, earliest first, filled on the project list",
     )
     created_by: str
     created_at: datetime
@@ -765,6 +795,33 @@ class ProjectRead(BaseModel):
 ProjectListRead = cursor_page(ProjectRead, "projects", model_name="ProjectListRead")
 """The body the project list route answers with, items under `projects`."""
 
+ProjectRelationType = Literal["blocks", "blocked_by"]
+"""How a dependency reads from the project named in the path."""
+
+PROJECT_RELATION_TYPES: tuple[str, ...] = ("blocks", "blocked_by")
+
+
+class ProjectRelationCreate(BaseModel):
+    """A dependency to add between the path project and another one."""
+
+    type: ProjectRelationType = Field(description="`blocks` when the path project blocks the target")
+    target_project_id: str = Field(min_length=1, description="The other project")
+
+
+class ProjectRelationRead(BaseModel):
+    """One dependency read from the path project's side."""
+
+    relation_id: str
+    type: ProjectRelationType
+    project_id: str = Field(description="The path project")
+    target_project_id: str = Field(description="The project at the other end")
+    created_by: str
+    created_at: datetime
+
+
+ProjectRelationListRead = cursor_page(ProjectRelationRead, "relations", model_name="ProjectRelationListRead")
+"""The body the project relation list answers with, whole and never paged."""
+
 
 def _check_update_body(value: Optional[str]) -> Optional[str]:
     """Hold an update body to non-blank markdown under the byte cap."""
@@ -781,17 +838,20 @@ class ProjectUpdateCreate(BaseModel):
     """The body `POST /api/workspaces/{workspace_id}/projects/{project_id}/updates` takes.
 
     Health is required, as in Linear, because an update is the report of how the
-    project stands and posting one is what sets the project's health.
+    project stands and posting one is what sets the project's health. `body`
+    may be left out when `template_id` names a document template, whose body
+    the update then takes.
     """
 
-    body: str
+    body: Optional[str] = None
     health: ProjectHealthField
+    template_id: Optional[str] = None
 
     @field_validator("body")
     @classmethod
-    def check_body(cls, value: str) -> str:
+    def check_body(cls, value: Optional[str]) -> Optional[str]:
         """Hold the body to non-blank markdown under the byte cap."""
-        return _check_update_body(value) or value
+        return _check_update_body(value)
 
 
 class ProjectUpdatePatch(BaseModel):
@@ -1283,16 +1343,21 @@ class InitiativeProgressRead(BaseModel):
 
 
 class InitiativeUpdateCreate(BaseModel):
-    """The body `POST /api/workspaces/{workspace_id}/initiatives/{initiative_id}/updates` takes."""
+    """The body `POST /api/workspaces/{workspace_id}/initiatives/{initiative_id}/updates` takes.
 
-    body: str
+    `body` may be left out when `template_id` names a workspace document
+    template, whose body the update then takes.
+    """
+
+    body: Optional[str] = None
     health: ProjectHealthField
+    template_id: Optional[str] = None
 
     @field_validator("body")
     @classmethod
-    def check_body(cls, value: str) -> str:
+    def check_body(cls, value: Optional[str]) -> Optional[str]:
         """Hold the body to non-blank markdown under the byte cap."""
-        return _check_update_body(value) or value
+        return _check_update_body(value)
 
 
 class InitiativeUpdatePatch(BaseModel):

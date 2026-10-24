@@ -24,7 +24,7 @@ from typing import Any, Mapping, Optional
 from fastapi import HTTPException, status
 from webbpulse.dynamodb import ConditionFailed, encode_start_key
 
-from app.common import pulse
+from app.common import document_templates, pulse
 from app.common.api.dependencies.authz import AuthzContext
 from app.common.api.dependencies.repositories import Repositories
 from app.common.api.pagination import decode_offset_cursor, encode_offset_cursor, resume_key
@@ -387,15 +387,16 @@ def list_initiative_updates(
 def create_initiative_update(
     repositories: Repositories, context: AuthzContext, initiative_id: str, payload: InitiativeUpdateCreate
 ) -> InitiativeUpdateRead:
-    """Post an update on an initiative and mirror its health onto the initiative."""
+    """Post an update on an initiative, from a workspace document template when one is named, and mirror its health."""
     initiative = load_initiative(repositories, context, initiative_id)
+    body = document_templates.fill_update_body(repositories, context, [], payload.body, payload.template_id)
     update_id = new_planning_id()
     update = InitiativeUpdateRow(
         workspace_id=context.workspace_id,
         planning_key=initiative_update_key(initiative.initiative_id, update_id),
         update_id=update_id,
         initiative_id=initiative.initiative_id,
-        body=payload.body,
+        body=body,
         health=payload.health,
         author_id=context.user_id,
         source=context.source,
@@ -412,6 +413,14 @@ def create_initiative_update(
     )
     pulse.record_initiative_update(repositories, created, initiative.health)
     return _update_read(context, initiative, created)
+
+
+def initiative_template_offer(
+    repositories: Repositories, context: AuthzContext, initiative_id: str
+) -> document_templates.Offer:
+    """The document templates an initiative offers, the workspace's, or the initiative's 403 or 404."""
+    load_initiative(repositories, context, initiative_id)
+    return document_templates.offer(repositories, context, [])
 
 
 def _load_editable_update(

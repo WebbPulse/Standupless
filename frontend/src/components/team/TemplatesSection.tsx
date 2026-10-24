@@ -3,7 +3,8 @@
  * reorder and delete, and the ones it inherits from its parent team and the
  * workspace, listed read only. A team admin also picks the template the
  * team's create dialog opens with; a sub-team that picks none opens with its
- * parent's. The team's project templates follow, kept the same way.
+ * parent's. The team's project and document templates follow, kept the same
+ * way.
  */
 
 import React, { useId } from 'react';
@@ -34,6 +35,7 @@ import TemplateEditor from '../templates/TemplateEditor';
 import { ErrorAlert } from '../ui/alert';
 import { SelectField } from '../ui/select';
 import Spinner from '../ui/spinner';
+import DocumentTemplatesSection from './DocumentTemplatesSection';
 import ProjectTemplatesSection from './ProjectTemplatesSection';
 
 /** Props for TemplatesSection: which team, and what the caller may change. */
@@ -189,6 +191,12 @@ export const TemplatesSection: React.FC<TemplatesSectionProps> = ({
         teamId={teamId}
         estimateScale={estimateScale}
         {...(estimateOptions === undefined ? {} : { estimateOptions })}
+        canEdit={canEdit}
+        canSetDefault={canSetDefault}
+      />
+      <DocumentTemplatesSection
+        workspaceId={workspaceId}
+        teamId={teamId}
         canEdit={canEdit}
         canSetDefault={canSetDefault}
       />

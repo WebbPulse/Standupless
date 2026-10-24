@@ -225,7 +225,10 @@ def _list_updates(call: ToolCall) -> Any:
 def _create_update(call: ToolCall) -> Any:
     """Post an update on an initiative, setting its health."""
     initiative_id = initiative_id_ref(call, call.require("initiative_id"))
-    payload = InitiativeUpdateCreate.model_validate({"body": call.require("body"), "health": call.require("health")})
+    fields = {"body": call.optional("body"), "template_id": call.optional("template_id")}
+    payload = InitiativeUpdateCreate.model_validate(
+        {"health": call.require("health"), **{name: value for name, value in fields.items() if value is not None}}
+    )
     return _update_json(create_initiative_update(call.repositories, call.context, initiative_id, payload))
 
 
@@ -373,15 +376,21 @@ INITIATIVE_TOOLS: tuple[Tool, ...] = (
     ),
     Tool(
         name="create_initiative_update",
-        description="Post a status update on an initiative, in Markdown, with its health. Posting sets its health.",
+        description=(
+            "Post a status update on an initiative, in Markdown, with its health. Posting sets its health. "
+            "Give template_id instead of body to post a workspace document template's body."
+        ),
         scopes=("projects:write",),
         schema=object_schema(
             {
                 "initiative_id": string(INITIATIVE_HELP),
-                "body": string("The update, in Markdown"),
+                "body": string("The update, in Markdown. Required unless template_id is given"),
                 "health": enum(HEALTHS, "How the initiative stands"),
+                "template_id": string(
+                    "A workspace document template whose body the update takes when body is left out: id or name"
+                ),
             },
-            required=("initiative_id", "body", "health"),
+            required=("initiative_id", "health"),
         ),
         handler=_create_update,
     ),

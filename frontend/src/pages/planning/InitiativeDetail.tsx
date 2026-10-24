@@ -61,6 +61,7 @@ import { SkeletonRows } from '../../components/ui/skeleton';
 import WorkspaceShell from '../../components/workspace/WorkspaceShell';
 import { useAuth } from '../../hooks/useAuth';
 import useCreateDocumentCommand from '../../hooks/useCreateDocumentCommand';
+import useDocumentTemplates from '../../hooks/useDocumentTemplates';
 import { useInitiativeUpdates } from '../../hooks/useInitiativeUpdates';
 import { useInitiatives } from '../../hooks/useInitiatives';
 import { useTeam } from '../../hooks/useTeam';
@@ -319,6 +320,12 @@ export const InitiativeDetail: React.FC = () => {
   } = useWorkspaceProjects(workspaceId, '', isMember);
   const updates = useInitiativeUpdates(
     workspaceId,
+    initiativeId,
+    initiative !== null
+  );
+  const updateTemplates = useDocumentTemplates(
+    workspaceId,
+    'initiative',
     initiativeId,
     initiative !== null
   );
@@ -699,6 +706,8 @@ export const InitiativeDetail: React.FC = () => {
             dueAt={initiative.next_update_due_at}
             composing={composing}
             onComposingChange={setComposing}
+            templates={updateTemplates.templates}
+            defaultTemplate={updateTemplates.defaultUpdate}
           />
         </div>
       ) : (

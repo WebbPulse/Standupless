@@ -5,7 +5,8 @@
  * each milestone's share done. The issues tab is the project's issues as a
  * list or board that groups and filters by milestone too. Every property
  * edits in place and shows at once, and a failed write is undone with a
- * notice.
+ * notice. The chip row also names the projects this one is blocked by and
+ * the ones it blocks, and links or unlinks them in place.
  *
  * The updates tab is the project's running account of itself: each update is
  * a short write up and a health call, newest first. `?tab=updates` opens it,
@@ -40,12 +41,14 @@ import {
   PriorityPicker,
 } from '../../components/issues/PropertyPickers';
 import EditableText from '../../components/planning/EditableText';
+import CustomerRequestsSection from '../../components/customers/CustomerRequestsSection';
 import DocumentsSection from '../../components/planning/DocumentsSection';
 import MilestonesSection from '../../components/planning/MilestonesSection';
 import ProjectIcon from '../../components/planning/ProjectIcon';
 import ProjectIssuesView from '../../components/planning/ProjectIssuesView';
 import {
   CadencePicker,
+  DependencyPicker,
   HealthPicker,
   InitiativePicker,
   LeadPicker,
@@ -67,14 +70,17 @@ import WorkspaceShell from '../../components/workspace/WorkspaceShell';
 import useCloseProjectPrompt from '../../hooks/useCloseProjectPrompt';
 import useCreateDocumentCommand from '../../hooks/useCreateDocumentCommand';
 import { useCreatePlannedIssue } from '../../hooks/useCreatePlannedIssue';
+import useDocumentTemplates from '../../hooks/useDocumentTemplates';
 import { useInitiatives } from '../../hooks/useInitiatives';
 import { usePlanningIssues } from '../../hooks/usePlanningIssues';
 import { usePlanningTeamLists } from '../../hooks/usePlanningTeamLists';
+import { useProjectDependencies } from '../../hooks/useProjectDependencies';
 import { useProjectMilestones } from '../../hooks/useProjectMilestones';
 import { useProjectUpdates } from '../../hooks/useProjectUpdates';
 import { useShortcut } from '../../hooks/useShortcuts';
 import { useTeam } from '../../hooks/useTeam';
 import { useWorkspace } from '../../hooks/useWorkspace';
+import { useWorkspaceProjects } from '../../hooks/useWorkspaceProjects';
 import { canWriteIssues, isTeamAdmin } from '../../lib/capabilities';
 import { cn } from '../../lib/cn';
 import { errorMessage } from '../../lib/errors';
@@ -229,6 +235,25 @@ export const ProjectDetail: React.FC = () => {
   );
 
   const updates = useProjectUpdates(workspaceId, projectId, project !== null);
+  const dependencies = useProjectDependencies(workspaceId, project);
+  const { projects: workspaceProjects } = useWorkspaceProjects(
+    workspaceId,
+    '',
+    project !== null
+  );
+  const dependencyCandidates = useMemo(
+    () =>
+      workspaceProjects.filter(
+        (candidate) => candidate.project_id !== projectId
+      ),
+    [workspaceProjects, projectId]
+  );
+  const updateTemplates = useDocumentTemplates(
+    workspaceId,
+    'project',
+    projectId,
+    project !== null
+  );
   const { initiatives } = useInitiatives(
     workspaceId,
     project !== null && workspace?.role !== 'guest'
@@ -457,6 +482,26 @@ export const ProjectDetail: React.FC = () => {
           }}
         />
       </span>
+      <DependencyPicker
+        type="blocked_by"
+        value={dependencies.sides.blocked_by}
+        opposite={dependencies.sides.blocks}
+        candidates={dependencyCandidates}
+        disabled={!canEdit}
+        onToggle={(targetId) => {
+          dependencies.toggle('blocked_by', targetId);
+        }}
+      />
+      <DependencyPicker
+        type="blocks"
+        value={dependencies.sides.blocks}
+        opposite={dependencies.sides.blocked_by}
+        candidates={dependencyCandidates}
+        disabled={!canEdit}
+        onToggle={(targetId) => {
+          dependencies.toggle('blocks', targetId);
+        }}
+      />
       <CadencePicker
         variant="chip"
         value={project.update_interval_days ?? workspaceCadence}
@@ -567,6 +612,8 @@ export const ProjectDetail: React.FC = () => {
             dueAt={project.next_update_due_at ?? null}
             composing={composing}
             onComposingChange={setComposing}
+            templates={updateTemplates.templates}
+            defaultTemplate={updateTemplates.defaultUpdate}
           />
         </div>
       ) : tab === 'issues' ? (
@@ -662,6 +709,17 @@ export const ProjectDetail: React.FC = () => {
                 canCreate={canEdit}
                 people={people}
               />
+              {workspace?.role !== 'guest' && (
+                <CustomerRequestsSection
+                  workspaceId={workspaceId}
+                  slug={slug}
+                  targetKind="project"
+                  targetId={projectId}
+                  targetLabel={project.name}
+                  canAdd={canEdit}
+                  variant="section"
+                />
+              )}
               <section aria-labelledby="project-issues-preview">
                 <div className="mb-2 flex items-center justify-between">
                   <h2

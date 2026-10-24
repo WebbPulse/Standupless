@@ -127,6 +127,38 @@ def test_a_teams_read_key_cannot_create_an_issue(client: TestClient, repositorie
     assert "issues:write" in body["message"]
 
 
+def test_a_rest_scope_refusal_says_where_to_grant_it(client: TestClient, repositories: Any, workspace: str) -> None:
+    """The body carries the same hint the MCP error gives: the scope and the connected apps page."""
+    secret = mint(repositories, MEMBER, ("teams:read",))
+    present(client, secret)
+
+    response = client.post(
+        f"/api/workspaces/{workspace}/issues",
+        json={"team_id": TEAM, "title": "Should not exist"},
+    )
+
+    assert response.status_code == 403, response.text
+    body = response.json()
+    hint = body["details"]
+    assert hint["missing"] == ["issues:write"]
+    assert hint["grant_url"].endswith("/w/acme/settings/connected-apps")
+    assert hint["api_keys_url"].endswith("/w/acme/settings/api-keys")
+    assert hint["grant_url"] in body["message"]
+
+
+def test_a_rest_refusal_the_role_blocks_offers_no_grant(workspace: str) -> None:
+    """A scope the caller's role cannot hold is named as that, with no link that could not help."""
+    from app.common.api.dependencies.authz import AuthzContext, insufficient_scope_detail
+
+    context = AuthzContext(workspace_id=workspace, user_id=MEMBER, role="member")
+
+    detail = insufficient_scope_detail(context, ["admin"], None)
+
+    assert detail["error_code"] == "INSUFFICIENT_SCOPE"
+    assert "role" in detail["message"]
+    assert "grant_url" not in detail
+
+
 def test_a_teams_read_key_cannot_post_a_comment(client: TestClient, repositories: Any, workspace: str) -> None:
     """Commenting needs `comments:write`, which this key does not carry."""
     issue_id = seed_issue(client, workspace)

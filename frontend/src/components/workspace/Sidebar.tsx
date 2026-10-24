@@ -35,6 +35,7 @@ import React, {
 } from 'react';
 import {
   LuActivity,
+  LuBuilding2,
   LuChevronRight,
   LuChevronsUpDown,
   LuEllipsis,
@@ -69,6 +70,7 @@ import {
   inboxPath,
   myIssuesPath,
   projectsPath,
+  customersPath,
   initiativesPath,
   pulsePath,
   reviewsPath,
@@ -797,6 +799,16 @@ export const Sidebar: React.FC<SidebarProps> = ({ workspace, onNavigate }) => {
               >
                 <LuGoal className={ICON} aria-hidden="true" />
                 Initiatives
+              </NavLink>
+            )}
+            {workspace.role !== 'guest' && (
+              <NavLink
+                to={customersPath(slug)}
+                className={itemClass}
+                onClick={onNavigate}
+              >
+                <LuBuilding2 className={ICON} aria-hidden="true" />
+                Customers
               </NavLink>
             )}
             <NavLink

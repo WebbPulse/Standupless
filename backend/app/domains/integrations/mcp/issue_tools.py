@@ -521,7 +521,8 @@ def _create_issue(call: ToolCall) -> Any:
     """Create an issue through the route's own create path, naming any possible duplicates.
 
     A template fills every field the caller left out, so an argument sent always
-    wins over the template's value, as it does in the create dialog.
+    wins over the template's value, as it does in the create dialog. A form
+    template holds `form_answers` to its questions, a missing required one included.
     """
     fields = (
         "team_id",
@@ -544,6 +545,8 @@ def _create_issue(call: ToolCall) -> Any:
         payload["parent_id"] = issue_id_ref(call, call.optional("parent_id"))
     if call.optional("template_id") is not None:
         payload["template_id"] = template_ref(call, str(payload["team_id"]), call.optional("template_id")).template_id
+    if call.optional("form_answers") is not None:
+        payload["form_answers"] = call.arguments["form_answers"]
     if payload.get("status_id"):
         payload["status_id"] = _status_ref(call, str(payload["team_id"]), str(payload["status_id"]))
     if payload.get("label_ids"):
@@ -1093,7 +1096,9 @@ ISSUE_TOOLS: tuple[Tool, ...] = (
             "or in triage while the team has triage on; a sub-issue from a team member skips triage unless asked. "
             "parent_id makes it a sub-issue; cycle_id, project_id and project_milestone_id place it. "
             "template_id fills every field not passed from one of the team's templates (see list_templates), "
-            "and title may then be omitted when the template has one. "
+            "and title may then be omitted when the template has one. A form template (one with form_fields) also "
+            "takes form_answers keyed by each field's key: required fields must be answered, a select takes one of "
+            "its options, and the answers land in the body and send the issue to triage. "
             "The answer lists possible_duplicates: open issues whose titles share its terms."
         ),
         scopes=("issues:write",),
@@ -1114,6 +1119,14 @@ ISSUE_TOOLS: tuple[Tool, ...] = (
                 "project_id": string("A project the team is on"),
                 "project_milestone_id": string("A milestone of that project"),
                 "template_id": string("A template the team offers, by id or name, filling the fields not passed"),
+                "form_answers": {
+                    "type": "object",
+                    "description": (
+                        "For a form template: answers by field key, text for short_text, long_text and select, "
+                        "true or false for checkbox"
+                    ),
+                    "additionalProperties": {"type": ["string", "boolean"]},
+                },
             },
             required=("team_id",),
         ),

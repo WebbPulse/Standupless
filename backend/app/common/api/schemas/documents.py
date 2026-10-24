@@ -44,22 +44,28 @@ def _check_body(value: Optional[str]) -> Optional[str]:
 
 
 class DocumentCreate(BaseModel):
-    """The body a document create takes; the parent comes from the path."""
+    """The body a document create takes; the parent comes from the path.
 
-    title: str
-    body: str = ""
+    `template_id` names a document template the parent offers. Its title fills
+    a left out `title`, and its body a left out `body`; a create without either
+    a title or a template is refused.
+    """
+
+    title: Optional[str] = None
+    body: Optional[str] = None
+    template_id: Optional[str] = None
 
     @field_validator("title")
     @classmethod
-    def check_title(cls, value: str) -> str:
+    def check_title(cls, value: Optional[str]) -> Optional[str]:
         """Hold the title to non-blank text under the cap."""
-        return _check_title(value) or value
+        return _check_title(value)
 
     @field_validator("body")
     @classmethod
-    def check_body(cls, value: str) -> str:
+    def check_body(cls, value: Optional[str]) -> Optional[str]:
         """Hold the body under the byte cap."""
-        return _check_body(value) or ""
+        return _check_body(value)
 
 
 class DocumentPatch(BaseModel):

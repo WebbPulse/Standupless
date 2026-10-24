@@ -8,6 +8,9 @@
  * its cadence, a banner above the composer says so and asks for a health call
  * with the write up.
  *
+ * Document templates the parent offers show in the composer's template menu,
+ * and the composer opens on the default update template's body when one is set.
+ *
  * When the address carries `#update-<id>`, the feed scrolls to that update
  * once it has loaded, which is where email, webhook and inbox links land.
  */
@@ -20,7 +23,11 @@ import { errorMessage } from '../../lib/errors';
 import type { Assignable } from '../../lib/issuePeople';
 import { showErrorToast, showToast } from '../../lib/toast';
 import { updateDueLabel } from '../../lib/planningDisplay';
-import type { ProjectHealth, ProjectUpdateDueState } from '../../types/Api';
+import type {
+  ProjectHealth,
+  ProjectUpdateDueState,
+  TemplateRead,
+} from '../../types/Api';
 import { ErrorAlert } from '../ui/alert';
 import Button from '../ui/button';
 import EmptyState from '../ui/empty-state';
@@ -54,6 +61,10 @@ export interface ProjectUpdatesFeedProps {
   dueState?: ProjectUpdateDueState | null;
   /** When the next update is due, or null. */
   dueAt?: string | null;
+  /** The document templates the composer's menu offers. */
+  templates?: TemplateRead[];
+  /** The template whose body a new update opens with, or null. */
+  defaultTemplate?: TemplateRead | null;
 }
 
 /** The composer and the list of one project's updates. */
@@ -67,6 +78,8 @@ export const ProjectUpdatesFeed: React.FC<ProjectUpdatesFeedProps> = ({
   onComposingChange,
   dueState = null,
   dueAt = null,
+  templates = [],
+  defaultTemplate = null,
 }) => {
   const { hash } = useLocation();
   const scrolledTo = useRef<string | null>(null);
@@ -118,9 +131,11 @@ export const ProjectUpdatesFeed: React.FC<ProjectUpdatesFeedProps> = ({
       {canPost &&
         (composing ? (
           <ProjectUpdateEditor
-            key={defaultHealth}
+            key={`${defaultHealth}:${defaultTemplate?.id ?? ''}`}
             people={people}
             initialHealth={defaultHealth}
+            initialBody={defaultTemplate?.body ?? ''}
+            templates={templates}
             submitLabel="Post update"
             busyLabel="Posting"
             ariaLabel={`Write ${articled(subject)} update`}
