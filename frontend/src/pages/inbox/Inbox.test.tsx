@@ -1066,7 +1066,7 @@ describe('inbox row menu', () => {
     const menu = await openRowMenu('Public beta');
 
     expect(
-      within(menu).getByRole('menuitem', { name: /Mark as unread/ })
+      within(menu).getByRole('menuitem', { name: /Mark as read/ })
     ).toBeInTheDocument();
     expect(
       within(menu).queryByRole('menuitem', { name: /Unsubscribe/ })
