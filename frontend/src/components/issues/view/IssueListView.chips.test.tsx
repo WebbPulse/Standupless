@@ -1,8 +1,8 @@
 /**
  * The chips on a row or card act on a click: a project or cycle chip opens
- * its page, a label or estimate chip narrows the view, and a viewer who cannot
- * edit narrows by priority, status or assignee too. None of them opens the
- * issue under it, by pointer or by Enter.
+ * its page, a label or estimate chip opens its picker for an editor and
+ * narrows the view for a viewer, who narrows by priority, status or assignee
+ * too. None of them opens the issue under it, by pointer or by Enter.
  */
 
 import { fireEvent, render, screen } from '@testing-library/react';
@@ -67,7 +67,10 @@ const context: IssueContext = {
       team_id: 'team-2',
     },
   ],
-  labels: [{ id: 'lb-bug', name: 'bug', color: '#f00', team_id: 'team-1' }],
+  labels: [
+    { id: 'lb-bug', name: 'bug', color: '#f00', team_id: 'team-1' },
+    { id: 'lb-ui', name: 'ui', color: '#0f0', team_id: 'team-1' },
+  ],
   people: [
     { user_id: 'user-1', email: 'me@example.com', display_name: 'Me' },
     { user_id: 'user-2', email: 'ada@example.com', display_name: 'Ada' },
@@ -96,6 +99,7 @@ const lists: IssueContextState = {
 const LIST = '/w/mine/team/ENG/issues';
 
 let registry: ShortcutRegistry;
+let update: ReturnType<typeof vi.fn<IssueCollection['update']>>;
 let onStateChange: ReturnType<typeof vi.fn<(state: ViewState) => void>>;
 let listener: (event: KeyboardEvent) => void;
 
@@ -127,7 +131,7 @@ const renderView = ({
     error: null,
     truncated: false,
     queryKey: ['issues'],
-    update: vi.fn<IssueCollection['update']>(),
+    update,
   };
   const base = defaultViewState(layout);
   const state: ViewState = { ...base, visible: [...base.visible, 'cycle'] };
@@ -170,6 +174,7 @@ const lastFilters = (): ViewState['filters'] => {
 
 beforeEach(() => {
   registry = createShortcutRegistry();
+  update = vi.fn<IssueCollection['update']>();
   onStateChange = vi.fn<(state: ViewState) => void>();
   listener = (event) => {
     registry.handleKey(event);
@@ -184,7 +189,7 @@ afterEach(() => {
 
 describe.each(['list', 'board'] as const)('chips on the %s', (layout) => {
   it('filters by a label without opening the issue', () => {
-    renderView({ layout });
+    renderView({ layout, canEdit: false });
 
     fireEvent.click(
       screen.getByRole('button', { name: 'Filter by label: bug' })
@@ -197,7 +202,7 @@ describe.each(['list', 'board'] as const)('chips on the %s', (layout) => {
   });
 
   it('filters by an estimate', () => {
-    renderView({ layout });
+    renderView({ layout, canEdit: false });
 
     fireEvent.click(
       screen.getByRole('button', { name: 'Filter by estimate: M' })
@@ -206,6 +211,41 @@ describe.each(['list', 'board'] as const)('chips on the %s', (layout) => {
     expect(lastFilters()).toEqual([
       { field: 'estimate', op: 'is', values: ['M'] },
     ]);
+    expect(where()).toBe(LIST);
+  });
+
+  it('opens the labels picker from a label chip for an editor', () => {
+    renderView({ layout });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Labels: bug' }));
+    fireEvent.click(screen.getByRole('option', { name: /ui/ }));
+
+    expect(update).toHaveBeenCalledWith(['iss-1'], {
+      add_label_ids: ['lb-ui'],
+    });
+    expect(onStateChange).not.toHaveBeenCalled();
+    expect(where()).toBe(LIST);
+  });
+
+  it('removes a label from the chip picker', () => {
+    renderView({ layout });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Labels: bug' }));
+    fireEvent.click(screen.getByRole('option', { name: /bug/ }));
+
+    expect(update).toHaveBeenCalledWith(['iss-1'], {
+      remove_label_ids: ['lb-bug'],
+    });
+  });
+
+  it('opens the estimate picker from the estimate chip for an editor', () => {
+    renderView({ layout });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Estimate: M' }));
+    fireEvent.click(screen.getByRole('option', { name: /^L/ }));
+
+    expect(update).toHaveBeenCalledWith(['iss-1'], { estimate: 'L' });
+    expect(onStateChange).not.toHaveBeenCalled();
     expect(where()).toBe(LIST);
   });
 
@@ -229,9 +269,20 @@ describe.each(['list', 'board'] as const)('chips on the %s', (layout) => {
 
 describe('chip keys and limits', () => {
   it('keeps Enter on a focused chip from opening the focused issue', () => {
-    renderView();
+    renderView({ canEdit: false });
     fireEvent.keyDown(document.body, { key: 'j' });
     const chip = screen.getByRole('button', { name: 'Filter by label: bug' });
+    chip.focus();
+
+    fireEvent.keyDown(chip, { key: 'Enter' });
+
+    expect(where()).toBe(LIST);
+  });
+
+  it('keeps Enter on a picker chip from opening the issue', () => {
+    renderView();
+    fireEvent.keyDown(document.body, { key: 'j' });
+    const chip = screen.getByRole('button', { name: 'Labels: bug' });
     chip.focus();
 
     fireEvent.keyDown(chip, { key: 'Enter' });
@@ -249,7 +300,7 @@ describe('chip keys and limits', () => {
   });
 
   it('leaves a chip inert for a field the view cannot filter on', () => {
-    renderView({ filterFields: ['status'] });
+    renderView({ canEdit: false, filterFields: ['status'] });
 
     expect(
       screen.queryByRole('button', { name: 'Filter by label: bug' })

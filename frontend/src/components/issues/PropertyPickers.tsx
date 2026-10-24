@@ -83,6 +83,11 @@ export interface PickerBaseProps {
   /** Which edge of the trigger the list lines up with. */
   align?: 'start' | 'end';
   className?: string;
+  /**
+   * Draws the control the list opens from in place of the picker's own, for a
+   * surface such as a row chip that keeps its look and gains the picker.
+   */
+  renderTrigger?: (trigger: PopoverTriggerProps) => React.ReactNode;
 }
 
 /** The value the "none" row carries in a list that can be cleared. */
@@ -181,24 +186,29 @@ const SinglePicker: React.FC<SinglePickerProps> = ({
   variant = 'rail',
   align = 'start',
   className = '',
+  renderTrigger,
 }) => (
   <Popover
     label={field}
     align={align}
     block={variant === 'rail'}
     contentClassName="w-64"
-    trigger={(trigger) => (
-      <PickerButton
-        trigger={trigger}
-        field={field}
-        icon={icon}
-        text={text}
-        empty={empty}
-        variant={variant}
-        disabled={disabled}
-        className={className}
-      />
-    )}
+    trigger={(trigger) =>
+      renderTrigger === undefined ? (
+        <PickerButton
+          trigger={trigger}
+          field={field}
+          icon={icon}
+          text={text}
+          empty={empty}
+          variant={variant}
+          disabled={disabled}
+          className={className}
+        />
+      ) : (
+        renderTrigger(trigger)
+      )
+    }
   >
     {(close) => (
       <Combobox
@@ -437,6 +447,7 @@ export const LabelsPicker: React.FC<LabelsPickerProps> = ({
   variant = 'rail',
   align = 'start',
   className = '',
+  renderTrigger,
 }) => {
   const latest = useRef(value);
   useEffect(() => {
@@ -509,19 +520,23 @@ export const LabelsPicker: React.FC<LabelsPickerProps> = ({
       align={align}
       block={variant === 'rail'}
       contentClassName="w-64"
-      trigger={(trigger) => (
-        <PickerButton
-          trigger={trigger}
-          field="Labels"
-          icon={icon}
-          text={text}
-          spoken={summary}
-          empty={chosen.length === 0}
-          variant={variant}
-          disabled={disabled}
-          className={className}
-        />
-      )}
+      trigger={(trigger) =>
+        renderTrigger === undefined ? (
+          <PickerButton
+            trigger={trigger}
+            field="Labels"
+            icon={icon}
+            text={text}
+            spoken={summary}
+            empty={chosen.length === 0}
+            variant={variant}
+            disabled={disabled}
+            className={className}
+          />
+        ) : (
+          renderTrigger(trigger)
+        )
+      }
     >
       <Combobox
         label="Labels"
