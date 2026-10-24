@@ -13,6 +13,7 @@
 
 import type { IssueListFilters } from '../api/issues';
 import type { ViewLayout } from '../api/views';
+import type { StatusCategory } from '../types/Api';
 import { teamPath } from './paths';
 
 /** One of a team's preset issue tabs. */
@@ -64,6 +65,21 @@ export const teamScopeFilters = (scope: TeamIssueScope): IssueListFilters => {
       return {};
   }
 };
+
+/** The status categories each narrowing preset covers. */
+const SCOPE_CATEGORIES: Record<
+  Exclude<TeamIssueScope, 'all'>,
+  readonly StatusCategory[]
+> = {
+  active: ['unstarted', 'started'],
+  backlog: ['backlog'],
+};
+
+/** The status categories a preset covers, or undefined when it covers every one. */
+export const teamScopeCategories = (
+  scope: TeamIssueScope
+): readonly StatusCategory[] | undefined =>
+  scope === 'all' ? undefined : SCOPE_CATEGORIES[scope];
 
 /** The empty list message for a preset of the named team. */
 export const teamScopeEmptyMessage = (

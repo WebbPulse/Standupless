@@ -71,6 +71,7 @@ import Avatar from '../ui/avatar';
 import { Combobox, type ComboboxOption } from '../ui/combobox';
 import { PriorityGlyph } from '../ui/glyphs';
 import { StatusIcon } from '../ui/StatusIcon';
+import MilestoneGlyph from '../planning/MilestoneGlyph';
 import { Popover, type PopoverTriggerProps } from '../ui/popover';
 
 /** Which trigger look a picker draws. */
@@ -726,7 +727,7 @@ export const MilestonePicker: React.FC<MilestonePickerProps> = ({
     ...milestones.map((milestone) => ({
       value: milestone.milestone_id,
       label: milestone.name,
-      icon: <LuMilestone className="h-3.5 w-3.5" />,
+      icon: <MilestoneGlyph milestone={milestone} decorative />,
       ...(milestone.target_date === null
         ? {}
         : { detail: shortDateLabel(milestone.target_date) }),
@@ -742,7 +743,13 @@ export const MilestonePicker: React.FC<MilestonePickerProps> = ({
       onChange={(picked) => {
         onChange(picked === NONE ? null : picked);
       }}
-      icon={<LuMilestone className="h-3.5 w-3.5" />}
+      icon={
+        current === undefined ? (
+          <LuMilestone className="h-3.5 w-3.5" />
+        ) : (
+          <MilestoneGlyph milestone={current} decorative />
+        )
+      }
       text={
         current === undefined
           ? emptyText(variant, 'Milestone', 'No milestone')

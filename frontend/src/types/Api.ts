@@ -732,7 +732,8 @@ export type IssueSort =
   | 'start_asc'
   | 'estimate_desc'
   | 'customer_requests_desc'
-  | 'customer_revenue_desc';
+  | 'customer_revenue_desc'
+  | 'completed_desc';
 
 /** The kinds of link a pair of issues may hold. */
 export type LinkType = 'blocks' | 'blocked_by' | 'relates_to' | 'duplicate_of';
@@ -2415,6 +2416,12 @@ export interface ProjectMilestoneMarkerRead {
   target_date: string;
   /** Every issue in the milestone is finished, and it holds at least one. */
   completed: boolean;
+  /** The milestone's issue counts. */
+  counts?: RollupCounts;
+  /** The unit `progress` reads in: points when a team on it estimates, otherwise issues. */
+  measure?: 'points' | 'issues';
+  /** The buckets scope and completion are measured by, in `measure`. */
+  progress?: RollupCounts;
 }
 
 /** One template issue a project created from a template left out, and why. */
@@ -4790,11 +4797,14 @@ export interface FavoriteRef {
   target_id: string;
   /** The cycle's team, needed only for a cycle. */
   team_id?: string | null;
+  /** The folder it goes in, null for the top level, or left out to keep where it is. */
+  folder_id?: string | null;
 }
 
-/** The caller's favorites in their new order. */
+/** The caller's favorites in their new order, and their folders' when `folders` is sent. */
 export interface FavoriteOrder {
   items: FavoriteRef[];
+  folders?: string[] | null;
 }
 
 /** One favorite as the sidebar draws it, resolved against its target at read time. */
@@ -4813,11 +4823,26 @@ export interface FavoriteRead {
   /** For a document, whether it hangs off a project or an initiative. */
   parent_kind?: string | null;
   parent_id?: string | null;
+  /** The folder it sits in, or null at the top level. */
+  folder_id?: string | null;
 }
 
-/** The caller's favorites in their order. */
+/** A named folder the caller groups favorites under. */
+export interface FavoriteFolderRead {
+  folder_id: string;
+  name: string;
+  position: number;
+}
+
+/** A new name for a favorite folder, or the name of a new one. */
+export interface FavoriteFolderWrite {
+  name: string;
+}
+
+/** The caller's favorites and folders in their order. */
 export interface FavoriteListRead {
   favorites: FavoriteRead[];
+  folders?: FavoriteFolderRead[];
 }
 
 /** One of the caller's unposted comment drafts, on an issue or one reply thread of it. */
