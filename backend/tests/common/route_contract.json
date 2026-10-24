@@ -446,6 +446,24 @@
   {
     "auth": "workspace:admin",
     "domain": "integrations",
+    "method": "POST",
+    "path": "/api/workspaces/{workspace_id}/imports/shortcut"
+  },
+  {
+    "auth": "workspace:admin",
+    "domain": "integrations",
+    "method": "POST",
+    "path": "/api/workspaces/{workspace_id}/imports/shortcut/preview"
+  },
+  {
+    "auth": "workspace:admin",
+    "domain": "integrations",
+    "method": "POST",
+    "path": "/api/workspaces/{workspace_id}/imports/shortcut/teams"
+  },
+  {
+    "auth": "workspace:admin",
+    "domain": "integrations",
     "method": "GET",
     "path": "/api/workspaces/{workspace_id}/imports/{import_id}"
   },
@@ -1312,6 +1330,12 @@
     "domain": "planning",
     "method": "PUT",
     "path": "/api/workspaces/{workspace_id}/projects/{project_id}/follow"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "planning",
+    "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/projects/{project_id}/history"
   },
   {
     "auth": "workspace:read",

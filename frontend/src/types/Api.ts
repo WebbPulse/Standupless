@@ -2029,6 +2029,34 @@ export interface CycleHistoryRead {
   days: CycleHistoryPoint[];
 }
 
+/**
+ * Where the recent completion rate takes a project's remaining scope.
+ * `rate_per_day` is in the project's measure. `expected_date` is null when
+ * nothing was completed recently or the finish is out of sight, and
+ * `days_past_target` is negative when the finish lands before the target.
+ */
+export interface ProjectProjectionRead {
+  rate_per_day: number;
+  expected_date: string | null;
+  days_past_target: number | null;
+}
+
+/**
+ * A project's daily history from the day its series opens to today, recorded
+ * by the rollup as the project's issues move. `recorded_since` is null while
+ * nothing has been recorded, and `days` then holds today alone.
+ */
+export interface ProjectHistoryRead {
+  project_id: string;
+  start_date: string | null;
+  target_date: string | null;
+  today: string;
+  measure: 'points' | 'issues';
+  recorded_since: string | null;
+  days: CycleHistoryPoint[];
+  projection: ProjectProjectionRead | null;
+}
+
 /** One closed cycle's delivered work, read as it stood on its last day. */
 export interface VelocityCycleRead {
   cycle_id: string;
@@ -4177,8 +4205,8 @@ export interface IssueImportPreviewRead {
 export type ImportStatus =
   'queued' | 'running' | 'completed' | 'failed' | 'cancelled';
 
-/** What an import reads: an uploaded CSV, a Linear or Asana workspace through its API, or a GitHub repository's Issues. */
-export type ImportKind = 'csv' | 'linear' | 'asana' | 'github';
+/** What an import reads: an uploaded CSV, a Linear, Shortcut or Asana workspace through its API, or a GitHub repository's Issues. */
+export type ImportKind = 'csv' | 'linear' | 'shortcut' | 'asana' | 'github';
 
 /** The tallies a Linear import keeps, by name. */
 export type LinearImportCount =
@@ -4232,6 +4260,14 @@ export interface LinearTeamMappingRead {
   team_id: string;
 }
 
+/** One team of the tool an API import reads, such as a Shortcut team, and the Standupless team it writes into. */
+export interface SourceTeamMappingRead {
+  source_id: string;
+  key: string;
+  name: string;
+  team_id: string;
+}
+
 /** One issue import job and how far it has got. */
 export interface IssueImportRead {
   import_id: string;
@@ -4262,6 +4298,8 @@ export interface IssueImportRead {
     Record<LinearImportCount | AsanaImportCount | GitHubImportCount, number>
   >;
   linear_teams?: LinearTeamMappingRead[];
+  /** The teams a Shortcut import reads, in the order it reads them. */
+  source_teams?: SourceTeamMappingRead[];
   asana_projects?: AsanaProjectMappingRead[];
   /** The repository a GitHub import reads; its full name is the file name. */
   github_repository_id?: string | null;
@@ -4298,6 +4336,52 @@ export interface LinearTeamChoice {
 export interface LinearImportRequest {
   api_key: string;
   teams: LinearTeamChoice[];
+}
+
+/** One team a Shortcut API token can read. */
+export interface ShortcutTeamRead {
+  id: string;
+  /** The team's mention name in Shortcut. */
+  key: string;
+  name: string;
+}
+
+/** Every team a Shortcut API token can read that is not archived. */
+export interface ShortcutTeamListRead {
+  items: ShortcutTeamRead[];
+}
+
+/** One Shortcut team to import and the Standupless team it goes into. */
+export interface ShortcutTeamChoice {
+  shortcut_team_id: string;
+  team_id: string;
+}
+
+/** The body a Shortcut import or its preview starts with. The token is used for the job only. */
+export interface ShortcutImportRequest {
+  api_token: string;
+  teams: ShortcutTeamChoice[];
+}
+
+/** What importing one Shortcut team would bring over. */
+export interface ShortcutPreviewTeamRead {
+  shortcut_team_id: string;
+  name: string;
+  team_id: string;
+  stories: number;
+  /** Whether the team holds more stories than the preview counts. */
+  stories_capped: boolean;
+  epics: number;
+  iterations: number;
+  statuses: StatusMappingRead[];
+  new_labels: string[];
+  matched_owners: number;
+  unmatched_owners: number;
+}
+
+/** What a Shortcut import would do, team by team, computed without writing anything. */
+export interface ShortcutImportPreviewRead {
+  teams: ShortcutPreviewTeamRead[];
 }
 
 /** One project an Asana personal access token can read. */
