@@ -1,4 +1,4 @@
-"""The MCP tools for importing a Linear workspace or a GitHub repository's Issues, and following or stopping an import.
+"""The MCP tools for importing a file, a Linear workspace or GitHub Issues, and following or stopping one.
 
 They run the same `app.common.issue_import`, `app.common.linear_import` and
 `github_import` functions as the import routes and check the same workspace
@@ -6,7 +6,10 @@ admin capability, so an agent can move a team off Linear or GitHub Issues
 exactly as an admin can in the app. The Linear key an agent passes is used for
 that call, sealed while the job runs and deleted when it ends, and never comes
 back in an answer. A GitHub import needs no key: it reads through the
-workspace's installed GitHub App.
+workspace's installed GitHub App. A file import takes the CSV export of Jira,
+Linear, Asana, Shortcut or Pivotal Tracker, any other CSV, or a Trello board's
+JSON, with the same preset and mapping the import settings screen offers, and
+its dry run writes nothing.
 """
 
 from __future__ import annotations
@@ -15,12 +18,21 @@ from typing import Any
 
 from app.common import audit, issue_import, linear_import
 from app.common.api.dependencies.authz import Capability, check_capability
+from app.common.csv_import import IMPORT_FIELDS, PRESETS, CsvRejected
 from app.common.issue_rules import require_team_member
 from app.common.linear_api import LinearAuthFailed, LinearError
 from app.domains.integrations import github_import
-from app.domains.integrations.mcp.toolkit import NOT_VISIBLE, Tool, ToolCall, object_schema, string, team_id_ref
+from app.domains.integrations.mcp.toolkit import (
+    NOT_VISIBLE,
+    Tool,
+    ToolCall,
+    enum,
+    object_schema,
+    string,
+    team_id_ref,
+)
 from app.domains.integrations.mcp.transport import ToolError
-from app.domains.integrations.schemas.imports import IssueImportRead
+from app.domains.integrations.schemas.imports import IssueImportPreviewRead, IssueImportRead
 
 KEY_ARGUMENT = "A Linear personal API key with read access. Used for this import only and never stored after it."
 
@@ -39,6 +51,26 @@ TEAMS_SCHEMA: dict[str, Any] = {
 }
 
 
+FILE_PROPERTIES: dict[str, Any] = {
+    "team_id": string("The Standupless team the issues go into: id, key such as ENG, or name"),
+    "preset": enum(
+        PRESETS,
+        "Whose export the file is: jira, linear, asana, shortcut or pivotal for their CSV exports, trello for a "
+        "board's JSON export, generic for any other CSV. Picks the columns each field is read from",
+    ),
+    "file": string("The whole file as text: a CSV with its header row first, or for trello the board's JSON"),
+    "file_name": string("The file's name, shown on the import"),
+    "mapping": {
+        "type": "object",
+        "additionalProperties": {"type": ["string", "null"]},
+        "description": (
+            "Overrides of the preset's mapping, field to header name; null unmaps a field. Fields: "
+            + ", ".join(IMPORT_FIELDS)
+        ),
+    },
+}
+
+
 def _linear_error(exc: LinearError) -> ToolError:
     """A Linear failure as a tool error that never carries the key."""
     if isinstance(exc, LinearAuthFailed):
@@ -49,6 +81,56 @@ def _linear_error(exc: LinearError) -> ToolError:
 def _job_json(job: issue_import.ImportJob) -> dict[str, Any]:
     """One import as the tools answer it, the same shape the import routes answer."""
     return IssueImportRead.from_job(job).model_dump(mode="json")
+
+
+def _file_arguments(call: ToolCall) -> tuple[str, str, str, Any]:
+    """The team, preset, file text and mapping a file import names, checked for the caller."""
+    check_capability(call.repositories, call.context, Capability.WORKSPACE_ADMIN)
+    preset = str(call.optional("preset", "generic")).strip()
+    if preset not in PRESETS:
+        raise ToolError(f"preset is one of {', '.join(PRESETS)}")
+    mapping = call.optional("mapping")
+    if mapping is not None and not isinstance(mapping, dict):
+        raise ToolError("mapping is an object of field to header name")
+    team_id = team_id_ref(call, str(call.require("team_id")).strip())
+    require_team_member(call.repositories, call.context, team_id)
+    return team_id, preset, str(call.require("file")), mapping
+
+
+def _preview_issue_import(call: ToolCall) -> Any:
+    """What importing a file into a team would do, row by row, writing nothing."""
+    team_id, preset, text, mapping = _file_arguments(call)
+    try:
+        preview = issue_import.preview_import(
+            call.repositories, call.context.workspace_id, team_id, preset, text, mapping
+        )
+    except CsvRejected as exc:
+        raise ToolError(str(exc)) from None
+    return IssueImportPreviewRead.from_preview(preview).model_dump(mode="json")
+
+
+def _import_issues_from_file(call: ToolCall) -> Any:
+    """Queue an import of a file into one team."""
+    team_id, preset, text, mapping = _file_arguments(call)
+    file_name = str(call.optional("file_name", "")).strip()
+    try:
+        job = issue_import.start_import(
+            call.repositories, call.context, team_id, preset, text, mapping, file_name=file_name
+        )
+    except CsvRejected as exc:
+        raise ToolError(str(exc)) from None
+    except (issue_import.ImportUnavailable, issue_import.ImportInProgress) as exc:
+        raise ToolError(str(exc)) from exc
+    audit.record(
+        call.repositories,
+        call.context,
+        "import.started",
+        target_type="import",
+        target_id=job.import_id,
+        target_label=job.file_name,
+        after={"team_id": job.team_id, "preset": job.preset, "total_rows": job.total_rows},
+    )
+    return _job_json(job)
 
 
 def _list_linear_teams(call: ToolCall) -> Any:
@@ -178,6 +260,30 @@ def _cancel_workspace_import(call: ToolCall) -> Any:
 
 IMPORT_TOOLS: tuple[Tool, ...] = (
     Tool(
+        name="preview_issue_import",
+        description=(
+            "Dry run a file import into one team without writing anything: the column each field maps to, how "
+            "many rows import, each row's problems, the labels it would create and where each source status "
+            "lands. Takes the CSV export of Jira, Linear, Asana, Shortcut or Pivotal Tracker, any other CSV, or "
+            "a Trello board's JSON. Needs workspace owner or admin."
+        ),
+        scopes=("settings:read", "admin"),
+        schema=object_schema(FILE_PROPERTIES, required=("team_id", "file")),
+        handler=_preview_issue_import,
+    ),
+    Tool(
+        name="import_issues_from_file",
+        description=(
+            "Start an import of a file into one team, as preview_issue_import reads it: the CSV export of Jira, "
+            "Linear, Asana, Shortcut or Pivotal Tracker, any other CSV, or a Trello board's JSON, whose checklist "
+            "items become sub-issues. People are matched by email, then display name. Runs in the background; "
+            "poll get_workspace_import. Needs workspace owner or admin."
+        ),
+        scopes=("settings:write", "admin"),
+        schema=object_schema(FILE_PROPERTIES, required=("team_id", "file")),
+        handler=_import_issues_from_file,
+    ),
+    Tool(
         name="list_linear_teams",
         description=(
             "The teams a Linear personal API key can read, with their ids, keys and names, to choose what "
@@ -241,7 +347,7 @@ IMPORT_TOOLS: tuple[Tool, ...] = (
         ),
         scopes=("settings:read", "admin"),
         schema=object_schema(
-            {"import_id": string("The import_id import_linear_workspace or import_github_issues answered")},
+            {"import_id": string("The import_id an import tool answered")},
             required=("import_id",),
         ),
         handler=_get_workspace_import,
@@ -254,7 +360,7 @@ IMPORT_TOOLS: tuple[Tool, ...] = (
         ),
         scopes=("settings:write", "admin"),
         schema=object_schema(
-            {"import_id": string("The import_id import_linear_workspace or import_github_issues answered")},
+            {"import_id": string("The import_id an import tool answered")},
             required=("import_id",),
         ),
         handler=_cancel_workspace_import,

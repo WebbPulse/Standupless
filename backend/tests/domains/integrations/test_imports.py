@@ -9,11 +9,14 @@ map by name then by category, assignees match by email, unknown labels are made
 on the team, a page run twice writes each issue once, a page that keeps failing
 fails the job, one import runs per workspace, only an owner or admin may
 import at all, and a parent column links sub-issues in a pass after every row is
-written, warning on a parent it cannot find and linking nothing twice.
+written, warning on a parent it cannot find and linking nothing twice. The
+Asana, Shortcut and Pivotal Tracker presets and a Trello board's JSON import
+from a fixture export each, over the routes and over MCP.
 """
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any, Iterator
 
 import pytest
@@ -24,8 +27,11 @@ from app.common import issue_import
 from app.common.db.dynamo.base import utc_now
 from app.common.db.dynamo.team_config import Label, label_key
 from app.domains.integrations.consumers import import_jobs
+from app.domains.integrations.mcp.transport import INSUFFICIENT_SCOPE
 from tests.domains.helpers import ADMIN, GUEST, MEMBER, OWNER, sign_in
 from tests.domains.integrations.conftest import TEAM, WORKSPACE, sqs_record
+from tests.domains.integrations.test_mcp import tool
+from tests.domains.integrations.test_mcp_tools import answer, mint_for, refusal
 
 BUCKET = "standupless-test-imports"
 
@@ -84,6 +90,14 @@ def bug_label(repositories: Any, workspace: str) -> Label:
             color="#d64545",
         )
     )
+
+
+FIXTURES = Path(__file__).resolve().parents[2] / "fixtures" / "imports"
+
+
+def fixture(name: str) -> str:
+    """One fixture export's text."""
+    return (FIXTURES / name).read_text(encoding="utf-8")
 
 
 def body(csv: str = CSV, **fields: Any) -> dict[str, Any]:
@@ -609,3 +623,116 @@ def test_an_issue_edited_before_the_link_pass_is_left_alone(
     assert (job.status, job.linked_count) == ("completed", 1)
     assert imported(repositories, import_id, 2).parent_id is None
     assert any(problem.row == 2 and problem.field == "parent" for problem in job.problems)
+
+
+def test_an_asana_export_imports_with_completed_tasks_done(
+    client: TestClient, repositories: Any, workspace: str, bucket: str
+) -> None:
+    """A task with a completion date lands in a completed status, and subtasks link to their parent."""
+    sign_in(client, ADMIN)
+
+    job = client.post(
+        f"/api/workspaces/{WORKSPACE}/imports", json=body(fixture("asana.csv"), preset="asana", file_name="asana.csv")
+    ).json()
+
+    assert (job["status"], job["created_count"], job["linked_count"]) == ("completed", 3, 2)
+    parent = imported(repositories, job["import_id"], 2)
+    venue = imported(repositories, job["import_id"], 3)
+    assert parent.title == "Plan the launch"
+    assert parent.assignee_id == MEMBER
+    assert parent.external_ref == "1205000000000001"
+    assert status_name(repositories, parent.status_id) == "In Progress"
+    assert status_name(repositories, venue.status_id) == "Done"
+    assert venue.parent_id == parent.issue_id
+
+
+@pytest.mark.parametrize(("preset", "name", "rows"), [("shortcut", "shortcut.csv", 2), ("pivotal", "pivotal.csv", 3)])
+def test_shortcut_and_pivotal_exports_preview_cleanly(
+    client: TestClient, workspace: str, bucket: str, preset: str, name: str, rows: int
+) -> None:
+    """Each tool's export maps by its preset alone and every row imports, finished ones as done."""
+    sign_in(client, ADMIN)
+
+    response = client.post(f"/api/workspaces/{WORKSPACE}/imports/preview", json=body(fixture(name), preset=preset))
+
+    assert response.status_code == 200, response.text
+    preview = response.json()
+    assert (preview["total_rows"], preview["importable_rows"]) == (rows, rows)
+    assert preview["rows"][0]["assignee_id"] == MEMBER
+    assert preview["rows"][0]["status_name"] == "In Progress"
+    assert preview["rows"][1]["status_name"] == "Done"
+
+
+def test_a_trello_board_imports_cards_and_checklists(
+    client: TestClient, repositories: Any, workspace: str, bucket: str
+) -> None:
+    """Lists become statuses, labels are made, and checklist items become sub-issues of their card."""
+    sign_in(client, ADMIN)
+
+    preview = client.post(
+        f"/api/workspaces/{WORKSPACE}/imports/preview", json=body(fixture("trello.json"), preset="trello")
+    ).json()
+    job = client.post(
+        f"/api/workspaces/{WORKSPACE}/imports",
+        json=body(fixture("trello.json"), preset="trello", file_name="trello.json"),
+    ).json()
+
+    assert preview["headers"][:2] == ["Card ID", "Name"]
+    assert preview["parent_links"] == 2
+    assert sorted(preview["new_labels"]) == ["Marketing", "red"]
+    assert (job["status"], job["total_rows"], job["created_count"], job["linked_count"]) == ("completed", 4, 4, 2)
+    banners = imported(repositories, job["import_id"], 2)
+    launch = imported(repositories, job["import_id"], 3)
+    pick = imported(repositories, job["import_id"], 4)
+    book = imported(repositories, job["import_id"], 5)
+    assert status_name(repositories, banners.status_id) == "Done"
+    assert status_name(repositories, launch.status_id) == "In Progress"
+    assert launch.assignee_id == MEMBER
+    assert status_name(repositories, pick.status_id) == "Done"
+    assert (pick.parent_id, book.parent_id) == (launch.issue_id, launch.issue_id)
+    assert book.assignee_id == MEMBER
+
+
+def test_a_file_that_is_not_a_trello_board_is_a_422(client: TestClient, workspace: str, bucket: str) -> None:
+    """The board is read before any job exists, so a bad upload starts nothing."""
+    sign_in(client, ADMIN)
+
+    response = client.post(f"/api/workspaces/{WORKSPACE}/imports", json=body("Title\nOne\n", preset="trello"))
+
+    assert response.status_code == 422
+    assert issue_import.list_jobs(WORKSPACE) == []
+
+
+def test_the_mcp_tools_preview_and_import_a_file(
+    client: TestClient, repositories: Any, workspace: str, bucket: str
+) -> None:
+    """An agent with an admin's key dry runs a file, imports it and the start is audited."""
+    secret = mint_for(repositories, OWNER, ("settings:read", "settings:write", "admin"))
+    arguments = {"team_id": "ABC", "preset": "shortcut", "file": fixture("shortcut.csv"), "file_name": "stories.csv"}
+
+    preview = answer(tool(client, secret, "preview_issue_import", arguments))
+    started = answer(tool(client, secret, "import_issues_from_file", arguments))
+    bad_preset = refusal(tool(client, secret, "preview_issue_import", {**arguments, "preset": "monday"}))
+    bad_file = refusal(tool(client, secret, "preview_issue_import", {**arguments, "preset": "trello"}))
+
+    assert preview["importable_rows"] == 2
+    assert preview["mapping"]["completed"] == "completed_at"
+    assert (started["kind"], started["status"], started["created_count"]) == ("csv", "completed", 2)
+    assert "preset" in bad_preset or "monday" in bad_preset
+    assert "Trello" in bad_file
+    assert len(team_issues(repositories)) == 2
+    [row] = repositories.audit.list_events(WORKSPACE, AuditQuery(action="import.started")).events
+    assert row.target.label == "stories.csv"
+    assert row.after == {"team_id": TEAM, "preset": "shortcut", "total_rows": 2}
+
+
+def test_a_member_key_cannot_import_a_file_over_mcp(
+    client: TestClient, repositories: Any, workspace: str, bucket: str
+) -> None:
+    """The file tools check the same admin capability the routes do."""
+    secret = mint_for(repositories, MEMBER, ("settings:read", "settings:write", "admin"))
+
+    refused = tool(client, secret, "import_issues_from_file", {"team_id": TEAM, "file": "Title\nOne\n"})
+
+    assert refused.json()["error"]["code"] == INSUFFICIENT_SCOPE
+    assert issue_import.list_jobs(WORKSPACE) == []

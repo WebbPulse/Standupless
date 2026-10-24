@@ -106,6 +106,8 @@ EXPECTED_TOOLS = frozenset(
         "get_workspace_export",
         "get_workspace_import",
         "import_linear_workspace",
+        "preview_issue_import",
+        "import_issues_from_file",
         "list_linear_teams",
         "list_github_import_repositories",
         "import_github_issues",

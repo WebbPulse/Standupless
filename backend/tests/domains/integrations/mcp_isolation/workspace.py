@@ -76,6 +76,8 @@ def arguments(foreign: dict[str, str], home_issue: str) -> dict[str, dict[str, A
             "api_key": ISOLATION_LINEAR_KEY,
             "teams": [{"linear_team_id": "team-isolation", "team_id": foreign["team_id"]}],
         },
+        "preview_issue_import": {"team_id": foreign["team_id"], "preset": "generic", "file": "Title\nIsolation\n"},
+        "import_issues_from_file": {"team_id": foreign["team_id"], "preset": "generic", "file": "Title\nIsolation\n"},
         "list_github_import_repositories": {},
         "import_github_issues": {"repository_id": "424242", "team_id": foreign["team_id"]},
         "get_workspace_import": {"import_id": FOREIGN_IMPORT_ID},
