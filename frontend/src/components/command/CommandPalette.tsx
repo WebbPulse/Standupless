@@ -128,6 +128,7 @@ import {
 } from '../../lib/paths';
 import { COPY_ISSUE_URL_KEYS } from '../../lib/copyIssue';
 import { favoriteHref } from '../../lib/favorites';
+import { isFormTemplate } from '../../lib/issueTemplates';
 import ProjectIcon from '../planning/ProjectIcon';
 import {
   matchesTerm,
@@ -978,7 +979,9 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
           keywords: template.title ?? '',
           ...(template.id === templateList?.default_template_id
             ? { hint: 'Default' }
-            : {}),
+            : isFormTemplate(template)
+              ? { hint: 'Form' }
+              : {}),
           icon: <LuFileText className={ICON} />,
           run: () => {
             createIssue.open({

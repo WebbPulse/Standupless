@@ -21,7 +21,10 @@
  * and the issue waits until every required one is answered, then the dialog
  * sends the template id with the answers and every field set explicitly, so
  * the server renders the answers into the description, applies the labels and
- * priority a chosen option maps to, and files the issue to triage.
+ * priority a chosen option maps to, and files the issue to triage. The label
+ * and priority chips preview that mapping as answers change, while the draft
+ * keeps only what the person picked, so changing an answer never drops a
+ * hand-picked label.
  *
  * Milestone, parent, sub-issues and attachments are filed in the same save.
  * The milestone chip appears once a project is chosen, the parent chip
@@ -128,6 +131,12 @@ import {
   type FormAnswers,
 } from './FormQuestions';
 import { LOOKUP_POLL_MS } from '../../lib/polling';
+import {
+  formMapping,
+  pickedAfterEdit,
+  previewLabels,
+  previewPriority,
+} from '../../lib/formMapping';
 
 /** Props for CreateIssueDialog: where the issue lands and what it may carry. */
 export interface CreateIssueDialogProps {
@@ -530,6 +539,12 @@ export const CreateIssueDialog: React.FC<CreateIssueDialogProps> = ({
     ) ?? null;
   const formFields = formTemplate?.form_fields ?? [];
   const unanswered = missingAnswers(formFields, answers);
+  const mapping = formMapping(formFields, answers);
+  const shownLabelIds =
+    formTemplate === null
+      ? draft.labelIds
+      : previewLabels(teamLabels, mapping.labelIds, draft.labelIds);
+  const shownPriority = previewPriority(mapping, draft.priority);
   const triageShown = landsInTriage || (triageOn && formTemplate !== null);
 
   const canSubmit =
@@ -1066,7 +1081,7 @@ export const CreateIssueDialog: React.FC<CreateIssueDialogProps> = ({
           />
           <PriorityPicker
             variant="chip"
-            value={draft.priority}
+            value={shownPriority}
             onChange={(priority) => {
               patch({ priority });
             }}
@@ -1083,9 +1098,20 @@ export const CreateIssueDialog: React.FC<CreateIssueDialogProps> = ({
           <LabelsPicker
             variant="chip"
             labels={teamLabels}
-            value={draft.labelIds}
+            value={shownLabelIds}
             onChange={(labelIds) => {
-              patch({ labelIds });
+              patch({
+                labelIds:
+                  formTemplate === null
+                    ? labelIds
+                    : pickedAfterEdit(
+                        teamLabels,
+                        mapping,
+                        draft.labelIds,
+                        shownLabelIds,
+                        labelIds
+                      ),
+              });
             }}
           />
           <EstimatePicker

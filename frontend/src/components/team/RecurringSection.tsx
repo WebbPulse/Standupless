@@ -24,6 +24,7 @@ import {
 } from '../../api/recurring';
 import { listTeamTemplates } from '../../api/templates';
 import { errorMessage } from '../../lib/errors';
+import { needsAnswers } from '../../lib/issueTemplates';
 import { recurringKey, templatesKey } from '../../lib/queryKeys';
 import { describeRule, WEEKDAY_SHORT } from '../../lib/recurringRule';
 import { fullTimestamp } from '../../lib/relativeTime';
@@ -234,8 +235,16 @@ const ScheduleForm: React.FC<ScheduleFormProps> = ({
               Choose a template
             </option>
             {templates.map((template) => (
-              <option key={template.id} value={template.id}>
-                {template.name}
+              <option
+                key={template.id}
+                value={template.id}
+                disabled={
+                  needsAnswers(template) && template.id !== draft.templateId
+                }
+              >
+                {needsAnswers(template)
+                  ? `${template.name} (form with required questions)`
+                  : template.name}
               </option>
             ))}
           </Select>
@@ -430,6 +439,7 @@ export const RecurringSection: React.FC<RecurringSectionProps> = ({
 
   const rows = data?.recurring_issues ?? [];
   const templates = templateData?.templates ?? [];
+  const schedulable = templates.filter((template) => !needsAnswers(template));
   const defaultZone = data?.default_timezone ?? 'UTC';
 
   const run = (write: Promise<unknown>): void => {
@@ -623,7 +633,7 @@ export const RecurringSection: React.FC<RecurringSectionProps> = ({
             (editing === 'new' ? (
               <ScheduleForm
                 initial={newDraft(
-                  initialTemplateId ?? templates[0]?.id ?? '',
+                  initialTemplateId ?? schedulable[0]?.id ?? '',
                   defaultZone
                 )}
                 templates={templates}
@@ -645,9 +655,13 @@ export const RecurringSection: React.FC<RecurringSectionProps> = ({
             ) : (
               <Button
                 size="sm"
-                disabled={templates.length === 0}
+                disabled={schedulable.length === 0}
                 title={
-                  templates.length === 0 ? 'Add a template first' : undefined
+                  templates.length === 0
+                    ? 'Add a template first'
+                    : schedulable.length === 0
+                      ? 'A form with required questions cannot be scheduled'
+                      : undefined
                 }
                 onClick={() => {
                   setEditing('new');

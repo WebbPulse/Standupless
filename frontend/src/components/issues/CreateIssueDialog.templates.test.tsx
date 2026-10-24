@@ -2,8 +2,9 @@
  * Templates in the new issue dialog: the team's default prefilling the draft
  * as it opens, a preset winning over the template, a template named by the
  * caller in place of the default, picking one from the header chip and going
- * back to none, a field the person clears staying cleared, and a prefilled
- * draft nobody touched closing without the discard guard.
+ * back to none, a field the person clears staying cleared, a prefilled
+ * draft nobody touched closing without the discard guard, and a form's chosen
+ * option previewing the labels and priority it maps to.
  */
 
 import { render, screen, waitFor } from '@testing-library/react';
@@ -379,5 +380,65 @@ describe('the template picker', () => {
     expect(
       screen.queryByRole('button', { name: /^Template/ })
     ).not.toBeInTheDocument();
+  });
+});
+
+describe('a form template', () => {
+  const form = template({
+    id: 'tp-3',
+    name: 'Crash report',
+    title: 'Crash: ',
+    form_fields: [
+      {
+        key: 'f1',
+        label: 'Severity',
+        type: 'select',
+        required: true,
+        options: [
+          { value: 'Crash', label_id: 'lb-1', priority: 'urgent' },
+          { value: 'Typo' },
+        ],
+      },
+    ],
+  });
+
+  it('previews the labels and priority a chosen option maps to', async () => {
+    listTeamTemplates.mockResolvedValue({
+      templates: [form],
+      default_template_id: null,
+    });
+    const user = userEvent.setup();
+    renderDialog({ templateId: 'tp-3' });
+
+    const severity = await screen.findByRole('combobox', { name: /Severity/ });
+    await user.selectOptions(severity, 'Crash');
+    expect(
+      screen.getByRole('button', { name: 'Priority: Urgent' })
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'Labels: bug' })
+    ).toBeInTheDocument();
+
+    await user.selectOptions(severity, 'Typo');
+    expect(
+      screen.getByRole('button', { name: 'Priority: Priority' })
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'Labels: Labels' })
+    ).toBeInTheDocument();
+
+    await user.type(titleBox(), 'app quits');
+    await user.keyboard('{Control>}{Enter}{/Control}');
+
+    await waitFor(() => {
+      expect(createIssue).toHaveBeenCalledWith(
+        expect.objectContaining({
+          template_id: 'tp-3',
+          form_answers: { f1: 'Typo' },
+          priority: 'none',
+          label_ids: [],
+        })
+      );
+    });
   });
 });
