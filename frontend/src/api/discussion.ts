@@ -35,6 +35,14 @@ export const issueCommentsPath = (
 export const commentPath = (workspaceId: string, commentId: string): string =>
   `/workspaces/${workspaceId}/comments/${commentId}`;
 
+/** The route a root comment's thread is resolved and unresolved through. */
+export const threadResolutionPath = (
+  workspaceId: string,
+  issueId: string,
+  commentId: string
+): string =>
+  `${issueCommentsPath(workspaceId, issueId)}/${commentId}/resolution`;
+
 /** The route every reaction read and write goes through. */
 export const reactionsPath = (workspaceId: string): string =>
   `/workspaces/${workspaceId}/reactions`;
@@ -149,6 +157,30 @@ export const deleteComment = async (
   await apiClient.delete<void>(commentPath(workspaceId, commentId), {
     query: { issue_id: issueId },
   });
+};
+
+/** Resolves a thread by its root comment. Resolving twice is a no-op. */
+export const resolveThread = async (
+  workspaceId: string,
+  issueId: string,
+  commentId: string
+): Promise<CommentRead> => {
+  const response = await apiClient.put<CommentRead>(
+    threadResolutionPath(workspaceId, issueId, commentId)
+  );
+  return response.data;
+};
+
+/** Reopens a resolved thread, whoever resolved it. */
+export const unresolveThread = async (
+  workspaceId: string,
+  issueId: string,
+  commentId: string
+): Promise<CommentRead> => {
+  const response = await apiClient.delete<CommentRead>(
+    threadResolutionPath(workspaceId, issueId, commentId)
+  );
+  return response.data;
 };
 
 /**

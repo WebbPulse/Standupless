@@ -94,18 +94,22 @@ class Domain:
 
 
 def configure_logging(service: "str | None" = None) -> None:
-    """The application's log format, applied to the root and uvicorn loggers.
+    """The shared JSON log format on stderr, with the log context filter attached.
 
-    A thin call into `app.common.core.logging.configure_app_logging`. Calling it
-    twice is harmless.
+    Stderr keeps a command's stdout data clean of log lines. Calling it twice is harmless.
     """
-    from app.common.core.logging import configure_app_logging
+    import sys
 
-    configure_app_logging(
+    from webbpulse.log_context import attach_log_context
+    from webbpulse.logging import configure_logging as configure_json_logging
+
+    configure_json_logging(
         level=settings.log_level,
         service=service or settings.PROJECT_NAME,
         environment=settings.environment,
+        stream=sys.stderr,
     )
+    attach_log_context(logging.getLogger())
 
 
 OTLP_ENDPOINT_ENV = "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT"

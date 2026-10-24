@@ -349,6 +349,21 @@ describe('describeActivity', () => {
     ).toBe('mentioned this in a comment on ABC-4 Other');
   });
 
+  it('reads a thread resolved, reopened, and reopened by a reply', () => {
+    const resolved = describeActivity(
+      entry({ kind: 'thread_resolved', to: 'c-1' }),
+      context
+    );
+    expect(resolved.text).toBe('resolved a comment thread');
+    expect(resolved.icon).toBe('thread');
+    expect(text({ kind: 'thread_unresolved', to: 'c-1' })).toBe(
+      'reopened a comment thread'
+    );
+    expect(text({ kind: 'thread_unresolved', field: 'reply', to: 'c-1' })).toBe(
+      'reopened a comment thread by replying'
+    );
+  });
+
   it('falls back to plain words for a field it does not know', () => {
     expect(text({ field: 'story_points' })).toBe('changed the story points');
   });

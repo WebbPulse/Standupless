@@ -1,4 +1,4 @@
-"""Comment routes: list and create under an issue, read, edit and delete by id.
+"""Comment routes: list and create under an issue, read, edit and delete by id, resolve a thread.
 
 The thread routes are nested under the issue because the `comments` table
 partitions by `<workspace_id>#<issue_id>`, so the issue is what makes a read one
@@ -9,6 +9,10 @@ rather than making the partition part of the path.
 Reactions are rendered inline on every comment, so a thread costs one call rather
 than one call per comment. Attachments a comment carries are joined the same way,
 with one batch read per page, so a file posted in the thread renders inline.
+
+Resolving a thread is addressed by the issue and the root comment together, the
+way the GitHub thread sync is, because the resolution is the thread's state and
+the issue is what partitions it.
 """
 
 from __future__ import annotations
@@ -23,6 +27,7 @@ from app.common.api.dependencies.repositories import Repositories, get_repositor
 from app.common.comment_writes import comment_page, edit_comment
 from app.common.comment_writes import create_comment as create_comment_row
 from app.common.db.dynamo.comments import Comment
+from app.common.thread_resolution import resolve_thread, unresolve_thread
 from app.domains.discussion.schemas.discussion import (
     DEFAULT_LIMIT,
     MAX_LIMIT,
@@ -248,3 +253,38 @@ def delete_comment(
     repositories.reactions.delete_for_target(context.workspace_id, comment_id)
     repositories.comments.delete(context.workspace_id, issue_id, comment_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.put("/{workspace_id}/issues/{issue_id}/comments/{comment_id}/resolution", response_model=CommentRead)
+def put_thread_resolution(
+    issue_id: Annotated[str, Path(min_length=1)],
+    comment_id: Annotated[str, Path(min_length=1)],
+    context: Annotated[AuthzContext, Depends(require(Capability.WORKSPACE_READ))],
+    repositories: Annotated[Repositories, Depends(get_repositories)],
+) -> CommentRead:
+    """Resolve one thread, answering its root comment with the resolution set.
+
+    Any team member may resolve. A reply is a 409, because only a thread's root
+    carries the state, and resolving a resolved thread changes nothing. The
+    thread's comments stay where they are; a reader collapses them.
+    """
+    comment = resolve_thread(repositories, context, issue_id, comment_id)
+    counts = repositories.comments.count_replies(repositories.comments.iter_for_issue(context.workspace_id, issue_id))
+    return _render(repositories, context, [comment], reply_counts=counts)[0]
+
+
+@router.delete("/{workspace_id}/issues/{issue_id}/comments/{comment_id}/resolution", response_model=CommentRead)
+def delete_thread_resolution(
+    issue_id: Annotated[str, Path(min_length=1)],
+    comment_id: Annotated[str, Path(min_length=1)],
+    context: Annotated[AuthzContext, Depends(require(Capability.WORKSPACE_READ))],
+    repositories: Annotated[Repositories, Depends(get_repositories)],
+) -> CommentRead:
+    """Unresolve one thread, whoever resolved it, answering its root comment.
+
+    Unresolving an open thread changes nothing. A reply to a resolved thread
+    reopens it the same way, without this call.
+    """
+    comment = unresolve_thread(repositories, context, issue_id, comment_id)
+    counts = repositories.comments.count_replies(repositories.comments.iter_for_issue(context.workspace_id, issue_id))
+    return _render(repositories, context, [comment], reply_counts=counts)[0]

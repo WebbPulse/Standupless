@@ -126,6 +126,8 @@ EXPECTED_TOOLS = frozenset(
         "list_github_thread_targets",
         "sync_comment_thread",
         "unsync_comment_thread",
+        "resolve_comment_thread",
+        "unresolve_comment_thread",
         "list_cycles",
         "list_github_transitions",
         "list_invites",
