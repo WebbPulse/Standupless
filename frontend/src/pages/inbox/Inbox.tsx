@@ -17,9 +17,16 @@
  * back unread on its own when its time comes; Show snoozed lists what is still
  * waiting, and H on a snoozed row offers to unsnooze it now.
  *
- * Removing or snoozing a row raises a notice with Undo, and Ctrl Z puts it
- * back too. There is no route that restores a deleted notification, so a
- * removed row is only hidden here until its Undo window lapses, and the
+ * Every row also offers its actions to the mouse: hover or select it for
+ * quick buttons, or right click it, or press its "more" button, for the full
+ * menu, which adds unsubscribing from the issue, copying its link and opening
+ * the row in a new tab. Shift S toggles the subscription on the selected
+ * row's issue, so the pane beside it gives that key up while the inbox shows
+ * it.
+ *
+ * Removing, snoozing or unsubscribing raises a notice with Undo, and Ctrl Z
+ * puts it back too. There is no route that restores a deleted notification,
+ * so a removed row is only hidden here until its Undo window lapses, and the
  * delete is sent then, or sooner when the page is left.
  *
  * Opening a row while read rows are hidden marks it read without pulling it
@@ -69,25 +76,37 @@ import {
   markUnread,
   snoozeNotifications,
 } from '../../api/views';
+import {
+  listSubscribers,
+  subscribe,
+  unsubscribe,
+} from '../../api/notifications';
 import IssuePane from '../../components/issues/IssuePane';
+import { ManageSubscribersKeyContext } from '../../components/issues/IssueSubscribers';
 import { ErrorAlert } from '../../components/ui/alert';
 import Avatar from '../../components/ui/avatar';
 import Button, { IconButton } from '../../components/ui/button';
 import Dialog from '../../components/ui/dialog';
-import { Menu, MenuItem, MenuSeparator } from '../../components/ui/menu';
+import {
+  ContextMenu,
+  Menu,
+  MenuItem,
+  MenuSeparator,
+} from '../../components/ui/menu';
 import EmptyState from '../../components/ui/empty-state';
 import Spinner from '../../components/ui/spinner';
 import Tooltip from '../../components/ui/tooltip';
 import WorkspaceShell from '../../components/workspace/WorkspaceShell';
 import { useCursorPages } from '../../hooks/useCursorPages';
-import { useShortcut } from '../../hooks/useShortcuts';
+import { displayKeys, useShortcut } from '../../hooks/useShortcuts';
 import { useWorkspace } from '../../hooks/useWorkspace';
 import { viaLabel } from '../../lib/changeSource';
 import { cn } from '../../lib/cn';
-import { m3ErrorMessage } from '../../lib/errors';
+import { copyText, issueUrl } from '../../lib/copyIssue';
+import { errorMessage, m3ErrorMessage } from '../../lib/errors';
 import { timestampLabel } from '../../lib/issueDisplay';
 import { compactAge, fullTimestamp } from '../../lib/relativeTime';
-import { showToast } from '../../lib/toast';
+import { showErrorToast, showToast } from '../../lib/toast';
 import { pushUndo, UNDO_TOAST_MS } from '../../lib/undo';
 import {
   exportSettingsPath,
@@ -100,7 +119,7 @@ import {
   teamSettingsPath,
   teamStandupPath,
 } from '../../lib/paths';
-import { inboxCountKey, inboxKey } from '../../lib/queryKeys';
+import { inboxCountKey, inboxKey, subscribersKey } from '../../lib/queryKeys';
 import type { InboxKind, NotificationRead } from '../../types/Api';
 import {
   DEFAULT_VIEW,
@@ -116,6 +135,13 @@ import {
   type InboxGroup,
   type InboxView,
 } from './groups';
+import {
+  InboxRowMenuItems,
+  REMOVE_KEYS,
+  SNOOZE_KEYS,
+  TOGGLE_READ_KEYS,
+  TOGGLE_SUBSCRIPTION_KEYS,
+} from './InboxRowMenu';
 import { InboxDisplayMenu, InboxFilterMenu } from './InboxViewMenus';
 import { keepPinned, type PinnedRow } from './pinned';
 import SnoozeDialog from './SnoozeDialog';
@@ -212,6 +238,19 @@ const isStandupRow = (row: NotificationRead): boolean =>
  */
 const isReviewRow = (row: NotificationRead): boolean =>
   row.kind === 'review_requested';
+
+/**
+ * Whether a row is about one issue, so it offers the issue-only actions:
+ * unsubscribing and copying the issue's link.
+ */
+const isIssueRow = (row: NotificationRead): boolean =>
+  row.issue_id !== '' &&
+  !isProjectRow(row) &&
+  !isInitiativeRow(row) &&
+  !isChannelRow(row) &&
+  !isJobRow(row) &&
+  !isStandupRow(row) &&
+  !isReviewRow(row);
 
 /** Opens a review request's pull request on GitHub in a new tab. */
 const openPullRequest = (row: NotificationRead): void => {
@@ -610,7 +649,45 @@ interface InboxRowProps {
   onToggleRead: () => void;
   onSnooze: () => void;
   onRemove: () => void;
+  /** Opens the row's context menu at the pointer. */
+  onContextMenu: (x: number, y: number) => void;
+  /** The entries the row's "more" button lists. */
+  menu: React.ReactNode;
 }
+
+/** A tooltip's text: what a quick button does and the key that does the same. */
+const actionTip = (label: string, keys: string): string =>
+  `${label} (${displayKeys(keys)[0] ?? ''})`;
+
+/** Props for RowAction: one quick button on a row. */
+interface RowActionProps {
+  /** The name the button is announced with. */
+  label: string;
+  /** The tooltip, which names the shortcut too. */
+  tip: string;
+  onClick: () => void;
+  children: React.ReactNode;
+}
+
+/** One quick button on a row, tipped with what it does and its key. */
+const RowAction: React.FC<RowActionProps> = ({
+  label,
+  tip,
+  onClick,
+  children,
+}) => (
+  <Tooltip text={tip}>
+    <Button
+      aria-label={label}
+      size="sm"
+      variant="ghost"
+      className="w-7 px-0 pointer-coarse:w-11"
+      onClick={onClick}
+    >
+      {children}
+    </Button>
+  </Tooltip>
+);
 
 /** One subject's notifications as one row: its newest change, who made it, and how many there are. */
 const InboxRow: React.FC<InboxRowProps> = ({
@@ -620,6 +697,8 @@ const InboxRow: React.FC<InboxRowProps> = ({
   onToggleRead,
   onSnooze,
   onRemove,
+  onContextMenu,
+  menu,
 }) => {
   const ref = useRef<HTMLLIElement>(null);
   useEffect(() => {
@@ -634,6 +713,10 @@ const InboxRow: React.FC<InboxRowProps> = ({
       ref={ref}
       data-notification-id={row.notification_id}
       aria-current={selected ? 'true' : undefined}
+      onContextMenu={(event) => {
+        event.preventDefault();
+        onContextMenu(event.clientX, event.clientY);
+      }}
       className={cn(
         'group relative flex items-start gap-2.5 border-b border-line px-3 py-2.5 transition-colors duration-100',
         selected
@@ -724,38 +807,58 @@ const InboxRow: React.FC<InboxRowProps> = ({
           </span>
         </span>
       </button>
-      <span className="relative flex shrink-0 items-center gap-0.5 opacity-100 sm:pointer-fine:absolute sm:pointer-fine:right-2 sm:pointer-fine:bottom-1.5 sm:pointer-fine:rounded-sm sm:pointer-fine:bg-raised sm:pointer-fine:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100">
-        {group.unread ? (
-          <IconButton
-            label={`Mark ${subjectName(row)} read`}
-            size="sm"
-            onClick={onToggleRead}
-          >
-            <LuCheck className="h-3.5 w-3.5" />
-          </IconButton>
-        ) : (
-          <IconButton
-            label={`Mark ${subjectName(row)} unread`}
-            size="sm"
-            onClick={onToggleRead}
-          >
-            <LuMailOpen className="h-3.5 w-3.5" />
-          </IconButton>
+      <span
+        className={cn(
+          'relative flex shrink-0 items-center gap-0.5 opacity-100 sm:pointer-fine:absolute sm:pointer-fine:right-2 sm:pointer-fine:bottom-1.5 sm:pointer-fine:rounded-sm sm:pointer-fine:bg-raised sm:group-hover:opacity-100 sm:group-focus-within:opacity-100',
+          selected ? 'sm:pointer-fine:opacity-100' : 'sm:pointer-fine:opacity-0'
         )}
-        <IconButton
+      >
+        {group.unread ? (
+          <RowAction
+            label={`Mark ${subjectName(row)} read`}
+            tip={actionTip('Mark as read', TOGGLE_READ_KEYS)}
+            onClick={onToggleRead}
+          >
+            <LuCheck aria-hidden="true" className="h-3.5 w-3.5" />
+          </RowAction>
+        ) : (
+          <RowAction
+            label={`Mark ${subjectName(row)} unread`}
+            tip={actionTip('Mark as unread', TOGGLE_READ_KEYS)}
+            onClick={onToggleRead}
+          >
+            <LuMailOpen aria-hidden="true" className="h-3.5 w-3.5" />
+          </RowAction>
+        )}
+        <RowAction
           label={`Snooze ${subjectName(row)}`}
-          size="sm"
+          tip={actionTip('Snooze', SNOOZE_KEYS)}
           onClick={onSnooze}
         >
-          <LuClock className="h-3.5 w-3.5" />
-        </IconButton>
-        <IconButton
+          <LuClock aria-hidden="true" className="h-3.5 w-3.5" />
+        </RowAction>
+        <RowAction
           label={`Remove ${subjectName(row)}`}
-          size="sm"
+          tip={actionTip('Delete notification', REMOVE_KEYS)}
           onClick={onRemove}
         >
-          <LuX className="h-3.5 w-3.5" />
-        </IconButton>
+          <LuX aria-hidden="true" className="h-3.5 w-3.5" />
+        </RowAction>
+        <Menu
+          label={`${subjectName(row)} actions`}
+          align="end"
+          trigger={(trigger) => (
+            <IconButton
+              label={`More actions for ${subjectName(row)}`}
+              size="sm"
+              {...trigger}
+            >
+              <LuEllipsis className="h-3.5 w-3.5" aria-hidden="true" />
+            </IconButton>
+          )}
+        >
+          {menu}
+        </Menu>
       </span>
     </li>
   );
@@ -775,6 +878,13 @@ interface UnreadOverride {
 interface HeldRemoval {
   ids: string[];
   timer: ReturnType<typeof setTimeout>;
+}
+
+/** A row's context menu, open at the pointer. */
+interface RowMenuAt {
+  group: InboxGroup;
+  x: number;
+  y: number;
 }
 
 /** Where the inbox keeps the viewer's filter and display choices between visits. */
@@ -838,6 +948,7 @@ export const Inbox: React.FC = () => {
   const [snoozing, setSnoozing] = useState<InboxGroup | null>(null);
   const [pinned, setPinned] = useState<PinnedRow | null>(null);
   const [clearing, setClearing] = useState<ClearScope | null>(null);
+  const [rowMenu, setRowMenu] = useState<RowMenuAt | null>(null);
   const [hidden, setHidden] = useState<ReadonlySet<string>>(
     () => new Set<string>()
   );
@@ -1164,6 +1275,87 @@ export const Inbox: React.FC = () => {
     void unsnooze(snoozedIds(group)).catch(() => undefined);
   };
 
+  const changeSubscription = (group: InboxGroup, joining: boolean): void => {
+    const { issue_id: issueId, issue_key: issueKey } = group.latest;
+    const keys = [subscribersKey(workspaceId, issueId)];
+    const request = joining
+      ? subscribe(workspaceId, issueId)
+      : unsubscribe(workspaceId, issueId);
+    void request
+      .then(() => {
+        invalidateQueries(keys);
+        if (joining) {
+          showToast(`Subscribed to ${issueKey}`);
+          return;
+        }
+        pushUndo(workspaceId, `Unsubscribed from ${issueKey}`, async () => {
+          try {
+            await subscribe(workspaceId, issueId);
+          } finally {
+            invalidateQueries(keys);
+          }
+        });
+      })
+      .catch((failure: unknown) => {
+        showErrorToast(
+          errorMessage(failure, 'Could not change your subscription.')
+        );
+      });
+  };
+
+  const toggleSubscription = (group: InboxGroup): void => {
+    void listSubscribers(workspaceId, group.latest.issue_id)
+      .then((read) => {
+        changeSubscription(group, !read.subscribed);
+      })
+      .catch((failure: unknown) => {
+        showErrorToast(
+          errorMessage(failure, 'Could not read your subscription.')
+        );
+      });
+  };
+
+  const openInNewTab = (row: NotificationRead): void => {
+    const target =
+      isReviewRow(row) && row.url
+        ? row.url
+        : new URL(rowPath(slug, row), globalThis.location.origin).toString();
+    window.open(target, '_blank', 'noopener,noreferrer');
+  };
+
+  const rowMenuItems = (group: InboxGroup): React.ReactNode => (
+    <InboxRowMenuItems
+      workspaceId={workspaceId}
+      group={group}
+      issueRow={isIssueRow(group.latest)}
+      onToggleRead={() => {
+        toggleRead(group);
+      }}
+      onSnooze={() => {
+        setSnoozing(group);
+      }}
+      onRemove={() => {
+        removeGroup(group);
+      }}
+      onSubscription={(joining) => {
+        changeSubscription(group, joining);
+      }}
+      onCopyLink={() => {
+        copyText(
+          issueUrl(slug, group.latest.issue_key),
+          'Link to the issue copied'
+        );
+      }}
+      onOpenInNewTab={() => {
+        openInNewTab(group.latest);
+      }}
+    />
+  );
+
+  const closeRowMenu = useCallback(() => {
+    setRowMenu(null);
+  }, []);
+
   const readEverything = (): void => {
     setUnreadOverrides(
       Object.fromEntries(
@@ -1245,7 +1437,7 @@ export const Inbox: React.FC = () => {
     },
   });
   useShortcut({
-    keys: 'backspace',
+    keys: REMOVE_KEYS,
     label: 'Remove notification',
     group: 'Inbox',
     enabled: selected !== null,
@@ -1255,7 +1447,7 @@ export const Inbox: React.FC = () => {
   });
 
   useShortcut({
-    keys: 'u',
+    keys: TOGGLE_READ_KEYS,
     label: 'Toggle read or unread',
     group: 'Inbox',
     enabled: selected !== null,
@@ -1264,12 +1456,21 @@ export const Inbox: React.FC = () => {
     },
   });
   useShortcut({
-    keys: 'h',
+    keys: SNOOZE_KEYS,
     label: 'Snooze notification',
     group: 'Inbox',
     enabled: selected !== null,
     handler: () => {
       if (selected !== null) setSnoozing(selected);
+    },
+  });
+  useShortcut({
+    keys: TOGGLE_SUBSCRIPTION_KEYS,
+    label: 'Toggle subscription to issue',
+    group: 'Inbox',
+    enabled: selected !== null && isIssueRow(selected.latest),
+    handler: () => {
+      if (selected !== null) toggleSubscription(selected);
     },
   });
   useShortcut({
@@ -1402,6 +1603,10 @@ export const Inbox: React.FC = () => {
                   onRemove={() => {
                     removeGroup(group);
                   }}
+                  onContextMenu={(x, y) => {
+                    setRowMenu({ group, x, y });
+                  }}
+                  menu={rowMenuItems(group)}
                 />
               ))}
             </ul>
@@ -1477,14 +1682,26 @@ export const Inbox: React.FC = () => {
               onClose={closePane}
             />
           ) : (
-            <IssuePane
-              key={current.issue_id}
-              issueId={current.issue_id}
-              onClose={closePane}
-            />
+            <ManageSubscribersKeyContext.Provider value={false}>
+              <IssuePane
+                key={current.issue_id}
+                issueId={current.issue_id}
+                onClose={closePane}
+              />
+            </ManageSubscribersKeyContext.Provider>
           )}
         </div>
       </div>
+      {rowMenu !== null && (
+        <ContextMenu
+          x={rowMenu.x}
+          y={rowMenu.y}
+          label={`${subjectName(rowMenu.group.latest)} actions`}
+          onClose={closeRowMenu}
+        >
+          {rowMenuItems(rowMenu.group)}
+        </ContextMenu>
+      )}
       <SnoozeDialog
         open={snoozing !== null}
         subject={snoozing === null ? 'It' : subjectName(snoozing.latest)}
