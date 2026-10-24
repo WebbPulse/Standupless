@@ -62,6 +62,7 @@ def test_the_caller_reads_their_own_row(client: TestClient, repositories: Any) -
             "closed": "all",
             "zoom": "month",
         },
+        "auto_grant_new_scopes": False,
     }
 
 

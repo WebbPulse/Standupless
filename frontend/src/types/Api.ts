@@ -35,6 +35,8 @@ export interface UserRead {
   font_size?: FontSize;
   /** How the projects page is laid out, grouped, ordered and windowed. */
   projects_display?: ProjectsDisplayPreference;
+  /** Whether a connected app that took every scope gets scopes added later at its next refresh. */
+  auto_grant_new_scopes?: boolean;
 }
 
 /** The projects page arrangement an account saves, every field filled. */
@@ -119,6 +121,7 @@ export interface UserPreferencesUpdate {
   font_size?: FontSize;
   /** Replaces the saved projects page arrangement whole. */
   projects_display?: ProjectsDisplayPreference;
+  auto_grant_new_scopes?: boolean;
 }
 
 /** A role held at the workspace level. */

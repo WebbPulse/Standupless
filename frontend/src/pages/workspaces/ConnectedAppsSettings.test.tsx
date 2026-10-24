@@ -12,6 +12,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { WorkspaceContextType } from '../../contexts/WorkspaceContextDefinition';
 import type {
   ConnectedAppRead,
+  UserPreferencesUpdate,
+  UserRead,
   WorkspaceConnectedAppRead,
   WorkspaceRead,
   WorkspaceRole,
@@ -29,16 +31,25 @@ const revokeWorkspaceConnectedApp =
     (workspaceId: string, userId: string, clientId: string) => Promise<void>
   >();
 
+const authState: { user: UserRead | null } = { user: null };
+const login = vi.fn<(user: UserRead) => void>();
+const updatePreferences =
+  vi.fn<(body: UserPreferencesUpdate) => Promise<UserRead>>();
+
 vi.mock('../../hooks/useAuth', () => ({
   useAuth: () => ({
     isAuthenticated: true,
-    user: null,
+    user: authState.user,
     isLoading: false,
     isBusy: false,
-    login: vi.fn(),
+    login,
     logout: vi.fn(),
     checkAuthStatus: vi.fn(),
   }),
+}));
+
+vi.mock('../../api/notifications', () => ({
+  updatePreferences: (body: UserPreferencesUpdate) => updatePreferences(body),
 }));
 
 vi.mock('../../api/connectedApps', () => ({
@@ -131,6 +142,9 @@ const renderPage = () =>
   );
 
 beforeEach(() => {
+  authState.user = null;
+  login.mockReset();
+  updatePreferences.mockReset();
   listMyConnectedApps.mockReset();
   revokeMyConnectedApp.mockReset();
   grantMyConnectedAppScopes.mockReset();
@@ -142,6 +156,59 @@ beforeEach(() => {
   revokeMyConnectedApp.mockResolvedValue(undefined);
   listWorkspaceConnectedApps.mockResolvedValue([memberGrant()]);
   revokeWorkspaceConnectedApp.mockResolvedValue(undefined);
+});
+
+describe('the automatic grant setting', () => {
+  const me: UserRead = {
+    id: 'user-1',
+    email: 'me@example.com',
+    display_name: 'Me',
+    email_verified: true,
+    auto_grant_new_scopes: false,
+  };
+
+  it('starts off and saves the opt-in', async () => {
+    authState.user = me;
+    updatePreferences.mockResolvedValue({ ...me, auto_grant_new_scopes: true });
+    const user = userEvent.setup();
+    renderPage();
+
+    const box = await screen.findByRole('checkbox', {
+      name: 'Give new permissions to apps that have every permission',
+    });
+    expect(box).not.toBeChecked();
+    await user.click(box);
+
+    await waitFor(() => {
+      expect(updatePreferences).toHaveBeenCalledWith({
+        auto_grant_new_scopes: true,
+      });
+    });
+    await waitFor(() => {
+      expect(login).toHaveBeenCalledWith({
+        ...me,
+        auto_grant_new_scopes: true,
+      });
+    });
+  });
+
+  it('shows the stored opt-in as checked', async () => {
+    authState.user = { ...me, auto_grant_new_scopes: true };
+    renderPage();
+
+    expect(
+      await screen.findByRole('checkbox', {
+        name: 'Give new permissions to apps that have every permission',
+      })
+    ).toBeChecked();
+  });
+
+  it('is not drawn before the account loads', async () => {
+    renderPage();
+
+    await screen.findByText('Claude');
+    expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
+  });
 });
 
 describe('the caller connected apps', () => {

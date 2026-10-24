@@ -94,6 +94,7 @@ class UserRead(BaseModel):
     name_display: NameDisplayField = "username"
     font_size: FontSizeField = "default"
     projects_display: ProjectsDisplay = Field(default_factory=ProjectsDisplay)
+    auto_grant_new_scopes: bool = False
 
 
 class WorkspaceSummaryRead(BaseModel):
@@ -144,7 +145,8 @@ class UserPreferencesUpdate(BaseModel):
     `name_display` and `font_size` are the interface preferences the account
     Preferences page sets, kept on the row so they follow the person to every
     device. `projects_display` replaces how the projects list is arranged as a
-    whole. Deliberately not a settings
+    whole. `auto_grant_new_scopes` lets scopes the product adds later reach the
+    connected apps that were given every scope. Deliberately not a settings
     domain of its own: a few values on the row the product already owns are cheaper
     than a table and a second read on every notification.
     """
@@ -158,6 +160,7 @@ class UserPreferencesUpdate(BaseModel):
     name_display: Optional[NameDisplayField] = None
     font_size: Optional[FontSizeField] = None
     projects_display: Optional[ProjectsDisplay] = None
+    auto_grant_new_scopes: Optional[bool] = None
 
     @field_validator("timezone")
     @classmethod
@@ -224,6 +227,7 @@ def _as_read(user: "Any") -> UserRead:
         name_display=_known(user.name_display, NAME_DISPLAYS, "username"),
         font_size=_known(user.font_size, FONT_SIZES, "default"),
         projects_display=stored_projects_display(user.projects_display),
+        auto_grant_new_scopes=bool(user.auto_grant_new_scopes),
     )
 
 
@@ -328,7 +332,7 @@ def update_current_user_preferences(
         changes["timezone"] = payload.timezone
     if payload.pulse_digest is not None and payload.pulse_digest != user.pulse_digest:
         changes["pulse_digest"] = payload.pulse_digest
-    for field in ("home_view", "week_start", "name_display", "font_size"):
+    for field in ("home_view", "week_start", "name_display", "font_size", "auto_grant_new_scopes"):
         value = getattr(payload, field)
         if value is not None and value != getattr(user, field):
             changes[field] = value

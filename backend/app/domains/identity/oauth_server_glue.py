@@ -4,7 +4,8 @@ The package owns every endpoint, the PKCE checks, the code exchange and the toke
 minting. Three things it cannot know are supplied here: where the three tables live,
 which workspaces a consenting user may bind a token to, and which scopes that
 workspace's membership actually allows. A fourth, the refresh guard, holds a standing
-grant to the workspace's authentication policy when the policy tightened after it.
+grant to the workspace's authentication policy when the policy tightened after it, and
+for a person who opted in, adds the scopes offered since to a grant that took them all.
 
 The tenant resolver reads the membership model directly rather than through the
 request's repository bundle, because the package calls it as a plain callable with no
@@ -20,6 +21,7 @@ halves of the intersection exist at once, which is `require` in
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
@@ -29,6 +31,8 @@ if TYPE_CHECKING:  # pragma: no cover
     from webbpulse.identity import AuthorizationSubject, ConsentRecord, OAuthServerStores, TenantChoice
 
     from app.common.core.config import Settings
+
+_log = logging.getLogger(__name__)
 
 MCP_SCOPES: tuple[str, ...] = API_KEY_SCOPES
 """The scopes `/authorize` will grant, which are exactly the scopes an API key may carry.
@@ -89,6 +93,10 @@ def build_oauth_server_stores(settings: "Settings") -> "OAuthServerStores":
                     client.client_name if client is not None else record.client_id,
                     list(record.scopes),
                 )
+
+        def replace_scopes(self, record: ConsentRecord) -> None:
+            """Write a widened grant without auditing it as an authorization; the caller audits it."""
+            super().put(record)
 
     return OAuthServerStores(
         clients=clients,
@@ -215,3 +223,27 @@ def refresh_allowed(consent: ConsentRecord) -> bool:
     policy = repository.get_auth_policy(consent.tenant_id)
     issued_at = epoch_of(consent.updated_at or consent.granted_at)
     return delegated_policy_refusal(policy, issued_at, workspace_id=consent.tenant_id, role=membership.role) is None
+
+
+def build_refresh_guard(stores: "OAuthServerStores") -> Callable[["ConsentRecord"], bool]:
+    """The guard the package asks before each MCP refresh, over the server's own stores.
+
+    It refuses what `refresh_allowed` refuses. A grant it lets through is then widened
+    by `auto_grant_new_scopes` when its holder opted in, before the package reads the
+    consent again to mint the token, so this refresh already carries the new scopes. A
+    failed widening is logged and the refresh goes ahead on the grant as it stood.
+    """
+
+    def guard(consent: "ConsentRecord") -> bool:
+        """Hold the policy, then widen an opted-in grant that took every scope."""
+        if not refresh_allowed(consent):
+            return False
+        from app.domains.identity.connected_apps import auto_grant_new_scopes
+
+        try:
+            auto_grant_new_scopes(stores, consent)
+        except Exception:
+            _log.exception("connected_app_auto_grant_failed client_id=%s", consent.client_id)
+        return True
+
+    return guard

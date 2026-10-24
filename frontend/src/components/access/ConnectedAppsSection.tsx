@@ -16,12 +16,18 @@
  * offers to grant them. Granting adds only the listed scopes to the existing
  * grant, so the app picks them up at its next token refresh without being
  * authorized again.
+ *
+ * A person can opt in to having that happen on its own: an app that took
+ * every scope when it was authorized then gets later scopes at its next
+ * refresh, each addition recorded in the workspace audit log. An app that was
+ * given less is never widened this way.
  */
 
 import React, { useState } from 'react';
 import { LuPlug } from 'react-icons/lu';
 import { useQueryAuth } from '@webbpulse/auth/react';
 import {
+  invalidateQueries,
   useMutationWithRefetch,
   usePolledQuery,
 } from '@webbpulse/api-client/react';
@@ -32,7 +38,10 @@ import {
   revokeMyConnectedApp,
   revokeWorkspaceConnectedApp,
 } from '../../api/connectedApps';
+import { updatePreferences } from '../../api/notifications';
+import { useAuth } from '../../hooks/useAuth';
 import { errorMessage } from '../../lib/errors';
+import { CURRENT_USER_KEY } from '../../lib/queryKeys';
 import {
   MY_CONNECTED_APPS_KEY,
   workspaceConnectedAppsKey,
@@ -44,6 +53,7 @@ import type {
 } from '../../types/Api';
 import { ErrorAlert } from '../ui/alert';
 import Button from '../ui/button';
+import Checkbox from '../ui/checkbox';
 import Dialog from '../ui/dialog';
 import EmptyState from '../ui/empty-state';
 import RelativeTime from '../ui/relative-time';
@@ -206,6 +216,55 @@ const GrantDialog: React.FC<GrantDialogProps> = ({
 );
 
 /** Lists the caller's own connected apps, with a revoke on each and a grant where new permissions exist. */
+/** The caller's opt-in to new scopes reaching apps that took every scope. */
+const AutoGrantSetting: React.FC = () => {
+  const { user, login } = useAuth();
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<unknown>(null);
+
+  if (user === null) return null;
+
+  const save = (on: boolean): void => {
+    setSaving(true);
+    setSaveError(null);
+    void updatePreferences({ auto_grant_new_scopes: on })
+      .then((stored) => {
+        login(stored);
+        invalidateQueries(CURRENT_USER_KEY);
+      })
+      .catch((failure: unknown) => {
+        setSaveError(failure);
+      })
+      .finally(() => {
+        setSaving(false);
+      });
+  };
+
+  return (
+    <div className="space-y-2 rounded-md border border-line p-3">
+      <Checkbox
+        label="Give new permissions to apps that have every permission"
+        checked={user.auto_grant_new_scopes === true}
+        disabled={saving}
+        onChange={(event) => {
+          save(event.target.checked);
+        }}
+      />
+      <p className="pl-5.5 text-xs text-text-faint">
+        When Standupless adds a permission, an app you authorized with every
+        permission gets it at its next token refresh, without you approving it
+        here. Apps you gave less to are left as they are. Your role still limits
+        what any app can do, and each addition shows in the workspace audit log.
+      </p>
+      {saveError !== null && (
+        <ErrorAlert
+          message={errorMessage(saveError, 'Could not save this setting.')}
+        />
+      )}
+    </div>
+  );
+};
+
 export const MyConnectedAppsSection: React.FC = () => {
   const auth = useQueryAuth();
   const [pending, setPending] = useState<PendingRevoke | null>(null);
@@ -273,6 +332,8 @@ export const MyConnectedAppsSection: React.FC = () => {
           it, and only with the access you gave it.
         </p>
       </div>
+
+      <AutoGrantSetting />
 
       {error !== null && (
         <ErrorAlert

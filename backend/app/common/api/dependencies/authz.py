@@ -68,6 +68,8 @@ __all__ = [
     "require",
     "require_platform_admin",
     "require_scopes_present",
+    "insufficient_scope_detail",
+    "scope_grant_links",
     "resolve_context",
     "sign_in_method_of",
     "source_of",
@@ -939,7 +941,7 @@ def require(
             sso_connection=sso_connection_of(claims) if actor is ActorKind.USER else None,
             auth_time=auth_time_of(claims) if actor is ActorKind.USER else 0,
         )
-        _enforce_route_scopes(request, context)
+        _enforce_route_scopes(request, context, repositories)
         return context
 
     dependency.__wrapped_capability__ = capability  # type: ignore[attr-defined]
@@ -1256,11 +1258,15 @@ def missing_scopes(scopes: Iterable[str], required: Iterable[str]) -> list[str]:
     return sorted({scope for scope in required if not satisfies(held, scope)})
 
 
-def require_scopes_present(context: AuthzContext, required: Iterable[str]) -> None:
+def require_scopes_present(
+    context: AuthzContext, required: Iterable[str], repositories: Optional[RepositoryBundle] = None
+) -> None:
     """Hold that an API key context carries every scope a route needs.
 
     A user context is unrestricted, so only a key or a token narrows further; this
-    keeps the intersection rule in one place.
+    keeps the intersection rule in one place. With `repositories` the refusal also
+    links to where the scope can be granted, read from the workspace's slug, under
+    the error envelope's `details`.
     """
     if context.actor is ActorKind.USER:
         return
@@ -1268,14 +1274,67 @@ def require_scopes_present(context: AuthzContext, required: Iterable[str]) -> No
     if missing:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail={
-                "error_code": "INSUFFICIENT_SCOPE",
-                "message": f"Missing scope: {', '.join(missing)}",
-            },
+            detail=_as_http_detail(insufficient_scope_detail(context, missing, repositories)),
         )
 
 
-def _enforce_route_scopes(request: Request, context: AuthzContext) -> None:
+def _as_http_detail(detail: dict[str, Any]) -> dict[str, Any]:
+    """Move a refusal's hint fields under `details`, the only extra key the REST envelope keeps."""
+    hint = {key: value for key, value in detail.items() if key not in ("error_code", "message")}
+    return {"error_code": detail["error_code"], "message": detail["message"], "details": hint}
+
+
+def scope_grant_links(repositories: Optional[RepositoryBundle], workspace_id: str) -> tuple[str, str]:
+    """The connected apps and API keys settings URLs for a workspace, or empty strings.
+
+    Empty when there is no bundle to read the workspace from, the bundle carries no
+    workspaces table, or the workspace is gone, so a refusal never fails over its hint.
+    """
+    from app.common.core.config import settings
+
+    if repositories is None or "workspaces" not in repositories.repository_names:
+        return "", ""
+    workspace = repositories.workspaces.get(workspace_id)
+    if workspace is None:
+        return "", ""
+    settings_url = f"{settings.frontend_base_url}/w/{workspace.slug}/settings"
+    return f"{settings_url}/connected-apps", f"{settings_url}/api-keys"
+
+
+def insufficient_scope_detail(
+    context: AuthzContext, missing: list[str], repositories: Optional[RepositoryBundle] = None
+) -> dict[str, Any]:
+    """The 403 body for a credential missing scopes, saying how to get them, as the MCP error does.
+
+    A scope the caller's role cannot hold is named as that, because no grant would
+    help. Otherwise the body carries `grant_url`, where "Grant new permissions" adds
+    the scope to an OAuth client's existing grant for its next refresh, and
+    `api_keys_url`, since a key's scopes are fixed when it is created.
+    """
+    names = ", ".join(missing)
+    detail: dict[str, Any] = {
+        "error_code": "INSUFFICIENT_SCOPE",
+        "message": f"Missing scope: {names}",
+        "missing": missing,
+    }
+    if missing_scopes(live_scopes_for(context.role, context.user_id), missing):
+        detail["message"] = f"Missing scope: {names}. Your role in this workspace does not allow it."
+        return detail
+    grant_url, api_keys_url = scope_grant_links(repositories, context.workspace_id)
+    detail["grant_url"] = grant_url
+    detail["api_keys_url"] = api_keys_url
+    detail["message"] = (
+        f"Missing scope: {names}. For an OAuth client, grant it without signing in again "
+        f"{f'at {grant_url}' if grant_url else 'under Settings, Connected apps'}: choose Grant new "
+        "permissions on this app, and the client's next token refresh carries it. For an API key, "
+        f"create a key that carries it {f'at {api_keys_url}' if api_keys_url else 'under Settings, API keys'}."
+    )
+    return detail
+
+
+def _enforce_route_scopes(
+    request: Request, context: AuthzContext, repositories: Optional[RepositoryBundle] = None
+) -> None:
     """Refuse a narrowed credential that the matched route's scopes do not cover.
 
     Runs for an API key and an MCP token alone: a session is unrestricted, which is
@@ -1302,7 +1361,7 @@ def _enforce_route_scopes(request: Request, context: AuthzContext) -> None:
                 "message": "This route is not reachable with an API key or a token.",
             },
         )
-    require_scopes_present(context, required)
+    require_scopes_present(context, required, repositories)
 
 
 def refuse_api_key_actor(context: AuthzContext) -> None:
