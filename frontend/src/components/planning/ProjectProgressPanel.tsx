@@ -11,6 +11,9 @@
  * Scope, started, completed, the percentage and the graph read in estimate
  * points when a team on the project estimates, each issue weighed on its own
  * team's scale, and in issues otherwise, with the unit named beside the scope.
+ * A toggle beside the heading switches them between the two, remembered per
+ * viewer and project, with Points disabled when no team on the project
+ * estimates. The projection follows the measure shown.
  *
  * The stage list shows each workflow status on its own, from the loaded issues
  * or the project's stored per-status counts, and falls back to one row per
@@ -20,7 +23,7 @@
  * project's own account of how it is going, with a way through to the rest.
  */
 
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { LuDiamond } from 'react-icons/lu';
 import { cn } from '../../lib/cn';
 import {
@@ -40,9 +43,15 @@ import {
   pointWeigher,
   projectGraphRange,
   projectHistoryGraph,
+  projectionIn,
   projectionNote,
+  type PlanningMeasure,
   type ProjectHistoryGraph,
 } from '../../lib/planningModel';
+import {
+  readProjectMeasure,
+  rememberProjectMeasure,
+} from '../../lib/projectMeasure';
 import { shortDateLabel } from '../../lib/propertyOptions';
 import { PROJECT_HEALTH_LABELS } from '../../lib/projectLook';
 import { statusLook } from '../../lib/statusAppearance';
@@ -61,6 +70,7 @@ import { StatusIcon } from '../ui/StatusIcon';
 import Markdown from '../ui/markdown';
 import RelativeTime from '../ui/relative-time';
 import BurnUpChart from './BurnUpChart';
+import MeasureToggle from './MeasureToggle';
 import ProjectHealthGlyph from './ProjectHealthGlyph';
 import ProgressRing from './ProgressRing';
 
@@ -170,6 +180,10 @@ const tallyByStatus = (
   return tally;
 };
 
+/** Why Points cannot be chosen on a project whose teams do not estimate. */
+export const NO_POINTS_REASON =
+  'No team on this project uses estimates, so progress reads in issues.';
+
 /** The default for a panel given no teams, stable so memoised sums keep. */
 const NO_TEAMS: readonly TeamRead[] = [];
 
@@ -189,12 +203,31 @@ export const ProjectProgressPanel: React.FC<ProjectProgressPanelProps> = ({
   history = null,
 }) => {
   const readable = complete && statuses.length > 0;
-  const measure = progressMeasureOf(project);
+  const natural = progressMeasureOf(project);
+  const pointsReadable = natural === 'points';
+  const [choice, setChoice] = useState<{
+    projectId: string;
+    measure: PlanningMeasure | null;
+  }>(() => ({
+    projectId: project.project_id,
+    measure: readProjectMeasure(project.project_id),
+  }));
+  const picked =
+    choice.projectId === project.project_id
+      ? choice.measure
+      : readProjectMeasure(project.project_id);
+  const measure: PlanningMeasure = pointsReadable
+    ? (picked ?? natural)
+    : 'issues';
+  const choose = (next: PlanningMeasure): void => {
+    setChoice({ projectId: project.project_id, measure: next });
+    rememberProjectMeasure(project.project_id, next);
+  };
   const weigh = useMemo(
     () => (measure === 'points' ? pointWeigher(teams) : countEach),
     [measure, teams]
   );
-  const stored = progressOf(project);
+  const stored = measure === 'points' ? progressOf(project) : project.counts;
   const breakdown: Record<StatusCategory, number> = useMemo(
     () =>
       readable
@@ -236,15 +269,17 @@ export const ProjectProgressPanel: React.FC<ProjectProgressPanelProps> = ({
   ];
 
   const recorded = useMemo(
-    () => (history === null ? null : projectHistoryGraph(history)),
-    [history]
+    () => (history === null ? null : projectHistoryGraph(history, measure)),
+    [history, measure]
   );
   const note = useMemo(
     () =>
       recorded === null || history === null
         ? null
-        : projectionNote(history.projection, (day) => shortDateLabel(day)),
-    [recorded, history]
+        : projectionNote(projectionIn(history, measure), (day) =>
+            shortDateLabel(day)
+          ),
+    [recorded, history, measure]
   );
 
   const graph = useMemo((): ProjectHistoryGraph | null => {
@@ -335,6 +370,14 @@ export const ProjectProgressPanel: React.FC<ProjectProgressPanelProps> = ({
       <section aria-labelledby="project-progress" className="space-y-3">
         <div className="flex items-center gap-2">
           <PanelHeading id="project-progress">Progress</PanelHeading>
+          <MeasureToggle
+            value={measure}
+            onChange={choose}
+            label="Progress measure"
+            unavailable={
+              pointsReadable ? undefined : { points: NO_POINTS_REASON }
+            }
+          />
           <span className="ml-auto flex items-center gap-1.5 text-xs text-text-muted tabular-nums">
             <ProgressRing percent={percent} />
             {`${String(percent)}%`}

@@ -20,6 +20,12 @@ ISOLATION_LINEAR_KEY = "lin_api_isolation_fake_0000000000000000"
 ISOLATION_SHORTCUT_TOKEN = "00000000-0000-4000-8000-0000000150a7"
 ISOLATION_ASANA_TOKEN = "2/isolation/fake:0000000000000000"
 
+ISOLATION_JIRA_SIGNIN = {
+    "site_url": "https://isolation-example.atlassian.net",
+    "email": "isolation@example.com",
+    "token": "fake-jira-isolation-token-0000",
+}
+
 ANSWERS_AT_HOME: frozenset[str] = frozenset(
     {
         "get_workspace",
@@ -87,6 +93,15 @@ def arguments(foreign: dict[str, str], home_issue: str) -> dict[str, dict[str, A
         "import_asana_workspace": {
             "token": ISOLATION_ASANA_TOKEN,
             "projects": [{"project_gid": "1200000000000001", "team_id": foreign["team_id"]}],
+        },
+        "list_jira_projects": ISOLATION_JIRA_SIGNIN,
+        "preview_jira_import": {
+            **ISOLATION_JIRA_SIGNIN,
+            "projects": [{"project_key": "ISO", "team_id": foreign["team_id"]}],
+        },
+        "import_jira_workspace": {
+            **ISOLATION_JIRA_SIGNIN,
+            "projects": [{"project_key": "ISO", "team_id": foreign["team_id"]}],
         },
         "preview_issue_import": {"team_id": foreign["team_id"], "preset": "generic", "file": "Title\nIsolation\n"},
         "import_issues_from_file": {"team_id": foreign["team_id"], "preset": "generic", "file": "Title\nIsolation\n"},
