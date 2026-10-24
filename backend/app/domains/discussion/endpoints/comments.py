@@ -20,9 +20,8 @@ from webbpulse.http import CursorPage
 
 from app.common.api.dependencies.authz import AuthzContext, Capability, require
 from app.common.api.dependencies.repositories import Repositories, get_repositories
-from app.common.comment_writes import comment_page
+from app.common.comment_writes import comment_page, edit_comment
 from app.common.comment_writes import create_comment as create_comment_row
-from app.common.comment_writes import edit_comment
 from app.common.db.dynamo.comments import Comment
 from app.domains.discussion.schemas.discussion import (
     DEFAULT_LIMIT,
