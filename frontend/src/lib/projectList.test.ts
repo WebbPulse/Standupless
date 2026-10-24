@@ -15,6 +15,7 @@ import type { ProjectRead, TeamRead } from '../types/Api';
 import {
   DEFAULT_PROJECTS_DISPLAY,
   directedGroups,
+  dropPatch,
   effectiveRows,
   groupPatch,
   groupProjects,
@@ -300,6 +301,45 @@ describe('board moves', () => {
     });
     if (engine === undefined) throw new Error('no team column');
     expect(groupPatch(engine)).toBeNull();
+  });
+
+  it('changes both fields on a drop into a column and a swimlane', () => {
+    const [planned] = groupProjects([], 'status', [], [], { keepEmpty: true });
+    const high = groupProjects([], 'priority', [], [], {
+      keepEmpty: true,
+    }).find((group) => group.key === 'priority:high');
+    if (planned === undefined || high === undefined)
+      throw new Error('no groups');
+    expect(
+      dropPatch(project({ status: 'planned', priority: 'low' }), [
+        planned,
+        high,
+      ])
+    ).toEqual({ priority: 'high' });
+    expect(
+      dropPatch(project({ status: 'backlog', priority: 'low' }), [
+        planned,
+        high,
+      ])
+    ).toEqual({ status: 'planned', priority: 'high' });
+    expect(
+      dropPatch(project({ status: 'planned', priority: 'high' }), [
+        planned,
+        high,
+      ])
+    ).toBeNull();
+  });
+
+  it('refuses a swimlane drop that would join a team', () => {
+    const [planned] = groupProjects([], 'status', [], [], { keepEmpty: true });
+    const [design] = groupProjects([], 'team', [], [team('t2', 'Design')], {
+      keepEmpty: true,
+    });
+    if (planned === undefined || design === undefined)
+      throw new Error('no groups');
+    expect(
+      dropPatch(project({ status: 'backlog' }), [planned, design])
+    ).toBeNull();
   });
 });
 

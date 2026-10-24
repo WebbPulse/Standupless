@@ -15,10 +15,11 @@ import React, { useState } from 'react';
 import { LuCalendar, LuCalendarCheck } from 'react-icons/lu';
 import { useQueryAuth } from '@webbpulse/auth/react';
 import { usePolledQuery } from '@webbpulse/api-client/react';
-import { createProject } from '../../api/planning';
+import { createProject, updateProject } from '../../api/planning';
 import { listTeamTemplates } from '../../api/templates';
 import { usePlanningTeamLists } from '../../hooks/usePlanningTeamLists';
 import { errorMessage } from '../../lib/errors';
+import type { ProjectMove } from '../../lib/projectList';
 import { showToast } from '../../lib/toast';
 import {
   projectTemplateHint,
@@ -59,6 +60,11 @@ export interface CreateProjectDialogProps {
   /** The teams the new project starts on. */
   initialTeamIds: string[];
   initialStatus?: ProjectStatus;
+  /**
+   * Fields the project starts with, such as the health, priority, lead or
+   * initiative of the board column it is created in.
+   */
+  preset?: ProjectMove;
   onClose: () => void;
   onCreated: (project: ProjectRead) => void;
 }
@@ -129,6 +135,7 @@ export const CreateProjectDialog: React.FC<CreateProjectDialogProps> = ({
   teams,
   initialTeamIds,
   initialStatus = 'planned',
+  preset = {},
   onClose,
   onCreated,
 }) => {
@@ -137,9 +144,13 @@ export const CreateProjectDialog: React.FC<CreateProjectDialogProps> = ({
   const [status, setStatus] = useState<ProjectStatus>(initialStatus);
   const [icon, setIcon] = useState<ProjectIconName | null>(null);
   const [color, setColor] = useState<string | null>(null);
-  const [health, setHealth] = useState<ProjectHealth | null>(null);
-  const [priority, setPriority] = useState<IssuePriority>('none');
-  const [leadId, setLeadId] = useState<string | null>(null);
+  const [health, setHealth] = useState<ProjectHealth | null>(
+    preset.health ?? null
+  );
+  const [priority, setPriority] = useState<IssuePriority>(
+    preset.priority ?? 'none'
+  );
+  const [leadId, setLeadId] = useState<string | null>(preset.lead_id ?? null);
   const [memberIds, setMemberIds] = useState<string[]>([]);
   const [teamIds, setTeamIds] = useState<string[]>(initialTeamIds);
   const [startDate, setStartDate] = useState<string | null>(null);
@@ -176,8 +187,8 @@ export const CreateProjectDialog: React.FC<CreateProjectDialogProps> = ({
       setSummary(fill.description ?? '');
     }
     setStatus(fill.status ?? initialStatus);
-    setPriority(fill.priority ?? 'none');
-    setLeadId(fill.leadId ?? null);
+    setPriority(fill.priority ?? preset.priority ?? 'none');
+    setLeadId(fill.leadId ?? preset.lead_id ?? null);
     setMemberIds(fill.memberIds ?? []);
     setIcon(fill.icon ?? null);
     setColor(fill.color ?? null);
@@ -227,9 +238,32 @@ export const CreateProjectDialog: React.FC<CreateProjectDialogProps> = ({
     if (template !== undefined) body.template_id = template.id;
     createProject(workspaceId, body).then(
       (project) => {
-        setIsSaving(false);
         announceSkipped(project.skipped_template_issues ?? []);
-        onCreated(project);
+        const initiativeId = preset.initiative_id ?? null;
+        if (initiativeId === null) {
+          setIsSaving(false);
+          onCreated(project);
+          return;
+        }
+        updateProject(workspaceId, project.project_id, {
+          initiative_id: initiativeId,
+        }).then(
+          (stored) => {
+            setIsSaving(false);
+            onCreated(stored);
+          },
+          (failure: unknown) => {
+            setIsSaving(false);
+            showToast(
+              errorMessage(
+                failure,
+                'Created the project, but could not add it to the initiative.'
+              ),
+              'error'
+            );
+            onCreated(project);
+          }
+        );
       },
       (failure: unknown) => {
         setIsSaving(false);
