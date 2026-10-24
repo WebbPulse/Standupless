@@ -10,8 +10,12 @@ import { useQueryAuth } from '@webbpulse/auth/react';
 import { invalidateQueries, usePolledQuery } from '@webbpulse/api-client/react';
 import {
   addFavorite,
+  createFavoriteFolder,
+  deleteFavoriteFolder,
+  listFavoriteFolders,
   listFavorites,
   removeFavorite,
+  renameFavoriteFolder,
   reorderFavorites,
 } from '../api/favorites';
 import { SidebarDataContext } from '../contexts/SidebarDataContextDefinition';
@@ -21,19 +25,38 @@ import {
   type FavoritePreview,
   type FavoritesState,
 } from '../lib/favorites';
-import { favoritesKey } from '../lib/queryKeys';
+import { favoriteFoldersKey, favoritesKey } from '../lib/queryKeys';
 import { showErrorToast } from '../lib/toast';
-import type { FavoriteKind, FavoriteRead, FavoriteRef } from '../types/Api';
+import type {
+  FavoriteFolderRead,
+  FavoriteKind,
+  FavoriteRead,
+  FavoriteRef,
+} from '../types/Api';
 
 /** How often the favorites read repeats. */
 export const FAVORITES_POLL_MS = 60000;
 
-/** An optimistic list, with when its write finished or null while it is in flight. */
+/** Optimistic favorites and folders, with when their write finished or null while it is in flight. */
 interface Overlay {
   id: number;
-  rows: FavoriteRead[];
+  rows: FavoriteRead[] | null;
+  folders: FavoriteFolderRead[] | null;
   settledAt: number | null;
 }
+
+/** Whether an overlay still stands in for a read last answered at `readAt`. */
+const stands = (overlay: Overlay, readAt: number | null): boolean =>
+  overlay.settledAt === null || readAt === null || readAt <= overlay.settledAt;
+
+/** The reorder payload for favorites in `rows` order, each naming its folder. */
+const orderOf = (rows: readonly FavoriteRead[]): FavoriteRef[] =>
+  rows.map((row) => ({
+    kind: row.kind,
+    target_id: row.target_id,
+    team_id: row.team_id ?? null,
+    folder_id: row.folder_id ?? null,
+  }));
 
 /**
  * Builds favorites state over one read. An optimistic list stands in while its
@@ -55,24 +78,41 @@ export const useFavoritesState = (
       auth,
     }
   );
+  const folderRead = usePolledQuery(
+    ({ signal }) => listFavoriteFolders(workspaceId, signal),
+    {
+      intervalMs: FAVORITES_POLL_MS,
+      enabled: enabled && workspaceId !== '',
+      queryKey: favoriteFoldersKey(workspaceId),
+      auth,
+    }
+  );
   const [overlay, setOverlay] = useState<Overlay | null>(null);
   const writes = useRef(0);
   const favorites =
-    overlay !== null &&
-    (overlay.settledAt === null ||
-      lastUpdatedAt === null ||
-      lastUpdatedAt <= overlay.settledAt)
+    overlay !== null && overlay.rows !== null && stands(overlay, lastUpdatedAt)
       ? overlay.rows
       : data;
+  const folders =
+    overlay !== null &&
+    overlay.folders !== null &&
+    stands(overlay, folderRead.lastUpdatedAt)
+      ? overlay.folders
+      : folderRead.data;
 
   const settle = useCallback(
     async (
-      rows: FavoriteRead[],
+      shown: { rows?: FavoriteRead[]; folders?: FavoriteFolderRead[] },
       write: () => Promise<unknown>
     ): Promise<boolean> => {
       writes.current += 1;
       const id = writes.current;
-      setOverlay({ id, rows, settledAt: null });
+      setOverlay({
+        id,
+        rows: shown.rows ?? favorites,
+        folders: shown.folders ?? folders,
+        settledAt: null,
+      });
       try {
         await write();
         const settledAt = Date.now();
@@ -86,9 +126,10 @@ export const useFavoritesState = (
         return false;
       } finally {
         invalidateQueries(favoritesKey(workspaceId));
+        invalidateQueries(favoriteFoldersKey(workspaceId));
       }
     },
-    [workspaceId]
+    [favorites, folders, workspaceId]
   );
 
   const isFavorite = useCallback(
@@ -102,7 +143,7 @@ export const useFavoritesState = (
       const rows = (favorites ?? []).filter(
         (row) => !sameFavorite(row, kind, targetId)
       );
-      await settle(rows, () => removeFavorite(workspaceId, kind, targetId));
+      await settle({ rows }, () => removeFavorite(workspaceId, kind, targetId));
     },
     [favorites, settle, workspaceId]
   );
@@ -115,9 +156,11 @@ export const useFavoritesState = (
     ): Promise<boolean> => {
       if (isFavorite(ref.kind, ref.target_id)) {
         const removed = await settle(
-          (favorites ?? []).filter(
-            (row) => !sameFavorite(row, ref.kind, ref.target_id)
-          ),
+          {
+            rows: (favorites ?? []).filter(
+              (row) => !sameFavorite(row, ref.kind, ref.target_id)
+            ),
+          },
           () => removeFavorite(workspaceId, ref.kind, ref.target_id)
         );
         return !removed;
@@ -129,7 +172,7 @@ export const useFavoritesState = (
         team_id: ref.team_id ?? null,
         title,
       };
-      return settle([...(favorites ?? []), row], () =>
+      return settle({ rows: [...(favorites ?? []), row] }, () =>
         addFavorite(workspaceId, ref)
       );
     },
@@ -138,22 +181,102 @@ export const useFavoritesState = (
 
   const reorder = useCallback(
     async (next: FavoriteRead[]): Promise<void> => {
-      await settle(next, () =>
-        reorderFavorites(workspaceId, {
-          items: next.map((row) => ({
-            kind: row.kind,
-            target_id: row.target_id,
-            team_id: row.team_id ?? null,
-          })),
-        })
+      await settle({ rows: next }, () =>
+        reorderFavorites(workspaceId, { items: orderOf(next) })
+      );
+    },
+    [settle, workspaceId]
+  );
+
+  const createFolder = useCallback(
+    async (name: string): Promise<FavoriteFolderRead | null> => {
+      let created: FavoriteFolderRead | null = null;
+      await settle({}, async () => {
+        created = await createFavoriteFolder(workspaceId, name);
+        const folder = created;
+        setOverlay((current) =>
+          current === null
+            ? current
+            : { ...current, folders: [...(current.folders ?? []), folder] }
+        );
+      });
+      return created;
+    },
+    [settle, workspaceId]
+  );
+
+  const renameFolder = useCallback(
+    async (folderId: string, name: string): Promise<void> => {
+      await settle(
+        {
+          folders: (folders ?? []).map((folder) =>
+            folder.folder_id === folderId ? { ...folder, name } : folder
+          ),
+        },
+        () => renameFavoriteFolder(workspaceId, folderId, name)
+      );
+    },
+    [folders, settle, workspaceId]
+  );
+
+  const deleteFolder = useCallback(
+    async (folderId: string): Promise<void> => {
+      await settle(
+        {
+          folders: (folders ?? []).filter(
+            (folder) => folder.folder_id !== folderId
+          ),
+          rows: (favorites ?? []).map((row) =>
+            row.folder_id === folderId ? { ...row, folder_id: null } : row
+          ),
+        },
+        () => deleteFavoriteFolder(workspaceId, folderId)
+      );
+    },
+    [favorites, folders, settle, workspaceId]
+  );
+
+  const reorderFolders = useCallback(
+    async (next: FavoriteFolderRead[]): Promise<void> => {
+      await settle(
+        {
+          folders: next.map((folder, position) => ({ ...folder, position })),
+        },
+        () =>
+          reorderFavorites(workspaceId, {
+            items: [],
+            folders: next.map((folder) => folder.folder_id),
+          })
       );
     },
     [settle, workspaceId]
   );
 
   return useMemo(
-    () => ({ favorites, isFavorite, toggle, remove, reorder }),
-    [favorites, isFavorite, toggle, remove, reorder]
+    () => ({
+      favorites,
+      isFavorite,
+      toggle,
+      remove,
+      reorder,
+      folders,
+      createFolder,
+      renameFolder,
+      deleteFolder,
+      reorderFolders,
+    }),
+    [
+      favorites,
+      isFavorite,
+      toggle,
+      remove,
+      reorder,
+      folders,
+      createFolder,
+      renameFolder,
+      deleteFolder,
+      reorderFolders,
+    ]
   );
 };
 

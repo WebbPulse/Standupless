@@ -44,6 +44,7 @@ import { Marked, type Token } from 'marked';
 import { isLinkTarget } from '../../lib/markdown';
 import { HighlightedCodeBlock } from './codeBlock';
 import { EditorShortcuts } from './editorShortcuts';
+import { EmojiSuggestion } from './EmojiSuggestion';
 import { MediaImage, MediaUpload } from './mediaNodes';
 
 /** What {@link markdownExtensions} can be asked to vary per surface. */
@@ -320,6 +321,7 @@ export const markdownExtensions = (
     MediaUpload,
     EditorShortcuts,
     MentionChips,
+    EmojiSuggestion,
     ReferenceChips.configure({
       ...(options.isIssueKey === undefined
         ? {}

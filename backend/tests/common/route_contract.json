@@ -2018,6 +2018,24 @@
   {
     "auth": "workspace:read",
     "domain": "views",
+    "method": "POST",
+    "path": "/api/workspaces/{workspace_id}/favorites/folders"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "views",
+    "method": "DELETE",
+    "path": "/api/workspaces/{workspace_id}/favorites/folders/{folder_id}"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "views",
+    "method": "PATCH",
+    "path": "/api/workspaces/{workspace_id}/favorites/folders/{folder_id}"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "views",
     "method": "PUT",
     "path": "/api/workspaces/{workspace_id}/favorites/order"
   },
