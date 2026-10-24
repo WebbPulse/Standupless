@@ -45,6 +45,7 @@ from app.common.api.schemas.releases import ReleaseBackfill, ReleaseBackfillRead
 from app.common.db.dynamo.github import RELEASE_SOURCE_DEPLOYMENTS, IssueLink
 from app.common.db.dynamo.issues import Issue
 from app.common.db.dynamo.releases import PipelineStage, Release
+from app.common.issue_key_search import commit_subject
 from app.common.planning_rules import unprocessable
 
 _log = logging.getLogger(__name__)
@@ -253,9 +254,13 @@ def _version_for(github: _GitHub, pull: Any, sha: str, ref: str | None) -> str |
 
 
 def _pull_number(message: str) -> int | None:
-    """The pull request a commit's subject names, when its message names no key to read it for."""
+    """The pull request a commit's subject names, when its subject names no key to read it for.
+
+    A key only the body mentions moves nothing, so it does not stand in for the
+    pull request's title and branch.
+    """
     match = _PULL_NUMBER.search(message.split("\n", 1)[0])
-    if match is None or _KEY_LIKE.search(message):
+    if match is None or _KEY_LIKE.search(commit_subject(message)[0]):
         return None
     return int(match.group(1) or match.group(2))
 

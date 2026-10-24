@@ -1281,3 +1281,18 @@ def test_a_deployment_still_ships_a_key_a_commit_body_fixes(
     [release] = _releases(repositories)
     assert release.issue_ids == [issue.issue_id]
     assert repositories.issues.get(WORKSPACE, issue.issue_id).status_id == done.status_id
+
+
+def test_a_body_mention_still_reads_the_pull_request_title(
+    repositories: Any, installed: str, github: FakeGitHub
+) -> None:
+    """A squash commit whose body only mentions a key is still read through its pull request's title and branch."""
+    issue = seed_issue(repositories, WORKSPACE, TEAM, "01JB0000000000000000000IS1", "ABC", 1)
+    seed_issue(repositories, WORKSPACE, TEAM, "01JB0000000000000000000IS3", "ABC", 2)
+    github.messages = {FIRST: "Fix login (#12)\n\nThe session cap came from ABC-2."}
+    github.pulls = {12: PullRef(number=12, title="Fix login", head_ref="abc-1-fix-login", url=None)}
+
+    handle_deployment_status(repositories, WORKSPACE, _delivery(FIRST))
+
+    [release] = _releases(repositories)
+    assert release.issue_ids == [issue.issue_id]
