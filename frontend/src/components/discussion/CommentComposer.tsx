@@ -12,6 +12,11 @@
  *
  * The editor is its own lazily loaded chunk, so a stand in with the same shape
  * shows until it arrives.
+ *
+ * A new thread on an issue with a linked pull request or GitHub issue can be
+ * synced as it posts. The toggle picks the one target, or opens a picker when
+ * there are several, and a public repository carries a warning, because the
+ * thread is published there.
  */
 
 import React, { Suspense, lazy, useCallback, useRef, useState } from 'react';
@@ -19,8 +24,9 @@ import {
   invalidateQueries,
   useMutationWithRefetch,
 } from '@webbpulse/api-client/react';
-import { LuArrowUp, LuPaperclip } from 'react-icons/lu';
+import { LuArrowUp, LuCheck, LuGithub, LuPaperclip } from 'react-icons/lu';
 import { createComment } from '../../api/discussion';
+import { syncThread } from '../../api/integrations';
 import { useAttachmentUploads } from '../../hooks/useAttachmentUploads';
 import { useCommentDraft } from '../../hooks/useCommentDraft';
 import { dragHasFiles, filesFrom } from '../../lib/attachments';
@@ -35,11 +41,14 @@ import {
 import { rememberPreview, useMedia } from '../../lib/mediaContext';
 import { submitKeysLabel } from '../../lib/platform';
 import { attachmentsKey, commentsKey } from '../../lib/queryKeys';
+import { PUBLIC_THREAD_WARNING, targetKey } from '../../lib/threadSync';
 import { showErrorToast } from '../../lib/toast';
 import { UPLOAD_CONTENT_TYPES } from '../../lib/uploads';
+import type { GithubThreadTargetRead } from '../../types/Api';
 import type { RichMarkdownHandle } from '../editor/RichMarkdownEditor';
 import type { UploadFile } from '../editor/mediaNodes';
 import Button, { IconButton } from '../ui/button';
+import Menu, { MenuItem, MenuLabel, MenuSeparator } from '../ui/menu';
 
 const RichMarkdownEditor = lazy(() => import('../editor/RichMarkdownEditor'));
 
@@ -59,7 +68,101 @@ export interface CommentComposerProps {
   placeholder?: string;
   /** A smaller box, for replies inside a thread. */
   compact?: boolean;
+  /** Where a new thread may be synced on GitHub; empty offers no sync. */
+  threadTargets?: GithubThreadTargetRead[];
 }
+
+/** Props for ThreadSyncToggle. */
+interface ThreadSyncToggleProps {
+  targets: GithubThreadTargetRead[];
+  chosen: GithubThreadTargetRead | null;
+  onChoose: (target: GithubThreadTargetRead | null) => void;
+}
+
+/** Turns syncing a new thread on or off, with a picker when there are several targets. */
+const ThreadSyncToggle: React.FC<ThreadSyncToggleProps> = ({
+  targets,
+  chosen,
+  onChoose,
+}) => {
+  const label = chosen === null ? 'Sync to GitHub' : `Syncing to ${chosen.ref}`;
+  const toggleClass = cn(chosen === null ? '' : 'text-accent');
+  const [only] = targets;
+  if (targets.length === 1 && only !== undefined) {
+    return (
+      <Button
+        variant="ghost"
+        size="sm"
+        aria-pressed={chosen !== null}
+        title={`Sync this thread to ${only.ref}`}
+        className={toggleClass}
+        onClick={() => {
+          onChoose(chosen === null ? only : null);
+        }}
+      >
+        <LuGithub aria-hidden="true" className="h-3.5 w-3.5" />
+        <span className="hidden sm:inline">{label}</span>
+      </Button>
+    );
+  }
+  return (
+    <Menu
+      label="Sync thread to GitHub"
+      trigger={(props) => (
+        <Button
+          variant="ghost"
+          size="sm"
+          className={toggleClass}
+          aria-label={label}
+          {...props}
+        >
+          <LuGithub aria-hidden="true" className="h-3.5 w-3.5" />
+          <span className="hidden sm:inline">{label}</span>
+        </Button>
+      )}
+    >
+      <MenuLabel>Sync thread to</MenuLabel>
+      {targets.map((target) => (
+        <MenuItem
+          key={targetKey(target)}
+          textValue={`${target.ref} ${target.title}`}
+          onSelect={() => {
+            onChoose(target);
+          }}
+        >
+          <LuCheck
+            aria-hidden="true"
+            className={cn(
+              'h-3.5 w-3.5',
+              chosen !== null && targetKey(chosen) === targetKey(target)
+                ? ''
+                : 'invisible'
+            )}
+          />
+          <span className="truncate">
+            {target.ref}
+            {target.title === '' ? '' : ` ${target.title}`}
+          </span>
+          {!target.private && (
+            <span className="ml-auto text-2xs text-text-faint">Public</span>
+          )}
+        </MenuItem>
+      ))}
+      {chosen !== null && (
+        <>
+          <MenuSeparator />
+          <MenuItem
+            onSelect={() => {
+              onChoose(null);
+            }}
+          >
+            Do not sync
+          </MenuItem>
+        </>
+      )}
+    </Menu>
+  );
+};
 
 /** Posts a comment, with the files its text embeds, to one issue. */
 export const CommentComposer: React.FC<CommentComposerProps> = ({
@@ -72,8 +175,10 @@ export const CommentComposer: React.FC<CommentComposerProps> = ({
   autoFocus = false,
   placeholder = 'Leave a comment...',
   compact = false,
+  threadTargets = [],
 }) => {
   const [draft, setDraft] = useState('');
+  const [chosenKey, setChosenKey] = useState<string | null>(null);
   const [inFlight, setInFlight] = useState(false);
   const [dragging, setDragging] = useState(false);
   const [focused, setFocused] = useState(false);
@@ -117,6 +222,31 @@ export const CommentComposer: React.FC<CommentComposerProps> = ({
     [sendFile, refresh, workspaceId, issueId]
   );
 
+  const syncTargets = parentCommentId === undefined ? threadTargets : [];
+  const chosen =
+    syncTargets.find((target) => targetKey(target) === chosenKey) ?? null;
+
+  const syncPosted = (
+    commentId: string,
+    target: GithubThreadTargetRead
+  ): void => {
+    void syncThread(workspaceId, issueId, commentId, {
+      repository_id: target.repository_id,
+      number: target.number,
+    })
+      .then(() => {
+        invalidateQueries(commentsKey(issueId));
+      })
+      .catch((failure: unknown) => {
+        showErrorToast(
+          errorMessage(
+            failure,
+            'The comment posted, but could not be synced to GitHub.'
+          )
+        );
+      });
+  };
+
   const canPost =
     !isMutating && !inFlight && !uploads.isUploading && draft.trim() !== '';
 
@@ -128,7 +258,9 @@ export const CommentComposer: React.FC<CommentComposerProps> = ({
       .attachmentIds()
       .filter((id) => embedded.includes(id));
     void post(body, linked)
-      .then(() => {
+      .then((created) => {
+        if (chosen !== null) syncPosted(created.comment_id, chosen);
+        setChosenKey(null);
         invalidateQueries(attachmentsKey(issueId));
         uploads.settle(linked);
         commentDraft.clear();
@@ -225,9 +357,19 @@ export const CommentComposer: React.FC<CommentComposerProps> = ({
         >
           <LuPaperclip className="h-3.5 w-3.5" />
         </IconButton>
-        <span className="hidden text-xs text-text-faint sm:inline">
-          Paste or drop images and videos
-        </span>
+        {syncTargets.length > 0 ? (
+          <ThreadSyncToggle
+            targets={syncTargets}
+            chosen={chosen}
+            onChoose={(target) => {
+              setChosenKey(target === null ? null : targetKey(target));
+            }}
+          />
+        ) : (
+          <span className="hidden text-xs text-text-faint sm:inline">
+            Paste or drop images and videos
+          </span>
+        )}
         <div className="ml-auto flex items-center gap-1.5">
           {onCancel !== undefined && (
             <Button variant="ghost" size="sm" onClick={onCancel}>
@@ -257,6 +399,11 @@ export const CommentComposer: React.FC<CommentComposerProps> = ({
           </Button>
         </div>
       </div>
+      {chosen !== null && !chosen.private && (
+        <p role="status" className="px-3 pb-2 text-xs text-warning">
+          {PUBLIC_THREAD_WARNING}
+        </p>
+      )}
     </div>
   );
 };
