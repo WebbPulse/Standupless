@@ -178,6 +178,7 @@ export const ProjectDetail: React.FC = () => {
     workspaceId,
     isLoading: isResolving,
     error: teamsError,
+    refetch: refetchTeams,
   } = useTeam(undefined);
   const projectId = id ?? '';
   const tab = tabFrom(params.get('tab'));
@@ -358,14 +359,22 @@ export const ProjectDetail: React.FC = () => {
     </span>
   );
 
+  if (isResolving && teamsError !== null && teamsError !== undefined) {
+    return (
+      <WorkspaceShell title="Project" leading={crumbs}>
+        <LoadError
+          message={errorMessage(teamsError, 'Could not load the teams.')}
+          onRetry={() => {
+            void refetchTeams();
+          }}
+        />
+      </WorkspaceShell>
+    );
+  }
+
   if (isResolving || (isLoading && project === null)) {
     return (
       <WorkspaceShell title="Project" leading={crumbs}>
-        {teamsError !== null && (
-          <ErrorAlert
-            message={errorMessage(teamsError, 'Could not load the teams.')}
-          />
-        )}
         <SkeletonRows label="Loading project" />
       </WorkspaceShell>
     );
