@@ -7,9 +7,12 @@
  * the workspace as a chip with its name. Embedded images and videos, and
  * links to attached files, load through the page's media tokens. Fenced code
  * is highlighted, once the highlighter loads, and carries a copy button.
+ * A collapsible section is a native `<details>`, closed until it is opened,
+ * so it toggles from the keyboard as well as the caret.
  */
 
 import React, { useMemo } from 'react';
+import { LuChevronRight } from 'react-icons/lu';
 import { useMentionLabel } from '../../contexts/MentionDirectoryContextDefinition';
 import { useLinkedReference } from '../../hooks/useLinkedReference';
 import { cn } from '../../lib/cn';
@@ -180,6 +183,25 @@ const renderBlock = (block: BlockNode, key: string): React.ReactNode => {
       );
     case 'rule':
       return <hr key={key} className="border-line" />;
+    case 'details':
+      return (
+        <details key={key} className="group">
+          <summary className="flex cursor-pointer list-none items-start gap-1 rounded-xs font-medium text-text outline-none focus-visible:ring-1 focus-visible:ring-accent [&::-webkit-details-marker]:hidden">
+            <LuChevronRight
+              aria-hidden="true"
+              className="mt-[0.3em] h-3.5 w-3.5 shrink-0 text-text-faint transition-transform group-open:rotate-90"
+            />
+            <span className="min-w-0">
+              {block.summary === '' ? 'Details' : block.summary}
+            </span>
+          </summary>
+          <div className="mt-2 space-y-2 pl-4.5">
+            {block.children.map((child, index) =>
+              renderBlock(child, `${key}-${String(index)}`)
+            )}
+          </div>
+        </details>
+      );
     case 'list': {
       const items = block.items.map((item, index) => {
         const itemKey = `${key}-${String(index)}`;
