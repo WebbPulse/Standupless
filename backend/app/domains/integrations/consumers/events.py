@@ -249,6 +249,10 @@ def handle_record(repositories: Repositories, record: Mapping[str, Any]) -> None
         from app.domains.integrations.tag_releases import handle_release
 
         handle_release(repositories, workspace_id, body)
+    elif event == "label":
+        from app.domains.integrations.label_sync import on_label_delivery
+
+        on_label_delivery(repositories, workspace_id, body)
 
 
 def fold_pull_request(

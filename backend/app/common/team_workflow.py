@@ -529,12 +529,19 @@ def _check_renamed(
 def _label_patch(payload: LabelUpdate, existing: Label) -> tuple[dict[str, Any], list[str]]:
     """The attributes a label patch sets and the ones it removes, a null `parent_id` ungrouping the label.
 
-    A move into the group the label is already in is no change, and a group is
-    refused a parent with a 422 because groups nest one level.
+    A null or empty `description` clears it. A move into the group the label is
+    already in is no change, and a group is refused a parent with a 422 because
+    groups nest one level.
     """
     given = payload.model_dump(exclude_unset=True)
+    if "description" in given:
+        given["description"] = (given["description"] or "").strip() or None
+        if given["description"] == existing.description:
+            given.pop("description")
     attributes = {name: value for name, value in given.items() if value is not None}
     clear = ["parent_id"] if "parent_id" in given and given["parent_id"] is None and existing.parent_id else []
+    if "description" in given and given["description"] is None:
+        clear.append("description")
     if attributes.get("parent_id") == existing.parent_id:
         attributes.pop("parent_id", None)
     if "parent_id" in attributes and existing.is_group:
@@ -686,6 +693,7 @@ def create_workspace_label(repositories: Repositories, workspace_id: str, payloa
             label_id=label_id,
             name=payload.name,
             color=payload.color,
+            description=(payload.description or "").strip() or None,
             is_group=payload.is_group,
             parent_id=payload.parent_id,
             scope=WORKSPACE_SCOPE,

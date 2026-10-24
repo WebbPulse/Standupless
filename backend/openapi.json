@@ -8643,11 +8643,23 @@
         "type": "object"
       },
       "LabelCreate": {
-        "description": "The body a label create takes.\n\n`is_group` makes a label group, which holds child labels and is never put on\nan issue itself. `parent_id` puts the new label in an existing group of the\nsame scope. A group cannot sit in another group.",
+        "description": "The body a label create takes.\n\n`is_group` makes a label group, which holds child labels and is never put on\nan issue itself. `parent_id` puts the new label in an existing group of the\nsame scope. A group cannot sit in another group. `description` is what a\nrepository the team syncs with shows beside the label.",
         "properties": {
           "color": {
             "title": "Color",
             "type": "string"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
           },
           "is_group": {
             "default": false,
@@ -8762,6 +8774,17 @@
             "title": "Color",
             "type": "string"
           },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
           "hidden": {
             "default": false,
             "title": "Hidden",
@@ -8822,7 +8845,7 @@
         "type": "object"
       },
       "LabelUpdate": {
-        "description": "The body a label patch takes.\n\n`parent_id` moves a label into a group of the same scope, and an explicit\nnull takes it out of its group. A field left out keeps its current value.",
+        "description": "The body a label patch takes.\n\n`parent_id` moves a label into a group of the same scope, and an explicit\nnull takes it out of its group, and an explicit null or empty `description`\nclears it. A field left out keeps its current value.",
         "properties": {
           "color": {
             "anyOf": [
@@ -8834,6 +8857,18 @@
               }
             ],
             "title": "Color"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
           },
           "name": {
             "anyOf": [
