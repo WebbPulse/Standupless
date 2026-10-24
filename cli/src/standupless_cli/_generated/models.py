@@ -1512,6 +1512,7 @@ class ProjectCreate(TypedDict):
         | None
     ]
     initiative_id: NotRequired[str | None]
+    label_ids: NotRequired[list[str]]
     lead_id: NotRequired[str | None]
     member_ids: NotRequired[list[str]]
     name: str
@@ -1523,6 +1524,28 @@ class ProjectCreate(TypedDict):
     team_ids: NotRequired[list[str] | None]
     template_id: NotRequired[str | None]
     update_interval_days: NotRequired[int | None]
+
+
+class ProjectLabelCreate(TypedDict):
+    color: str
+    description: NotRequired[str | None]
+    name: str
+
+
+class ProjectLabelRead(TypedDict):
+    color: str
+    created_at: str
+    description: NotRequired[str | None]
+    id: str
+    name: str
+    project_count: NotRequired[int]
+    updated_at: str
+
+
+class ProjectLabelUpdate(TypedDict):
+    color: NotRequired[str | None]
+    description: NotRequired[str | None]
+    name: NotRequired[str | None]
 
 
 class ProjectMilestoneMarkerRead(TypedDict):
@@ -1617,6 +1640,7 @@ class ProjectUpdate(TypedDict):
         | None
     ]
     initiative_id: NotRequired[str | None]
+    label_ids: NotRequired[list[str] | None]
     lead_id: NotRequired[str | None]
     member_ids: NotRequired[list[str] | None]
     name: NotRequired[str | None]
@@ -3760,6 +3784,10 @@ class ProjectHistoryRead(TypedDict):
     today: str
 
 
+class ProjectLabelListRead(TypedDict):
+    labels: list[ProjectLabelRead]
+
+
 class ProjectRead(TypedDict):
     blocked_by_project_ids: NotRequired[list[str]]
     blocking_project_ids: NotRequired[list[str]]
@@ -3774,6 +3802,7 @@ class ProjectRead(TypedDict):
     health: NotRequired[Literal["on_track", "at_risk", "off_track"] | None]
     icon: NotRequired[str | None]
     initiative_id: NotRequired[str | None]
+    label_ids: NotRequired[list[str]]
     last_update_at: NotRequired[str | None]
     lead_id: NotRequired[str | None]
     measure: NotRequired[Literal["points", "issues"]]
@@ -3787,6 +3816,7 @@ class ProjectRead(TypedDict):
     progress: NotRequired[CountsRead]
     project_id: str
     skipped_template_issues: NotRequired[list[SkippedTemplateIssueRead] | None]
+    slug_id: NotRequired[str]
     start_date: NotRequired[str | None]
     status: Literal["backlog", "planned", "in_progress", "paused", "completed", "canceled"]
     status_counts: NotRequired[dict[str, int]]

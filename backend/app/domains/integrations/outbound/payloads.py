@@ -67,6 +67,7 @@ PROJECT_FIELDS: dict[str, str] = {
     "health": "health",
     "priority": "priority",
     "member_ids": "memberIds",
+    "label_ids": "labelIds",
 }
 
 CYCLE_FIELDS: dict[str, str] = {

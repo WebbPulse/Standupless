@@ -115,6 +115,12 @@ export const workspaceStatusesKey = (workspaceId: string): QueryKey => [
   workspaceId,
 ];
 
+/** The workspace's project labels. */
+export const projectLabelsKey = (workspaceId: string): QueryKey => [
+  'project-labels',
+  workspaceId,
+];
+
 /** The labels a workspace defines for every team. */
 export const workspaceLabelsKey = (workspaceId: string): QueryKey => [
   'workspace-labels',
