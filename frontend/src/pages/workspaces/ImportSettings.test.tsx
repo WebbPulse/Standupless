@@ -1,16 +1,17 @@
 /**
  * The issue import page. It opens on the import assistant, one row per
- * provider; Shortcut opens the file flow with its preset chosen and a note
- * that its API import is coming, and the page links to
+ * provider, and the page links to
  * the export below. For a CSV an admin picks a source, a team and a file,
  * dry runs it and sees the row problems, remaps a column, which runs the dry
  * run again with the change, and starts the import with the same body. For
  * Linear they paste a key, load its teams, map each and start, and the key is
- * cleared once the job is queued. For Asana they paste a token, tick projects,
- * pick a team, preview where each section lands, override one and start. For
- * Jira they enter the site, email and token, tick a project, preview where each
- * status lands, override one and start, and the token is cleared. For
- * GitHub they pick a repository the App
+ * cleared once the job is queued. For Shortcut they paste a token, load its
+ * teams, map each, preview and start, and the token is cleared the same way.
+ * For Asana they paste a token, tick projects, pick a team, preview where
+ * each section lands, override one and start. For Jira they enter the site,
+ * email and token, tick a project, preview where each status lands, override
+ * one and start, and the token is cleared. For GitHub they pick a
+ * repository the App
  * covers and a team and start, or are told why they cannot when the App is
  * missing or suspended. A running job can be cancelled. Anyone below admin is
  * told they cannot.
@@ -38,6 +39,9 @@ import type {
   JiraProjectListRead,
   LinearImportRequest,
   LinearTeamRead,
+  ShortcutImportPreviewRead,
+  ShortcutImportRequest,
+  ShortcutTeamRead,
   StatusRead,
   TeamRead,
   WorkspaceRead,
@@ -53,6 +57,12 @@ const startIssueImport =
 const listLinearTeams = vi.fn<(apiKey: string) => Promise<LinearTeamRead[]>>();
 const startLinearImport =
   vi.fn<(body: LinearImportRequest) => Promise<IssueImportRead>>();
+const listShortcutTeams =
+  vi.fn<(apiToken: string) => Promise<ShortcutTeamRead[]>>();
+const previewShortcutImport =
+  vi.fn<(body: ShortcutImportRequest) => Promise<ShortcutImportPreviewRead>>();
+const startShortcutImport =
+  vi.fn<(body: ShortcutImportRequest) => Promise<IssueImportRead>>();
 const listAsanaProjects =
   vi.fn<(token: string) => Promise<AsanaProjectRead[]>>();
 const previewAsanaImport =
@@ -96,6 +106,12 @@ vi.mock('../../api/imports', () => ({
     listLinearTeams(apiKey),
   startLinearImport: (_workspaceId: string, body: LinearImportRequest) =>
     startLinearImport(body),
+  listShortcutTeams: (_workspaceId: string, apiToken: string) =>
+    listShortcutTeams(apiToken),
+  previewShortcutImport: (_workspaceId: string, body: ShortcutImportRequest) =>
+    previewShortcutImport(body),
+  startShortcutImport: (_workspaceId: string, body: ShortcutImportRequest) =>
+    startShortcutImport(body),
   listAsanaProjects: (_workspaceId: string, token: string) =>
     listAsanaProjects(token),
   previewAsanaImport: (_workspaceId: string, body: AsanaImportRequest) =>
@@ -277,9 +293,10 @@ const chooseProvider = async (
   await user.click(screen.getByRole('button', { name }));
 };
 
-/** Opens the Shortcut row, which lands on the file flow with the Shortcut preset. */
+/** Opens the file row and picks the Jira export preset. */
 const chooseCsv = async (user: ReturnType<typeof userEvent.setup>) => {
-  await chooseProvider(user, /^Shortcut/);
+  await chooseProvider(user, /^CSV or file/);
+  await user.selectOptions(screen.getByLabelText('Source'), 'jira');
 };
 
 /** Opens the GitHub row of the import assistant. */
@@ -287,7 +304,7 @@ const chooseGitHub = async (user: ReturnType<typeof userEvent.setup>) => {
   await chooseProvider(user, /^GitHub/);
 };
 
-/** Opens the Shortcut file flow unless it is open, picks the fixture file, then dry runs it. */
+/** Opens the Jira file flow unless it is open, picks the fixture file, then dry runs it. */
 const pickAndCheck = async (user: ReturnType<typeof userEvent.setup>) => {
   if (screen.queryByRole('list', { name: 'Import assistant' }) !== null) {
     await chooseCsv(user);
@@ -320,6 +337,34 @@ beforeEach(() => {
   ]);
   startLinearImport.mockResolvedValue(
     job({ kind: 'linear', status: 'queued', file_name: '' })
+  );
+  listShortcutTeams.mockReset();
+  previewShortcutImport.mockReset();
+  startShortcutImport.mockReset();
+  listShortcutTeams.mockResolvedValue([
+    { id: 'sc-team-1', key: 'pla', name: 'Shortcut Platform' },
+  ]);
+  previewShortcutImport.mockResolvedValue({
+    teams: [
+      {
+        shortcut_team_id: 'sc-team-1',
+        name: 'Shortcut Platform',
+        team_id: 'team-1',
+        stories: 12,
+        stories_capped: false,
+        epics: 2,
+        iterations: 1,
+        statuses: [
+          { source: 'In Development', status_name: 'In Progress', count: 3 },
+        ],
+        new_labels: ['backend'],
+        matched_owners: 2,
+        unmatched_owners: 1,
+      },
+    ],
+  });
+  startShortcutImport.mockResolvedValue(
+    job({ kind: 'shortcut', status: 'queued', file_name: 'Shortcut' })
   );
   cancelIssueImport.mockResolvedValue(job({ status: 'cancelled' }));
   listAsanaProjects.mockReset();
@@ -490,25 +535,6 @@ describe('the issue import page', () => {
     ).toHaveAttribute('href', '/w/engineering/settings/export');
   });
 
-  it.each([[/^Shortcut/, 'shortcut', 'Shortcut']])(
-    'opens the file flow with the preset chosen for %s',
-    async (row, preset, title) => {
-      const user = userEvent.setup();
-      renderPage();
-
-      await chooseProvider(user, row);
-
-      expect(screen.getByLabelText('Source')).toHaveValue(preset);
-      expect(
-        screen.getByText(/Connect via API \(coming soon\)/)
-      ).toHaveTextContent(`export from ${title} as CSV`);
-      expect(screen.getByLabelText('CSV file')).toHaveAttribute(
-        'accept',
-        '.csv,text/csv'
-      );
-    }
-  );
-
   it('opens any file on the generic preset and goes back to the list', async () => {
     const user = userEvent.setup();
     renderPage();
@@ -620,7 +646,7 @@ describe('the issue import page', () => {
     await waitFor(() => {
       expect(startIssueImport).toHaveBeenCalledWith({
         team_id: 'team-1',
-        preset: 'shortcut',
+        preset: 'jira',
         csv: CSV,
         file_name: 'jira.csv',
         mapping: null,
@@ -677,6 +703,80 @@ describe('the issue import page', () => {
     await waitFor(() => {
       expect(screen.getByLabelText('Linear API key')).toHaveValue('');
     });
+  });
+
+  it('previews and imports Shortcut teams and clears the token', async () => {
+    const user = userEvent.setup();
+    renderPage();
+    await chooseProvider(user, /^Shortcut/);
+
+    expect(screen.queryByText(/coming soon/)).not.toBeInTheDocument();
+    await user.type(
+      screen.getByLabelText('Shortcut API token'),
+      'shortcut-example'
+    );
+    await user.click(screen.getByRole('button', { name: 'Load teams' }));
+
+    expect(
+      await screen.findByLabelText('Standupless team for Shortcut Platform')
+    ).toHaveValue('team-1');
+    expect(listShortcutTeams).toHaveBeenCalledWith('shortcut-example');
+    expect(
+      screen.getByRole('button', { name: 'Import 1 team' })
+    ).toBeDisabled();
+
+    await user.click(screen.getByRole('button', { name: 'Preview import' }));
+
+    const body = {
+      api_token: 'shortcut-example',
+      teams: [{ shortcut_team_id: 'sc-team-1', team_id: 'team-1' }],
+    };
+    expect(
+      await screen.findByText('12 stories, 2 epics, 1 iteration, 1 new label')
+    ).toBeInTheDocument();
+    expect(previewShortcutImport).toHaveBeenCalledWith(body);
+    expect(
+      screen.getByText('In Development becomes In Progress')
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Import 1 team' }));
+
+    await waitFor(() => {
+      expect(startShortcutImport).toHaveBeenCalledWith(body);
+    });
+    await waitFor(() => {
+      expect(screen.getByLabelText('Shortcut API token')).toHaveValue('');
+    });
+  });
+
+  it('lists what a finished Shortcut import brought over', async () => {
+    listIssueImports.mockResolvedValue([
+      job({
+        kind: 'shortcut',
+        file_name: 'Shortcut',
+        created_count: 4,
+        updated_count: 0,
+        counts: { comments: 3, sub_issues: 1, projects: 1 },
+        source_teams: [
+          {
+            source_id: 'sc-team-1',
+            key: 'pla',
+            name: 'Shortcut Platform',
+            team_id: 'team-1',
+          },
+        ],
+      }),
+    ]);
+    renderPage();
+
+    expect(
+      await screen.findByText('Shortcut Shortcut Platform into Platform')
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        /4 issues created, 3 comments, 1 sub-issue link, 1 project/
+      )
+    ).toBeInTheDocument();
   });
 
   it('previews Asana projects, takes a status override and clears the token', async () => {

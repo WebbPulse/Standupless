@@ -2115,6 +2115,21 @@ class SharedTarget(TypedDict):
     workspace_name: str
 
 
+class ShortcutTeamChoice(TypedDict):
+    shortcut_team_id: str
+    team_id: str
+
+
+class ShortcutTeamRead(TypedDict):
+    id: str
+    key: str
+    name: str
+
+
+class ShortcutTokenRequest(TypedDict):
+    api_token: str
+
+
 class SimilarIssueRead(TypedDict):
     issue_id: str
     key: str
@@ -2186,6 +2201,13 @@ class SlackLinkRead(TypedDict):
     problem: NotRequired[str | None]
     slack_team_name: NotRequired[str | None]
     slack_user_id: NotRequired[str | None]
+
+
+class SourceTeamMappingRead(TypedDict):
+    key: str
+    name: str
+    source_id: str
+    team_id: str
 
 
 class SsoConnectionRead(TypedDict):
@@ -3571,7 +3593,7 @@ class IssueImportRead(TypedDict):
     github_repository_id: NotRequired[str | None]
     import_id: str
     jira_projects: NotRequired[list[JiraProjectMappingRead]]
-    kind: NotRequired[Literal["csv", "linear", "github", "asana", "jira"]]
+    kind: NotRequired[Literal["csv", "linear", "github", "shortcut", "asana", "jira"]]
     labels_created: int
     linear_teams: NotRequired[list[LinearTeamMappingRead]]
     linked_count: NotRequired[int]
@@ -3585,6 +3607,7 @@ class IssueImportRead(TypedDict):
     processed_rows: int
     requested_by: str
     skipped_count: int
+    source_teams: NotRequired[list[SourceTeamMappingRead]]
     started_at: NotRequired[str | None]
     status: Literal["queued", "running", "completed", "failed", "cancelled"]
     team_id: str
@@ -3898,6 +3921,29 @@ class SharedViewPage(TypedDict):
     next_cursor: NotRequired[str | None]
 
 
+class ShortcutImportRequest(TypedDict):
+    api_token: str
+    teams: list[ShortcutTeamChoice]
+
+
+class ShortcutPreviewTeamRead(TypedDict):
+    epics: int
+    iterations: int
+    matched_owners: int
+    name: str
+    new_labels: list[str]
+    shortcut_team_id: str
+    statuses: list[StatusMappingRead]
+    stories: int
+    stories_capped: bool
+    team_id: str
+    unmatched_owners: int
+
+
+class ShortcutTeamListRead(TypedDict):
+    items: list[ShortcutTeamRead]
+
+
 class StandupPerson(TypedDict):
     blocked: NotRequired[list[StandupItem]]
     commented: NotRequired[list[StandupItem]]
@@ -4081,6 +4127,10 @@ class ProjectListRead(TypedDict):
 class ReleaseListRead(TypedDict):
     next_cursor: NotRequired[str | None]
     releases: list[ReleaseRead]
+
+
+class ShortcutImportPreviewRead(TypedDict):
+    teams: list[ShortcutPreviewTeamRead]
 
 
 class StandupDigest(TypedDict):

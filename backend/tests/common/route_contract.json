@@ -464,6 +464,24 @@
   {
     "auth": "workspace:admin",
     "domain": "integrations",
+    "method": "POST",
+    "path": "/api/workspaces/{workspace_id}/imports/shortcut"
+  },
+  {
+    "auth": "workspace:admin",
+    "domain": "integrations",
+    "method": "POST",
+    "path": "/api/workspaces/{workspace_id}/imports/shortcut/preview"
+  },
+  {
+    "auth": "workspace:admin",
+    "domain": "integrations",
+    "method": "POST",
+    "path": "/api/workspaces/{workspace_id}/imports/shortcut/teams"
+  },
+  {
+    "auth": "workspace:admin",
+    "domain": "integrations",
     "method": "GET",
     "path": "/api/workspaces/{workspace_id}/imports/{import_id}"
   },
