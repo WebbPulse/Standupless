@@ -204,7 +204,9 @@ class CommentRepository:
         when the comment is gone or is a reply.
         """
         key = {"ws_issue": ws_issue(workspace_id, issue_id), "comment_id": comment_id}
-        condition = Attr("comment_id").exists() & Attr("parent_comment_id").not_exists()
+        condition = Attr("comment_id").exists() & (
+            Attr("parent_comment_id").not_exists() | Attr("parent_comment_id").attribute_type("NULL")
+        )
         try:
             if thread is None:
                 item = self._repository.update(
