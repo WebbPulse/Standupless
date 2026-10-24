@@ -323,6 +323,9 @@ class IssueLink(BaseModel):
     `moves_status` is false while the pull request only mentions the key in passing
     in its body, so the link shows on the issue without moving its status; a row
     written before it existed reads as one that moves.
+    `holds_on_merge` is true when the pull request named the key only after a
+    `Refs` style word, so its merge did not finish the issue; a promotion reads it
+    to leave such an issue open. A row written before it existed reads as `None`.
 
     The branch, review and check fields are copied from the pull request's
     `PullRequestState` row whenever it changes, so a read of an issue's links
@@ -345,6 +348,7 @@ class IssueLink(BaseModel):
     author_login: str = ""
     magic_word: str | None = None
     moves_status: bool = True
+    holds_on_merge: bool | None = None
     applied_status_id: str | None = None
     comment_id: str | None = None
     check_run_id: str | None = None

@@ -44,6 +44,8 @@ def pull_request_event(
     author_association: str = "MEMBER",
     author_id: int = 4242,
     head_repository: str = REPOSITORY_FULL_NAME,
+    number: int = 7,
+    node_id: str = "PR_node",
 ) -> dict[str, Any]:
     """One `pull_request` delivery, in the shape the receiver enqueues it.
 
@@ -51,8 +53,8 @@ def pull_request_event(
     only a trusted author's pull request links anything.
     """
     pull_request: dict[str, Any] = {
-        "number": 7,
-        "node_id": "PR_node",
+        "number": number,
+        "node_id": node_id,
         "title": title,
         "body": body,
         "state": state,
@@ -1534,3 +1536,132 @@ def test_an_opened_refs_pull_request_still_starts_the_issue(
     )
 
     assert status_of(repositories, issue.issue_id) == preset["In Review"]
+
+
+def merge_into_staging(repositories: Any, *, number: int, title: str, body: str, branch: str) -> None:
+    """Merge one feature pull request into staging, as its own pull request with its own node."""
+    events.handle_record(
+        repositories,
+        sqs_record(
+            pull_request_event(
+                action="closed",
+                merged=True,
+                state="closed",
+                title=title,
+                body=body,
+                branch=branch,
+                base="staging",
+                number=number,
+                node_id=f"PR_node_{number}",
+            )
+        ),
+    )
+
+
+def merge_promotion(repositories: Any, pr_commits: PullRequestCommits, messages: list[str]) -> None:
+    """Merge a promotion into main whose commits are the given squash commit messages."""
+    pr_commits.messages = messages
+    events.handle_record(
+        repositories,
+        sqs_record(
+            pull_request_event(
+                action="closed",
+                merged=True,
+                state="closed",
+                title="Promote staging to main",
+                body="Release of the day.",
+                branch="promote/2026-10-23-release",
+                base="main",
+                number=90,
+                node_id="PR_node_promotion",
+            )
+        ),
+    )
+
+
+def test_a_promotion_leaves_open_an_issue_its_shipped_pull_request_only_referenced(
+    repositories: Any,
+    installed: str,
+    issue: Any,
+    preset: dict[str, str],
+    pr_commits: PullRequestCommits,
+    enqueued: list[tuple[str, Any]],
+    github_env: None,
+) -> None:
+    """A squash title naming a `Refs` key does not close the issue when the promotion lands on main."""
+    place(repositories, issue, preset["In Review"])
+    merge_into_staging(repositories, number=10, title="ABC-1 partial", body="Refs ABC-1", branch="abc-1-partial")
+
+    merge_promotion(repositories, pr_commits, ["ABC-1 partial (#10)"])
+
+    assert status_of(repositories, issue.issue_id) == preset["In Review"]
+    links = repositories.github.list_links_for_issue(WORKSPACE, issue.issue_id).items
+    assert {link["pr_number"]: link["holds_on_merge"] for link in links} == {10: True, 90: True}
+
+
+def test_a_promotion_closes_an_issue_its_shipped_pull_request_fixed(
+    repositories: Any,
+    installed: str,
+    issue: Any,
+    preset: dict[str, str],
+    pr_commits: PullRequestCommits,
+    enqueued: list[tuple[str, Any]],
+    github_env: None,
+) -> None:
+    """A staging pull request that said `Fixes` is what lets the promotion finish the issue."""
+    merge_into_staging(repositories, number=10, title="ABC-1 whole thing", body="Fixes ABC-1", branch="abc-1-whole")
+    assert status_of(repositories, issue.issue_id) == preset["On Staging"]
+
+    merge_promotion(repositories, pr_commits, ["ABC-1 whole thing (#10)"])
+
+    assert status_of(repositories, issue.issue_id) == preset["Done"]
+
+
+def test_a_promotion_closes_an_issue_a_branch_rule_moved_without_refs(
+    repositories: Any,
+    installed: str,
+    issue: Any,
+    preset: dict[str, str],
+    pr_commits: PullRequestCommits,
+    enqueued: list[tuple[str, Any]],
+    github_env: None,
+) -> None:
+    """A title key with no `Refs` moves through the team's merge rules all the way to Done."""
+    merge_into_staging(repositories, number=10, title="ABC-1 a change", body="", branch="abc-1-change")
+
+    merge_promotion(repositories, pr_commits, ["ABC-1 a change (#10)"])
+
+    assert status_of(repositories, issue.issue_id) == preset["Done"]
+
+
+def test_a_promotion_closes_an_issue_when_any_shipped_pull_request_fixed_it(
+    repositories: Any,
+    installed: str,
+    issue: Any,
+    preset: dict[str, str],
+    pr_commits: PullRequestCommits,
+    enqueued: list[tuple[str, Any]],
+    github_env: None,
+) -> None:
+    """A `Refs` slice and the `Fixes` pull request that finished the work ship together, so the issue closes."""
+    merge_into_staging(repositories, number=10, title="ABC-1 first slice", body="Refs ABC-1", branch="abc-1-first")
+    merge_into_staging(repositories, number=11, title="ABC-1 last slice", body="Fixes ABC-1", branch="abc-1-last")
+
+    merge_promotion(repositories, pr_commits, ["ABC-1 first slice (#10)", "ABC-1 last slice (#11)"])
+
+    assert status_of(repositories, issue.issue_id) == preset["Done"]
+
+
+def test_a_promotion_still_closes_a_key_from_a_commit_no_pull_request_links(
+    repositories: Any,
+    installed: str,
+    issue: Any,
+    preset: dict[str, str],
+    pr_commits: PullRequestCommits,
+    enqueued: list[tuple[str, Any]],
+    github_env: None,
+) -> None:
+    """A commit citing a pull request the App never linked falls back to what its text says."""
+    merge_promotion(repositories, pr_commits, ["ABC-1 pushed before the App (#3)"])
+
+    assert status_of(repositories, issue.issue_id) == preset["Done"]
