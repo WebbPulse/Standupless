@@ -358,6 +358,7 @@ const WorkspaceOverlays: React.FC = () => {
                         workspace={workspace}
                         teams={teams}
                         onShowShortcuts={showHelp}
+                        currentUserId={user?.id}
                       />
                     </>
                   )}
