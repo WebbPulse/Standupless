@@ -67,6 +67,44 @@ def test_get_workspace_answers_the_callers_role(client: TestClient, repositories
     assert found["purge_after"] is None
 
 
+def test_workspace_display_defaults_set_read_and_clear(client: TestClient, repositories: Any, workspace: str) -> None:
+    """An admin sets the workspace projects default, get_workspace reads it, and null clears it."""
+    secret = mint_for(repositories, ADMIN, ("settings:write", "settings:read", "admin"))
+
+    saved = answer(
+        tool(client, secret, "update_workspace_display_defaults", {"projects_display": {"layout": "timeline"}})
+    )
+    found = answer(tool(client, secret, "get_workspace"))
+    invalid = refusal(
+        tool(client, secret, "update_workspace_display_defaults", {"projects_display": {"layout": "gantt"}})
+    )
+    missing = refusal(tool(client, secret, "update_workspace_display_defaults", {}))
+    cleared = answer(tool(client, secret, "update_workspace_display_defaults", {"projects_display": None}))
+
+    assert saved["projects_display"]["layout"] == "timeline"
+    assert saved["effective_projects_display"]["layout"] == "timeline"
+    assert found["display_defaults"]["projects_display"]["layout"] == "timeline"
+    assert "layout" in invalid
+    assert "projects_display" in missing
+    assert cleared["projects_display"] is None
+    assert cleared["effective_projects_display"]["layout"] == "list"
+
+
+def test_a_member_cannot_set_the_workspace_display_defaults(
+    client: TestClient, repositories: Any, workspace: str
+) -> None:
+    """The workspace projects default is a workspace admin decision on MCP as on the route."""
+    scope_refused(
+        tool(
+            client,
+            mint_for(repositories, MEMBER, ("settings:write", "admin")),
+            "update_workspace_display_defaults",
+            {"projects_display": {"layout": "board"}},
+        )
+    )
+    assert repositories.team_config.get_workspace_display_defaults(WORKSPACE) is None
+
+
 def test_update_workspace_renames_it(client: TestClient, repositories: Any, workspace: str) -> None:
     """An admin renames the workspace, and the slug stays as it was."""
     secret = mint_for(repositories, ADMIN, ("settings:write", "admin"))

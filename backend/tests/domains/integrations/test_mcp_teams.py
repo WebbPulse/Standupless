@@ -401,6 +401,32 @@ def test_display_defaults_set_clear_and_validate(client: TestClient, repositorie
     assert cleared["board_display"]["completed_window"] == "past_week"
 
 
+def test_team_projects_display_default_falls_back_to_the_workspace(
+    client: TestClient, repositories: Any, workspace: str
+) -> None:
+    """A team admin sets the team projects default, and without one get_team reads the workspace default."""
+    admin = mint_for(repositories, ADMIN, ("teams:write", "teams:read", "settings:write", "admin"))
+    member = mint_for(repositories, MEMBER, ("teams:write",))
+
+    answer(tool(client, admin, "update_workspace_display_defaults", {"projects_display": {"group": "lead"}}))
+    inherited = answer(tool(client, admin, "get_team", {"team_id": TEAM}))
+    saved = answer(
+        tool(client, admin, "update_team_display_defaults", {"team_id": "ABC", "projects_display": {"group": "health"}})
+    )
+    refused = refusal(
+        tool(client, member, "update_team_display_defaults", {"team_id": "ABC", "projects_display": None})
+    )
+    cleared = answer(tool(client, admin, "update_team_display_defaults", {"team_id": "ABC", "projects_display": None}))
+
+    assert inherited["display_defaults"]["projects_display"] is None
+    assert inherited["display_defaults"]["effective_projects_display"]["group"] == "lead"
+    assert saved["projects_display"]["group"] == "health"
+    assert saved["effective_projects_display"]["group"] == "health"
+    assert FORBIDDEN in refused
+    assert cleared["projects_display"] is None
+    assert cleared["effective_projects_display"]["group"] == "lead"
+
+
 def test_list_team_members_by_key(client: TestClient, repositories: Any, workspace: str) -> None:
     """A guest reads the members of its own team and nothing of another."""
     secret = mint_for(repositories, GUEST, ("members:read",))

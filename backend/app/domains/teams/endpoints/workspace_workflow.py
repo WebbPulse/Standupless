@@ -1,8 +1,10 @@
-"""Workspace status and label routes: the set every team of the workspace inherits.
+"""Workspace status, label and display default routes: what every team of the workspace inherits.
 
 Reads are open to any member, because every team's pickers draw on the set.
 Writes are workspace admin, because one change reaches every team at once. A
-team adjusts an inherited record for itself through the team override routes.
+team adjusts an inherited record for itself through the team override routes,
+and sets a projects display default of its own through the team display
+defaults route.
 """
 
 from __future__ import annotations
@@ -11,7 +13,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Path, Query, Response, status
 
-from app.common import label_merge, team_workflow
+from app.common import label_merge, team_workflow, team_writes
 from app.common.api.dependencies.authz import AuthzContext, Capability, require
 from app.common.api.dependencies.repositories import Repositories, get_repositories
 from app.common.api.schemas.teams import (
@@ -25,6 +27,8 @@ from app.common.api.schemas.teams import (
     StatusListRead,
     StatusRead,
     StatusUpdate,
+    WorkspaceDisplayDefaultsRead,
+    WorkspaceDisplayDefaultsUpdate,
 )
 
 router = APIRouter()
@@ -145,3 +149,29 @@ def delete_workspace_label(
     """Delete a workspace label, every team's override of it, and the label on every issue carrying it."""
     team_workflow.delete_workspace_label(repositories, context.workspace_id, label_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.get("/{workspace_id}/display-defaults", response_model=WorkspaceDisplayDefaultsRead)
+def read_workspace_display_defaults(
+    context: Annotated[AuthzContext, Depends(require(Capability.WORKSPACE_READ))],
+    repositories: Annotated[Repositories, Depends(get_repositories)],
+) -> WorkspaceDisplayDefaultsRead:
+    """What the projects page opens with for a member who never arranged it and whose team set no default."""
+    return WorkspaceDisplayDefaultsRead.from_row(
+        team_writes.workspace_display_defaults(repositories, context.workspace_id)
+    )
+
+
+@router.patch("/{workspace_id}/display-defaults", response_model=WorkspaceDisplayDefaultsRead)
+def update_workspace_display_defaults(
+    payload: WorkspaceDisplayDefaultsUpdate,
+    context: Annotated[AuthzContext, Depends(require(Capability.WORKSPACE_ADMIN))],
+    repositories: Annotated[Repositories, Depends(get_repositories)],
+) -> WorkspaceDisplayDefaultsRead:
+    """Set or clear the projects arrangement every member opens with until they arrange it themselves.
+
+    A workspace admin's call. A team default, where one is set, wins on that
+    team's projects page, and a member's own arrangement wins over both.
+    """
+    saved = team_writes.update_workspace_display_defaults(repositories, context.workspace_id, context.user_id, payload)
+    return WorkspaceDisplayDefaultsRead.from_row(saved)
