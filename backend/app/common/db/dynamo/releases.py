@@ -527,18 +527,26 @@ class ReleaseRepository:
         item = self._get(workspace_id, head_key(team_id, repository_id, stage_id), consistent=True)
         return str(item["sha"]) if item and item.get("sha") else None
 
-    def set_head(self, workspace_id: str, team_id: str, repository_id: str, stage_id: str, sha: str) -> None:
-        """Record the commit one repository just reached one stage at."""
-        self._repository.put(
-            {
-                "workspace_id": workspace_id,
-                "planning_key": head_key(team_id, repository_id, stage_id),
-                "kind": RELEASE_HEAD,
-                "team_id": team_id,
-                "sha": sha.lower(),
-                "updated_at": utc_now().isoformat(),
-            }
-        )
+    def get_head_ref(self, workspace_id: str, team_id: str, repository_id: str, stage_id: str) -> str | None:
+        """The ref one repository last reached one stage from, or `None` for a head recorded without one."""
+        item = self._get(workspace_id, head_key(team_id, repository_id, stage_id), consistent=True)
+        return str(item["ref"]) if item and item.get("ref") else None
+
+    def set_head(
+        self, workspace_id: str, team_id: str, repository_id: str, stage_id: str, sha: str, *, ref: str | None = None
+    ) -> None:
+        """Record the commit one repository just reached one stage at, and the ref it deployed from when known."""
+        item: dict[str, Any] = {
+            "workspace_id": workspace_id,
+            "planning_key": head_key(team_id, repository_id, stage_id),
+            "kind": RELEASE_HEAD,
+            "team_id": team_id,
+            "sha": sha.lower(),
+            "updated_at": utc_now().isoformat(),
+        }
+        if ref:
+            item["ref"] = ref
+        self._repository.put(item)
 
     def link_issues(self, release: Release, issue_ids: Sequence[str]) -> None:
         """Write the issue side of a release's links for these issues."""

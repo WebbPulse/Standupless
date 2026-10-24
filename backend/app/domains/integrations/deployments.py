@@ -10,12 +10,20 @@ previous successful deployment on GitHub.
 
 Commits a team already released, say on staging, are advanced to the new stage
 rather than released twice, which is how a promotion moves the staging releases to
-production. A deployed commit that is a pull request's merge, such as a promotion
-from `promote/2026-10-07-b`, makes a release named from that pull request carrying
-every issue of the range. Otherwise only issues no earlier release carried make a
-new release. A repository pinned to a team always records, so a deploy with no
-keys is still on the record; an unpinned one records only for teams whose keys it
-names. A stage set to publish makes the deployment's release a GitHub Release.
+production. A promotion, a deployed pull request merge from a branch such as
+`promote/2026-10-07-b` or one carrying releases from an earlier stage, makes a
+release named from that pull request carrying every issue of the range. Otherwise
+only issues no earlier release carried, and no release already took to that
+stage, make a new release, so an issue lists one release per stage.
+
+A deployment that does not move the stage forward records nothing and leaves its
+head where it was: a commit the head already contains, one whose release already
+reached a later stage, or one from another ref that diverged from the head, such
+as the default branch's commit an end-to-end job reports against staging.
+
+A repository pinned to a team always records, so a deploy with no keys is still
+on the record; an unpinned one records only for teams whose keys it names. A
+stage set to publish makes the deployment's release a GitHub Release.
 
 A release moves only the issues it closes. An issue whose pull requests in the
 repository name it without a closing keyword, such as `Refs ABC-1`, and none of
@@ -91,6 +99,7 @@ class _GitHub:
     best_effort_pulls: bool = False
     pulls_unread: int = 0
     _version_tags: dict[str, list[str]] | None = None
+    _statuses: dict[tuple[str, str], str | None] = field(default_factory=dict)
 
     def token(self) -> str:
         """An installation token, minted on first use."""
@@ -172,6 +181,19 @@ class _GitHub:
         missing = [number for number in dict.fromkeys(numbers) if number not in self._pulls_by_number]
         if missing:
             self._pulls_by_number.update(self.stored_pulls(missing))
+
+    def standing(self, previous_sha: str, sha: str) -> str | None:
+        """How the deployed commit stands to the stage's head, read once per pair, or `None` when unreadable."""
+        from app.domains.integrations import github_deployments
+
+        key = (previous_sha, sha)
+        if key not in self._statuses:
+            self._statuses[key] = _readable(
+                lambda: github_deployments.compare_status(self.token(), self.repository_id, previous_sha, sha),
+                None,
+                "compare",
+            )
+        return self._statuses[key]
 
     def merged_pull(self, sha: str) -> Any:
         """The pull request whose merge commit this is, or `None`, read once per commit."""
@@ -284,6 +306,20 @@ def handle_deployment_status(repositories: Repositories, workspace_id: str, body
         previous = repositories.releases.get_head(workspace_id, team_id, repository_id, stage.stage_id)
         if previous == sha:
             continue
+        head_ref = repositories.releases.get_head_ref(workspace_id, team_id, repository_id, stage.stage_id)
+        if previous is not None and _off_the_stage(
+            repositories,
+            github,
+            pipeline.stages,
+            workspace_id,
+            team_id,
+            stage,
+            previous=previous,
+            head_ref=head_ref,
+            sha=sha,
+            ref=ref,
+        ):
+            continue
         if previous is None:
             if not seeded:
                 seeded.append(github.previous_success(environment, sha, deployment_id))
@@ -310,7 +346,63 @@ def handle_deployment_status(repositories: Repositories, workspace_id: str, body
         )
         if release is not None and pinned and stage.publish_github_release:
             _publish(repositories, github, release, stage, pipeline.stages)
-        repositories.releases.set_head(workspace_id, team_id, repository_id, stage.stage_id, sha)
+        repositories.releases.set_head(
+            workspace_id,
+            team_id,
+            repository_id,
+            stage.stage_id,
+            sha,
+            ref=head_ref or ref,
+        )
+
+
+def _later_stage_ids(stages: Sequence[PipelineStage], stage: PipelineStage) -> set[str]:
+    """The ids of the pipeline's stages after this one."""
+    ids = [row.stage_id for row in stages]
+    if stage.stage_id not in ids:
+        return set()
+    return set(ids[ids.index(stage.stage_id) + 1 :])
+
+
+def _beyond(release: Release, later: set[str], stage: PipelineStage) -> bool:
+    """Whether a release already reached a later stage and never this one, so this stage cannot carry it."""
+    reached = {row.stage_id for row in release.stages}
+    return stage.stage_id not in reached and bool(reached & later)
+
+
+def _off_the_stage(
+    repositories: Repositories,
+    github: _GitHub,
+    stages: Sequence[PipelineStage],
+    workspace_id: str,
+    team_id: str,
+    stage: PipelineStage,
+    *,
+    previous: str,
+    head_ref: str | None,
+    sha: str,
+    ref: str | None,
+) -> bool:
+    """Whether a successful deployment is not the stage moving forward, so it records nothing and keeps the head.
+
+    A job that only runs against an environment, such as an end-to-end suite
+    triggered from the default branch, shows on GitHub as a deployment of that
+    branch's commit. Taking it as the stage's head would start the next real
+    deploy's range at that commit and release everything since again. So a
+    commit the stage's head already contains, a commit whose release already
+    reached a later stage, and a commit from another ref that diverged from the
+    head are passed over. A head stored without its ref accepts a diverged
+    commit, which is how a head an earlier deployment misplaced recovers.
+    """
+    release_id = repositories.releases.release_for_sha(workspace_id, team_id, github.repository_id, sha)
+    if release_id is not None:
+        rows = repositories.releases.get_many(workspace_id, [(team_id, release_id)])
+        if rows and _beyond(rows[0], _later_stage_ids(stages, stage), stage):
+            return True
+    standing = github.standing(previous, sha)
+    if standing in ("behind", "identical"):
+        return True
+    return standing == "diverged" and bool(head_ref) and bool(ref) and ref != head_ref
 
 
 def _in_repository(link: IssueLink, repository_id: str, repository: str) -> bool:
@@ -373,32 +465,64 @@ def _record_for_team(
     tag: str | None = None,
     at: datetime | None = None,
     automate: bool = True,
+    first_only: bool = True,
 ) -> Release | None:
     """Advance the team's releases of these commits to the stage, and release what none of them carried.
 
     Answers the release of the deployed commit, or `None` when the deployment
-    made none. A deployed pull request merge carries every issue of the range,
-    so a promotion reads as one release in the later stage, and the earlier
-    releases it advanced are recorded as included in it rather than listed beside
-    it. A promotion's branch names its release; any other deployment is named by
-    its version `tag`, or by the date without one, never by a pull request title.
+    made none. A promotion carries every issue of the range, so it reads as one
+    release in the later stage, and the earlier releases it advanced are recorded
+    as included in it rather than listed beside it. A promotion is a deployed pull
+    request merge from a promotion branch, or one whose range holds a release
+    from an earlier stage. Any other deployment releases only the issues no
+    release in its range carried and, with `first_only`, none that another
+    release already took to this stage, so an issue lists at most one release
+    per stage: the first that carried it there. A release that already reached a
+    later stage is not moved back to this one, and a deployed commit whose
+    release did records nothing. A promotion's branch names its
+    release; any other deployment is named by its version `tag`, or by the date
+    without one, never by a pull request title.
     """
+    from app.domains.integrations import github_deployments, tag_releases
+
+    pipeline, _ = releases.pipeline_for(repositories, workspace_id, team_id)
+    later = _later_stage_ids(pipeline.stages, stage)
+    before = {row.stage_id for row in pipeline.stages} - later - {stage.stage_id}
     shas = [*(commit_sha for commit_sha, _ in commits), sha]
     known = repositories.releases.releases_for_shas(workspace_id, team_id, repository_id, shas)
     pairs = [(team_id, release_id) for release_id in set(known.values())]
     earlier = repositories.releases.get_many(workspace_id, pairs)
     covered: set[str] = set()
     head_release: Release | None = None
+    carried_on = False
     for release in earlier:
         release = _with_references(repositories, release, repository_id, repository)
-        advanced = releases.reach_stage(
-            repositories, release, stage, source=SOURCE, environment=environment, url=url, at=at, automate=automate
-        )
+        if _beyond(release, later, stage):
+            if known.get(sha) == release.release_id:
+                return None
+            advanced = release
+        else:
+            carried_on = carried_on or any(row.stage_id in before for row in release.stages)
+            advanced = releases.reach_stage(
+                repositories, release, stage, source=SOURCE, environment=environment, url=url, at=at, automate=automate
+            )
         covered.update(advanced.issue_ids)
         if known.get(sha) == release.release_id:
             head_release = advanced
+    promoted = github_deployments.promotion_name(pull) if pull is not None else None
+    carries_all = promoted is not None or (pull is not None and carried_on)
     mentioned = releases.issues_from_messages(repositories, workspace_id, team_id, [message for _, message in commits])
-    issues: list[Issue] = mentioned if pull is not None else [i for i in mentioned if i.issue_id not in covered]
+    issues: list[Issue] = mentioned if carries_all else [i for i in mentioned if i.issue_id not in covered]
+    if issues and not carries_all and first_only:
+        taken = _taken_at_stage(
+            repositories,
+            workspace_id,
+            team_id,
+            stage,
+            [issue.issue_id for issue in issues],
+            keep=head_release.release_id if head_release is not None else None,
+        )
+        issues = [issue for issue in issues if issue.issue_id not in taken]
     referenced = referenced_only(
         repositories, workspace_id, repository_id, repository, [issue.issue_id for issue in issues]
     )
@@ -408,11 +532,8 @@ def _record_for_team(
         return head_release
     if not issues and not pinned:
         return None
-    if not issues and pull is None and earlier:
+    if not issues and not carries_all and earlier:
         return None
-    from app.domains.integrations import github_deployments, tag_releases
-
-    promoted = github_deployments.promotion_name(pull) if pull is not None else None
     release, created = releases.record_release(
         repositories,
         workspace_id,
@@ -434,10 +555,32 @@ def _record_for_team(
         automate=automate,
         referenced=referenced,
     )
-    if pull is not None and created and earlier:
-        pipeline, _ = releases.pipeline_for(repositories, workspace_id, team_id)
+    if carries_all and created and earlier:
         release = releases.include_releases(repositories, release, earlier, pipeline)
     return release
+
+
+def _taken_at_stage(
+    repositories: Repositories,
+    workspace_id: str,
+    team_id: str,
+    stage: PipelineStage,
+    issue_ids: Sequence[str],
+    *,
+    keep: str | None,
+) -> set[str]:
+    """The issues another release of the team, not `keep`, already took to this stage."""
+    taken: set[str] = set()
+    for issue_id in dict.fromkeys(issue_ids):
+        pairs = [
+            pair
+            for pair in repositories.releases.list_for_issue(workspace_id, issue_id)
+            if pair[0] == team_id and pair[1] != keep
+        ]
+        rows = repositories.releases.get_many(workspace_id, pairs)
+        if any(row.stage_id == stage.stage_id for release in rows for row in release.stages):
+            taken.add(issue_id)
+    return taken
 
 
 def _notes(repositories: Repositories, release: Release) -> str:
@@ -626,7 +769,8 @@ def backfill(
     """Rebuild one batch of a team's releases from an environment's past successful deployments.
 
     Works newest first, each deployment's range starting at the next older
-    successful one, through the same path a live deployment takes, so a commit
+    successful one from the same ref, or from any ref when the page holds none,
+    through the same path a live deployment takes, so a commit
     that already has a release only gains issues. It never moves issues, never
     publishes, and sets a repository's stage head only when it has none.
 
@@ -727,7 +871,7 @@ def backfill(
                 budget.until(BACKFILL_FIRST_SECONDS if first else BACKFILL_PAGE_SECONDS)
                 github.best_effort_pulls = first
                 try:
-                    older = [row.sha for row in found.deployments[index + 1 :] if row.sha != deployment.sha]
+                    older = _older_shas(found.deployments[index + 1 :], deployment)
                     if older:
                         previous: str | None = older[0]
                     else:
@@ -769,6 +913,7 @@ def backfill(
                     tag=tag,
                     at=deployment.created_at,
                     automate=False,
+                    first_only=False,
                 )
                 done += 1
                 if release is None:
@@ -828,6 +973,19 @@ def backfill(
         rate_limit_remaining=budget.remaining,
         rate_limit=budget.limit,
     )
+
+
+def _older_shas(older: Sequence[Any], deployment: Any) -> list[str]:
+    """The older deployments' commits a backfilled range may start at, those from the same ref first.
+
+    A job that only runs against the environment from another branch, such as an
+    end-to-end suite on the default branch, lists as a deployment of that
+    branch's commit, so starting the range there would take in history the stage
+    shipped earlier.
+    """
+    candidates = [row for row in older if row.sha != deployment.sha]
+    ordered = sorted(candidates, key=lambda row: not (deployment.ref and row.ref == deployment.ref))
+    return [row.sha for row in ordered]
 
 
 RETRY_RESUME = "unreadable_deployment_ids as deployment_ids"
@@ -934,6 +1092,7 @@ def _retry(
                     tag=tag,
                     at=deployment.created_at,
                     automate=False,
+                    first_only=False,
                 )
                 done += 1
                 if release is None:
