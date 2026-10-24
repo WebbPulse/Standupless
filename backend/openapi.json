@@ -11712,6 +11712,85 @@
         "title": "ProjectCreate",
         "type": "object"
       },
+      "ProjectHistoryRead": {
+        "description": "A project's daily scope, started and completed figures, from the day its series opens to today.\n\n`recorded_since` is the first day the snapshots recorded, None while the\nproject has no history yet and `days` holds today alone.",
+        "properties": {
+          "days": {
+            "items": {
+              "$ref": "#/components/schemas/CycleHistoryPoint"
+            },
+            "title": "Days",
+            "type": "array"
+          },
+          "measure": {
+            "enum": [
+              "points",
+              "issues"
+            ],
+            "title": "Measure",
+            "type": "string"
+          },
+          "project_id": {
+            "title": "Project Id",
+            "type": "string"
+          },
+          "projection": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProjectProjectionRead"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "recorded_since": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recorded Since"
+          },
+          "start_date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start Date"
+          },
+          "target_date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Date"
+          },
+          "today": {
+            "title": "Today",
+            "type": "string"
+          }
+        },
+        "required": [
+          "project_id",
+          "today",
+          "measure",
+          "days"
+        ],
+        "title": "ProjectHistoryRead",
+        "type": "object"
+      },
       "ProjectListRead": {
         "properties": {
           "next_cursor": {
@@ -11798,6 +11877,42 @@
           "action"
         ],
         "title": "ProjectOpenIssues",
+        "type": "object"
+      },
+      "ProjectProjectionRead": {
+        "description": "Where the recent completion rate takes a project's remaining scope.\n\n`rate_per_day` is in the project's `measure`. `expected_date` is None when\nnothing was completed over the window or the finish is out of sight, and\n`days_past_target` is negative when the finish lands before the target date.",
+        "properties": {
+          "days_past_target": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Days Past Target"
+          },
+          "expected_date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Date"
+          },
+          "rate_per_day": {
+            "title": "Rate Per Day",
+            "type": "number"
+          }
+        },
+        "required": [
+          "rate_per_day"
+        ],
+        "title": "ProjectProjectionRead",
         "type": "object"
       },
       "ProjectRead": {
@@ -40428,6 +40543,80 @@
           }
         ],
         "summary": "Follow Project",
+        "tags": [
+          "planning"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/projects/{project_id}/history": {
+      "get": {
+        "description": "A project's daily scope, started and completed figures, and its projected finish.\n\nRead from the daily snapshots the rollup writes, one query on the project's\nown prefix, so no read of the `issues` table. Today always reads the live\ncounts. The projection extends the recent completion rate over the remaining\nscope, in the project's measure, and says how far its finish lands from the\ntarget date.",
+        "operationId": "read_project_history_api_workspaces__workspace_id__projects__project_id__history_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "team_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Team Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectHistoryRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Read Project History",
         "tags": [
           "planning"
         ]

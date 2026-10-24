@@ -2029,6 +2029,34 @@ export interface CycleHistoryRead {
   days: CycleHistoryPoint[];
 }
 
+/**
+ * Where the recent completion rate takes a project's remaining scope.
+ * `rate_per_day` is in the project's measure. `expected_date` is null when
+ * nothing was completed recently or the finish is out of sight, and
+ * `days_past_target` is negative when the finish lands before the target.
+ */
+export interface ProjectProjectionRead {
+  rate_per_day: number;
+  expected_date: string | null;
+  days_past_target: number | null;
+}
+
+/**
+ * A project's daily history from the day its series opens to today, recorded
+ * by the rollup as the project's issues move. `recorded_since` is null while
+ * nothing has been recorded, and `days` then holds today alone.
+ */
+export interface ProjectHistoryRead {
+  project_id: string;
+  start_date: string | null;
+  target_date: string | null;
+  today: string;
+  measure: 'points' | 'issues';
+  recorded_since: string | null;
+  days: CycleHistoryPoint[];
+  projection: ProjectProjectionRead | null;
+}
+
 /** One closed cycle's delivered work, read as it stood on its last day. */
 export interface VelocityCycleRead {
   cycle_id: string;

@@ -122,4 +122,41 @@ describe('BurnUpChart', () => {
     ).toBeInTheDocument();
     expect(tickLabels()).toEqual(['0', '1']);
   });
+
+  it('draws a project forecast and target marker without the target pace', () => {
+    render(
+      <BurnUpChart
+        points={[point('2026-09-01', 4, 1, 1), point('2026-09-02', 4, 2, 2)]}
+        days={days}
+        forecast={{ date: '2026-09-04', value: 4 }}
+        targetDate="2026-09-03"
+        showPace={false}
+      />
+    );
+
+    expect(screen.getByTestId('burn-up-forecast')).toBeInTheDocument();
+    expect(screen.getByTestId('burn-up-target')).toBeInTheDocument();
+    expect(screen.queryByText('Target pace')).toBeNull();
+    expect(screen.getByText('Target date')).toBeInTheDocument();
+    expect(
+      screen.getByRole('img', {
+        name: /Projected to complete 4 by 2026-09-04/,
+      })
+    ).toBeInTheDocument();
+  });
+
+  it('skips a forecast or target that falls outside the drawn days', () => {
+    render(
+      <BurnUpChart
+        points={[point('2026-09-01', 4, 1, 1)]}
+        days={days}
+        forecast={{ date: '2026-10-01', value: 4 }}
+        targetDate="2026-08-01"
+      />
+    );
+
+    expect(screen.queryByTestId('burn-up-forecast')).toBeNull();
+    expect(screen.queryByTestId('burn-up-target')).toBeNull();
+    expect(screen.getByText('Target pace')).toBeInTheDocument();
+  });
 });
