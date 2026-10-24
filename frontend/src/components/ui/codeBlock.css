@@ -1,0 +1,118 @@
+@reference '../../index.css';
+
+.code-highlight {
+  --syntax-keyword: var(--merged);
+  --syntax-string: var(--success);
+  --syntax-number: var(--warning);
+  --syntax-title: var(--accent-strong);
+  --syntax-type: var(--danger);
+  --syntax-comment: var(--text-faint);
+  --syntax-meta: var(--text-muted);
+  --syntax-addition: var(--success);
+  --syntax-addition-bg: var(--success-soft);
+  --syntax-deletion: var(--danger);
+  --syntax-deletion-bg: var(--danger-soft);
+}
+
+.code-highlight .hljs-keyword,
+.code-highlight .hljs-selector-tag,
+.code-highlight .hljs-doctag,
+.code-highlight .hljs-template-tag,
+.code-highlight .hljs-meta .hljs-keyword {
+  color: var(--syntax-keyword);
+}
+
+.code-highlight .hljs-string,
+.code-highlight .hljs-regexp,
+.code-highlight .hljs-char.escape_,
+.code-highlight .hljs-meta .hljs-string {
+  color: var(--syntax-string);
+}
+
+.code-highlight .hljs-number,
+.code-highlight .hljs-literal,
+.code-highlight .hljs-symbol,
+.code-highlight .hljs-bullet,
+.code-highlight .hljs-variable.constant_,
+.code-highlight .hljs-link {
+  color: var(--syntax-number);
+}
+
+.code-highlight .hljs-title,
+.code-highlight .hljs-title.function_,
+.code-highlight .hljs-section,
+.code-highlight .hljs-selector-id,
+.code-highlight .hljs-selector-class {
+  color: var(--syntax-title);
+}
+
+.code-highlight .hljs-type,
+.code-highlight .hljs-built_in,
+.code-highlight .hljs-title.class_,
+.code-highlight .hljs-attr,
+.code-highlight .hljs-attribute,
+.code-highlight .hljs-property,
+.code-highlight .hljs-name,
+.code-highlight .hljs-variable.language_,
+.code-highlight .hljs-selector-attr,
+.code-highlight .hljs-selector-pseudo {
+  color: var(--syntax-type);
+}
+
+.code-highlight .hljs-comment,
+.code-highlight .hljs-quote {
+  color: var(--syntax-comment);
+  font-style: italic;
+}
+
+.code-highlight .hljs-meta,
+.code-highlight .hljs-tag,
+.code-highlight .hljs-punctuation,
+.code-highlight .hljs-subst {
+  color: var(--syntax-meta);
+}
+
+.code-highlight .hljs-addition {
+  color: var(--syntax-addition);
+  background-color: var(--syntax-addition-bg);
+}
+
+.code-highlight .hljs-deletion {
+  color: var(--syntax-deletion);
+  background-color: var(--syntax-deletion-bg);
+}
+
+.code-highlight .hljs-emphasis {
+  font-style: italic;
+}
+
+.code-highlight .hljs-strong {
+  font-weight: 600;
+}
+
+.code-block {
+  @apply relative;
+}
+
+.code-block-copy {
+  @apply inline-flex h-6 w-6 cursor-pointer items-center justify-center rounded-sm border border-line bg-surface text-text-muted opacity-0 transition-opacity hover:bg-raised hover:text-text focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-focus pointer-coarse:h-11 pointer-coarse:w-11;
+}
+
+.code-block-copy svg {
+  @apply h-3.5 w-3.5;
+}
+
+.code-block-copy[data-copied='true'] {
+  @apply text-success opacity-100;
+}
+
+.code-block:hover .code-block-copy,
+.code-block:focus-within .code-block-copy {
+  @apply opacity-100;
+}
+
+@media (hover: none) {
+  .code-block-copy {
+    @apply opacity-100;
+  }
+}
