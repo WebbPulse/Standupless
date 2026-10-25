@@ -14,8 +14,8 @@
  * removal is held until its window lapses or the page goes, and undoing a
  * snooze unsnoozes and keeps read rows read. Each row's menu, from a right
  * click or its "more" button, offers the issue-only entries only on issue
- * rows, and unsubscribing from it, or with Shift S, offers Undo. Ctrl F
- * opens quick search over the loaded rows, Show unread first reorders them
+ * rows, and unsubscribing from it, or with Cmd or Ctrl Shift S, offers
+ * Undo. Ctrl F opens quick search over the loaded rows, Show unread first reorders them
  * without a new read, and Shift Backspace offers to delete every read row.
  */
 
@@ -1352,12 +1352,12 @@ describe('inbox row menu', () => {
     open.mockRestore();
   });
 
-  it('toggles the subscription on the selected row with shift s', async () => {
+  it('toggles the subscription on the selected row with mod shift s', async () => {
     renderPage('/w/mine/inbox?n=n-1');
 
     await screen.findByLabelText('Peek iss-1');
-    await keysBound('shift+s');
-    press('S', { shiftKey: true });
+    await keysBound('mod+shift+s');
+    press('S', { ctrlKey: true, shiftKey: true });
 
     await waitFor(() => {
       expect(unsubscribe).toHaveBeenCalledWith('iss-1');
@@ -1367,7 +1367,7 @@ describe('inbox row menu', () => {
     });
   });
 
-  it('does not bind shift s on a row with no issue', async () => {
+  it('does not bind mod shift s on a row with no issue', async () => {
     listInbox.mockResolvedValue({
       notifications: [projectRow()],
       next_cursor: null,
@@ -1377,6 +1377,6 @@ describe('inbox row menu', () => {
     await screen.findByRole('complementary', { name: 'Project update' });
     await keysBound('enter');
 
-    expect(boundKeys()).not.toContain('shift+s');
+    expect(boundKeys()).not.toContain('mod+shift+s');
   });
 });
