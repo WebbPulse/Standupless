@@ -1,7 +1,8 @@
 /**
  * The named folders inside the sidebar's Favorites. Each folder collapses and
  * remembers that per viewer and workspace, renames in place, drags to a new
- * place among the folders, and takes a favorite dropped onto it. Deleting one
+ * place among the folders, and takes a favorite or a sidebar row dropped onto
+ * it. Its menu copies the links of what it holds, one per line. Deleting one
  * never unstars anything: its favorites move back to the top level.
  */
 
@@ -85,6 +86,8 @@ export interface FavoriteFoldersProps {
   favoriteDragging: boolean;
   /** Moves the dragged favorite into a folder. */
   onFavoriteDrop: (folderId: string) => void;
+  /** Copies the links of a folder's favorites in its order. */
+  onCopyLinks: (folderId: string) => void;
   /** Says a change out loud for screen readers. */
   onAnnounce: (message: string) => void;
 }
@@ -143,6 +146,7 @@ export const FavoriteFolders: React.FC<FavoriteFoldersProps> = ({
   onReorder,
   favoriteDragging,
   onFavoriteDrop,
+  onCopyLinks,
   onAnnounce,
 }) => {
   const [collapsed, setCollapsed] = useState<string[]>(() =>
@@ -343,6 +347,15 @@ export const FavoriteFolders: React.FC<FavoriteFoldersProps> = ({
                     >
                       Rename
                     </MenuItem>
+                    {children.length > 0 && (
+                      <MenuItem
+                        onSelect={() => {
+                          onCopyLinks(folder.folder_id);
+                        }}
+                      >
+                        Copy links
+                      </MenuItem>
+                    )}
                     {canReorder && index > 0 && (
                       <MenuItem
                         onSelect={() => {

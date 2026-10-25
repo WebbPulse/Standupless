@@ -9,15 +9,24 @@
  * new order shows at once and the server keeps it per person and workspace, so
  * it follows them to every device. The heading's menu makes a folder, a row's
  * menu moves it into one, and dropping a row on a folder does the same.
+ *
+ * A team's header or page dragged from elsewhere in the sidebar stars the team
+ * where it is dropped: on the heading for the top level or on a folder. While
+ * nothing is starred the heading still shows during such a drag, so there is
+ * always somewhere to drop it.
  */
 
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { LuEllipsis, LuFolder, LuGoal, LuRefreshCcw } from 'react-icons/lu';
 import { NavLink } from 'react-router-dom';
 import { useFavorites } from '../../hooks/useFavorites';
+import {
+  useSidebarFavoriteDrag,
+  type SidebarFavoriteDrag,
+} from '../../hooks/useSidebarFavoriteDrag';
 import { cn } from '../../lib/cn';
 import { favoriteHref, sameFavorite } from '../../lib/favorites';
-import { showToast } from '../../lib/toast';
+import { showErrorToast, showToast } from '../../lib/toast';
 import { PROJECT_ICON_GLYPHS, projectGlyph } from '../../lib/projectLook';
 import type { ViewColor } from '../../api/views';
 import type { FavoriteRead, ProjectIconName, TeamRead } from '../../types/Api';
@@ -147,6 +156,7 @@ export const FavoritesSection: React.FC<FavoritesSectionProps> = ({
 }) => {
   const {
     favorites,
+    place,
     remove,
     reorder,
     folders,
@@ -159,6 +169,9 @@ export const FavoritesSection: React.FC<FavoritesSectionProps> = ({
   const [dragOver, setDragOver] = useState<string | null>(null);
   const [renaming, setRenaming] = useState<string | null>(null);
   const [announcement, setAnnouncement] = useState('');
+  const [headingOver, setHeadingOver] = useState(false);
+  const anchor = useRef<HTMLElement | null>(null);
+  const sidebarDrag = useSidebarFavoriteDrag(anchor, teams);
 
   const folderList = folders ?? [];
   const known = new Set(folderList.map((folder) => folder.folder_id));
@@ -169,9 +182,13 @@ export const FavoritesSection: React.FC<FavoritesSectionProps> = ({
   const rows = (favorites ?? []).filter(
     (favorite) => favoriteHref(slug, favorite) !== null
   );
-  if (rows.length === 0 && folderList.length === 0) return null;
   const dragging =
     rows.find((favorite) => rowId(favorite) === draggingId) ?? null;
+  const incoming = sidebarDrag.drag;
+  if (rows.length === 0 && folderList.length === 0 && incoming === null) {
+    return <span ref={anchor} hidden />;
+  }
+  const accepting = dragging !== null || incoming !== null;
   const groupOf = (folderId: string | null): FavoriteRead[] =>
     rows.filter((favorite) => folderOf(favorite) === folderId);
 
@@ -221,6 +238,51 @@ export const FavoritesSection: React.FC<FavoritesSectionProps> = ({
   const endDrag = (): void => {
     setDraggingId(null);
     setDragOver(null);
+    setHeadingOver(false);
+    sidebarDrag.clear();
+  };
+
+  const placeIncoming = (
+    item: SidebarFavoriteDrag,
+    folderId: string | null
+  ): void => {
+    const existing = rows.find((favorite) =>
+      sameFavorite(favorite, item.ref.kind, item.ref.target_id)
+    );
+    if (existing !== undefined && folderOf(existing) === folderId) return;
+    const folder = folderList.find((row) => row.folder_id === folderId);
+    setAnnouncement(
+      folder === undefined
+        ? `Added ${item.title} to favorites.`
+        : `Added ${item.title} to ${folder.name}.`
+    );
+    void place(item.ref, item.title, folderId, item.preview);
+  };
+
+  const dropInto = (folderId: string | null): void => {
+    if (dragging !== null) moveToFolder(dragging, folderId);
+    else if (incoming !== null) placeIncoming(incoming, folderId);
+    endDrag();
+  };
+
+  const copyLinks = (folderId: string): void => {
+    const links = groupOf(folderId).flatMap((favorite) => {
+      const href = favoriteHref(slug, favorite);
+      return href === null ? [] : [`${globalThis.location.origin}${href}`];
+    });
+    if (links.length === 0) return;
+    void globalThis.navigator.clipboard
+      .writeText(links.join('\n'))
+      .then(() => {
+        showToast(
+          links.length === 1
+            ? 'Copied 1 link'
+            : `Copied ${String(links.length)} links`
+        );
+      })
+      .catch(() => {
+        showErrorToast('Could not copy links.');
+      });
   };
 
   const newFolder = async (): Promise<void> => {
@@ -416,8 +478,32 @@ export const FavoritesSection: React.FC<FavoritesSectionProps> = ({
   const top = groupOf(null);
 
   return (
-    <section aria-labelledby="sidebar-favorites">
-      <div className="group/favorites-heading relative">
+    <section ref={anchor} aria-labelledby="sidebar-favorites">
+      <div
+        className={cn(
+          'group/favorites-heading relative rounded-sm',
+          accepting && headingOver && 'bg-raised ring-1 ring-accent'
+        )}
+        data-testid="favorites-heading"
+        onDragEnter={() => {
+          if (accepting) setHeadingOver(true);
+        }}
+        onDragLeave={(event) => {
+          const into = event.relatedTarget;
+          if (into instanceof Node && event.currentTarget.contains(into)) {
+            return;
+          }
+          setHeadingOver(false);
+        }}
+        onDragOver={(event) => {
+          if (accepting) event.preventDefault();
+        }}
+        onDrop={(event) => {
+          if (!accepting) return;
+          event.preventDefault();
+          dropInto(null);
+        }}
+      >
         {heading}
         <Menu
           label="Favorites actions"
@@ -464,14 +550,17 @@ export const FavoritesSection: React.FC<FavoritesSectionProps> = ({
           onReorder={(next) => {
             void reorderFolders(next);
           }}
-          favoriteDragging={dragging !== null}
-          onFavoriteDrop={(folderId) => {
-            if (dragging !== null) moveToFolder(dragging, folderId);
-            endDrag();
-          }}
+          favoriteDragging={accepting}
+          onFavoriteDrop={dropInto}
+          onCopyLinks={copyLinks}
           onAnnounce={setAnnouncement}
         />
         {top.map((favorite, index) => renderRow(favorite, top, index, false))}
+        {incoming !== null && rows.length === 0 && folderList.length === 0 && (
+          <p className="flex h-7 items-center pl-2 text-xs text-text-faint pointer-coarse:h-11">
+            Drop on Favorites to add {incoming.title}
+          </p>
+        )}
         <p role="status" aria-live="polite" className="sr-only">
           {announcement}
         </p>
