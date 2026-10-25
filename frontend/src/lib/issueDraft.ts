@@ -7,7 +7,7 @@
  */
 
 import { useSyncExternalStore } from 'react';
-import { stripPending } from './draftUploads';
+import { hasPending, stripPending } from './draftUploads';
 import type { IssuePriority } from '../types/Api';
 
 /** The prefix every draft's storage key starts with. */
@@ -164,9 +164,7 @@ export const writeIssueDraft = (
   if (storageKey === null) return false;
   const stored: IssueDraft = {
     ...draft,
-    body: draft.body.includes('pending-upload:')
-      ? stripPending(draft.body)
-      : draft.body,
+    body: hasPending(draft.body) ? stripPending(draft.body) : draft.body,
     subIssues: draft.subIssues.filter((row) => row.trim() !== ''),
   };
   try {

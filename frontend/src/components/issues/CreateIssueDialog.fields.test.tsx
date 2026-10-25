@@ -6,7 +6,14 @@
  * uploaded once the issue exists, and the expand toggle.
  */
 
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import type { Editor } from '@tiptap/core';
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { WorkspaceContextType } from '../../contexts/WorkspaceContextDefinition';
@@ -24,6 +31,51 @@ import type {
   TeamRead,
 } from '../../types/Api';
 import CreateIssueDialog, { type CreateIssuePreset } from './CreateIssueDialog';
+
+/** How long the lazily loaded editor may take to arrive on a busy runner. */
+const EDITOR_LOAD_MS = 10_000;
+
+/** The description surface once the lazy editor has arrived. */
+const findDescription = async (): Promise<HTMLElement> =>
+  screen.findByRole(
+    'textbox',
+    { name: 'Description' },
+    { timeout: EDITOR_LOAD_MS }
+  );
+
+/** The Tiptap editor behind a surface. */
+const editorOf = (surface: HTMLElement): Editor =>
+  (surface as HTMLElement & { editor: Editor }).editor;
+
+/** Puts the caret at the end of the description and appends text. */
+const typeAtEnd = (surface: HTMLElement, text: string): void => {
+  act(() => {
+    surface.focus();
+    editorOf(surface)
+      .chain()
+      .setTextSelection(editorOf(surface).state.doc.content.size - 1)
+      .insertContent(text)
+      .run();
+  });
+};
+
+/** Pastes files onto a surface, as the clipboard hands them over. */
+const pasteFiles = (surface: HTMLElement, files: File[]): void => {
+  act(() => {
+    fireEvent.paste(surface, {
+      clipboardData: {
+        files,
+        items: files.map((file) => ({ kind: 'file', getAsFile: () => file })),
+        types: ['Files'],
+        getData: () => '',
+      },
+    });
+  });
+};
+
+/** The placeholder path the dialog writes for a held file. */
+const PENDING =
+  /\/api\/workspaces\/ws-1\/attachments\/pending-[\w-]+\/content\?issue_id=pending-upload/;
 
 const createIssue = vi.fn<(body: IssueCreate) => Promise<IssueRead>>();
 const updateIssue =
@@ -355,16 +407,16 @@ describe('attachments', () => {
     renderDialog();
 
     await user.type(screen.getByRole('textbox', { name: 'Title' }), 'Bug');
-    const description = screen.getByRole('textbox', { name: 'Description' });
-    await user.type(description, 'Look');
+    const description = await findDescription();
+    typeAtEnd(description, 'Look');
     const file = new File(['png'], 'shot.png', { type: 'image/png' });
-    fireEvent.paste(description, {
-      clipboardData: { files: [file], types: ['Files'] },
-    });
+    pasteFiles(description, [file]);
 
-    expect((description as HTMLTextAreaElement).value).toMatch(
-      /^Look\n!\[shot\.png\]\(pending-upload:[\w-]+\)\n$/
-    );
+    await waitFor(() => {
+      expect(editorOf(description).getMarkdown()).toMatch(
+        new RegExp(`^Look\\n+!\\[shot\\.png\\]\\(${PENDING.source}\\)`)
+      );
+    });
     expect(screen.getByRole('list', { name: 'Attachments' })).toHaveTextContent(
       'shot.png'
     );
@@ -381,24 +433,24 @@ describe('attachments', () => {
     });
     expect(uploadAttachment).toHaveBeenCalledWith('id-ENG-1', file);
     expect(updateIssue).toHaveBeenCalledWith('id-ENG-1', {
-      body: 'Look\n![shot.png](/api/workspaces/ws-1/attachments/att-1/content?issue_id=id-ENG-1)',
+      body: 'Look\n\n![shot.png](/api/workspaces/ws-1/attachments/att-1/content?issue_id=id-ENG-1)',
     });
   });
 
-  it('takes the placeholder out when the file is removed', () => {
+  it('takes the placeholder out when the file is removed', async () => {
     renderDialog();
 
-    const description = screen.getByRole('textbox', { name: 'Description' });
+    const description = await findDescription();
     const file = new File(['pdf'], 'spec.pdf', { type: 'application/pdf' });
-    fireEvent.paste(description, {
-      clipboardData: { files: [file], types: ['Files'] },
+    pasteFiles(description, [file]);
+    await waitFor(() => {
+      expect(editorOf(description).getMarkdown()).toMatch(
+        new RegExp(`\\[spec\\.pdf\\]\\(${PENDING.source}\\)`)
+      );
     });
-    expect((description as HTMLTextAreaElement).value).toMatch(
-      /^\[spec\.pdf\]\(pending-upload:/
-    );
     fireEvent.click(screen.getByRole('button', { name: 'Remove spec.pdf' }));
 
-    expect(description).toHaveValue('');
+    expect(editorOf(description).getText()).toBe('');
     expect(screen.queryByRole('list', { name: 'Attachments' })).toBeNull();
   });
 });

@@ -11,7 +11,14 @@
  * quiet line naming who on triage duty will see a new triage issue.
  */
 
-import { render, screen, waitFor } from '@testing-library/react';
+import type { Editor } from '@tiptap/core';
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { WorkspaceContextType } from '../../contexts/WorkspaceContextDefinition';
@@ -30,6 +37,33 @@ import type { Assignable } from '../../lib/issuePeople';
 import { readIssueDraft, writeIssueDraft } from '../../lib/issueDraft';
 import { DEFAULT_PREFERENCES, setPreferences } from '../../lib/preferences';
 import CreateIssueDialog, { type CreateIssuePreset } from './CreateIssueDialog';
+
+/** How long the lazily loaded editor may take to arrive on a busy runner. */
+const EDITOR_LOAD_MS = 10_000;
+
+/** The description surface once the lazy editor has arrived. */
+const findDescription = async (): Promise<HTMLElement> =>
+  screen.findByRole(
+    'textbox',
+    { name: 'Description' },
+    { timeout: EDITOR_LOAD_MS }
+  );
+
+/** The Tiptap editor behind a surface. */
+const editorOf = (surface: HTMLElement): Editor =>
+  (surface as HTMLElement & { editor: Editor }).editor;
+
+/** Puts the caret at the end of the description and appends text. */
+const typeAtEnd = (surface: HTMLElement, text: string): void => {
+  act(() => {
+    surface.focus();
+    editorOf(surface)
+      .chain()
+      .setTextSelection(editorOf(surface).state.doc.content.size - 1)
+      .insertContent(text)
+      .run();
+  });
+};
 
 const createIssue = vi.fn<(body: IssueCreate) => Promise<IssueRead>>();
 const listTeams = vi.fn<() => Promise<TeamRead[]>>();
@@ -278,8 +312,11 @@ describe('filing an issue', () => {
     await user.keyboard('2');
     await user.click(screen.getByRole('button', { name: 'Labels: Labels' }));
     await user.keyboard('{Enter}{Escape}');
-    screen.getByRole('textbox', { name: 'Description' }).focus();
-    await user.keyboard('Steps{Control>}{Enter}{/Control}');
+    const description = await findDescription();
+    typeAtEnd(description, 'Steps');
+    act(() => {
+      fireEvent.keyDown(description, { key: 'Enter', ctrlKey: true });
+    });
 
     await waitFor(() => {
       expect(createIssue).toHaveBeenCalledWith({
@@ -299,7 +336,13 @@ describe('filing an issue', () => {
 
     await user.type(screen.getByRole('textbox', { name: 'Title' }), 'A{Enter}');
 
-    expect(screen.getByRole('textbox', { name: 'Description' })).toHaveFocus();
+    const description = await findDescription();
+    await waitFor(
+      () => {
+        expect(description).toHaveFocus();
+      },
+      { timeout: EDITOR_LOAD_MS }
+    );
     expect(createIssue).not.toHaveBeenCalled();
   });
 
@@ -465,10 +508,7 @@ describe('drafts', () => {
     const first = renderDialog(viewer);
 
     await user.type(screen.getByRole('textbox', { name: 'Title' }), 'Draft');
-    await user.type(
-      screen.getByRole('textbox', { name: 'Description' }),
-      'Some notes'
-    );
+    typeAtEnd(await findDescription(), 'Some notes');
     await user.click(
       screen.getByRole('button', { name: 'Priority: Priority' })
     );
@@ -488,9 +528,7 @@ describe('drafts', () => {
     renderDialog(viewer);
 
     expect(screen.getByRole('textbox', { name: 'Title' })).toHaveValue('Draft');
-    expect(screen.getByRole('textbox', { name: 'Description' })).toHaveValue(
-      'Some notes'
-    );
+    expect(await findDescription()).toHaveTextContent('Some notes');
     expect(
       screen.getByRole('button', { name: 'Priority: High' })
     ).toBeInTheDocument();
@@ -584,9 +622,10 @@ describe('drafts', () => {
     expect(screen.getByRole('textbox', { name: 'Title' })).toHaveValue(
       'Saved work'
     );
-    expect(screen.getByRole('textbox', { name: 'Description' })).toHaveValue(
-      'Kept notes'
-    );
+    const description = await findDescription();
+    await waitFor(() => {
+      expect(description).toHaveTextContent('Kept notes');
+    });
     expect(
       screen.getByRole('button', { name: 'Priority: Low' })
     ).toBeInTheDocument();

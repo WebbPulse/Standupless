@@ -7,7 +7,8 @@
  * option previewing the labels and priority it maps to.
  */
 
-import { render, screen, waitFor } from '@testing-library/react';
+import type { Editor } from '@tiptap/core';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { WorkspaceContextType } from '../../contexts/WorkspaceContextDefinition';
@@ -22,6 +23,29 @@ import type {
   TemplateRead,
 } from '../../types/Api';
 import CreateIssueDialog, { type CreateIssuePreset } from './CreateIssueDialog';
+
+/** How long the lazily loaded editor may take to arrive on a busy runner. */
+const EDITOR_LOAD_MS = 10_000;
+
+/** The description surface once the lazy editor has arrived. */
+const findDescription = async (): Promise<HTMLElement> =>
+  screen.findByRole(
+    'textbox',
+    { name: 'Description' },
+    { timeout: EDITOR_LOAD_MS }
+  );
+
+/** Waits for the description to read as this text. */
+const expectDescription = async (text: string): Promise<void> => {
+  const surface = await findDescription();
+  await waitFor(() => {
+    expect(surface.textContent).toBe(text);
+  });
+};
+
+/** The Tiptap editor behind a surface. */
+const editorOf = (surface: HTMLElement): Editor =>
+  (surface as HTMLElement & { editor: Editor }).editor;
 
 const createIssue = vi.fn<(body: IssueCreate) => Promise<IssueRead>>();
 const listTeamTemplates =
@@ -215,9 +239,7 @@ describe('the default template', () => {
     await waitFor(() => {
       expect(titleBox()).toHaveValue('Bug: ');
     });
-    expect(screen.getByRole('textbox', { name: 'Description' })).toHaveValue(
-      'Steps to reproduce'
-    );
+    await expectDescription('Steps to reproduce');
     expect(
       screen.getByRole('button', { name: 'Template: Bug report' })
     ).toBeInTheDocument();
@@ -275,9 +297,7 @@ describe('the default template', () => {
     await waitFor(() => {
       expect(titleBox()).toHaveValue('Spike: ');
     });
-    expect(screen.getByRole('textbox', { name: 'Description' })).toHaveValue(
-      ''
-    );
+    await expectDescription('');
   });
 
   it('keeps a cleared field cleared', async () => {
@@ -291,7 +311,13 @@ describe('the default template', () => {
     await waitFor(() => {
       expect(titleBox()).toHaveValue('Bug: ');
     });
-    await user.clear(screen.getByRole('textbox', { name: 'Description' }));
+    const description = await findDescription();
+    await waitFor(() => {
+      expect(description).toHaveTextContent('Steps to reproduce');
+    });
+    act(() => {
+      editorOf(description).commands.clearContent(true);
+    });
     await user.type(titleBox(), 'x');
     await user.keyboard('{Control>}{Enter}{/Control}');
 
@@ -343,9 +369,7 @@ describe('the template picker', () => {
     await user.click(screen.getByRole('option', { name: /No template/ }));
 
     expect(titleBox()).toHaveValue('');
-    expect(screen.getByRole('textbox', { name: 'Description' })).toHaveValue(
-      ''
-    );
+    await expectDescription('');
     expect(
       screen.getByRole('button', { name: 'Status: Backlog' })
     ).toBeInTheDocument();
@@ -362,9 +386,7 @@ describe('the template picker', () => {
     await user.click(screen.getByRole('option', { name: /Bug report/ }));
 
     expect(titleBox()).toHaveValue('My own words');
-    expect(screen.getByRole('textbox', { name: 'Description' })).toHaveValue(
-      'Steps to reproduce'
-    );
+    await expectDescription('Steps to reproduce');
   });
 
   it('is absent when the team offers no templates', async () => {
