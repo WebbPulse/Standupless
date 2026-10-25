@@ -61,6 +61,7 @@ import {
   LuMaximize2,
   LuPanelRight,
   LuPrinter,
+  LuSquarePen,
   LuTrash2,
   LuUnlink,
   LuUsers,
@@ -126,10 +127,12 @@ import { PRINT_KEYS, PRINT_LABEL, printPage } from '../../lib/print';
 import IssuePrintProperties from '../print/IssuePrintProperties';
 import {
   CONVERT_TO_PROJECT_LABEL,
+  DUPLICATE_AS_DRAFT_LABEL,
   DUPLICATE_ISSUE_LABEL,
   duplicateAsks,
   convertedPath,
   duplicatePath,
+  openDuplicateDraft,
   runDuplicate,
 } from '../../lib/issueConversion';
 import { recordArchive, recordDelete, recordPatch } from '../../lib/issueUndo';
@@ -495,6 +498,12 @@ export const IssueView: React.FC<IssueViewProps> = ({
     if (copy !== null) void navigate(duplicatePath(slug, copy));
   };
 
+  const duplicateAsDraft = (): void => {
+    if (issue !== null) {
+      void openDuplicateDraft(workspaceId, issue.id, createIssue.open);
+    }
+  };
+
   const addSubIssue = (): void => {
     if (issue === null) return;
     createIssue.open({
@@ -711,6 +720,12 @@ export const IssueView: React.FC<IssueViewProps> = ({
                 <LuCopyPlus aria-hidden="true" className="h-3.5 w-3.5" />
                 {DUPLICATE_ISSUE_LABEL}
               </MenuItem>
+              {createIssue.canCreate && (
+                <MenuItem onSelect={duplicateAsDraft}>
+                  <LuSquarePen aria-hidden="true" className="h-3.5 w-3.5" />
+                  {DUPLICATE_AS_DRAFT_LABEL}
+                </MenuItem>
+              )}
               <MenuItem
                 onSelect={() => {
                   setConverting(true);
@@ -947,6 +962,12 @@ export const IssueView: React.FC<IssueViewProps> = ({
         onRun={() => {
           void duplicate();
         }}
+      />
+      <IssueCommand
+        keys=""
+        label={DUPLICATE_AS_DRAFT_LABEL}
+        enabled={canAct && createIssue.canCreate}
+        onRun={duplicateAsDraft}
       />
       <IssueCommand
         keys=""

@@ -17,7 +17,11 @@
  * `description` start the draft on text, such as a selection, and
  * `relatedIssueId` relates the new issue to the one the text came from.
  * `expanded` opens the dialog already expanded, as `V` does, and `showDrafts`
- * opens it on its Drafts list.
+ * opens it on its Drafts list. `labelIds`, `estimate`, `projectMilestoneId`
+ * and `parentTitle` complete a copy of another issue, and `keepAsDraft`, as
+ * Duplicate as draft sets it, keeps the prefilled text as a draft on close
+ * even before it is edited, without the team's default template or the
+ * assign to self preference.
  *
  * {@link CreateIssueState.hasDraft} says whether the viewer has any new issue
  * draft saved in this workspace, so the new issue button can show that the
@@ -43,6 +47,16 @@ export interface CreateIssueOptions {
   parentId?: string;
   /** The parent's key, shown in the dialog header beside `parentId`. */
   parentKey?: string;
+  /** The parent's title, kept with the draft beside `parentKey`. */
+  parentTitle?: string;
+  /** The labels the draft starts with. */
+  labelIds?: string[];
+  /** The estimate the draft starts on. */
+  estimate?: string;
+  /** The project milestone the draft starts in, beside `projectId`. */
+  projectMilestoneId?: string;
+  /** Whether the prefilled draft is kept on close before any edit, as a copy is. */
+  keepAsDraft?: boolean;
   /** The priority the draft starts on, such as a parent's for a sub-issue. */
   priority?: IssuePriority;
   /** A template the draft starts from, in place of the team's default. */

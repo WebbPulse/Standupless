@@ -100,10 +100,12 @@ import { setSubscriptions } from '../../../lib/bulkIssueActions';
 import { boardStep } from '../../../lib/boardNav';
 import {
   CONVERT_TO_PROJECT_LABEL,
+  DUPLICATE_AS_DRAFT_LABEL,
   DUPLICATE_ISSUE_LABEL,
   duplicateAsks,
   convertedPath,
   duplicatePath,
+  openDuplicateDraft,
   runDuplicate,
 } from '../../../lib/issueConversion';
 import { rememberTrail } from '../../../lib/issueTrail';
@@ -904,8 +906,19 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
     invalidateQueries(queryKey);
     void navigate(duplicatePath(slug, copy));
   };
+  const duplicateAsDraft = (issue: OrderedIssueRead): void => {
+    void openDuplicateDraft(workspaceId, issue.id, (options) => {
+      creator.open({
+        ...options,
+        onCreated: () => {
+          invalidateQueries(queryKey);
+        },
+      });
+    });
+  };
   const single = targets.length === 1 ? targets[0] : undefined;
   const canConvert = canEdit && workspaceId !== '';
+  const canDraftCopy = canConvert && creator.canCreate;
   const copyIds = (issues: readonly OrderedIssueRead[]): void => {
     copyText(
       issues.map((issue) => issue.key).join(', '),
@@ -993,6 +1006,15 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
     enabled: canConvert && single !== undefined,
     handler: () => {
       if (single !== undefined) void duplicate(single);
+    },
+  });
+  useShortcut({
+    keys: '',
+    label: DUPLICATE_AS_DRAFT_LABEL,
+    scope: 'issue',
+    enabled: canDraftCopy && single !== undefined,
+    handler: () => {
+      if (single !== undefined) duplicateAsDraft(single);
     },
   });
   useShortcut({
@@ -1731,6 +1753,13 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
             canConvert && menuSingle !== undefined
               ? () => {
                   void duplicate(menuSingle);
+                }
+              : undefined
+          }
+          onDuplicateAsDraft={
+            canDraftCopy && menuSingle !== undefined
+              ? () => {
+                  duplicateAsDraft(menuSingle);
                 }
               : undefined
           }
