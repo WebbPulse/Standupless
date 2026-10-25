@@ -27,12 +27,12 @@ from app.common.api.dependencies.authz import AuthzContext
 from app.common.api.dependencies.repositories import Repositories
 from app.common.api.schemas.planning import CycleRead, CycleStartTodayRead
 from app.common.cycle_schedule import active_cycle, relative_cycle
-from app.common.cycle_writes import team_today
 from app.common.db.dynamo.activity import build_activity
 from app.common.db.dynamo.base import utc_now
 from app.common.db.dynamo.planning import Cycle
 from app.common.issue_rules import COMPLETED_CATEGORIES
 from app.common.planning_rules import counts_unestimated, load_readable_cycle, require_team_member
+from app.common.team_time import team_today
 
 SYSTEM_ACTOR = "system"
 """The actor an automatic carry-over is recorded under."""
@@ -108,11 +108,12 @@ def start_cycle_today(
     which continues after the latest end date and counts only cycles starting
     after today as upcoming, tops the chain up without overlapping it. The moved
     issues are stamped as a carry-over, and the hourly close finds nothing left
-    to move when it reaches the ended cycle.
+    to move when it reaches the ended cycle. Today is the team's own day in its
+    timezone, so the switch happens on the date the team sees.
     """
     target = load_readable_cycle(repositories, context, team_id, cycle_id)
     require_team_member(repositories, context, team_id)
-    now = today or date.today()
+    now = today or team_today(repositories, context.workspace_id, team_id)
     now_text = now.isoformat()
     if target.cancelled or target.start_date <= now_text:
         raise _conflict("Only an upcoming cycle can start today")
@@ -159,9 +160,10 @@ def start_cycle_today_read(
     today: Optional[date] = None,
 ) -> CycleStartTodayRead:
     """Start a cycle today and answer with both cycles as the API shows them."""
-    result = start_cycle_today(repositories, context, team_id, cycle_id, today)
+    now_day = today or team_today(repositories, context.workspace_id, team_id)
+    result = start_cycle_today(repositories, context, team_id, cycle_id, now_day)
     counted = counts_unestimated(repositories, context.workspace_id, team_id)
-    now = (today or date.today()).isoformat()
+    now = now_day.isoformat()
     return CycleStartTodayRead(
         cycle=CycleRead.from_row(result.cycle, now, count_unestimated=counted),
         ended=None if result.ended is None else CycleRead.from_row(result.ended, now, count_unestimated=counted),

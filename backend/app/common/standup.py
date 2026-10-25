@@ -33,6 +33,7 @@ from app.common.db.dynamo.base import utc_now
 from app.common.db.dynamo.issues import Issue
 from app.common.db.dynamo.planning import Project
 from app.common.db.dynamo.team_config import StandupSettings, default_standup_settings
+from app.common.team_time import timezone_of
 
 DUE_SOON_DAYS = 3
 """How many days after the digest date an open issue's due date counts as due soon."""
@@ -200,7 +201,7 @@ def build_digest(
     if team is None:
         raise LookupError(team_id)
     stored = settings or repositories.team_config.get_standup_settings(workspace_id, team_id)
-    settings = stored or default_standup_settings(workspace_id, team_id)
+    settings = stored or default_standup_settings(workspace_id, team_id, timezone_of(team))
     shape = cadence or ("weekly" if settings.cadence == "weekly" else "daily")
     start, end = window_for(day, shape, settings.send_time, settings.timezone)
     categories = {

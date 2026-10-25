@@ -10,7 +10,6 @@ The token rides in the query rather than the path because only paths are logged.
 
 from __future__ import annotations
 
-from datetime import date
 from typing import Annotated
 from urllib.parse import quote
 
@@ -23,6 +22,7 @@ from app.common.core.config import settings
 from app.common.cycle_calendar import build_calendar, feed_context, feed_cycles, feed_url, hash_token, mint_token
 from app.common.db.dynamo.planning import Cycle, CycleFeed
 from app.common.planning_rules import not_found, require_team_reader
+from app.common.team_time import local_date, timezone_of
 
 router = APIRouter()
 
@@ -121,7 +121,9 @@ def read_cycle_calendar(
         """The cycle's page in the app."""
         return f"{base}/cycles/{quote(cycle.cycle_id, safe='')}"
 
-    cycles = feed_cycles(repositories.planning.list_for_roadmap(workspace_id, team_id), date.today().isoformat())
+    cycles = feed_cycles(
+        repositories.planning.list_for_roadmap(workspace_id, team_id), local_date(timezone_of(team)).isoformat()
+    )
     return Response(
         content=build_calendar(team, cycles, link_for),
         media_type=CALENDAR_MEDIA_TYPE,

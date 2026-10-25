@@ -50,6 +50,9 @@ A row stored before the toggle carries no `estimate_extended`, and on these scal
 it reads as extended, so a Fibonacci team keeps offering 13 and 21 as it always did.
 """
 
+DEFAULT_TEAM_TIMEZONE = "UTC"
+"""The timezone a team that never chose one keeps its cycles in."""
+
 ALIAS_PREFIX = "alias#"
 
 INTERNAL_ATTRIBUTES = ("workspace_key_prefix", "deleting_at")
@@ -97,6 +100,7 @@ class Team(BaseModel):
     estimate_allow_zero: bool = False
     estimate_count_unestimated: bool = False
     sync_pr_labels: bool = True
+    timezone: str = DEFAULT_TEAM_TIMEZONE
     icon_key: str | None = None
     parent_team_id: str | None = None
     created_at: datetime = Field(default_factory=utc_now)

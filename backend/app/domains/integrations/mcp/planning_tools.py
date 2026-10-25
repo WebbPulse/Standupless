@@ -14,7 +14,6 @@ id or by a name that is unambiguous among the rows the caller can see.
 
 from __future__ import annotations
 
-from datetime import date
 from typing import Any, Optional, get_args
 
 from app.common.api.schemas.issues import BULK_MAX_ISSUES, IssueBulkUpdate
@@ -79,6 +78,7 @@ from app.common.project_writes import (
     update_project,
 )
 from app.common.readable_ids import project_web_url
+from app.common.team_time import team_today
 from app.domains.integrations.mcp.project_label_tools import project_label_ids
 from app.domains.integrations.mcp.project_status_tools import (
     STATUS_HELP,
@@ -174,7 +174,7 @@ def _cycle_id(call: ToolCall, team_id: str, value: Any) -> str:
     cycles = call.repositories.planning.list_for_roadmap(workspace_id, team_id)
     folded = reference.casefold()
     if folded in RELATIVE_CYCLES:
-        found = relative_cycle(cycles, folded, date.today())
+        found = relative_cycle(cycles, folded, team_today(call.repositories, workspace_id, team_id))
         if found is None:
             team = call.repositories.teams.get(workspace_id, team_id)
             raise ToolError(f"Team {team.key_prefix if team is not None else team_id} has no {folded} cycle")
@@ -387,7 +387,8 @@ def _get_cycle(call: ToolCall) -> Any:
     cycle_id = _cycle_id(call, team_id, call.require("cycle_id"))
     cycle = load_readable_cycle(call.repositories, call.context, team_id, cycle_id)
     counted = counts_unestimated(call.repositories, call.context.workspace_id, team_id)
-    return _cycle_json(CycleRead.from_row(cycle, count_unestimated=counted))
+    today = team_today(call.repositories, call.context.workspace_id, team_id).isoformat()
+    return _cycle_json(CycleRead.from_row(cycle, today, count_unestimated=counted))
 
 
 def _create_cycle(call: ToolCall) -> Any:

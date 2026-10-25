@@ -12,7 +12,6 @@ rollup consumer writes, so neither route reads the `issues` table.
 
 from __future__ import annotations
 
-from datetime import date
 from typing import Annotated, Optional
 
 from fastapi import APIRouter, Depends, Path, Query, Response, status
@@ -45,6 +44,7 @@ from app.common.cycle_writes import list_cycles as list_cycle_page
 from app.common.cycle_writes import update_cycle as update_cycle_row
 from app.common.db.dynamo.teams import DEFAULT_ESTIMATE_SCALE
 from app.common.planning_rules import counts_unestimated, load_readable_cycle, not_found, require_team_reader
+from app.common.team_time import local_date, team_today, timezone_of
 from app.domains.planning.history import (
     average,
     burn_up,
@@ -131,7 +131,7 @@ def read_velocity(
     if team is None:
         raise not_found()
 
-    today = date.today().isoformat()
+    today = local_date(timezone_of(team)).isoformat()
     counted = team.estimate_count_unestimated and team.estimate_scale != "off"
     cycles = repositories.planning.list_for_roadmap(context.workspace_id, team_id)
     entries = [
@@ -198,7 +198,7 @@ def read_cycle_history(
     always reads the live counters.
     """
     cycle = load_readable_cycle(repositories, context, team_id, cycle_id)
-    today = date.today().isoformat()
+    today = team_today(repositories, context.workspace_id, team_id).isoformat()
     snapshots = repositories.planning.list_cycle_history(context.workspace_id, team_id, cycle_id)
     counted = counts_unestimated(repositories, context.workspace_id, team_id)
     return CycleHistoryRead(
@@ -222,7 +222,11 @@ def read_cycle(
 ) -> CycleRead:
     """One cycle, or a 404 when the caller cannot see its team."""
     cycle = load_readable_cycle(repositories, context, team_id, cycle_id)
-    return CycleRead.from_row(cycle, count_unestimated=counts_unestimated(repositories, context.workspace_id, team_id))
+    return CycleRead.from_row(
+        cycle,
+        team_today(repositories, context.workspace_id, team_id).isoformat(),
+        count_unestimated=counts_unestimated(repositories, context.workspace_id, team_id),
+    )
 
 
 @router.patch("/{workspace_id}/cycles/{cycle_id}", response_model=CycleRead)

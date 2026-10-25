@@ -660,6 +660,8 @@ export interface TeamRead {
   icon_url?: string | null;
   /** Whether linked pull requests carry the labels of this team's issues. */
   sync_pr_labels?: boolean;
+  /** The IANA timezone cycles start, end and roll over at midnight in. */
+  timezone?: string;
   /** Whether only team members can see the team and its issues. */
   private?: boolean;
   /** The parent team this one sits under, or null for a top-level team. */
@@ -689,6 +691,8 @@ export interface TeamCreate {
   estimate_extended?: boolean;
   estimate_allow_zero?: boolean;
   estimate_count_unestimated?: boolean;
+  /** The IANA timezone the team's cycles run in, UTC when left out. */
+  timezone?: string | null;
   /** Make the team private from the start. Needs the Business plan. */
   private?: boolean;
   /** A top-level team to sit under, inheriting its statuses and labels. */
@@ -710,6 +714,8 @@ export interface TeamUpdate {
   estimate_allow_zero?: boolean;
   estimate_count_unestimated?: boolean;
   description?: string | null;
+  /** The IANA timezone the team's cycles run in. A sub-team takes its parent's. */
+  timezone?: string | null;
   /** Whether linked pull requests carry the labels of this team's issues. */
   sync_pr_labels?: boolean;
   /** Turning this on needs the Business plan; turning it off never does. */

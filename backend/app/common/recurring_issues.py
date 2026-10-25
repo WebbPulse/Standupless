@@ -27,7 +27,7 @@ from app.common.api.schemas.recurring import RecurringCreate, RecurringRead, Rec
 from app.common.change_source import SYSTEM
 from app.common.db.dynamo.base import utc_now
 from app.common.db.dynamo.issues import Issue
-from app.common.db.dynamo.team_config import DEFAULT_STANDUP_TIMEZONE, new_config_id
+from app.common.db.dynamo.team_config import new_config_id
 from app.common.db.dynamo.team_recurring import RecurringIssue, recurring_key
 from app.common.db.dynamo.team_templates import IssueTemplate
 from app.common.issue_keys import display_key
@@ -35,6 +35,7 @@ from app.common.issue_rules import not_found, require_team_member, require_team_
 from app.common.issue_templates import conflict, find_template, team_templates
 from app.common.issue_writes import create_issue
 from app.common.recurrence import RecurrenceError, Rule, next_run, resolve_zone, upcoming_runs
+from app.common.team_time import timezone_of
 
 MAX_PER_TEAM = 50
 """The most recurring issues one team may keep."""
@@ -58,11 +59,11 @@ WORKSPACE_ROLES: tuple[str, ...] = ("owner", "admin", "member", "guest")
 
 
 def team_timezone(repositories: Repositories, workspace_id: str, team_id: str) -> str:
-    """The timezone a team's new schedules default to: its standup timezone, else UTC."""
+    """The timezone a team's new schedules default to: its standup timezone, else the team's own."""
     settings = repositories.team_config.get_standup_settings(workspace_id, team_id)
     if settings is not None and settings.timezone:
         return str(settings.timezone)
-    return DEFAULT_STANDUP_TIMEZONE
+    return timezone_of(repositories.teams.get(workspace_id, team_id))
 
 
 def rule_of(row: RecurringIssue) -> Rule:

@@ -624,6 +624,11 @@ export const TEAM_SETTINGS_SECTIONS: readonly TeamSettingsSection[] = [
         synonyms: ['default estimate', 'progress'],
       },
       {
+        id: 'timezone',
+        title: 'Team timezone',
+        synonyms: ['time zone', 'cycle start', 'midnight', 'rollover'],
+      },
+      {
         id: 'parent',
         title: 'Parent team',
         synonyms: ['sub-team', 'nest', 'hierarchy'],

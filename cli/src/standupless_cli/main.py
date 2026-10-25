@@ -1200,6 +1200,13 @@ def team_update(
             help="Count each unestimated issue as 1 point in cycle and project progress, rather than skip it.",
         ),
     ] = None,
+    timezone: Annotated[
+        str | None,
+        typer.Option(
+            "--timezone",
+            help="IANA timezone such as America/Los_Angeles. Cycles start, end and roll over at midnight in it.",
+        ),
+    ] = None,
     parent: Annotated[
         str | None,
         typer.Option(
@@ -1223,10 +1230,12 @@ def team_update(
         body["estimate_allow_zero"] = allow_zero
     if count_unestimated is not None:
         body["estimate_count_unestimated"] = count_unestimated
+    if timezone is not None:
+        body["timezone"] = timezone
     if not body and parent is None:
         raise ConfigError(
             "Nothing to change. Pass --sync-pr-labels, --private, --public, --estimate-scale, --extended, "
-            "--allow-zero, --count-unestimated, --parent or one of their --no- forms."
+            "--allow-zero, --count-unestimated, --timezone, --parent or one of their --no- forms."
         )
     context = _state(ctx).context()
     found = context.team(team)
@@ -1244,6 +1253,8 @@ def team_update(
         output.success(f"{updated['key_prefix']} is now {visibility}.")
     if any(value is not None for value in (estimate_scale, extended, allow_zero, count_unestimated)):
         output.success(f"Estimates for {updated['key_prefix']}: {_estimate_summary(updated)}.")
+    if timezone is not None:
+        output.success(f"Cycles for {updated['key_prefix']} turn over at midnight {updated.get('timezone', 'UTC')}.")
     if parent is not None:
         above = context.team_by_id(str(updated.get("parent_team_id") or ""))
         where = f"now sits under {above['key_prefix']}" if above else "is now a top-level team"
