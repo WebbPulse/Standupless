@@ -21,13 +21,11 @@ import type {
 export const appApprovalsPath = (workspaceId: string): string =>
   `/workspaces/${workspaceId}/app-approvals`;
 
-/** The route one app's decision is made through. */
-export const appApprovalDecisionPath = (
+/** The route one app's approval records under, which its decisions are posted beneath. */
+export const appApprovalPath = (
   workspaceId: string,
-  clientId: string,
-  decision: 'approve' | 'deny' | 'revoke'
-): string =>
-  `${appApprovalsPath(workspaceId)}/${encodeURIComponent(clientId)}/${decision}`;
+  clientId: string
+): string => `${appApprovalsPath(workspaceId)}/${encodeURIComponent(clientId)}`;
 
 /** Passes an abort signal through only when one was given. */
 const signalOptions = (
@@ -89,10 +87,17 @@ export const decideAppApproval = async (
   reason: string,
   clientName: string
 ): Promise<AppApprovalRead> => {
-  const response = await apiClient.post<AppApprovalRead>(
-    appApprovalDecisionPath(workspaceId, clientId, decision),
-    { reason, client_name: clientName }
-  );
+  const body = { reason, client_name: clientName };
+  const response =
+    decision === 'approve'
+      ? await apiClient.post<AppApprovalRead>(
+          `${appApprovalPath(workspaceId, clientId)}/approve`,
+          body
+        )
+      : await apiClient.post<AppApprovalRead>(
+          `${appApprovalPath(workspaceId, clientId)}/deny`,
+          body
+        );
   return response.data;
 };
 
@@ -104,7 +109,7 @@ export const revokeAppApproval = async (
   clientName: string
 ): Promise<AppApprovalRead> => {
   const response = await apiClient.post<AppApprovalRead>(
-    appApprovalDecisionPath(workspaceId, clientId, 'revoke'),
+    `${appApprovalPath(workspaceId, clientId)}/revoke`,
     { reason, client_name: clientName }
   );
   await revokeWorkspaceApp(workspaceId, clientId);
