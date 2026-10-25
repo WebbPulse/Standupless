@@ -7508,7 +7508,7 @@
         "type": "object"
       },
       "InboxClearRequest": {
-        "description": "The body a bulk delete takes: which of the caller's notifications to remove.\n\n`read_only` keeps to rows already read. Without it every row goes except those\nstill snoozed, unless `include_snoozed` takes them too. `kinds` keeps to those\nnotification kinds, matching the list's filter, and `bucket` to one tab of the split inbox.",
+        "description": "The body a bulk delete takes: which of the caller's notifications to remove.\n\n`read_only` keeps to rows already read. Without it every row goes except those\nstill snoozed, unless `include_snoozed` takes them too. `completed_only` keeps to\nrows about an issue now in a completed or cancelled status, read or not. `kinds`\nkeeps to those notification kinds, matching the list's filter, and `bucket` to one\ntab of the split inbox.",
         "properties": {
           "bucket": {
             "default": "all",
@@ -7519,6 +7519,11 @@
             ],
             "title": "Bucket",
             "type": "string"
+          },
+          "completed_only": {
+            "default": false,
+            "title": "Completed Only",
+            "type": "boolean"
           },
           "include_snoozed": {
             "default": false,
@@ -40534,7 +40539,7 @@
     },
     "/api/workspaces/{workspace_id}/inbox/clear": {
       "post": {
-        "description": "Delete the caller's own notifications in bulk: the read ones, or all of them.\n\nOnly the caller's own partition is read, so nothing in anyone else's inbox can\nmatch. `kinds` narrows it as the list's filter does, and a row still snoozed\ngoes only when a full clear sends `include_snoozed`.",
+        "description": "Delete the caller's own notifications in bulk: the read ones, those about finished issues, or all.\n\nOnly the caller's own partition is read, so nothing in anyone else's inbox can\nmatch. `kinds` narrows it as the list's filter does, `completed_only` keeps to\nrows whose issue is completed or cancelled, and a row still snoozed goes only\nwhen the clear sends `include_snoozed`.",
         "operationId": "clear_inbox_api_workspaces__workspace_id__inbox_clear_post",
         "parameters": [
           {

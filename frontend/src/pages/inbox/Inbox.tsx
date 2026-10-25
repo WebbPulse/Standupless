@@ -1129,8 +1129,15 @@ const DELETE_READ_KEYS = 'shift+backspace';
 /** The keys that mark every notification read, as Linear binds them. */
 const MARK_ALL_READ_KEYS = 'alt+u';
 
-/** Which rows a bulk delete removes: the read ones or every one. */
-type ClearScope = 'read' | 'all';
+/** Which rows a bulk delete removes: the read ones, those about finished issues, or every one. */
+type ClearScope = 'read' | 'completed' | 'all';
+
+/** What each bulk delete is called, in the menu and on its confirmation. */
+const CLEAR_TITLES: Record<ClearScope, string> = {
+  read: 'Delete all read notifications',
+  completed: 'Delete all for completed issues',
+  all: 'Delete all notifications',
+};
 
 /** What a bulk delete confirmation says it removes under the current view. */
 const clearDescription = (scope: ClearScope, view: InboxView): string => {
@@ -1140,6 +1147,8 @@ const clearDescription = (scope: ClearScope, view: InboxView): string => {
   const snoozed = view.showSnoozed
     ? ', snoozed ones included'
     : '. Snoozed ones stay';
+  if (scope === 'completed')
+    return `Every notification${filtered} about a completed or cancelled issue is deleted, read or not${snoozed}. This cannot be undone.`;
   return `Every notification${filtered} is deleted${snoozed}. This cannot be undone.`;
 };
 
@@ -1364,6 +1373,7 @@ export const Inbox: React.FC = () => {
     (scope: ClearScope) =>
       clearInbox(workspaceId, {
         read_only: scope === 'read',
+        ...(scope === 'completed' ? { completed_only: true } : {}),
         ...(query.include_snoozed === true ? { include_snoozed: true } : {}),
         ...(query.kind === undefined ? {} : { kinds: query.kind }),
         ...(bucket === 'all' ? {} : { bucket }),
@@ -1944,8 +1954,18 @@ export const Inbox: React.FC = () => {
               }}
             >
               <LuTrash2 className="h-3.5 w-3.5" aria-hidden="true" />
-              Delete all read notifications
+              {CLEAR_TITLES.read}
               <MenuShortcut keys={DELETE_READ_KEYS} />
+            </MenuItem>
+            <MenuItem
+              danger
+              disabled={isClearing}
+              onSelect={() => {
+                setClearing('completed');
+              }}
+            >
+              <LuTrash2 className="h-3.5 w-3.5" aria-hidden="true" />
+              {CLEAR_TITLES.completed}
             </MenuItem>
             <MenuItem
               danger
@@ -1955,7 +1975,7 @@ export const Inbox: React.FC = () => {
               }}
             >
               <LuTrash2 className="h-3.5 w-3.5" aria-hidden="true" />
-              Delete all notifications
+              {CLEAR_TITLES.all}
             </MenuItem>
           </Menu>
         </div>
@@ -2132,11 +2152,7 @@ export const Inbox: React.FC = () => {
         onClose={() => {
           setClearing(null);
         }}
-        title={
-          clearing === 'read'
-            ? 'Delete all read notifications'
-            : 'Delete all notifications'
-        }
+        title={CLEAR_TITLES[clearing ?? 'all']}
         description={clearDescription(clearing ?? 'all', view)}
         size="sm"
       >

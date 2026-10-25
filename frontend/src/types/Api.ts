@@ -2203,12 +2203,14 @@ export interface InboxReadResult {
 }
 
 /**
- * Which of the caller's rows a bulk delete removes: read rows only, or every
- * row, with snoozed rows only when asked, optionally narrowed to some kinds.
+ * Which of the caller's rows a bulk delete removes: read rows only, rows about
+ * completed or cancelled issues, or every row, with snoozed rows only when asked,
+ * optionally narrowed to some kinds.
  */
 export interface InboxClearWrite {
   read_only?: boolean;
   include_snoozed?: boolean;
+  completed_only?: boolean;
   kinds?: string[];
   bucket?: InboxBucket;
 }

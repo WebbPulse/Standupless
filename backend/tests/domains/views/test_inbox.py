@@ -14,6 +14,7 @@ from typing import Any
 from fastapi.testclient import TestClient
 
 from app.common.db.dynamo.inbox import Notification, expires_at, inbox_partition
+from app.common.db.dynamo.issues import Issue
 from tests.domains.helpers import GUEST, MEMBER, OWNER, sign_in
 from tests.domains.views.conftest import TEAM, WORKSPACE
 
@@ -30,6 +31,7 @@ def put_notification(
     minutes: int = 0,
     new_value: str | None = None,
     actor_name: str = "Olive Owner",
+    issue_id: str = "01JB0000000000000000ISSUE1",
 ) -> Notification:
     """Write one inbox row straight in, so a route test needs no consumer run."""
     created_at = BASE + timedelta(minutes=minutes)
@@ -38,7 +40,7 @@ def put_notification(
         notification_id=notification_id,
         workspace_id=WORKSPACE,
         kind=kind,
-        issue_id="01JB0000000000000000ISSUE1",
+        issue_id=issue_id,
         issue_key="ABC-1",
         issue_title="An issue",
         team_id=TEAM,
@@ -771,3 +773,71 @@ def test_clearing_keeps_to_the_bucket(client: TestClient, workspace: str, reposi
 
     assert response.json()["deleted"] == 2
     assert _ids(client.get(f"/api/workspaces/{workspace}/inbox")) == ["01N0000000000000000000B000"]
+
+
+def _issue_in(repositories: Any, number: int, category: str) -> str:
+    """Store one `TEAM` issue in its status of `category`, answering its id."""
+    status = {row.category: row for row in repositories.team_config.list_statuses(WORKSPACE, TEAM)}[category]
+    issue = repositories.issues.create(
+        Issue(
+            workspace_id=WORKSPACE,
+            issue_id=f"01JB00000000000000000ISS{number:02d}",
+            team_id=TEAM,
+            key=f"ABC-{number}",
+            number=number,
+            title=f"Issue {number}",
+            status_id=status.status_id,
+            created_by=OWNER,
+        )
+    )
+    return str(issue.issue_id)
+
+
+def test_clearing_completed_keeps_to_finished_issues(client: TestClient, workspace: str, repositories: Any) -> None:
+    """`completed_only` takes rows on completed or cancelled issues, read or not, and nothing else."""
+    done = _issue_in(repositories, 1, "completed")
+    dropped = _issue_in(repositories, 2, "cancelled")
+    open_issue = _issue_in(repositories, 3, "started")
+    put_notification(repositories, MEMBER, "01N0000000000000000000A000", unread=True, issue_id=done)
+    put_notification(repositories, MEMBER, "01N0000000000000000000B000", unread=False, issue_id=dropped)
+    put_notification(repositories, MEMBER, "01N0000000000000000000C000", issue_id=open_issue)
+    put_notification(repositories, MEMBER, "01N0000000000000000000D000", issue_id="")
+    put_notification(repositories, MEMBER, "01N0000000000000000000E000", issue_id="01JB00000000000000000ISS99")
+    put_notification(repositories, OWNER, "01N0000000000000000000F000", issue_id=done)
+
+    sign_in(client, MEMBER)
+    response = client.post(f"/api/workspaces/{workspace}/inbox/clear", json={"completed_only": True})
+
+    assert response.status_code == 200
+    assert response.json()["deleted"] == 2
+    assert sorted(_ids(client.get(f"/api/workspaces/{workspace}/inbox"))) == [
+        "01N0000000000000000000C000",
+        "01N0000000000000000000D000",
+        "01N0000000000000000000E000",
+    ]
+    assert repositories.inbox.get(workspace, OWNER, "01N0000000000000000000F000") is not None
+
+
+def test_clearing_completed_leaves_snoozed_rows_unless_asked(
+    client: TestClient, workspace: str, repositories: Any
+) -> None:
+    """A snoozed row on a finished issue survives a completed clear until `include_snoozed` is sent."""
+    done = _issue_in(repositories, 1, "completed")
+    put_notification(repositories, MEMBER, "01N0000000000000000000A000", issue_id=done)
+    put_notification(repositories, MEMBER, "01N0000000000000000000B000", issue_id=done)
+    repositories.inbox.snooze(
+        workspace, MEMBER, ["01N0000000000000000000B000"], datetime.now(timezone.utc) + timedelta(hours=1)
+    )
+
+    sign_in(client, MEMBER)
+    first = client.post(f"/api/workspaces/{workspace}/inbox/clear", json={"completed_only": True})
+
+    assert first.json()["deleted"] == 1
+    assert repositories.inbox.get(workspace, MEMBER, "01N0000000000000000000B000") is not None
+
+    second = client.post(
+        f"/api/workspaces/{workspace}/inbox/clear", json={"completed_only": True, "include_snoozed": True}
+    )
+
+    assert second.json()["deleted"] == 1
+    assert repositories.inbox.get(workspace, MEMBER, "01N0000000000000000000B000") is None

@@ -1068,6 +1068,7 @@ class ImportRowRead(TypedDict):
 
 class InboxClearRequest(TypedDict):
     bucket: NotRequired[Literal["all", "priority", "other"]]
+    completed_only: NotRequired[bool]
     include_snoozed: NotRequired[bool]
     kinds: NotRequired[list[str]]
     read_only: NotRequired[bool]

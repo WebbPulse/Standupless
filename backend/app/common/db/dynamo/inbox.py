@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import hashlib
 from datetime import datetime, timedelta, timezone
-from typing import Any, Callable, Iterable, Literal, Mapping
+from typing import Any, Callable, Collection, Iterable, Literal, Mapping
 
 from boto3.dynamodb.conditions import Attr, Key
 from pydantic import BaseModel, Field
@@ -638,13 +638,16 @@ class InboxRepository:
         read_only: bool = False,
         include_snoozed: bool = False,
         kinds: Iterable[str] = (),
+        issue_filter: Callable[[set[str]], Collection[str]] | None = None,
         now: datetime | None = None,
     ) -> int:
         """Delete every notification of one member that matches, reporting how many went.
 
         `read_only` keeps to rows already read, which a snoozed row never is. Without
         it every row goes, except those still snoozed unless `include_snoozed` takes
-        them too. `kinds` keeps to those kinds. Reads only this member's partition, so
+        them too. `kinds` keeps to those kinds. `issue_filter`, when given, keeps to
+        rows naming an issue: it is called once with every issue id the matching rows
+        name and answers the ids whose rows go. Reads only this member's partition, so
         nothing outside their own inbox can match.
         """
         moment = now or utc_now()
@@ -652,14 +655,17 @@ class InboxRepository:
         state: Any = Attr("unread_at").not_exists() if read_only else None if include_snoozed else _awake(moment)
         wanted = list(kinds)
         of_kind = Attr("kind").is_in(wanted) if wanted else None
+        of_issue = Attr("issue_id").gt("") if issue_filter is not None else None
         filter_expression = None
-        for condition in (state, of_kind):
+        for condition in (state, of_kind, of_issue):
             if condition is not None:
                 filter_expression = condition if filter_expression is None else filter_expression & condition
-        keys = [
-            {"ws_user": partition, "notification_id": str(item["notification_id"])}
-            for item in self._repository.iter_query(Key("ws_user").eq(partition), filter_expression=filter_expression)
-        ]
+        items = list(self._repository.iter_query(Key("ws_user").eq(partition), filter_expression=filter_expression))
+        if issue_filter is not None:
+            issue_ids = {str(item.get("issue_id") or "") for item in items} - {""}
+            chosen = set(issue_filter(issue_ids)) if issue_ids else set()
+            items = [item for item in items if str(item.get("issue_id") or "") in chosen]
+        keys = [{"ws_user": partition, "notification_id": str(item["notification_id"])} for item in items]
         return self._repository.delete_many(keys)
 
     def delete(self, workspace_id: str, user_id: str, notification_id: str) -> bool:

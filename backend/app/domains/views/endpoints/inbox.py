@@ -166,11 +166,12 @@ def clear_inbox(
     context: AuthzContext = Depends(require(Capability.WORKSPACE_READ)),
     repositories: Repositories = Depends(get_repositories),
 ) -> InboxClearResult:
-    """Delete the caller's own notifications in bulk: the read ones, or all of them.
+    """Delete the caller's own notifications in bulk: the read ones, those about finished issues, or all.
 
     Only the caller's own partition is read, so nothing in anyone else's inbox can
-    match. `kinds` narrows it as the list's filter does, and a row still snoozed
-    goes only when a full clear sends `include_snoozed`.
+    match. `kinds` narrows it as the list's filter does, `completed_only` keeps to
+    rows whose issue is completed or cancelled, and a row still snoozed goes only
+    when the clear sends `include_snoozed`.
     """
     return InboxClearResult(deleted=clear_rows(repositories, context, payload))
 
