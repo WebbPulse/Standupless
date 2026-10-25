@@ -446,9 +446,24 @@ TRIAGE_REASON_MAX = 500
 
 
 class TriageAccept(BaseModel):
-    """The body an accept takes: the status the issue moves to, or the team's first unstarted one."""
+    """The body an accept takes: the status the issue moves to, or the team's first unstarted one.
+
+    `comment` is posted on the issue by the person accepting, in the same request,
+    so a note such as why it was taken in lands beside the accept in the thread.
+    """
 
     status_id: Optional[str] = None
+    comment: Optional[str] = None
+
+    @field_validator("comment")
+    @classmethod
+    def check_comment(cls, value: Optional[str]) -> Optional[str]:
+        """Treat a blank comment as none and hold a real one to the comment byte cap."""
+        if value is None or not value.strip():
+            return None
+        if len(value.encode("utf-8")) > ISSUE_BODY_MAX_BYTES:
+            raise ValueError(f"comment must be at most {ISSUE_BODY_MAX_BYTES} bytes")
+        return value
 
 
 class TriageDecline(BaseModel):
