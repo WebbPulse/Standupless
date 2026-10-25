@@ -45,7 +45,12 @@ the app secret instead and the script exits 4. ``--secret-id``,
     SLACK_CONFIG_TOKEN='{{resolve:secretsmanager:standupless-staging/app:SecretString:SLACK_CONFIG_TOKEN}}' \\
         asm-exec python3 scripts/apply_slack_manifest.py staging --app-id A0123456789
 
-Exit codes: 0 applied and in sync, 1 a Slack call failed, 2 bad input or no token,
+``--skip-unprovisioned`` makes the pipeline skip cleanly while that setup has not
+happened yet: when the role cannot be assumed, or the dedicated secret holds no token
+and the app secret cannot be read, the script prints a warning and exits 0 without
+calling Slack. Any other failure keeps its exit code.
+
+Exit codes: 0 applied and in sync, or skipped as unprovisioned, 1 a Slack call failed, 2 bad input or no token,
 3 the live App still differs, 4 the rotated refresh token could not be stored.
 """
 
@@ -83,6 +88,10 @@ class SlackApiError(RuntimeError):
 
 class TokenError(RuntimeError):
     """No usable configuration token could be found or the stored refresh token is unusable."""
+
+
+class NotProvisioned(TokenError):
+    """The slack-config role or the token in its dedicated secret does not exist yet."""
 
 
 class WriteBackError(RuntimeError):
@@ -290,7 +299,7 @@ def migrate_config_token(
     except TokenError:
         raise
     except Exception as error:
-        raise TokenError(
+        raise NotProvisioned(
             f"secret {store.secret_id} holds no {store.key} yet and secret {legacy.secret_id} could not be read "
             f"({type(error).__name__}); migrate it once from the production AdministratorAccess profile"
         ) from None
@@ -333,9 +342,16 @@ def secrets_client(region: str, role_arn: str | None = None) -> Any:
         ) from None
     if role_arn is None:
         return boto3.client("secretsmanager", region_name=region)
-    credentials = boto3.client("sts", region_name=region).assume_role(
-        RoleArn=role_arn, RoleSessionName=ROLE_SESSION_NAME, DurationSeconds=900
-    )["Credentials"]
+    try:
+        credentials = boto3.client("sts", region_name=region).assume_role(
+            RoleArn=role_arn, RoleSessionName=ROLE_SESSION_NAME, DurationSeconds=900
+        )["Credentials"]
+    except Exception as error:
+        if error_code(error) == "AccessDenied":
+            raise NotProvisioned(
+                f"role {role_arn} cannot be assumed (AccessDenied); it does not exist yet or does not trust this caller"
+            ) from None
+        raise
     return boto3.client(
         "secretsmanager",
         region_name=region,
@@ -416,6 +432,11 @@ def main() -> int:
     )
     parser.add_argument("--role-arn", help="A role to assume for the refresh token secret, as the deploy pipeline does")
     parser.add_argument("--region", default=DEFAULT_REGION, help="The secrets' AWS region")
+    parser.add_argument(
+        "--skip-unprovisioned",
+        action="store_true",
+        help="Exit 0 with a warning when the slack-config role or the dedicated token does not exist yet",
+    )
     args = parser.parse_args()
 
     slack_dir = Path(__file__).resolve().parent.parent / "slack"
@@ -446,6 +467,12 @@ def main() -> int:
     except SlackApiError as error:
         print(error, file=sys.stderr)
         return 1
+    except NotProvisioned as error:
+        if not args.skip_unprovisioned:
+            print(f"no App configuration token: {error}", file=sys.stderr)
+            return 2
+        print(f"::warning title=Slack manifest skipped::{error}")
+        return 0
     except Exception as error:
         print(f"no App configuration token: {type(error).__name__}: {error}", file=sys.stderr)
         return 2

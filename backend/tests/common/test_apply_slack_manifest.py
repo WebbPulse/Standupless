@@ -362,4 +362,95 @@ def test_main_passes_the_role_to_the_dedicated_secret(monkeypatch: pytest.Monkey
     assert dedicated.current == {"SLACK_CONFIG_REFRESH_TOKEN": "xoxe-new-1"}
 
 
+class AccessDenied(Exception):
+    """Stands in for the ``ClientError`` STS answers for a role that is missing or does not trust the caller."""
+
+    response = {"Error": {"Code": "AccessDenied"}}
+
+
+class DenyingSts:
+    """An STS client that refuses every role."""
+
+    def assume_role(self, **kwargs: Any) -> dict[str, Any]:
+        """Refuse the role."""
+        raise AccessDenied()
+
+
+def denying_client(service: str, **kwargs: Any) -> Any:
+    """Hand back the refusing STS client, and fail for any other service."""
+    assert service == "sts"
+    return DenyingSts()
+
+
+def test_a_role_that_cannot_be_assumed_is_not_provisioned(monkeypatch: pytest.MonkeyPatch) -> None:
+    """AccessDenied on AssumeRole is reported as the role not existing yet."""
+    fake_boto3 = ModuleType("boto3")
+    monkeypatch.setattr(fake_boto3, "client", denying_client, raising=False)
+    monkeypatch.setitem(sys.modules, "boto3", fake_boto3)
+
+    with pytest.raises(script.NotProvisioned):
+        script.secrets_client("us-west-2", "arn:aws:iam::1:role/x")
+
+
+def test_a_migration_without_app_secret_access_is_not_provisioned() -> None:
+    """An empty dedicated secret the pipeline cannot fill is reported as not provisioned."""
+    with pytest.raises(script.NotProvisioned):
+        script.migrate_config_token(
+            RefusingLegacy(),
+            script.TokenSecret(FakeDedicated(), DEDICATED_ID),
+            FakeSlack().rotate,
+        )
+
+
+def run_unprovisioned(monkeypatch: pytest.MonkeyPatch, *flags: str) -> tuple[int, list[str]]:
+    """Run ``main`` against a role that cannot be assumed and return its exit code and the Slack methods called."""
+    methods: list[str] = []
+
+    def fake_call(method: str, token: str | None, **params: str) -> dict[str, Any]:
+        """Record every Slack method."""
+        methods.append(method)
+        return {"ok": True}
+
+    def refuse(secret_id: str, region: str, role_arn: str | None = None) -> Any:
+        """Refuse the role as STS does before the production apply."""
+        raise script.NotProvisioned(f"role {role_arn} cannot be assumed (AccessDenied)")
+
+    monkeypatch.delenv("SLACK_CONFIG_TOKEN", raising=False)
+    monkeypatch.setattr(script, "call", fake_call)
+    monkeypatch.setattr(script, "open_secret", refuse)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "apply_slack_manifest.py",
+            "staging",
+            "--app-id",
+            "A0123456789",
+            "--role-arn",
+            "arn:aws:iam::1:role/x",
+            *flags,
+        ],
+    )
+    return script.main(), methods
+
+
+def test_main_skips_an_unprovisioned_role_when_asked(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """``--skip-unprovisioned`` exits 0 with a warning and never calls Slack."""
+    code, methods = run_unprovisioned(monkeypatch, "--skip-unprovisioned")
+
+    assert code == 0
+    assert methods == []
+    assert "::warning title=Slack manifest skipped::" in capsys.readouterr().out
+
+
+def test_main_fails_on_an_unprovisioned_role_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Without the flag a role that cannot be assumed still exits 2."""
+    code, methods = run_unprovisioned(monkeypatch)
+
+    assert code == 2
+    assert methods == []
+
+
 MANIFEST = SCRIPT.parent.parent / "slack" / "manifest.staging.json"
