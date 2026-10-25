@@ -129,6 +129,7 @@ IMPORT_REPOSITORIES: tuple[str, ...] = (
     "comments",
     "relations",
     "planning",
+    "customers",
 )
 """What the import job writes: issues, keys, activity, subscriptions, labels, the notice, and Linear's extras."""
 

@@ -7,7 +7,8 @@ one page of one Linear connection and writes what it found. The job walks a
 fixed list of phases, per mapped team its cycles, its projects with their
 milestones and updates, its issues with their comments, and then a second walk
 over the issues for sub-issue and relation links, and finally the workspace's
-initiatives and the dependencies between its projects. `phase_index` and
+initiatives, the dependencies between its projects and its customers, with
+their statuses and tiers mapped onto the workspace's own lists. `phase_index` and
 `after` say where it is, and `cursor` counts the steps so the queue's
 duplicate guard works unchanged. Two phases per team are the admin's choice: one
 opens the team's walk by creating a status for each Linear workflow state the
@@ -52,6 +53,7 @@ from app.common.csv_import import RowProblem, parse_datetime
 from app.common.date_resolution import DateEdge, DateResolution, snap
 from app.common.db.dynamo.base import utc_now
 from app.common.linear_api import (
+    CUSTOMERS_QUERY,
     CYCLES_QUERY,
     INITIATIVES_QUERY,
     ISSUE_COMMENTS_QUERY,
@@ -152,8 +154,11 @@ TRANSIENT_CODES = frozenset({"unreachable", "unavailable"})
 PROJECT_DEPENDENCY_TYPES = frozenset({"dependency", "blocks"})
 """The Linear project relation types that are a dependency between two projects."""
 
-WORKSPACE_PHASES: tuple[str, ...] = ("initiatives", "project_relations")
-"""What the import reads once for the workspace after every team: dependencies need every project written."""
+WORKSPACE_PHASES: tuple[str, ...] = ("initiatives", "project_relations", "customers")
+"""What the import reads once for the workspace after every team: dependencies need every project written.
+
+Customers come last so a job queued before they were read keeps its place.
+"""
 
 CROCKFORD = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
 
@@ -597,6 +602,8 @@ def run_step(repositories: Any, job: Any, client: LinearClient) -> StepResult:
         return _initiatives_step(repositories, job, client)
     if phase == "project_relations":
         return _project_relations_step(repositories, job, client)
+    if phase == "customers":
+        return _customers_step(repositories, job, client)
     mapping = job.linear_teams[index]
     context = _team_context(repositories, job.workspace_id, mapping.team_id)
     handlers = {
@@ -1588,6 +1595,127 @@ def _project_relations_step(repositories: Any, job: Any, client: LinearClient) -
             continue
         relations.append(relation)
         result.add("project_relations")
+    result.next_after = page.end_cursor if page.has_next else None
+    return result
+
+
+def _amount(value: Any) -> Optional[int]:
+    """A Linear revenue or size as the whole, non-negative number a customer keeps, or `None`."""
+    try:
+        number = int(round(float(value)))
+    except (TypeError, ValueError):
+        return None
+    return number if 0 <= number <= 10**15 else None
+
+
+def _customer_domains(node: dict[str, Any], taken: dict[str, str], customer_id: str) -> list[str]:
+    """A Linear customer's well formed domains no other customer claims, at most 20."""
+    from app.common.api.schemas.customers import DOMAIN_PATTERN, DOMAINS_MAX, normalize_domain
+
+    domains: dict[str, None] = {}
+    for raw in node.get("domains") or []:
+        domain = normalize_domain(str(raw))
+        if domain and DOMAIN_PATTERN.match(domain) and taken.get(domain, customer_id) == customer_id:
+            domains[domain] = None
+    return list(domains)[:DOMAINS_MAX]
+
+
+def _customer_field_id(
+    repositories: Any, job: Any, kind: str, value: Any, fields: Any, result: StepResult
+) -> Optional[str]:
+    """The workspace entry a Linear customer status or tier maps to by name, created last when missing."""
+    from app.common.customer_fields import find_or_create_customer_field
+
+    ref = value if isinstance(value, dict) else {}
+    name = str(ref.get("name") or "").strip()
+    if not name:
+        return None
+    before = len(fields.rows(kind))
+    color = str(ref.get("color") or "")
+    row = find_or_create_customer_field(
+        repositories,
+        job.workspace_id,
+        kind,
+        name,
+        created_by=job.requested_by,
+        color=color.lower() if COLOR.match(color) else None,
+        fields=fields,
+    )
+    if len(fields.rows(kind)) > before:
+        result.add("customer_statuses" if kind == "customer_status" else "customer_tiers")
+    return row.field_id
+
+
+def _customers_step(repositories: Any, job: Any, client: LinearClient) -> StepResult:
+    """Write one page of the Linear workspace's customers, mapping their statuses and tiers by name.
+
+    A Linear status or tier the workspace has no entry of the same name for,
+    ignoring case, is added to the end of its list with Linear's colour. A domain
+    another customer already claims stays with that customer. The phase is
+    fail-soft the way project dependencies are: a workspace whose Linear plan
+    has no customers, or a query Linear rejects, ends it with a warning.
+    """
+    from app.common.customer_fields import STATUS, TIER, materialise_customer_fields
+    from app.common.db.dynamo.customers import Customer
+
+    result = StepResult()
+    try:
+        page = _page(client, CUSTOMERS_QUERY, ("customers",), {}, job.after)
+    except (LinearAuthFailed, LinearRateLimited):
+        raise
+    except LinearError as exc:
+        if exc.code in TRANSIENT_CODES:
+            raise
+        _log.warning(
+            "Linear rejected the customers query, so the import goes on without them.",
+            extra={"event": "issue.import.linear_customers_skipped", "import_id": job.import_id, "code": exc.code},
+        )
+        result.warn("customers", f"Linear would not list customers ({exc.code}), left out")
+        return result
+    if not page.nodes:
+        return result
+    people = _people(repositories, job.workspace_id)
+    fields = materialise_customer_fields(repositories, job.workspace_id)
+    taken = {
+        domain: row.customer_id
+        for row in repositories.customers.list_customers(job.workspace_id)
+        for domain in row.domains
+    }
+    for node in page.nodes:
+        customer_id = linear_row_id(job.workspace_id, "customer", str(node["id"]), node.get("createdAt"))
+        domains = _customer_domains(node, taken, customer_id)
+        values: dict[str, Any] = {
+            "name": str(node.get("name") or "").strip()[:200] or "Unnamed customer",
+            "domains": domains,
+            "status_id": _customer_field_id(repositories, job, STATUS, node.get("status"), fields, result),
+            "status": None,
+            "tier_id": _customer_field_id(repositories, job, TIER, node.get("tier"), fields, result),
+            "tier": None,
+            "owner_id": people.get(_email(node.get("owner"))),
+            "revenue": _amount(node.get("revenue")),
+            "size": _amount(node.get("size")),
+            "updated_at": utc_now(),
+        }
+        existing = repositories.customers.get(job.workspace_id, customer_id)
+        if existing is None:
+            created = _instant(node.get("createdAt")) or utc_now()
+            try:
+                repositories.customers.create(
+                    Customer(
+                        workspace_id=job.workspace_id,
+                        customer_id=customer_id,
+                        created_by=job.requested_by,
+                        created_at=created,
+                        **values,
+                    )
+                )
+            except ConditionFailed:
+                continue
+        else:
+            repositories.customers.replace(existing.model_copy(update=values))
+        for domain in domains:
+            taken[domain] = customer_id
+        result.add("customers")
     result.next_after = page.end_cursor if page.has_next else None
     return result
 

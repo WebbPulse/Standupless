@@ -49,6 +49,7 @@ class FakeLinear:
     issues: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
     initiatives: list[dict[str, Any]] = field(default_factory=list)
     project_relations: list[dict[str, Any]] = field(default_factory=list)
+    customers: list[dict[str, Any]] = field(default_factory=list)
     states: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
     templates: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
     labels: list[dict[str, Any]] = field(default_factory=list)
@@ -266,6 +267,11 @@ class FakeLinear:
         """The workspace's project dependencies."""
         relations = list(self.project_relations)
         return {"projectRelations": self._connection(relations, variables.get("first"), variables.get("after"))}
+
+    def _op_Customers(self, variables: dict[str, Any]) -> dict[str, Any]:
+        """The workspace's customers with their status, tier and owner."""
+        customers = list(self.customers)
+        return {"customers": self._connection(customers, variables.get("first"), variables.get("after"))}
 
 
 def ref(node: dict[str, Any]) -> dict[str, Any]:

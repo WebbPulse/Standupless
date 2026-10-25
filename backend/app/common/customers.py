@@ -19,7 +19,7 @@ a deleted issue simply stops appearing.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Callable, Iterable, cast
+from typing import Any, Callable, Iterable, Optional, cast
 
 from fastapi import HTTPException, status
 from webbpulse.dynamodb import ConditionFailed
@@ -36,6 +36,14 @@ from app.common.api.schemas.customers import (
     CustomerRequestRead,
 )
 from app.common.change_source import ChangeSource
+from app.common.customer_fields import (
+    LABELS,
+    STATUS,
+    TIER,
+    CustomerFields,
+    load_customer_fields,
+    materialise_customer_fields,
+)
 from app.common.db.dynamo.base import utc_now
 from app.common.db.dynamo.customers import TARGET_KINDS, Customer, CustomerRequest, TargetKind, new_customer_id
 from app.common.issue_rules import load_visible_issue
@@ -119,16 +127,30 @@ def _can_delete_customer(context: AuthzContext, customer: Customer) -> bool:
 
 
 def _customer_read(
-    context: AuthzContext, customer: Customer, request_count: int, important_count: int = 0
+    context: AuthzContext,
+    customer: Customer,
+    request_count: int,
+    important_count: int = 0,
+    *,
+    fields: CustomerFields,
 ) -> CustomerRead:
-    """One customer's response shape, with this caller's rights on it."""
+    """One customer's response shape, with its status and tier as the workspace names them and this caller's rights.
+
+    A status or tier the workspace no longer lists reads as none, the way a
+    deleted label drops off an issue.
+    """
+    held_status = fields.status_of(customer)
+    held_tier = fields.tier_of(customer)
     return CustomerRead(
         customer_id=customer.customer_id,
         workspace_id=customer.workspace_id,
         name=customer.name,
         domains=customer.domains,
-        status=customer.status,
-        tier=customer.tier,
+        status_id=held_status.field_id if held_status else None,
+        status=held_status.field_id if held_status else None,
+        status_name=held_status.name if held_status else None,
+        tier_id=held_tier.field_id if held_tier else None,
+        tier=held_tier.name if held_tier else None,
         owner_id=customer.owner_id,
         revenue=customer.revenue,
         size=customer.size,
@@ -205,6 +227,61 @@ def _visible_counts(
     return counts, important
 
 
+FIELD_KEYS: dict[str, tuple[str, str]] = {STATUS: ("status_id", "status"), TIER: ("tier_id", "tier")}
+"""The id field and the older name-or-id field a customer body sets each kind through."""
+
+
+def _resolve_field(fields: CustomerFields, kind: str, given: dict[str, Any]) -> Optional[str]:
+    """The entry id a body sets for one kind, None to clear it, or a 422 for one the workspace does not list.
+
+    `status_id` and `tier_id` take an id; `status` and `tier` take an id or a
+    name, ignoring case. Given both, they must name the same entry.
+    """
+    id_key, alias_key = FIELD_KEYS[kind]
+    by_id = given.get(id_key)
+    by_alias = given.get(alias_key)
+    chosen: Optional[str] = None
+    if by_id is not None:
+        row = fields.find(kind, by_id)
+        if row is None:
+            raise unprocessable(f"No such {LABELS[kind]}: {by_id}")
+        chosen = row.field_id
+    if by_alias is not None:
+        row = fields.resolve(kind, by_alias)
+        if row is None:
+            raise unprocessable(f"No such {LABELS[kind]}: {by_alias}")
+        if chosen is not None and chosen != row.field_id:
+            raise unprocessable(f"{id_key} and {alias_key} name different {LABELS[kind]} entries")
+        chosen = row.field_id
+    return chosen
+
+
+def _field_changes(
+    repositories: Repositories, context: AuthzContext, given: dict[str, Any], existing: Optional[Customer]
+) -> dict[str, Any]:
+    """The stored fields a body's status and tier set, by id, with any legacy string cleared.
+
+    A body that names neither leaves both alone. Setting either stores the
+    workspace's seeded lists first, so an id a customer points at never depends
+    on the legacy strings it was seeded from.
+    """
+    named = [kind for kind, keys in FIELD_KEYS.items() if keys[0] in given or keys[1] in given]
+    if not named:
+        return {}
+    fields = materialise_customer_fields(repositories, context.workspace_id)
+    changes: dict[str, Any] = {}
+    for kind in named:
+        id_key, alias_key = FIELD_KEYS[kind]
+        chosen = _resolve_field(fields, kind, given)
+        current = fields.holder_of(kind, existing) if existing is not None else None
+        if existing is not None and (current.field_id if current else None) == chosen:
+            if getattr(existing, alias_key) is None or chosen is None:
+                continue
+        changes[id_key] = chosen
+        changes[alias_key] = None
+    return changes
+
+
 def _load_customer(repositories: Repositories, context: AuthzContext, customer_id: str) -> Customer:
     """A customer of the caller's workspace, or a 403 for a guest and a 404 when it is not there."""
     require_customer_reader(context)
@@ -241,9 +318,10 @@ def list_customers(repositories: Repositories, context: AuthzContext) -> list[Cu
     require_customer_reader(context)
     counts, important = _visible_counts(repositories, context)
     customers = repositories.customers.list_customers(context.workspace_id)
+    fields = load_customer_fields(repositories, context.workspace_id, customers)
     customers.sort(key=lambda row: (row.name.casefold(), row.customer_id))
     return [
-        _customer_read(context, row, counts.get(row.customer_id, 0), important.get(row.customer_id, 0))
+        _customer_read(context, row, counts.get(row.customer_id, 0), important.get(row.customer_id, 0), fields=fields)
         for row in customers
     ]
 
@@ -253,8 +331,13 @@ def get_customer(repositories: Repositories, context: AuthzContext, customer_id:
     customer = _load_customer(repositories, context, customer_id)
     requests = repositories.customers.list_for_customer(context.workspace_id, customer.customer_id)
     counts, important = _visible_counts(repositories, context, requests)
+    fields = load_customer_fields(repositories, context.workspace_id)
     return _customer_read(
-        context, customer, counts.get(customer.customer_id, 0), important.get(customer.customer_id, 0)
+        context,
+        customer,
+        counts.get(customer.customer_id, 0),
+        important.get(customer.customer_id, 0),
+        fields=fields,
     )
 
 
@@ -284,14 +367,15 @@ def create_customer(repositories: Repositories, context: AuthzContext, payload: 
     require_customer_reader(context)
     _check_owner(repositories, context, payload.owner_id)
     _check_domains_free(repositories, context, payload.domains)
+    held = _field_changes(repositories, context, payload.model_dump(exclude_unset=True), None)
     now = utc_now()
     customer = Customer(
         workspace_id=context.workspace_id,
         customer_id=new_customer_id(),
         name=payload.name,
         domains=payload.domains,
-        status=payload.status,
-        tier=payload.tier,
+        status_id=held.get("status_id"),
+        tier_id=held.get("tier_id"),
         owner_id=payload.owner_id,
         revenue=payload.revenue,
         size=payload.size,
@@ -303,7 +387,7 @@ def create_customer(repositories: Repositories, context: AuthzContext, payload: 
         repositories.customers.create(customer)
     except ConditionFailed as exc:
         raise conflict("That customer already exists") from exc
-    return _customer_read(context, customer, 0)
+    return _customer_read(context, customer, 0, fields=load_customer_fields(repositories, context.workspace_id))
 
 
 def update_customer(
@@ -316,7 +400,10 @@ def update_customer(
         _check_owner(repositories, context, fields["owner_id"])
     if "domains" in fields:
         _check_domains_free(repositories, context, fields["domains"], ignore=[existing.customer_id])
-    changes = {name: value for name, value in fields.items() if getattr(existing, name) != value}
+    held = _field_changes(repositories, context, fields, existing)
+    plain = {name: value for name, value in fields.items() if name not in ("status_id", "status", "tier_id", "tier")}
+    changes = {name: value for name, value in plain.items() if getattr(existing, name) != value}
+    changes.update(held)
     if not changes:
         return get_customer(repositories, context, existing.customer_id)
     edited = existing.model_copy(update={**changes, "updated_at": utc_now()})
@@ -354,11 +441,16 @@ def merge_customers(
     if not _can_delete_customer(context, source):
         raise forbidden()
     domains = list(dict.fromkeys([*target.domains, *source.domains]))
+    fields = materialise_customer_fields(repositories, context.workspace_id)
+    held_status = fields.status_of(target) or fields.status_of(source)
+    held_tier = fields.tier_of(target) or fields.tier_of(source)
     merged = target.model_copy(
         update={
             "domains": domains[:20],
-            "status": target.status if target.status is not None else source.status,
-            "tier": target.tier if target.tier is not None else source.tier,
+            "status_id": held_status.field_id if held_status else None,
+            "status": None,
+            "tier_id": held_tier.field_id if held_tier else None,
+            "tier": None,
             "owner_id": target.owner_id if target.owner_id is not None else source.owner_id,
             "revenue": target.revenue if target.revenue is not None else source.revenue,
             "size": target.size if target.size is not None else source.size,

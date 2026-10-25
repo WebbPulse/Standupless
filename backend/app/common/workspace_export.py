@@ -92,6 +92,9 @@ ENTITY_FILES: tuple[str, ...] = (
     "views",
     "releases",
     "documents",
+    "customer_statuses",
+    "customer_tiers",
+    "customers",
 )
 """Every NDJSON file in a bundle, in the order the manifest lists them."""
 
@@ -109,6 +112,7 @@ EXPORT_READ_REPOSITORIES: tuple[str, ...] = (
     "comments",
     "attachments",
     "planning",
+    "customers",
     "releases",
     "documents",
     "views",
@@ -549,6 +553,7 @@ def _walk(repositories: Any, job: ExportJob, writer: _Writer) -> datetime:
 
     _projects(repositories, job, writer, visible_ids)
     _initiative_documents(repositories, job, writer)
+    _customers(repositories, job, writer)
     _attachments(repositories, job, writer, visible, links_expire)
     return links_expire
 
@@ -635,6 +640,37 @@ def _initiative_documents(repositories: Any, job: ExportJob, writer: _Writer) ->
         return
     for initiative in repositories.planning.list_initiatives(job.workspace_id, max_items=100_000):
         _documents(repositories, writer, job.workspace_id, "initiative", initiative.initiative_id)
+
+
+def _customers(repositories: Any, job: ExportJob, writer: _Writer) -> None:
+    """The workspace's customer statuses, tiers and customers, which a guest requester never sees.
+
+    Each customer carries the id and name of its status and tier as the
+    workspace lists them, so a reader never has to map the legacy strings an
+    older customer row may still hold.
+    """
+    if job.context().is_guest:
+        return
+    from app.common.customer_fields import STATUS, TIER, load_customer_fields
+
+    customers = repositories.customers.list_customers(job.workspace_id, max_items=100_000)
+    fields = load_customer_fields(repositories, job.workspace_id, customers)
+    for kind, name in ((STATUS, "customer_statuses"), (TIER, "customer_tiers")):
+        for row in fields.rows(kind):
+            writer.write(name, {**_dump(row, "workspace_id", "kind", "field_id", "created_by"), "id": row.field_id})
+    for customer in sorted(customers, key=lambda row: (row.name.casefold(), row.customer_id)):
+        held_status = fields.status_of(customer)
+        held_tier = fields.tier_of(customer)
+        writer.write(
+            "customers",
+            {
+                **_dump(customer, "status", "tier"),
+                "status_id": held_status.field_id if held_status else None,
+                "status_name": held_status.name if held_status else None,
+                "tier_id": held_tier.field_id if held_tier else None,
+                "tier_name": held_tier.name if held_tier else None,
+            },
+        )
 
 
 def _documents(repositories: Any, writer: _Writer, workspace_id: str, parent_kind: str, parent_id: str) -> None:
