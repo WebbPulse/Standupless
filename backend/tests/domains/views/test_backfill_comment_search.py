@@ -94,5 +94,5 @@ def test_a_dry_run_counts_and_writes_nothing(
     assert main(["--stage", stage, "--workspace", WORKSPACE, "--dry-run"]) == 0
 
     printed = capsys.readouterr().out.strip()
-    assert printed == "dry-run workspaces=1 comments=1 indexed=1 skipped=0 postings_written=3"
+    assert printed == "dry-run workspaces=1 comments=1 indexed=1 skipped=0 postings_written=11"
     assert _postings(repositories, "widget") == []

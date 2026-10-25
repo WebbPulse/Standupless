@@ -6,8 +6,8 @@ rather than a rewrite of the issue's whole term set. A REMOVE deletes every term
 the old image, because a deleted issue that stayed findable would be worse than one
 that was never indexed.
 
-An issue is posted under at most `TERM_CAP` terms, title terms first, with
-stopwords left out. Terms that leave the text are also deleted from the wider
+An issue is posted under at most `TERM_CAP` words and `PREFIX_CAP` word
+prefixes, title terms first, with stopwords left out. Terms that leave the text are also deleted from the wider
 `legacy_terms` set, so postings written before the cap and the stopwords existed
 are cleaned up as their issue is edited or removed, without a backfill. Each
 posting is a single put: nothing is read before a write.

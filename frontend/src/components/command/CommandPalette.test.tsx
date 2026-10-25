@@ -507,14 +507,14 @@ describe('what a term resolves to', () => {
     expect(search).toHaveBeenCalled();
   });
 
-  it('leaves a short word to the index rather than searching it', async () => {
+  it('waits for a second character rather than searching one', async () => {
     const user = renderPalette();
 
     await user.keyboard('{Control>}k{/Control}');
-    await user.keyboard('zzz');
+    await user.keyboard('z');
 
     await waitFor(() => {
-      expect(screen.getByText(/at least 4 letters/)).toBeInTheDocument();
+      expect(screen.getByText(/at least 2 characters/)).toBeInTheDocument();
     });
     expect(search).not.toHaveBeenCalled();
   });

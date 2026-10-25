@@ -182,12 +182,17 @@ describe('indexable terms', () => {
     expect(hasIndexableTerm('cache')).toBe(true);
   });
 
-  it('refuses words the index drops', () => {
-    expect(hasIndexableTerm('a to the')).toBe(false);
+  it('accepts two and three letter words', () => {
+    expect(hasIndexableTerm('ui')).toBe(true);
+    expect(hasIndexableTerm('csv')).toBe(true);
+  });
+
+  it('refuses single characters, which the index drops', () => {
+    expect(hasIndexableTerm('a b')).toBe(false);
   });
 
   it('accepts a phrase where one word is long enough', () => {
-    expect(hasIndexableTerm('to the cache')).toBe(true);
+    expect(hasIndexableTerm('a cache')).toBe(true);
   });
 });
 
@@ -201,18 +206,27 @@ describe('search page', () => {
     expect(search).not.toHaveBeenCalled();
   });
 
-  it('refuses a short term here rather than sending it', async () => {
+  it('waits for a second character rather than sending one', async () => {
     const user = userEvent.setup();
     renderPage();
 
-    await user.type(screen.getByLabelText('Search'), 'the');
+    await user.type(screen.getByLabelText('Search'), 'u');
 
     expect(
-      await screen.findByText(
-        'Search needs a word of at least four letters. Shorter words are not indexed.'
-      )
+      await screen.findByText('Keep typing to search.')
     ).toBeInTheDocument();
     expect(search).not.toHaveBeenCalled();
+  });
+
+  it('searches a two letter word', async () => {
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.type(screen.getByLabelText('Search'), 'ui');
+
+    await waitFor(() => {
+      expect(search).toHaveBeenCalledWith('ui', expect.anything());
+    });
   });
 
   it('searches once the term is long enough', async () => {

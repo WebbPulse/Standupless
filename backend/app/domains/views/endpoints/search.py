@@ -14,6 +14,12 @@ so the key an issue had in the tool it came from still finds it.
 Search is not paged. The MVP caps at `limit` and says so; a cursor over an
 intersection of posting lists is a post-MVP decision alongside the OpenSearch one.
 
+A query matches its last word as a prefix and every other word whole, as
+`SearchQuery` reads it: the prefix is answered by the word posted whole or by
+its `p:` prefix posting, and a prefix longer than any posted one is checked
+against the hit's own text. Projects, initiatives and documents are matched the
+same way against their words in memory.
+
 Term search walks each term's postings newest issue id first and intersects them
 as a merge join, one page at a time, so it stops reading once `limit` matches are
 found. Only those matches are fetched, and the page is ordered by score and then
@@ -45,7 +51,14 @@ from app.common.api.dependencies.repositories import Repositories, get_repositor
 from app.common.api.dependencies.scopes import PROJECTS_READ
 from app.common.api.schemas.documents import DocumentSummaryRead
 from app.common.db.dynamo.issues import Issue
-from app.common.db.dynamo.search_index import comment_term, ref_term, split_comment_doc, tokenize
+from app.common.db.dynamo.search_index import (
+    SearchQuery,
+    comment_term,
+    parse_query,
+    ref_term,
+    split_comment_doc,
+    truncate_body,
+)
 from app.common.db.dynamo.team_config import Status
 from app.common.documents import search_documents
 from app.common.issue_keys import current
@@ -86,7 +99,7 @@ KEY_PATTERN = re.compile(r"^([A-Za-z][A-Za-z0-9]{1,5})-(\d+)$")
 """What counts as an issue key typed into the search box.
 
 The same shape the M2 contract fixes for a key, so `ABC-123` resolves to one issue
-rather than being tokenized into terms that would each be dropped as too short.
+rather than being tokenized into a word search that would match far more.
 """
 
 
@@ -147,7 +160,7 @@ def _ref_hits(
     term = source_ref_term(query)
     if term is None or not teams:
         return []
-    matches = _matching_ids(repositories, workspace_id, teams, {term})
+    matches = _matching_ids(repositories, workspace_id, teams, [[term]])
     return _first_hits(repositories, context, workspace_id, matches, limit, keep)
 
 
@@ -191,17 +204,30 @@ def intersect_descending(streams: list[Iterator[str]]) -> Iterator[str]:
                 heads[index] = head
 
 
+def union_descending(streams: list[Iterator[str]]) -> Iterator[str]:
+    """The ids in any stream, each stream sorted newest id first, once each and in the same order."""
+    previous: str | None = None
+    for item in heapq.merge(*streams, reverse=True):
+        if item != previous:
+            previous = item
+            yield item
+
+
+def _clause_stream(repositories: Repositories, workspace_id: str, team_id: str, terms: list[str]) -> Iterator[str]:
+    """Ids posted under any of one clause's terms in one team, newest id first."""
+    streams = [repositories.search_index.iter_postings(workspace_id, team_id, term) for term in terms]
+    return streams[0] if len(streams) == 1 else union_descending(streams)
+
+
 def _matching_ids(
     repositories: Repositories,
     workspace_id: str,
     teams: list[str],
-    terms: set[str],
+    clauses: list[list[str]],
 ) -> Iterator[str]:
-    """Ids of issues matching every term across the teams, newest id first, read lazily."""
+    """Ids of issues matching every clause across the teams, newest id first, read lazily."""
     per_team = [
-        intersect_descending(
-            [repositories.search_index.iter_postings(workspace_id, team_id, term) for term in sorted(terms)]
-        )
+        intersect_descending([_clause_stream(repositories, workspace_id, team_id, terms) for terms in clauses])
         for team_id in teams
     ]
     seen: set[str] = set()
@@ -284,6 +310,20 @@ def status_filter(book: StatusBook, status_ids: list[str], categories: list[str]
     return keep
 
 
+def prefix_check(query: SearchQuery, keep: IssuePredicate | None) -> IssuePredicate | None:
+    """`keep`, also turning away an issue whose text lacks the prefix when the postings alone cannot tell."""
+    if not query.needs_check:
+        return keep
+
+    def checked(issue: Issue) -> bool:
+        """Whether one issue's indexed text holds the prefix and `keep` takes it."""
+        if not query.prefix_in(issue.title, issue.key, truncate_body(issue.body)):
+            return False
+        return keep is None or keep(issue)
+
+    return checked
+
+
 def _issue_reads(
     repositories: Repositories, book: StatusBook, issues: list[Issue], score: int
 ) -> list[SearchResultRead]:
@@ -300,9 +340,9 @@ def _reads_projects(context: AuthzContext) -> bool:
 
 
 def _document_hits(
-    repositories: Repositories, context: AuthzContext, team_id: Optional[str], terms: set[str], limit: int
+    repositories: Repositories, context: AuthzContext, team_id: Optional[str], query: SearchQuery, limit: int
 ) -> list[DocumentSummaryRead]:
-    """Documents matching every term, for a workspace-wide search by a caller who may read projects.
+    """Documents matching the query, for a workspace-wide search by a caller who may read projects.
 
     A search narrowed to one team skips them, since a document belongs to a
     project or an initiative rather than a team, and a key without the projects
@@ -310,35 +350,29 @@ def _document_hits(
     """
     if team_id or not _reads_projects(context):
         return []
-    return search_documents(repositories, context, terms, limit)
+    return search_documents(repositories, context, query, limit)
 
 
-def text_matches(terms: set[str], *parts: str | None) -> bool:
-    """Whether every term appears somewhere in the text, case folded, so a term also matches inside a longer word."""
-    text = " ".join(part for part in parts if part).lower()
-    return bool(text) and all(term in text for term in terms)
-
-
-def _name_first(name: str, terms: set[str]) -> bool:
-    """Whether every term is in the name itself, which ranks a hit ahead of a description match."""
-    return text_matches(terms, name)
+def _name_first(name: str, query: SearchQuery) -> bool:
+    """Whether the name alone matches the query, which ranks a hit ahead of a description match."""
+    return query.matches_text(name)
 
 
 def _project_hits(
     repositories: Repositories,
     context: AuthzContext,
     teams: list[str],
-    terms: set[str],
+    query: SearchQuery,
     limit: int,
 ) -> list[SearchProjectRead]:
-    """Projects on a team the caller sees whose name or description holds every term, name matches first."""
+    """Projects on a team the caller sees whose name or description matches the query, name matches first."""
     if not _reads_projects(context):
         return []
     visible = set(teams)
     hits: list[tuple[SearchProjectRead, bool]] = []
     for project in repositories.planning.list_projects(context.workspace_id):
         shown = visible_project_teams(project, visible)
-        if not shown or not text_matches(terms, project.name, project.description):
+        if not shown or not query.matches_text(project.name, project.description):
             continue
         hits.append(
             (
@@ -354,7 +388,7 @@ def _project_hits(
                     target_date=project.target_date,
                     updated_at=project.updated_at,
                 ),
-                _name_first(project.name, terms),
+                _name_first(project.name, query),
             )
         )
     hits.sort(key=lambda hit: (not hit[1], -hit[0].updated_at.timestamp()))
@@ -362,9 +396,9 @@ def _project_hits(
 
 
 def _initiative_hits(
-    repositories: Repositories, context: AuthzContext, team_id: Optional[str], terms: set[str], limit: int
+    repositories: Repositories, context: AuthzContext, team_id: Optional[str], query: SearchQuery, limit: int
 ) -> list[SearchInitiativeRead]:
-    """Initiatives whose name or description holds every term, for a workspace-wide search by a non-guest.
+    """Initiatives whose name or description matches the query, for a workspace-wide search by a non-guest.
 
     An initiative belongs to no team, so a search narrowed to one skips them, as
     it does documents.
@@ -382,10 +416,10 @@ def _initiative_hits(
                 target_date=initiative.target_date,
                 updated_at=initiative.updated_at,
             ),
-            _name_first(initiative.name, terms),
+            _name_first(initiative.name, query),
         )
         for initiative in repositories.planning.list_initiatives(context.workspace_id)
-        if text_matches(terms, initiative.name, initiative.description)
+        if query.matches_text(initiative.name, initiative.description)
     ]
     hits.sort(key=lambda hit: (not hit[1], -hit[0].updated_at.timestamp()))
     return [read for read, _ in hits[:limit]]
@@ -407,10 +441,10 @@ def _comment_hits(
     context: AuthzContext,
     workspace_id: str,
     teams: list[str],
-    terms: set[str],
+    query: SearchQuery,
     limit: int,
 ) -> list[SearchCommentRead]:
-    """Comments holding every term, newest first, on issues that exist in a team the caller sees.
+    """Comments matching the query, newest first, on issues that exist in a team the caller sees.
 
     Read like issue hits: the postings are merged lazily and fetched a shortfall
     at a time, so a stale posting or one on an issue out of sight is skipped and
@@ -418,7 +452,8 @@ def _comment_hits(
     """
     if not teams:
         return []
-    matches = _matching_ids(repositories, workspace_id, teams, {comment_term(term) for term in terms})
+    clauses = [[comment_term(term) for term in clause] for clause in query.clauses()]
+    matches = _matching_ids(repositories, workspace_id, teams, clauses)
     hits: list[SearchCommentRead] = []
     while len(hits) < limit:
         batch = [split_comment_doc(doc) for _, doc in zip(range(limit - len(hits)), matches)]
@@ -431,7 +466,7 @@ def _comment_hits(
             if issue is None or not context.can_see_team(issue.team_id):
                 continue
             comment = repositories.comments.get(workspace_id, issue_id, comment_id)
-            if comment is None:
+            if comment is None or (query.needs_check and not query.prefix_in(comment.body)):
                 continue
             shown = current(repositories.teams, issue)
             hits.append(
@@ -442,7 +477,7 @@ def _comment_hits(
                     issue_title=issue.title,
                     team_id=issue.team_id,
                     author_id=comment.author_id,
-                    snippet=snippet(comment.body, terms),
+                    snippet=snippet(comment.body, query.highlights),
                     created_at=comment.created_at,
                 )
             )
@@ -483,29 +518,28 @@ def search(
         )
         return SearchRead(results=_issue_reads(repositories, book, hits, 1))
 
-    terms = tokenize(q)
+    query = parse_query(q)
     referenced = _ref_hits(repositories, context, workspace_id, teams, q, limit, keep) if "issues" in kinds else []
-    if not terms:
+    if not query:
         if not teams:
             return SearchRead(results=[])
         if referenced:
             return SearchRead(results=_issue_reads(repositories, book, referenced, 1))
         raise query_too_short()
 
-    documents = _document_hits(repositories, context, team_id, terms, limit) if "documents" in kinds else []
-    initiatives = _initiative_hits(repositories, context, team_id, terms, limit) if "initiatives" in kinds else []
+    documents = _document_hits(repositories, context, team_id, query, limit) if "documents" in kinds else []
+    initiatives = _initiative_hits(repositories, context, team_id, query, limit) if "initiatives" in kinds else []
     if not teams:
         return SearchRead(results=[], documents=documents, initiatives=initiatives)
 
-    projects = _project_hits(repositories, context, teams, terms, limit) if "projects" in kinds else []
-    comments = _comment_hits(repositories, context, workspace_id, teams, terms, limit) if "comments" in kinds else []
+    projects = _project_hits(repositories, context, teams, query, limit) if "projects" in kinds else []
+    comments = _comment_hits(repositories, context, workspace_id, teams, query, limit) if "comments" in kinds else []
     results: list[SearchResultRead] = []
     if "issues" in kinds:
-        hits = _first_hits(
-            repositories, context, workspace_id, _matching_ids(repositories, workspace_id, teams, terms), limit, keep
-        )
+        matches = _matching_ids(repositories, workspace_id, teams, query.clauses())
+        hits = _first_hits(repositories, context, workspace_id, matches, limit, prefix_check(query, keep))
         ordered = _merge_hits(referenced, sorted(hits, key=lambda row: row.updated_at, reverse=True), limit)
-        results = _issue_reads(repositories, book, ordered, len(terms))
+        results = _issue_reads(repositories, book, ordered, query.size)
     return SearchRead(
         results=results,
         documents=documents,

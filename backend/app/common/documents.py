@@ -48,7 +48,7 @@ from app.common.db.dynamo.documents import (
     new_document_id,
     summary_keys,
 )
-from app.common.db.dynamo.search_index import ranked_terms
+from app.common.db.dynamo.search_index import SearchQuery, ranked_terms
 from app.common.initiative_writes import load_initiative
 from app.common.planning_rules import (
     forbidden,
@@ -259,18 +259,23 @@ def list_workspace_documents(repositories: Repositories, context: AuthzContext) 
     )
 
 
+def document_terms(title: str, body: str) -> list[str]:
+    """The search terms one document keeps, title first, sorted as they are stored."""
+    return sorted(ranked_terms(title, body, cap=TERMS_MAX))
+
+
 def search_documents(
-    repositories: Repositories, context: AuthzContext, terms: set[str], limit: int
+    repositories: Repositories, context: AuthzContext, query: SearchQuery, limit: int
 ) -> list[DocumentSummaryRead]:
-    """Readable documents whose title and body hold every term, most recently edited first."""
-    if not terms:
+    """Readable documents whose title and body terms match the query, most recently edited first."""
+    if not query:
         return []
     parents = readable_parents(repositories, context)
     rights = Rights(repositories, context)
     hits = [
         row
         for row in repositories.documents.list_for_workspace(context.workspace_id)
-        if (row.parent_kind, row.parent_id) in parents and terms.issubset(row.terms)
+        if (row.parent_kind, row.parent_id) in parents and query.matches(row.terms)
     ]
     hits.sort(key=lambda row: row.updated_at, reverse=True)
     return [_summary(rights, parents[(row.parent_kind, row.parent_id)], row) for row in hits[:limit]]
@@ -326,7 +331,7 @@ def create_document(
         source=context.source,
         created_at=now,
         updated_at=now,
-        terms=sorted(ranked_terms(title, text, cap=TERMS_MAX)),
+        terms=document_terms(title, text),
         mention_keys=keys,
         mentions=resolve_mentions(repositories, context, keys),
     )
@@ -383,7 +388,7 @@ def update_document(
             "updated_by": context.user_id,
             "source": context.source,
             "updated_at": now,
-            "terms": sorted(ranked_terms(title, text, cap=TERMS_MAX)),
+            "terms": document_terms(title, text),
             "mention_keys": keys,
             "mentions": mentions,
         }

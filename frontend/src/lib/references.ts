@@ -62,8 +62,8 @@ export interface LinkedReference {
   id: string;
 }
 
-/** The fewest characters search reads a free text query from. */
-export const REFERENCE_QUERY_MIN = 4;
+/** The fewest characters search reads a free text word from. */
+export const REFERENCE_QUERY_MIN = 2;
 
 /** How many hits of each kind the picker shows. */
 export const REFERENCE_LIMITS = { issue: 6, project: 3, document: 3 } as const;
@@ -107,10 +107,11 @@ export const isKeyQuery = (query: string): boolean =>
 /** Whether search can answer the query, so a too short one costs no request. */
 export const isSearchable = (query: string): boolean =>
   isKeyQuery(query.trim()) ||
-  query
-    .trim()
-    .split(/[^A-Za-z0-9]+/)
-    .some((term) => term.length >= REFERENCE_QUERY_MIN);
+  (!/^[A-Za-z][A-Za-z0-9]*-$/.test(query.trim()) &&
+    query
+      .trim()
+      .split(/[^A-Za-z0-9]+/)
+      .some((term) => term.length >= REFERENCE_QUERY_MIN));
 
 /** One issue hit as the picker offers it. */
 const issueItem = (hit: SearchResultRead): IssueReference => ({

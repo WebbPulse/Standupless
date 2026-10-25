@@ -216,6 +216,30 @@ def test_the_workspace_list_and_search_find_documents(
     found = views_client.get(f"{_base(workspace)}/search", params={"q": "zephyr"})
     assert found.status_code == 200, found.text
     assert [row["document_id"] for row in found.json()["documents"]] == [first["document_id"]]
+    prefixed = views_client.get(f"{_base(workspace)}/search", params={"q": "zeph"}).json()["documents"]
+    assert [row["document_id"] for row in prefixed] == [first["document_id"]]
+
+
+def test_document_search_matches_short_words_and_a_last_word_prefix(
+    client: TestClient, views_client: TestClient, workspace: str
+) -> None:
+    """Two and three letter words are document terms, and the last typed word matches as a prefix."""
+    sign_in(client, MEMBER)
+    sign_in(views_client, MEMBER)
+    project_id = seed_project(client, workspace)["project_id"]
+    wanted = _create(client, workspace, "project", project_id, title="UI notes", body="Export to CSV nightly")
+    _create(client, workspace, "project", project_id, title="Other notes", body="Nothing to export")
+
+    def found(q: str) -> list[str]:
+        """The document ids one query returns."""
+        response = views_client.get(f"{_base(workspace)}/search", params={"q": q})
+        assert response.status_code == 200, response.text
+        return [row["document_id"] for row in response.json()["documents"]]
+
+    assert found("ui") == [wanted["document_id"]]
+    assert found("export csv") == [wanted["document_id"]]
+    assert found("csv nigh") == [wanted["document_id"]]
+    assert found("nigh csv") == []
 
 
 def test_deleting_the_parent_deletes_its_documents(client: TestClient, repositories: Any, workspace: str) -> None:
