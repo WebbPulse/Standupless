@@ -211,7 +211,7 @@ export const SettingsSearch: React.FC<SettingsSearchProps> = ({
                   choose(entry);
                 }}
                 className={cn(
-                  'flex cursor-pointer flex-col rounded-sm px-2 py-1.5',
+                  'flex cursor-pointer flex-col rounded-sm px-2 py-1.5 hover:bg-raised',
                   position === active ? 'bg-raised' : ''
                 )}
               >
