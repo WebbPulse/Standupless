@@ -211,6 +211,24 @@ def test_an_update_reply_draft_is_staged_by_update_and_project(
     assert deleted == {"deleted": True, "update_id": UPDATE}
 
 
+def test_an_update_reply_draft_takes_no_nested_reply(client: TestClient, repositories: Any, workspace: str) -> None:
+    """An update thread is one level deep, so a reply draft under one of its replies is refused."""
+    seed_threads(repositories, workspace)
+    secret = mint_for(repositories, MEMBER, DRAFTS)
+
+    nested = refusal(
+        tool(
+            client,
+            secret,
+            "set_comment_draft",
+            {"update_id": UPDATE, "project_id": PROJECT, "parent_comment_id": "01C000000000000000000001", "body": "Hi"},
+        )
+    )
+
+    assert "one level deep" in nested
+    assert repositories.views.get_draft(workspace, MEMBER, UPDATE, "01C000000000000000000001") is None
+
+
 def test_a_draft_names_exactly_one_parent(client: TestClient, repositories: Any, issue: Issue) -> None:
     """Naming no parent, or an issue and a document together, is refused before anything is saved."""
     secret = mint_for(repositories, MEMBER, DRAFTS)

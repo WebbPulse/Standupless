@@ -209,21 +209,6 @@ def test_project_and_initiative_update_reply_drafts(client: TestClient, workspac
     assert [row["update_id"] for row in listed(client, workspace)] == [PROJECT_UPDATE]
 
 
-def test_an_update_reply_draft_takes_no_nested_reply(client: TestClient, workspace: str, repositories: Any) -> None:
-    """An update thread is one level deep, so a reply draft on it is refused."""
-    seed_document(repositories, workspace)
-    seed_project_update(repositories, workspace)
-    sign_in(client, MEMBER)
-
-    nested = client.put(
-        reply_path(workspace, "projects", PROJECT, PROJECT_UPDATE),
-        json={"body": "Hi"},
-        params={"parent_comment_id": ROOT},
-    )
-
-    assert nested.status_code == 409
-
-
 def test_a_guest_cannot_draft_on_an_update_they_cannot_reach(
     client: TestClient, workspace: str, repositories: Any
 ) -> None:
