@@ -1107,6 +1107,22 @@ export interface PullRequestSummaryRead {
 }
 
 /** One issue. Workspace scoped, so links and "my issues" can cross teams. */
+/** Who asked for an issue that came in through Slack or email intake. */
+export interface IssueRequester {
+  source: 'slack' | 'email';
+  /** The person's name as Slack or the mail sender gave it, empty when only an address was known. */
+  name: string;
+  /** The Slack handle, without the at sign. */
+  handle?: string | null;
+  /** The sender's address masked to its first character and domain. */
+  masked_email?: string | null;
+  avatar_url?: string | null;
+  /** The Slack user id. */
+  external_id?: string | null;
+  /** The member the requester is, when their verified address names one. */
+  user_id?: string | null;
+}
+
 export interface IssueRead {
   id: string;
   workspace_id: string;
@@ -1200,6 +1216,12 @@ export interface IssueRead {
    * a Linear or Jira key. Null for issues created in Standupless.
    */
   external_ref?: string | null;
+  /**
+   * Who asked for the issue through Slack or email intake, kept even when they
+   * hold no seat. Null for issues created in Standupless. The address is
+   * already masked, so no response carries a full one.
+   */
+  requester?: IssueRequester | null;
   /**
    * When the issue first landed in a started status, kept after it moves on.
    * Optional so a row read before it was stamped reads as none.

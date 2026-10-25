@@ -1524,6 +1524,16 @@ class IssueReminderWrite(TypedDict):
     remind_at: str
 
 
+class IssueRequesterRead(TypedDict):
+    avatar_url: NotRequired[str | None]
+    external_id: NotRequired[str | None]
+    handle: NotRequired[str | None]
+    masked_email: NotRequired[str | None]
+    name: NotRequired[str]
+    source: Literal["slack", "email"]
+    user_id: NotRequired[str | None]
+
+
 class IssueSyncRead(TypedDict):
     issue_id: str
     number: int
@@ -4172,6 +4182,7 @@ class AppCommonApiSchemasIssuesIssueRead(TypedDict):
     project_milestone_id: NotRequired[str | None]
     pull_request_summary: NotRequired[PullRequestSummaryRead | None]
     relation_count: NotRequired[int]
+    requester: NotRequired[IssueRequesterRead | None]
     sla_breaches_at: NotRequired[str | None]
     sla_calendar: NotRequired[Literal["calendar", "business_days"]]
     sla_paused_at: NotRequired[str | None]

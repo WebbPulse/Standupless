@@ -194,6 +194,78 @@ def test_a_reaction_by_someone_without_an_account_files_as_the_admin(intake_on: 
     assert len(filed) == 1 and filed[0].created_by == ADMIN
 
 
+AUTHOR_PROFILE = {
+    "ok": True,
+    "user": {
+        "id": "UAUTHOR",
+        "name": "pat",
+        "is_email_confirmed": True,
+        "profile": {
+            "real_name": "Pat Requester",
+            "display_name": "patr",
+            "image_72": "https://avatars.example.com/pat-72.png",
+            "email": "pat@example.com",
+        },
+    },
+}
+
+
+class AuthorSlack(ReactionSlack):
+    """The reaction fake with a message written by a Slack person who has no Standupless seat."""
+
+    def call(self, method: str, token: str, payload: Mapping[str, Any] | None = None) -> dict[str, Any]:
+        """Describe the message's author on `users.info` and defer the rest."""
+        if method == "users.info" and dict(payload or {}).get("user") == "UAUTHOR":
+            self.calls.append((method, token, dict(payload or {})))
+            return AUTHOR_PROFILE
+        return super().call(method, token, payload)
+
+
+def test_a_reaction_keeps_the_messages_author_as_the_requester(
+    intake_on: TestClient, slack: ReactionSlack, repositories: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The author with no seat is kept by name, handle, avatar and Slack id, and their address is not kept."""
+    author = AuthorSlack()
+    author.message["user"] = "UAUTHOR"
+    monkeypatch.setattr(api, "call", author.call)
+
+    assert _event(intake_on, _reaction("Ev1")).status_code == 200
+
+    [issue] = _issues(repositories)
+    requester = issue.requester
+    assert requester is not None
+    assert requester.source == "slack"
+    assert requester.name == "Pat Requester"
+    assert requester.handle == "patr"
+    assert requester.avatar_url == "https://avatars.example.com/pat-72.png"
+    assert requester.external_id == "UAUTHOR"
+    assert requester.user_id is None
+    assert "pat@example.com" not in requester.model_dump_json()
+
+
+def test_a_message_by_a_member_links_the_requester_to_that_member(
+    intake_on: TestClient, slack: ReactionSlack, repositories: Any
+) -> None:
+    """An author whose confirmed Slack address is a member's is kept as that member."""
+    slack.message["user"] = "UOWNER"
+    slack.message["text"] = "Owner wrote this"
+
+    assert _event(intake_on, _reaction("Ev1", user="USTRANGER")).status_code == 200
+
+    [issue] = _issues(repositories)
+    assert issue.requester is not None
+    assert issue.requester.external_id == "UOWNER"
+    assert issue.requester.user_id == OWNER
+
+
+def test_a_message_with_no_readable_author_has_no_requester(intake_on: TestClient, repositories: Any) -> None:
+    """A message without an author, or one Slack cannot describe, files with no requester."""
+    assert _event(intake_on, _reaction("Ev1")).status_code == 200
+
+    [issue] = _issues(repositories)
+    assert issue.requester is None
+
+
 def test_a_reply_in_a_thread_pairs_with_the_parent_thread(
     intake_on: TestClient, slack: ReactionSlack, repositories: Any
 ) -> None:

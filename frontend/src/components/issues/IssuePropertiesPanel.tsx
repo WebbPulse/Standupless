@@ -63,6 +63,7 @@ import IssueSubscribers from './IssueSubscribers';
 import { IssueTeamRow } from './MoveIssueDialog';
 import { IssueMilestonePicker } from './PlanningPickers';
 import PlanningRowLink from './PlanningRowLink';
+import RequesterBadge from './RequesterBadge';
 import {
   AssigneePicker,
   CyclePicker,
@@ -567,6 +568,16 @@ export const IssuePropertiesPanel: React.FC<IssuePropertiesPanelProps> = ({
         />
       </div>
 
+      {issue.requester ? (
+        <div className="px-2 pt-3">
+          <p className="pb-1 text-2xs text-text-faint">Requested by</p>
+          <RequesterBadge
+            requester={issue.requester}
+            slug={slug}
+            people={people}
+          />
+        </div>
+      ) : null}
       {issue.external_ref ? (
         <p className="px-2 pt-2 text-2xs break-words text-text-faint">
           Imported from {issue.external_ref}

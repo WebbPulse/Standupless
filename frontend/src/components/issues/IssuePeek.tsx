@@ -59,6 +59,7 @@ import { RelationMarkers } from './BlockedMarker';
 import PassageThreadsProvider from '../../contexts/PassageThreadsProvider';
 import IssueBody from './IssueBody';
 import IssueFields, { PropertyRow, PropertySection } from './IssueFields';
+import RequesterBadge from './RequesterBadge';
 import IssueTimeline from './IssueTimeline';
 import { IssueMilestonePicker } from './PlanningPickers';
 import PlanningRowLink from './PlanningRowLink';
@@ -430,6 +431,19 @@ export const IssuePeek: React.FC<IssuePeekProps> = ({
                     onUpdate={onUpdate}
                   />
                 )}
+
+                {issue.requester ? (
+                  <PropertySection title="Request">
+                    <PropertyRow label="Requester">
+                      <RequesterBadge
+                        requester={issue.requester}
+                        slug={workspace?.slug ?? ''}
+                        people={options.people}
+                        className="px-2 py-1"
+                      />
+                    </PropertyRow>
+                  </PropertySection>
+                ) : null}
 
                 {team !== undefined && (
                   <PropertySection title="Planning">

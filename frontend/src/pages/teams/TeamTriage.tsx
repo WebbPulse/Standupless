@@ -50,6 +50,7 @@ import {
   snoozeTriage,
 } from '../../api/triage';
 import IssuePeek from '../../components/issues/IssuePeek';
+import RequesterBadge from '../../components/issues/RequesterBadge';
 import { ErrorAlert } from '../../components/ui/alert';
 import Button from '../../components/ui/button';
 import Dialog from '../../components/ui/dialog';
@@ -141,7 +142,7 @@ interface TriageRowProps {
   onAction: (id: TriageActionId) => void;
 }
 
-/** One waiting issue: its key, title and when it was filed, with its actions. */
+/** One waiting issue: its key, title, who asked for it and when it was filed, with its actions. */
 const TriageRow: React.FC<TriageRowProps> = ({
   issue,
   selected,
@@ -178,6 +179,13 @@ const TriageRow: React.FC<TriageRowProps> = ({
           </span>
         </span>
         <span className="flex w-full items-center gap-2 text-xs text-text-muted">
+          {issue.requester ? (
+            <RequesterBadge
+              requester={issue.requester}
+              compact
+              className="shrink"
+            />
+          ) : null}
           <span className="truncate">
             {issue.snoozed_until
               ? snoozeLabel(issue.snoozed_until)
