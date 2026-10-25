@@ -73,7 +73,7 @@ const shiftDigit = (digit: '7' | '8' | '9'): KeyboardEventInit => ({
 const checkedStates = (editor: Editor): boolean[] => {
   const states: boolean[] = [];
   editor.state.doc.descendants((node) => {
-    if (node.type.name === 'taskItem') states.push(node.attrs.checked === true);
+    if (node.type.name === 'taskItem') states.push(node.attrs['checked'] === true);
   });
   return states;
 };

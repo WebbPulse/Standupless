@@ -41,7 +41,7 @@ export const toggleChecklistItem = (
   const found = taskItemAt(state);
   if (found === null) return false;
   if (dispatch === undefined) return true;
-  const checked = found.node.attrs.checked !== true;
+  const checked = found.node.attrs['checked'] !== true;
   const transaction = state.tr.setNodeMarkup(found.pos, undefined, {
     ...found.node.attrs,
     checked,
