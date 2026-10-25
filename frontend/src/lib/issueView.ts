@@ -1729,13 +1729,14 @@ export const viewToState = (view: SavedViewDisplayRead): ViewState => {
 
 /**
  * The stored filter keys a view carries that the filter bar does not edit:
- * its team and a status category. They are the fixed scope the view runs
+ * its team, a status category and the issues a one-off key list saved. They are the fixed scope the view runs
  * under, kept as they are when the view is updated.
  */
 const SCOPE_KEYS = [
   'team_id',
   'status_category',
   'status_category_not',
+  'issue_id',
 ] as const;
 
 /** The fixed scope of a stored filter, as the list query it adds. */
@@ -2694,11 +2695,14 @@ const statusRank = (
 /** Whether an issue lacks the value an ordering reads, so it sorts last either way. */
 const lacksValue = (
   issue: OrderedIssueRead,
-  ordering: IssueListSort
+  ordering: IssueListSort,
+  rank?: ReadonlyMap<string, number>
 ): boolean => {
   switch (ordering) {
     case 'manual':
-      return (issue.sort_order ?? null) === null;
+      return rank === undefined
+        ? (issue.sort_order ?? null) === null
+        : !rank.has(issue.id);
     case 'due_asc':
       return issue.due_date === null;
     case 'sla_asc':
@@ -2720,6 +2724,11 @@ export interface SortOptions {
   reverse?: boolean;
   /** The statuses the status ordering ranks rows by. */
   context?: IssueContext;
+  /**
+   * Positions by issue id that the manual ordering follows in place of each
+   * issue's sort order, such as the order a one-off key list names them in.
+   */
+  rank?: ReadonlyMap<string, number> | undefined;
 }
 
 /**
@@ -2739,6 +2748,10 @@ export const sortIssues = (
   const compare = (left: OrderedIssueRead, right: OrderedIssueRead): number => {
     switch (ordering) {
       case 'manual': {
+        if (options.rank !== undefined)
+          return (
+            (options.rank.get(left.id) ?? 0) - (options.rank.get(right.id) ?? 0)
+          );
         const a = left.sort_order ?? '';
         const b = right.sort_order ?? '';
         return a < b ? -1 : a > b ? 1 : 0;
@@ -2801,8 +2814,8 @@ export const sortIssues = (
     }
   };
   const ranked = (left: OrderedIssueRead, right: OrderedIssueRead): number => {
-    const leftMissing = lacksValue(left, ordering);
-    const rightMissing = lacksValue(right, ordering);
+    const leftMissing = lacksValue(left, ordering, options.rank);
+    const rightMissing = lacksValue(right, ordering, options.rank);
     if (leftMissing !== rightMissing) return leftMissing ? 1 : -1;
     if (leftMissing) return 0;
     return direction * compare(left, right);

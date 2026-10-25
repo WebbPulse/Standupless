@@ -112,6 +112,10 @@ export interface IssueListFilters {
   /** Narrows a workspace list to these teams. */
   team_id_in?: FilterValues;
   team_id_not?: FilterValues;
+  /** Only these issues. */
+  issue_id?: FilterValues;
+  /** Only the issues these keys name, across teams; keys naming nothing are skipped. */
+  key?: FilterValues;
   created_after?: string;
   created_before?: string;
   updated_after?: string;
