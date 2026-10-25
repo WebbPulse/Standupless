@@ -14,6 +14,7 @@ import { useNavigate } from 'react-router-dom';
 import type { OrderedIssueRead } from '../../api/issues';
 import { usePublishIssueSubject } from '../../hooks/useIssueSubject';
 import { useIssueTreeKeys } from '../../hooks/useIssueTreeKeys';
+import { useQuickActions } from '../../hooks/useQuickActions';
 import { useShortcut } from '../../hooks/useShortcuts';
 import { changeToUpdate } from '../../lib/issueChange';
 import { withGroupNames } from '../../lib/labelGroups';
@@ -205,6 +206,15 @@ export const IssuePageCommands: React.FC<IssuePageCommandsProps> = ({
     onOpen: (target) => {
       void navigate(issuePath(slug, target.key));
     },
+  });
+
+  useQuickActions({
+    workspaceId: issue.workspace_id,
+    issues: targets,
+    enabled: canEdit,
+    write: env.update,
+    cyclesFor: () => cycles,
+    group: 'Issue',
   });
 
   const assignable = people.some((person) => person.user_id === currentUserId);
