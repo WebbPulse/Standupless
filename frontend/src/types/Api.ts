@@ -35,6 +35,10 @@ export interface UserRead {
   name_display?: NameDisplay;
   /** The interface text size. */
   font_size?: FontSize;
+  /** The interface theme, null until the person first saves one. */
+  theme?: Theme | null;
+  /** Whether interactive elements show the pointer cursor. */
+  pointer_cursors?: boolean;
   /** Whether issue activity shows every change or only comments. */
   activity_filter?: ActivityFilter;
   /** How the projects page is laid out, grouped, ordered and windowed. */
@@ -108,6 +112,9 @@ export type NameDisplay = 'username' | 'full_name';
 /** The interface text size a person picked. */
 export type FontSize = 'small' | 'default' | 'large';
 
+/** The interface themes a person may pick. */
+export type Theme = 'system' | 'light' | 'dark';
+
 /** Whether an issue's activity shows every change or only its comments. */
 export type ActivityFilter = 'all' | 'comments';
 
@@ -167,6 +174,8 @@ export interface UserPreferencesUpdate {
   week_start?: WeekStart;
   name_display?: NameDisplay;
   font_size?: FontSize;
+  theme?: Theme;
+  pointer_cursors?: boolean;
   activity_filter?: ActivityFilter;
   /** Replaces the saved projects page arrangement whole, null forgets it. */
   projects_display?: ProjectsDisplayPreference | null;

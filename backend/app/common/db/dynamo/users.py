@@ -57,6 +57,11 @@ FontSizeField = Literal["small", "default", "large"]
 FONT_SIZES: tuple[str, ...] = ("small", "default", "large")
 """The interface text sizes a person may pick."""
 
+ThemeField = Literal["system", "light", "dark"]
+
+THEMES: tuple[str, ...] = ("system", "light", "dark")
+"""The interface themes a person may pick."""
+
 ActivityFilterField = Literal["all", "comments"]
 
 ACTIVITY_FILTERS: tuple[str, ...] = ("all", "comments")
@@ -96,6 +101,9 @@ class User(BaseModel):
     `home_view`, `week_start`, `name_display` and `font_size` are the interface
     preferences that follow the person to every device. They default to the values
     the interface used before they existed, so an older row reads unchanged.
+    `theme` is the interface theme, None until the person first saves one, so a
+    browser's earlier local choice can be uploaded once. `pointer_cursors` shows
+    the pointer cursor on interactive elements, off by default.
     `activity_filter` is whether every issue's activity shows all of it or only
     its comments, all by default.
     `projects_display` is how the person last arranged the projects list, its
@@ -134,6 +142,8 @@ class User(BaseModel):
     week_start: str = "monday"
     name_display: str = "username"
     font_size: str = "default"
+    theme: Optional[str] = None
+    pointer_cursors: bool = False
     activity_filter: str = "all"
     projects_display: dict[str, str] = Field(default_factory=dict)
     initiatives_display: dict[str, str] = Field(default_factory=dict)

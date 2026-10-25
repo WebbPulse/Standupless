@@ -56,6 +56,8 @@ def test_the_caller_reads_their_own_row(client: TestClient, repositories: Any) -
         "week_start": "monday",
         "name_display": "username",
         "font_size": "default",
+        "theme": None,
+        "pointer_cursors": False,
         "activity_filter": "all",
         "projects_display": {
             "layout": "list",
@@ -221,6 +223,28 @@ def test_workflow_preferences_default_and_toggle_each_way(client: TestClient, re
     assert client.get("/api/users/me").json()["home_view"] == "home"
 
     assert client.patch("/api/users/me/preferences", json={"branch_copy_starts": "sometimes"}).status_code == 422
+
+
+def test_theme_and_pointer_cursors_are_stored_on_the_account(client: TestClient, repositories: Any) -> None:
+    """The theme reads null until saved, then follows the account; pointer cursors start off and toggle."""
+    make_user(repositories, OWNER, "owner@example.com", display_name="Owner")
+    sign_in(client, OWNER)
+
+    body = client.get("/api/users/me").json()
+    assert (body["theme"], body["pointer_cursors"]) == (None, False)
+
+    body = client.patch("/api/users/me/preferences", json={"theme": "light", "pointer_cursors": True}).json()
+    assert (body["theme"], body["pointer_cursors"]) == ("light", True)
+    stored = repositories.users.get(OWNER)
+    assert (stored.theme, stored.pointer_cursors) == ("light", True)
+
+    body = client.patch("/api/users/me/preferences", json={"theme": "system"}).json()
+    assert (body["theme"], body["pointer_cursors"]) == ("system", True)
+
+    assert client.patch("/api/users/me/preferences", json={"theme": "sepia"}).status_code == 422
+
+    repositories.users.update(OWNER, theme="sepia")
+    assert client.get("/api/users/me").json()["theme"] is None
 
 
 def test_a_retired_stored_preference_reads_as_the_default(client: TestClient, repositories: Any) -> None:

@@ -1,5 +1,6 @@
 /**
- * The colour theme the person picked, kept in this browser only.
+ * The colour theme the person picked, saved on the account and cached in this
+ * browser.
  *
  * Dark is the default, because an issue tracker is a tool people keep open all
  * day and the product is designed dark first. A person can still pick light,
@@ -9,7 +10,10 @@
  * an empty store means dark.
  *
  * The pre-paint script in index.html applies the same rule before the bundle
- * loads, so the first frame is already in the right theme.
+ * loads, so the first frame is already in the right theme. Once signed in, the
+ * account's theme wins and is written back to the cache, and a choice made here
+ * is handed to the registered saver so it reaches the account. Other tabs hear
+ * of a change through the storage event.
  */
 
 /** The three settings a person can choose between. */
@@ -27,28 +31,60 @@ export const parseTheme = (held: string | null): Theme =>
     ? held
     : DEFAULT_THEME;
 
-/** Reads the stored preference, treating any failure as the default. */
-export const readTheme = (): Theme => {
+/** The theme this browser holds explicitly, or null when it holds none. */
+export const readStoredTheme = (): Theme | null => {
   try {
-    return parseTheme(globalThis.localStorage.getItem(THEME_STORAGE_KEY));
+    const held = globalThis.localStorage.getItem(THEME_STORAGE_KEY);
+    return held === 'light' || held === 'dark' || held === 'system'
+      ? held
+      : null;
   } catch {
-    return DEFAULT_THEME;
+    return null;
   }
 };
+
+/** Reads the stored preference, treating any failure as the default. */
+export const readTheme = (): Theme => readStoredTheme() ?? DEFAULT_THEME;
 
 /** Everyone who wants to hear when the theme changes, such as the toggle. */
 const listeners = new Set<() => void>();
 
+/** Tells every subscriber the theme may have changed. */
+const notify = (): void => {
+  for (const listener of [...listeners]) listener();
+};
+
+/** Repaints and notifies when another tab writes a new theme. */
+const onStorage = (event: StorageEvent): void => {
+  if (event.key !== THEME_STORAGE_KEY) return;
+  paintTheme(readTheme());
+  notify();
+};
+
 /**
- * Subscribes to theme changes made through {@link applyTheme}, so the toggle in
- * the sidebar and the command in the palette never disagree about the current
- * setting. Returns the unsubscribe function.
+ * Subscribes to theme changes made through {@link applyTheme} here or in
+ * another tab, so the toggle in the sidebar and the command in the palette
+ * never disagree about the current setting. Returns the unsubscribe function.
  */
 export const subscribeTheme = (listener: () => void): (() => void) => {
+  if (listeners.size === 0) {
+    globalThis.addEventListener('storage', onStorage);
+  }
   listeners.add(listener);
   return () => {
     listeners.delete(listener);
+    if (listeners.size === 0) {
+      globalThis.removeEventListener('storage', onStorage);
+    }
   };
+};
+
+/** Saves a chosen theme to the account, set while someone is signed in. */
+let saver: ((theme: Theme) => void) | null = null;
+
+/** Registers the account saver, or clears it with null on sign out. */
+export const setThemeSaver = (next: ((theme: Theme) => void) | null): void => {
+  saver = next;
 };
 
 /**
@@ -95,11 +131,26 @@ const storeTheme = (theme: Theme): void => {
   }
 };
 
-/** Applies a theme to the document, remembers it and tells the subscribers. */
+/**
+ * Paints and caches a theme without saving it to the account, for the
+ * account's own value arriving. Unchanged values are a no-op.
+ */
+export const adoptTheme = (theme: Theme): void => {
+  if (readStoredTheme() === theme) return;
+  paintTheme(theme);
+  storeTheme(theme);
+  notify();
+};
+
+/**
+ * Applies a theme the person chose: paints it, caches it, tells the
+ * subscribers and saves it to the account when someone is signed in.
+ */
 export const applyTheme = (theme: Theme): void => {
   paintTheme(theme);
   storeTheme(theme);
-  for (const listener of [...listeners]) listener();
+  notify();
+  saver?.(theme);
 };
 
 /** The setting after this one, in the order the toggle cycles. */

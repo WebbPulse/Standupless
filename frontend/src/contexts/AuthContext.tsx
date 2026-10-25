@@ -17,6 +17,12 @@ import { clearIssueContextCache } from '../lib/issueContextCache';
 import { preferencesOf, setPreferences } from '../lib/preferences';
 import { isAppShell, SHELL_SIGN_IN_PATH } from '../lib/shell';
 import { clearSignedIn, useSignedInHint } from '../lib/signedInHint';
+import {
+  adoptTheme,
+  readStoredTheme,
+  setThemeSaver,
+  type Theme,
+} from '../lib/theme';
 import { browserTimezone, setViewerTimezone } from '../lib/viewerTimezone';
 import type { UserRead } from '../types/Api';
 import {
@@ -60,6 +66,64 @@ const useTimezoneCapture = (
 };
 
 /**
+ * Keeps the theme on the account. The account's theme wins and is cached in
+ * this browser for the pre-paint script; a profile with none takes this
+ * browser's explicit choice once. While signed in, a theme chosen anywhere is
+ * saved to the account, and only the latest save's answer is kept.
+ */
+const useThemeSync = (
+  user: UserRead | null,
+  setUser: (user: UserRead) => void
+): void => {
+  const uploaded = useRef(false);
+  const latest = useRef(0);
+  const current = useRef(user);
+  const stored = user?.theme;
+  const signedIn = user !== null;
+
+  useEffect(() => {
+    current.current = user;
+  }, [user]);
+
+  const save = useCallback(
+    (theme: Theme) => {
+      const ticket = latest.current + 1;
+      latest.current = ticket;
+      void import('../api/notifications')
+        .then(({ updatePreferences }) => updatePreferences({ theme }))
+        .then((profile) => {
+          const held = current.current;
+          if (ticket === latest.current && held !== null) {
+            setUser({ ...held, theme: profile.theme ?? null });
+          }
+        })
+        .catch(() => undefined);
+    },
+    [setUser]
+  );
+
+  useEffect(() => {
+    if (!signedIn) return;
+    setThemeSaver(save);
+    return () => {
+      setThemeSaver(null);
+    };
+  }, [signedIn, save]);
+
+  useEffect(() => {
+    if (!signedIn) return;
+    if (stored !== null && stored !== undefined) {
+      adoptTheme(stored);
+      return;
+    }
+    const local = readStoredTheme();
+    if (local === null || uploaded.current) return;
+    uploaded.current = true;
+    save(local);
+  }, [signedIn, stored, save]);
+};
+
+/**
  * Copies the profile's interface and workflow preferences into the shared
  * store whenever they change, so a name, a date shortcut, the text size or
  * what copying a branch does follows the account rather than the browser. A signed out page keeps what was last in force.
@@ -69,6 +133,7 @@ const usePreferenceSync = (user: UserRead | null): void => {
   const weekStart = user?.week_start;
   const nameDisplay = user?.name_display;
   const fontSize = user?.font_size;
+  const pointerCursors = user?.pointer_cursors;
   const autoAssign = user?.auto_assign_to_self;
   const branchStarts = user?.branch_copy_starts;
   const branchAssigns = user?.branch_copy_assigns;
@@ -82,6 +147,7 @@ const usePreferenceSync = (user: UserRead | null): void => {
         week_start: weekStart,
         name_display: nameDisplay,
         font_size: fontSize,
+        pointer_cursors: pointerCursors,
         auto_assign_to_self: autoAssign,
         branch_copy_starts: branchStarts,
         branch_copy_assigns: branchAssigns,
@@ -93,6 +159,7 @@ const usePreferenceSync = (user: UserRead | null): void => {
     weekStart,
     nameDisplay,
     fontSize,
+    pointerCursors,
     autoAssign,
     branchStarts,
     branchAssigns,
@@ -145,6 +212,7 @@ const AuthExtrasProvider: React.FC<{ children: ReactNode }> = ({
   useSignedOutCacheClear(isAuthenticated, isLoading);
   useTimezoneCapture(isAuthenticated ? user : null, setUser);
   usePreferenceSync(isAuthenticated ? user : null);
+  useThemeSync(isAuthenticated ? user : null, setUser);
 
   const login = useCallback(
     (userData: UserRead) => {
