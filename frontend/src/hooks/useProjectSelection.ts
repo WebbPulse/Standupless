@@ -1,9 +1,10 @@
 /**
- * Selection on the projects list and board and the initiatives list, worked
- * the way the issue list's is: x toggles the row in focus, Shift and an arrow
- * or j and k extends the selection from it, Cmd or Ctrl and A takes every row
- * shown, Escape lets go, and a Shift click takes the run from the last row
- * picked. Selected rows that leave the page drop out of the selection.
+ * Selection on the projects list and board, the initiatives list and the
+ * customers list, worked the way the issue list's is: x toggles the row in
+ * focus, Shift and an arrow or j and k extends the selection from it, Cmd or
+ * Ctrl and A takes every row shown, Escape lets go, and a Shift click takes
+ * the run from the last row picked. Selected rows that leave the page drop out
+ * of the selection.
  */
 
 import { useCallback, useMemo, useState } from 'react';

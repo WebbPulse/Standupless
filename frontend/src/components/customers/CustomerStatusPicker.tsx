@@ -1,7 +1,7 @@
 /**
  * The customer status picker: a chip naming the status with its dot, opening a
  * menu of the fixed statuses and a way to clear it. Used in the customer
- * dialog and on the customer page's properties.
+ * dialog, on the customer page's properties and in the customers list's rows.
  */
 
 import React from 'react';
@@ -21,8 +21,11 @@ export interface CustomerStatusPickerProps {
   value: CustomerStatus | null;
   onChange: (status: CustomerStatus | null) => void;
   disabled?: boolean;
-  /** A bordered chip, or a full width row for a properties list. */
-  variant?: 'chip' | 'rail';
+  /**
+   * A bordered chip, a full width row for a properties list, or a borderless
+   * cell for a row of the customers list.
+   */
+  variant?: 'chip' | 'rail' | 'cell';
   className?: string;
 }
 
@@ -46,6 +49,7 @@ export const CustomerStatusDot: React.FC<{
 const TRIGGER_CLASS = {
   chip: 'h-7 gap-1.5 rounded-sm border border-line px-2 text-xs enabled:hover:border-line-strong enabled:hover:bg-raised',
   rail: 'min-h-7 w-full justify-start gap-2 rounded-sm px-2 py-1 text-sm enabled:hover:bg-raised',
+  cell: 'h-6 min-w-0 max-w-full gap-1.5 rounded-sm px-1 text-xs enabled:hover:bg-raised',
 } as const;
 
 /** The chip that sets a customer's status. */
@@ -66,7 +70,13 @@ export const CustomerStatusPicker: React.FC<CustomerStatusPickerProps> = ({
         className={cn(
           'inline-flex items-center focus-visible:ring-1 focus-visible:ring-accent focus-visible:outline-none disabled:cursor-default',
           TRIGGER_CLASS[variant],
-          value === null ? 'text-text-muted' : 'text-text',
+          variant === 'cell'
+            ? value === null
+              ? 'text-text-faint'
+              : 'text-text-muted'
+            : value === null
+              ? 'text-text-muted'
+              : 'text-text',
           className
         )}
         {...trigger}
@@ -77,7 +87,7 @@ export const CustomerStatusPicker: React.FC<CustomerStatusPickerProps> = ({
             value,
             variant === 'chip'
               ? 'Status'
-              : disabled
+              : disabled || variant === 'cell'
                 ? 'No status'
                 : 'Set status'
           )}
