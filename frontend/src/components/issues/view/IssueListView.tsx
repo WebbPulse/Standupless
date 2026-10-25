@@ -25,7 +25,9 @@
  * The keys go through the workspace
  * shortcut registry, so they stand down in text fields and dialogs, show in
  * the help overlay, and the property ones are offered as actions in the
- * command palette.
+ * command palette. On a touch screen a list row swipes right to its status
+ * picker and left to a quick menu, and pulling the list down from its top
+ * refetches it.
  */
 
 import React, {
@@ -54,6 +56,8 @@ import { useBranchNaming } from '../../../hooks/useBranchNaming';
 import type { IssueCollection } from '../../../hooks/useIssueCollection';
 import { useMilestoneContext } from '../../../hooks/useMilestoneContext';
 import { useStoredSet } from '../../../hooks/useStoredSet';
+import { useCoarsePointer } from '../../../hooks/useCoarsePointer';
+import { usePullToRefresh } from '../../../hooks/usePullToRefresh';
 import { COLLECTION_LIMIT } from '../../../hooks/useIssueCollection';
 import {
   subjectOf,
@@ -153,6 +157,8 @@ import {
   type RowFocusStore,
 } from './IssueViewContext';
 import IssueRowMenu from './IssueRowMenu';
+import IssueQuickMenu from './IssueQuickMenu';
+import PullIndicator from '../../ui/PullIndicator';
 import ListRows, { type IssueSection } from './ListRows';
 import PropertyCommand from './PropertyCommand';
 import StatusPositionKeys from './StatusPositionKeys';
@@ -376,6 +382,11 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
   const [renaming, setRenaming] = useState<string | null>(null);
   const [relating, setRelating] = useState<OpenRelation | null>(null);
   const [menu, setMenu] = useState<OpenMenu | null>(null);
+  const [quick, setQuick] = useState<{
+    id: string;
+    x: number;
+    y: number;
+  } | null>(null);
   const [deleting, setDeleting] = useState<OrderedIssueRead[] | null>(null);
   const [withdrawing, setWithdrawing] = useState<{
     issue: OrderedIssueRead;
@@ -1252,6 +1263,25 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
   const closeMenu = useCallback(() => {
     setMenu(null);
   }, []);
+  const openStatus = useCallback((issue: OrderedIssueRead) => {
+    setFocusedId(issue.id);
+    setCommand({ property: 'status', ids: [issue.id] });
+  }, []);
+  const openQuickMenu = useCallback(
+    (issue: OrderedIssueRead, x: number, y: number) => {
+      setFocusedId(issue.id);
+      setQuick({ id: issue.id, x, y });
+    },
+    []
+  );
+  const coarse = useCoarsePointer();
+  const refetch = useCallback(() => {
+    invalidateQueries(queryKey);
+  }, [queryKey]);
+  const pullList = usePullToRefresh(
+    coarse && state.layout !== 'board',
+    refetch
+  );
 
   const createIn = useMemo(() => {
     if (!canEdit || !creator.canCreate) return undefined;
@@ -1380,6 +1410,8 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
       selectMany,
       peek,
       openMenu,
+      openStatus,
+      openQuickMenu,
       onOpen: rememberOrder,
       filterFor,
       milestones,
@@ -1406,6 +1438,8 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
       selectMany,
       peek,
       openMenu,
+      openStatus,
+      openQuickMenu,
       rememberOrder,
       filterFor,
       milestones,
@@ -1425,6 +1459,7 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
   const [convertIssue] = converting === null ? [] : resolve([converting]);
   const [duplicateTarget] = duplicating === null ? [] : resolve([duplicating]);
   const [renameIssue] = renaming === null ? [] : resolve([renaming]);
+  const [quickIssue] = quick === null ? [] : resolve([quick.id]);
   const [relationIssue] = relating === null ? [] : resolve([relating.id]);
   const movingIssues = moving === null ? [] : resolve(moving);
   const menuIssues = menu === null ? [] : resolve(menu.ids);
@@ -1659,7 +1694,11 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
     );
   } else {
     body = (
-      <div className="min-h-0 flex-1 overflow-y-auto pb-20">
+      <div
+        ref={pullList.ref}
+        className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-y-contain pb-20"
+      >
+        <PullIndicator pull={pullList.pull} refreshing={pullList.refreshing} />
         <ListRows
           sections={sections}
           collapsed={collapsed}
@@ -1847,6 +1886,27 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
           onConfirm={() =>
             withdrawRequest(withdrawing.issue, withdrawing.customerId)
           }
+        />
+      )}
+      {quick !== null && quickIssue !== undefined && (
+        <IssueQuickMenu
+          x={quick.x}
+          y={quick.y}
+          issue={quickIssue}
+          workspaceId={workspaceId}
+          meId={me?.user_id}
+          canEdit={
+            canEdit && (canEditIssue === undefined || canEditIssue(quickIssue))
+          }
+          onAssignToMe={() => {
+            assignToMe([quickIssue], true);
+          }}
+          onPriority={() => {
+            openCommand('priority', [quickIssue]);
+          }}
+          onClose={() => {
+            setQuick(null);
+          }}
         />
       )}
       {menu !== null && menuIssues.length > 0 && (
