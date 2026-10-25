@@ -7,6 +7,9 @@
  * dismiss it while Escape inside a picker or the comment box does not, and
  * that the issue's activity and comments show below the body, newest last,
  * with a comment box that posts and offers to sync to a linked pull request.
+ * Also covers the sub-issues section under the description, which files a
+ * child inline and peeks a child in place, and the parent line above the
+ * title, which peeks the parent.
  */
 
 import type { Editor } from '@tiptap/core';
@@ -48,6 +51,7 @@ const listActivity = vi.fn<() => Promise<ActivityListRead>>();
 const listComments = vi.fn<() => Promise<CommentListRead>>();
 const createComment = vi.fn<(body: unknown) => Promise<CommentRead>>();
 const listThreadTargets = vi.fn<() => Promise<GithubThreadTargetRead[]>>();
+const createIssue = vi.fn<(body: unknown) => Promise<IssueRead>>();
 const listChildren =
   vi.fn<
     (id: string) => Promise<{ issues: OrderedIssueRead[]; next_cursor: null }>
@@ -66,6 +70,7 @@ vi.mock('../../api/issues', async () => {
     listIssues: () => Promise.resolve({ issues: [], next_cursor: null }),
     listActivity: () => listActivity(),
     listChildren: (_w: string, id: string) => listChildren(id),
+    createIssue: (_w: string, body: unknown) => createIssue(body),
   };
 });
 
@@ -273,6 +278,7 @@ beforeEach(() => {
     createComment,
     listThreadTargets,
     listChildren,
+    createIssue,
     onClose,
   ])
     spy.mockReset();
@@ -596,5 +602,151 @@ describe('walking the issue tree from the peek', () => {
 
     expect(openPeek).not.toHaveBeenCalled();
     expect(listChildren).not.toHaveBeenCalled();
+  });
+});
+
+describe('sub-issues in the peek', () => {
+  /** Mounts the peek with a spy standing in for the pane's peek. */
+  const renderWithPeek = () => {
+    const openPeek = vi.fn<(issue: { id: string; key: string }) => void>();
+    render(
+      <MemoryRouter>
+        <IssuePeek issueId="iss-1" onClose={onClose} onOpenIssue={openPeek} />
+      </MemoryRouter>
+    );
+    return { openPeek };
+  };
+
+  /** A child of the peeked issue. */
+  const childOf = (
+    id: string,
+    key: string,
+    title: string,
+    sort_order: string
+  ): OrderedIssueRead => ({
+    ...issue,
+    id,
+    key,
+    number: Number(key.slice(4)),
+    title,
+    parent_id: 'iss-1',
+    sort_order,
+  });
+
+  it('lists the sub-issues under the description with their progress', async () => {
+    getIssue.mockResolvedValue({
+      ...issue,
+      progress: { total: 2, completed: 0 },
+    });
+    listChildren.mockResolvedValue({
+      issues: [
+        childOf('iss-8', 'ENG-8', 'First child', 'a'),
+        childOf('iss-9', 'ENG-9', 'Second child', 'b'),
+      ],
+      next_cursor: null,
+    });
+    renderWithPeek();
+
+    const section = await screen.findByRole('region', { name: 'Sub-issues' });
+    expect(await within(section).findByText('First child')).toBeInTheDocument();
+    expect(within(section).getByText('Second child')).toBeInTheDocument();
+    expect(within(section).getByText('0/2')).toBeInTheDocument();
+    expect(listChildren).toHaveBeenCalledWith('iss-1');
+    expect(
+      within(section).getAllByRole('button', { name: 'Status: Todo' })
+    ).toHaveLength(2);
+    expect(
+      within(section).getByRole('button', { name: 'Add sub-issue' })
+    ).toBeInTheDocument();
+  });
+
+  it('peeks a sub-issue in place on click and keeps Ctrl+click for its page', async () => {
+    getIssue.mockResolvedValue({
+      ...issue,
+      progress: { total: 1, completed: 0 },
+    });
+    listChildren.mockResolvedValue({
+      issues: [childOf('iss-8', 'ENG-8', 'First child', 'a')],
+      next_cursor: null,
+    });
+    const { openPeek } = renderWithPeek();
+
+    const row = (await screen.findByText('First child')).closest('a');
+    expect(row).toHaveAttribute('href', '/w/mine/issues/ENG-8');
+    if (row === null) throw new Error('missing row link');
+
+    fireEvent.click(row, { ctrlKey: true });
+    expect(openPeek).not.toHaveBeenCalled();
+
+    fireEvent.click(row);
+    expect(openPeek).toHaveBeenCalledWith({ id: 'iss-8', key: 'ENG-8' });
+  });
+
+  it('offers only the add button without sub-issues, and files one from the peek', async () => {
+    createIssue.mockResolvedValue(
+      childOf('iss-8', 'ENG-8', 'Break it down', 'a')
+    );
+    const user = userEvent.setup();
+    renderWithPeek();
+
+    const section = await screen.findByRole('region', { name: 'Sub-issues' });
+    expect(within(section).queryByText('No sub-issues')).toBeNull();
+    expect(listChildren).not.toHaveBeenCalled();
+
+    await user.click(
+      within(section).getByRole('button', { name: 'Add sub-issue' })
+    );
+    await user.type(
+      within(section).getByRole('textbox', { name: 'New sub-issue title' }),
+      'Break it down{Enter}'
+    );
+
+    expect(createIssue).toHaveBeenCalledWith({
+      team_id: 't-1',
+      title: 'Break it down',
+      parent_id: 'iss-1',
+    });
+    expect(
+      await within(section).findByText('Break it down')
+    ).toBeInTheDocument();
+    expect(within(section).getByText('0/1')).toBeInTheDocument();
+  });
+
+  it('hides the section from a guest when the issue has no sub-issues', async () => {
+    useWorkspaceMock.mockReturnValue(resolved('guest'));
+    const { role: _role, ...guestTeam } = team;
+    listTeams.mockResolvedValue([guestTeam]);
+    renderWithPeek();
+
+    expect(
+      await screen.findByRole('button', { name: 'Status: Todo' })
+    ).toBeDisabled();
+    expect(screen.queryByRole('region', { name: 'Sub-issues' })).toBeNull();
+  });
+
+  it('shows the parent above the title and peeks it on click', async () => {
+    const parent: IssueRead = {
+      ...issue,
+      id: 'iss-0',
+      key: 'ENG-6',
+      title: 'The parent',
+    };
+    getIssue.mockImplementation((id) =>
+      Promise.resolve(
+        id === 'iss-0' ? parent : { ...issue, parent_id: 'iss-0' }
+      )
+    );
+    const { openPeek } = renderWithPeek();
+
+    const line = await screen.findByRole('link', {
+      name: 'Sub-issue of ENG-6 The parent',
+    });
+    expect(line).toHaveAttribute('href', '/w/mine/issues/ENG-6');
+
+    fireEvent.click(line, { metaKey: true });
+    expect(openPeek).not.toHaveBeenCalled();
+
+    fireEvent.click(line);
+    expect(openPeek).toHaveBeenCalledWith({ id: 'iss-0', key: 'ENG-6' });
   });
 });
