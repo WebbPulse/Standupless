@@ -1,9 +1,10 @@
 """The project update reminder sweep the digest flush schedule runs every quarter hour.
 
-The properties held are that a due project's lead gets one reminder per due date
-however many passes run, even after deleting it; that exempt statuses, an off
-cadence, a lead who cannot see the project and a long stale due date get none;
-that posting an update starts a new due date; and that the due hook hears each
+The properties held are that a due project's lead gets one reminder when an
+update comes due and one more when it goes overdue, however many passes run,
+even after deleting it; that exempt statuses, an off cadence, no lead, a lead
+who cannot see the project and a long stale due date get none; that posting an
+update starts a new due date for both stages; and that the due hook hears each
 due date once.
 """
 
@@ -18,6 +19,7 @@ from webbpulse.identity.email import RecordingEmailSender
 from app.common.db.dynamo.planning import Project, project_key
 from app.common.email import reset_email_sender
 from app.common.project_cadence import (
+    OVERDUE_GRACE,
     ProjectUpdateDue,
     register_update_due_listener,
     unregister_update_due_listener,
@@ -35,6 +37,8 @@ PROJECT_ID = "01JB000000000000000000PRJR"
 CREATED = datetime(2026, 9, 1, 9, 0, tzinfo=timezone.utc)
 
 DUE = CREATED + timedelta(days=7)
+
+OVERDUE = DUE + OVERDUE_GRACE
 
 
 @pytest.fixture
@@ -83,7 +87,7 @@ def test_the_lead_gets_one_reminder_however_many_passes_run(
 
     first = run_reminders(repositories, DUE + timedelta(minutes=5))
     run_reminders(repositories, DUE + timedelta(hours=1))
-    run_reminders(repositories, DUE + timedelta(days=4))
+    run_reminders(repositories, OVERDUE - timedelta(minutes=1))
     flush_digests(repositories)
 
     assert (first.due, first.notified) == (1, 1)
@@ -92,12 +96,147 @@ def test_the_lead_gets_one_reminder_however_many_passes_run(
     assert row["project_name"] == "Launch"
     assert row["team_id"] == TEAM
     assert row["actor_id"] == ""
+    assert row["due_state"] == "due"
     [message] = recorder.sent
     assert message.subject == "[Project] Launch"
     assert "A project update is due." in message.text
     assert f"/projects/launch-{PROJECT_ID}?tab=updates" in message.text
     assert [event.project_id for event in heard] == [PROJECT_ID]
     assert heard[0].due_at == DUE
+
+
+def test_an_overdue_update_sends_a_second_reminder_once(
+    repositories: Any, workspace: str, recorder: RecordingEmailSender, heard: list[ProjectUpdateDue]
+) -> None:
+    """Going overdue is its own stage, reminded once on top of the due reminder and never emitted again."""
+    _project(repositories, workspace)
+    run_reminders(repositories, DUE + timedelta(minutes=1))
+    flush_digests(repositories)
+
+    overdue = run_reminders(repositories, OVERDUE + timedelta(minutes=1))
+    again = run_reminders(repositories, OVERDUE + timedelta(days=1))
+    flush_digests(repositories)
+
+    assert (overdue.overdue, overdue.overdue_notified, overdue.due) == (1, 1, 0)
+    assert again.overdue == 0
+    rows = _reminders(repositories, workspace, MEMBER)
+    assert sorted(row["due_state"] for row in rows) == ["due", "overdue"]
+    assert len(recorder.sent) == 2
+    assert "A project update is overdue." in recorder.sent[-1].text
+    assert "A project update is due." not in recorder.sent[-1].text
+    assert len(heard) == 1
+
+
+def test_a_pass_that_starts_overdue_sends_only_the_overdue_reminder(
+    repositories: Any, workspace: str, heard: list[ProjectUpdateDue]
+) -> None:
+    """A sweep that first sees the project once overdue gives the lead one row, while the hook still hears it."""
+    _project(repositories, workspace)
+
+    summary = run_reminders(repositories, OVERDUE + timedelta(hours=1))
+
+    assert (summary.due, summary.notified, summary.overdue_notified) == (1, 0, 1)
+    [row] = _reminders(repositories, workspace, MEMBER)
+    assert row["due_state"] == "overdue"
+    assert len(heard) == 1
+
+
+def test_a_deleted_overdue_reminder_is_not_sent_again(repositories: Any, workspace: str) -> None:
+    """The overdue marker outlives the row too."""
+    _project(repositories, workspace)
+    run_reminders(repositories, OVERDUE + timedelta(minutes=1))
+    [row] = _reminders(repositories, workspace, MEMBER)
+
+    assert repositories.inbox.delete(workspace, MEMBER, row["notification_id"])
+    summary = run_reminders(repositories, OVERDUE + timedelta(hours=2))
+
+    assert summary.overdue == 0
+    assert _reminders(repositories, workspace, MEMBER) == []
+
+
+def test_posting_an_update_resets_both_stages(repositories: Any, workspace: str) -> None:
+    """After a new update the next due date is reminded when due and again when overdue."""
+    _project(repositories, workspace)
+    run_reminders(repositories, DUE + timedelta(hours=1))
+    run_reminders(repositories, OVERDUE + timedelta(hours=1))
+
+    posted = OVERDUE + timedelta(days=1)
+    repositories.planning.record_project_health(workspace, PROJECT_ID, health="on_track", last_update_at=posted)
+    next_due = posted + timedelta(days=7)
+    early = run_reminders(repositories, next_due - timedelta(minutes=1))
+    due = run_reminders(repositories, next_due + timedelta(minutes=1))
+    late = run_reminders(repositories, next_due + OVERDUE_GRACE + timedelta(minutes=1))
+
+    assert (early.due, early.overdue) == (0, 0)
+    assert (due.notified, due.overdue) == (1, 0)
+    assert late.overdue_notified == 1
+    rows = _reminders(repositories, workspace, MEMBER)
+    assert sorted(row["due_state"] for row in rows) == ["due", "due", "overdue", "overdue"]
+
+
+@pytest.mark.parametrize("status", ["completed", "canceled"])
+def test_closed_projects_get_no_overdue_reminder(repositories: Any, workspace: str, status: str) -> None:
+    """A completed or canceled project is never overdue."""
+    _project(repositories, workspace, status=status)
+
+    summary = run_reminders(repositories, OVERDUE + timedelta(hours=1))
+
+    assert (summary.due, summary.overdue) == (0, 0)
+    assert _reminders(repositories, workspace, MEMBER) == []
+
+
+def test_an_off_cadence_gets_no_overdue_reminder(repositories: Any, workspace: str) -> None:
+    """Reminders off on the project send neither stage."""
+    _project(repositories, workspace, update_interval_days=0)
+
+    summary = run_reminders(repositories, OVERDUE + timedelta(hours=1))
+
+    assert (summary.due, summary.overdue) == (0, 0)
+    assert _reminders(repositories, workspace, MEMBER) == []
+
+
+def test_a_project_with_no_lead_gets_no_overdue_reminder(
+    repositories: Any, workspace: str, heard: list[ProjectUpdateDue]
+) -> None:
+    """No lead means no overdue row for anyone, and the hook hears the due date once only."""
+    _project(repositories, workspace, lead_id=None)
+
+    run_reminders(repositories, DUE + timedelta(hours=1))
+    summary = run_reminders(repositories, OVERDUE + timedelta(hours=1))
+    run_reminders(repositories, OVERDUE + timedelta(hours=2))
+
+    assert (summary.overdue, summary.overdue_notified) == (1, 0)
+    assert len(heard) == 1
+    for user_id in (OWNER, ADMIN, MEMBER):
+        assert _reminders(repositories, workspace, user_id) == []
+
+
+def test_the_inbox_summary_says_overdue() -> None:
+    """The row's line reads overdue for the second stage and due otherwise."""
+    from app.common.db.dynamo.inbox import Notification
+    from app.common.inbox_summary import notification_summary
+
+    def row(due_state: str | None) -> Notification:
+        """One project reminder row in the given stage."""
+        return Notification(
+            ws_user="W1#U1",
+            notification_id="N1",
+            workspace_id="W1",
+            kind="project_update_due",
+            team_id=TEAM,
+            project_id=PROJECT_ID,
+            project_name="Launch",
+            due_state=due_state,
+            actor_id="",
+            actor_name="",
+            recipient_id=MEMBER,
+            created_at=CREATED,
+            expires_at=0,
+        )
+
+    assert notification_summary(row("overdue")) == "Update overdue"
+    assert notification_summary(row("due")) == "Update due"
+    assert notification_summary(row(None)) == "Update due"
 
 
 def test_a_deleted_reminder_is_not_sent_again(repositories: Any, workspace: str) -> None:
@@ -264,4 +403,30 @@ def test_a_digest_line_names_the_reminder() -> None:
     message = render_digest(entries, to="member@example.com", workspace_slug="acme")
 
     assert "Project: Launch" in message.text
+    assert "A project update is due." in message.text
+
+
+def test_a_digest_line_says_overdue() -> None:
+    """An overdue entry reads overdue in a digest."""
+    from app.common.db.dynamo.notify_digests import DigestEntry
+
+    entries = [
+        DigestEntry(
+            workspace_id="W1",
+            recipient_id=MEMBER,
+            notification_id=f"N{number}",
+            kind="project_update_due",
+            team_id=TEAM,
+            actor_name="",
+            project_id=PROJECT_ID,
+            project_name="Launch",
+            due_state=state,
+            created_at=CREATED + timedelta(seconds=number),
+        )
+        for number, state in enumerate(("due", "overdue"))
+    ]
+
+    message = render_digest(entries, to="member@example.com", workspace_slug="acme")
+
+    assert "A project update is overdue." in message.text
     assert "A project update is due." in message.text

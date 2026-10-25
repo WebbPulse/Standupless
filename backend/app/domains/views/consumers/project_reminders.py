@@ -4,9 +4,10 @@ The digest flush already fires every minute on the views notify consumer, which
 holds the inbox grant and reads workspaces, memberships, users and planning, so
 the sweep rides it once per `SWEEP_INTERVAL` window, claimed through `sweeps`,
 rather than needing a schedule of its own. Each pass reads every live workspace's projects, finds the ones whose
-update has come due, and sends each lead one inbox reminder per due date. The same pass reads every
-live workspace's initiatives and sends each owner a reminder when an update
-comes due and another when it goes overdue, once per due date and stage.
+update has come due, and sends each lead one inbox reminder when an update
+comes due and another when it goes overdue, once per due date and stage. The
+same pass reads every live workspace's initiatives and does the same for each
+owner.
 
 A marker per project and due date is what makes the reminder once only: it is
 checked before the reminder is written and set after, so a lead who deletes the
@@ -67,6 +68,8 @@ class ReminderSummary:
     workspaces: int = 0
     due: int = 0
     notified: int = 0
+    overdue: int = 0
+    overdue_notified: int = 0
     initiatives_due: int = 0
     initiatives_notified: int = 0
 
@@ -76,13 +79,21 @@ def sweep_due(repositories: Repositories, now: datetime) -> bool:
     return claim_pass(repositories, SWEEP_NAME, SWEEP_INTERVAL, now)
 
 
-def write_reminder(repositories: Repositories, project: Project, due_at: datetime) -> bool:
-    """Write the lead's reminder for one due date under their preferences, answering whether one was written.
+def write_reminder(
+    repositories: Repositories, project: Project, due_at: datetime, stage: str = "due", stage_at: datetime | None = None
+) -> bool:
+    """Write the lead's reminder for one due date and stage under their preferences, answering whether one was written.
 
     The lead must still see one of the project's teams, which is the team the row
-    carries. The row is stamped at the due date, so its id is the same on every
-    pass and a repeat write is dropped by the conditional put.
+    carries. The row is stamped at the stage's start, so its id is the same on
+    every pass and a repeat write is dropped by the conditional put. The due
+    stage keeps the id it always had, so a row written before stages existed is
+    not written again.
     """
+    stamped = stage_at or due_at
+    subject = f"{project.project_id}#{due_at.isoformat()}"
+    if stage != "due":
+        subject = f"{project.project_id}#{stage}#{due_at.isoformat()}"
     lead_id = project.lead_id or ""
     if not lead_id:
         return False
@@ -98,20 +109,19 @@ def write_reminder(repositories: Repositories, project: Project, due_at: datetim
 
     row = Notification(
         ws_user=inbox_partition(project.workspace_id, lead_id),
-        notification_id=notification_id(
-            due_at, PROJECT_UPDATE_DUE, lead_id, f"{project.project_id}#{due_at.isoformat()}"
-        ),
+        notification_id=notification_id(stamped, PROJECT_UPDATE_DUE, lead_id, subject),
         workspace_id=project.workspace_id,
         kind=PROJECT_UPDATE_DUE,
         team_id=team_id,
         project_id=project.project_id,
         project_name=project.name,
+        due_state=stage,
         actor_id="",
         actor_name="",
         recipient_id=lead_id,
-        created_at=due_at,
-        unread_at=due_at.isoformat() if in_app else None,
-        expires_at=expires_at(due_at),
+        created_at=stamped,
+        unread_at=stamped.isoformat() if in_app else None,
+        expires_at=expires_at(stamped),
     )
     if not repositories.inbox.create(row):
         return False
@@ -148,13 +158,16 @@ def remind_project(repositories: Repositories, project: Project, default_days: i
     Answers `None` when nothing was due, and otherwise whether the lead got an
     inbox row. The due event goes to the listeners and the team channels either
     way, so a team webhook or Slack channel hears of a project with no lead too.
+    A pass that first sees the project once it is already overdue still emits the
+    due event but leaves the lead's row to the overdue stage, so the lead gets one
+    reminder rather than two at once.
     """
     due_at = next_update_due_at(project, default_days)
     if due_at is None or due_at > now or now - due_at > REMINDER_WINDOW:
         return None
     if repositories.inbox.reminded(project.workspace_id, project.project_id, due_at):
         return None
-    written = write_reminder(repositories, project, due_at)
+    written = now < due_at + OVERDUE_GRACE and write_reminder(repositories, project, due_at)
     event = ProjectUpdateDue(
         workspace_id=project.workspace_id,
         project_id=project.project_id,
@@ -167,6 +180,31 @@ def remind_project(repositories: Repositories, project: Project, default_days: i
     emit_update_due(event)
     announce(event)
     repositories.inbox.mark_reminded(project.workspace_id, project.project_id, due_at, now)
+    return written
+
+
+def remind_project_overdue(
+    repositories: Repositories, project: Project, default_days: int, now: datetime
+) -> bool | None:
+    """Send one project's lead a second reminder once its update has gone overdue, once per due date.
+
+    Answers `None` when the update is not overdue, its overdue stage began more
+    than `REMINDER_WINDOW` ago or was already reminded, and otherwise whether the
+    lead got an inbox row. Nothing is emitted to the listeners or the team
+    channels, which hear of each due date once. The marker is set either way, so
+    a project with no lead is not read again for the same stage.
+    """
+    due_at = next_update_due_at(project, default_days)
+    if due_at is None:
+        return None
+    overdue_at = due_at + OVERDUE_GRACE
+    if now < overdue_at or now - overdue_at > REMINDER_WINDOW:
+        return None
+    subject_id = f"{project.project_id}#overdue"
+    if repositories.inbox.reminded(project.workspace_id, subject_id, due_at):
+        return None
+    written = write_reminder(repositories, project, due_at, "overdue", overdue_at)
+    repositories.inbox.mark_reminded(project.workspace_id, subject_id, due_at, now)
     return written
 
 
@@ -274,11 +312,13 @@ def run_reminders(repositories: Repositories, now: datetime | None = None) -> Re
         summary.workspaces += 1
         for project in repositories.planning.list_projects(workspace.id):
             outcome = remind_project(repositories, project, workspace.project_update_interval_days, moment)
-            if outcome is None:
-                continue
-            summary.due += 1
-            if outcome:
-                summary.notified += 1
+            if outcome is not None:
+                summary.due += 1
+                summary.notified += int(outcome)
+            late = remind_project_overdue(repositories, project, workspace.project_update_interval_days, moment)
+            if late is not None:
+                summary.overdue += 1
+                summary.overdue_notified += int(late)
         for initiative in repositories.planning.list_initiatives(workspace.id):
             outcome = remind_initiative(repositories, initiative, workspace.project_update_interval_days, moment)
             if outcome is None:
@@ -286,7 +326,7 @@ def run_reminders(repositories: Repositories, now: datetime | None = None) -> Re
             summary.initiatives_due += 1
             if outcome:
                 summary.initiatives_notified += 1
-    if summary.due or summary.initiatives_due:
+    if summary.due or summary.overdue or summary.initiatives_due:
         _log.info(
             "Sent project update reminders.",
             extra={
@@ -294,6 +334,8 @@ def run_reminders(repositories: Repositories, now: datetime | None = None) -> Re
                 "workspaces": summary.workspaces,
                 "due": summary.due,
                 "notified": summary.notified,
+                "overdue": summary.overdue,
+                "overdue_notified": summary.overdue_notified,
                 "initiatives_due": summary.initiatives_due,
                 "initiatives_notified": summary.initiatives_notified,
             },

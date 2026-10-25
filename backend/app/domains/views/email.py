@@ -350,22 +350,36 @@ _DUE_REASON = (
 )
 
 
+def _project_due_line(due_state: str) -> str:
+    """The sentence a project reminder says, by whether the update is due or overdue."""
+    if due_state == "overdue":
+        return "A project update is overdue."
+    return "A project update is due."
+
+
 def render_project_update_due_notification(
-    *, to: str, project_id: str, project_name: str, workspace_slug: str, accent: str | None = None
+    *,
+    to: str,
+    project_id: str,
+    project_name: str,
+    workspace_slug: str,
+    due_state: str = "due",
+    accent: str | None = None,
 ) -> EmailMessage:
-    """Render the reminder a project lead gets when the project's update comes due.
+    """Render the reminder a project lead gets when the project's update comes due or goes overdue.
 
     The subject is `[Project] Name`, so the reminder threads with the project's
     update notifications.
     """
     title = project_name.strip() or "Untitled project"
+    line = _project_due_line(due_state)
     return render(
         to=to,
         subject=f"[Project] {title}",
-        preheader=f"A project update is due for {title}.",
+        preheader=f"{line[:-1]} for {title}.",
         blocks=[
             Heading(title),
-            Paragraph("A project update is due."),
+            Paragraph(line),
             Button(
                 f"Write an update for {title}", project_url(workspace_slug, project_id, project_name), show_url=True
             ),
@@ -446,7 +460,7 @@ read by nobody; the inbox holds every one of them anyway.
 def _entry_line(entry: DigestEntry) -> str:
     """The one sentence a digest says about one notification."""
     if entry.kind == PROJECT_UPDATE_DUE:
-        return "A project update is due."
+        return _project_due_line(entry.due_state)
     if entry.kind == INITIATIVE_UPDATE_DUE:
         return _initiative_due_line(entry.due_state)
     actor = entry.actor_name.strip() or "Someone"
@@ -498,6 +512,7 @@ def render_single(
             project_id=entry.project_id,
             project_name=entry.project_name,
             workspace_slug=workspace_slug,
+            due_state=entry.due_state,
             accent=accent,
         )
     if entry.kind == INITIATIVE_UPDATE_DUE:

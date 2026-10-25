@@ -675,7 +675,8 @@ const ProjectUpdatePane: React.FC<ProjectUpdatePaneProps> = ({
         </p>
       ) : row.kind === 'project_update_due' ? (
         <p className="text-sm text-text">
-          An update is due on <span className="font-medium">{project}</span>
+          An update is {row.due_state === 'overdue' ? 'overdue' : 'due'} on{' '}
+          <span className="font-medium">{project}</span>
         </p>
       ) : (
         <p className="text-sm text-text">
@@ -759,8 +760,10 @@ const InitiativeUpdatePane: React.FC<InitiativeUpdatePaneProps> = ({
 const rowSummary = (row: NotificationRead): string => {
   if (row.summary) return row.summary;
   const label =
-    isInitiativeRow(row) && row.due_state === 'overdue'
-      ? 'Initiative update overdue'
+    row.due_state === 'overdue'
+      ? isInitiativeRow(row)
+        ? 'Initiative update overdue'
+        : 'Update overdue'
       : kindLabel(row.kind);
   return row.actor_name === '' ? label : `${label} by ${row.actor_name}`;
 };
