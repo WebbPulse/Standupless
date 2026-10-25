@@ -3439,20 +3439,26 @@
           "status": {
             "anyOf": [
               {
-                "enum": [
-                  "lead",
-                  "trial",
-                  "active",
-                  "paused",
-                  "churned"
-                ],
                 "type": "string"
               },
               {
                 "type": "null"
               }
             ],
+            "description": "A customer status by id or name, the older spelling of `status_id`",
             "title": "Status"
+          },
+          "status_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The id of one of the workspace's customer statuses",
+            "title": "Status Id"
           },
           "tier": {
             "anyOf": [
@@ -3463,13 +3469,162 @@
                 "type": "null"
               }
             ],
+            "description": "A customer tier by id or name, the older spelling of `tier_id`",
             "title": "Tier"
+          },
+          "tier_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The id of one of the workspace's customer tiers",
+            "title": "Tier Id"
           }
         },
         "required": [
           "name"
         ],
         "title": "CustomerCreate",
+        "type": "object"
+      },
+      "CustomerFieldCreate": {
+        "description": "The body a customer status or tier create takes; it lands last unless a position is given.",
+        "properties": {
+          "color": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Color"
+          },
+          "name": {
+            "maxLength": 40,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "position": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Position"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "CustomerFieldCreate",
+        "type": "object"
+      },
+      "CustomerFieldRead": {
+        "description": "One customer status or tier as the API returns it, with how many customers hold it.",
+        "properties": {
+          "color": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A `#rrggbb` colour, or null for a neutral dot",
+            "title": "Color"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "customer_count": {
+            "default": 0,
+            "description": "Customers that hold this status or tier",
+            "title": "Customer Count",
+            "type": "integer"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "position": {
+            "title": "Position",
+            "type": "integer"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "position",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "CustomerFieldRead",
+        "type": "object"
+      },
+      "CustomerFieldUpdate": {
+        "description": "The body a customer status or tier patch takes; an omitted field is kept and a null colour clears it.",
+        "properties": {
+          "color": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Color"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "maxLength": 40,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "position": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Position"
+          }
+        },
+        "title": "CustomerFieldUpdate",
         "type": "object"
       },
       "CustomerListRead": {
@@ -3581,20 +3736,26 @@
           "status": {
             "anyOf": [
               {
-                "enum": [
-                  "lead",
-                  "trial",
-                  "active",
-                  "paused",
-                  "churned"
-                ],
                 "type": "string"
               },
               {
                 "type": "null"
               }
             ],
+            "description": "A customer status by id or name, the older spelling of `status_id`",
             "title": "Status"
+          },
+          "status_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The id of one of the workspace's customer statuses",
+            "title": "Status Id"
           },
           "tier": {
             "anyOf": [
@@ -3605,7 +3766,20 @@
                 "type": "null"
               }
             ],
+            "description": "A customer tier by id or name, the older spelling of `tier_id`",
             "title": "Tier"
+          },
+          "tier_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The id of one of the workspace's customer tiers",
+            "title": "Tier Id"
           }
         },
         "title": "CustomerPatch",
@@ -3694,20 +3868,38 @@
           "status": {
             "anyOf": [
               {
-                "enum": [
-                  "lead",
-                  "trial",
-                  "active",
-                  "paused",
-                  "churned"
-                ],
                 "type": "string"
               },
               {
                 "type": "null"
               }
             ],
+            "description": "The id of the customer's status, kept for clients that read it before `status_id`",
             "title": "Status"
+          },
+          "status_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The id of the customer's status",
+            "title": "Status Id"
+          },
+          "status_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The name of the customer's status",
+            "title": "Status Name"
           },
           "tier": {
             "anyOf": [
@@ -3718,7 +3910,20 @@
                 "type": "null"
               }
             ],
+            "description": "The name of the customer's tier",
             "title": "Tier"
+          },
+          "tier_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The id of the customer's tier",
+            "title": "Tier Id"
           },
           "updated_at": {
             "format": "date-time",
@@ -3972,6 +4177,40 @@
           "created_at"
         ],
         "title": "CustomerRequestRead",
+        "type": "object"
+      },
+      "CustomerStatusListRead": {
+        "description": "The workspace's customer statuses by position.",
+        "properties": {
+          "statuses": {
+            "items": {
+              "$ref": "#/components/schemas/CustomerFieldRead"
+            },
+            "title": "Statuses",
+            "type": "array"
+          }
+        },
+        "required": [
+          "statuses"
+        ],
+        "title": "CustomerStatusListRead",
+        "type": "object"
+      },
+      "CustomerTierListRead": {
+        "description": "The workspace's customer tiers by position.",
+        "properties": {
+          "tiers": {
+            "items": {
+              "$ref": "#/components/schemas/CustomerFieldRead"
+            },
+            "title": "Tiers",
+            "type": "array"
+          }
+        },
+        "required": [
+          "tiers"
+        ],
+        "title": "CustomerTierListRead",
         "type": "object"
       },
       "CycleCalendarFeedCreate": {
@@ -35923,6 +36162,486 @@
           }
         ],
         "summary": "List All Requests",
+        "tags": [
+          "planning"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/customers/statuses": {
+      "get": {
+        "description": "The workspace's customer statuses by position, each with how many customers hold it.\n\nDeclared before `/customers/{customer_id}`, as are the tier routes, so\n`statuses` and `tiers` are not swallowed as ids.",
+        "operationId": "list_customer_statuses_api_workspaces__workspace_id__customers_statuses_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CustomerStatusListRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "List Customer Statuses",
+        "tags": [
+          "planning"
+        ]
+      },
+      "post": {
+        "description": "Add a customer status, as a workspace admin.",
+        "operationId": "add_customer_status_api_workspaces__workspace_id__customers_statuses_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CustomerFieldCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CustomerFieldRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Add Customer Status",
+        "tags": [
+          "planning"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/customers/statuses/{status_id}": {
+      "delete": {
+        "description": "Delete a customer status, as a workspace admin, moving the customers that hold it onto `replacement_id`.",
+        "operationId": "remove_customer_status_api_workspaces__workspace_id__customers_statuses__status_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "status_id",
+            "required": true,
+            "schema": {
+              "title": "Status Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "replacement_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Replacement Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Remove Customer Status",
+        "tags": [
+          "planning"
+        ]
+      },
+      "patch": {
+        "description": "Rename, recolour or reorder a customer status, as a workspace admin.",
+        "operationId": "edit_customer_status_api_workspaces__workspace_id__customers_statuses__status_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "status_id",
+            "required": true,
+            "schema": {
+              "title": "Status Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CustomerFieldUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CustomerFieldRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Edit Customer Status",
+        "tags": [
+          "planning"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/customers/tiers": {
+      "get": {
+        "description": "The workspace's customer tiers by position, each with how many customers hold it.",
+        "operationId": "list_customer_tiers_api_workspaces__workspace_id__customers_tiers_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CustomerTierListRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "List Customer Tiers",
+        "tags": [
+          "planning"
+        ]
+      },
+      "post": {
+        "description": "Add a customer tier, as a workspace admin.",
+        "operationId": "add_customer_tier_api_workspaces__workspace_id__customers_tiers_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CustomerFieldCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CustomerFieldRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Add Customer Tier",
+        "tags": [
+          "planning"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/customers/tiers/{tier_id}": {
+      "delete": {
+        "description": "Delete a customer tier, as a workspace admin, moving the customers that hold it onto `replacement_id`.",
+        "operationId": "remove_customer_tier_api_workspaces__workspace_id__customers_tiers__tier_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "tier_id",
+            "required": true,
+            "schema": {
+              "title": "Tier Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "replacement_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Replacement Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Remove Customer Tier",
+        "tags": [
+          "planning"
+        ]
+      },
+      "patch": {
+        "description": "Rename, recolour or reorder a customer tier, as a workspace admin.",
+        "operationId": "edit_customer_tier_api_workspaces__workspace_id__customers_tiers__tier_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "tier_id",
+            "required": true,
+            "schema": {
+              "title": "Tier Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CustomerFieldUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CustomerFieldRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Edit Customer Tier",
         "tags": [
           "planning"
         ]

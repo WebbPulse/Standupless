@@ -23,6 +23,7 @@ from app.common.composition.domains import DOMAINS
 from app.common.composition.wiring import build_domain_app
 from app.common.db.dynamo.attachments import build_attachment
 from app.common.db.dynamo.comments import build_comment
+from app.common.db.dynamo.customers import Customer
 from app.common.db.dynamo.documents import Document, DocumentBody
 from app.common.db.dynamo.issues import Issue
 from app.common.db.dynamo.planning import (
@@ -272,6 +273,16 @@ def seed_everything(repositories: Any) -> None:
             owner_id=ADMIN,
         )
     )
+    repositories.customers.create(
+        Customer(
+            workspace_id=WORKSPACE,
+            customer_id="01JB0000000000000000CUST01",
+            name="Initech",
+            status="active",
+            tier="Enterprise",
+            created_by=ADMIN,
+        )
+    )
 
 
 def open_bundle(workspace_id: str, export_id: str) -> zipfile.ZipFile:
@@ -330,6 +341,10 @@ def test_an_admin_exports_every_entity(client: TestClient, repositories: Any, wo
     assert dependency["relation_id"] == "01JB0000000000000000PREL01"
     assert "planning_key" not in dependency
     assert {row["name"] for row in rows(bundle, "views")} == {"Team view", "Mine"}
+    [customer] = rows(bundle, "customers")
+    assert (customer["status_id"], customer["status_name"], customer["tier_name"]) == ("active", "Active", "Enterprise")
+    assert customer["tier_id"] in {row["id"] for row in rows(bundle, "customer_tiers")}
+    assert len(rows(bundle, "customer_statuses")) == 5
     assert [(row["title"], row["body"]) for row in rows(bundle, "documents")] == [("Launch plan", "Ship it")]
     assert {row["email"] for row in rows(bundle, "members")} >= {"owner@example.com", "guest@example.com"}
 

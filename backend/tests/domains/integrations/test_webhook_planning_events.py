@@ -12,6 +12,7 @@ from typing import Any
 
 import pytest
 
+from app.common.customer_fields import legacy_tier_id
 from app.common.db.dynamo.base import utc_now
 from app.common.db.dynamo.customers import Customer, CustomerRequest
 from app.common.db.dynamo.documents import Document, DocumentBody, ParentKind
@@ -433,6 +434,22 @@ def test_a_customer_reaches_only_workspace_wide_webhooks(
     assert body["data"]["name"] == "Acme"
     assert body["data"]["domains"] == ["acme.test"]
     assert body["url"].endswith("/customers/C1")
+
+
+def test_a_customer_carries_its_status_and_tier_ids(repositories: Any, workspace: str) -> None:
+    """A configured customer names its ids, and a legacy row derives them from its strings."""
+    configured = Customer(
+        workspace_id=WORKSPACE, customer_id="C1", name="Acme", status_id="active", tier_id="T1", created_by=OWNER
+    )
+    legacy = Customer(
+        workspace_id=WORKSPACE, customer_id="C2", name="Beta", status="trial", tier="Gold", created_by=OWNER
+    )
+
+    first = payloads.describe(repositories, payloads.CUSTOMER, "INSERT", _image(configured) or {}, {})
+    second = payloads.describe(repositories, payloads.CUSTOMER, "INSERT", _image(legacy) or {}, {})
+
+    assert first is not None and (first.data["statusId"], first.data["tierId"]) == ("active", "T1")
+    assert second is not None and (second.data["statusId"], second.data["tierId"]) == ("trial", legacy_tier_id("Gold"))
 
 
 def _request(team_ids: list[str] | None = None, **fields: Any) -> CustomerRequest:

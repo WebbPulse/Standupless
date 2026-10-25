@@ -500,8 +500,32 @@ class CustomerCreate(TypedDict):
     owner_id: NotRequired[str | None]
     revenue: NotRequired[int | None]
     size: NotRequired[int | None]
-    status: NotRequired[Literal["lead", "trial", "active", "paused", "churned"] | None]
+    status: NotRequired[str | None]
+    status_id: NotRequired[str | None]
     tier: NotRequired[str | None]
+    tier_id: NotRequired[str | None]
+
+
+class CustomerFieldCreate(TypedDict):
+    color: NotRequired[str | None]
+    name: str
+    position: NotRequired[int | None]
+
+
+class CustomerFieldRead(TypedDict):
+    color: NotRequired[str | None]
+    created_at: str
+    customer_count: NotRequired[int]
+    id: str
+    name: str
+    position: int
+    updated_at: str
+
+
+class CustomerFieldUpdate(TypedDict):
+    color: NotRequired[str | None]
+    name: NotRequired[str | None]
+    position: NotRequired[int | None]
 
 
 class CustomerMerge(TypedDict):
@@ -514,8 +538,10 @@ class CustomerPatch(TypedDict):
     owner_id: NotRequired[str | None]
     revenue: NotRequired[int | None]
     size: NotRequired[int | None]
-    status: NotRequired[Literal["lead", "trial", "active", "paused", "churned"] | None]
+    status: NotRequired[str | None]
+    status_id: NotRequired[str | None]
     tier: NotRequired[str | None]
+    tier_id: NotRequired[str | None]
 
 
 class CustomerRead(TypedDict):
@@ -531,8 +557,11 @@ class CustomerRead(TypedDict):
     request_count: NotRequired[int]
     revenue: NotRequired[int | None]
     size: NotRequired[int | None]
-    status: NotRequired[Literal["lead", "trial", "active", "paused", "churned"] | None]
+    status: NotRequired[str | None]
+    status_id: NotRequired[str | None]
+    status_name: NotRequired[str | None]
     tier: NotRequired[str | None]
+    tier_id: NotRequired[str | None]
     updated_at: str
     workspace_id: str
 
@@ -568,6 +597,14 @@ class CustomerRequestRead(TypedDict):
     target_title: NotRequired[str]
     updated_at: NotRequired[str | None]
     workspace_id: str
+
+
+class CustomerStatusListRead(TypedDict):
+    statuses: list[CustomerFieldRead]
+
+
+class CustomerTierListRead(TypedDict):
+    tiers: list[CustomerFieldRead]
 
 
 class CycleCalendarFeedCreate(TypedDict):

@@ -1208,6 +1208,54 @@
   {
     "auth": "workspace:read",
     "domain": "planning",
+    "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/customers/statuses"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "planning",
+    "method": "POST",
+    "path": "/api/workspaces/{workspace_id}/customers/statuses"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "planning",
+    "method": "DELETE",
+    "path": "/api/workspaces/{workspace_id}/customers/statuses/{status_id}"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "planning",
+    "method": "PATCH",
+    "path": "/api/workspaces/{workspace_id}/customers/statuses/{status_id}"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "planning",
+    "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/customers/tiers"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "planning",
+    "method": "POST",
+    "path": "/api/workspaces/{workspace_id}/customers/tiers"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "planning",
+    "method": "DELETE",
+    "path": "/api/workspaces/{workspace_id}/customers/tiers/{tier_id}"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "planning",
+    "method": "PATCH",
+    "path": "/api/workspaces/{workspace_id}/customers/tiers/{tier_id}"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "planning",
     "method": "DELETE",
     "path": "/api/workspaces/{workspace_id}/customers/{customer_id}"
   },

@@ -355,7 +355,7 @@ def test_an_import_carries_comments_links_and_planning(
     }
     assert (job["created_count"], job["linked_count"], job["labels_created"]) == (4, 1, 3)
     assert job["phase"] is None
-    assert job["phase_index"] == job["phase_count"] == 6
+    assert job["phase_index"] == job["phase_count"] == 7
 
 
 def test_no_account_or_invite_is_made_for_unmatched_people(
@@ -551,6 +551,95 @@ def test_a_rejected_project_dependencies_query_still_completes_the_import(
     assert not key_stored(WORKSPACE, job["import_id"])
 
 
+def add_customers(fake: FakeLinear) -> None:
+    """Two Linear customers: one on a status the workspace has, one on a tier it has not."""
+    fake.customers = [
+        {
+            "id": "customer-1",
+            "name": "Acme",
+            "domains": ["https://www.Acme.example/about", "not a domain"],
+            "revenue": 120000.4,
+            "size": 40,
+            "createdAt": "2026-08-01T09:00:00.000Z",
+            "status": {"name": "active", "color": "#22C55E"},
+            "tier": {"name": "Enterprise", "color": "#8b5cf6"},
+            "owner": {"email": "member@example.com"},
+        },
+        {
+            "id": "customer-2",
+            "name": "Globex",
+            "domains": ["acme.example", "globex.example"],
+            "revenue": None,
+            "size": None,
+            "createdAt": "2026-08-02T09:00:00.000Z",
+            "status": {"name": "Prospect", "color": "blue"},
+            "tier": {"name": "enterprise", "color": "#000000"},
+            "owner": None,
+        },
+    ]
+
+
+def test_linear_customers_map_onto_the_workspace_statuses_and_tiers(
+    client: TestClient, repositories: Any, workspace: str, bucket: str, linear: FakeLinear
+) -> None:
+    """A Linear status or tier reuses the workspace entry of the same name and adds the missing ones once."""
+    add_customers(linear)
+
+    job = start(client).json()
+
+    assert job["status"] == "completed", job
+    acme = repositories.customers.get(WORKSPACE, row_id("customer", "customer-1", "2026-08-01T09:00:00.000Z"))
+    globex = repositories.customers.get(WORKSPACE, row_id("customer", "customer-2", "2026-08-02T09:00:00.000Z"))
+    assert (acme.name, acme.domains, acme.owner_id, acme.revenue, acme.size) == (
+        "Acme",
+        ["acme.example"],
+        MEMBER,
+        120000,
+        40,
+    )
+    assert acme.status_id == "active"
+    assert globex.domains == ["globex.example"]
+    tiers = repositories.customers.list_fields(WORKSPACE, "customer_tier")
+    assert [(row.name, row.color) for row in tiers] == [("Enterprise", "#8b5cf6")]
+    assert acme.tier_id == globex.tier_id == tiers[0].field_id
+    statuses = repositories.customers.list_fields(WORKSPACE, "customer_status")
+    prospect = next(row for row in statuses if row.name == "Prospect")
+    assert (prospect.color, prospect.position) == (None, 5)
+    assert globex.status_id == prospect.field_id
+    assert job["counts"]["customers"] == 2
+    assert job["counts"]["customer_statuses"] == 1
+    assert job["counts"]["customer_tiers"] == 1
+
+    again = start(client).json()
+
+    assert again["counts"]["customers"] == 2
+    assert again["counts"].get("customer_tiers", 0) == 0
+    assert len(repositories.customers.list_customers(WORKSPACE, max_items=100)) == 2
+
+
+def test_a_rejected_customers_query_still_completes_the_import(
+    client: TestClient,
+    repositories: Any,
+    workspace: str,
+    bucket: str,
+    linear: FakeLinear,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A Linear plan without customers is a warning and a log line, never a failed import."""
+    add_customers(linear)
+    linear.rejected_operations = {"Customers"}
+    caplog.set_level(logging.WARNING)
+
+    job = start(client).json()
+
+    assert job["status"] == "completed", job
+    assert job["counts"].get("customers", 0) == 0
+    assert repositories.customers.list_customers(WORKSPACE, max_items=100) == []
+    problems = {(problem["field"], problem["message"]) for problem in job["problems"]}
+    assert ("customers", "Linear would not list customers (graphql_validation_failed), left out") in problems
+    assert any(getattr(record, "event", "") == "issue.import.linear_customers_skipped" for record in caplog.records)
+
+
 def test_the_queue_runs_a_linear_import_a_step_at_a_time(
     client: TestClient, repositories: Any, workspace: str, queued: list[tuple[str, Any]], linear: FakeLinear
 ) -> None:
@@ -563,7 +652,7 @@ def test_the_queue_runs_a_linear_import_a_step_at_a_time(
     middle = client.get(f"/api/workspaces/{WORKSPACE}/imports/{job['import_id']}").json()
     assert middle["status"] == "running"
     assert middle["phase"] == "projects"
-    assert (middle["phase_index"], middle["phase_count"]) == (1, 6)
+    assert (middle["phase_index"], middle["phase_count"]) == (1, 7)
 
     drain(repositories, queued)
 
@@ -915,7 +1004,7 @@ def test_the_queue_reports_the_optional_phases(
     middle = client.get(f"/api/workspaces/{WORKSPACE}/imports/{job['import_id']}").json()
 
     assert middle["phase"] == "cycles"
-    assert (middle["phase_index"], middle["phase_count"]) == (1, 8)
+    assert (middle["phase_index"], middle["phase_count"]) == (1, 9)
     assert [team["create_statuses"] for team in middle["linear_teams"]] == [True]
 
 

@@ -8,12 +8,19 @@ the MCP tools share.
 
 from __future__ import annotations
 
-from typing import Annotated, Any
+from typing import Annotated, Any, Optional
 
-from fastapi import APIRouter, Depends, Path, Response, status
+from fastapi import APIRouter, Depends, Path, Query, Response, status
 
 from app.common.api.dependencies.authz import AuthzContext, Capability, require
 from app.common.api.dependencies.repositories import Repositories, get_repositories
+from app.common.api.schemas.customer_fields import (
+    CustomerFieldCreate,
+    CustomerFieldRead,
+    CustomerFieldUpdate,
+    CustomerStatusListRead,
+    CustomerTierListRead,
+)
 from app.common.api.schemas.customers import (
     CustomerCreate,
     CustomerListRead,
@@ -24,6 +31,14 @@ from app.common.api.schemas.customers import (
     CustomerRequestListRead,
     CustomerRequestPatch,
     CustomerRequestRead,
+)
+from app.common.customer_fields import (
+    STATUS,
+    TIER,
+    create_customer_field,
+    delete_customer_field,
+    list_customer_fields,
+    update_customer_field,
 )
 from app.common.customers import (
     create_customer,
@@ -77,6 +92,104 @@ def list_all_requests(
     `requests` is not swallowed as an id.
     """
     return CustomerRequestListRead(items=list_workspace_requests(repositories, context), next_cursor=None)
+
+
+@router.get("/{workspace_id}/customers/statuses", response_model=CustomerStatusListRead)
+def list_customer_statuses(
+    context: Annotated[AuthzContext, Depends(require(Capability.WORKSPACE_READ))],
+    repositories: Annotated[Repositories, Depends(get_repositories)],
+    workspace_id: Annotated[str, Path()],
+) -> CustomerStatusListRead:
+    """The workspace's customer statuses by position, each with how many customers hold it.
+
+    Declared before `/customers/{customer_id}`, as are the tier routes, so
+    `statuses` and `tiers` are not swallowed as ids.
+    """
+    return CustomerStatusListRead(statuses=list_customer_fields(repositories, context, STATUS))
+
+
+@router.post(
+    "/{workspace_id}/customers/statuses", response_model=CustomerFieldRead, status_code=status.HTTP_201_CREATED
+)
+def add_customer_status(
+    payload: CustomerFieldCreate,
+    context: Annotated[AuthzContext, Depends(require(Capability.WORKSPACE_READ))],
+    repositories: Annotated[Repositories, Depends(get_repositories)],
+    workspace_id: Annotated[str, Path()],
+) -> CustomerFieldRead:
+    """Add a customer status, as a workspace admin."""
+    return create_customer_field(repositories, context, STATUS, payload)
+
+
+@router.patch("/{workspace_id}/customers/statuses/{status_id}", response_model=CustomerFieldRead)
+def edit_customer_status(
+    payload: CustomerFieldUpdate,
+    context: Annotated[AuthzContext, Depends(require(Capability.WORKSPACE_READ))],
+    repositories: Annotated[Repositories, Depends(get_repositories)],
+    workspace_id: Annotated[str, Path()],
+    status_id: Annotated[str, Path()],
+) -> CustomerFieldRead:
+    """Rename, recolour or reorder a customer status, as a workspace admin."""
+    return update_customer_field(repositories, context, STATUS, status_id, payload)
+
+
+@router.delete("/{workspace_id}/customers/statuses/{status_id}", status_code=status.HTTP_204_NO_CONTENT)
+def remove_customer_status(
+    context: Annotated[AuthzContext, Depends(require(Capability.WORKSPACE_READ))],
+    repositories: Annotated[Repositories, Depends(get_repositories)],
+    workspace_id: Annotated[str, Path()],
+    status_id: Annotated[str, Path()],
+    replacement_id: Annotated[Optional[str], Query(min_length=1)] = None,
+) -> Response:
+    """Delete a customer status, as a workspace admin, moving the customers that hold it onto `replacement_id`."""
+    delete_customer_field(repositories, context, STATUS, status_id, replacement_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.get("/{workspace_id}/customers/tiers", response_model=CustomerTierListRead)
+def list_customer_tiers(
+    context: Annotated[AuthzContext, Depends(require(Capability.WORKSPACE_READ))],
+    repositories: Annotated[Repositories, Depends(get_repositories)],
+    workspace_id: Annotated[str, Path()],
+) -> CustomerTierListRead:
+    """The workspace's customer tiers by position, each with how many customers hold it."""
+    return CustomerTierListRead(tiers=list_customer_fields(repositories, context, TIER))
+
+
+@router.post("/{workspace_id}/customers/tiers", response_model=CustomerFieldRead, status_code=status.HTTP_201_CREATED)
+def add_customer_tier(
+    payload: CustomerFieldCreate,
+    context: Annotated[AuthzContext, Depends(require(Capability.WORKSPACE_READ))],
+    repositories: Annotated[Repositories, Depends(get_repositories)],
+    workspace_id: Annotated[str, Path()],
+) -> CustomerFieldRead:
+    """Add a customer tier, as a workspace admin."""
+    return create_customer_field(repositories, context, TIER, payload)
+
+
+@router.patch("/{workspace_id}/customers/tiers/{tier_id}", response_model=CustomerFieldRead)
+def edit_customer_tier(
+    payload: CustomerFieldUpdate,
+    context: Annotated[AuthzContext, Depends(require(Capability.WORKSPACE_READ))],
+    repositories: Annotated[Repositories, Depends(get_repositories)],
+    workspace_id: Annotated[str, Path()],
+    tier_id: Annotated[str, Path()],
+) -> CustomerFieldRead:
+    """Rename, recolour or reorder a customer tier, as a workspace admin."""
+    return update_customer_field(repositories, context, TIER, tier_id, payload)
+
+
+@router.delete("/{workspace_id}/customers/tiers/{tier_id}", status_code=status.HTTP_204_NO_CONTENT)
+def remove_customer_tier(
+    context: Annotated[AuthzContext, Depends(require(Capability.WORKSPACE_READ))],
+    repositories: Annotated[Repositories, Depends(get_repositories)],
+    workspace_id: Annotated[str, Path()],
+    tier_id: Annotated[str, Path()],
+    replacement_id: Annotated[Optional[str], Query(min_length=1)] = None,
+) -> Response:
+    """Delete a customer tier, as a workspace admin, moving the customers that hold it onto `replacement_id`."""
+    delete_customer_field(repositories, context, TIER, tier_id, replacement_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.get("/{workspace_id}/customers/{customer_id}", response_model=CustomerRead)

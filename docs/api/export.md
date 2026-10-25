@@ -78,6 +78,9 @@ within each team.
 | `views.ndjson` | Team views, plus the requester's personal views |
 | `releases.ndjson` | Releases of each included team |
 | `documents.ndjson` | Documents of the included projects and of every initiative, each with its Markdown `body`. A guest requester gets no initiative documents. |
+| `customer_statuses.ndjson` | The workspace's customer statuses by position: `id`, `name`, `color`, `position`. Empty for a guest requester. |
+| `customer_tiers.ndjson` | The workspace's customer tiers by position, shaped like the statuses. Empty for a guest requester. |
+| `customers.ndjson` | Customers by name, each with `status_id`, `status_name`, `tier_id` and `tier_name` from those lists. Empty for a guest requester. |
 
 ### Attachments
 

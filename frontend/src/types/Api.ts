@@ -6022,8 +6022,46 @@ export interface IssueDraftListRead {
 /** The two kinds of record a customer request can name. */
 export type CustomerTargetKind = 'issue' | 'project';
 
-/** Where a customer stands with the workspace, from a fixed set. */
-export type CustomerStatus = 'lead' | 'trial' | 'active' | 'paused' | 'churned';
+/**
+ * The id of one of the workspace's customer statuses. The seeded ones are
+ * `lead`, `trial`, `active`, `paused` and `churned`.
+ */
+export type CustomerStatus = string;
+
+/**
+ * One customer status or tier: a named, coloured, ordered entry a workspace
+ * admin sets up in settings, with how many customers hold it.
+ */
+export interface CustomerFieldRead {
+  id: string;
+  name: string;
+  /** A `#rrggbb` colour, or null for a neutral dot. */
+  color: string | null;
+  position: number;
+  customer_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+/** The body a customer status or tier create takes; it lands last unless a position is given. */
+export interface CustomerFieldCreate {
+  name: string;
+  color?: string | null;
+  position?: number | null;
+}
+
+/** The body a customer status or tier patch takes; a field left out is kept. */
+export type CustomerFieldUpdate = Partial<CustomerFieldCreate>;
+
+/** The workspace's customer statuses by position. */
+export interface CustomerStatusListRead {
+  statuses: CustomerFieldRead[];
+}
+
+/** The workspace's customer tiers by position. */
+export interface CustomerTierListRead {
+  tiers: CustomerFieldRead[];
+}
 
 /**
  * One customer of the workspace, with how many requests this caller can see
@@ -6035,8 +6073,13 @@ export interface CustomerRead {
   workspace_id: string;
   name: string;
   domains: string[];
+  /** The status id, kept beside `status_id` for older readers. */
   status: CustomerStatus | null;
+  status_id: string | null;
+  status_name: string | null;
+  /** The tier's name. */
   tier: string | null;
+  tier_id: string | null;
   owner_id: string | null;
   revenue: number | null;
   size: number | null;
@@ -6053,7 +6096,11 @@ export interface CustomerRead {
 export interface CustomerCreate {
   name: string;
   domains?: string[];
-  status?: CustomerStatus | null;
+  status_id?: string | null;
+  /** A status id or name, for callers that know only the name. */
+  status?: string | null;
+  tier_id?: string | null;
+  /** A tier id or name, for callers that know only the name. */
   tier?: string | null;
   owner_id?: string | null;
   revenue?: number | null;

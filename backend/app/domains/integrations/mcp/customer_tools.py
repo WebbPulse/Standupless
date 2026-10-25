@@ -3,13 +3,15 @@
 Every tool runs the same `app.common.customers` path the customer routes do, so
 the rights and the visibility of requests match HTTP exactly. A customer is
 named by its id, its exact name or one of its domains, an issue by its id or key,
-and a project by its id or a unique name.
+and a project by its id or a unique name. A customer status or tier is named by
+its id or its name, from the lists the workspace sets up in settings.
 """
 
 from __future__ import annotations
 
 from typing import Any
 
+from app.common.api.schemas.customer_fields import CustomerFieldRead
 from app.common.api.schemas.customers import (
     CustomerCreate,
     CustomerMerge,
@@ -19,6 +21,7 @@ from app.common.api.schemas.customers import (
     CustomerRequestPatch,
     CustomerRequestRead,
 )
+from app.common.customer_fields import STATUS, TIER, list_customer_fields
 from app.common.customers import (
     create_customer,
     create_request,
@@ -33,13 +36,11 @@ from app.common.customers import (
     update_customer,
     update_request,
 )
-from app.common.db.dynamo.customers import CUSTOMER_STATUSES
 from app.domains.integrations.mcp.toolkit import (
     Tool,
     ToolCall,
     issue_ref,
     nullable,
-    nullable_enum,
     object_schema,
     project_id_ref,
     string,
@@ -64,7 +65,9 @@ def _customer_json(customer: CustomerRead) -> dict[str, Any]:
         "customer_id": customer.customer_id,
         "name": customer.name,
         "domains": customer.domains,
-        "status": customer.status,
+        "status_id": customer.status_id,
+        "status": customer.status_name,
+        "tier_id": customer.tier_id,
         "tier": customer.tier,
         "owner_id": customer.owner_id,
         "revenue": customer.revenue,
@@ -74,6 +77,17 @@ def _customer_json(customer: CustomerRead) -> dict[str, Any]:
         "created_by": customer.created_by,
         "created_at": customer.created_at.isoformat(),
         "updated_at": customer.updated_at.isoformat(),
+    }
+
+
+def _field_json(row: CustomerFieldRead) -> dict[str, Any]:
+    """One customer status or tier as the tools answer it."""
+    return {
+        "id": row.id,
+        "name": row.name,
+        "color": row.color,
+        "position": row.position,
+        "customer_count": row.customer_count,
     }
 
 
@@ -125,6 +139,16 @@ def _target(call: ToolCall) -> tuple[str, str]:
 def _list_customers(call: ToolCall) -> Any:
     """Every customer of the workspace by name, with request counts."""
     return {"customers": [_customer_json(row) for row in list_customers(call.repositories, call.context)]}
+
+
+def _list_customer_statuses(call: ToolCall) -> Any:
+    """The workspace's customer statuses by position."""
+    return {"statuses": [_field_json(row) for row in list_customer_fields(call.repositories, call.context, STATUS)]}
+
+
+def _list_customer_tiers(call: ToolCall) -> Any:
+    """The workspace's customer tiers by position."""
+    return {"tiers": [_field_json(row) for row in list_customer_fields(call.repositories, call.context, TIER)]}
 
 
 def _create_customer(call: ToolCall) -> Any:
@@ -211,9 +235,11 @@ def _delete_customer_request(call: ToolCall) -> Any:
 
 
 CUSTOMER_PROPERTIES: dict[str, Any] = {
-    "status": nullable_enum(CUSTOMER_STATUSES, "Where the customer stands; null clears it"),
+    "status": nullable(
+        "Where the customer stands: a status id or name from list_customer_statuses, such as Active; null clears it"
+    ),
     "domains": string_list("Domains such as acme.com; the list replaces the current one"),
-    "tier": nullable("A short tier label such as Enterprise; null clears it"),
+    "tier": nullable("A tier id or name from list_customer_tiers, such as Enterprise; null clears it"),
     "owner_id": nullable("The workspace member who owns the account: me, id or email; null clears it"),
     "revenue": _amount("Annual revenue in whole currency units; null clears it"),
     "size": _amount("Headcount; null clears it"),
@@ -227,6 +253,22 @@ CUSTOMER_TOOLS: tuple[Tool, ...] = (
         scopes=("projects:read",),
         schema=object_schema({}),
         handler=_list_customers,
+    ),
+    Tool(
+        name="list_customer_statuses",
+        description="The customer statuses the workspace sets up, such as Lead or Active, by position, with how "
+        "many customers hold each. A customer's status is one of these.",
+        scopes=("projects:read",),
+        schema=object_schema({}),
+        handler=_list_customer_statuses,
+    ),
+    Tool(
+        name="list_customer_tiers",
+        description="The customer tiers the workspace sets up, such as Enterprise, by position, with how many "
+        "customers hold each. A customer's tier is one of these.",
+        scopes=("projects:read",),
+        schema=object_schema({}),
+        handler=_list_customer_tiers,
     ),
     Tool(
         name="create_customer",

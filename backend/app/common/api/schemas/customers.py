@@ -17,8 +17,6 @@ from app.common.change_source import ChangeSource
 
 NAME_MAX = 200
 
-TIER_MAX = 40
-
 DOMAINS_MAX = 20
 
 QUOTE_MAX = 5000
@@ -29,8 +27,8 @@ AMOUNT_MAX = 10**15
 
 CustomerTargetKind = Literal["issue", "project"]
 
-CustomerStatusField = Literal["lead", "trial", "active", "paused", "churned"]
-"""Where a customer stands: a lead, on a trial, active, paused or churned."""
+FIELD_REF_MAX = 64
+"""The longest status or tier reference a body takes, an id or a name."""
 
 DOMAIN_PATTERN = re.compile(r"^(?=.{1,253}$)([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$")
 """A bare host name such as `acme.com`, lowercase, without a scheme, port or path."""
@@ -77,13 +75,13 @@ def _check_domains(value: Optional[list[str]]) -> Optional[list[str]]:
     return list(seen)
 
 
-def _check_tier(value: Optional[str]) -> Optional[str]:
-    """Hold a tier to short text, trimmed; blank clears it."""
+def _check_ref(value: Optional[str]) -> Optional[str]:
+    """Hold a status or tier reference, an id or a name, to short text, trimmed; blank clears it."""
     if value is None:
         return None
     trimmed = value.strip()
-    if len(trimmed) > TIER_MAX:
-        raise ValueError(f"tier must be at most {TIER_MAX} characters")
+    if len(trimmed) > FIELD_REF_MAX:
+        raise ValueError(f"must be at most {FIELD_REF_MAX} characters")
     return trimmed or None
 
 
@@ -102,8 +100,14 @@ class CustomerCreate(BaseModel):
 
     name: str
     domains: list[str] = Field(default_factory=list)
-    status: Optional[CustomerStatusField] = None
-    tier: Optional[str] = None
+    status_id: Optional[str] = Field(default=None, description="The id of one of the workspace's customer statuses")
+    status: Optional[str] = Field(
+        default=None, description="A customer status by id or name, the older spelling of `status_id`"
+    )
+    tier_id: Optional[str] = Field(default=None, description="The id of one of the workspace's customer tiers")
+    tier: Optional[str] = Field(
+        default=None, description="A customer tier by id or name, the older spelling of `tier_id`"
+    )
     owner_id: Optional[str] = None
     revenue: Optional[int] = Field(default=None, ge=0, le=AMOUNT_MAX)
     size: Optional[int] = Field(default=None, ge=0, le=AMOUNT_MAX)
@@ -120,11 +124,11 @@ class CustomerCreate(BaseModel):
         """Hold the domains to distinct host names."""
         return _check_domains(value) or []
 
-    @field_validator("tier")
+    @field_validator("status_id", "status", "tier_id", "tier")
     @classmethod
-    def check_tier(cls, value: Optional[str]) -> Optional[str]:
-        """Hold the tier to short text."""
-        return _check_tier(value)
+    def check_refs(cls, value: Optional[str]) -> Optional[str]:
+        """Hold a status or tier reference to short text; blank clears it."""
+        return _check_ref(value)
 
 
 class CustomerPatch(BaseModel):
@@ -132,8 +136,14 @@ class CustomerPatch(BaseModel):
 
     name: Optional[str] = None
     domains: Optional[list[str]] = None
-    status: Optional[CustomerStatusField] = None
-    tier: Optional[str] = None
+    status_id: Optional[str] = Field(default=None, description="The id of one of the workspace's customer statuses")
+    status: Optional[str] = Field(
+        default=None, description="A customer status by id or name, the older spelling of `status_id`"
+    )
+    tier_id: Optional[str] = Field(default=None, description="The id of one of the workspace's customer tiers")
+    tier: Optional[str] = Field(
+        default=None, description="A customer tier by id or name, the older spelling of `tier_id`"
+    )
     owner_id: Optional[str] = None
     revenue: Optional[int] = Field(default=None, ge=0, le=AMOUNT_MAX)
     size: Optional[int] = Field(default=None, ge=0, le=AMOUNT_MAX)
@@ -152,11 +162,11 @@ class CustomerPatch(BaseModel):
         """Hold the domains to distinct host names; `null` clears them."""
         return _check_domains(value) if value is not None else []
 
-    @field_validator("tier")
+    @field_validator("status_id", "status", "tier_id", "tier")
     @classmethod
-    def check_tier(cls, value: Optional[str]) -> Optional[str]:
-        """Hold the tier to short text."""
-        return _check_tier(value)
+    def check_refs(cls, value: Optional[str]) -> Optional[str]:
+        """Hold a status or tier reference to short text; blank clears it."""
+        return _check_ref(value)
 
 
 class CustomerMerge(BaseModel):
@@ -176,8 +186,13 @@ class CustomerRead(BaseModel):
     workspace_id: str
     name: str
     domains: list[str] = Field(default_factory=list)
-    status: Optional[CustomerStatusField] = None
-    tier: Optional[str] = None
+    status_id: Optional[str] = Field(default=None, description="The id of the customer's status")
+    status: Optional[str] = Field(
+        default=None, description="The id of the customer's status, kept for clients that read it before `status_id`"
+    )
+    status_name: Optional[str] = Field(default=None, description="The name of the customer's status")
+    tier_id: Optional[str] = Field(default=None, description="The id of the customer's tier")
+    tier: Optional[str] = Field(default=None, description="The name of the customer's tier")
     owner_id: Optional[str] = None
     revenue: Optional[int] = None
     size: Optional[int] = None
