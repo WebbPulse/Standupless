@@ -21,6 +21,7 @@ from app.common.issue_mentions import record_issue_mentions
 from app.common.issue_rules import load_visible_issue, not_found, require_team_member, unprocessable
 from app.common.mentions import mentioned_user_ids
 from app.common.thread_resolution import reopen_on_reply
+from app.common.triage_wake import wake_on_activity
 
 
 def conflict(message: str) -> HTTPException:
@@ -80,6 +81,9 @@ def create_comment(
     A reply to a resolved thread reopens it, so new discussion is never hidden
     under a collapsed thread.
 
+    A comment from anyone but the person who snoozed the issue in triage ends the
+    snooze, so new activity brings it back to the inbox.
+
     `anchor` pins a new thread to a passage of the description. A reply belongs to
     its root's passage, so one carrying its own anchor is a 422.
     """
@@ -122,6 +126,7 @@ def create_comment(
 
     if parent is not None:
         reopen_on_reply(repositories, parent, context.user_id, source=context.source)
+    wake_on_activity(repositories, issue, context.user_id)
 
     subscriptions = repositories.subscriptions
     subscriptions.subscribe(context.workspace_id, issue_id, issue.team_id, context.user_id, "commenter")

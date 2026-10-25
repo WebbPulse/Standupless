@@ -65,6 +65,7 @@ SortField = Literal[
     "customer_important_desc",
     "customer_revenue_desc",
     "completed_desc",
+    "links_desc",
 ]
 
 ISSUE_KEY_PATTERN = re.compile(r"^([A-Za-z][A-Za-z0-9]{1,5})-(\d+)$")
@@ -162,6 +163,10 @@ class IssueCreate(BaseModel):
     `form_answers` answers a form template's fields by key: text for a text or
     select field and a boolean for a checkbox. `template_sub_issue_keys` keeps
     only the template sub-issues it names; left out, every one is created.
+    A sub-issue that leaves out `cycle_id` joins its parent's open cycle when it
+    starts in an unstarted or started status, and one that leaves out
+    `assignee_id` takes the parent's assignee when the creator is that assignee
+    or every existing sub-issue shares it. Sending either, null included, wins.
     """
 
     team_id: str = Field(min_length=1)

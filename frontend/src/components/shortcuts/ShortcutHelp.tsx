@@ -3,9 +3,10 @@
  * leaves the page usable behind it, with a search box that filters by label,
  * heading and key. It lists what the registry holds right now, so a page's
  * own shortcuts appear while that page is open and are listed first, plus the
- * few keys handled outside the registry (the palette and Escape), which are
- * fixed, and in the desktop app the tab keys its shell handles. Bindings that
- * share a heading and a label, such as J and the down arrow, share one row.
+ * few keys handled outside the registry (the palette, Escape and the editor's
+ * attach chord), which are fixed, and in the desktop app the tab keys its
+ * shell handles. Bindings that share a heading and a label, such as J and the
+ * down arrow, share one row.
  */
 
 import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
@@ -131,6 +132,24 @@ const fixedGroups = (): HelpGroup[] => {
       ],
     },
     {
+      name: 'Search',
+      local: false,
+      rows: [
+        fixedRow('fixed-search-escape', 'Clear the search, then leave search', [
+          fromKeys('escape'),
+        ]),
+      ],
+    },
+    {
+      name: 'Editor',
+      local: false,
+      rows: [
+        fixedRow('editor-attach', 'Attach a file or image', [
+          fromKeys('mod+shift+u'),
+        ]),
+      ],
+    },
+    {
       name: PANEL_GROUP,
       local: false,
       rows: [
@@ -164,7 +183,15 @@ const fixedGroups = (): HelpGroup[] => {
 };
 
 /** The headings every workspace page has; any other comes from the page in view. */
-const APP_WIDE = ['General', 'Navigation', 'Open', 'Tabs', PANEL_GROUP];
+const APP_WIDE = [
+  'General',
+  'Navigation',
+  'Open',
+  'Search',
+  'Editor',
+  'Tabs',
+  PANEL_GROUP,
+];
 
 /** The order page headings appear in; anything else follows alphabetically. */
 const PAGE_ORDER = ['Issue', 'List', 'Filters', 'Board'];

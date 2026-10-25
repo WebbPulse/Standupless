@@ -330,6 +330,21 @@ def test_delete_all_notifications(client: TestClient, repositories: Any, inbox: 
     assert TOOLS_BY_NAME["delete_all_notifications"].descriptor()["annotations"]["destructiveHint"] is True
 
 
+def test_delete_all_notifications_for_completed_issues_only(
+    client: TestClient, repositories: Any, inbox: tuple[str, str]
+) -> None:
+    """`completed_only` reaches the clear, so rows whose issue is not finished survive it."""
+    secret = mint_for(repositories, MEMBER, INBOX)
+
+    cleared = answer(tool(client, secret, "delete_all_notifications", {"completed_only": True}))
+    after = answer(tool(client, secret, "list_notifications", {}))
+
+    assert cleared["deleted"] == 0
+    assert sorted(row["notification_id"] for row in after["notifications"]) == sorted(inbox)
+    schema = TOOLS_BY_NAME["delete_all_notifications"].descriptor()["inputSchema"]["properties"]
+    assert schema["completed_only"]["type"] == "boolean"
+
+
 def test_mark_tools_leave_another_workspaces_notification_alone(
     client: TestClient, repositories: Any, inbox: tuple[str, str]
 ) -> None:

@@ -783,6 +783,7 @@ class DisplayOptionsBody(TypedDict):
             "customer_important_desc",
             "customer_revenue_desc",
             "completed_desc",
+            "links_desc",
         ]
         | None
     ]
@@ -1067,6 +1068,7 @@ class ImportRowRead(TypedDict):
 
 class InboxClearRequest(TypedDict):
     bucket: NotRequired[Literal["all", "priority", "other"]]
+    completed_only: NotRequired[bool]
     include_snoozed: NotRequired[bool]
     kinds: NotRequired[list[str]]
     read_only: NotRequired[bool]
@@ -1153,6 +1155,7 @@ class InitiativeUpdate(TypedDict):
 class InitiativeUpdateCreate(TypedDict):
     body: NotRequired[str | None]
     health: Literal["on_track", "at_risk", "off_track"]
+    hide_details: NotRequired[bool]
     template_id: NotRequired[str | None]
 
 
@@ -1523,12 +1526,27 @@ class LinearKeyRequest(TypedDict):
     api_key: str
 
 
+class LinearPreviewTeamRead(TypedDict):
+    linear_key: str
+    linear_team_id: str
+    name: str
+    new_statuses: list[str]
+    new_templates: list[str]
+    status_count: int
+    team_id: str
+    template_count: int
+
+
 class LinearTeamChoice(TypedDict):
+    create_statuses: NotRequired[bool]
+    import_templates: NotRequired[bool]
     linear_team_id: str
     team_id: str
 
 
 class LinearTeamMappingRead(TypedDict):
+    create_statuses: NotRequired[bool]
+    import_templates: NotRequired[bool]
     linear_key: str
     linear_team_id: str
     name: str
@@ -1630,6 +1648,13 @@ class MilestoneRead(TypedDict):
     target_date: NotRequired[str | None]
     updated_at: str
     workspace_id: str
+
+
+class MilestoneSnapshotRead(TypedDict):
+    completed: NotRequired[int]
+    milestone_id: str
+    name: str
+    total: NotRequired[int]
 
 
 class MilestoneTemplate(TypedDict):
@@ -2012,17 +2037,34 @@ class ProjectUpdateCommentPatch(TypedDict):
 class ProjectUpdateCreate(TypedDict):
     body: NotRequired[str | None]
     health: Literal["on_track", "at_risk", "off_track"]
+    hide_details: NotRequired[bool]
     template_id: NotRequired[str | None]
 
 
 class ProjectUpdatePatch(TypedDict):
     body: NotRequired[str | None]
     health: NotRequired[Literal["on_track", "at_risk", "off_track"] | None]
+    hide_details: NotRequired[bool | None]
 
 
 class ProjectUpdateReactionWrite(TypedDict):
     comment_id: NotRequired[str | None]
     emoji: str
+
+
+class ProjectUpdateSnapshotRead(TypedDict):
+    completed: NotRequired[int]
+    lead_id: NotRequired[str | None]
+    lead_name: NotRequired[str | None]
+    measure: NotRequired[Literal["points", "issues"]]
+    milestones: NotRequired[list[MilestoneSnapshotRead]]
+    percent: NotRequired[int]
+    status: NotRequired[Literal["backlog", "planned", "in_progress", "paused", "completed", "canceled"] | None]
+    status_id: NotRequired[str | None]
+    status_name: NotRequired[str | None]
+    target_date: NotRequired[str | None]
+    target_date_resolution: NotRequired[Literal["day", "month", "quarter", "half", "year"] | None]
+    total: NotRequired[int]
 
 
 class ProjectsDisplay(TypedDict):
@@ -2031,7 +2073,11 @@ class ProjectsDisplay(TypedDict):
     dependencies: NotRequired[Literal["show", "hide"]]
     direction: NotRequired[Literal["asc", "desc"]]
     empty: NotRequired[Literal["show", "hide"]]
-    group: NotRequired[Literal["status", "health", "priority", "initiative", "lead", "team", "none"]]
+    group: NotRequired[
+        Literal[
+            "status", "health", "priority", "initiative", "lead", "member", "team", "start_date", "target_date", "none"
+        ]
+    ]
     layout: NotRequired[Literal["list", "board", "timeline"]]
     lead_team: NotRequired[Literal["all", "lead"]]
     order: NotRequired[
@@ -2039,8 +2085,27 @@ class ProjectsDisplay(TypedDict):
             "target", "start", "name", "priority", "progress", "created", "updated", "customers", "important", "manual"
         ]
     ]
-    rows: NotRequired[Literal["status", "health", "priority", "initiative", "lead", "team", "none"]]
+    rows: NotRequired[
+        Literal[
+            "status", "health", "priority", "initiative", "lead", "member", "team", "start_date", "target_date", "none"
+        ]
+    ]
     zoom: NotRequired[Literal["week", "month", "quarter", "year"]]
+
+
+class PullRequestHitRead(TypedDict):
+    author_login: str
+    issue_keys: NotRequired[list[str]]
+    number: int
+    repository_full_name: str
+    state: Literal["open", "draft", "merged", "closed"]
+    title: str
+    updated_at: str
+    url: str
+
+
+class PullRequestSearchRead(TypedDict):
+    pull_requests: NotRequired[list[PullRequestHitRead]]
 
 
 class PullRequestSummaryEntryRead(TypedDict):
@@ -2446,6 +2511,7 @@ class ShareLinkCreate(TypedDict):
             "customer_important_desc",
             "customer_revenue_desc",
             "completed_desc",
+            "links_desc",
         ]
         | None
     ]
@@ -2551,6 +2617,7 @@ class SlaSettingsRead(TypedDict):
     low_hours: NotRequired[int | None]
     medium_hours: NotRequired[int | None]
     paused_status_ids: NotRequired[list[str]]
+    start_mode: NotRequired[Literal["on_triage_exit", "on_creation"]]
     team_id: str
     updated_at: NotRequired[str | None]
     urgent_hours: NotRequired[int | None]
@@ -2562,6 +2629,7 @@ class SlaSettingsUpdate(TypedDict):
     low_hours: NotRequired[int | None]
     medium_hours: NotRequired[int | None]
     paused_status_ids: NotRequired[list[str] | None]
+    start_mode: NotRequired[Literal["on_triage_exit", "on_creation"] | None]
     urgent_hours: NotRequired[int | None]
 
 
@@ -3360,6 +3428,7 @@ class ViewCreate(TypedDict):
             "customer_important_desc",
             "customer_revenue_desc",
             "completed_desc",
+            "links_desc",
         ]
         | None
     ]
@@ -3385,6 +3454,7 @@ class ViewCreate(TypedDict):
             "customer_important_desc",
             "customer_revenue_desc",
             "completed_desc",
+            "links_desc",
         ]
     ]
     sub_group_by: NotRequired[
@@ -3509,6 +3579,7 @@ class ViewUpdate(TypedDict):
             "customer_important_desc",
             "customer_revenue_desc",
             "completed_desc",
+            "links_desc",
         ]
         | None
     ]
@@ -3534,6 +3605,7 @@ class ViewUpdate(TypedDict):
             "customer_important_desc",
             "customer_revenue_desc",
             "completed_desc",
+            "links_desc",
         ]
         | None
     ]
@@ -4524,6 +4596,10 @@ class LabelMergeRead(TypedDict):
     views_updated: NotRequired[int]
 
 
+class LinearImportPreviewRead(TypedDict):
+    teams: list[LinearPreviewTeamRead]
+
+
 class LinearImportRequest(TypedDict):
     api_key: str
     teams: list[LinearTeamChoice]
@@ -4674,8 +4750,11 @@ class ProjectUpdateRead(TypedDict):
     created_at: str
     edited_at: NotRequired[str | None]
     health: Literal["on_track", "at_risk", "off_track"]
+    hide_details: NotRequired[bool]
+    previous_snapshot: NotRequired[ProjectUpdateSnapshotRead | None]
     project_id: str
     reactions: NotRequired[list[ReactionGroupRead]]
+    snapshot: NotRequired[ProjectUpdateSnapshotRead | None]
     source: NotRequired[Literal["web", "mcp", "cli", "api", "github", "system", "email"] | None]
     update_id: str
     updated_at: str

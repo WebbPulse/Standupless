@@ -262,7 +262,7 @@ const TimelineRow: React.FC<TimelineRowProps> = ({
   const editable = canEditProject(workspaceRole, project, teams);
   const percent = progressPercent(project);
   const lead = people.find((person) => person.user_id === project.lead_id);
-  const href = projectPath(slug, project.project_id);
+  const href = projectPath(slug, project);
   const projectTeams = teams.filter((team) =>
     project.team_ids.includes(team.id)
   );
@@ -621,11 +621,7 @@ const TimelineRow: React.FC<TimelineRowProps> = ({
           return (
             <Link
               key={mark.milestoneId}
-              to={projectMilestonePath(
-                slug,
-                project.project_id,
-                mark.milestoneId
-              )}
+              to={projectMilestonePath(slug, project, mark.milestoneId)}
               aria-label={label}
               title={`${label} · ${mark.date}`}
               data-milestone={mark.milestoneId}

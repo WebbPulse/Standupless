@@ -160,6 +160,16 @@ describe('ShortcutHelp', () => {
     expect(within(row).getByText('Esc')).toBeInTheDocument();
   });
 
+  it('lists the attach chord under Editor', () => {
+    renderHelp();
+    const row = within(screen.getByRole('region', { name: 'Editor' }))
+      .getByText('Attach a file or image')
+      .closest('li');
+    if (row === null) throw new Error('no row');
+
+    expect(within(row).getByText('U')).toBeInTheDocument();
+  });
+
   it('focuses the search on open', () => {
     renderHelp();
 

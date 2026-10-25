@@ -208,6 +208,37 @@ query Teams($first: Int!, $after: String) {
 }
 """
 
+WORKFLOW_STATES_QUERY = """
+query WorkflowStates($team: String!, $first: Int!, $after: String) {
+  team(id: $team) {
+    states(first: $first, after: $after) {
+      nodes { id name type color position createdAt }
+      pageInfo { hasNextPage endCursor }
+    }
+  }
+}
+"""
+
+TEMPLATES_QUERY = """
+query Templates($team: String!, $first: Int!, $after: String) {
+  team(id: $team) {
+    templates(first: $first, after: $after) {
+      nodes { id name type templateData createdAt }
+      pageInfo { hasNextPage endCursor }
+    }
+  }
+}
+"""
+
+ISSUE_LABELS_QUERY = """
+query IssueLabels($first: Int!, $after: String) {
+  issueLabels(first: $first, after: $after) {
+    nodes { id name color parent { id name color groupType } }
+    pageInfo { hasNextPage endCursor }
+  }
+}
+"""
+
 CYCLES_QUERY = """
 query Cycles($team: String!, $first: Int!, $after: String) {
   team(id: $team) {

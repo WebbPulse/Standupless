@@ -1403,6 +1403,56 @@ def test_the_branch_the_title_or_a_magic_word_moves_the_issue(
     assert moved.status_id == status_ids["started"]
 
 
+@pytest.mark.parametrize(
+    ("action", "merged", "state"),
+    [("opened", False, "open"), ("ready_for_review", False, "open"), ("closed", True, "closed")],
+)
+@pytest.mark.parametrize("word", ["Relates to", "Related to"])
+def test_a_related_word_links_the_issue_and_moves_nothing(
+    repositories: Any,
+    installed: str,
+    issue: Any,
+    enqueued: list[tuple[str, Any]],
+    github_env: None,
+    action: str,
+    merged: bool,
+    state: str,
+    word: str,
+) -> None:
+    """A pull request that only relates to an issue links it, and no open, ready or merge moves it."""
+    events.handle_record(
+        repositories,
+        sqs_record(
+            pull_request_event(
+                action=action,
+                merged=merged,
+                state=state,
+                title="ABC-1 Side change",
+                branch="abc-1-side",
+                body=f"{word} ABC-1",
+            )
+        ),
+    )
+
+    links = repositories.github.list_links_for_issue(WORKSPACE, issue.issue_id).items
+    assert [(link["issue_key"], link["moves_status"]) for link in links] == [("ABC-1", False)]
+    assert status_of(repositories, issue.issue_id) == issue.status_id
+
+
+def test_an_updates_word_moves_the_issue_on_open(
+    repositories: Any,
+    installed: str,
+    issue: Any,
+    status_ids: dict[str, str],
+    enqueued: list[tuple[str, Any]],
+    github_env: None,
+) -> None:
+    """`Updates` is a contributing word, so the issue starts as the pull request opens."""
+    events.handle_record(repositories, sqs_record(pull_request_event(title="A change", body="Updates ABC-1")))
+
+    assert status_of(repositories, issue.issue_id) == status_ids["started"]
+
+
 def test_a_bare_mention_edited_into_a_magic_word_moves_the_issue(
     repositories: Any,
     installed: str,
@@ -1612,6 +1662,29 @@ def merge_promotion(repositories: Any, pr_commits: PullRequestCommits, messages:
             )
         ),
     )
+
+
+@pytest.mark.parametrize("message", ["ABC-1 side change (#10)", "ABC-1 side change (#10)\n\nRelates to ABC-1"])
+def test_a_promotion_leaves_an_issue_its_shipped_pull_request_only_related_to(
+    repositories: Any,
+    installed: str,
+    issue: Any,
+    preset: dict[str, str],
+    pr_commits: PullRequestCommits,
+    enqueued: list[tuple[str, Any]],
+    github_env: None,
+    message: str,
+) -> None:
+    """A `Relates to` merge moves nothing, and the promotion naming it in a squash title moves nothing either."""
+    place(repositories, issue, preset["In Review"])
+    merge_into_staging(repositories, number=10, title="ABC-1 side change", body="Relates to ABC-1", branch="abc-1-side")
+    assert status_of(repositories, issue.issue_id) == preset["In Review"]
+
+    merge_promotion(repositories, pr_commits, [message])
+
+    assert status_of(repositories, issue.issue_id) == preset["In Review"]
+    links = repositories.github.list_links_for_issue(WORKSPACE, issue.issue_id).items
+    assert {link["pr_number"]: link["moves_status"] for link in links} == {10: False, 90: False}
 
 
 def test_a_promotion_leaves_open_an_issue_its_shipped_pull_request_only_referenced(

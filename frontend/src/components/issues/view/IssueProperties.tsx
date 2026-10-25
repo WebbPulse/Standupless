@@ -592,7 +592,7 @@ export const MetaChips: React.FC<MetaChipsProps> = ({
       {shows('project') && project !== undefined && (
         <NavChipLink
           tooltip={`Open project: ${project.name}`}
-          to={projectPath(slug, project.project_id, keyPrefix)}
+          to={projectPath(slug, project, keyPrefix)}
           wrapperClassName={card ? '' : 'hidden lg:inline-flex'}
           className={CHIP_CLASS}
         >

@@ -5321,7 +5321,8 @@
                   "customer_requests_desc",
                   "customer_important_desc",
                   "customer_revenue_desc",
-                  "completed_desc"
+                  "completed_desc",
+                  "links_desc"
                 ],
                 "type": "string"
               },
@@ -7507,7 +7508,7 @@
         "type": "object"
       },
       "InboxClearRequest": {
-        "description": "The body a bulk delete takes: which of the caller's notifications to remove.\n\n`read_only` keeps to rows already read. Without it every row goes except those\nstill snoozed, unless `include_snoozed` takes them too. `kinds` keeps to those\nnotification kinds, matching the list's filter, and `bucket` to one tab of the split inbox.",
+        "description": "The body a bulk delete takes: which of the caller's notifications to remove.\n\n`read_only` keeps to rows already read. Without it every row goes except those\nstill snoozed, unless `include_snoozed` takes them too. `completed_only` keeps to\nrows about an issue now in a completed or cancelled status, read or not. `kinds`\nkeeps to those notification kinds, matching the list's filter, and `bucket` to one\ntab of the split inbox.",
         "properties": {
           "bucket": {
             "default": "all",
@@ -7518,6 +7519,11 @@
             ],
             "title": "Bucket",
             "type": "string"
+          },
+          "completed_only": {
+            "default": false,
+            "title": "Completed Only",
+            "type": "boolean"
           },
           "include_snoozed": {
             "default": false,
@@ -8459,6 +8465,12 @@
             ],
             "title": "Health",
             "type": "string"
+          },
+          "hide_details": {
+            "default": false,
+            "description": "Hide the progress report on this update for everyone",
+            "title": "Hide Details",
+            "type": "boolean"
           },
           "template_id": {
             "anyOf": [
@@ -9603,7 +9615,7 @@
         "type": "object"
       },
       "IssueCreate": {
-        "description": "The body `POST /api/workspaces/{workspace_id}/issues` takes.\n\n`team_id` is a field rather than a path segment because issues are workspace\nscoped, which is what lets a link and a \"my issues\" read cross teams.\n`template_id` fills every field the body leaves out from a template the team\noffers, so `title` may be left out only when a template is named.\n`form_answers` answers a form template's fields by key: text for a text or\nselect field and a boolean for a checkbox. `template_sub_issue_keys` keeps\nonly the template sub-issues it names; left out, every one is created.",
+        "description": "The body `POST /api/workspaces/{workspace_id}/issues` takes.\n\n`team_id` is a field rather than a path segment because issues are workspace\nscoped, which is what lets a link and a \"my issues\" read cross teams.\n`template_id` fills every field the body leaves out from a template the team\noffers, so `title` may be left out only when a template is named.\n`form_answers` answers a form template's fields by key: text for a text or\nselect field and a boolean for a checkbox. `template_sub_issue_keys` keeps\nonly the template sub-issues it names; left out, every one is created.\nA sub-issue that leaves out `cycle_id` joins its parent's open cycle when it\nstarts in an unstarted or started status, and one that leaves out\n`assignee_id` takes the parent's assignee when the creator is that assignee\nor every existing sub-issue shares it. Sending either, null included, wins.",
         "properties": {
           "assignee_id": {
             "anyOf": [
@@ -12317,8 +12329,25 @@
         "title": "LabelUpdate",
         "type": "object"
       },
+      "LinearImportPreviewRead": {
+        "description": "What a Linear import would create in each team, computed without writing anything.",
+        "properties": {
+          "teams": {
+            "items": {
+              "$ref": "#/components/schemas/LinearPreviewTeamRead"
+            },
+            "title": "Teams",
+            "type": "array"
+          }
+        },
+        "required": [
+          "teams"
+        ],
+        "title": "LinearImportPreviewRead",
+        "type": "object"
+      },
       "LinearImportRequest": {
-        "description": "A Linear import: the key, sealed while the job runs and deleted after, and the team mapping.",
+        "description": "A Linear import or its preview: the key, sealed while the job runs and deleted after, and the team mapping.",
         "properties": {
           "api_key": {
             "description": "A Linear personal API key with read access.",
@@ -12361,9 +12390,80 @@
         "title": "LinearKeyRequest",
         "type": "object"
       },
+      "LinearPreviewTeamRead": {
+        "description": "What the optional phases of importing one Linear team would create, whether switched on or not.",
+        "properties": {
+          "linear_key": {
+            "title": "Linear Key",
+            "type": "string"
+          },
+          "linear_team_id": {
+            "title": "Linear Team Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "new_statuses": {
+            "description": "The Linear states the team has no status for, by name.",
+            "items": {
+              "type": "string"
+            },
+            "title": "New Statuses",
+            "type": "array"
+          },
+          "new_templates": {
+            "description": "The Linear issue templates the team has no template for, by name.",
+            "items": {
+              "type": "string"
+            },
+            "title": "New Templates",
+            "type": "array"
+          },
+          "status_count": {
+            "description": "How many statuses creating the missing statuses would add.",
+            "title": "Status Count",
+            "type": "integer"
+          },
+          "team_id": {
+            "title": "Team Id",
+            "type": "string"
+          },
+          "template_count": {
+            "description": "How many templates importing the templates would add.",
+            "title": "Template Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "linear_team_id",
+          "linear_key",
+          "name",
+          "team_id",
+          "new_statuses",
+          "new_templates",
+          "status_count",
+          "template_count"
+        ],
+        "title": "LinearPreviewTeamRead",
+        "type": "object"
+      },
       "LinearTeamChoice": {
         "description": "One Linear team to import and the Standupless team it goes into.",
         "properties": {
+          "create_statuses": {
+            "default": false,
+            "description": "Create a status, in the matching category, for each Linear workflow state the team has no status of the same name for, before the issues are imported.",
+            "title": "Create Statuses",
+            "type": "boolean"
+          },
+          "import_templates": {
+            "default": false,
+            "description": "Bring the Linear team's issue templates over as team templates, skipping a name the team already has.",
+            "title": "Import Templates",
+            "type": "boolean"
+          },
           "linear_team_id": {
             "maxLength": 64,
             "minLength": 1,
@@ -12404,6 +12504,18 @@
       "LinearTeamMappingRead": {
         "description": "One Linear team a Linear import reads and the Standupless team it writes into.",
         "properties": {
+          "create_statuses": {
+            "default": false,
+            "description": "Whether the import creates a status for each Linear state the team lacks.",
+            "title": "Create Statuses",
+            "type": "boolean"
+          },
+          "import_templates": {
+            "default": false,
+            "description": "Whether the import brings the team's Linear issue templates over.",
+            "title": "Import Templates",
+            "type": "boolean"
+          },
           "linear_key": {
             "title": "Linear Key",
             "type": "string"
@@ -13218,6 +13330,35 @@
           "updated_at"
         ],
         "title": "MilestoneRead",
+        "type": "object"
+      },
+      "MilestoneSnapshotRead": {
+        "description": "One milestone's progress as a project update recorded it, in the project's measure.",
+        "properties": {
+          "completed": {
+            "default": 0,
+            "title": "Completed",
+            "type": "integer"
+          },
+          "milestone_id": {
+            "title": "Milestone Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "total": {
+            "default": 0,
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "milestone_id",
+          "name"
+        ],
+        "title": "MilestoneSnapshotRead",
         "type": "object"
       },
       "MilestoneTemplate": {
@@ -16330,6 +16471,12 @@
             "title": "Health",
             "type": "string"
           },
+          "hide_details": {
+            "default": false,
+            "description": "Hide the progress report on this update for everyone",
+            "title": "Hide Details",
+            "type": "boolean"
+          },
           "template_id": {
             "anyOf": [
               {
@@ -16376,7 +16523,7 @@
         "type": "object"
       },
       "ProjectUpdatePatch": {
-        "description": "The body a project update patch takes; either field may be left out, neither cleared.",
+        "description": "The body a project update patch takes; any field may be left out, none cleared.",
         "properties": {
           "body": {
             "anyOf": [
@@ -16404,6 +16551,18 @@
               }
             ],
             "title": "Health"
+          },
+          "hide_details": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Hide or show the update's progress report",
+            "title": "Hide Details"
           }
         },
         "title": "ProjectUpdatePatch",
@@ -16436,7 +16595,7 @@
         "type": "object"
       },
       "ProjectUpdateRead": {
-        "description": "One project update as the API returns it.\n\n`can_edit` says whether this caller may edit or delete it, which is its\nauthor, a workspace admin or an admin of one of the project's teams, so a\nclient draws the menu without repeating the rule. `reactions` and\n`comment_count` summarise the update's thread so the feed draws the reaction\nbar and the replies toggle without a read per card.",
+        "description": "One project update as the API returns it.\n\n`can_edit` says whether this caller may edit or delete it, which is its\nauthor, a workspace admin or an admin of one of the project's teams, so a\nclient draws the menu without repeating the rule. `reactions` and\n`comment_count` summarise the update's thread so the feed draws the reaction\nbar and the replies toggle without a read per card.\n\n`snapshot` and `previous_snapshot` are what the progress report diffs: the\nproject when this update was posted, and when the one before it was. A null\n`snapshot` is an update posted before reports existed, which shows none,\nand a null `previous_snapshot` beside a snapshot is a first update, whose\nreport is a baseline. `hide_details` is the author's choice to hide it.",
         "properties": {
           "author_id": {
             "title": "Author Id",
@@ -16482,6 +16641,21 @@
             "title": "Health",
             "type": "string"
           },
+          "hide_details": {
+            "default": false,
+            "title": "Hide Details",
+            "type": "boolean"
+          },
+          "previous_snapshot": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProjectUpdateSnapshotRead"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "project_id": {
             "title": "Project Id",
             "type": "string"
@@ -16492,6 +16666,16 @@
             },
             "title": "Reactions",
             "type": "array"
+          },
+          "snapshot": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProjectUpdateSnapshotRead"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "source": {
             "anyOf": [
@@ -16538,6 +16722,136 @@
           "updated_at"
         ],
         "title": "ProjectUpdateRead",
+        "type": "object"
+      },
+      "ProjectUpdateSnapshotRead": {
+        "description": "Where a project stood when an update was posted, as the API returns it.\n\n`completed` and `total` are in `measure`, cancelled work left out, and\n`percent` is their whole percent.",
+        "properties": {
+          "completed": {
+            "default": 0,
+            "title": "Completed",
+            "type": "integer"
+          },
+          "lead_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lead Id"
+          },
+          "lead_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lead Name"
+          },
+          "measure": {
+            "default": "issues",
+            "enum": [
+              "points",
+              "issues"
+            ],
+            "title": "Measure",
+            "type": "string"
+          },
+          "milestones": {
+            "items": {
+              "$ref": "#/components/schemas/MilestoneSnapshotRead"
+            },
+            "title": "Milestones",
+            "type": "array"
+          },
+          "percent": {
+            "default": 0,
+            "title": "Percent",
+            "type": "integer"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "enum": [
+                  "backlog",
+                  "planned",
+                  "in_progress",
+                  "paused",
+                  "completed",
+                  "canceled"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
+          },
+          "status_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status Id"
+          },
+          "status_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status Name"
+          },
+          "target_date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Date"
+          },
+          "target_date_resolution": {
+            "anyOf": [
+              {
+                "enum": [
+                  "day",
+                  "month",
+                  "quarter",
+                  "half",
+                  "year"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Date Resolution"
+          },
+          "total": {
+            "default": 0,
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "title": "ProjectUpdateSnapshotRead",
         "type": "object"
       },
       "ProjectsDisplay": {
@@ -16594,7 +16908,10 @@
               "priority",
               "initiative",
               "lead",
+              "member",
               "team",
+              "start_date",
+              "target_date",
               "none"
             ],
             "title": "Group",
@@ -16644,7 +16961,10 @@
               "priority",
               "initiative",
               "lead",
+              "member",
               "team",
+              "start_date",
+              "target_date",
               "none"
             ],
             "title": "Rows",
@@ -16663,6 +16983,78 @@
           }
         },
         "title": "ProjectsDisplay",
+        "type": "object"
+      },
+      "PullRequestHitRead": {
+        "description": "One linked pull request matching a search, with the keys of the visible issues it links.",
+        "properties": {
+          "author_login": {
+            "title": "Author Login",
+            "type": "string"
+          },
+          "issue_keys": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Issue Keys",
+            "type": "array"
+          },
+          "number": {
+            "title": "Number",
+            "type": "integer"
+          },
+          "repository_full_name": {
+            "title": "Repository Full Name",
+            "type": "string"
+          },
+          "state": {
+            "enum": [
+              "open",
+              "draft",
+              "merged",
+              "closed"
+            ],
+            "title": "State",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "repository_full_name",
+          "number",
+          "title",
+          "url",
+          "state",
+          "author_login",
+          "updated_at"
+        ],
+        "title": "PullRequestHitRead",
+        "type": "object"
+      },
+      "PullRequestSearchRead": {
+        "description": "The linked pull requests matching a search, exact references first and then newest first, capped.",
+        "properties": {
+          "pull_requests": {
+            "items": {
+              "$ref": "#/components/schemas/PullRequestHitRead"
+            },
+            "title": "Pull Requests",
+            "type": "array"
+          }
+        },
+        "title": "PullRequestSearchRead",
         "type": "object"
       },
       "PullRequestSummaryEntryRead": {
@@ -19892,7 +20284,8 @@
                   "customer_requests_desc",
                   "customer_important_desc",
                   "customer_revenue_desc",
-                  "completed_desc"
+                  "completed_desc",
+                  "links_desc"
                 ],
                 "type": "string"
               },
@@ -20821,6 +21214,15 @@
             "title": "Paused Status Ids",
             "type": "array"
           },
+          "start_mode": {
+            "default": "on_triage_exit",
+            "enum": [
+              "on_triage_exit",
+              "on_creation"
+            ],
+            "title": "Start Mode",
+            "type": "string"
+          },
           "team_id": {
             "title": "Team Id",
             "type": "string"
@@ -20857,7 +21259,7 @@
         "type": "object"
       },
       "SlaSettingsUpdate": {
-        "description": "The body a team's SLA settings patch takes.\n\nEach `*_hours` is how long an issue of that priority may stay open before it\nbreaches, from one hour to ninety days; `null` removes that priority's rule.\n`paused_status_ids` replaces the set of open statuses whose time does not\ncount toward a breach; `null` or an empty list pauses in none.",
+        "description": "The body a team's SLA settings patch takes.\n\nEach `*_hours` is how long an issue of that priority may stay open before it\nbreaches, from one hour to ninety days; `null` removes that priority's rule.\n`paused_status_ids` replaces the set of open statuses whose time does not\ncount toward a breach; `null` or an empty list pauses in none.\n`start_mode` picks when a timer starts: `on_triage_exit` once an issue\nleaves triage, `on_creation` from when it was filed, triage included. A\nchange applies from each issue's next priority, status or triage move and\nleaves timers already running alone.",
         "properties": {
           "enabled": {
             "anyOf": [
@@ -20923,6 +21325,21 @@
               }
             ],
             "title": "Paused Status Ids"
+          },
+          "start_mode": {
+            "anyOf": [
+              {
+                "enum": [
+                  "on_triage_exit",
+                  "on_creation"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start Mode"
           },
           "urgent_hours": {
             "anyOf": [
@@ -25820,7 +26237,8 @@
                   "customer_requests_desc",
                   "customer_important_desc",
                   "customer_revenue_desc",
-                  "completed_desc"
+                  "completed_desc",
+                  "links_desc"
                 ],
                 "type": "string"
               },
@@ -25881,7 +26299,8 @@
               "customer_requests_desc",
               "customer_important_desc",
               "customer_revenue_desc",
-              "completed_desc"
+              "completed_desc",
+              "links_desc"
             ],
             "title": "Sort",
             "type": "string"
@@ -26380,7 +26799,8 @@
                   "customer_requests_desc",
                   "customer_important_desc",
                   "customer_revenue_desc",
-                  "completed_desc"
+                  "completed_desc",
+                  "links_desc"
                 ],
                 "type": "string"
               },
@@ -26472,7 +26892,8 @@
                   "customer_requests_desc",
                   "customer_important_desc",
                   "customer_revenue_desc",
-                  "completed_desc"
+                  "completed_desc",
+                  "links_desc"
                 ],
                 "type": "string"
               },
@@ -38527,6 +38948,78 @@
         ]
       }
     },
+    "/api/workspaces/{workspace_id}/github/pull-requests": {
+      "get": {
+        "description": "Linked pull requests matching `q` by `owner/repo#number`, a bare number or title words.\n\nOnly a pull request linked to an issue in a team the caller sees is\nanswered, and a query shaped like an issue key answers none.",
+        "operationId": "list_pull_requests_api_workspaces__workspace_id__github_pull_requests_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "q",
+            "required": true,
+            "schema": {
+              "maxLength": 128,
+              "minLength": 1,
+              "title": "Q",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 5,
+              "maximum": 20,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PullRequestSearchRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "List Pull Requests",
+        "tags": [
+          "integrations"
+        ]
+      }
+    },
     "/api/workspaces/{workspace_id}/github/repositories": {
       "get": {
         "description": "Every repository the installation can see, with the team it feeds.",
@@ -39440,6 +39933,65 @@
         ]
       }
     },
+    "/api/workspaces/{workspace_id}/imports/linear/preview": {
+      "post": {
+        "description": "The statuses and templates importing the chosen Linear teams would create, team by team, writing nothing.",
+        "operationId": "preview_linear_import_api_workspaces__workspace_id__imports_linear_preview_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LinearImportRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LinearImportPreviewRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Preview Linear Import",
+        "tags": [
+          "integrations"
+        ]
+      }
+    },
     "/api/workspaces/{workspace_id}/imports/linear/teams": {
       "post": {
         "description": "The Linear teams a personal API key can read, to choose from; the key is not kept.",
@@ -39993,7 +40545,7 @@
     },
     "/api/workspaces/{workspace_id}/inbox/clear": {
       "post": {
-        "description": "Delete the caller's own notifications in bulk: the read ones, or all of them.\n\nOnly the caller's own partition is read, so nothing in anyone else's inbox can\nmatch. `kinds` narrows it as the list's filter does, and a row still snoozed\ngoes only when a full clear sends `include_snoozed`.",
+        "description": "Delete the caller's own notifications in bulk: the read ones, those about finished issues, or all.\n\nOnly the caller's own partition is read, so nothing in anyone else's inbox can\nmatch. `kinds` narrows it as the list's filter does, `completed_only` keeps to\nrows whose issue is completed or cancelled, and a row still snoozed goes only\nwhen the clear sends `include_snoozed`.",
         "operationId": "clear_inbox_api_workspaces__workspace_id__inbox_clear_post",
         "parameters": [
           {
@@ -42791,7 +43343,8 @@
                 "customer_requests_desc",
                 "customer_important_desc",
                 "customer_revenue_desc",
-                "completed_desc"
+                "completed_desc",
+                "links_desc"
               ],
               "title": "Sort",
               "type": "string"

@@ -90,6 +90,7 @@ REPLACE_REMOVABLE_ATTRIBUTES: tuple[str, ...] = (
     "deleted_by",
     "in_triage",
     "snoozed_until",
+    "snoozed_by",
     "sla_started_at",
     "sla_breaches_at",
     "sla_paused_at",
@@ -299,6 +300,7 @@ class Issue(BaseModel):
     deleted_by: str | None = None
     in_triage: bool = False
     snoozed_until: datetime | None = None
+    snoozed_by: str | None = None
     sla_started_at: datetime | None = None
     sla_breaches_at: datetime | None = None
     sla_paused_at: datetime | None = None
@@ -411,6 +413,7 @@ def as_issue_item(issue: Issue) -> dict[str, Any]:
         "deleted_by",
         "in_triage",
         "snoozed_until",
+        "snoozed_by",
         "started_at",
         "completed_at",
         "cancelled_at",
@@ -1321,6 +1324,34 @@ class IssueRepository:
                 },
                 expression_values={":changed": changed_stamp(), **REVISION_STEP},
                 condition=Attr("issue_id").exists() & Attr("status_id").eq(issue.status_id),
+                return_values="NONE",
+            )
+        except ConditionFailed:
+            return False
+        return True
+
+    def wake_snoozed(self, issue: Issue) -> bool:
+        """End one waiting issue's snooze if it is still snoozed in triage, answering whether it did.
+
+        Removes only `snoozed_until` and `snoozed_by` and leaves `updated_at`
+        alone, since snoozing is arrangement, but stamps `changed_at` so synced
+        clients pick it up.
+        """
+        try:
+            self._repository.update(
+                {"workspace_id": issue.workspace_id, "issue_id": issue.issue_id},
+                update_expression="REMOVE #until, #by SET #changed = :changed, " + REVISION_BUMP,
+                expression_names={
+                    "#until": "snoozed_until",
+                    "#by": "snoozed_by",
+                    "#changed": CHANGED_AT,
+                    "#rev": REVISION,
+                },
+                expression_values={":changed": changed_stamp(), **REVISION_STEP},
+                condition=Attr("issue_id").exists()
+                & Attr("deleted_at").not_exists()
+                & Attr("in_triage").eq(True)
+                & Attr("snoozed_until").exists(),
                 return_values="NONE",
             )
         except ConditionFailed:

@@ -64,6 +64,7 @@ const markAllRead =
   vi.fn<(kinds?: string[], bucket?: string) => Promise<number>>();
 const deleteNotification = vi.fn<(id: string) => Promise<void>>();
 const clearInbox = vi.fn<(body: unknown) => Promise<number>>();
+const showToast = vi.fn<(message: string) => void>();
 const markUnread = vi.fn<(body: unknown) => Promise<number>>();
 const snoozeNotifications =
   vi.fn<
@@ -98,6 +99,17 @@ vi.mock('../../hooks/useAuth', () => ({
     checkAuthStatus: vi.fn(),
   }),
 }));
+
+vi.mock('../../lib/toast', async () => {
+  const actual =
+    await vi.importActual<typeof import('../../lib/toast')>('../../lib/toast');
+  return {
+    ...actual,
+    showToast: (message: string) => {
+      showToast(message);
+    },
+  };
+});
 
 vi.mock('../../api/views', async () => {
   const actual =
@@ -253,6 +265,7 @@ beforeEach(() => {
   markAllRead.mockReset();
   deleteNotification.mockReset();
   clearInbox.mockReset();
+  showToast.mockReset();
   markUnread.mockReset();
   snoozeNotifications.mockReset();
   useWorkspaceMock.mockReset();
@@ -419,6 +432,60 @@ describe('inbox', () => {
         read_only: false,
         include_snoozed: true,
         kinds: ['commented'],
+      });
+    });
+  });
+
+  it('deletes the rows about completed issues after a confirmation', async () => {
+    const user = userEvent.setup();
+    renderPage();
+
+    await screen.findByText('Cache the token');
+    await user.click(screen.getByRole('button', { name: 'Inbox actions' }));
+    await user.click(
+      screen.getByRole('menuitem', { name: 'Delete all for completed issues' })
+    );
+    expect(clearInbox).not.toHaveBeenCalled();
+    const dialog = await screen.findByRole('dialog', {
+      name: 'Delete all for completed issues',
+    });
+    expect(dialog).toHaveTextContent(
+      'about a completed or cancelled issue is deleted, read or not. Snoozed ones stay'
+    );
+    await user.click(within(dialog).getByRole('button', { name: 'Delete' }));
+
+    await waitFor(() => {
+      expect(clearInbox).toHaveBeenCalledWith({
+        read_only: false,
+        completed_only: true,
+      });
+    });
+    await waitFor(() => {
+      expect(showToast).toHaveBeenCalledWith('Deleted 2 notifications');
+    });
+  });
+
+  it('keeps snoozed rows out of a completed clear unless they are shown', async () => {
+    const user = userEvent.setup();
+    renderPage();
+
+    await screen.findByText('Cache the token');
+    await user.click(screen.getByRole('button', { name: 'Display' }));
+    await user.click(screen.getByRole('checkbox', { name: 'Show snoozed' }));
+    await user.click(screen.getByRole('button', { name: 'Inbox actions' }));
+    await user.click(
+      screen.getByRole('menuitem', { name: 'Delete all for completed issues' })
+    );
+    const dialog = await screen.findByRole('dialog', {
+      name: 'Delete all for completed issues',
+    });
+    await user.click(within(dialog).getByRole('button', { name: 'Delete' }));
+
+    await waitFor(() => {
+      expect(clearInbox).toHaveBeenCalledWith({
+        read_only: false,
+        completed_only: true,
+        include_snoozed: true,
       });
     });
   });

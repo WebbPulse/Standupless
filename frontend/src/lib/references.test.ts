@@ -1,18 +1,22 @@
 /**
  * The `#` reference picker's rules. Covers when typing opens the picker, which
  * queries search can answer, how a search answer becomes the picker's list,
- * what a pick writes, and which links read back as project or document chips.
+ * what a pick writes, and which links read back as project, document or pull
+ * request chips.
  */
 
 import { describe, expect, it } from 'vitest';
 import type {
   DocumentSummaryRead,
+  PullRequestHitRead,
   SearchListRead,
   SearchProjectRead,
   SearchResultRead,
 } from '../types/Api';
 import {
+  isPullRequestQuery,
   isSearchable,
+  linkedPullRequest,
   linkedReference,
   referenceHref,
   referenceItems,
@@ -54,6 +58,18 @@ const projectHit = (id: string): SearchProjectRead => ({
   updated_at: '2026-10-23T00:00:00Z',
 });
 
+/** A linked pull request hit with the given number. */
+const pullRequestHit = (number: number): PullRequestHitRead => ({
+  repository_full_name: 'acme/app',
+  number,
+  title: `Fix [${String(number)}]`,
+  url: `https://github.com/acme/app/pull/${String(number)}`,
+  state: 'draft',
+  author_login: 'octocat',
+  issue_keys: ['ENG-1'],
+  updated_at: '2026-10-23T00:00:00Z',
+});
+
 /** A document hit with the given id. */
 const documentHit = (id: string): DocumentSummaryRead =>
   ({
@@ -79,6 +95,17 @@ describe('referenceQuery', () => {
   it('stays shut for a # inside a word or after a space in the query', () => {
     expect(referenceQuery('page#anchor', 11)).toBeNull();
     expect(referenceQuery('#road map', 9)).toBeNull();
+  });
+
+  it('opens on a repository pull request reference but not a heading', () => {
+    expect(referenceQuery('see #acme/app#12', 16)).toEqual({
+      start: 4,
+      query: 'acme/app#12',
+      trigger: 'hash',
+    });
+    expect(referenceQuery('#app#', 5)?.query).toBe('app#');
+    expect(referenceQuery('##', 2)).toBeNull();
+    expect(referenceQuery('#app#x', 6)).toBeNull();
   });
 
   it('reads only up to the caret', () => {
@@ -113,6 +140,14 @@ describe('isSearchable', () => {
     expect(isSearchable('a')).toBe(false);
     expect(isSearchable('ENG-')).toBe(false);
     expect(isSearchable('a b')).toBe(false);
+  });
+
+  it('answers a pull request number however short', () => {
+    expect(isSearchable('4')).toBe(true);
+    expect(isSearchable('app#4')).toBe(true);
+    expect(isPullRequestQuery('acme/app#42')).toBe(true);
+    expect(isPullRequestQuery('ENG-12')).toBe(false);
+    expect(isPullRequestQuery('fix')).toBe(false);
   });
 });
 
@@ -154,6 +189,31 @@ describe('referenceItems', () => {
     expect(count('issue')).toBe(REFERENCE_LIMITS.issue);
     expect(count('project')).toBe(REFERENCE_LIMITS.project);
     expect(count('document')).toBe(REFERENCE_LIMITS.document);
+  });
+
+  it('lists linked pull requests last, capped, after an exact issue', () => {
+    const items = referenceItems(
+      {
+        results: [issueHit('ENG-12')],
+        documents: [documentHit('doc-1')],
+      },
+      Array.from({ length: 5 }, (_, i) => pullRequestHit(i + 1))
+    );
+
+    expect(items.map((item) => item.kind)).toEqual([
+      'issue',
+      'document',
+      'pull_request',
+      'pull_request',
+      'pull_request',
+    ]);
+    expect(items[2]).toMatchObject({
+      kind: 'pull_request',
+      id: 'acme/app#1',
+      repository: 'acme/app',
+      number: 1,
+      state: 'draft',
+    });
   });
 
   it('reads an answer with no projects or documents', () => {
@@ -200,6 +260,36 @@ describe('referenceMarkdown', () => {
   });
 });
 
+describe('pull request references', () => {
+  it('writes a pull request as a link to it on GitHub', () => {
+    const [pull] = referenceItems({}, [pullRequestHit(12)]);
+
+    expect(pull && referenceMarkdown(pull, ORIGIN, 'acme')).toBe(
+      '[Fix \\[12\\]](https://github.com/acme/app/pull/12)'
+    );
+  });
+
+  it('reads a GitHub pull request link back', () => {
+    expect(linkedPullRequest('https://github.com/acme/app/pull/12')).toEqual({
+      repository: 'acme/app',
+      number: 12,
+    });
+    expect(
+      linkedPullRequest('https://github.com/acme/app/pull/12/?w=1')
+    ).toEqual({ repository: 'acme/app', number: 12 });
+  });
+
+  it('leaves other GitHub links alone', () => {
+    expect(linkedPullRequest('https://github.com/acme/app/issues/12')).toBe(
+      null
+    );
+    expect(linkedPullRequest('https://github.com/acme/app')).toBeNull();
+    expect(
+      linkedPullRequest('https://github.example.com/acme/app/pull/12')
+    ).toBeNull();
+  });
+});
+
 describe('linkedReference', () => {
   it('reads the link a pick writes back to its target', () => {
     const href = referenceHref(ORIGIN, 'acme', {
@@ -217,6 +307,27 @@ describe('linkedReference', () => {
     expect(
       linkedReference(`${ORIGIN}/w/acme/projects/prj-1/?tab=issues`, ORIGIN)
     ).toEqual({ kind: 'project', slug: 'acme', id: 'prj-1' });
+  });
+
+  it('writes a project link readably and reads its id back out', () => {
+    const id = '01M5SCBRDDWDSDX5WJDGTCV6CQ';
+    const href = referenceHref(ORIGIN, 'acme', {
+      kind: 'project',
+      id,
+      name: 'Launch Plan',
+      icon: null,
+      color: null,
+    });
+
+    expect(href).toBe(`${ORIGIN}/w/acme/projects/launch-plan-${id}`);
+    expect(linkedReference(href, ORIGIN)).toEqual({
+      kind: 'project',
+      slug: 'acme',
+      id,
+    });
+    expect(
+      linkedReference(`${ORIGIN}/w/acme/projects/old-name-${id}`, ORIGIN)
+    ).toEqual({ kind: 'project', slug: 'acme', id });
   });
 
   it('leaves links to another origin or another page alone', () => {

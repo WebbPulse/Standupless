@@ -10,11 +10,20 @@
  *
  * An exact issue key short circuits to that issue, since typing a key is the
  * most common search and the index is not the right answer for it.
+ *
+ * Escape in the term follows Linear: the first press clears a non-empty term
+ * and keeps focus, and a press on an empty term leaves search for the page
+ * before it, or the workspace home when search was the first page opened.
  */
 
 import React, { useCallback, useDeferredValue, useMemo } from 'react';
 import { LuFileText, LuGoal, LuMessageSquare, LuSearch } from 'react-icons/lu';
-import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import {
+  Link,
+  useLocation,
+  useNavigate,
+  useSearchParams,
+} from 'react-router-dom';
 import { searchAll } from '../../api/views';
 import ProjectStatusGlyph from '../../components/planning/ProjectStatusGlyph';
 import { ErrorAlert } from '../../components/ui/alert';
@@ -38,6 +47,7 @@ import {
   initiativePath,
   issuePath,
   projectPath,
+  workspacePath,
 } from '../../lib/paths';
 import { INITIATIVE_STATUS_LABELS } from '../../lib/planningDisplay';
 import {
@@ -129,6 +139,7 @@ export const Search: React.FC = () => {
   const { workspace } = useWorkspace();
   const { statusOf: projectStatusOf } = useProjectStatuses();
   const navigate = useNavigate();
+  const location = useLocation();
   const auth = useQueryAuth();
   const [params, setParams] = useSearchParams();
 
@@ -206,6 +217,26 @@ export const Search: React.FC = () => {
     void navigate(issuePath(slug, deferred.toUpperCase()));
   }, [isKey, navigate, slug, deferred]);
 
+  /** Clears a non-empty term, or leaves search when the term is already empty. */
+  const onTermKeyDown = useCallback(
+    (event: React.KeyboardEvent<HTMLInputElement>) => {
+      if (event.key !== 'Escape' || event.nativeEvent.isComposing) return;
+      event.preventDefault();
+      event.stopPropagation();
+      if (term !== '') {
+        setParam('q', '', true);
+        return;
+      }
+      event.currentTarget.blur();
+      if (location.key === 'default') {
+        void navigate(workspacePath(slug), { replace: true });
+      } else {
+        void navigate(-1);
+      }
+    },
+    [term, setParam, location.key, navigate, slug]
+  );
+
   const results = data?.results ?? [];
   const projects = data?.projects ?? [];
   const initiatives = data?.initiatives ?? [];
@@ -281,6 +312,7 @@ export const Search: React.FC = () => {
               onChange={(event) => {
                 setParam('q', event.target.value, true);
               }}
+              onKeyDown={onTermKeyDown}
             />
           </div>
           <SelectField
@@ -455,7 +487,7 @@ export const Search: React.FC = () => {
                   {visible(projects).map((project) => (
                     <li key={project.project_id} className={ROW}>
                       <Link
-                        to={projectPath(slug, project.project_id)}
+                        to={projectPath(slug, project)}
                         data-hover="parent"
                         className={ROW_LINK}
                       >
@@ -489,7 +521,7 @@ export const Search: React.FC = () => {
                   {visible(initiatives).map((initiative) => (
                     <li key={initiative.initiative_id} className={ROW}>
                       <Link
-                        to={initiativePath(slug, initiative.initiative_id)}
+                        to={initiativePath(slug, initiative)}
                         data-hover="parent"
                         className={ROW_LINK}
                       >

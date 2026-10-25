@@ -38,6 +38,7 @@ SortField = Literal[
     "customer_important_desc",
     "customer_revenue_desc",
     "completed_desc",
+    "links_desc",
 ]
 
 ViewKindField = Literal["list", "board"]
@@ -808,12 +809,15 @@ class InboxClearRequest(BaseModel):
     """The body a bulk delete takes: which of the caller's notifications to remove.
 
     `read_only` keeps to rows already read. Without it every row goes except those
-    still snoozed, unless `include_snoozed` takes them too. `kinds` keeps to those
-    notification kinds, matching the list's filter, and `bucket` to one tab of the split inbox.
+    still snoozed, unless `include_snoozed` takes them too. `completed_only` keeps to
+    rows about an issue now in a completed or cancelled status, read or not. `kinds`
+    keeps to those notification kinds, matching the list's filter, and `bucket` to one
+    tab of the split inbox.
     """
 
     read_only: bool = False
     include_snoozed: bool = False
+    completed_only: bool = False
     kinds: list[str] = Field(default_factory=list, max_length=INBOX_CLEAR_MAX_KINDS)
     bucket: InboxBucket = "all"
 

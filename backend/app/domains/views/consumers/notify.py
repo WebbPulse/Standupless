@@ -75,6 +75,7 @@ from app.common.db.dynamo.update_threads import PROJECT_UPDATE_COMMENT
 from app.common.db.dynamo.users import User
 from app.common.issue_keys import display_key
 from app.common.issue_rules import COMPLETED_CATEGORIES
+from app.common.project_update_report import report_for_item
 from app.common.team_privacy import person_can_see_team
 from app.common.trash_stream import touches_trash
 from app.common.triage_duty import duty_notified
@@ -377,7 +378,8 @@ def handle_issue_record(repositories: Repositories, record: Mapping[str, Any]) -
     sent back, tells everyone on that team's triage duty when the team notifies.
     An issue newly matching a saved view tells each of the view's subscribers,
     naming the view in `new_value`, unless the record already earned them
-    something more specific.
+    something more specific, and only the first time that issue enters that view
+    for them.
 
     The actor is `updated_by`, or on an insert the creator. A modify without an
     `updated_by`, such as a GitHub transition, has no human actor to leave out.
@@ -458,6 +460,7 @@ def handle_issue_record(repositories: Repositories, record: Mapping[str, Any]) -
 
     changed_at = _text(new_image, "updated_at") or _text(new_image, "created_at")
     before = image_issue(old_image) if old_image else None
+    view_notices: dict[str, str] = {}
     if before is not None or not old_image:
         for entry in newly_entered(repositories, workspace_id, before, image_issue(new_image)):
             plan(
@@ -466,6 +469,8 @@ def handle_issue_record(repositories: Repositories, record: Mapping[str, Any]) -
                 f"{issue_id}#view#{entry.view.view_id}#{changed_at}",
                 new_value=entry.view.name,
             )
+            if entry.user_id in planned and planned[entry.user_id][0] == VIEW_ISSUE_ADDED:
+                view_notices.setdefault(entry.user_id, entry.view.view_id)
 
     written = 0
     for recipient_id in cap_recipients(list(planned), workspace_id=workspace_id, source=f"issue#{issue_id}"):
@@ -486,6 +491,8 @@ def handle_issue_record(repositories: Repositories, record: Mapping[str, Any]) -
                 **extra,
             )
         )
+        if kind == VIEW_ISSUE_ADDED and recipient_id in view_notices:
+            repositories.views.record_notice(workspace_id, view_notices[recipient_id], recipient_id, issue_id)
     if resolved:
         written += notify_blocker_resolved(
             repositories,
@@ -779,12 +786,14 @@ def write_project_update_notification(
     actor_display: str,
     created_at: datetime | None,
     source: str | None = None,
+    report: list[str] | None = None,
 ) -> bool:
     """Write one project update inbox row, and mail it, under the same rules an issue row follows.
 
     The recipient must still see at least one of the project's teams, and that
     team is the one the row carries, so the inbox's visibility checks read it as
-    they read an issue's team.
+    they read an issue's team. `report` is the update's progress report, which
+    the email lists under the excerpt.
     """
     if not recipient_id or recipient_id == actor_id:
         return False
@@ -820,7 +829,9 @@ def write_project_update_notification(
         return False
 
     if email:
-        hold_for_digest(repositories, row, recipient=recipient, health=health, excerpt=excerpt(body))
+        hold_for_digest(
+            repositories, row, recipient=recipient, health=health, excerpt=excerpt(body), report=list(report or [])
+        )
     if chat:
         hold_for_chat(repositories, row, health=health, excerpt=excerpt(body))
     return True
@@ -944,6 +955,7 @@ def handle_planning_record(repositories: Repositories, record: Mapping[str, Any]
     display = actor_name(repositories, actor_id)
     created_at = _stamped_at(new_image)
     audience = [user_id for user_id in dict.fromkeys([project.lead_id or "", *project.member_ids]) if user_id]
+    report = report_for_item(new_image)
     written = 0
     for recipient_id in cap_recipients(
         [user_id for user_id in audience if user_id != actor_id],
@@ -962,6 +974,7 @@ def handle_planning_record(repositories: Repositories, record: Mapping[str, Any]
                 actor_display=display,
                 created_at=created_at,
                 source=_text(new_image, "source") or None,
+                report=report,
             )
         )
     return written

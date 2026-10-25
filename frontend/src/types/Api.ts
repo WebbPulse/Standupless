@@ -85,7 +85,16 @@ export interface InitiativesDisplayPreference {
 export interface ProjectsDisplayPreference {
   layout: 'list' | 'board' | 'timeline';
   group:
-    'status' | 'health' | 'priority' | 'initiative' | 'lead' | 'team' | 'none';
+    | 'status'
+    | 'health'
+    | 'priority'
+    | 'initiative'
+    | 'lead'
+    | 'member'
+    | 'team'
+    | 'start_date'
+    | 'target_date'
+    | 'none';
   order:
     | 'target'
     | 'start'
@@ -102,7 +111,16 @@ export interface ProjectsDisplayPreference {
   direction?: 'asc' | 'desc';
   /** The grouping inside each group. */
   rows?:
-    'status' | 'health' | 'priority' | 'initiative' | 'lead' | 'team' | 'none';
+    | 'status'
+    | 'health'
+    | 'priority'
+    | 'initiative'
+    | 'lead'
+    | 'member'
+    | 'team'
+    | 'start_date'
+    | 'target_date'
+    | 'none';
   /** Whether a team page keeps only the projects that team leads. */
   lead_team?: 'all' | 'lead';
   /** Whether the board shows columns that hold no project. */
@@ -867,7 +885,8 @@ export type IssueSort =
   | 'customer_requests_desc'
   | 'customer_important_desc'
   | 'customer_revenue_desc'
-  | 'completed_desc';
+  | 'completed_desc'
+  | 'links_desc';
 
 /** The kinds of link a pair of issues may hold. */
 export type LinkType = 'blocks' | 'blocked_by' | 'relates_to' | 'duplicate_of';
@@ -2202,12 +2221,14 @@ export interface InboxReadResult {
 }
 
 /**
- * Which of the caller's rows a bulk delete removes: read rows only, or every
- * row, with snoozed rows only when asked, optionally narrowed to some kinds.
+ * Which of the caller's rows a bulk delete removes: read rows only, rows about
+ * completed or cancelled issues, or every row, with snoozed rows only when asked,
+ * optionally narrowed to some kinds.
  */
 export interface InboxClearWrite {
   read_only?: boolean;
   include_snoozed?: boolean;
+  completed_only?: boolean;
   kinds?: string[];
   bucket?: InboxBucket;
 }
@@ -2540,6 +2561,9 @@ export interface ArchiveSettingsUpdate {
  * priority, and the open statuses whose time does not count toward a breach.
  * `updated_at` is null until first saved.
  */
+/** When a team's SLA timers start: once an issue leaves triage, or from when it was created. */
+export type SlaStartMode = 'on_triage_exit' | 'on_creation';
+
 export interface SlaSettingsRead {
   team_id: string;
   enabled: boolean;
@@ -2549,12 +2573,15 @@ export interface SlaSettingsRead {
   low_hours: number | null;
   /** Open statuses that pause the timer. Optional so an older answer reads as none. */
   paused_status_ids?: string[];
+  /** When timers start. Optional so an older answer reads as on_triage_exit. */
+  start_mode?: SlaStartMode;
   updated_at: string | null;
 }
 
 /**
  * The editable fields of a team's SLA rules. Hours are whole, 1 to 2160.
  * `paused_status_ids` replaces the paused set, at most 50 open statuses.
+ * `start_mode` applies from each issue's next move, leaving running timers alone.
  */
 export interface SlaSettingsUpdate {
   enabled?: boolean;
@@ -2563,6 +2590,7 @@ export interface SlaSettingsUpdate {
   medium_hours?: number | null;
   low_hours?: number | null;
   paused_status_ids?: string[] | null;
+  start_mode?: SlaStartMode;
 }
 
 /** What triage duty does as an issue enters the inbox: tell everyone on duty, or assign one of them. */
@@ -3120,6 +3148,39 @@ export interface ProjectUpdateRead extends StatusUpdateRead {
   project_id: string;
   reactions?: ReactionGroup[];
   comment_count?: number;
+  /** Where the project stood when the update was posted; absent on updates from before snapshots. */
+  snapshot?: ProjectUpdateSnapshot | null;
+  /** The snapshot the update before this one recorded, or null for a first update. */
+  previous_snapshot?: ProjectUpdateSnapshot | null;
+  /** Whether the author hid the progress report for everyone. */
+  hide_details?: boolean;
+}
+
+/** One milestone's progress when a project update was posted. */
+export interface MilestoneSnapshot {
+  milestone_id: string;
+  name: string;
+  completed: number;
+  total: number;
+}
+
+/**
+ * Where a project stood when an update was posted. `total` is the scope with
+ * cancelled work left out, and `percent` is a whole number.
+ */
+export interface ProjectUpdateSnapshot {
+  measure: 'points' | 'issues';
+  completed: number;
+  total: number;
+  percent: number;
+  target_date: string | null;
+  target_date_resolution: DateResolution | null;
+  lead_id: string | null;
+  lead_name: string | null;
+  status: ProjectStatus | null;
+  status_id: string | null;
+  status_name: string | null;
+  milestones: MilestoneSnapshot[];
 }
 
 /**
@@ -3204,12 +3265,16 @@ export interface ProjectActivityListRead {
 export interface ProjectUpdateCreate {
   body: string;
   health: ProjectHealth;
+  /** Hides the progress report for everyone; project updates only. */
+  hide_details?: boolean;
 }
 
 /** The editable fields of a project update. */
 export interface ProjectUpdateEdit {
   body?: string;
   health?: ProjectHealth;
+  /** Hides or shows the progress report; project updates only. */
+  hide_details?: boolean;
 }
 
 /** The paging a project's update list reads. */
@@ -3647,6 +3712,27 @@ export interface GithubIssueLinkRead {
   stack?: PullRequestStackRead | null;
   linked_at: string;
   updated_at: string;
+}
+
+/**
+ * One pull request a linked issue the caller can see points at, as the `#`
+ * reference picker and a pull request chip read it. `issue_keys` names only
+ * the linked issues the caller can see.
+ */
+export interface PullRequestHitRead {
+  repository_full_name: string;
+  number: number;
+  title: string;
+  url: string;
+  state: 'open' | 'draft' | 'merged' | 'closed';
+  author_login: string;
+  issue_keys: string[];
+  updated_at: string;
+}
+
+/** The pull requests matching a picker query, exact references first. */
+export interface PullRequestSearchRead {
+  pull_requests: PullRequestHitRead[];
 }
 
 /** Which way a team's issues sync with its linked repository. */
@@ -5044,7 +5130,9 @@ export type LinearImportCount =
   | 'initiatives'
   | 'sub_issues'
   | 'relations'
-  | 'project_relations';
+  | 'project_relations'
+  | 'statuses'
+  | 'templates';
 
 /** The tallies a GitHub import keeps, by name. */
 export type GitHubImportCount =
@@ -5106,6 +5194,10 @@ export interface LinearTeamMappingRead {
   linear_key: string;
   name: string;
   team_id: string;
+  /** Whether the import creates a status for each Linear state the team lacks. */
+  create_statuses?: boolean;
+  /** Whether the import brings the team's Linear issue templates over. */
+  import_templates?: boolean;
 }
 
 /** One team of the tool an API import reads, such as a Shortcut team, and the Standupless team it writes into. */
@@ -5185,12 +5277,33 @@ export interface LinearTeamListRead {
 export interface LinearTeamChoice {
   linear_team_id: string;
   team_id: string;
+  /** Create a status for each Linear workflow state the team has no status of the same name for. */
+  create_statuses?: boolean;
+  /** Bring the Linear team's issue templates over, skipping names the team already has. */
+  import_templates?: boolean;
 }
 
-/** The body a Linear import starts with. The key is used for the job only. */
+/** The body a Linear import or its preview starts with. The key is used for the job only. */
 export interface LinearImportRequest {
   api_key: string;
   teams: LinearTeamChoice[];
+}
+
+/** What the optional phases of importing one Linear team would create. */
+export interface LinearPreviewTeamRead {
+  linear_team_id: string;
+  linear_key: string;
+  name: string;
+  team_id: string;
+  new_statuses: string[];
+  new_templates: string[];
+  status_count: number;
+  template_count: number;
+}
+
+/** What a Linear import would create in each team, computed without writing anything. */
+export interface LinearImportPreviewRead {
+  teams: LinearPreviewTeamRead[];
 }
 
 /** One team a Shortcut API token can read. */

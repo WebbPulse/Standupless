@@ -266,3 +266,34 @@ def test_an_update_records_the_client_it_came_through(client: TestClient, worksp
 
     assert by_browser["source"] == "web"
     assert by_key["source"] == "api"
+
+
+def test_an_update_stores_a_snapshot_and_the_one_before_it(client: TestClient, workspace: str) -> None:
+    """The first update is a baseline with no earlier snapshot; the next carries the first's snapshot."""
+    sign_in(client, MEMBER)
+    project_id = seed_project(client, workspace, target_date="2026-12-01")["project_id"]
+
+    first = _post(client, workspace, project_id)
+    assert first["snapshot"]["target_date"] == "2026-12-01"
+    assert first["snapshot"]["completed"] == 0
+    assert first["snapshot"]["percent"] == 0
+    assert first["previous_snapshot"] is None
+    assert first["hide_details"] is False
+
+    client.patch(f"/api/workspaces/{workspace}/projects/{project_id}", json={"target_date": "2027-01-15"})
+    second = _post(client, workspace, project_id)
+    assert second["snapshot"]["target_date"] == "2027-01-15"
+    assert second["previous_snapshot"] == first["snapshot"]
+
+
+def test_hide_details_is_saved_on_post_and_toggles_without_marking_edited(client: TestClient, workspace: str) -> None:
+    """Hiding the report is a display choice, so it never stamps the update as edited."""
+    sign_in(client, MEMBER)
+    project_id = seed_project(client, workspace)["project_id"]
+    update = _post(client, workspace, project_id, hide_details=True)
+    assert update["hide_details"] is True
+
+    response = client.patch(_path(workspace, project_id, update["update_id"]), json={"hide_details": False})
+    assert response.status_code == 200, response.text
+    assert response.json()["hide_details"] is False
+    assert response.json()["edited_at"] is None

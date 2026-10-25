@@ -47,6 +47,7 @@ from app.common.cycle_schedule import RELATIVE_CYCLES, relative_cycle
 from app.common.cycle_writes import create_cycle, delete_cycle, list_cycles, update_cycle
 from app.common.date_resolution import DATE_RESOLUTIONS, date_label
 from app.common.db.dynamo.issues import Issue
+from app.common.db.dynamo.planning import ProjectUpdateSnapshot
 from app.common.issue_conversion import convert_to_project
 from app.common.issue_keys import current
 from app.common.issue_writes import bulk_update_issues
@@ -63,6 +64,7 @@ from app.common.project_activity import activity_page
 from app.common.project_cadence import INTERVAL_OPTIONS, workspace_interval
 from app.common.project_link_writes import create_link, delete_link, project_links, update_link
 from app.common.project_relations import create_relation, delete_relation, fill_one, list_relations
+from app.common.project_update_report import report_lines
 from app.common.project_updates import (
     create_project_update,
     delete_project_update,
@@ -76,6 +78,7 @@ from app.common.project_writes import (
     set_project_archived,
     update_project,
 )
+from app.common.readable_ids import project_web_url
 from app.domains.integrations.mcp.project_label_tools import project_label_ids
 from app.domains.integrations.mcp.project_status_tools import (
     STATUS_HELP,
@@ -325,7 +328,7 @@ def _milestone_json(milestone: MilestoneRead) -> dict[str, Any]:
 
 
 def _project_update_json(update: ProjectUpdateRead) -> dict[str, Any]:
-    """One project update as the tools answer it, with whether the caller may change it and its thread summary."""
+    """One project update as the tools answer it, with whether the caller may change it, its thread and report."""
     return {
         "update_id": update.update_id,
         "project_id": update.project_id,
@@ -338,7 +341,20 @@ def _project_update_json(update: ProjectUpdateRead) -> dict[str, Any]:
         "can_edit": update.can_edit,
         "comment_count": update.comment_count,
         "reactions": [group.model_dump(mode="json") for group in update.reactions],
+        "hide_details": update.hide_details,
+        "report": _update_report(update),
     }
+
+
+def _update_report(update: ProjectUpdateRead) -> list[str]:
+    """The update's progress report as plain lines, empty when it has none or its author hid it."""
+    if update.hide_details or update.snapshot is None:
+        return []
+    previous = update.previous_snapshot
+    return report_lines(
+        ProjectUpdateSnapshot.model_validate(update.snapshot.model_dump()),
+        ProjectUpdateSnapshot.model_validate(previous.model_dump()) if previous is not None else None,
+    )
 
 
 def _list_cycles(call: ToolCall) -> Any:
@@ -542,6 +558,9 @@ def _get_project(call: ToolCall) -> Any:
         call.repositories, call.context, ProjectRead.from_row(project, visible, default_interval_days=default_days)
     )
     body = _project_json(read, status_names(call))
+    workspace = call.repositories.workspaces.get(call.context.workspace_id)
+    if workspace is not None:
+        body["web_url"] = project_web_url(workspace.slug, project.project_id, project.name)
     milestones = call.repositories.planning.list_milestones(call.context.workspace_id, project.project_id)
     body["milestones"] = [_milestone_json(MilestoneRead.from_row(row)) for row in milestones]
     body["links"] = [
@@ -834,7 +853,11 @@ def _list_project_activity(call: ToolCall) -> Any:
 def _create_project_update(call: ToolCall) -> Any:
     """Post an update on a project the caller may edit, setting the project's health, from a template if named."""
     project_id = _project_id(call, call.require("project_id"))
-    fields = {"body": call.optional("body"), "template_id": call.optional("template_id")}
+    fields = {
+        "body": call.optional("body"),
+        "template_id": call.optional("template_id"),
+        "hide_details": call.optional("hide_details"),
+    }
     payload = ProjectUpdateCreate.model_validate(
         {"health": call.require("health"), **{name: value for name, value in fields.items() if value is not None}}
     )
@@ -845,7 +868,7 @@ def _update_project_update(call: ToolCall) -> Any:
     """Edit an update's body or health as its author or an admin, through the route's own path."""
     project_id = _project_id(call, call.require("project_id"))
     payload: dict[str, Any] = {}
-    for name in ("body", "health"):
+    for name in ("body", "health", "hide_details"):
         if call.optional(name) is not None:
             payload[name] = call.arguments[name]
     updated = update_project_update(
@@ -1370,7 +1393,8 @@ PLANNING_TOOLS: tuple[Tool, ...] = (
         description=(
             "Post a status update on a project, in Markdown, with its health. "
             "Posting sets the project's health and notifies its lead and members. "
-            "Give template_id instead of body to post a document template's body."
+            "Give template_id instead of body to post a document template's body. "
+            "The update records a report of what changed since the last one."
         ),
         scopes=("projects:write",),
         schema=object_schema(
@@ -1381,6 +1405,7 @@ PLANNING_TOOLS: tuple[Tool, ...] = (
                 "template_id": string(
                     "A document template whose body the update takes when body is left out: id or name"
                 ),
+                "hide_details": _boolean("true hides the progress report the update carries"),
             },
             required=("project_id", "health"),
         ),
@@ -1399,6 +1424,7 @@ PLANNING_TOOLS: tuple[Tool, ...] = (
                 "update_id": string("The update"),
                 "body": string("The update, in Markdown"),
                 "health": enum(PROJECT_HEALTHS, "How the project stands"),
+                "hide_details": _boolean("true hides the update's progress report, false shows it"),
             },
             required=("project_id", "update_id"),
         ),

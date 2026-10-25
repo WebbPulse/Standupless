@@ -43,6 +43,7 @@ from app.common.planning_rules import (
     team_role,
     unprocessable,
 )
+from app.common.project_update_report import take_snapshot
 from app.common.project_update_threads import summarise_updates
 
 
@@ -113,10 +114,15 @@ def list_project_updates(
 def create_project_update(
     repositories: Repositories, context: AuthzContext, project_id: str, payload: ProjectUpdateCreate
 ) -> ProjectUpdateRead:
-    """Post an update on a project the caller may edit, from a document template when one is named."""
+    """Post an update on a project the caller may edit, from a document template when one is named.
+
+    The update records where the project stands now beside the snapshot the
+    update before it recorded, which is what its progress report diffs.
+    """
     project, teams = load_readable_project(repositories, context, project_id)
     require_project_editor(repositories, context, teams)
     body = document_templates.fill_update_body(repositories, context, teams, payload.body, payload.template_id)
+    previous = repositories.planning.latest_project_update(context.workspace_id, project.project_id)
     update_id = new_planning_id()
     update = ProjectUpdateRow(
         workspace_id=context.workspace_id,
@@ -127,6 +133,9 @@ def create_project_update(
         health=payload.health,
         author_id=context.user_id,
         source=context.source,
+        snapshot=take_snapshot(repositories, project),
+        previous_snapshot=previous.snapshot if previous is not None else None,
+        hide_details=payload.hide_details,
     )
     try:
         created = repositories.planning.create_project_update(update)
@@ -168,16 +177,18 @@ def update_project_update(
     update_id: str,
     payload: ProjectUpdatePatch,
 ) -> ProjectUpdateRead:
-    """Edit an update's body or health; a health change on the newest one moves the project."""
+    """Edit an update's body, health or report visibility; a health change on the newest one moves the project."""
     _, teams, existing = _load_editable(repositories, context, project_id, update_id)
     fields: dict[str, Any] = payload.model_dump(exclude_unset=True)
-    for name in ("body", "health"):
+    for name in ("body", "health", "hide_details"):
         if name in fields and fields[name] is None:
             raise unprocessable(f"{name} must not be null")
     if not fields:
         return summarise_updates(repositories, context, [_read(repositories, context, teams, existing)])[0]
     now = utc_now()
-    edited = existing.model_copy(update={**fields, "updated_at": now, "edited_at": now})
+    rewritten = bool(fields.keys() - {"hide_details"})
+    stamps = {"updated_at": now, "edited_at": now} if rewritten else {"updated_at": now}
+    edited = existing.model_copy(update={**fields, **stamps})
     try:
         stored = repositories.planning.replace_project_update(edited)
     except ConditionFailed as exc:
@@ -186,9 +197,10 @@ def update_project_update(
         repositories.planning.record_project_health(
             context.workspace_id, stored.project_id, health=stored.health, last_update_at=stored.created_at
         )
-    pulse.revise_update(
-        repositories, context.workspace_id, stored.update_id, body=stored.body, health=stored.health, edited_at=now
-    )
+    if rewritten:
+        pulse.revise_update(
+            repositories, context.workspace_id, stored.update_id, body=stored.body, health=stored.health, edited_at=now
+        )
     return summarise_updates(repositories, context, [_read(repositories, context, teams, stored)])[0]
 
 

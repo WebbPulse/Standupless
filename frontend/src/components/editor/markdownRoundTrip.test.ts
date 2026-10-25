@@ -66,6 +66,10 @@ const EXACT: [string, string][] = [
     'links, bare URLs and mentions',
     'See [docs](https://example.com) and https://bare.example.com and @alice-b.',
   ],
+  [
+    'a pull request reference link',
+    'Shipped in [Fix login redirect](https://github.com/acme/app/pull/12) today.',
+  ],
   ['a rule', 'a\n\n---\n\nb'],
   ['an unsafe link left as text', '[x](javascript:alert(1))'],
   [

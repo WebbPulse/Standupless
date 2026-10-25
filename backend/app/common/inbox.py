@@ -32,7 +32,7 @@ from app.common.db.dynamo.base import utc_now
 from app.common.db.dynamo.inbox import SNOOZE_MAX, Notification, NotificationKind
 from app.common.db.dynamo.users import DEFAULT_PRIORITY_KINDS
 from app.common.issue_keys import display_key
-from app.common.issue_rules import not_found, unprocessable
+from app.common.issue_rules import COMPLETED_CATEGORIES, not_found, status_categories, unprocessable
 
 SNOOZE_MIN = timedelta(minutes=1)
 INBOX_KINDS: tuple[str, ...] = (
@@ -214,10 +214,12 @@ def snooze(repositories: Repositories, context: AuthzContext, payload: InboxSnoo
 
 
 def clear_notifications(repositories: Repositories, context: AuthzContext, payload: InboxClearRequest) -> int:
-    """Delete the caller's own notifications in bulk, the read ones or all, answering how many went.
+    """Delete the caller's own notifications in bulk, the read ones, the finished ones or all.
 
     `kinds` and `bucket` narrow it the way the list's filters do, and a snoozed
-    row is only taken by a full clear that asks for snoozed rows too.
+    row is only taken by a clear that asks for snoozed rows too. `completed_only`
+    keeps to rows whose issue is now completed or cancelled, so rows naming no
+    issue, or one since deleted, stay.
     """
     unknown = sorted(set(payload.kinds) - set(INBOX_KINDS))
     if unknown:
@@ -231,7 +233,28 @@ def clear_notifications(repositories: Repositories, context: AuthzContext, paylo
         read_only=payload.read_only,
         include_snoozed=payload.include_snoozed,
         kinds=narrowed,
+        issue_filter=(lambda ids: finished_issue_ids(repositories, context.workspace_id, ids))
+        if payload.completed_only
+        else None,
     )
+
+
+def finished_issue_ids(repositories: Repositories, workspace_id: str, issue_ids: set[str]) -> set[str]:
+    """The named issues whose status sits in a completed or cancelled category.
+
+    One batch read for the issues and one status read per team they span, so the
+    cost follows the teams involved rather than the rows being cleared.
+    """
+    issues = repositories.issues.get_many(workspace_id, sorted(issue_ids))
+    categories = {
+        team_id: status_categories(repositories, workspace_id, team_id)
+        for team_id in {issue.team_id for issue in issues.values()}
+    }
+    return {
+        issue_id
+        for issue_id, issue in issues.items()
+        if categories[issue.team_id].get(issue.status_id) in COMPLETED_CATEGORIES
+    }
 
 
 def delete_notification(repositories: Repositories, context: AuthzContext, notification_id: str) -> None:

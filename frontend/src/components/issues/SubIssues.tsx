@@ -17,7 +17,9 @@
  * with status, priority and assignee pickers; Ctrl or Cmd+Shift+Enter keeps
  * the picked values for the next title, and pasting several lines files one
  * child per line once confirmed. Children inherit the parent's team, priority
- * and project, as in Linear.
+ * and project, as in Linear, and the row starts on the parent's assignee when
+ * the person holds the parent or every loaded sibling shares it. The server
+ * decides the cycle from the status a child starts in.
  */
 
 import React, { useMemo, useRef, useState } from 'react';
@@ -49,6 +51,7 @@ import {
 } from '../../lib/subIssues';
 import {
   createSubIssues,
+  inheritedAssignee,
   subIssueBody,
   type ResolvedSubIssueParent,
   type SubIssueExtras,
@@ -83,10 +86,10 @@ export interface SubIssuesProps {
   slug: string;
   /**
    * The issue the rows hang off. A new child is filed in its team and inherits
-   * its priority and project when given.
+   * its priority, project and, by Linear's rule, assignee when given.
    */
   parent: Pick<IssueRead, 'id' | 'team_id'> &
-    Partial<Pick<IssueRead, 'key' | 'priority' | 'project_id'>>;
+    Partial<Pick<IssueRead, 'key' | 'priority' | 'project_id' | 'assignee_id'>>;
   rows: IssueRead[];
   isLoading: boolean;
   error: unknown;
@@ -125,22 +128,36 @@ const shownProgress = (
   return { total: rows.length, completed };
 };
 
-/** The fields the inline row sets on each child it files. */
+/**
+ * The fields the inline row sets on each child it files. An undefined
+ * assignee is one the person has not touched, so it follows the inherited one.
+ */
 interface RowFields {
   statusId: string | null;
   priority: IssuePriority;
-  assigneeId: string | null;
+  assigneeId: string | null | undefined;
 }
 
-/** The fields as create extras, the priority only when it differs. */
+/**
+ * The fields as create extras, the priority only when it differs. A picked
+ * assignee, none included, is always sent; an untouched one sends the
+ * inherited assignee when there is one and otherwise leaves it to the server.
+ */
 const rowExtras = (
   fields: RowFields,
-  inherited: IssuePriority
-): SubIssueExtras => ({
-  ...(fields.statusId === null ? {} : { status_id: fields.statusId }),
-  ...(fields.priority === inherited ? {} : { priority: fields.priority }),
-  ...(fields.assigneeId === null ? {} : { assignee_id: fields.assigneeId }),
-});
+  inherited: IssuePriority,
+  inheritedAssigneeId: string | null
+): SubIssueExtras => {
+  const assigneeId =
+    fields.assigneeId === undefined ? inheritedAssigneeId : fields.assigneeId;
+  return {
+    ...(fields.statusId === null ? {} : { status_id: fields.statusId }),
+    ...(fields.priority === inherited ? {} : { priority: fields.priority }),
+    ...(fields.assigneeId === undefined && assigneeId === null
+      ? {}
+      : { assignee_id: assigneeId }),
+  };
+};
 
 /** Asks before pasted lines become that many sub-issues, listing them. */
 const ConfirmPastedTitles: React.FC<{
@@ -200,6 +217,7 @@ const AddSubIssueRow: React.FC<{
   people: Assignable[];
   currentUserId?: string;
   inheritedPriority: IssuePriority;
+  inheritedAssigneeId: string | null;
   onCreate: (title: string, extras: SubIssueExtras) => Promise<boolean>;
   onCreateMany: (
     titles: readonly string[],
@@ -212,6 +230,7 @@ const AddSubIssueRow: React.FC<{
   people,
   currentUserId,
   inheritedPriority,
+  inheritedAssigneeId,
   onCreate,
   onCreateMany,
   onDone,
@@ -219,7 +238,7 @@ const AddSubIssueRow: React.FC<{
   const fresh: RowFields = {
     statusId: null,
     priority: inheritedPriority,
-    assigneeId: null,
+    assigneeId: undefined,
   };
   const [title, setTitle] = useState('');
   const [fields, setFields] = useState<RowFields>(fresh);
@@ -229,7 +248,8 @@ const AddSubIssueRow: React.FC<{
   const dirty =
     fields.statusId !== null ||
     fields.priority !== inheritedPriority ||
-    fields.assigneeId !== null;
+    (fields.assigneeId !== undefined &&
+      fields.assigneeId !== inheritedAssigneeId);
   const submit = (keep: boolean): void => {
     const trimmed = title.trim();
     if (trimmed === '') return;
@@ -238,7 +258,7 @@ const AddSubIssueRow: React.FC<{
     if (!keep) setFields(fresh);
     void onCreate(
       trimmed.slice(0, TITLE_MAX),
-      rowExtras(held, inheritedPriority)
+      rowExtras(held, inheritedPriority, inheritedAssigneeId)
     ).then((created) => {
       if (created) return;
       setTitle((typed) => (typed === '' ? trimmed : typed));
@@ -327,7 +347,11 @@ const AddSubIssueRow: React.FC<{
           variant="icon"
           align="end"
           people={people}
-          value={fields.assigneeId}
+          value={
+            fields.assigneeId === undefined
+              ? inheritedAssigneeId
+              : fields.assigneeId
+          }
           onChange={(assigneeId) => {
             set({ assigneeId });
           }}
@@ -343,7 +367,10 @@ const AddSubIssueRow: React.FC<{
             inputRef.current?.focus();
           }}
           onConfirm={() =>
-            onCreateMany(pasted, rowExtras(fields, inheritedPriority))
+            onCreateMany(
+              pasted,
+              rowExtras(fields, inheritedPriority, inheritedAssigneeId)
+            )
           }
         />
       )}
@@ -591,7 +618,15 @@ export const SubIssues: React.FC<SubIssuesProps> = ({
     teamId: parent.team_id,
     priority: parent.priority ?? 'none',
     projectId: parent.project_id ?? null,
+    assigneeId: parent.assignee_id ?? null,
   };
+  const rowAssigneeId = inheritedAssignee(
+    childParent.assigneeId ?? null,
+    currentUserId,
+    isLoading || shown.length < progress.total
+      ? undefined
+      : shown.map((row) => row.assignee_id)
+  );
 
   const addChild = async (
     title: string,
@@ -824,6 +859,7 @@ export const SubIssues: React.FC<SubIssuesProps> = ({
           people={people}
           {...(currentUserId === undefined ? {} : { currentUserId })}
           inheritedPriority={childParent.priority}
+          inheritedAssigneeId={rowAssigneeId}
           onCreate={addChild}
           onCreateMany={addChildren}
           onDone={() => {

@@ -22,12 +22,7 @@ import {
   LuTrash2,
   LuX,
 } from 'react-icons/lu';
-import {
-  Link,
-  useNavigate,
-  useParams,
-  useSearchParams,
-} from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   addInitiativeProject,
   deleteInitiative,
@@ -80,6 +75,10 @@ import { errorMessage } from '../../lib/errors';
 import { descendantIds, parentCandidates } from '../../lib/initiativeTree';
 import { useOptimisticRecord } from '../../lib/optimistic';
 import { initiativePath, initiativesPath, projectPath } from '../../lib/paths';
+import {
+  useReadableAddress,
+  useRouteEntityId,
+} from '../../hooks/useReadableAddress';
 import {
   progressMeasureOf,
   progressOf,
@@ -278,7 +277,7 @@ const RollupPanel: React.FC<RollupPanelProps> = ({
 
 /** One initiative's overview, projects and updates. */
 export const InitiativeDetail: React.FC = () => {
-  const { id } = useParams<{ id: string }>();
+  const initiativeId = useRouteEntityId();
   const [params, setParams] = useSearchParams();
   const { workspace } = useWorkspace();
   const { user } = useAuth();
@@ -287,7 +286,6 @@ export const InitiativeDetail: React.FC = () => {
   const navigate = useNavigate();
   const { teams, workspaceId, isLoading: isResolving } = useTeam(undefined);
   const { statusOf } = useProjectStatuses();
-  const initiativeId = id ?? '';
   const tab = tabFrom(params.get('tab'));
   const isMember = workspace !== null && workspace.role !== 'guest';
   const [composing, setComposing] = useState(false);
@@ -315,6 +313,8 @@ export const InitiativeDetail: React.FC = () => {
     queryKey: detailKey,
     auth,
   });
+
+  useReadableAddress(initiativeId, server?.name);
 
   const { value: initiative, update } = useOptimisticRecord<
     InitiativeRead,
@@ -468,7 +468,7 @@ export const InitiativeDetail: React.FC = () => {
       {ancestors.map((ancestor) => (
         <React.Fragment key={ancestor.initiative_id}>
           <Link
-            to={initiativePath(slug, ancestor.initiative_id)}
+            to={initiativePath(slug, ancestor)}
             className="max-w-40 truncate rounded-xs hover:text-text focus-visible:ring-1 focus-visible:ring-accent focus-visible:outline-none"
           >
             {ancestor.name}
@@ -953,7 +953,7 @@ export const InitiativeDetail: React.FC = () => {
                             className="h-3.5 w-3.5 shrink-0 text-text-muted"
                           />
                           <Link
-                            to={initiativePath(slug, child.initiative_id)}
+                            to={initiativePath(slug, child)}
                             className="min-w-0 flex-1 truncate font-medium text-text hover:underline focus-visible:ring-1 focus-visible:ring-accent focus-visible:outline-none"
                           >
                             {child.name}
@@ -1019,7 +1019,7 @@ export const InitiativeDetail: React.FC = () => {
                             color={project.color}
                           />
                           <Link
-                            to={projectPath(slug, project.project_id)}
+                            to={projectPath(slug, project)}
                             className="min-w-0 flex-1 truncate font-medium text-text hover:underline focus-visible:ring-1 focus-visible:ring-accent focus-visible:outline-none"
                           >
                             {project.name}
@@ -1074,7 +1074,7 @@ export const InitiativeDetail: React.FC = () => {
                             color={project.color}
                           />
                           <Link
-                            to={projectPath(slug, project.project_id)}
+                            to={projectPath(slug, project)}
                             className="min-w-0 truncate font-medium text-text hover:underline focus-visible:ring-1 focus-visible:ring-accent focus-visible:outline-none"
                           >
                             {project.name}

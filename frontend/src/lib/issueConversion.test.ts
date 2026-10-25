@@ -1,17 +1,21 @@
 /**
- * The shared pieces of Duplicate issue and Convert to project: the duplicate
- * call with its notices, where each result opens, and what the conversion's
+ * The shared pieces of Duplicate issue, Duplicate as draft and Convert to
+ * project: the duplicate call with its notices, the create dialog options a
+ * draft copy opens on and the fresh read behind them, where each result opens, and what the conversion's
  * confirmation says it will do for an issue with none, one or several
  * sub-issues.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { CreateIssueOptions } from '../hooks/useCreateIssue';
 import type { IssueConversionRead, IssueRead } from '../types/Api';
 import {
   conversionSummary,
   convertedPath,
   duplicateAsks,
+  duplicateDraftOptions,
   duplicatePath,
+  openDuplicateDraft,
   runDuplicate,
 } from './issueConversion';
 import { clearToasts, currentToasts } from './toast';
@@ -25,12 +29,17 @@ const duplicateIssue =
     ) => Promise<IssueRead>
   >();
 
+const getIssue =
+  vi.fn<(workspaceId: string, issueId: string) => Promise<IssueRead>>();
+
 vi.mock('../api/issues', () => ({
   duplicateIssue: (
     workspaceId: string,
     issueId: string,
     includeSubIssues?: boolean
   ) => duplicateIssue(workspaceId, issueId, includeSubIssues),
+  getIssue: (workspaceId: string, issueId: string) =>
+    getIssue(workspaceId, issueId),
 }));
 
 /** An issue in team t-1 with the given overrides. */
@@ -61,6 +70,7 @@ const issue = (id: string, overrides: Partial<IssueRead> = {}): IssueRead => ({
 
 beforeEach(() => {
   duplicateIssue.mockReset();
+  getIssue.mockReset();
 });
 
 afterEach(() => {
@@ -144,5 +154,97 @@ describe('conversionSummary', () => {
     expect(conversionSummary(parent)).toContain(
       'Its 3 sub-issues move into the project.'
     );
+  });
+});
+
+/** A source issue with every property a draft copy carries set. */
+const fullSource = (): IssueRead =>
+  issue('1', {
+    title: 'Fix login',
+    body: 'Steps to reproduce',
+    status_id: 'st-2',
+    priority: 'high',
+    assignee_id: 'user-9',
+    label_ids: ['lb-1', 'lb-2'],
+    estimate: '3',
+    project_id: 'p-1',
+    project_milestone_id: 'm-1',
+    cycle_id: 'c-1',
+    parent_id: '5',
+    progress: { total: 2, completed: 1 },
+  });
+
+describe('duplicateDraftOptions', () => {
+  it('prefills every property and keeps the copy as a draft', () => {
+    expect(
+      duplicateDraftOptions(fullSource(), { key: 'ENG-5', title: 'Epic' })
+    ).toEqual({
+      teamId: 't-1',
+      title: 'Fix login',
+      description: 'Steps to reproduce',
+      statusId: 'st-2',
+      priority: 'high',
+      labelIds: ['lb-1', 'lb-2'],
+      estimate: '3',
+      assigneeId: 'user-9',
+      projectId: 'p-1',
+      projectMilestoneId: 'm-1',
+      cycleId: 'c-1',
+      parentId: '5',
+      parentKey: 'ENG-5',
+      parentTitle: 'Epic',
+      keepAsDraft: true,
+    });
+  });
+
+  it('leaves unset properties out and never carries sub-issues', () => {
+    const options = duplicateDraftOptions(issue('1'));
+
+    expect(options).toEqual({
+      teamId: 't-1',
+      title: 'Issue 1',
+      description: '',
+      statusId: 'st-1',
+      priority: 'none',
+      labelIds: [],
+      keepAsDraft: true,
+    });
+    expect(Object.keys(options)).not.toContain('subIssues');
+  });
+});
+
+describe('openDuplicateDraft', () => {
+  it('reads the issue and its parent afresh and opens the dialog on the copy', async () => {
+    getIssue.mockImplementation((_w, id) =>
+      Promise.resolve(
+        id === '1' ? fullSource() : issue('5', { title: 'Login epic' })
+      )
+    );
+    const open = vi.fn<(options: CreateIssueOptions) => void>();
+
+    await openDuplicateDraft('ws-1', '1', open);
+
+    expect(getIssue).toHaveBeenCalledWith('ws-1', '1');
+    expect(getIssue).toHaveBeenCalledWith('ws-1', '5');
+    expect(open).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: 'Fix login',
+        parentId: '5',
+        parentKey: 'ENG-5',
+        parentTitle: 'Login epic',
+        keepAsDraft: true,
+      })
+    );
+    expect(duplicateIssue).not.toHaveBeenCalled();
+  });
+
+  it('opens nothing and raises a notice when the issue cannot be read', async () => {
+    getIssue.mockRejectedValue(new Error('boom'));
+    const open = vi.fn<(options: CreateIssueOptions) => void>();
+
+    await openDuplicateDraft('ws-1', '1', open);
+
+    expect(open).not.toHaveBeenCalled();
+    expect(currentToasts().map((toast) => toast.tone)).toEqual(['error']);
   });
 });

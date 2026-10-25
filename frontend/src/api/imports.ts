@@ -27,6 +27,7 @@ import type {
   JiraImportPreviewRead,
   JiraImportRequest,
   JiraProjectListRead,
+  LinearImportPreviewRead,
   LinearImportRequest,
   LinearTeamListRead,
   LinearTeamRead,
@@ -122,6 +123,18 @@ export const startLinearImport = async (
 ): Promise<IssueImportRead> => {
   const response = await apiClient.post<IssueImportRead>(
     `${issueImportsPath(workspaceId)}/linear`,
+    body
+  );
+  return response.data;
+};
+
+/** Answers the statuses and templates importing the chosen Linear teams would create, writing nothing. */
+export const previewLinearImport = async (
+  workspaceId: string,
+  body: LinearImportRequest
+): Promise<LinearImportPreviewRead> => {
+  const response = await apiClient.post<LinearImportPreviewRead>(
+    `${issueImportsPath(workspaceId)}/linear/preview`,
     body
   );
   return response.data;

@@ -347,14 +347,20 @@ const WorkspaceHome: React.FC = () => {
             : cyclePath(slug, team.key_prefix, cycle.cycle_id);
         }
         case 'projects':
-          return projectPath(slug, item.id);
+          return projectPath(
+            slug,
+            home.projects.find((row) => row.project_id === item.id) ?? item.id
+          );
         case 'pulse': {
           const pulse = home.pulse.find(
             (row) => row.update.update_id === item.id
           );
           return pulse === undefined
             ? null
-            : projectPath(slug, pulse.project_id);
+            : projectPath(slug, {
+                project_id: pulse.project_id,
+                name: pulse.project_name,
+              });
         }
         case 'inbox':
           return inboxPath(slug);
@@ -833,7 +839,7 @@ const WorkspaceHome: React.FC = () => {
                   <ProjectRow
                     key={project.project_id}
                     project={project}
-                    href={projectPath(slug, project.project_id)}
+                    href={projectPath(slug, project)}
                     {...rowProps(projectsStart + offset)}
                   />
                 ))}
@@ -848,7 +854,10 @@ const WorkspaceHome: React.FC = () => {
                   <PulseRow
                     key={item.update.update_id}
                     item={item}
-                    href={projectPath(slug, item.project_id)}
+                    href={projectPath(slug, {
+                      project_id: item.project_id,
+                      name: item.project_name,
+                    })}
                     author={memberName(item.update.author_id)}
                     {...rowProps(pulseStart + offset)}
                   />

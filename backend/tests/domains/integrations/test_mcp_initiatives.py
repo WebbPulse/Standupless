@@ -13,6 +13,7 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 
+from app.common.readable_ids import readable_id
 from app.domains.integrations.mcp.toolkit import NOT_VISIBLE
 from app.domains.integrations.mcp.tools import TOOLS_BY_NAME
 from tests.domains.helpers import ADMIN, GUEST, MEMBER, add_team_member
@@ -64,6 +65,7 @@ def test_an_initiative_is_created_and_rolls_up_projects_named_by_name(
 
     assert added == {"project_id": planning["project_id"], "initiative_id": created["initiative_id"]}
     assert sorted(rolled["project_ids"]) == sorted([planning["project_id"], other["project_id"]])
+    assert rolled["web_url"].endswith("/w/acme/initiatives/" + readable_id(created["initiative_id"], rolled["name"]))
     assert rolled["project_health"]["none"] == 2
     assert {row["initiative_id"] for row in listed["projects"]} == {created["initiative_id"]}
 

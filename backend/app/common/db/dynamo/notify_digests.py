@@ -21,7 +21,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Iterable
 
 from boto3.dynamodb.conditions import Attr, Key
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from webbpulse.dynamodb import ConditionFailed, Repository
 
 from app.common.db.dynamo.base import as_item
@@ -100,6 +100,7 @@ class DigestEntry(BaseModel):
     initiative_id: str = ""
     initiative_name: str = ""
     due_state: str = ""
+    report: list[str] = Field(default_factory=list)
     unread_when_held: bool | None = None
     created_at: datetime
 

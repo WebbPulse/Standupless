@@ -595,11 +595,15 @@ def update_sla_settings(
     or removing a rule never does, so a downgrade never traps a team. Paused
     statuses must be open statuses of the team, and issues already sitting in a
     status added to or taken out of the set are paused or resumed on the spot.
+    A new start mode leaves running timers alone and applies from each issue's
+    next watched-field change.
     """
     current = sla_settings(repositories, workspace_id, team_id)
     changes = payload.model_dump(exclude_unset=True)
     if changes.get("enabled") is None:
         changes.pop("enabled", None)
+    if changes.get("start_mode") is None:
+        changes.pop("start_mode", None)
     if "paused_status_ids" in changes:
         changes["paused_status_ids"] = _paused_statuses(
             repositories, workspace_id, team_id, changes["paused_status_ids"] or []

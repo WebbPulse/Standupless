@@ -49,6 +49,9 @@ class FakeLinear:
     issues: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
     initiatives: list[dict[str, Any]] = field(default_factory=list)
     project_relations: list[dict[str, Any]] = field(default_factory=list)
+    states: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
+    templates: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
+    labels: list[dict[str, Any]] = field(default_factory=list)
     rejected_operations: set[str] = field(default_factory=set)
     nested_page_size: int = 50
     rate_limit_next: int = 0
@@ -172,6 +175,20 @@ class FakeLinear:
         teams = [{"id": team["id"], "key": team["key"], "name": team["name"]} for team in self.teams]
         return {"teams": self._connection(teams, variables.get("first"), variables.get("after"))}
 
+    def _op_WorkflowStates(self, variables: dict[str, Any]) -> dict[str, Any]:
+        """One team's workflow states."""
+        states = self.states.get(str(variables.get("team")), [])
+        return {"team": {"states": self._connection(states, variables.get("first"), variables.get("after"))}}
+
+    def _op_Templates(self, variables: dict[str, Any]) -> dict[str, Any]:
+        """One team's templates, of every type."""
+        templates = self.templates.get(str(variables.get("team")), [])
+        return {"team": {"templates": self._connection(templates, variables.get("first"), variables.get("after"))}}
+
+    def _op_IssueLabels(self, variables: dict[str, Any]) -> dict[str, Any]:
+        """Every label the key can read."""
+        return {"issueLabels": self._connection(list(self.labels), variables.get("first"), variables.get("after"))}
+
     def _op_Cycles(self, variables: dict[str, Any]) -> dict[str, Any]:
         """One team's cycles."""
         cycles = self.cycles.get(str(variables.get("team")), [])
@@ -259,7 +276,8 @@ def ref(node: dict[str, Any]) -> dict[str, Any]:
 def sample(member_email: str, *, prefix: str = "ENG", tag: str = "") -> FakeLinear:
     """A small Linear workspace touching every field the importer reads.
 
-    One team keyed `prefix` with five workflow states, a cycle, a project with two milestones
+    One team keyed `prefix` with five workflow states, two issue templates and
+    a project template, a cycle, a project with two milestones
     and an update, an initiative holding the project, and four issues: a parent
     with a grouped label, a sub-issue, an issue the parent blocks, and a
     duplicate. `member_email` is the person a Standupless member matches;
@@ -269,13 +287,15 @@ def sample(member_email: str, *, prefix: str = "ENG", tag: str = "") -> FakeLine
     team_id = f"team-{prefix.lower()}{tag}"
     stranger = {"name": "Riley Stranger", "email": "riley@linear-only.example"}
     member = {"name": "Matched Member", "email": member_email}
+    created = "2026-07-01T09:00:00.000Z"
     states = [
-        {"id": f"state-backlog{tag}", "name": "Backlog", "type": "backlog", "position": 0},
-        {"id": f"state-todo{tag}", "name": "Todo", "type": "unstarted", "position": 1},
-        {"id": f"state-doing{tag}", "name": "Doing", "type": "started", "position": 2},
-        {"id": f"state-shipped{tag}", "name": "Shipped", "type": "completed", "position": 3},
-        {"id": f"state-dropped{tag}", "name": "Dropped", "type": "canceled", "position": 4},
+        {"id": f"state-backlog{tag}", "name": "Backlog", "type": "backlog", "position": 0, "color": "#bec2c8"},
+        {"id": f"state-todo{tag}", "name": "Todo", "type": "unstarted", "position": 1, "color": "#e2e2e2"},
+        {"id": f"state-doing{tag}", "name": "Doing", "type": "started", "position": 2, "color": "#f2c94c"},
+        {"id": f"state-shipped{tag}", "name": "Shipped", "type": "completed", "position": 3, "color": "#5e6ad2"},
+        {"id": f"state-dropped{tag}", "name": "Dropped", "type": "canceled", "position": 4, "color": "#95a2b3"},
     ]
+    states = [{**state, "createdAt": created} for state in states]
     cycle = {
         "id": f"cycle-1{tag}",
         "number": 7,
@@ -432,8 +452,42 @@ def sample(member_email: str, *, prefix: str = "ENG", tag: str = "") -> FakeLine
         "owner": {"email": member_email},
         "projects": [ref(project)],
     }
+    templates = [
+        {
+            "id": f"template-bug{tag}",
+            "name": "Bug report",
+            "type": "issue",
+            "createdAt": created,
+            "templateData": {
+                "title": "Bug: ",
+                "description": "## Steps\n\n1. ",
+                "priority": 2,
+                "labelIds": [bug["id"]],
+                "estimate": 3,
+            },
+        },
+        {
+            "id": f"template-spike{tag}",
+            "name": "Spike",
+            "type": "issue",
+            "createdAt": created,
+            "templateData": json.dumps(
+                {
+                    "descriptionData": {
+                        "type": "doc",
+                        "content": [{"type": "paragraph", "content": [{"type": "text", "text": "Timebox it."}]}],
+                    },
+                    "priority": 0,
+                }
+            ),
+        },
+        {"id": f"template-launch{tag}", "name": "Launch", "type": "project", "createdAt": created, "templateData": {}},
+    ]
     return FakeLinear(
         teams=[{"id": team_id, "key": prefix, "name": f"Engineering {prefix}"}],
+        states={team_id: states},
+        templates={team_id: templates},
+        labels=[label_group, bug, frontend],
         cycles={team_id: [cycle]},
         projects={team_id: [project]},
         issues={team_id: [parent, child, blocked, duplicate]},

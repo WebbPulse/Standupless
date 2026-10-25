@@ -431,6 +431,49 @@ def test_a_project_update_posts_to_its_projects_teams(repositories: Any, workspa
     assert embed["url"].endswith("?tab=updates#update-U1")
 
 
+def test_a_project_update_carries_its_progress_report(repositories: Any, workspace: str, queue: Queue) -> None:
+    """The report follows the body as plain lines, and a hidden one is left out."""
+    repositories.planning.create_project(
+        Project(
+            workspace_id=WORKSPACE,
+            planning_key=project_key("P1"),
+            project_id="P1",
+            team_ids=[TEAM],
+            name="Launch",
+            created_by=OWNER,
+        )
+    )
+    make_channel(repositories, events_=["project_update_posted"], url=DISCORD_URL)
+    snapshot = {"measure": "issues", "completed": 8, "total": 20, "percent": 40, "milestones": []}
+    update = {
+        "workspace_id": WORKSPACE,
+        "planning_key": project_update_key("P1", "U1"),
+        "kind": "project_update",
+        "project_id": "P1",
+        "update_id": "U1",
+        "author_id": OWNER,
+        "body": "Slipping a week",
+        "health": "at_risk",
+        "created_at": "2026-09-20T12:00:00+00:00",
+        "snapshot": snapshot,
+    }
+
+    stream.handle_record(repositories, record("INSERT", update, table="planning"))
+    stream.handle_record(
+        repositories,
+        record(
+            "INSERT",
+            {**update, "update_id": "U2", "planning_key": project_update_key("P1", "U2"), "hide_details": True},
+            table="planning",
+            event_id="evt-2",
+        ),
+    )
+
+    shown, hidden = (delivery_body(repositories, job)["embeds"][0]["description"] for job in queue.jobs)
+    assert "Slipping a week" in shown and r"Progress 40% \(8 of 20 issues\)" in shown
+    assert "Slipping a week" in hidden and "Progress" not in hidden
+
+
 def test_a_due_project_update_is_announced_once(repositories: Any, workspace: str, queue: Queue) -> None:
     """The reminder hook posts to the teams that opted in, and a rerun with the same seed posts nothing more."""
     repositories.planning.create_project(

@@ -218,7 +218,16 @@ export const SLASH_COMMANDS: SlashCommand[] = [
     id: 'attachment',
     label: 'Image or attachment',
     icon: LuImage,
-    keywords: ['image', 'picture', 'photo', 'file', 'upload', 'video'],
+    keywords: [
+      'image',
+      'picture',
+      'photo',
+      'file',
+      'upload',
+      'video',
+      'insert',
+    ],
+    keys: ['mod', 'shift', 'u'],
     available: (context) => context.pickFiles !== undefined,
     run: (editor, range, context) => {
       editor.chain().focus().deleteRange(range).run();

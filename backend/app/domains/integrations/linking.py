@@ -11,8 +11,9 @@ somebody deliberately reopened.
 As in Linear, only a key in the branch name, in the title, in a commit's subject
 line, or right after a magic word moves an issue's status. A key the body or a
 commit's body mentions in passing still links the pull request to the issue, and
-moves nothing. A key named after `Refs` moves as the
-pull request opens but never on its merge, which only a closing word may trigger.
+moves nothing. A key named after a contributing word such as `Refs` or `Updates`
+moves as the pull request opens but never on its merge, which only a closing word
+may trigger. A key named after `Relates to` or `Related to` only links.
 """
 
 from __future__ import annotations

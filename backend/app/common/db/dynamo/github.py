@@ -371,7 +371,8 @@ class IssueLink(BaseModel):
     `detached` marks a link whose key a later delivery no longer names, which is
     how the label sync tells an unlinked issue from a linked one.
     `moves_status` is false while the pull request only mentions the key in passing
-    in its body, so the link shows on the issue without moving its status; a row
+    in its body or names it after a related word such as `Relates to`, so the link
+    shows on the issue without moving its status; a row
     written before it existed reads as one that moves.
     `holds_on_merge` is true when the pull request named the key only after a
     `Refs` style word, so its merge did not finish the issue; a promotion reads it

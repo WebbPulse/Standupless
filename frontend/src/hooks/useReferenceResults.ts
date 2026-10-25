@@ -1,12 +1,16 @@
 /**
  * Answers the `#` reference picker as the writer types. Each query waits a
  * moment so a burst of keys costs one request, a newer query aborts the read
- * still in flight, and a query search cannot answer yet costs nothing.
+ * still in flight, and a query search cannot answer yet costs nothing. Linked
+ * pull requests are read beside search, and a failed pull request read only
+ * leaves them out, so the issues still answer.
  */
 
 import { useEffect, useState } from 'react';
+import { searchPullRequests } from '../api/pullRequests';
 import { searchAll } from '../api/views';
 import {
+  isKeyQuery,
   isSearchable,
   REFERENCE_LIMITS,
   referenceItems,
@@ -45,14 +49,29 @@ export const useReferenceResults = (
     const controller = new AbortController();
     const text = query.trim();
     const timer = setTimeout(() => {
-      searchAll(
-        workspaceId,
-        text,
-        { limit: REFERENCE_LIMITS.issue },
-        controller.signal
-      )
-        .then((answer) => {
-          setResults({ query, items: referenceItems(answer), loading: false });
+      const pullRequests = isKeyQuery(text)
+        ? Promise.resolve([])
+        : searchPullRequests(
+            workspaceId,
+            text,
+            { limit: REFERENCE_LIMITS.pull_request },
+            controller.signal
+          ).catch(() => []);
+      Promise.all([
+        searchAll(
+          workspaceId,
+          text,
+          { limit: REFERENCE_LIMITS.issue },
+          controller.signal
+        ),
+        pullRequests,
+      ])
+        .then(([answer, hits]) => {
+          setResults({
+            query,
+            items: referenceItems(answer, hits),
+            loading: false,
+          });
         })
         .catch(() => {
           if (controller.signal.aborted) return;

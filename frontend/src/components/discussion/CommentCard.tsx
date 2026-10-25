@@ -334,7 +334,7 @@ const CommentItem: React.FC<CommentItemProps> = ({
     void resolveSubIssueParent(workspaceId, { id: issueId })
       .then((parent) => {
         issueCreator.open({
-          ...subIssueDialogPresets(parent),
+          ...subIssueDialogPresets(parent, { creatorId: currentUserId }),
           ...draft(parent),
           onCreated: () => {
             invalidateQueries([childrenKey(issueId), activityKey(issueId)]);

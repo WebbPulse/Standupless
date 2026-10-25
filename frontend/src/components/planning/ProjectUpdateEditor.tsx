@@ -13,6 +13,9 @@
  *
  * A reply on an update uses the same editor with the health row left out.
  *
+ * A project update's editor also offers "Hide details", which keeps the
+ * progress report the server attaches to the update out of sight for everyone.
+ *
  * The editor is its own lazily loaded chunk, so a stand in with the same shape
  * shows until it arrives.
  */
@@ -26,6 +29,7 @@ import { PROJECT_HEALTHS, PROJECT_HEALTH_LABELS } from '../../lib/projectLook';
 import type { ProjectHealth, TemplateRead } from '../../types/Api';
 import type { RichMarkdownHandle } from '../editor/RichMarkdownEditor';
 import Button from '../ui/button';
+import Checkbox from '../ui/checkbox';
 import Menu, { MenuItem } from '../ui/menu';
 import ProjectHealthGlyph from './ProjectHealthGlyph';
 
@@ -87,8 +91,12 @@ export interface ProjectUpdateEditorProps {
   ariaLabel: string;
   placeholder?: string;
   autoFocus?: boolean;
-  /** Called with the trimmed text and the health. Resolves true once saved. */
-  onSubmit: (body: string, health: ProjectHealth) => Promise<boolean>;
+  /** Called with the trimmed text, the health and the Hide details choice. Resolves true once saved. */
+  onSubmit: (
+    body: string,
+    health: ProjectHealth,
+    hideDetails: boolean
+  ) => Promise<boolean>;
   onCancel?: () => void;
   /** Clears the text after a successful submit, for a composer that stays open. */
   clearOnSubmit?: boolean;
@@ -96,6 +104,10 @@ export interface ProjectUpdateEditorProps {
   templates?: TemplateRead[];
   /** Shows the health chooser; a reply has no health of its own. */
   withHealth?: boolean;
+  /** Shows the Hide details toggle; only a project update carries a progress report. */
+  withDetailsToggle?: boolean;
+  /** Whether Hide details starts on. */
+  initialHideDetails?: boolean;
 }
 
 /** A Markdown box and a health chooser that submit together. */
@@ -113,9 +125,12 @@ export const ProjectUpdateEditor: React.FC<ProjectUpdateEditorProps> = ({
   clearOnSubmit = false,
   templates = [],
   withHealth = true,
+  withDetailsToggle = false,
+  initialHideDetails = false,
 }) => {
   const [draft, setDraft] = useState(initialBody);
   const [health, setHealth] = useState<ProjectHealth>(initialHealth);
+  const [hideDetails, setHideDetails] = useState(initialHideDetails);
   const [busy, setBusy] = useState(false);
   const [focused, setFocused] = useState(false);
   const editor = useRef<RichMarkdownHandle>(null);
@@ -126,11 +141,12 @@ export const ProjectUpdateEditor: React.FC<ProjectUpdateEditorProps> = ({
     const body = (editor.current?.getMarkdown() ?? draft).trim();
     if (busy || body === '') return;
     setBusy(true);
-    void onSubmit(body, health).then((saved) => {
+    void onSubmit(body, health, hideDetails).then((saved) => {
       setBusy(false);
       if (saved && clearOnSubmit) {
         editor.current?.setMarkdown('');
         setDraft('');
+        setHideDetails(initialHideDetails);
       }
     });
   };
@@ -210,6 +226,18 @@ export const ProjectUpdateEditor: React.FC<ProjectUpdateEditorProps> = ({
           </Menu>
         )}
         <div className="ml-auto flex items-center gap-1.5">
+          {withDetailsToggle && (
+            <Checkbox
+              label="Hide details"
+              checked={hideDetails}
+              disabled={busy}
+              onChange={(event) => {
+                setHideDetails(event.target.checked);
+              }}
+              className="mr-1 text-xs text-text-muted"
+              title="Hide the progress report on this update for everyone"
+            />
+          )}
           {onCancel !== undefined && (
             <Button variant="ghost" size="sm" onClick={onCancel}>
               Cancel

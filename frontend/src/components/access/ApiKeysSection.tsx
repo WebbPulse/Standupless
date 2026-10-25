@@ -9,15 +9,20 @@
  * The `workspace` listing and the workspace key kind are offered only to an
  * admin, because the server refuses both to anyone else and an empty panel
  * behind a refused read is worse than a control that was never there.
+ *
+ * Export CSV downloads the keys listed, naming each creator by display name and
+ * leaving out emails and prefixes, from the list already loaded.
  */
 
 import React, { useState } from 'react';
+import { LuDownload } from 'react-icons/lu';
 import { useQueryAuth } from '@webbpulse/auth/react';
 import {
   useMutationWithRefetch,
   usePolledQuery,
 } from '@webbpulse/api-client/react';
 import { createApiKey, listApiKeys, revokeApiKey } from '../../api/access';
+import { listMembers } from '../../api/workspaces';
 import { canManageMembers } from '../../lib/capabilities';
 import {
   MAX_EXPIRY_DAYS,
@@ -27,9 +32,13 @@ import {
   kindLabel,
   parseExpiryDays,
 } from '../../lib/accessDisplay';
+import { toCsv } from '../../lib/csv';
+import { downloadText, fileSlug, todayStamp } from '../../lib/download';
 import { errorMessage } from '../../lib/errors';
 import { OPENAPI_DOCUMENT_PATH } from '../../lib/paths';
 import { apiKeysKey } from '../../lib/queryKeys';
+import { apiKeyCsvRows } from '../../lib/settingsCsv';
+import { showErrorToast } from '../../lib/toast';
 import {
   API_KEY_SCOPES,
   type ApiKeyCreatedRead,
@@ -78,6 +87,7 @@ export const ApiKeysSection: React.FC<ApiKeysSectionProps> = ({
   const [expiryError, setExpiryError] = useState<string | null>(null);
   const [minted, setMinted] = useState<ApiKeyCreatedRead | null>(null);
   const [copied, setCopied] = useState(false);
+  const [exporting, setExporting] = useState(false);
 
   const queryKey = apiKeysKey(workspace.id, scope);
 
@@ -154,6 +164,23 @@ export const ApiKeysSection: React.FC<ApiKeysSectionProps> = ({
 
   const keys = data ?? [];
 
+  const exportCsv = async (): Promise<void> => {
+    setExporting(true);
+    try {
+      const members = await listMembers(workspace.id);
+      downloadText(
+        toCsv(apiKeyCsvRows(keys, members)),
+        `${fileSlug(`${workspace.name} api keys`)}-${todayStamp()}.csv`
+      );
+    } catch (exportError) {
+      showErrorToast(
+        errorMessage(exportError, 'Could not export the API keys.')
+      );
+    } finally {
+      setExporting(false);
+    }
+  };
+
   return (
     <section className="space-y-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -177,21 +204,34 @@ export const ApiKeysSection: React.FC<ApiKeysSectionProps> = ({
             .
           </p>
         </div>
-        {isAdmin && (
-          <SelectField
-            id="api-keys-scope"
-            label="Show"
-            hideLabel
-            className="w-44"
-            value={scope}
-            onChange={(event) => {
-              setScope(event.target.value as ApiKeyListScope);
-            }}
+        <div className="flex items-center gap-2">
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            disabled={exporting || isLoading || keys.length === 0}
+            aria-busy={exporting}
+            onClick={() => void exportCsv()}
           >
-            <option value="mine">My keys</option>
-            <option value="workspace">Every key in this workspace</option>
-          </SelectField>
-        )}
+            <LuDownload aria-hidden="true" className="h-3.5 w-3.5" />
+            {exporting ? 'Exporting...' : 'Export CSV'}
+          </Button>
+          {isAdmin && (
+            <SelectField
+              id="api-keys-scope"
+              label="Show"
+              hideLabel
+              className="w-44"
+              value={scope}
+              onChange={(event) => {
+                setScope(event.target.value as ApiKeyListScope);
+              }}
+            >
+              <option value="mine">My keys</option>
+              <option value="workspace">Every key in this workspace</option>
+            </SelectField>
+          )}
+        </div>
       </div>
 
       {error !== null && (

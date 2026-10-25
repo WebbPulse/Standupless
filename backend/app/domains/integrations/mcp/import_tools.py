@@ -52,6 +52,16 @@ TEAMS_SCHEMA: dict[str, Any] = {
         "properties": {
             "linear_team_id": string("The Linear team id list_linear_teams answered"),
             "team_id": string("The Standupless team it goes into: id, key such as ENG, or name"),
+            "create_statuses": {
+                "type": "boolean",
+                "description": "Create a status for each Linear workflow state the team has no status of the "
+                "same name for, before the issues import. Defaults to false",
+            },
+            "import_templates": {
+                "type": "boolean",
+                "description": "Bring the Linear team's issue templates over, skipping names the team already "
+                "has. Defaults to false",
+            },
         },
         "required": ["linear_team_id", "team_id"],
     },
@@ -172,7 +182,7 @@ def _import_linear_workspace(call: ToolCall) -> Any:
     """Queue an import of Linear teams into Standupless teams."""
     check_capability(call.repositories, call.context, Capability.WORKSPACE_ADMIN)
     api_key = str(call.require("api_key")).strip()
-    choices: list[tuple[str, str]] = []
+    choices: list[tuple[str, str, bool, bool]] = []
     for item in call.require("teams"):
         if not isinstance(item, dict):
             raise ToolError("each teams entry needs linear_team_id and team_id")
@@ -182,7 +192,9 @@ def _import_linear_workspace(call: ToolCall) -> Any:
             raise ToolError("each teams entry needs linear_team_id and team_id")
         team_id = team_id_ref(call, team)
         require_team_member(call.repositories, call.context, team_id)
-        choices.append((linear_team_id, team_id))
+        choices.append(
+            (linear_team_id, team_id, item.get("create_statuses") is True, item.get("import_templates") is True)
+        )
     try:
         mappings = linear_import.team_mappings(api_key, choices)
         job = issue_import.start_linear_import(call.repositories, call.context, api_key, mappings)

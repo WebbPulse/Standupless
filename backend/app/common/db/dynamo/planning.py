@@ -723,12 +723,48 @@ class InitiativeUpdateRow(BaseModel):
     edited_at: datetime | None = None
 
 
+class MilestoneSnapshot(BaseModel):
+    """One milestone's progress as a project update recorded it."""
+
+    milestone_id: str
+    name: str
+    completed: int = 0
+    total: int = 0
+
+
+class ProjectUpdateSnapshot(BaseModel):
+    """Where a project stood when an update was posted, for the report of what changed since the last one.
+
+    `completed` and `total` are in `measure`, cancelled work left out of the
+    total, and `percent` is their whole percent. The lead's and the status's
+    names are copied so the report reads the same after either is renamed.
+    """
+
+    measure: str = "issues"
+    completed: int = 0
+    total: int = 0
+    percent: int = 0
+    target_date: str | None = None
+    target_date_resolution: str | None = None
+    lead_id: str | None = None
+    lead_name: str | None = None
+    status: str | None = None
+    status_id: str | None = None
+    status_name: str | None = None
+    milestones: list[MilestoneSnapshot] = Field(default_factory=list)
+
+
 class ProjectUpdateRow(BaseModel):
     """One written status update on a project, with the health it reported.
 
     The newest update is what the project's `health` and `last_update_at`
     mirror, so a reader of the project row sees the latest report without
     reading the update feed.
+
+    `snapshot` is where the project stood when the update was posted and
+    `previous_snapshot` the one the update before it recorded, so the report of
+    what changed reads off one row. Both are None on an update posted before
+    snapshots existed, and `hide_details` is the author's choice to hide it.
     """
 
     workspace_id: str
@@ -744,6 +780,9 @@ class ProjectUpdateRow(BaseModel):
     updated_at: datetime = Field(default_factory=utc_now)
     edited_at: datetime | None = None
     import_batch_id: str | None = None
+    snapshot: ProjectUpdateSnapshot | None = None
+    previous_snapshot: ProjectUpdateSnapshot | None = None
+    hide_details: bool = False
 
 
 class ProjectActivityRow(BaseModel):
@@ -1061,11 +1100,13 @@ def _stored_time(value: datetime) -> str:
 
 
 def as_project_update_item(update: ProjectUpdateRow) -> dict[str, Any]:
-    """One project update as the stored item, an unedited one carrying no `edited_at` and no empty bulk marker."""
+    """One project update as the stored item, with no empty optional field and no `hide_details` left off."""
     item = update.model_dump(mode="json")
-    for name in ("edited_at", "import_batch_id"):
+    for name in ("edited_at", "import_batch_id", "snapshot", "previous_snapshot"):
         if item.get(name) is None:
             item.pop(name, None)
+    if not item.get("hide_details"):
+        item.pop("hide_details", None)
     return item
 
 

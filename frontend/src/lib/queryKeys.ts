@@ -510,6 +510,12 @@ export const workspaceDocumentsKey = (workspaceId: string): QueryKey => [
   workspaceId,
 ];
 
+/** One linked pull request a chip looks up by `owner/repo#number`. */
+export const pullRequestLookupKey = (
+  workspaceId: string,
+  reference: string
+): QueryKey => ['pull-request', workspaceId, reference];
+
 /** One document read by its id, as its page polls it. */
 export const documentKey = (
   workspaceId: string,

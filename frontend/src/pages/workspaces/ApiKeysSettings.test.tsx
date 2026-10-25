@@ -14,6 +14,7 @@ import type { WorkspaceContextType } from '../../contexts/WorkspaceContextDefini
 import type {
   ApiKeyCreatedRead,
   ApiKeyRead,
+  MemberRead,
   WorkspaceRead,
   WorkspaceRole,
 } from '../../types/Api';
@@ -22,6 +23,8 @@ import ApiKeysSettings from './ApiKeysSettings';
 const listApiKeys = vi.fn<(query: unknown) => Promise<ApiKeyRead[]>>();
 const createApiKey = vi.fn<(body: unknown) => Promise<ApiKeyCreatedRead>>();
 const revokeApiKey = vi.fn<(keyId: string) => Promise<void>>();
+const listMembers = vi.fn<() => Promise<MemberRead[]>>();
+const downloadText = vi.fn<(text: string, name: string) => void>();
 
 vi.mock('../../hooks/useAuth', () => ({
   useAuth: () => ({
@@ -40,6 +43,24 @@ vi.mock('../../api/access', () => ({
   createApiKey: (_workspaceId: string, body: unknown) => createApiKey(body),
   revokeApiKey: (_workspaceId: string, keyId: string) => revokeApiKey(keyId),
 }));
+
+vi.mock('../../api/workspaces', async () => {
+  const actual = await vi.importActual<typeof import('../../api/workspaces')>(
+    '../../api/workspaces'
+  );
+  return { ...actual, listMembers: () => listMembers() };
+});
+
+vi.mock('../../lib/download', async () => {
+  const actual =
+    await vi.importActual<typeof import('../../lib/download')>(
+      '../../lib/download'
+    );
+  return {
+    ...actual,
+    downloadText: (text: string, name: string) => downloadText(text, name),
+  };
+});
 
 vi.mock('@webbpulse/auth/react', async () => {
   const actual = await vi.importActual<typeof import('@webbpulse/auth/react')>(
@@ -365,5 +386,39 @@ describe('revoking a key', () => {
     expect(
       await screen.findByText('Could not revoke that key.')
     ).toBeInTheDocument();
+  });
+});
+
+describe('exporting the keys', () => {
+  it('downloads the listed keys with creator names and no secret, prefix or email', async () => {
+    const user = userEvent.setup();
+    downloadText.mockReset();
+    listMembers.mockResolvedValue([
+      {
+        user_id: 'user-1',
+        email: 'ada@example.com',
+        display_name: 'ada',
+        full_name: 'Ada Lovelace',
+        role: 'owner',
+        joined_at: '2026-09-01T00:00:00Z',
+      },
+    ]);
+    renderPage();
+
+    await screen.findByText('Shell');
+    await user.click(screen.getByRole('button', { name: 'Export CSV' }));
+
+    await waitFor(() => {
+      expect(downloadText).toHaveBeenCalledTimes(1);
+    });
+    const [text, name] = downloadText.mock.calls[0] ?? ['', ''];
+    expect(name).toMatch(/^engineering-api-keys-\d{4}-\d{2}-\d{2}\.csv$/);
+    expect(text.split('\r\n')).toEqual([
+      'Label,Created by,Scopes,Created,Last used,Expires',
+      'Shell,Ada Lovelace,issues:read; teams:read,2026-09-18,,',
+      '',
+    ]);
+    expect(text).not.toContain('wpk_');
+    expect(text).not.toContain('ada@example.com');
   });
 });
