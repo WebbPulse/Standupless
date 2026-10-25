@@ -146,7 +146,9 @@ def put_widget_order(
     repositories: Repositories = Depends(get_repositories),
 ) -> DashboardRead:
     """Rearrange a dashboard's widgets; the order names every widget once."""
-    return dashboard_read(repositories, context, reorder_widgets(repositories, context, dashboard_id, payload.widget_ids))
+    return dashboard_read(
+        repositories, context, reorder_widgets(repositories, context, dashboard_id, payload.widget_ids)
+    )
 
 
 @router.patch("/{workspace_id}/views/dashboards/{dashboard_id}/widgets/{widget_id}", response_model=DashboardRead)
@@ -175,9 +177,7 @@ def remove_widget(
     return dashboard_read(repositories, context, delete_widget(repositories, context, dashboard_id, widget_id))
 
 
-@router.get(
-    "/{workspace_id}/views/dashboards/{dashboard_id}/widgets/{widget_id}/insights", response_model=InsightsRead
-)
+@router.get("/{workspace_id}/views/dashboards/{dashboard_id}/widgets/{widget_id}/insights", response_model=InsightsRead)
 def get_widget_insights(
     workspace_id: str = Path(..., min_length=1),
     dashboard_id: str = Path(..., min_length=1),

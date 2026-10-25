@@ -4674,6 +4674,291 @@
         "title": "CycleUpdate",
         "type": "object"
       },
+      "DashboardCreate": {
+        "description": "The body a dashboard create takes; the owner is the caller and a team scope names its team.",
+        "properties": {
+          "description": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "filter": {
+            "additionalProperties": true,
+            "title": "Filter",
+            "type": "object"
+          },
+          "icon": {
+            "anyOf": [
+              {
+                "maxLength": 32,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Icon"
+          },
+          "name": {
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "scope": {
+            "default": "personal",
+            "enum": [
+              "personal",
+              "team",
+              "workspace"
+            ],
+            "title": "Scope",
+            "type": "string"
+          },
+          "team_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Team Id"
+          },
+          "widgets": {
+            "items": {
+              "$ref": "#/components/schemas/WidgetCreate"
+            },
+            "maxItems": 24,
+            "title": "Widgets",
+            "type": "array"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "DashboardCreate",
+        "type": "object"
+      },
+      "DashboardList": {
+        "description": "The dashboards a caller may read, personal ones first, then team and workspace ones.",
+        "properties": {
+          "dashboards": {
+            "items": {
+              "$ref": "#/components/schemas/DashboardRead"
+            },
+            "title": "Dashboards",
+            "type": "array"
+          }
+        },
+        "required": [
+          "dashboards"
+        ],
+        "title": "DashboardList",
+        "type": "object"
+      },
+      "DashboardMove": {
+        "description": "Where a dashboard moves: personal to its owner, a team, or the whole workspace.",
+        "properties": {
+          "scope": {
+            "enum": [
+              "personal",
+              "team",
+              "workspace"
+            ],
+            "title": "Scope",
+            "type": "string"
+          },
+          "team_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Team Id"
+          }
+        },
+        "required": [
+          "scope"
+        ],
+        "title": "DashboardMove",
+        "type": "object"
+      },
+      "DashboardRead": {
+        "description": "One dashboard as the API answers it, with whether the caller may change it.",
+        "properties": {
+          "can_edit": {
+            "default": false,
+            "title": "Can Edit",
+            "type": "boolean"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "filter": {
+            "additionalProperties": true,
+            "title": "Filter",
+            "type": "object"
+          },
+          "icon": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Icon"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "owner_id": {
+            "title": "Owner Id",
+            "type": "string"
+          },
+          "scope": {
+            "enum": [
+              "personal",
+              "team",
+              "workspace"
+            ],
+            "title": "Scope",
+            "type": "string"
+          },
+          "team_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Team Id"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "widgets": {
+            "items": {
+              "$ref": "#/components/schemas/WidgetRead"
+            },
+            "title": "Widgets",
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "scope",
+          "owner_id",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "DashboardRead",
+        "type": "object"
+      },
+      "DashboardUpdate": {
+        "description": "The dashboard fields a patch may move: its name, description, icon, shared filter and owner.",
+        "properties": {
+          "description": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "filter": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Filter"
+          },
+          "icon": {
+            "anyOf": [
+              {
+                "maxLength": 32,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Icon"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "maxLength": 80,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "owner_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner Id"
+          }
+        },
+        "title": "DashboardUpdate",
+        "type": "object"
+      },
       "DeletedIssueListRead": {
         "description": "One team's trash: its deleted issues, newest number first, and when each is purged.",
         "properties": {
@@ -26353,6 +26638,472 @@
           }
         },
         "title": "WebhookEndpointUpdate",
+        "type": "object"
+      },
+      "WidgetCreate": {
+        "description": "The body that adds one widget: its source, its own filter and how it is measured and drawn.",
+        "properties": {
+          "filter": {
+            "additionalProperties": true,
+            "title": "Filter",
+            "type": "object"
+          },
+          "group_by": {
+            "default": "status",
+            "enum": [
+              "status",
+              "status_category",
+              "assignee",
+              "creator",
+              "priority",
+              "label",
+              "project",
+              "cycle",
+              "estimate",
+              "team"
+            ],
+            "title": "Group By",
+            "type": "string"
+          },
+          "include_sub_teams": {
+            "default": false,
+            "title": "Include Sub Teams",
+            "type": "boolean"
+          },
+          "kind": {
+            "default": "chart",
+            "enum": [
+              "chart",
+              "table",
+              "metric"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "measure": {
+            "default": "count",
+            "enum": [
+              "count",
+              "points",
+              "cycle_time",
+              "lead_time",
+              "triage_time",
+              "issue_age"
+            ],
+            "title": "Measure",
+            "type": "string"
+          },
+          "segment_by": {
+            "anyOf": [
+              {
+                "enum": [
+                  "status",
+                  "status_category",
+                  "assignee",
+                  "creator",
+                  "priority",
+                  "label",
+                  "project",
+                  "cycle",
+                  "estimate",
+                  "team"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Segment By"
+          },
+          "size": {
+            "default": "half",
+            "enum": [
+              "half",
+              "full"
+            ],
+            "title": "Size",
+            "type": "string"
+          },
+          "source": {
+            "default": "workspace",
+            "enum": [
+              "workspace",
+              "team",
+              "view"
+            ],
+            "title": "Source",
+            "type": "string"
+          },
+          "team_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Team Id"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "maxLength": 80,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "view_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "View Id"
+          }
+        },
+        "title": "WidgetCreate",
+        "type": "object"
+      },
+      "WidgetOrder": {
+        "description": "Every widget id of a dashboard in the order they should be drawn.",
+        "properties": {
+          "widget_ids": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 24,
+            "title": "Widget Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "widget_ids"
+        ],
+        "title": "WidgetOrder",
+        "type": "object"
+      },
+      "WidgetRead": {
+        "description": "One widget as the API answers it.",
+        "properties": {
+          "filter": {
+            "additionalProperties": true,
+            "title": "Filter",
+            "type": "object"
+          },
+          "group_by": {
+            "enum": [
+              "status",
+              "status_category",
+              "assignee",
+              "creator",
+              "priority",
+              "label",
+              "project",
+              "cycle",
+              "estimate",
+              "team"
+            ],
+            "title": "Group By",
+            "type": "string"
+          },
+          "include_sub_teams": {
+            "default": false,
+            "title": "Include Sub Teams",
+            "type": "boolean"
+          },
+          "kind": {
+            "enum": [
+              "chart",
+              "table",
+              "metric"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "measure": {
+            "enum": [
+              "count",
+              "points",
+              "cycle_time",
+              "lead_time",
+              "triage_time",
+              "issue_age"
+            ],
+            "title": "Measure",
+            "type": "string"
+          },
+          "segment_by": {
+            "anyOf": [
+              {
+                "enum": [
+                  "status",
+                  "status_category",
+                  "assignee",
+                  "creator",
+                  "priority",
+                  "label",
+                  "project",
+                  "cycle",
+                  "estimate",
+                  "team"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Segment By"
+          },
+          "size": {
+            "enum": [
+              "half",
+              "full"
+            ],
+            "title": "Size",
+            "type": "string"
+          },
+          "source": {
+            "enum": [
+              "workspace",
+              "team",
+              "view"
+            ],
+            "title": "Source",
+            "type": "string"
+          },
+          "team_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Team Id"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "view_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "View Id"
+          },
+          "widget_id": {
+            "title": "Widget Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "widget_id",
+          "kind",
+          "source",
+          "group_by",
+          "measure",
+          "size"
+        ],
+        "title": "WidgetRead",
+        "type": "object"
+      },
+      "WidgetUpdate": {
+        "description": "The widget fields a patch may move, each optional; a source change names its team or view again.",
+        "properties": {
+          "filter": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Filter"
+          },
+          "group_by": {
+            "anyOf": [
+              {
+                "enum": [
+                  "status",
+                  "status_category",
+                  "assignee",
+                  "creator",
+                  "priority",
+                  "label",
+                  "project",
+                  "cycle",
+                  "estimate",
+                  "team"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Group By"
+          },
+          "include_sub_teams": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Include Sub Teams"
+          },
+          "kind": {
+            "anyOf": [
+              {
+                "enum": [
+                  "chart",
+                  "table",
+                  "metric"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kind"
+          },
+          "measure": {
+            "anyOf": [
+              {
+                "enum": [
+                  "count",
+                  "points",
+                  "cycle_time",
+                  "lead_time",
+                  "triage_time",
+                  "issue_age"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Measure"
+          },
+          "segment_by": {
+            "anyOf": [
+              {
+                "enum": [
+                  "status",
+                  "status_category",
+                  "assignee",
+                  "creator",
+                  "priority",
+                  "label",
+                  "project",
+                  "cycle",
+                  "estimate",
+                  "team"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Segment By"
+          },
+          "size": {
+            "anyOf": [
+              {
+                "enum": [
+                  "half",
+                  "full"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Size"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "enum": [
+                  "workspace",
+                  "team",
+                  "view"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source"
+          },
+          "team_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Team Id"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "maxLength": 80,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "view_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "View Id"
+          }
+        },
+        "title": "WidgetUpdate",
         "type": "object"
       },
       "WorkspaceChannelCreate": {
@@ -57906,6 +58657,736 @@
           }
         ],
         "summary": "Create View",
+        "tags": [
+          "views"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/views/dashboards": {
+      "get": {
+        "description": "The dashboards the caller may read: their own first, then team and workspace ones.\n\n`scope` narrows to `personal`, `team` or `workspace`, and `team_id` to one\nteam's dashboards alongside the caller's own.",
+        "operationId": "list_dashboards_api_workspaces__workspace_id__views_dashboards_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "scope",
+            "required": false,
+            "schema": {
+              "default": "all",
+              "title": "Scope",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "team_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Team Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DashboardList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "List Dashboards",
+        "tags": [
+          "views"
+        ]
+      },
+      "post": {
+        "description": "Create a dashboard owned by the caller: personal, for a team they write in, or for the workspace.",
+        "operationId": "post_dashboard_api_workspaces__workspace_id__views_dashboards_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DashboardCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DashboardRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Post Dashboard",
+        "tags": [
+          "views"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/views/dashboards/{dashboard_id}": {
+      "delete": {
+        "description": "Delete a dashboard, the owner's call or an admin's for a shared one.",
+        "operationId": "remove_dashboard_api_workspaces__workspace_id__views_dashboards__dashboard_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "dashboard_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Dashboard Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Remove Dashboard",
+        "tags": [
+          "views"
+        ]
+      },
+      "get": {
+        "description": "One dashboard the caller may read, with its widgets in order.",
+        "operationId": "get_dashboard_api_workspaces__workspace_id__views_dashboards__dashboard_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "dashboard_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Dashboard Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DashboardRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Get Dashboard",
+        "tags": [
+          "views"
+        ]
+      },
+      "patch": {
+        "description": "Change a dashboard's name, description, icon, shared filter or owner.",
+        "operationId": "patch_dashboard_api_workspaces__workspace_id__views_dashboards__dashboard_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "dashboard_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Dashboard Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DashboardUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DashboardRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Patch Dashboard",
+        "tags": [
+          "views"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/views/dashboards/{dashboard_id}/move": {
+      "post": {
+        "description": "Move a dashboard to its owner, a team or the whole workspace, keeping its id.",
+        "operationId": "post_dashboard_move_api_workspaces__workspace_id__views_dashboards__dashboard_id__move_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "dashboard_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Dashboard Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DashboardMove"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DashboardRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Post Dashboard Move",
+        "tags": [
+          "views"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/views/dashboards/{dashboard_id}/widgets": {
+      "post": {
+        "description": "Add a widget at the end of a dashboard, answering the dashboard.",
+        "operationId": "post_widget_api_workspaces__workspace_id__views_dashboards__dashboard_id__widgets_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "dashboard_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Dashboard Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WidgetCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DashboardRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Post Widget",
+        "tags": [
+          "views"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/views/dashboards/{dashboard_id}/widgets/order": {
+      "put": {
+        "description": "Rearrange a dashboard's widgets; the order names every widget once.",
+        "operationId": "put_widget_order_api_workspaces__workspace_id__views_dashboards__dashboard_id__widgets_order_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "dashboard_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Dashboard Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WidgetOrder"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DashboardRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Put Widget Order",
+        "tags": [
+          "views"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/views/dashboards/{dashboard_id}/widgets/{widget_id}": {
+      "delete": {
+        "description": "Take one widget off a dashboard, answering the dashboard.",
+        "operationId": "remove_widget_api_workspaces__workspace_id__views_dashboards__dashboard_id__widgets__widget_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "dashboard_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Dashboard Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "widget_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Widget Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DashboardRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Remove Widget",
+        "tags": [
+          "views"
+        ]
+      },
+      "patch": {
+        "description": "Change one widget's source, filter, measure, grouping or look, answering the dashboard.",
+        "operationId": "patch_widget_api_workspaces__workspace_id__views_dashboards__dashboard_id__widgets__widget_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "dashboard_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Dashboard Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "widget_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Widget Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WidgetUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DashboardRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Patch Widget",
+        "tags": [
+          "views"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/views/dashboards/{dashboard_id}/widgets/{widget_id}/insights": {
+      "get": {
+        "description": "One widget's data: its breakdown with its own filter and the dashboard's applied.\n\nRead with the caller's visibility, so a workspace widget counts only the\nteams they can see and a widget over a view they cannot read is a 404.",
+        "operationId": "get_widget_insights_api_workspaces__workspace_id__views_dashboards__dashboard_id__widgets__widget_id__insights_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "dashboard_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Dashboard Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "widget_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Widget Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InsightsRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Get Widget Insights",
         "tags": [
           "views"
         ]

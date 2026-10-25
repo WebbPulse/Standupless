@@ -13,7 +13,7 @@ from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, Field, StrictBool
 
-from app.common.api.schemas.insights import InsightDimension, InsightMeasure, InsightsRead
+from app.common.api.schemas.insights import InsightDimension, InsightMeasure
 from app.common.db.dynamo.dashboards import Dashboard, DashboardWidget
 
 DASHBOARD_NAME_MAX = 80
@@ -164,18 +164,3 @@ class DashboardList(BaseModel):
     """The dashboards a caller may read, personal ones first, then team and workspace ones."""
 
     dashboards: list[DashboardRead]
-
-
-class WidgetInsights(BaseModel):
-    """One widget's data: its breakdown with the dashboard filter and its own applied."""
-
-    widget_id: str
-    insights: InsightsRead
-
-
-class DashboardData(BaseModel):
-    """Every widget's data at once, keyed by widget id; a widget that cannot be drawn carries its error."""
-
-    dashboard_id: str
-    widgets: list[WidgetInsights]
-    errors: dict[str, str] = Field(default_factory=dict)

@@ -36,7 +36,7 @@ def revoke_share_links(repositories: Repositories, workspace_id: str, team_id: s
 
 
 def step(repositories: Repositories, job: PurgeJob, deadline: Deadline) -> int | None:
-    """Remove the team's views and their subscriptions, its dashboards, its issue drafts and search postings, and its share links."""
+    """Remove the team's views and subscriptions, dashboards, issue drafts, search postings and share links."""
     workspace_id, team_id = job.workspace_id, job.team_id
     while views := repositories.views.list_for_team(workspace_id, team_id):
         for view in views:

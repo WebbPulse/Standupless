@@ -186,9 +186,7 @@ def test_a_widget_over_a_team_the_caller_cannot_see_is_refused(
     sign_in(client, GUEST)
     body = create(client, workspace, scope="team", team_id=TEAM)
 
-    response = client.post(
-        f"{base(workspace)}/{body['id']}/widgets", json={"source": "team", "team_id": OTHER_TEAM}
-    )
+    response = client.post(f"{base(workspace)}/{body['id']}/widgets", json={"source": "team", "team_id": OTHER_TEAM})
 
     assert response.status_code == 404
 
@@ -269,9 +267,7 @@ def test_a_view_widget_reads_the_saved_view(client: TestClient, issues_client: T
     assert client.get(f"{path}/widgets/{widget['widget_id']}/insights").json()["total"] == 1
 
 
-def test_moving_keeps_the_id_and_changes_who_reads_it(
-    client: TestClient, workspace: str, repositories: Any
-) -> None:
+def test_moving_keeps_the_id_and_changes_who_reads_it(client: TestClient, workspace: str, repositories: Any) -> None:
     """A personal dashboard moved to the workspace keeps its id and becomes readable by members."""
     sign_in(client, OWNER)
     body = create(client, workspace, name="Promoted")
@@ -335,7 +331,10 @@ def test_ownership_rules_refuse_a_personal_dashboard_and_a_reader_who_cannot_see
 
     assert client.patch(f"{base(workspace)}/{personal['id']}", json={"owner_id": MEMBER}).status_code == 422
     assert client.patch(f"{base(workspace)}/{wide['id']}", json={"owner_id": GUEST}).status_code == 422
-    assert client.patch(f"{base(workspace)}/{wide['id']}", json={"owner_id": "01JBNOBODY0000000000000000"}).status_code == 422
+    assert (
+        client.patch(f"{base(workspace)}/{wide['id']}", json={"owner_id": "01JBNOBODY0000000000000000"}).status_code
+        == 422
+    )
 
 
 def test_create_and_delete_are_audited(client: TestClient, workspace: str, repositories: Any) -> None:

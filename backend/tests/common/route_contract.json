@@ -2463,6 +2463,72 @@
     "auth": "workspace:read",
     "domain": "views",
     "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/views/dashboards"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "views",
+    "method": "POST",
+    "path": "/api/workspaces/{workspace_id}/views/dashboards"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "views",
+    "method": "DELETE",
+    "path": "/api/workspaces/{workspace_id}/views/dashboards/{dashboard_id}"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "views",
+    "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/views/dashboards/{dashboard_id}"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "views",
+    "method": "PATCH",
+    "path": "/api/workspaces/{workspace_id}/views/dashboards/{dashboard_id}"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "views",
+    "method": "POST",
+    "path": "/api/workspaces/{workspace_id}/views/dashboards/{dashboard_id}/move"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "views",
+    "method": "POST",
+    "path": "/api/workspaces/{workspace_id}/views/dashboards/{dashboard_id}/widgets"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "views",
+    "method": "PUT",
+    "path": "/api/workspaces/{workspace_id}/views/dashboards/{dashboard_id}/widgets/order"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "views",
+    "method": "DELETE",
+    "path": "/api/workspaces/{workspace_id}/views/dashboards/{dashboard_id}/widgets/{widget_id}"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "views",
+    "method": "PATCH",
+    "path": "/api/workspaces/{workspace_id}/views/dashboards/{dashboard_id}/widgets/{widget_id}"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "views",
+    "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/views/dashboards/{dashboard_id}/widgets/{widget_id}/insights"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "views",
+    "method": "GET",
     "path": "/api/workspaces/{workspace_id}/views/home"
   },
   {

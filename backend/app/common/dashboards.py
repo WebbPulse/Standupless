@@ -122,7 +122,9 @@ def load_dashboard(repositories: Repositories, context: AuthzContext, dashboard_
     return found
 
 
-def _require_scope_writer(repositories: Repositories, context: AuthzContext, scope: str, team_id: Optional[str]) -> None:
+def _require_scope_writer(
+    repositories: Repositories, context: AuthzContext, scope: str, team_id: Optional[str]
+) -> None:
     """Hold that the caller may file a dashboard in one scope: a team they write in, or the workspace if not a guest."""
     if scope == "team":
         if not team_id:
@@ -273,7 +275,9 @@ def _check_new_owner(repositories: Repositories, context: AuthzContext, dashboar
             raise unprocessable("The new owner cannot read this dashboard")
 
 
-def move_dashboard(repositories: Repositories, context: AuthzContext, dashboard_id: str, payload: DashboardMove) -> Dashboard:
+def move_dashboard(
+    repositories: Repositories, context: AuthzContext, dashboard_id: str, payload: DashboardMove
+) -> Dashboard:
     """Move a dashboard between its owner, a team and the whole workspace, keeping its id.
 
     The scope lives in the sort key, so the row is written under its new key and
