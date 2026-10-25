@@ -110,6 +110,26 @@ describe('memberDirectory', () => {
     ).toEqual(['cal', 'ada', 'bob']);
   });
 
+  it('sorts by last active with members never seen first', () => {
+    const seenEarly = { ...ada, last_active_at: '2026-10-01T00:00:00Z' };
+    const seenLate = { ...cal, last_active_at: '2026-10-20T00:00:00Z' };
+    const byActive = toggleSort(empty, 'active');
+    expect(
+      ids(applyDirectoryState([seenLate, bob, seenEarly], byActive))
+    ).toEqual(['bob', 'ada', 'cal']);
+    expect(
+      ids(
+        applyDirectoryState(
+          [seenEarly, bob, seenLate],
+          toggleSort(byActive, 'active')
+        )
+      )
+    ).toEqual(['cal', 'ada', 'bob']);
+    expect(
+      readDirectoryState(new URLSearchParams('member_sort=active')).sort
+    ).toBe('active');
+  });
+
   it('round-trips through the URL query and keeps other keys', () => {
     const state: MemberDirectoryState = {
       query: 'ada',

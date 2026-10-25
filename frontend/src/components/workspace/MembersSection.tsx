@@ -5,7 +5,8 @@
  * suspends or reactivates, and removes. A workspace admin can also tick rows,
  * with a Shift click for a run, the header box for every row the filter
  * shows, or x and Shift with j, k or an arrow, and act on all of them at once
- * from the bulk bar, and Enter opens the member in focus. The filter, search
+ * from the bulk bar, and Enter opens the member in focus. Only an admin sees
+ * the Last active column, which the API answers to admins alone. The filter, search
  * and sort live in the URL query so a reload keeps them. Controls are hidden
  * by the caller's role for clarity only; the API authorizes every call.
  */
@@ -85,6 +86,7 @@ import { ErrorAlert } from '../ui/alert';
 import Avatar from '../ui/avatar';
 import { awayNote, isAway, statusSummary } from '../../lib/userStatus';
 import Badge from '../ui/badge';
+import RelativeTime from '../ui/relative-time';
 import Button, { IconButton } from '../ui/button';
 import Dialog from '../ui/dialog';
 import FilterButton from '../ui/filter-button';
@@ -106,9 +108,9 @@ const POLL_MS = 30000;
 const COLUMNS =
   'grid grid-cols-[minmax(0,1fr)_5rem_1.75rem] items-center gap-3 px-3 sm:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_5rem_6rem_1.75rem]';
 
-/** The same layout with a leading checkbox column, for a caller who can select rows. */
+/** The admin layout: a leading checkbox column and a Last active column. */
 const SELECT_COLUMNS =
-  'grid grid-cols-[1rem_minmax(0,1fr)_5rem_1.75rem] items-center gap-3 px-3 sm:grid-cols-[1rem_minmax(0,1.2fr)_minmax(0,1fr)_5rem_6rem_1.75rem]';
+  'grid grid-cols-[1rem_minmax(0,1fr)_5rem_1.75rem] items-center gap-3 px-3 sm:grid-cols-[1rem_minmax(0,1.2fr)_minmax(0,1fr)_5rem_6rem_6rem_1.75rem]';
 
 /** The header checkbox: ticked when every selectable row is, mixed when some are. */
 const SelectAllBox: React.FC<{
@@ -490,6 +492,15 @@ export const MembersSection: React.FC<MembersSectionProps> = ({
               className="hidden sm:block"
               onSort={(column) => update(toggleSort(state, column))}
             />
+            {manages && (
+              <SortHeader
+                label="Last active"
+                column="active"
+                state={state}
+                className="hidden sm:block"
+                onSort={(column) => update(toggleSort(state, column))}
+              />
+            )}
             <span role="columnheader" className="sr-only">
               Actions
             </span>
@@ -596,6 +607,22 @@ export const MembersSection: React.FC<MembersSectionProps> = ({
                 >
                   {joinedFormat.format(new Date(member.joined_at))}
                 </span>
+                {manages && (
+                  <span
+                    role="cell"
+                    className="hidden text-xs text-text-muted sm:block"
+                  >
+                    {status === 'invited' ? null : member.last_active_at ===
+                        undefined || member.last_active_at === null ? (
+                      'Never'
+                    ) : (
+                      <RelativeTime
+                        value={member.last_active_at}
+                        className="text-text-muted"
+                      />
+                    )}
+                  </span>
+                )}
                 <div role="cell" className="flex justify-end">
                   {manages && (
                     <Menu

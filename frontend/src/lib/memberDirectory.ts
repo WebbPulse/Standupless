@@ -8,7 +8,7 @@ import type { MemberRead, MemberStatus, WorkspaceRole } from '../types/Api';
 import { roleLabel } from './capabilities';
 
 /** A column the list sorts by. */
-export type MemberSortKey = 'name' | 'email' | 'role' | 'joined';
+export type MemberSortKey = 'name' | 'email' | 'role' | 'joined' | 'active';
 
 /** Which way a sort runs. */
 export type SortDirection = 'asc' | 'desc';
@@ -38,7 +38,13 @@ export const MEMBER_STATUSES: readonly MemberStatus[] = [
   'suspended',
 ];
 
-const SORT_KEYS: readonly MemberSortKey[] = ['name', 'email', 'role', 'joined'];
+const SORT_KEYS: readonly MemberSortKey[] = [
+  'name',
+  'email',
+  'role',
+  'joined',
+  'active',
+];
 
 /** The URL query keys the state is kept under. */
 export const MEMBER_PARAMS = {
@@ -118,6 +124,12 @@ export const toggleValue = <T extends string>(values: T[], value: T): T[] =>
 
 const collator = new Intl.Collator(undefined, { sensitivity: 'base' });
 
+/** When a member was last active as a sortable number, with never seen ordered before any time. */
+const lastActive = (member: MemberRead): number =>
+  member.last_active_at === undefined || member.last_active_at === null
+    ? Number.NEGATIVE_INFINITY
+    : Date.parse(member.last_active_at);
+
 const compareBy = (
   key: MemberSortKey,
   left: MemberRead,
@@ -130,6 +142,11 @@ const compareBy = (
       return MEMBER_ROLES.indexOf(left.role) - MEMBER_ROLES.indexOf(right.role);
     case 'joined':
       return Date.parse(left.joined_at) - Date.parse(right.joined_at);
+    case 'active': {
+      const leftAt = lastActive(left);
+      const rightAt = lastActive(right);
+      return leftAt === rightAt ? 0 : leftAt < rightAt ? -1 : 1;
+    }
     default:
       return collator.compare(memberName(left), memberName(right));
   }

@@ -14182,7 +14182,7 @@
         "type": "object"
       },
       "MemberRead": {
-        "description": "One workspace member, joined with the user row for a renderable identity.\n\n`display_name` is the member's handle. `previous_handles` are the handles they\ngave up, so a client can render a mention written under one as the current name.\n`status` is `suspended` for a member who keeps their history but holds no\naccess, and `invited` for a pending invite, which then carries `invite_id`,\nanswers the invite id as `user_id` and the invite's sent time as `joined_at`.\n`user_status` is the member's own away status while it is in force, and null\nwhen they have none, it has ended, or the caller is a guest outside their teams.",
+        "description": "One workspace member, joined with the user row for a renderable identity.\n\n`display_name` is the member's handle. `previous_handles` are the handles they\ngave up, so a client can render a mention written under one as the current name.\n`status` is `suspended` for a member who keeps their history but holds no\naccess, and `invited` for a pending invite, which then carries `invite_id`,\nanswers the invite id as `user_id` and the invite's sent time as `joined_at`.\n`user_status` is the member's own away status while it is in force, and null\nwhen they have none, it has ended, or the caller is a guest outside their teams.\n`last_active_at` is when the member last made an authenticated request here, to\nwithin a quarter hour, answered only to a workspace admin and null otherwise or\nwhen they were never seen.",
         "properties": {
           "avatar_url": {
             "anyOf": [
@@ -14223,6 +14223,18 @@
             "format": "date-time",
             "title": "Joined At",
             "type": "string"
+          },
+          "last_active_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Active At"
           },
           "previous_handles": {
             "items": {

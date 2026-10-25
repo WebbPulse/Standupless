@@ -322,6 +322,9 @@ class MemberRead(BaseModel):
     answers the invite id as `user_id` and the invite's sent time as `joined_at`.
     `user_status` is the member's own away status while it is in force, and null
     when they have none, it has ended, or the caller is a guest outside their teams.
+    `last_active_at` is when the member last made an authenticated request here, to
+    within a quarter hour, answered only to a workspace admin and null otherwise or
+    when they were never seen.
     """
 
     user_id: str
@@ -337,16 +340,24 @@ class MemberRead(BaseModel):
     suspended_by: Optional[str] = None
     invite_id: Optional[str] = None
     user_status: Optional[UserStatusRead] = None
+    last_active_at: Optional[datetime] = None
 
     @classmethod
     def from_rows(
-        cls, membership: Membership, user: Optional[User], *, visible: Optional[set[str]] = None
+        cls,
+        membership: Membership,
+        user: Optional[User],
+        *,
+        visible: Optional[set[str]] = None,
+        include_activity: bool = False,
     ) -> "MemberRead":
         """Build the response from a membership and the user row it points at.
 
         A missing user row still answers a member, because the membership is the
         authorization fact and dropping it would hide someone who holds access.
         `visible`, when given, names the people whose status the caller may see.
+        `include_activity` is for an admin caller, the only one shown when a seat
+        was last used.
         """
         shown = visible is None or membership.user_id in visible
         return cls(
@@ -362,6 +373,7 @@ class MemberRead(BaseModel):
             suspended_at=membership.suspended_at,
             suspended_by=membership.suspended_by,
             user_status=current_status(membership.user_status) if shown else None,
+            last_active_at=membership.last_active_at if include_activity else None,
         )
 
     @classmethod
