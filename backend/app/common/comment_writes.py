@@ -16,7 +16,7 @@ from webbpulse.dynamodb import ConditionFailed, encode_start_key
 from app.common.api.dependencies.authz import AuthzContext
 from app.common.api.dependencies.repositories import Repositories
 from app.common.api.pagination import resume_key
-from app.common.db.dynamo.comments import Comment, as_comment, build_comment
+from app.common.db.dynamo.comments import Comment, CommentAnchor, as_comment, build_comment
 from app.common.issue_mentions import record_issue_mentions
 from app.common.issue_rules import load_visible_issue, not_found, require_team_member, unprocessable
 from app.common.mentions import mentioned_user_ids
@@ -59,6 +59,7 @@ def create_comment(
     *,
     parent_comment_id: Optional[str] = None,
     attachment_ids: Optional[list[str]] = None,
+    anchor: Optional[CommentAnchor] = None,
 ) -> Comment:
     """Add a comment to an issue, extracting its mentions on the way in.
 
@@ -78,7 +79,12 @@ def create_comment(
 
     A reply to a resolved thread reopens it, so new discussion is never hidden
     under a collapsed thread.
+
+    `anchor` pins a new thread to a passage of the description. A reply belongs to
+    its root's passage, so one carrying its own anchor is a 422.
     """
+    if anchor is not None and parent_comment_id:
+        raise unprocessable("A reply cannot be pinned to a passage")
     issue = load_visible_issue(repositories, context, issue_id)
     require_team_member(repositories, context, issue.team_id)
 
@@ -107,6 +113,7 @@ def create_comment(
         mentions=mentions,
         attachment_ids=attachments,
         source=context.source,
+        anchor=anchor,
     )
     try:
         created = repositories.comments.create(comment)

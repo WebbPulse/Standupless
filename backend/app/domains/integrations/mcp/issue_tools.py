@@ -30,6 +30,7 @@ from app.common.api.schemas.issues import (
     SubscribersRead,
 )
 from app.common.change_source import CHANGE_SOURCES
+from app.common.comment_anchors import ANCHOR_QUOTE_MAX, anchor_from_quote
 from app.common.comment_drafts import clear_posted_draft
 from app.common.comment_writes import comment_page, create_comment
 from app.common.customer_index import require_customer_list_reader
@@ -669,6 +670,7 @@ def _comment_json(comment: Comment) -> dict[str, Any]:
         "edited_at": comment.edited_at.isoformat() if comment.edited_at else None,
         "github_thread": comment.github_thread.model_dump(mode="json") if comment.github_thread else None,
         "resolution": comment.resolution.model_dump(mode="json") if comment.resolution else None,
+        "anchor": comment.anchor.model_dump(mode="json") if comment.anchor else None,
     }
 
 
@@ -685,9 +687,23 @@ def _add_comment(call: ToolCall) -> Any:
 
     With `sync_to_github` the thread is synced too: a reply's thread before the
     reply is written, so the reply is posted, and a new thread once its root is.
+
+    `quote` pins a new thread to the first place the description shows that text,
+    with the context either side found here, so an agent names only the words.
     """
     issue = issue_ref(call, call.require("issue_id"))
     parent = call.optional("parent_comment_id")
+    quote = call.optional("quote")
+    anchor = None
+    if quote is not None:
+        if parent:
+            raise ToolError("quote pins a new thread, so it cannot go on a reply")
+        text = str(quote).strip()
+        if not text or len(text) > ANCHOR_QUOTE_MAX:
+            raise ToolError(f"quote must be between 1 and {ANCHOR_QUOTE_MAX} characters")
+        anchor = anchor_from_quote(issue.body or "", text)
+        if anchor is None:
+            raise ToolError("quote must be text the issue description shows")
     sync = call.optional("sync_to_github") is True
     if sync and parent:
         _sync_root(call, issue, str(parent))
@@ -697,6 +713,7 @@ def _add_comment(call: ToolCall) -> Any:
         issue.issue_id,
         str(call.require("body")),
         parent_comment_id=str(parent) if parent else None,
+        anchor=anchor,
     )
     clear_posted_draft(
         call.repositories,
@@ -1343,6 +1360,10 @@ ISSUE_TOOLS: tuple[Tool, ...] = (
                 "issue_id": string(ISSUE_REF),
                 "body": string("The comment body, in Markdown; @mentions notify"),
                 "parent_comment_id": string("A top level comment on the same issue to reply to"),
+                "quote": string(
+                    "Pin a new thread to this passage of the issue description, copied as it reads; the "
+                    "description highlights it. Not for replies"
+                ),
                 "sync_to_github": boolean(
                     "Also sync the thread to a pull request or GitHub issue linked to this issue, so the App "
                     "posts it there and GitHub replies land in the thread. A public repository publishes it"

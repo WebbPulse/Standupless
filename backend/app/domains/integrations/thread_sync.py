@@ -31,6 +31,7 @@ from webbpulse.dynamodb import ConditionFailed
 from app.common.api.dependencies.authz import AuthzContext
 from app.common.api.dependencies.repositories import Repositories
 from app.common.change_source import GITHUB
+from app.common.comment_anchors import quoted_passage
 from app.common.db.dynamo.base import utc_now
 from app.common.db.dynamo.comments import Comment, GithubThread, build_comment, new_comment_id
 from app.common.db.dynamo.github import ThreadComment, ThreadTarget, thread_comment_key, thread_target_key
@@ -291,7 +292,8 @@ def opener_body(repositories: Repositories, issue: Issue, root: Comment) -> str:
 
     Carries `thread_marker` on its first line, which is how a retry finds a post
     that landed before its row was saved, and how the events consumer knows the
-    delivery of it is the App's own.
+    delivery of it is the App's own. A root pinned to a passage of the description
+    quotes that passage ahead of its own text.
     """
     user = repositories.users.get(root.author_id)
     name = _escape((user.display_name or "") if user is not None else "") or "Someone"
@@ -301,6 +303,7 @@ def opener_body(repositories: Repositories, issue: Issue, root: Comment) -> str:
     return (
         f"{thread_marker(root.comment_id)}\n"
         f"**{name}** started a thread in Standupless on {where}:\n\n"
+        f"{quoted_passage(root.anchor)}"
         f"{_quote(root.body)}\n\n"
         "Replies here are added to the thread in Standupless."
     )

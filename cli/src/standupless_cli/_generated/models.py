@@ -391,7 +391,14 @@ class CheckoutCreate(TypedDict):
     plan: NotRequired[Literal["standard", "business"]]
 
 
+class CommentAnchor(TypedDict):
+    prefix: NotRequired[str]
+    quote: str
+    suffix: NotRequired[str]
+
+
 class CommentCreate(TypedDict):
+    anchor: NotRequired[CommentAnchor | None]
     attachment_ids: NotRequired[list[str]]
     body: NotRequired[str]
     parent_comment_id: NotRequired[str | None]
@@ -3454,6 +3461,7 @@ class BoardRead(TypedDict):
 
 
 class CommentRead(TypedDict):
+    anchor: NotRequired[CommentAnchor | None]
     attachments: NotRequired[list[AttachmentRead]]
     author: AuthorRead
     author_id: str
