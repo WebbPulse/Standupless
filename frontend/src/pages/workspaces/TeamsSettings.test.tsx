@@ -180,6 +180,24 @@ describe('creating a team', () => {
     ).not.toBeInTheDocument();
   });
 
+  it('tells a member why Create team is missing when only admins may create teams', async () => {
+    useWorkspaceMock.mockReturnValue(resolved('member'));
+    renderPage({ open: vi.fn(), openSubTeam: vi.fn(), canCreate: false });
+
+    await screen.findByRole('link', { name: /Engine/ });
+
+    expect(
+      screen.getByText(
+        'Only workspace admins can create teams in this workspace.'
+      )
+    ).toBeInTheDocument();
+    expect(
+      within(screen.getByRole('main')).queryByRole('button', {
+        name: 'Create team',
+      })
+    ).not.toBeInTheDocument();
+  });
+
   it('offers Create team from the empty state when there are no teams', async () => {
     listTeams.mockResolvedValue([]);
     renderPage({ open: vi.fn(), openSubTeam: vi.fn(), canCreate: true });

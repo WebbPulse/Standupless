@@ -54,6 +54,20 @@ def test_create_team_makes_the_caller_admin_and_seeds_statuses(
     assert read["caller_role"] == "admin"
 
 
+def test_create_team_follows_the_team_creation_setting(client: TestClient, repositories: Any, workspace: str) -> None:
+    """With team creation closed to admins, a member is refused and an admin key still creates."""
+    repositories.workspaces.set_permissions(WORKSPACE, team_creation_permission="admins")
+    member = mint_for(repositories, MEMBER, ("teams:write",))
+    admin = mint_for(repositories, ADMIN, ("teams:write", "teams:read", "admin"))
+
+    assert "Only workspace admins can create teams" in refusal(
+        tool(client, member, "create_team", {"name": "Nope", "key_prefix": "NOP"})
+    )
+    created = answer(tool(client, admin, "create_team", {"name": "Platform", "key_prefix": "PLT"}))
+
+    assert created["caller_role"] == "admin"
+
+
 def test_create_team_refuses_a_guest_and_a_taken_prefix(client: TestClient, repositories: Any, workspace: str) -> None:
     """A guest may not create a team, and a prefix in use is the route's conflict."""
     guest = mint_for(repositories, GUEST, ("teams:write",))

@@ -48,9 +48,22 @@ class BranchFormat(StrEnum):
     KEY = "key"
 
 
+class PermissionLevel(StrEnum):
+    """Who a workspace permission setting admits, as Linear's security settings offer it."""
+
+    ADMINS = "admins"
+    MEMBERS = "members"
+
+
 DEFAULT_PLAN = Plan.FREE.value
 
 DEFAULT_BRANCH_FORMAT = BranchFormat.KEY_TITLE.value
+
+DEFAULT_INVITE_PERMISSION = PermissionLevel.ADMINS.value
+
+DEFAULT_TEAM_CREATION_PERMISSION = PermissionLevel.MEMBERS.value
+
+PERMISSION_FIELDS = ("invite_permission", "team_creation_permission")
 
 BILLING_FIELDS = (
     "plan",
@@ -126,6 +139,8 @@ class Workspace(BaseModel):
     `effective_plan` is the higher of the two. `project_update_interval_days` is
     the update cadence a project without its own follows, 0 for no reminders.
     `branch_format` is how every member's copied git branch name is built.
+    `invite_permission` and `team_creation_permission` say whether admins alone
+    or every member may invite people and create teams; guests never may.
     """
 
     id: str = Field(default_factory=new_workspace_id)
@@ -153,6 +168,8 @@ class Workspace(BaseModel):
     purging_at: Optional[datetime] = None
     purge_member_ids: list[str] = Field(default_factory=list)
     branch_format: str = DEFAULT_BRANCH_FORMAT
+    invite_permission: str = DEFAULT_INVITE_PERMISSION
+    team_creation_permission: str = DEFAULT_TEAM_CREATION_PERMISSION
 
     def comp_active(self, now: datetime | None = None) -> bool:
         """Whether a comp grant naming a known plan holds right now, its expiry not yet reached."""
@@ -276,6 +293,17 @@ class WorkspaceRepository:
             item = self._repository.set_attributes(
                 {"id": workspace_id}, {"branch_format": branch_format}, condition=Attr("id").exists()
             )
+        except ConditionFailed:
+            return None
+        return _as_workspace(item) if item is not None else None
+
+    def set_permissions(self, workspace_id: str, **fields: str) -> Workspace | None:
+        """Set who may invite people or create teams, or `None` when the workspace does not exist."""
+        unknown = set(fields) - set(PERMISSION_FIELDS)
+        if unknown:
+            raise ValueError(f"not permission fields: {sorted(unknown)}")
+        try:
+            item = self._repository.set_attributes({"id": workspace_id}, fields, condition=Attr("id").exists())
         except ConditionFailed:
             return None
         return _as_workspace(item) if item is not None else None

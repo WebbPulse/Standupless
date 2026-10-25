@@ -106,20 +106,26 @@ def _update_workspace_display_defaults(call: ToolCall) -> Any:
     return _display_defaults_json(call)
 
 
+UPDATE_WORKSPACE_ARGUMENTS = (
+    "name",
+    "accent_color",
+    "project_update_interval_days",
+    "branch_format",
+    "invite_permission",
+    "team_creation_permission",
+)
+
+
 def _update_workspace(call: ToolCall) -> Any:
-    """Rename the workspace, set its accent color, project update cadence or branch format, as the PATCH route does.
+    """Rename the workspace or set its accent, update cadence, branch format or permissions, as the PATCH route does.
 
     An absent argument is left alone and a null `accent_color` returns the
     accent to the default, so the tool patches exactly what the caller named.
     """
     check_capability(call.repositories, call.context, Capability.WORKSPACE_ADMIN)
-    body = {
-        name: call.arguments[name]
-        for name in ("name", "accent_color", "project_update_interval_days", "branch_format")
-        if call.present(name)
-    }
+    body = {name: call.arguments[name] for name in UPDATE_WORKSPACE_ARGUMENTS if call.present(name)}
     if not body:
-        raise ToolError("name, accent_color, project_update_interval_days or branch_format is required")
+        raise ToolError(f"{', '.join(UPDATE_WORKSPACE_ARGUMENTS[:-1])} or {UPDATE_WORKSPACE_ARGUMENTS[-1]} is required")
     payload = WorkspaceUpdate.model_validate(body)
     return workspace_members.update_workspace(call.repositories, call.context, payload).model_dump(mode="json")
 
@@ -161,7 +167,7 @@ def _invite_member(call: ToolCall) -> Any:
     The accept link is answered too, as the route answers the token, so an admin
     can pass it on when this environment cannot mail the address.
     """
-    check_capability(call.repositories, call.context, Capability.WORKSPACE_ADMIN)
+    check_capability(call.repositories, call.context, Capability.INVITE_CREATE)
     payload = InviteCreate.model_validate({"email": call.require("email"), "role": _assignable_role(call)})
     created = workspace_members.create_invite(call.repositories, call.context, payload)
     body = _invite_json(InviteRead.model_validate(created.model_dump(exclude={"token"})))
@@ -171,7 +177,7 @@ def _invite_member(call: ToolCall) -> Any:
 
 def _revoke_invite(call: ToolCall) -> Any:
     """Revoke one outstanding invite, so its link stops working."""
-    check_capability(call.repositories, call.context, Capability.WORKSPACE_ADMIN)
+    check_capability(call.repositories, call.context, Capability.INVITE_REVOKE)
     invite = _invite_ref(call, call.require("invite"))
     workspace_members.revoke_invite(call.repositories, call.context, invite.invite_id)
     return {"revoked": True, "invite_id": invite.invite_id, "email": invite.email}
@@ -209,8 +215,10 @@ WORKSPACE_TOOLS: tuple[Tool, ...] = (
     Tool(
         name="update_workspace",
         description="Rename the workspace, set its accent color, set the default cadence project leads are "
-        "reminded to post updates at, or set the git branch name format. The slug is fixed. Pass at least one "
-        "of name, accent_color, project_update_interval_days and branch_format. Needs workspace owner or admin.",
+        "reminded to post updates at, set the git branch name format, or choose whether only admins or every "
+        "member may invite people and create teams. The slug is fixed. Pass at least one of name, accent_color, "
+        "project_update_interval_days, branch_format, invite_permission and team_creation_permission. Needs "
+        "workspace owner or admin.",
         scopes=("settings:write", "admin"),
         schema=object_schema(
             {
@@ -226,6 +234,16 @@ WORKSPACE_TOOLS: tuple[Tool, ...] = (
                     "enum": ["key_title", "user_key_title", "key"],
                     "description": "How copied git branch names are built: key_title (abc-1-fix-login), "
                     "user_key_title (handle/abc-1-fix-login) or key (abc-1)",
+                },
+                "invite_permission": {
+                    "type": "string",
+                    "enum": ["admins", "members"],
+                    "description": "Who may invite new members: admins, or every member (at member or guest only)",
+                },
+                "team_creation_permission": {
+                    "type": "string",
+                    "enum": ["admins", "members"],
+                    "description": "Who may create teams: admins, or every member",
                 },
             }
         ),
@@ -286,8 +304,10 @@ WORKSPACE_TOOLS: tuple[Tool, ...] = (
     Tool(
         name="invite_member",
         description="Invite an email address to the workspace as admin, member or guest and email them the "
-        "accept link, which is also answered. Needs owner or admin and counts against the plan's limits.",
-        scopes=("members:write", "admin"),
+        "accept link, which is also answered. Needs owner or admin, or a member when the workspace lets members "
+        "invite, who may invite only as member or guest. Inviting as admin needs the admin scope. Counts against "
+        "the plan's limits.",
+        scopes=("members:write",),
         schema=object_schema(
             {"email": string("The address to invite"), "role": enum(ASSIGNABLE_ROLES, "The role they join with")},
             required=("email", "role"),
@@ -297,8 +317,9 @@ WORKSPACE_TOOLS: tuple[Tool, ...] = (
     Tool(
         name="revoke_invite",
         description="Revoke an outstanding invite so its link stops working; the invitee would need a new invite. "
-        "invite: an invite_id or the invited email address. Needs owner or admin.",
-        scopes=("members:write", "admin"),
+        "invite: an invite_id or the invited email address. Needs owner or admin with the admin scope, or the "
+        "member who sent the invite.",
+        scopes=("members:write",),
         schema=object_schema({"invite": string("An invite_id, or the invited email address")}, required=("invite",)),
         handler=_revoke_invite,
         destructive=True,

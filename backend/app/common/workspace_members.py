@@ -30,7 +30,7 @@ from app.common.api.schemas.workspaces import (
 )
 from app.common.billing import sync_seats
 from app.common.db.dynamo.invites import Invite, default_expiry, hash_token, new_invite_id, new_invite_token
-from app.common.db.dynamo.workspaces import Workspace
+from app.common.db.dynamo.workspaces import PERMISSION_FIELDS, Workspace
 from app.common.email import deliver
 from app.common.email.invite import render_invite
 from app.common.plan_limits import LimitedResource
@@ -40,6 +40,10 @@ NOT_FOUND = {"error_code": "NOT_FOUND", "message": "Resource not found"}
 LAST_OWNER = {"error_code": "CONFLICT", "message": "A workspace must keep one owner"}
 
 OWNER_ONLY = {"error_code": "FORBIDDEN", "message": "Only an owner may grant or remove ownership"}
+
+ADMIN_INVITE_ONLY = {"error_code": "FORBIDDEN", "message": "Only a workspace admin may invite someone as an admin"}
+
+OWN_INVITES_ONLY = {"error_code": "FORBIDDEN", "message": "Only an admin may revoke an invite someone else sent"}
 
 
 def _not_found() -> HTTPException:
@@ -56,7 +60,7 @@ def read_workspace(repositories: Repositories, context: AuthzContext) -> Workspa
 
 
 def update_workspace(repositories: Repositories, context: AuthzContext, payload: WorkspaceUpdate) -> WorkspaceRead:
-    """Rename the workspace, change its accent color, project update cadence or branch format. The slug is fixed.
+    """Rename the workspace or change its accent, update cadence, branch format or permissions. The slug is fixed.
 
     `accent_color` is written only when the body names it, so a rename never
     resets the accent, and an explicit null returns it to the default.
@@ -73,6 +77,9 @@ def update_workspace(repositories: Repositories, context: AuthzContext, payload:
         )
     if workspace is not None and payload.branch_format is not None:
         workspace = repositories.workspaces.set_branch_format(context.workspace_id, payload.branch_format)
+    permissions = {name: getattr(payload, name) for name in PERMISSION_FIELDS if getattr(payload, name) is not None}
+    if workspace is not None and permissions:
+        workspace = repositories.workspaces.set_permissions(context.workspace_id, **permissions)
     if workspace is None:
         raise _not_found()
     before, after = changed_fields(previous, _settings_of(workspace))
@@ -99,6 +106,8 @@ def _settings_of(workspace: Workspace | None) -> dict[str, object]:
         "accent_color": workspace.accent_color,
         "project_update_interval_days": workspace.project_update_interval_days,
         "branch_format": workspace.branch_format,
+        "invite_permission": workspace.invite_permission,
+        "team_creation_permission": workspace.team_creation_permission,
     }
 
 
@@ -208,7 +217,12 @@ def create_invite(repositories: Repositories, context: AuthzContext, payload: In
     A full workspace refuses the invite up front, though the member slot is only
     taken when it is accepted. The invite takes its pending slot, and a guest
     invite its guest place, in the same transaction as its row.
+
+    A member the invite setting lets in may invite at member or guest only, so
+    inviting never grants more than the inviter holds.
     """
+    if payload.role == "admin" and not context.acts_as_workspace_admin:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=ADMIN_INVITE_ONLY)
     plan_usage.ensure_room(repositories, context.workspace_id, LimitedResource.MEMBERS)
     token = new_invite_token()
     invite = Invite(
@@ -259,7 +273,14 @@ def create_invite(repositories: Repositories, context: AuthzContext, payload: In
 
 
 def revoke_invite(repositories: Repositories, context: AuthzContext, invite_id: str) -> None:
-    """Revoke an invite before it is accepted. Idempotent, as the route is, and audited only when one went."""
+    """Revoke an invite before it is accepted. Idempotent, as the route is, and audited only when one went.
+
+    Anyone not acting as an admin may revoke only an invite they sent.
+    """
+    if not context.acts_as_workspace_admin:
+        invite = repositories.invites.get(context.workspace_id, invite_id)
+        if invite is not None and invite.invited_by != context.user_id:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=OWN_INVITES_ONLY)
     existing = plan_usage.delete_invite(repositories, context.workspace_id, invite_id)
     if existing is not None:
         audit.record(

@@ -47,7 +47,7 @@ import { useShortcut } from '../../hooks/useShortcuts';
 import { useTeams } from '../../hooks/useTeams';
 import { useWorkspace } from '../../hooks/useWorkspace';
 import { useWorkspaceMembers } from '../../hooks/useWorkspaceMembers';
-import { canWriteIssues } from '../../lib/capabilities';
+import { canInviteMembers, canWriteIssues } from '../../lib/capabilities';
 import { errorMessage } from '../../lib/errors';
 import { defaultViewState, type ViewState } from '../../lib/issueView';
 import {
@@ -127,6 +127,7 @@ const setupSteps = ({
   memberCount,
   github,
   canCreateTeam,
+  canInvite,
   onCreateTeam,
 }: {
   slug: string;
@@ -134,6 +135,7 @@ const setupSteps = ({
   memberCount: number;
   github: 'installed' | 'not_installed' | 'not_configured' | null;
   canCreateTeam: boolean;
+  canInvite: boolean;
   onCreateTeam: () => void;
 }): SetupStep[] => {
   const steps: SetupStep[] = [
@@ -156,14 +158,14 @@ const setupSteps = ({
       title: 'Invite your people',
       detail: 'Bring in the software engineers you plan and ship with.',
       done: memberCount > 1,
-      action: (
+      action: canInvite ? (
         <Link
           to={settingsPath(slug)}
           className="shrink-0 text-xs text-accent hover:underline"
         >
           Invite people
         </Link>
-      ),
+      ) : null,
     },
   ];
   if (github !== 'not_configured') {
@@ -198,6 +200,7 @@ const WorkspaceHome: React.FC = () => {
   const workspaceId = workspace?.id ?? '';
   const userId = user?.id ?? '';
   const isAdmin = workspace?.role === 'owner' || workspace?.role === 'admin';
+  const canInvite = workspace !== null && canInviteMembers(workspace);
   const [timezone] = useState(browserTimezone);
   const [hour] = useState(() => new Date().getHours());
 
@@ -488,6 +491,7 @@ const WorkspaceHome: React.FC = () => {
                   memberCount: members.length,
                   github: isAdmin ? github : 'not_configured',
                   canCreateTeam: true,
+                  canInvite,
                   onCreateTeam: openCreateTeam,
                 })}
               />
@@ -753,6 +757,7 @@ const WorkspaceHome: React.FC = () => {
                 memberCount: members.length,
                 github,
                 canCreateTeam: createTeam.canCreate,
+                canInvite,
                 onCreateTeam: openCreateTeam,
               })}
             />

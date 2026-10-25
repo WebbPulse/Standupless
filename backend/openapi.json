@@ -25664,6 +25664,16 @@
             "title": "Id",
             "type": "string"
           },
+          "invite_permission": {
+            "default": "admins",
+            "description": "Who may invite new members: admins, or every member",
+            "enum": [
+              "admins",
+              "members"
+            ],
+            "title": "Invite Permission",
+            "type": "string"
+          },
           "name": {
             "title": "Name",
             "type": "string"
@@ -25709,6 +25719,16 @@
           "slug": {
             "title": "Slug",
             "type": "string"
+          },
+          "team_creation_permission": {
+            "default": "members",
+            "description": "Who may create teams: admins, or every member",
+            "enum": [
+              "admins",
+              "members"
+            ],
+            "title": "Team Creation Permission",
+            "type": "string"
           }
         },
         "required": [
@@ -25751,7 +25771,7 @@
         "type": "object"
       },
       "WorkspaceUpdate": {
-        "description": "The body `PATCH /api/workspaces/{workspace_id}` takes.\n\nThe name, the accent color, the default project update cadence and the git\nbranch name format are editable. The slug is not: it is the tenant's public handle and changing one\nwould break every link that carries it. An absent field is left alone, and an\nexplicit null `accent_color` goes back to the Standupless default.",
+        "description": "The body `PATCH /api/workspaces/{workspace_id}` takes.\n\nThe name, the accent color, the default project update cadence, the git\nbranch name format and who may invite people or create teams are editable.\nThe slug is not: it is the tenant's public handle and changing one\nwould break every link that carries it. An absent field is left alone, and an\nexplicit null `accent_color` goes back to the Standupless default.",
         "properties": {
           "accent_color": {
             "anyOf": [
@@ -25782,6 +25802,22 @@
             "description": "How copied git branch names are built: key_title, user_key_title or key",
             "title": "Branch Format"
           },
+          "invite_permission": {
+            "anyOf": [
+              {
+                "enum": [
+                  "admins",
+                  "members"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Who may invite new members: admins, or every member",
+            "title": "Invite Permission"
+          },
           "name": {
             "anyOf": [
               {
@@ -25805,6 +25841,22 @@
               }
             ],
             "title": "Project Update Interval Days"
+          },
+          "team_creation_permission": {
+            "anyOf": [
+              {
+                "enum": [
+                  "admins",
+                  "members"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Who may create teams: admins, or every member",
+            "title": "Team Creation Permission"
           }
         },
         "title": "WorkspaceUpdate",
@@ -38395,7 +38447,7 @@
         ]
       },
       "post": {
-        "description": "Store an invite, mail it, and return its token exactly once.\n\nOnly the token's SHA-256 hash is stored, so this response is the only place\nthe token is readable. It is still returned after the mail goes out, because\nthe copy-link flow is what an admin falls back on when the address is one this\nenvironment cannot reach, and a failed send never fails the invite.",
+        "description": "Store an invite, mail it, and return its token exactly once.\n\nOnly the token's SHA-256 hash is stored, so this response is the only place\nthe token is readable. It is still returned after the mail goes out, because\nthe copy-link flow is what an admin falls back on when the address is one this\nenvironment cannot reach, and a failed send never fails the invite. A member\nmay invite at member or guest when the workspace's invite setting allows it.",
         "operationId": "create_invite_api_workspaces__workspace_id__invites_post",
         "parameters": [
           {
@@ -38454,7 +38506,7 @@
     },
     "/api/workspaces/{workspace_id}/invites/{invite_id}": {
       "delete": {
-        "description": "Revoke an invite before it is accepted.",
+        "description": "Revoke an invite before it is accepted. A member may revoke only an invite they sent.",
         "operationId": "delete_invite_api_workspaces__workspace_id__invites__invite_id__delete",
         "parameters": [
           {

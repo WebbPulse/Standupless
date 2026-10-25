@@ -127,6 +127,26 @@ def test_update_workspace_sets_the_branch_format(client: TestClient, repositorie
     assert "branch_format" in refusal(tool(client, secret, "update_workspace", {"branch_format": "title"}))
 
 
+def test_update_workspace_sets_the_permission_settings(client: TestClient, repositories: Any, workspace: str) -> None:
+    """An admin opens invites to members and closes team creation to admins, and a bad value is refused."""
+    secret = mint_for(repositories, ADMIN, ("settings:write", "admin"))
+
+    updated = answer(
+        tool(
+            client,
+            secret,
+            "update_workspace",
+            {"invite_permission": "members", "team_creation_permission": "admins"},
+        )
+    )
+
+    assert updated["invite_permission"] == "members"
+    assert updated["team_creation_permission"] == "admins"
+    stored = repositories.workspaces.get(WORKSPACE)
+    assert (stored.invite_permission, stored.team_creation_permission) == ("members", "admins")
+    assert "invite_permission" in refusal(tool(client, secret, "update_workspace", {"invite_permission": "everyone"}))
+
+
 def test_update_workspace_refuses_what_the_route_refuses(client: TestClient, repositories: Any, workspace: str) -> None:
     """A member cannot carry admin, a blank name is refused, and the slug is not a field."""
     scope_refused(
@@ -141,6 +161,8 @@ def test_update_workspace_refuses_what_the_route_refuses(client: TestClient, rep
         "accent_color",
         "project_update_interval_days",
         "branch_format",
+        "invite_permission",
+        "team_creation_permission",
     }
     assert "required" in refusal(tool(client, secret, "update_workspace", {}))
 
@@ -310,11 +332,11 @@ def test_invite_member_stores_and_mails_the_invite(
 
 
 def test_invite_member_refuses_what_the_route_refuses(client: TestClient, repositories: Any, workspace: str) -> None:
-    """A member cannot invite, ownership cannot be invited, and a bad address is refused."""
-    scope_refused(
+    """A member cannot invite by default, ownership cannot be invited, and a bad address is refused."""
+    assert "Only workspace admins can invite" in refusal(
         tool(
             client,
-            mint_for(repositories, MEMBER, ADMIN_MEMBERS),
+            mint_for(repositories, MEMBER, ("members:write",)),
             "invite_member",
             {"email": "x@example.com", "role": "member"},
         )
@@ -324,6 +346,22 @@ def test_invite_member_refuses_what_the_route_refuses(client: TestClient, reposi
     assert "Ownership" in refusal(tool(client, secret, "invite_member", {"email": "x@example.com", "role": "owner"}))
     assert "email" in refusal(tool(client, secret, "invite_member", {"email": "not-an-address", "role": "member"}))
     assert repositories.invites.list_for_workspace(WORKSPACE) == []
+
+
+def test_invite_member_lets_a_member_invite_when_the_workspace_allows_it(
+    client: TestClient, repositories: Any, workspace: str, recorder: RecordingEmailSender
+) -> None:
+    """With invites open to members, a member invites at member or guest but never as an admin."""
+    repositories.workspaces.set_permissions(WORKSPACE, invite_permission="members")
+    secret = mint_for(repositories, MEMBER, ("members:write",))
+
+    created = answer(tool(client, secret, "invite_member", {"email": "new@example.com", "role": "guest"}))
+
+    assert created["invited_by"] == MEMBER
+    assert "as an admin" in refusal(tool(client, secret, "invite_member", {"email": "x@example.com", "role": "admin"}))
+    guest = mint_for(repositories, GUEST, ("members:write",))
+    assert refusal(tool(client, guest, "invite_member", {"email": "y@example.com", "role": "guest"}))
+    assert [row.email for row in repositories.invites.list_for_workspace(WORKSPACE)] == ["new@example.com"]
 
 
 @pytest.mark.parametrize("resource", [LimitedResource.INVITES, LimitedResource.MEMBERS])
@@ -361,10 +399,10 @@ def test_revoke_invite_by_email_and_by_id(client: TestClient, repositories: Any,
 def test_revoke_invite_refuses_a_member_and_an_unknown_invite(
     client: TestClient, repositories: Any, workspace: str
 ) -> None:
-    """A member cannot revoke, and an invite that is not outstanding here is not found."""
+    """A member cannot revoke another person's invite, and an invite that is not outstanding here is not found."""
     invite = seed_invite(repositories, WORKSPACE, "pending@example.com")
-    scope_refused(
-        tool(client, mint_for(repositories, MEMBER, ADMIN_MEMBERS), "revoke_invite", {"invite": invite.invite_id})
+    assert "someone else sent" in refusal(
+        tool(client, mint_for(repositories, MEMBER, ("members:write",)), "revoke_invite", {"invite": invite.invite_id})
     )
     secret = mint_for(repositories, OWNER, ADMIN_MEMBERS)
 
