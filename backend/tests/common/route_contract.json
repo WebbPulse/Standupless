@@ -3030,6 +3030,12 @@
     "path": "/api/workspaces/{workspace_id}/members"
   },
   {
+    "auth": "workspace:admin",
+    "domain": "workspaces",
+    "method": "POST",
+    "path": "/api/workspaces/{workspace_id}/members/bulk"
+  },
+  {
     "auth": "workspace:read",
     "domain": "workspaces",
     "method": "DELETE",

@@ -121,6 +121,7 @@ ROUTE_SCOPES: Mapping[tuple[str, str], tuple[str, ...]] = {
     ("POST", "/{workspace_id}/deletion"): NO_KEY_ACCESS,
     ("DELETE", "/{workspace_id}/deletion"): NO_KEY_ACCESS,
     ("GET", "/{workspace_id}/members"): MEMBERS_READ,
+    ("POST", "/{workspace_id}/members/bulk"): MEMBERS_WRITE_ADMIN,
     ("PATCH", "/{workspace_id}/members/{user_id}"): MEMBERS_WRITE_ADMIN,
     ("DELETE", "/{workspace_id}/members/{user_id}"): MEMBERS_WRITE_ADMIN,
     ("POST", "/{workspace_id}/members/{user_id}/suspend"): MEMBERS_WRITE_ADMIN,

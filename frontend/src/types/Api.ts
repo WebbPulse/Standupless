@@ -608,6 +608,35 @@ export interface MemberUpdate {
   role: WorkspaceRole;
 }
 
+/** The action a bulk member change applies to every member named. */
+export type MemberBulkAction =
+  'change_role' | 'suspend' | 'reactivate' | 'remove' | 'add_to_team';
+
+/** One action on several workspace members: a role for a role change, a team to add them to. */
+export interface MemberBulkUpdate {
+  action: MemberBulkAction;
+  user_ids: string[];
+  role?: WorkspaceRole;
+  team_id?: string;
+}
+
+/** What a bulk member change did to one member, with the reason when it was skipped. */
+export interface MemberBulkResult {
+  user_id: string;
+  outcome: 'changed' | 'unchanged' | 'skipped';
+  error_code?: string | null;
+  message?: string | null;
+  member?: MemberRead | null;
+}
+
+/** The answer to a bulk member change: a result per member and the tallies. */
+export interface MemberBulkRead {
+  results: MemberBulkResult[];
+  changed: number;
+  unchanged: number;
+  skipped: number;
+}
+
 /** One outstanding invite to a workspace. */
 export interface InviteRead {
   invite_id: string;

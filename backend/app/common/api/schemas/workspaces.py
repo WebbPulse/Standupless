@@ -14,7 +14,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Literal, Optional
 
-from pydantic import BaseModel, EmailStr, Field, field_validator
+from pydantic import BaseModel, EmailStr, Field, field_validator, model_validator
 
 from app.common.db.dynamo.invites import Invite
 from app.common.db.dynamo.memberships import Membership
@@ -32,6 +32,13 @@ BranchFormatField = Literal["key_title", "user_key_title", "key"]
 PermissionLevelField = Literal["admins", "members"]
 
 MemberStatusField = Literal["active", "suspended", "invited"]
+
+MemberBulkActionField = Literal["change_role", "suspend", "reactivate", "remove", "add_to_team"]
+
+MemberBulkOutcomeField = Literal["changed", "unchanged", "skipped"]
+
+BULK_MAX_MEMBERS = 200
+"""The most members one bulk action names, so a request stays inside one Lambda invocation's time."""
 
 
 class WorkspaceCreate(BaseModel):
@@ -290,6 +297,61 @@ class MemberUpdate(BaseModel):
     """The body a member role change takes."""
 
     role: WorkspaceRoleField
+
+
+class MemberBulkUpdate(BaseModel):
+    """The body `POST /api/workspaces/{workspace_id}/members/bulk` takes.
+
+    One action applied to every named member: `role` is the role `change_role`
+    sets, and `team_id` the team `add_to_team` adds them to as members.
+    """
+
+    action: MemberBulkActionField
+    user_ids: list[str] = Field(min_length=1, max_length=BULK_MAX_MEMBERS)
+    role: Optional[WorkspaceRoleField] = None
+    team_id: Optional[str] = Field(default=None, min_length=1, max_length=64)
+
+    @field_validator("user_ids")
+    @classmethod
+    def check_user_ids(cls, value: list[str]) -> list[str]:
+        """Drop repeats and blanks, keeping first-seen order, so no member is acted on or audited twice."""
+        kept = [user_id for user_id in dict.fromkeys(item.strip() for item in value) if user_id]
+        if not kept:
+            raise ValueError("user_ids must name at least one member")
+        return kept
+
+    @model_validator(mode="after")
+    def check_arguments(self) -> "MemberBulkUpdate":
+        """Require the role a role change sets and the team an add names, and refuse them elsewhere."""
+        if (self.action == "change_role") != (self.role is not None):
+            raise ValueError("role is required for change_role and only allowed there")
+        if (self.action == "add_to_team") != (self.team_id is not None):
+            raise ValueError("team_id is required for add_to_team and only allowed there")
+        return self
+
+
+class MemberBulkResult(BaseModel):
+    """What a bulk action did to one member.
+
+    `changed` and `unchanged` carry the member as they now stand, absent once
+    removed. `skipped` carries the refusal the single route would have answered,
+    as `error_code` and `message`, so the caller can say why.
+    """
+
+    user_id: str
+    outcome: MemberBulkOutcomeField
+    error_code: Optional[str] = None
+    message: Optional[str] = None
+    member: Optional[MemberRead] = None
+
+
+class MemberBulkRead(BaseModel):
+    """What a bulk member action answers with: one result per named member, in request order, and the tallies."""
+
+    results: list[MemberBulkResult]
+    changed: int = 0
+    unchanged: int = 0
+    skipped: int = 0
 
 
 class InviteCreate(BaseModel):

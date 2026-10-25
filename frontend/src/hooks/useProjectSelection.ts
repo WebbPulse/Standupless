@@ -1,6 +1,6 @@
 /**
- * Selection on the projects list and board, the initiatives list and the
- * customers list, worked the way the issue list's is: x toggles the row in
+ * Selection on the projects list and board, the initiatives list, the
+ * customers list and the workspace members list, worked the way the issue list's is: x toggles the row in
  * focus, Shift and an arrow or j and k extends the selection from it, Cmd or
  * Ctrl and A takes every row shown, Escape lets go, and a Shift click takes
  * the run from the last row picked. Selected rows that leave the page drop out
@@ -30,6 +30,8 @@ export interface ProjectSelection {
   selected: ReadonlySet<string>;
   /** Picks or drops one project, or takes the run from the anchor with `range`. */
   toggle: (projectId: string, range: boolean) => void;
+  /** Takes every row shown, as Cmd or Ctrl and A does, for a select-all checkbox. */
+  selectAll: () => void;
   clear: () => void;
 }
 
@@ -73,6 +75,10 @@ export const useProjectSelection = ({
     setHeld(new Set());
     setAnchor(null);
   }, []);
+
+  const selectAll = useCallback(() => {
+    setHeld(new Set(order));
+  }, [order]);
 
   const extend = (step: number): void => {
     if (order.length === 0) return;
@@ -144,7 +150,7 @@ export const useProjectSelection = ({
     enabled: live,
     handler: (event) => {
       event?.preventDefault();
-      setHeld(new Set(order));
+      selectAll();
     },
   });
   useShortcut({
@@ -155,7 +161,7 @@ export const useProjectSelection = ({
     handler: clear,
   });
 
-  return { selected, toggle, clear };
+  return { selected, toggle, selectAll, clear };
 };
 
 export default useProjectSelection;
