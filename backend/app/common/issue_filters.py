@@ -311,11 +311,14 @@ class IssueFilter:
     has_relations: FilterValues = field(default_factory=frozenset)
     customer_ids: FilterValues = field(default_factory=frozenset)
     customer_ids_not: FilterValues = field(default_factory=frozenset)
+    release_ids: FilterValues = field(default_factory=frozenset)
+    release_ids_not: FilterValues = field(default_factory=frozenset)
     match: str = "all"
     groups: tuple[IssueFilter, ...] = ()
     relation_ids: Optional[Mapping[str, frozenset[str]]] = field(default=None, compare=False)
     subscribed_issue_ids: Optional[Mapping[str, frozenset[str]]] = field(default=None, compare=False)
     customer_index: Optional[CustomerIndex] = field(default=None, compare=False)
+    release_index: Optional[Mapping[str, frozenset[str]]] = field(default=None, compare=False)
     viewer_id: Optional[str] = field(default=None, compare=False)
 
     @property
@@ -349,6 +352,12 @@ class IssueFilter:
         """Whether matching needs the workspace's customer requests, which costs one planning query."""
         own = bool(self.customer_ids or self.customer_ids_not)
         return own or any(group.needs_customers for group in self.groups)
+
+    @property
+    def needs_releases(self) -> bool:
+        """Whether matching needs the workspace's release links, which costs one planning query."""
+        own = bool(self.release_ids or self.release_ids_not)
+        return own or any(group.needs_releases for group in self.groups)
 
     @property
     def needs_cycles(self) -> bool:
@@ -389,7 +398,13 @@ class IssueFilter:
         """The filter as plain JSON values, groups included, for the fingerprint."""
         canonical: dict[str, Any] = {}
         for item in fields(self):
-            if item.name in ("relation_ids", "subscribed_issue_ids", "customer_index", "viewer_id"):
+            if item.name in (
+                "relation_ids",
+                "subscribed_issue_ids",
+                "customer_index",
+                "release_index",
+                "viewer_id",
+            ):
                 continue
             value = getattr(self, item.name)
             if isinstance(value, frozenset):
@@ -490,6 +505,9 @@ class IssueFilter:
             held = index.customer_ids("issue", issue.issue_id) if index else frozenset()
             important = index.important_count("issue", issue.issue_id) if index else 0
             yield customer_match(self.customer_ids, self.customer_ids_not, held, important)
+        if self.release_ids or self.release_ids_not:
+            releases = (self.release_index or {}).get(issue.issue_id, frozenset())
+            yield _labels_included(self.release_ids, self.release_ids_not, list(releases))
         if self.content or self.content_not:
             yield _content_matches(self.content, self.content_not, issue)
         if self.query and self.query.strip():
@@ -659,6 +677,8 @@ def build_issue_filter(
     has_relation: Iterable[str] | str | None = None,
     customer_id: Iterable[str] | str | None = None,
     customer_id_not: Iterable[str] | str | None = None,
+    release_id: Iterable[str] | str | None = None,
+    release_id_not: Iterable[str] | str | None = None,
     match: object = None,
     groups: object = None,
 ) -> IssueFilter:
@@ -674,7 +694,9 @@ def build_issue_filter(
     `InvalidFilterValue` otherwise. `customer_id` keeps the issues one of the
     named customers asked for, and `customer_id_not` drops them, `none` standing
     for an issue no customer asked for and `important` for one with an important
-    request. `my_teams` in a team filter stands for the teams `user_id` belongs
+    request. `release_id` keeps the issues that shipped in one of the named
+    releases and `release_id_not` drops them, `none` standing for an issue in no
+    release. `my_teams` in a team filter stands for the teams `user_id` belongs
     to. Relative cycles, `my_teams`, the link index and the
     subscription index are resolved later, by `resolve_issue_filter`, because each
     needs a read. `groups` takes a list of condition objects, or its JSON text,
@@ -731,6 +753,8 @@ def build_issue_filter(
         has_relations=_relation_types(has_relation),
         customer_ids=_values(customer_id),
         customer_ids_not=_values(customer_id_not),
+        release_ids=_values(release_id),
+        release_ids_not=_values(release_id_not),
         match=_match_mode(match),
         groups=tuple(_group_filter(user_id, item) for item in parse_groups(groups)),
         viewer_id=user_id,

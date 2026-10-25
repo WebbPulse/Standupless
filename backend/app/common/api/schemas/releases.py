@@ -565,3 +565,27 @@ class IssueReleaseListRead(BaseModel):
     """The releases one issue shipped in, newest first."""
 
     releases: list[IssueReleaseRead]
+
+
+class ReleaseIndexEntryRead(BaseModel):
+    """One release with the issues it carries, as an issue list groups and labels its rows by it.
+
+    `stage_position` is where `current_stage` sits in the team's pipeline, `-1`
+    when the release reached no stage, so a list orders its release groups by
+    pipeline stage without reading each team's pipeline.
+    """
+
+    release_id: str
+    team_id: str
+    name: str
+    current_stage: Optional[ReleaseStageRead] = None
+    stage_position: int = -1
+    included_in: Optional[str] = None
+    created_at: datetime
+    issue_ids: list[str] = Field(default_factory=list)
+
+
+class ReleaseIndexRead(BaseModel):
+    """Every release of the teams the caller can see, newest first, each with its issues."""
+
+    releases: list[ReleaseIndexEntryRead]

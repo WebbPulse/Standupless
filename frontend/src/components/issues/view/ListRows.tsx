@@ -19,6 +19,7 @@ import {
   LuFlame,
   LuPlus,
   LuRefreshCcw,
+  LuRocket,
 } from 'react-icons/lu';
 import { Link } from 'react-router-dom';
 import { NONE, type OrderedIssueRead } from '../../../api/issues';
@@ -163,6 +164,16 @@ export const GroupGlyph: React.FC<{ group: IssueGroup }> = ({ group }) => {
       />
     ) : (
       <Avatar name={group.label} size="xs" shape="square" />
+    );
+  }
+  if (group.field === 'release') {
+    return group.key === NONE ? (
+      <span
+        aria-hidden="true"
+        className="h-3.5 w-3.5 rounded-full border border-dashed border-text-faint"
+      />
+    ) : (
+      <LuRocket aria-hidden="true" className="h-3.5 w-3.5 text-text-muted" />
     );
   }
   if (group.field === 'milestone' && group.milestone !== undefined) {

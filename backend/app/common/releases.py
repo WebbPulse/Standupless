@@ -37,6 +37,8 @@ from app.common.api.schemas.releases import (
     IssueReleaseRead,
     ReleaseCreate,
     ReleaseDetailRead,
+    ReleaseIndexEntryRead,
+    ReleaseIndexRead,
     ReleaseIssueRead,
     ReleasePipelineRead,
     ReleasePipelineUpdate,
@@ -62,7 +64,7 @@ from app.common.db.dynamo.releases import (
 )
 from app.common.issue_key_search import find_keys, moving_commit_keys
 from app.common.issue_move import find_issue_by_number
-from app.common.issue_rules import load_visible_issue, status_categories
+from app.common.issue_rules import load_visible_issue, status_categories, visible_team_ids
 from app.common.planning_rules import (
     not_found,
     require_team_admin,
@@ -1147,3 +1149,42 @@ def issue_releases(repositories: Repositories, context: AuthzContext, issue_id: 
             )
         )
     return IssueReleaseListRead(releases=rows)
+
+
+RELEASE_INDEX_TEAM_CAP = 2000
+"""The most releases one team contributes to the release index, newest first."""
+
+
+def release_index(repositories: Repositories, context: AuthzContext) -> ReleaseIndexRead:
+    """Every release of the teams the caller can see, with its issues and furthest stage.
+
+    One query per visible team rather than one per issue, so an issue list groups
+    and labels every row by release from a single read. A release a promotion
+    carried is listed too, naming that promotion in `included_in`, as the issue
+    page lists it.
+    """
+    entries: list[ReleaseIndexEntryRead] = []
+    for team_id in visible_team_ids(repositories, context):
+        rows = repositories.releases.list_all_for_team(context.workspace_id, team_id, max_items=RELEASE_INDEX_TEAM_CAP)
+        if not rows:
+            continue
+        pipeline = pipeline_for(repositories, context.workspace_id, team_id)[0]
+        order = {stage.stage_id: index for index, stage in enumerate(pipeline.stages)}
+        carried = included_in(rows, pipeline)
+        for release in rows:
+            read = ReleaseRead.from_row(release, pipeline)
+            stage = read.current_stage
+            entries.append(
+                ReleaseIndexEntryRead(
+                    release_id=release.release_id,
+                    team_id=release.team_id,
+                    name=release.name,
+                    current_stage=stage,
+                    stage_position=order.get(stage.stage_id, -1) if stage is not None else -1,
+                    included_in=carried.get(release.release_id),
+                    created_at=release.created_at,
+                    issue_ids=list(dict.fromkeys(release.issue_ids)),
+                )
+            )
+    entries.sort(key=lambda entry: entry.release_id, reverse=True)
+    return ReleaseIndexRead(releases=entries)

@@ -147,18 +147,18 @@ def _view_properties(*, clearable: bool) -> dict[str, Any]:
         "filter": {
             "type": "object",
             "description": (
-                "The issue filter, keyed as list_issues takes it (team_id, team_id_in, status_id, "
-                "status_category, assignee_id, creator_id, subscriber_id, label_id, label_id_all, priority, "
-                "parent_id, cycle_id, project_id, project_milestone_id, estimate, sla_status, has_relation, "
-                "due_before, due_after, created_after, created_before, updated_after, updated_before, "
-                "completed_after, completed_before, customer_id, content, q and their _not forms, plus is_blocked, "
-                "is_blocking and has_sub_issues as true or false). Values are ids or lists of ids; assignee_id, "
-                "creator_id and subscriber_id may be 'me'. match is all (default) or any, and groups is a list "
-                "of condition objects with these same keys and their own match, each counting as one condition, "
-                "and a group may hold groups of its own, two levels at most. A project view's filter instead "
-                "takes team_id, status (project statuses such as planned or in_progress), lead_id (user ids, "
-                "'none' for no lead), customer_id and customer_id_not (customer ids, 'none' for no customer "
-                "request), and sub_teams, is_blocked and is_blocking, each as true or false."
+                "The issue filter, keyed as list_issues takes it (team_id, team_id_in, status_id, status_category, "
+                "assignee_id, creator_id, subscriber_id, label_id, label_id_all, priority, parent_id, cycle_id, "
+                "project_id, project_milestone_id, estimate, sla_status, has_relation, due_before, due_after, "
+                "created_after, created_before, updated_after, updated_before, completed_after, completed_before, "
+                "customer_id, release_id, content, q and their _not forms, plus is_blocked, is_blocking and "
+                "has_sub_issues as true or false). Values are ids or lists of ids; assignee_id, creator_id and "
+                "subscriber_id may be 'me'. match is all (default) or any, and groups is a list of condition "
+                "objects with these same keys and their own match, each counting as one condition, and a group may "
+                "hold groups of its own, two levels at most. A project view's filter instead takes team_id, status "
+                "(project statuses such as planned or in_progress), lead_id (user ids, 'none' for no lead), "
+                "customer_id and customer_id_not (customer ids, 'none' for no customer request), and sub_teams, "
+                "is_blocked and is_blocking, each as true or false."
             ),
         },
         "sort": enum(SORTS, "Sort order"),

@@ -310,3 +310,28 @@ def test_the_link_index_does_not_move_the_fingerprint() -> None:
 
     assert wanted.fingerprint() == replace(wanted, relation_ids={"blocks": frozenset({"A"})}).fingerprint()
     assert wanted.fingerprint() != build_issue_filter(user_id=CALLER).fingerprint()
+
+
+def test_the_release_filter_reads_every_release_an_issue_shipped_in() -> None:
+    """An issue in two releases matches either, `none` keeps unreleased issues and `_not` drops them."""
+    index = {"one": frozenset({"R1", "R2"}), "two": frozenset({"R2"})}
+    one, two, three = _issue(issue_id="one"), _issue(issue_id="two"), _issue(issue_id="three")
+
+    def kept(**values: Any) -> set[str]:
+        wanted = replace(build_issue_filter(user_id=CALLER, **values), release_index=index)
+        return {issue.issue_id for issue in (one, two, three) if wanted.matches(issue)}
+
+    assert kept(release_id="R1") == {"one"}
+    assert kept(release_id="R2") == {"one", "two"}
+    assert kept(release_id=["R1", "none"]) == {"one", "three"}
+    assert kept(release_id_not="R1") == {"two", "three"}
+    assert kept(release_id_not="none") == {"one", "two"}
+
+
+def test_a_release_condition_asks_for_the_release_index() -> None:
+    """Only a filter naming a release, here or in a group, pays for the link read, which is not fingerprinted."""
+    assert not build_issue_filter(user_id=CALLER).needs_releases
+    assert build_issue_filter(user_id=CALLER, release_id="R1").needs_releases
+    assert build_issue_filter(user_id=CALLER, groups=[{"release_id_not": "none"}]).needs_releases
+    wanted = build_issue_filter(user_id=CALLER, release_id="R1")
+    assert wanted.fingerprint() == replace(wanted, release_index={"A": frozenset({"R1"})}).fingerprint()

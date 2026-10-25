@@ -193,6 +193,8 @@ FILTER_ARGUMENTS: tuple[str, ...] = (
     "cycle_id_not",
     "customer_id",
     "customer_id_not",
+    "release_id",
+    "release_id_not",
 )
 """The issue list filter arguments the tools take, by the HTTP list's query parameter names."""
 
@@ -275,6 +277,8 @@ def _filter_properties(*, with_assignee: bool = True) -> dict[str, Any]:
             "Requested by none of these customers; 'none' keeps requested issues only, "
             "'important' drops issues with an important request"
         ),
+        "release_id": one_or_many("Shipped in any of these releases; 'none' is issues in no release"),
+        "release_id_not": one_or_many("Shipped in none of these releases; 'none' keeps released issues only"),
         "due_before": string("Due before this day, YYYY-MM-DD, exclusive"),
         "due_after": string("Due after this day, YYYY-MM-DD, exclusive"),
         "created_after": string("Created after this day, YYYY-MM-DD, exclusive"),

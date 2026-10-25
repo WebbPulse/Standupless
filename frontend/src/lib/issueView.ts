@@ -119,7 +119,8 @@ export type FilterField =
   | 'blocked'
   | 'blocking'
   | 'relation'
-  | 'customer';
+  | 'customer'
+  | 'release';
 
 /**
  * Whether a filter keeps or excludes the issues matching its values, or, for
@@ -173,6 +174,7 @@ const SERVER_ONLY_FIELDS: ReadonlySet<FilterField> = new Set([
   'blocking',
   'relation',
   'customer',
+  'release',
 ]);
 
 /** The fields filtered by a day bound rather than a set of values. */
@@ -333,6 +335,28 @@ export interface IssueContext {
    * customer places an issue under every customer that asked for it.
    */
   customerRequests?: ReadonlyMap<string, readonly string[]>;
+  /**
+   * The releases the reader can see. A list offers the release filter and
+   * grouping only once they are read.
+   */
+  releases?: IssueRelease[];
+  /**
+   * The releases carrying each issue, by issue id, so a grouping by release
+   * places an issue under every release that shipped it.
+   */
+  issueReleases?: ReadonlyMap<string, readonly string[]>;
+}
+
+/** A release as a list groups, filters and labels by it. */
+export interface IssueRelease {
+  id: string;
+  name: string;
+  teamId: string;
+  /** Where its furthest stage sits in the team's pipeline, -1 for none. */
+  stagePosition: number;
+  createdAt: string;
+  /** The name of the furthest stage it reached, if any. */
+  stageName?: string;
 }
 
 /** A customer as a list groups and filters by it. */
@@ -380,6 +404,7 @@ export const GROUP_FIELDS: GroupField[] = [
   'team',
   'sla',
   'customer',
+  'release',
   'none',
 ];
 
@@ -406,18 +431,19 @@ export const isMovableGroupField = (field: GroupField): boolean =>
 /**
  * The fields a list with this context can be grouped or filtered by. A
  * milestone only means something inside one project, so it is left out
- * wherever the context carries no milestones, and a customer only where the
- * reader may see customers.
+ * wherever the context carries no milestones, a customer only where the
+ * reader may see customers, and a release only once releases are read.
  */
 export const fieldsFor = <T extends string>(
   fields: readonly T[],
-  context: Pick<IssueContext, 'milestones' | 'teams' | 'customers'>
+  context: Pick<IssueContext, 'milestones' | 'teams' | 'customers' | 'releases'>
 ): T[] =>
   fields.filter(
     (field) =>
       (field !== 'milestone' || context.milestones !== undefined) &&
       (field !== 'team' || (context.teams ?? []).length > 1) &&
-      (field !== 'customer' || context.customers !== undefined)
+      (field !== 'customer' || context.customers !== undefined) &&
+      (field !== 'release' || context.releases !== undefined)
   );
 
 /**
@@ -426,7 +452,10 @@ export const fieldsFor = <T extends string>(
  * from each project the list knows.
  */
 export const filterFieldsFor = (
-  context: Pick<IssueContext, 'milestones' | 'teams' | 'projects' | 'customers'>
+  context: Pick<
+    IssueContext,
+    'milestones' | 'teams' | 'projects' | 'customers' | 'releases'
+  >
 ): FilterField[] =>
   FILTER_FIELDS.filter(
     (field) =>
@@ -434,7 +463,8 @@ export const filterFieldsFor = (
         context.milestones !== undefined ||
         context.projects.length > 0) &&
       (field !== 'team' || (context.teams ?? []).length > 1) &&
-      (field !== 'customer' || context.customers !== undefined)
+      (field !== 'customer' || context.customers !== undefined) &&
+      (field !== 'release' || context.releases !== undefined)
   );
 
 /** How a grouping reads in the interface. */
@@ -450,6 +480,7 @@ export const GROUP_LABELS: Record<GroupProperty, string> = {
   team: 'Team',
   sla: 'SLA status',
   customer: 'Customer',
+  release: 'Release',
   focus: 'Focus',
   none: 'No grouping',
 };
@@ -551,7 +582,10 @@ export const labelGroupFields = (
  * group follows the plain label grouping, as in Linear.
  */
 export const groupFieldsFor = (
-  context: Pick<IssueContext, 'milestones' | 'teams' | 'labels' | 'customers'>,
+  context: Pick<
+    IssueContext,
+    'milestones' | 'teams' | 'labels' | 'customers' | 'releases'
+  >,
   options: { focus?: boolean } = {}
 ): GroupField[] => {
   const groups = labelGroupFields(context);
@@ -633,6 +667,7 @@ export const FILTER_FIELDS: FilterField[] = [
   'blocking',
   'relation',
   'customer',
+  'release',
 ];
 
 /** How a filter field reads in the interface. */
@@ -660,6 +695,7 @@ export const FILTER_LABELS: Record<FilterField, string> = {
   blocking: 'Blocking',
   relation: 'Relations',
   customer: 'Customer',
+  release: 'Release',
 };
 
 /**
@@ -702,6 +738,7 @@ const FILTER_KEYS: Record<FilterField, string> = {
   blocking: 'is_blocking',
   relation: 'has_relation',
   customer: 'customer_id',
+  release: 'release_id',
 };
 
 /** The fields whose filter can keep only issues carrying every value. */
@@ -739,6 +776,7 @@ export const DISPLAY_PROPERTIES: ViewVisibleProperty[] = [
   'created_at',
   'updated_at',
   'time_in_status',
+  'release',
   'assignee',
 ];
 
@@ -762,6 +800,7 @@ export const PROPERTY_LABELS: Record<ViewVisibleProperty, string> = {
   created_at: 'Created',
   updated_at: 'Updated',
   time_in_status: 'Time in status',
+  release: 'Release',
 };
 
 /** The properties a row shows until someone changes them. */
@@ -1173,6 +1212,7 @@ const issueFilterValues = (issue: IssueRead, field: FilterField): string[] => {
     case 'blocking':
     case 'relation':
     case 'customer':
+    case 'release':
       return [];
   }
 };
@@ -1863,6 +1903,10 @@ export const groupKeysOf = (
       const keys = [...new Set(context.customerRequests?.get(issue.id) ?? [])];
       return keys.length === 0 ? [NONE] : keys;
     }
+    case 'release': {
+      const keys = [...new Set(context.issueReleases?.get(issue.id) ?? [])];
+      return keys.length === 0 ? [NONE] : keys;
+    }
     default: {
       if (!isLabelGroupField(field)) return ['all'];
       const members = new Set(
@@ -1919,6 +1963,36 @@ const cycleLabel = (cycle: CycleRead, context: IssueContext): string => {
 const parentLabel = (parent: ParentRef): string =>
   `${parent.key} ${parent.title}`;
 
+/** The releases carrying an issue, the newest first, from the release index. */
+export const releasesOf = (
+  issue: Pick<IssueRead, 'id'>,
+  context: Pick<IssueContext, 'releases' | 'issueReleases'>
+): IssueRelease[] => {
+  const ids = context.issueReleases?.get(issue.id) ?? [];
+  if (ids.length === 0) return [];
+  return (context.releases ?? [])
+    .filter((release) => ids.includes(release.id))
+    .sort(
+      (left, right) =>
+        right.createdAt.localeCompare(left.createdAt) ||
+        right.id.localeCompare(left.id)
+    );
+};
+
+/**
+ * Releases in the order their groups read: by how far down the pipeline each
+ * got, those that reached no stage first, then the newest first.
+ */
+export const releasesInOrder = (
+  releases: readonly IssueRelease[]
+): IssueRelease[] =>
+  [...releases].sort(
+    (left, right) =>
+      left.stagePosition - right.stagePosition ||
+      right.createdAt.localeCompare(left.createdAt) ||
+      right.id.localeCompare(left.id)
+  );
+
 /**
  * The header a row's group takes when the field's shells do not hold it, such
  * as a closed project, a finished cycle or a parent outside the list.
@@ -1952,6 +2026,11 @@ const fallbackLabel = (
       );
     case 'customer':
       return 'Unknown customer';
+    case 'release':
+      return (
+        context.releases?.find((release) => release.id === key)?.name ??
+        'Unknown release'
+      );
     default:
       return key;
   }
@@ -2149,6 +2228,15 @@ const groupShells = (
               : { requests: customer.requestCount }),
           })),
         { key: NONE, field, label: 'No customer' },
+      ];
+    case 'release':
+      return [
+        ...releasesInOrder(context.releases ?? []).map((release) => ({
+          key: release.id,
+          field,
+          label: release.name,
+        })),
+        { key: NONE, field, label: 'No release' },
       ];
     default:
       return isLabelGroupField(field)
@@ -2679,6 +2767,7 @@ export const moveChange = (
     case 'parent':
     case 'team':
     case 'sla':
+    case 'release':
       return null;
     case 'customer':
       return {};

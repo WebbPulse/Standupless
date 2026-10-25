@@ -90,6 +90,8 @@ def export_issues(
     has_relation: Values = None,
     customer_id: Values = None,
     customer_id_not: Values = None,
+    release_id: Values = None,
+    release_id_not: Values = None,
     match: Annotated[Optional[str], Query()] = None,
     groups: Annotated[Optional[str], Query(max_length=8000)] = None,
     include_archived: Annotated[bool, Query()] = False,
@@ -156,6 +158,8 @@ def export_issues(
             has_relation=has_relation,
             customer_id=customer_id,
             customer_id_not=customer_id_not,
+            release_id=release_id,
+            release_id_not=release_id_not,
             match=match,
             groups=groups,
         )

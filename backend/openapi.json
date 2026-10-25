@@ -5256,7 +5256,8 @@
                   "parent",
                   "team",
                   "sla",
-                  "customer"
+                  "customer",
+                  "release"
                 ],
                 "type": "string"
               },
@@ -5390,7 +5391,8 @@
                   "parent",
                   "team",
                   "sla",
-                  "customer"
+                  "customer",
+                  "release"
                 ],
                 "type": "string"
               },
@@ -5430,11 +5432,12 @@
                     "links",
                     "created_at",
                     "updated_at",
-                    "time_in_status"
+                    "time_in_status",
+                    "release"
                   ],
                   "type": "string"
                 },
-                "maxItems": 18,
+                "maxItems": 19,
                 "type": "array"
               },
               {
@@ -18567,6 +18570,86 @@
         "title": "ReleaseDetailRead",
         "type": "object"
       },
+      "ReleaseIndexEntryRead": {
+        "description": "One release with the issues it carries, as an issue list groups and labels its rows by it.\n\n`stage_position` is where `current_stage` sits in the team's pipeline, `-1`\nwhen the release reached no stage, so a list orders its release groups by\npipeline stage without reading each team's pipeline.",
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "current_stage": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ReleaseStageRead"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "included_in": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Included In"
+          },
+          "issue_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Issue Ids",
+            "type": "array"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "release_id": {
+            "title": "Release Id",
+            "type": "string"
+          },
+          "stage_position": {
+            "default": -1,
+            "title": "Stage Position",
+            "type": "integer"
+          },
+          "team_id": {
+            "title": "Team Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "release_id",
+          "team_id",
+          "name",
+          "created_at"
+        ],
+        "title": "ReleaseIndexEntryRead",
+        "type": "object"
+      },
+      "ReleaseIndexRead": {
+        "description": "Every release of the teams the caller can see, newest first, each with its issues.",
+        "properties": {
+          "releases": {
+            "items": {
+              "$ref": "#/components/schemas/ReleaseIndexEntryRead"
+            },
+            "title": "Releases",
+            "type": "array"
+          }
+        },
+        "required": [
+          "releases"
+        ],
+        "title": "ReleaseIndexRead",
+        "type": "object"
+      },
       "ReleaseIssueRead": {
         "description": "One issue a release carried, as its notes list it.",
         "properties": {
@@ -26185,7 +26268,8 @@
                   "parent",
                   "team",
                   "sla",
-                  "customer"
+                  "customer",
+                  "release"
                 ],
                 "type": "string"
               },
@@ -26350,7 +26434,8 @@
                   "parent",
                   "team",
                   "sla",
-                  "customer"
+                  "customer",
+                  "release"
                 ],
                 "type": "string"
               },
@@ -26397,11 +26482,12 @@
                     "links",
                     "created_at",
                     "updated_at",
-                    "time_in_status"
+                    "time_in_status",
+                    "release"
                   ],
                   "type": "string"
                 },
-                "maxItems": 18,
+                "maxItems": 19,
                 "type": "array"
               },
               {
@@ -26743,7 +26829,8 @@
                   "parent",
                   "team",
                   "sla",
-                  "customer"
+                  "customer",
+                  "release"
                 ],
                 "type": "string"
               },
@@ -26948,7 +27035,8 @@
                   "parent",
                   "team",
                   "sla",
-                  "customer"
+                  "customer",
+                  "release"
                 ],
                 "type": "string"
               },
@@ -26984,11 +27072,12 @@
                     "links",
                     "created_at",
                     "updated_at",
-                    "time_in_status"
+                    "time_in_status",
+                    "release"
                   ],
                   "type": "string"
                 },
-                "maxItems": 18,
+                "maxItems": 19,
                 "type": "array"
               },
               {
@@ -42427,7 +42516,7 @@
     },
     "/api/workspaces/{workspace_id}/issues": {
       "get": {
-        "description": "One page of the issues the caller may see, filtered and sorted.\n\nEvery id filter repeats, ORing its values, and `none` matches the unset field\nwhere the field can be unset. Filters are applied after the key read rather\nthan through an index, so adding one costs no GSI. The cursor is a position in\nthe filtered, sorted set and is bound to the filter, so a cursor carried to a\ndifferent filter starts over rather than skipping rows.\n\nThe exception is a filter on one person: `subscriber_id=me`, one `creator_id`\nor one `assignee_id` reads that person's own index instead of every team, which\nis what the My issues tabs ask for. Any other `subscriber_id` is matched after\nthe read, against the subscriptions of each person it names.\n\n`match=any` keeps an issue meeting any one condition rather than all of them.\n`groups` is a JSON array of condition objects, each holding these same filter\nnames plus its own `match`, and each counting as one condition, which is how\n\"status is Todo and (label is Bug or priority is Urgent)\" is said. A group may\nhold groups of its own, two levels at most, so a client can wrap its own\nconditions in one group under the list's fixed scope. `content`\nmatches title and description text, `label_id_all` wants every label named,\nand `completed_after` and `completed_before` bound the day an issue was done.\nThe `completed_desc` sort puts the latest `completed_at` first and issues not\ncompleted last.\n`customer_id` keeps the issues one of the named customers asked for and\n`customer_id_not` drops them, `none` standing for no customer request and\n`important` for an important one, and the `customer_requests_desc`,\n`customer_important_desc` and `customer_revenue_desc` sorts put the most\nrequested, most importantly requested or highest revenue issues first.\nGuests may use neither.\n\nArchived issues are left out unless `include_archived` is set, and\n`archived_only` lists nothing but them, the archive view. That read goes\nstraight to each status's archived partition of the status index rather than\nreading every issue of the team and dropping the live ones. Issues awaiting\ntriage are left out the same way unless `include_triage` is set, and\n`triage_only` lists nothing but them.\n\n`include_sub_teams` with a `team_id` rolls that team's sub-teams the caller\nmay see into the list, so a parent team's views show its sub-teams' issues.\n`reverse` turns the sort around, issues lacking the sorted value still last.\nEach sub-issue carries its parent's `parent_key` and `parent_title`, so a row\nlisted apart from its parent can still name it.\n\nEvery body carries `synced_at`. Sent back as `updated_since` with the same\nfilter, it turns the read into a delta: only the issues changed since, every\none in the list's sort order and unpaged, plus `removed_ids` for issues that\nleft the filter, were archived or were deleted. `resync_required` asks for a\nfull read instead, when the cursor is older than deletions are remembered or\nthe delta is too large to carry. A delta costs one key-bounded query per team\non the change feed index, so a poll that finds nothing reads almost nothing.\n\nA delta answer carries a weak `ETag` over its body. Two polls that find the\nsame thing answer the same body, so a poll that sends the tag back in\n`If-None-Match` gets a 304 with no body instead. A full read carries none,\nbecause its cursor moves with the clock.",
+        "description": "One page of the issues the caller may see, filtered and sorted.\n\nEvery id filter repeats, ORing its values, and `none` matches the unset field\nwhere the field can be unset. Filters are applied after the key read rather\nthan through an index, so adding one costs no GSI. The cursor is a position in\nthe filtered, sorted set and is bound to the filter, so a cursor carried to a\ndifferent filter starts over rather than skipping rows.\n\nThe exception is a filter on one person: `subscriber_id=me`, one `creator_id`\nor one `assignee_id` reads that person's own index instead of every team, which\nis what the My issues tabs ask for. Any other `subscriber_id` is matched after\nthe read, against the subscriptions of each person it names.\n\n`match=any` keeps an issue meeting any one condition rather than all of them.\n`groups` is a JSON array of condition objects, each holding these same filter\nnames plus its own `match`, and each counting as one condition, which is how\n\"status is Todo and (label is Bug or priority is Urgent)\" is said. A group may\nhold groups of its own, two levels at most, so a client can wrap its own\nconditions in one group under the list's fixed scope. `content`\nmatches title and description text, `label_id_all` wants every label named,\nand `completed_after` and `completed_before` bound the day an issue was done.\nThe `completed_desc` sort puts the latest `completed_at` first and issues not\ncompleted last.\n`customer_id` keeps the issues one of the named customers asked for and\n`customer_id_not` drops them, `none` standing for no customer request and\n`important` for an important one, and the `customer_requests_desc`,\n`customer_important_desc` and `customer_revenue_desc` sorts put the most\nrequested, most importantly requested or highest revenue issues first.\n`release_id` keeps the issues that shipped in one of the named releases and\n`release_id_not` drops them, `none` standing for an issue in no release.\nGuests may use neither.\n\nArchived issues are left out unless `include_archived` is set, and\n`archived_only` lists nothing but them, the archive view. That read goes\nstraight to each status's archived partition of the status index rather than\nreading every issue of the team and dropping the live ones. Issues awaiting\ntriage are left out the same way unless `include_triage` is set, and\n`triage_only` lists nothing but them.\n\n`include_sub_teams` with a `team_id` rolls that team's sub-teams the caller\nmay see into the list, so a parent team's views show its sub-teams' issues.\n`reverse` turns the sort around, issues lacking the sorted value still last.\nEach sub-issue carries its parent's `parent_key` and `parent_title`, so a row\nlisted apart from its parent can still name it.\n\nEvery body carries `synced_at`. Sent back as `updated_since` with the same\nfilter, it turns the read into a delta: only the issues changed since, every\none in the list's sort order and unpaged, plus `removed_ids` for issues that\nleft the filter, were archived or were deleted. `resync_required` asks for a\nfull read instead, when the cursor is older than deletions are remembered or\nthe delta is too large to carry. A delta costs one key-bounded query per team\non the change feed index, so a poll that finds nothing reads almost nothing.\n\nA delta answer carries a weak `ETag` over its body. Two polls that find the\nsame thing answer the same body, so a poll that sends the tag back in\n`If-None-Match` gets a 304 with no body instead. A full read carries none,\nbecause its cursor moves with the clock.",
         "operationId": "list_issues_api_workspaces__workspace_id__issues_get",
         "parameters": [
           {
@@ -43279,6 +43368,44 @@
                 }
               ],
               "title": "Customer Id Not"
+            }
+          },
+          {
+            "in": "query",
+            "name": "release_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Release Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "release_id_not",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Release Id Not"
             }
           },
           {
@@ -44560,6 +44687,44 @@
           },
           {
             "in": "query",
+            "name": "release_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Release Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "release_id_not",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Release Id Not"
+            }
+          },
+          {
+            "in": "query",
             "name": "match",
             "required": false,
             "schema": {
@@ -44668,6 +44833,55 @@
           }
         ],
         "summary": "Export Issues",
+        "tags": [
+          "issues"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/issues/releases": {
+      "get": {
+        "description": "Every release of the teams the caller can see with the issues each carries, newest first.\n\nWhat an issue list groups and labels its rows by when it shows releases. The\nrouter is mounted before the issue routes so `releases` is not read as an id.",
+        "operationId": "list_release_index_api_workspaces__workspace_id__issues_releases_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReleaseIndexRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "List Release Index",
         "tags": [
           "issues"
         ]
@@ -61788,6 +62002,44 @@
                 }
               ],
               "title": "Customer Id Not"
+            }
+          },
+          {
+            "in": "query",
+            "name": "release_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Release Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "release_id_not",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Release Id Not"
             }
           },
           {

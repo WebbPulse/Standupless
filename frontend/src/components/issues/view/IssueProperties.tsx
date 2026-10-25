@@ -20,6 +20,7 @@ import {
   LuIterationCw,
   LuLink,
   LuCircleDashed,
+  LuRocket,
   LuTriangle,
 } from 'react-icons/lu';
 import { NONE, type OrderedIssueRead } from '../../../api/issues';
@@ -30,7 +31,9 @@ import { personAvatar, personLabel } from '../../../lib/issuePeople';
 import {
   labelsOf,
   milestoneOf,
+  releasesOf,
   type FilterField,
+  type IssueRelease,
 } from '../../../lib/issueView';
 import { pullRequestChipStyle } from '../../../lib/pullRequestState';
 import { cyclePath, projectPath } from '../../../lib/paths';
@@ -496,6 +499,63 @@ export const PullRequestChip: React.FC<{
   );
 };
 
+/**
+ * The releases an issue shipped in as one chip: the newest release's name and
+ * a count of the rest. Hovering names each one, with its stage where the chip
+ * cannot filter, and a click narrows the view to the newest release where the
+ * list offers that filter.
+ */
+export const ReleaseChip: React.FC<{
+  releases: readonly IssueRelease[];
+  className?: string;
+}> = ({ releases, className }) => {
+  const { filterFor } = useIssueViewEnv();
+  const filterRelease = filterFor?.('release');
+  const [lead] = releases;
+  if (lead === undefined) return null;
+  const rest = releases.length - 1;
+  const lines = releases.map((release) =>
+    release.stageName === undefined
+      ? release.name
+      : `${release.name} (${release.stageName})`
+  );
+  const body = (
+    <>
+      <LuRocket aria-hidden="true" className="h-3 w-3" />
+      <span className="truncate">{lead.name}</span>
+      {rest > 0 && (
+        <span className="shrink-0 text-text-faint">+{String(rest)}</span>
+      )}
+    </>
+  );
+  if (filterRelease === undefined) {
+    return (
+      <span
+        title={`Releases: ${lines.join(', ')}`}
+        className={cn(CHIP_CLASS, 'max-w-40', className)}
+      >
+        {body}
+      </span>
+    );
+  }
+  return (
+    <FilterChipButton
+      tooltip={
+        rest > 0
+          ? `Filter by release: ${lead.name}, also in ${lines.slice(1).join(', ')}`
+          : `Filter by release: ${lead.name}`
+      }
+      onFilter={() => {
+        filterRelease(lead.id);
+      }}
+      wrapperClassName={className}
+      className={cn(CHIP_CLASS, 'max-w-40')}
+    >
+      {body}
+    </FilterChipButton>
+  );
+};
+
 /** Props for MetaChips: the issue and whether it is drawn on a card. */
 export interface MetaChipsProps {
   issue: OrderedIssueRead;
@@ -507,7 +567,7 @@ export interface MetaChipsProps {
 
 /**
  * The chips after the title: sub-issue progress, labels, pull requests,
- * project, milestone, cycle, relation count, estimate and dates, each only when the view shows it and
+ * project, milestone, cycle, releases, relation count, estimate and dates, each only when the view shows it and
  * the issue has it, then the SLA countdown whenever the issue's team SLA
  * covers it.
  */
@@ -532,6 +592,7 @@ export const MetaChips: React.FC<MetaChipsProps> = ({
     ? milestoneOf(issue, milestones ? { ...context, milestones } : context)
     : undefined;
   const links = issue.relation_count ?? 0;
+  const releases = shows('release') ? releasesOf(issue, context) : [];
   const teamName = teamNameFor?.(issue.team_id);
   const hide = card ? '' : 'hidden md:inline-flex';
 
@@ -619,6 +680,12 @@ export const MetaChips: React.FC<MetaChipsProps> = ({
           <LuIterationCw aria-hidden="true" className="h-3 w-3" />
           <span className="truncate">{cycle.name}</span>
         </NavChipLink>
+      )}
+      {releases.length > 0 && (
+        <ReleaseChip
+          releases={releases}
+          className={card ? '' : 'hidden lg:inline-flex'}
+        />
       )}
       {shows('links') && links > 0 && (
         <Chip

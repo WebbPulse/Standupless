@@ -24,7 +24,18 @@ ViewKind = Literal["list", "board"]
 VIEW_KINDS: tuple[str, ...] = ("list", "board")
 
 GroupBy = Literal[
-    "status", "assignee", "priority", "label", "milestone", "project", "cycle", "parent", "team", "sla", "customer"
+    "status",
+    "assignee",
+    "priority",
+    "label",
+    "milestone",
+    "project",
+    "cycle",
+    "parent",
+    "team",
+    "sla",
+    "customer",
+    "release",
 ]
 
 GROUP_BY_FIELDS: tuple[str, ...] = get_args(GroupBy)

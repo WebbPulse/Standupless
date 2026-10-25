@@ -692,3 +692,56 @@ def test_create_leaves_out_a_key_a_commit_body_only_mentions(client: TestClient,
 
     assert response.status_code == 201, response.text
     assert [issue["issue_id"] for issue in response.json()["issues"]] == [shipped.issue_id]
+
+
+def test_the_release_index_lists_each_release_with_its_issues_and_stage(client: TestClient, repositories: Any) -> None:
+    """One read gives every visible release, its issues and where its stage sits, and a guest sees none."""
+    first = _issue(repositories, TEAM, "APO", 1)
+    second = _issue(repositories, TEAM, "APO", 2)
+    sign_in(client, ADMIN)
+    client.put(PIPELINE, json={"stages": [{"name": "Staging"}, {"name": "Production"}]})
+    sign_in(client, MEMBER)
+    draft = client.post(RELEASES, json={"name": "Draft", "issues": ["APO-1"]}).json()["release_id"]
+    shipped = client.post(RELEASES, json={"name": "Shipped", "issues": ["APO-1", "APO-2"]}).json()["release_id"]
+    client.post(f"{RELEASES}/{shipped}/stages", json={"stage": "Production"})
+
+    with TestClient(_app(repositories, "issues")) as issues_client:
+        sign_in(issues_client, MEMBER)
+        response = issues_client.get(f"{BASE}/issues/releases")
+        sign_in(issues_client, GUEST)
+        hidden = issues_client.get(f"{BASE}/issues/releases")
+
+    assert response.status_code == 200, response.text
+    rows = {row["release_id"]: row for row in response.json()["releases"]}
+    assert set(rows) == {draft, shipped}
+    assert rows[draft]["issue_ids"] == [first.issue_id]
+    assert sorted(rows[shipped]["issue_ids"]) == sorted([first.issue_id, second.issue_id])
+    assert rows[shipped]["stage_position"] == 1
+    assert rows[shipped]["current_stage"]["name"] == "Production"
+    assert rows[draft]["stage_position"] == 0
+    assert hidden.status_code == 200, hidden.text
+    assert all(row["team_id"] != TEAM for row in hidden.json()["releases"])
+
+
+def test_the_issue_list_filters_by_release(client: TestClient, repositories: Any) -> None:
+    """An issue in two releases matches either, `none` keeps unreleased issues and `_not` drops released ones."""
+    first = _issue(repositories, TEAM, "APO", 1)
+    second = _issue(repositories, TEAM, "APO", 2)
+    third = _issue(repositories, TEAM, "APO", 3)
+    sign_in(client, MEMBER)
+    draft = client.post(RELEASES, json={"name": "Draft", "issues": ["APO-1"]}).json()["release_id"]
+    shipped = client.post(RELEASES, json={"name": "Shipped", "issues": ["APO-1", "APO-2"]}).json()["release_id"]
+
+    with TestClient(_app(repositories, "issues")) as issues_client:
+        sign_in(issues_client, MEMBER)
+
+        def listed(**params: Any) -> set[str]:
+            response = issues_client.get(f"{BASE}/issues", params={"team_id": TEAM, "limit": 100, **params})
+            assert response.status_code == 200, response.text
+            return {row["id"] for row in response.json()["issues"]}
+
+        assert listed(release_id=draft) == {first.issue_id}
+        assert listed(release_id=shipped) == {first.issue_id, second.issue_id}
+        assert listed(release_id="none") == {third.issue_id}
+        assert listed(release_id_not=draft) == {second.issue_id, third.issue_id}
+        assert listed(release_id=[draft, "none"]) == {first.issue_id, third.issue_id}

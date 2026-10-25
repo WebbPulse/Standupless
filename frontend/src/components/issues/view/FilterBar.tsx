@@ -35,6 +35,7 @@ import {
   LuListTree,
   LuPenLine,
   LuPlus,
+  LuRocket,
   LuUsers,
   LuListFilter,
   LuMilestone,
@@ -58,6 +59,7 @@ import {
   RELATIVE_CYCLES,
   filterFieldsFor,
   isDateField,
+  releasesInOrder,
   isTextField,
   labelGroupKey,
   statusGroupKey,
@@ -122,6 +124,7 @@ const FIELD_ICONS: Record<FilterField, React.ReactNode> = {
   blocking: <BlockingGlyph className="h-3.5 w-3.5" />,
   relation: <LuLink className="h-3.5 w-3.5" />,
   customer: <LuBuilding2 className="h-3.5 w-3.5" />,
+  release: <LuRocket className="h-3.5 w-3.5" />,
 };
 
 /** How each relative cycle reads in the cycle filter. */
@@ -583,6 +586,21 @@ const filterChoices = (
             icon: <LuBuilding2 className="h-3.5 w-3.5 text-text-muted" />,
           },
           ids: [customer.id],
+        })),
+      ];
+    case 'release':
+      return [
+        {
+          option: { value: NONE, label: 'No release', icon: hollow },
+          ids: [NONE],
+        },
+        ...releasesInOrder(context.releases ?? []).map((release) => ({
+          option: {
+            value: release.id,
+            label: release.name,
+            icon: <LuRocket className="h-3.5 w-3.5 text-text-muted" />,
+          },
+          ids: [release.id],
         })),
       ];
   }
