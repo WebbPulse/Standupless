@@ -610,6 +610,16 @@ class CycleSettingsUpdate(TypedDict):
     upcoming_count: NotRequired[int | None]
 
 
+class CycleStartToday(TypedDict):
+    team_id: str
+
+
+class CycleStartTodayRead(TypedDict):
+    cycle: CycleRead
+    ended: NotRequired[CycleRead | None]
+    moved_issues: NotRequired[int]
+
+
 class CycleUpdate(TypedDict):
     cancelled: NotRequired[bool | None]
     end_date: NotRequired[str | None]

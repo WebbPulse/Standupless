@@ -1,4 +1,4 @@
-"""Cycle routes: list, create, read, patch and delete, plus history and velocity.
+"""Cycle routes: list, create, read, patch and delete, plus history, velocity and start today.
 
 Cycles are workspace scoped like issues, so the team is a query parameter or a
 body field rather than a path segment, and every route decides visibility against
@@ -29,11 +29,14 @@ from app.common.api.schemas.planning import (
     CycleHistoryRead,
     CycleListRead,
     CycleRead,
+    CycleStartToday,
+    CycleStartTodayRead,
     CycleStatusField,
     CycleUpdate,
     VelocityCycleRead,
     VelocityRead,
 )
+from app.common.cycle_rollover import start_cycle_today_read
 from app.common.cycle_writes import create_cycle as create_cycle_row
 from app.common.cycle_writes import delete_cycle as delete_cycle_row
 from app.common.cycle_writes import list_cycles as list_cycle_page
@@ -235,6 +238,24 @@ def update_cycle(
     the numbers the stream owns.
     """
     return update_cycle_row(repositories, context, cycle_id, payload)
+
+
+@router.post("/{workspace_id}/cycles/{cycle_id}/start-today", response_model=CycleStartTodayRead)
+def start_cycle_today(
+    payload: CycleStartToday,
+    context: Annotated[AuthzContext, Depends(require(Capability.WORKSPACE_READ))],
+    repositories: Annotated[Repositories, Depends(get_repositories)],
+    workspace_id: Annotated[str, Path()],
+    cycle_id: Annotated[str, Path()],
+) -> CycleStartTodayRead:
+    """Start the team's next upcoming cycle today, as Linear's "Start cycle today" does.
+
+    The current cycle ends yesterday and its unfinished issues roll into the
+    started one under the cycle close's own rule, while the started cycle keeps
+    its end date. A 409 answers a cycle that is not the next upcoming one, and a
+    current cycle that itself started today.
+    """
+    return start_cycle_today_read(repositories, context, payload.team_id, cycle_id)
 
 
 @router.delete("/{workspace_id}/cycles/{cycle_id}", status_code=status.HTTP_204_NO_CONTENT)

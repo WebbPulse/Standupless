@@ -12,6 +12,11 @@
  * the rows of every open group in the order they are drawn, and Enter opens
  * the highlighted cycle.
  *
+ * Every cycle row and the current cycle's card carry a `...` menu with
+ * cancel or restore and delete. The next upcoming cycle's menu also offers
+ * "Start cycle today", which ends the current cycle yesterday and moves its
+ * open issues across, behind a confirm that names the cycle and the count.
+ *
  * Velocity sits under the current cycle: what the last closed cycles
  * delivered and how the cycle being planned compares with that average.
  *
@@ -29,7 +34,9 @@ import {
 import {
   LuBan,
   LuChevronRight,
+  LuEllipsis,
   LuLayers,
+  LuPlay,
   LuPlus,
   LuRotateCcw,
   LuTrash2,
@@ -40,6 +47,7 @@ import {
   deleteCycle,
   getVelocity,
   listCycles,
+  startCycleToday,
   updateCycle,
 } from '../../api/planning';
 import { ErrorAlert } from '../../components/ui/alert';
@@ -48,6 +56,7 @@ import Button, { IconButton } from '../../components/ui/button';
 import Dialog from '../../components/ui/dialog';
 import EmptyState from '../../components/ui/empty-state';
 import Field from '../../components/ui/field';
+import Menu, { MenuItem, MenuSeparator } from '../../components/ui/menu';
 import Spinner from '../../components/ui/spinner';
 import ProgressBar from '../../components/planning/ProgressBar';
 import ProgressRing from '../../components/planning/ProgressRing';
@@ -98,65 +107,106 @@ interface CycleRowProps {
   isAdmin: boolean;
   onCancel: (cycle: CycleRead) => void;
   onDelete: (cycle: CycleRead) => void;
+  onStartToday?: (cycle: CycleRead) => void;
   isActive: boolean;
   rowRef: (node: HTMLElement | null) => void;
   onPointerEnter: () => void;
 }
 
-/** Props for CycleControls: one cycle and what the caller may do to it. */
-interface CycleControlsProps {
+/** Props for CycleMenu: one cycle and what the caller may do to it. */
+interface CycleMenuProps {
   cycle: CycleRead;
   canEdit: boolean;
   isAdmin: boolean;
   onCancel: (cycle: CycleRead) => void;
   onDelete: (cycle: CycleRead) => void;
+  /** Present only on the next upcoming cycle, the one that may start today. */
+  onStartToday?: (cycle: CycleRead) => void;
 }
 
 /**
- * The cancel or restore and the delete buttons for one cycle. Shared by the
- * rows and the active card, because the running cycle is the one most likely
- * to need cancelling and must not lose the controls by being promoted.
+ * The `...` menu for one cycle: start today, cancel or restore, and delete.
+ * Shared by the rows and the active card, because the running cycle is the
+ * one most likely to need cancelling and must not lose the actions by being
+ * promoted. Draws nothing for a caller who may do none of them.
  */
-const CycleControls: React.FC<CycleControlsProps> = ({
+const CycleMenu: React.FC<CycleMenuProps> = ({
   cycle,
   canEdit,
   isAdmin,
   onCancel,
   onDelete,
-}) => (
-  <>
-    {canEdit && (
-      <IconButton
-        label={
-          cycle.cancelled
-            ? `Restore ${cycleTitle(cycle)}`
-            : `Cancel ${cycleTitle(cycle)}`
-        }
-        size="sm"
-        onClick={() => {
-          onCancel(cycle);
-        }}
-      >
-        {cycle.cancelled ? (
-          <LuRotateCcw className="h-3.5 w-3.5" />
-        ) : (
-          <LuBan className="h-3.5 w-3.5" />
-        )}
-      </IconButton>
-    )}
-    {isAdmin && (
-      <IconButton
-        label={`Delete ${cycleTitle(cycle)}`}
-        size="sm"
-        onClick={() => {
-          onDelete(cycle);
-        }}
-      >
-        <LuTrash2 className="h-3.5 w-3.5" />
-      </IconButton>
-    )}
-  </>
-);
+  onStartToday,
+}) => {
+  if (!canEdit && !isAdmin) return null;
+  const title = cycleTitle(cycle);
+  return (
+    <Menu
+      label={`${title} actions`}
+      align="end"
+      trigger={(trigger) => (
+        <IconButton label={`${title} actions`} size="sm" {...trigger}>
+          <LuEllipsis className="h-3.5 w-3.5" />
+        </IconButton>
+      )}
+    >
+      {canEdit && onStartToday !== undefined && (
+        <MenuItem
+          onSelect={() => {
+            onStartToday(cycle);
+          }}
+        >
+          <LuPlay aria-hidden="true" className="h-3.5 w-3.5" />
+          Start cycle today
+        </MenuItem>
+      )}
+      {canEdit && (
+        <MenuItem
+          onSelect={() => {
+            onCancel(cycle);
+          }}
+        >
+          {cycle.cancelled ? (
+            <LuRotateCcw aria-hidden="true" className="h-3.5 w-3.5" />
+          ) : (
+            <LuBan aria-hidden="true" className="h-3.5 w-3.5" />
+          )}
+          {cycle.cancelled ? 'Restore cycle' : 'Cancel cycle'}
+        </MenuItem>
+      )}
+      {isAdmin && (
+        <>
+          {canEdit && <MenuSeparator />}
+          <MenuItem
+            danger
+            onSelect={() => {
+              onDelete(cycle);
+            }}
+          >
+            <LuTrash2 aria-hidden="true" className="h-3.5 w-3.5" />
+            Delete cycle
+          </MenuItem>
+        </>
+      )}
+    </Menu>
+  );
+};
+
+/** How many issues starting a cycle today moves out of the current one. */
+const movingCount = (current: CycleRead | undefined): number =>
+  current === undefined ? 0 : current.counts.todo + current.counts.in_progress;
+
+/** The confirm sentence for starting a cycle today. */
+const startTodayMessage = (
+  cycle: CycleRead,
+  current: CycleRead | undefined
+): string => {
+  const title = cycleTitle(cycle);
+  if (current === undefined) return `${title} will start today.`;
+  const count = movingCount(current);
+  const issues = count === 1 ? '1 open issue' : `${String(count)} open issues`;
+  return `${title} will start today and ${cycleTitle(current)} will end yesterday. ${issues} will move from ${cycleTitle(current)} into ${title}.`;
+};
 
 /** One cycle as a dense row that opens its page, in the upcoming and past lists. */
 const CycleRow: React.FC<CycleRowProps> = ({
@@ -166,6 +216,7 @@ const CycleRow: React.FC<CycleRowProps> = ({
   isAdmin,
   onCancel,
   onDelete,
+  onStartToday,
   isActive,
   rowRef,
   onPointerEnter,
@@ -208,13 +259,14 @@ const CycleRow: React.FC<CycleRowProps> = ({
       <span className="pointer-events-none hidden w-24 shrink-0 text-right text-xs text-text-muted tabular-nums md:block">
         {`${shortCountsLabel(cycle.counts)} · ${String(percent)}%`}
       </span>
-      <span className="relative z-10 flex shrink-0 items-center opacity-0 group-hover/row:opacity-100 focus-within:opacity-100 pointer-coarse:opacity-100">
-        <CycleControls
+      <span className="relative z-10 flex shrink-0 items-center opacity-0 group-hover/row:opacity-100 focus-within:opacity-100 has-[[aria-expanded=true]]:opacity-100 pointer-coarse:opacity-100">
+        <CycleMenu
           cycle={cycle}
           canEdit={canEdit}
           isAdmin={isAdmin}
           onCancel={onCancel}
           onDelete={onDelete}
+          onStartToday={onStartToday}
         />
       </span>
     </li>
@@ -222,7 +274,7 @@ const CycleRow: React.FC<CycleRowProps> = ({
 };
 
 /** Props for ActiveCycle: the running cycle, given its own card. */
-type ActiveCycleProps = CycleControlsProps & {
+type ActiveCycleProps = Omit<CycleMenuProps, 'onStartToday'> & {
   href: string;
   isActive: boolean;
   cardRef: (node: HTMLElement | null) => void;
@@ -270,7 +322,7 @@ const ActiveCycle: React.FC<ActiveCycleProps> = ({
           {daysRemainingLabel(cycle.end_date)}
         </span>
         <span className="ml-auto flex items-center gap-1 self-center">
-          <CycleControls
+          <CycleMenu
             cycle={cycle}
             canEdit={canEdit}
             isAdmin={isAdmin}
@@ -308,6 +360,9 @@ interface CycleGroupProps {
   isAdmin: boolean;
   onCancel: (cycle: CycleRead) => void;
   onDelete: (cycle: CycleRead) => void;
+  /** The one cycle of the group that may start today, if any. */
+  startableId?: string | null;
+  onStartToday?: (cycle: CycleRead) => void;
   /** The keyboard position of the group's first row. */
   start: number;
   activeIndex: number;
@@ -330,6 +385,8 @@ const CycleGroup: React.FC<CycleGroupProps> = ({
   isAdmin,
   onCancel,
   onDelete,
+  startableId = null,
+  onStartToday,
   start,
   activeIndex,
   registerItem,
@@ -368,6 +425,9 @@ const CycleGroup: React.FC<CycleGroupProps> = ({
               isAdmin={isAdmin}
               onCancel={onCancel}
               onDelete={onDelete}
+              onStartToday={
+                cycle.cycle_id === startableId ? onStartToday : undefined
+              }
               isActive={start + index === activeIndex}
               rowRef={registerItem(start + index)}
               onPointerEnter={() => {
@@ -402,6 +462,7 @@ export const Cycles: React.FC = () => {
   const [goal, setGoal] = useState('');
   const [isUpcomingOpen, setIsUpcomingOpen] = useState(true);
   const [isPastOpen, setIsPastOpen] = useState(false);
+  const [starting, setStarting] = useState<CycleRead | null>(null);
 
   const teamId = team?.id ?? '';
   const { subTeams, rollUp, toggle } = useSubTeamRollUp(team);
@@ -469,6 +530,15 @@ export const Cycles: React.FC = () => {
     queryKey
   );
 
+  const {
+    mutate: startToday,
+    isMutating: isStarting,
+    error: startError,
+  } = useMutationWithRefetch(
+    (cycleId: string) => startCycleToday(workspaceId, cycleId, teamId),
+    queryKey
+  );
+
   const canEdit = canWriteIssues(workspace?.role, team?.role);
   const isAdmin = isTeamAdmin(workspace?.role, team?.role);
   const dateError = validateCycleDates(startDate, endDate);
@@ -511,6 +581,15 @@ export const Cycles: React.FC = () => {
     }),
     [cycles]
   );
+  const current = active[0];
+  const startable =
+    !rollUp && upcoming[0]?.team_id === teamId ? upcoming[0] : undefined;
+  const onStartToday = useCallback((cycle: CycleRead): void => {
+    setStarting(cycle);
+  }, []);
+  const closeStart = useCallback((): void => {
+    setStarting(null);
+  }, []);
   const visible = useMemo(
     () => [
       ...active,
@@ -536,7 +615,7 @@ export const Cycles: React.FC = () => {
     count: visible.length,
     onActivate,
     resetKey: visible.map((row) => row.cycle_id).join(','),
-    enabled: !isCreating,
+    enabled: !isCreating && starting === null,
   });
 
   useShortcut({
@@ -649,6 +728,8 @@ export const Cycles: React.FC = () => {
             <CycleGroup
               title="Upcoming"
               cycles={upcoming}
+              startableId={startable?.cycle_id ?? null}
+              onStartToday={onStartToday}
               hrefFor={hrefFor}
               isOpen={isUpcomingOpen}
               onToggle={() => {
@@ -683,6 +764,42 @@ export const Cycles: React.FC = () => {
           </>
         )}
       </div>
+
+      {starting !== null && (
+        <Dialog open title="Start cycle today" onClose={closeStart} size="sm">
+          <div className="space-y-4">
+            {startError !== null && (
+              <ErrorAlert
+                message={errorMessage(
+                  startError,
+                  'Could not start that cycle.'
+                )}
+              />
+            )}
+            <p className="text-sm text-text-muted">
+              {startTodayMessage(starting, current)}
+            </p>
+            <div className="flex justify-end gap-2">
+              <Button variant="secondary" onClick={closeStart}>
+                Cancel
+              </Button>
+              <Button
+                variant="primary"
+                disabled={isStarting}
+                onClick={() => {
+                  void startToday(starting.cycle_id)
+                    .then(() => {
+                      setStarting(null);
+                    })
+                    .catch(() => undefined);
+                }}
+              >
+                {isStarting ? 'Starting' : `Start ${cycleTitle(starting)}`}
+              </Button>
+            </div>
+          </div>
+        </Dialog>
+      )}
 
       {isCreating && (
         <Dialog open title="New cycle" onClose={closeDialog}>

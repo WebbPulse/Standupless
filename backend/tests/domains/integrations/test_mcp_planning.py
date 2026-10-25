@@ -90,6 +90,7 @@ def test_destructive_tools_say_so(name: str) -> None:
     [
         ("create_cycle", ("cycles:write",)),
         ("update_cycle", ("cycles:write",)),
+        ("start_cycle_today", ("cycles:write",)),
         ("delete_cycle", ("cycles:write",)),
         ("add_issues_to_cycle", ("issues:write",)),
         ("remove_issues_from_cycle", ("issues:write",)),

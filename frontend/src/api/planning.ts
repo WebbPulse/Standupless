@@ -15,6 +15,7 @@ import type {
   CycleListQuery,
   CycleListRead,
   CycleRead,
+  CycleStartTodayRead,
   CycleUpdate,
   MilestoneCreate,
   MilestoneListRead,
@@ -228,6 +229,22 @@ export const updateCycle = async (
   const response = await apiClient.patch<CycleRead>(
     cyclePath(workspaceId, cycleId),
     body
+  );
+  return response.data;
+};
+
+/**
+ * Starts a team's next upcoming cycle today. The current cycle ends yesterday
+ * and its unfinished issues move into the started one.
+ */
+export const startCycleToday = async (
+  workspaceId: string,
+  cycleId: string,
+  teamId: string
+): Promise<CycleStartTodayRead> => {
+  const response = await apiClient.post<CycleStartTodayRead>(
+    `${cyclePath(workspaceId, cycleId)}/start-today`,
+    { team_id: teamId }
   );
   return response.data;
 };
