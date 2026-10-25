@@ -131,7 +131,10 @@ def team_sla_settings(repositories: Repositories, workspace_id: str, team_id: st
 
 
 def team_clock_zone(repositories: Repositories, settings: SlaSettings) -> str | None:
-    """The timezone a team's new timers skip weekends in, `None` for calendar time, reading the team only when needed."""
+    """The timezone a team's new timers skip weekends in, `None` for calendar time.
+
+    Reads the team row only when the team counts business days.
+    """
     if settings.calendar != "business_days":
         return None
     return settings.clock_zone(team_timezone(repositories, settings.workspace_id, settings.team_id))

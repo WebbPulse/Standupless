@@ -43,17 +43,17 @@ type LocalDay = number;
 const wallTime = (ms: number, zone: string): number => {
   const formatter = formatterFor(zone);
   if (formatter === null) return ms;
-  const parts: Record<string, number> = {};
+  const parts = new Map<string, number>();
   for (const part of formatter.formatToParts(new Date(ms))) {
-    if (part.type !== 'literal') parts[part.type] = Number(part.value);
+    if (part.type !== 'literal') parts.set(part.type, Number(part.value));
   }
   return Date.UTC(
-    parts.year ?? 1970,
-    (parts.month ?? 1) - 1,
-    parts.day ?? 1,
-    parts.hour ?? 0,
-    parts.minute ?? 0,
-    parts.second ?? 0
+    parts.get('year') ?? 1970,
+    (parts.get('month') ?? 1) - 1,
+    parts.get('day') ?? 1,
+    parts.get('hour') ?? 0,
+    parts.get('minute') ?? 0,
+    parts.get('second') ?? 0
   );
 };
 
