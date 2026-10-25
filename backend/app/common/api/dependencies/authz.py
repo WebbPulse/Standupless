@@ -1475,9 +1475,10 @@ def insufficient_scope_detail(
     """The 403 body for a credential missing scopes, saying how to get them, as the MCP error does.
 
     A scope the caller's role cannot hold is named as that, because no grant would
-    help. Otherwise the body carries `grant_url`, where "Grant new permissions" adds
-    the scope to an OAuth client's existing grant for its next refresh, and
-    `api_keys_url`, since a key's scopes are fixed when it is created.
+    help. Otherwise the body tells an OAuth client to authorize again for the scope,
+    which adds it to the existing grant and keeps the scopes already held, and carries
+    `grant_url`, the connected apps page listing that grant, and `api_keys_url`, since
+    a key's scopes are fixed when it is created.
     """
     names = ", ".join(missing)
     detail: dict[str, Any] = {
@@ -1492,9 +1493,9 @@ def insufficient_scope_detail(
     detail["grant_url"] = grant_url
     detail["api_keys_url"] = api_keys_url
     detail["message"] = (
-        f"Missing scope: {names}. For an OAuth client, grant it without signing in again "
-        f"{f'at {grant_url}' if grant_url else 'under Settings, Connected apps'}: choose Grant new "
-        "permissions on this app, and the client's next token refresh carries it. For an API key, "
+        f"Missing scope: {names}. For an OAuth client, authorize it again asking for it: one approval "
+        "adds it and keeps the scopes the client already holds. Its grants are listed "
+        f"{f'at {grant_url}' if grant_url else 'under Settings, Connected apps'}. For an API key, "
         f"create a key that carries it {f'at {api_keys_url}' if api_keys_url else 'under Settings, API keys'}."
     )
     return detail

@@ -231,95 +231,89 @@ def test_a_grant_lists_the_scopes_it_does_not_cover_yet(client: TestClient, serv
     assert app["workspaces"][0]["new_scopes"] == app["new_scopes"]
 
 
-def test_granting_new_permissions_reaches_the_next_refresh(client: TestClient, server: Any, workspaces: None) -> None:
-    """The approved scopes join the grant, and the client's next refresh carries them with the old ones."""
-    token = grant(server, OWNER, CLAUDE, WORKSPACE_ONE)
-    sign_in(client, OWNER)
+def authorize_for(server: Any, user_id: str, client_id: str, workspace_id: str, scope: str) -> dict[str, Any]:
+    """Approve one authorization the way the consent route does, returning the token response.
 
-    response = client.post(
-        f"/api/users/me/connected-apps/{CLAUDE}/scopes", json={"scopes": ["releases:read", "releases:write"]}
+    The code is issued for `authorized_request`, as the package's consent route issues
+    it, so with `mcp_include_granted_scopes` on the token carries the stored union.
+    """
+    verifier, challenge = pkce_pair()
+    request = server.service.parse_authorization_request(
+        {
+            "response_type": "code",
+            "client_id": client_id,
+            "redirect_uri": REDIRECT,
+            "resource": RESOURCE,
+            "scope": scope,
+            "code_challenge": challenge,
+            "code_challenge_method": "S256",
+        }
+    )
+    record = server.service.record_consent(request, user_id=user_id, tenant_id=workspace_id)
+    issued = server.service.authorized_request(request, record)
+    code = server.service.issue_code(issued, user_id=user_id, tenant_id=workspace_id)
+    return dict(
+        server.service.exchange_code(
+            {"code": code, "client_id": client_id, "redirect_uri": REDIRECT, "code_verifier": verifier}
+        )
     )
 
-    assert response.status_code == 200
-    body = response.json()
-    assert body["scopes"] == ["issues:read", "issues:write", "releases:read", "releases:write"]
-    assert "releases:read" not in body["new_scopes"]
-    refreshed = server.service.refresh({"refresh_token": token, "client_id": CLAUDE})
-    assert refreshed["scope"].split() == ["issues:read", "issues:write", "releases:read", "releases:write"]
+
+def consents_for(server: Any, user_id: str, client_id: str) -> list[Any]:
+    """Every stored consent `user_id` holds to `client_id`."""
+    return list(server.stores.consents.list_for_client(user_id, client_id))
 
 
-def test_granting_new_permissions_never_adds_what_was_not_approved(
-    client: TestClient, server: Any, workspaces: None
-) -> None:
-    """Only the posted scopes are added, never the rest of the product's set."""
-    token = grant(server, OWNER, CLAUDE, WORKSPACE_ONE)
-    sign_in(client, OWNER)
+def test_a_step_up_keeps_the_grant_and_adds_the_new_scopes(client: TestClient, server: Any, workspaces: None) -> None:
+    """Authorizing again for one more scope keeps the consent id and its first grant time, and unions the scopes."""
+    authorize_for(server, OWNER, CLAUDE, WORKSPACE_ONE, "issues:read issues:write")
+    (before,) = consents_for(server, OWNER, CLAUDE)
 
-    client.post(f"/api/users/me/connected-apps/{CLAUDE}/scopes", json={"scopes": ["releases:read"]})
+    body = authorize_for(server, OWNER, CLAUDE, WORKSPACE_ONE, "releases:read")
 
-    refreshed = server.service.refresh({"refresh_token": token, "client_id": CLAUDE})
+    assert body["scope"].split() == ["issues:read", "issues:write", "releases:read"]
+    (after,) = consents_for(server, OWNER, CLAUDE)
+    assert after.consent_id == before.consent_id
+    assert after.granted_at == before.granted_at
+    assert after.scopes == ("issues:read", "issues:write", "releases:read")
+    refreshed = server.service.refresh({"refresh_token": body["refresh_token"], "client_id": CLAUDE})
     assert refreshed["scope"].split() == ["issues:read", "issues:write", "releases:read"]
 
 
-def test_granting_new_permissions_in_one_workspace_leaves_the_other(
+def test_a_step_up_in_another_workspace_is_a_separate_grant(
     client: TestClient, server: Any, workspaces: None
 ) -> None:
-    """A named workspace widens that grant alone."""
-    here = grant(server, OWNER, CLAUDE, WORKSPACE_ONE)
-    elsewhere = grant(server, OWNER, CLAUDE, WORKSPACE_TWO)
-    sign_in(client, OWNER)
+    """The union is per workspace, so a grant elsewhere neither gains nor lends scopes."""
+    authorize_for(server, OWNER, CLAUDE, WORKSPACE_ONE, "issues:read issues:write")
 
-    response = client.post(
-        f"/api/users/me/connected-apps/{CLAUDE}/scopes",
-        json={"scopes": ["releases:read"], "workspace_id": WORKSPACE_ONE},
-    )
+    body = authorize_for(server, OWNER, CLAUDE, WORKSPACE_TWO, "releases:read")
 
-    assert response.status_code == 200
-    widened = server.service.refresh({"refresh_token": here, "client_id": CLAUDE})["scope"].split()
-    untouched = server.service.refresh({"refresh_token": elsewhere, "client_id": CLAUDE})["scope"].split()
-    assert "releases:read" in widened
-    assert "releases:read" not in untouched
+    assert body["scope"].split() == ["releases:read"]
+    scopes = {consent.tenant_id: consent.scopes for consent in consents_for(server, OWNER, CLAUDE)}
+    assert scopes == {WORKSPACE_ONE: ("issues:read", "issues:write"), WORKSPACE_TWO: ("releases:read",)}
 
 
-def test_granting_new_permissions_is_audited(
+def test_only_a_first_grant_is_audited_as_an_authorization(
     client: TestClient, server: Any, workspaces: None, repositories: Any
 ) -> None:
-    """The workspace log records the widening with the scopes before and after."""
-    grant(server, OWNER, CLAUDE, WORKSPACE_ONE)
-    sign_in(client, OWNER)
+    """A step-up replaces the stored consent, so it writes no second `connected_app.authorized` row."""
+    authorize_for(server, OWNER, CLAUDE, WORKSPACE_ONE, "issues:read")
+    authorize_for(server, OWNER, CLAUDE, WORKSPACE_ONE, "issues:write")
+    authorize_for(server, OWNER, CLAUDE, WORKSPACE_TWO, "issues:read")
 
-    client.post(f"/api/users/me/connected-apps/{CLAUDE}/scopes", json={"scopes": ["releases:read"]})
-
-    events = repositories.audit.list_events(WORKSPACE_ONE).events
-    granted = [event for event in events if event.action == "connected_app.scopes_granted"]
-    assert len(granted) == 1
-
-
-def test_granting_an_unknown_scope_is_refused(client: TestClient, server: Any, workspaces: None) -> None:
-    """A scope the server does not offer is a 422, not silently dropped."""
-    grant(server, OWNER, CLAUDE, WORKSPACE_ONE)
-    sign_in(client, OWNER)
-
-    response = client.post(f"/api/users/me/connected-apps/{CLAUDE}/scopes", json={"scopes": ["everything"]})
-
-    assert response.status_code == 422
-
-
-def test_granting_to_a_client_never_authorized_is_a_404(client: TestClient, server: Any, workspaces: None) -> None:
-    """There is no grant to widen, and another person's grant is out of reach."""
-    grant(server, MEMBER, CURSOR, WORKSPACE_ONE)
-    sign_in(client, OWNER)
-
-    response = client.post(f"/api/users/me/connected-apps/{CURSOR}/scopes", json={"scopes": ["releases:read"]})
-
-    assert response.status_code == 404
-
-
-def test_a_delegated_credential_cannot_grant_itself_scopes(client: TestClient, workspaces: None) -> None:
-    """An MCP token may never widen the grant behind it."""
-    sign_in(client, OWNER, scope="issues:read")
-    response = client.post(f"/api/users/me/connected-apps/{CLAUDE}/scopes", json={"scopes": ["releases:read"]})
-    assert response.status_code == 403
+    first = [
+        event
+        for event in repositories.audit.list_events(WORKSPACE_ONE).events
+        if event.action == "connected_app.authorized"
+    ]
+    elsewhere = [
+        event
+        for event in repositories.audit.list_events(WORKSPACE_TWO).events
+        if event.action == "connected_app.authorized"
+    ]
+    assert len(first) == 1
+    assert first[0].after is not None and first[0].after["scopes"] == ["issues:read"]
+    assert len(elsewhere) == 1
 
 
 BEFORE_RELEASES = "2026-10-01T00:00:00Z"

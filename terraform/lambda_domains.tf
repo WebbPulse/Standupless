@@ -372,6 +372,8 @@ locals {
         IDENTITY_FRONTEND_BASE_URL = local.frontend_url
         IDENTITY_MCP_LOGIN_URL     = "${local.frontend_url}/login"
 
+        IDENTITY_MCP_INCLUDE_GRANTED_SCOPES = "true"
+
         IDENTITY_EMAIL_FROM            = local.email_from
         IDENTITY_SES_CONFIGURATION_SET = module.ses.configuration_set_name
 
