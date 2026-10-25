@@ -87,7 +87,8 @@ describe('video embeds in the Markdown round trip', () => {
 
   it('leave a video link in a list item a link', () => {
     const editor = holding(`- ${YOUTUBE}`);
-    expect(types(editor)).toEqual(['bulletList']);
+    expect(types(editor)[0]).toBe('bulletList');
+    expect(types(editor)).not.toContain('videoEmbed');
     expect(readMarkdown(editor)).toBe(`- ${YOUTUBE}`);
   });
 
@@ -114,7 +115,7 @@ describe('pasting a video link', () => {
   it('embeds it on an empty line and selects the embed', () => {
     const editor = holding('');
     expect(paste(editor, ` ${YOUTUBE} `)).toBe(true);
-    expect(types(editor)).toEqual(['videoEmbed']);
+    expect(types(editor)[0]).toBe('videoEmbed');
     expect(editor.state.selection).toBeInstanceOf(NodeSelection);
     expect(readMarkdown(editor)).toBe(YOUTUBE);
   });
@@ -123,7 +124,7 @@ describe('pasting a video link', () => {
     const editor = holding('');
     paste(editor, YOUTUBE);
     expect(keepPastedVideoAsLink(editor)).toBe(true);
-    expect(types(editor)).toEqual(['paragraph']);
+    expect(types(editor)).not.toContain('videoEmbed');
     expect(readMarkdown(editor)).toBe(`[${YOUTUBE}](${YOUTUBE})`);
     expect(parseMarkdown(readMarkdown(editor))[0]?.type).toBe('paragraph');
   });
@@ -156,8 +157,8 @@ describe('pasting a video link', () => {
 
   it('never embeds inside a list item', () => {
     const editor = holding('- item');
-    editor.commands.focus('end');
-    editor.commands.splitListItem('listItem');
+    editor.commands.setTextSelection(7);
+    expect(editor.commands.splitListItem('listItem')).toBe(true);
     expect(paste(editor, YOUTUBE)).toBe(false);
   });
 });

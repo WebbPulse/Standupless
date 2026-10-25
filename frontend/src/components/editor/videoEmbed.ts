@@ -172,8 +172,11 @@ export const VideoEmbedPaste = Extension.create({
           apply: (tr, held) => {
             const meta = tr.getMeta(pastedKey) as number | null | undefined;
             if (meta !== undefined) return meta;
-            if (held === null || tr.docChanged || tr.selectionSet) return null;
-            return held;
+            if (held === null || tr.selectionSet) return null;
+            if (tr.getMeta('appendedTransaction') !== undefined) {
+              return tr.mapping.map(held);
+            }
+            return tr.docChanged ? null : held;
           },
         },
         props: {
