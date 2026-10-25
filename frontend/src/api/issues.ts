@@ -17,6 +17,7 @@ import type {
   ActivityRead,
   DeletedIssueListRead,
   IssueConversionRead,
+  IssueDuplicate,
   IssueCreate,
   IssueDescriptionVersionListRead,
   IssueDescriptionVersionRead,
@@ -528,13 +529,17 @@ export const moveIssue = async (
  * Copies an issue into its own team under a new key. The copy keeps the
  * title with a copy suffix, the description, labels, priority, estimate,
  * parent, project and milestone, and starts unassigned in the default status.
+ * With `includeSubIssues` its whole sub-issue tree is copied under it too.
  */
 export const duplicateIssue = async (
   workspaceId: string,
-  issueId: string
+  issueId: string,
+  includeSubIssues = false
 ): Promise<IssueRead> => {
+  const body: IssueDuplicate = { include_sub_issues: includeSubIssues };
   const response = await apiClient.post<IssueRead>(
-    `${issuePath(workspaceId, issueId)}/duplicate`
+    `${issuePath(workspaceId, issueId)}/duplicate`,
+    body
   );
   return response.data;
 };

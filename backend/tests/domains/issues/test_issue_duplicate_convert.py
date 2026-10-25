@@ -9,8 +9,10 @@ from __future__ import annotations
 
 from typing import Any
 
+import pytest
 from fastapi.testclient import TestClient
 
+from app.common import issue_conversion
 from app.common.db.dynamo.planning import Project, ProjectMilestone, milestone_key, project_key
 from app.common.db.dynamo.team_config import Label, label_key, new_config_id
 from tests.domains.helpers import GUEST, MEMBER, OWNER, sign_in
@@ -128,6 +130,81 @@ def test_a_duplicate_of_an_invisible_issue_is_not_found(client: TestClient, work
     sign_in(client, GUEST)
 
     assert _post(client, workspace, issue["id"], "duplicate").status_code == 404
+
+
+def _children(repositories: Any, workspace: str, issue_id: str) -> "list[Any]":
+    """The direct children of one issue, oldest first."""
+    return list(repositories.issues.iter_children(workspace, issue_id))
+
+
+def test_a_duplicate_leaves_sub_issues_behind_by_default(client: TestClient, workspace: str, repositories: Any) -> None:
+    """Without the flag, and with it off, only the issue itself is copied."""
+    sign_in(client, OWNER)
+    parent = create_issue(client, workspace, title="Checklist")
+    create_issue(client, workspace, title="Step", parent_id=parent["id"])
+
+    bare = _post(client, workspace, parent["id"], "duplicate").json()
+    off = client.post(
+        f"/api/workspaces/{workspace}/issues/{parent['id']}/duplicate", json={"include_sub_issues": False}
+    ).json()
+
+    assert _children(repositories, workspace, bare["id"]) == []
+    assert _children(repositories, workspace, off["id"]) == []
+
+
+def test_a_duplicate_with_sub_issues_copies_the_whole_tree(
+    client: TestClient, workspace: str, repositories: Any, statuses: Any
+) -> None:
+    """Open and closed sub-issues are copied in order under the copy by the same rules."""
+    sign_in(client, OWNER)
+    parent = create_issue(client, workspace, title="Checklist")
+    create_issue(client, workspace, title="Later", parent_id=parent["id"], sort_order="b")
+    first = create_issue(
+        client,
+        workspace,
+        title="First",
+        parent_id=parent["id"],
+        sort_order="a",
+        assignee_id=MEMBER,
+        priority="high",
+        status_id=statuses["completed"].status_id,
+    )
+
+    response = client.post(
+        f"/api/workspaces/{workspace}/issues/{parent['id']}/duplicate", json={"include_sub_issues": True}
+    )
+
+    assert response.status_code == 201, response.text
+    copy = response.json()
+    assert copy["title"] == "Checklist (copy)"
+    copied = _children(repositories, workspace, copy["id"])
+    assert [row.title for row in copied] == ["First", "Later"]
+    assert [row.sort_order for row in copied] == ["a", "b"]
+    default_status = create_issue(client, workspace, title="Fresh")["status_id"]
+    copied_first = copied[0]
+    assert copied_first.issue_id != first["id"]
+    assert copied_first.priority == "high"
+    assert copied_first.assignee_id is None
+    assert copied_first.status_id == default_status
+    assert [row.title for row in _children(repositories, workspace, parent["id"])] == ["Later", "First"]
+
+
+def test_a_duplicate_above_the_sub_issue_cap_is_refused_before_anything_is_written(
+    client: TestClient, workspace: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A tree larger than the cap answers 422 and files no copy at all."""
+    monkeypatch.setattr(issue_conversion, "DUPLICATE_SUB_ISSUES_MAX", 2)
+    sign_in(client, OWNER)
+    parent = create_issue(client, workspace, title="Checklist")
+    for title in ("One", "Two", "Three"):
+        create_issue(client, workspace, title=title, parent_id=parent["id"])
+
+    response = client.post(
+        f"/api/workspaces/{workspace}/issues/{parent['id']}/duplicate", json={"include_sub_issues": True}
+    )
+
+    assert response.status_code == 422, response.text
+    assert create_issue(client, workspace, title="Next")["number"] == parent["number"] + 4
 
 
 def test_converting_creates_a_project_and_moves_the_sub_issues(

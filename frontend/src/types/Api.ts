@@ -1373,6 +1373,11 @@ export interface RecurringIssueListRead {
   default_timezone: string;
 }
 
+/** The optional body a duplicate takes: whether the sub-issue tree is copied too. */
+export interface IssueDuplicate {
+  include_sub_issues?: boolean;
+}
+
 /** The body that moves an issue to another team, which gives it a new key. */
 export interface IssueMove {
   team_id: string;

@@ -10,17 +10,27 @@ import type { IssueConversionRead, IssueRead } from '../types/Api';
 import {
   conversionSummary,
   convertedPath,
+  duplicateAsks,
   duplicatePath,
   runDuplicate,
 } from './issueConversion';
 import { clearToasts, currentToasts } from './toast';
 
 const duplicateIssue =
-  vi.fn<(workspaceId: string, issueId: string) => Promise<IssueRead>>();
+  vi.fn<
+    (
+      workspaceId: string,
+      issueId: string,
+      includeSubIssues?: boolean
+    ) => Promise<IssueRead>
+  >();
 
 vi.mock('../api/issues', () => ({
-  duplicateIssue: (workspaceId: string, issueId: string) =>
-    duplicateIssue(workspaceId, issueId),
+  duplicateIssue: (
+    workspaceId: string,
+    issueId: string,
+    includeSubIssues?: boolean
+  ) => duplicateIssue(workspaceId, issueId, includeSubIssues),
 }));
 
 /** An issue in team t-1 with the given overrides. */
@@ -63,7 +73,7 @@ describe('runDuplicate', () => {
 
     const copy = await runDuplicate('ws-1', issue('1'));
 
-    expect(duplicateIssue).toHaveBeenCalledWith('ws-1', '1');
+    expect(duplicateIssue).toHaveBeenCalledWith('ws-1', '1', false);
     expect(copy?.key).toBe('ENG-7');
     expect(currentToasts().map((toast) => toast.message)).toEqual([
       'Duplicated ENG-1 as ENG-7',
@@ -77,6 +87,23 @@ describe('runDuplicate', () => {
 
     expect(copy).toBeNull();
     expect(currentToasts().map((toast) => toast.tone)).toEqual(['error']);
+  });
+});
+
+describe('duplicateAsks', () => {
+  it('asks only for an issue with sub-issues', () => {
+    expect(duplicateAsks(issue('1'))).toBe(false);
+    expect(
+      duplicateAsks(issue('1', { progress: { total: 2, completed: 0 } }))
+    ).toBe(true);
+  });
+
+  it('passes the include sub-issues choice on', async () => {
+    duplicateIssue.mockResolvedValue(issue('7'));
+
+    await runDuplicate('ws-1', issue('1'), true);
+
+    expect(duplicateIssue).toHaveBeenCalledWith('ws-1', '1', true);
   });
 });
 

@@ -118,6 +118,7 @@ import { timestampLabel } from '../../lib/issueDisplay';
 import {
   CONVERT_TO_PROJECT_LABEL,
   DUPLICATE_ISSUE_LABEL,
+  duplicateAsks,
   convertedPath,
   duplicatePath,
   runDuplicate,
@@ -173,6 +174,7 @@ import MoveIssueDialog, {
   MOVE_ISSUE_LABEL,
 } from './MoveIssueDialog';
 import ConvertToProjectDialog from './ConvertToProjectDialog';
+import DuplicateIssueDialog from './DuplicateIssueDialog';
 import SetParentDialog, { SET_PARENT_KEYS } from './SetParentDialog';
 import SubIssues from './SubIssues';
 import { ARCHIVE_ISSUE_KEYS, DELETE_ISSUE_KEYS } from './view/propertyKeys';
@@ -383,6 +385,7 @@ export const IssueView: React.FC<IssueViewProps> = ({
   const [moving, setMoving] = useState(false);
   const [parenting, setParenting] = useState(false);
   const [converting, setConverting] = useState(false);
+  const [duplicating, setDuplicating] = useState(false);
   const [reminding, setReminding] = useState(false);
   const [history, setHistory] = useState(false);
 
@@ -475,6 +478,10 @@ export const IssueView: React.FC<IssueViewProps> = ({
 
   const duplicate = async (): Promise<void> => {
     if (issue === null) return;
+    if (duplicateAsks(issue)) {
+      setDuplicating(true);
+      return;
+    }
     const copy = await runDuplicate(workspaceId, issue);
     if (copy !== null) void navigate(duplicatePath(slug, copy));
   };
@@ -1177,6 +1184,18 @@ export const IssueView: React.FC<IssueViewProps> = ({
                 }}
                 onClose={() => {
                   setParenting(false);
+                }}
+              />
+            )}
+            {duplicating && (
+              <DuplicateIssueDialog
+                workspaceId={workspaceId}
+                issue={issue}
+                onClose={() => {
+                  setDuplicating(false);
+                }}
+                onDuplicated={(copy) => {
+                  void navigate(duplicatePath(slug, copy));
                 }}
               />
             )}

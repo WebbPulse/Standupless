@@ -9,7 +9,9 @@ The copying rules follow Linear. A duplicate is a fresh issue in the same team
 carrying what describes the work, its title with a copy suffix, description,
 labels, priority, estimate, parent, project and milestone, and nothing that
 describes progress on it: it starts in the team's default status, unassigned,
-outside any cycle and with no dates, relations or comments. A conversion creates a
+outside any cycle and with no dates, relations or comments. Asked to, a duplicate
+also copies its sub-issues under the copy by the same rules, keeping each one's
+title and order. A conversion creates a
 project on the issue's team named after it, with its description, priority,
 assignee as lead and dates as the plan, moves its sub-issues out from under it and
 into the project, then points the issue at the project and closes it.
@@ -21,7 +23,7 @@ from typing import cast
 
 from app.common.api.dependencies.authz import AuthzContext
 from app.common.api.dependencies.repositories import Repositories
-from app.common.api.schemas.issues import TITLE_MAX, IssueCreate, PriorityField
+from app.common.api.schemas.issues import TEMPLATE_SUB_ISSUE_KEYS_MAX, TITLE_MAX, IssueCreate, PriorityField
 from app.common.api.schemas.planning import (
     DESCRIPTION_MAX_BYTES,
     NAME_MAX,
@@ -42,6 +44,9 @@ COPY_SUFFIX = " (copy)"
 PROJECT_STATUS_BY_CATEGORY: dict[str, ProjectStatusField] = {"started": "in_progress", "unstarted": "planned"}
 """The project status a converted issue's status category maps to; any other category starts in backlog."""
 
+DUPLICATE_SUB_ISSUES_MAX = TEMPLATE_SUB_ISSUE_KEYS_MAX
+"""How many sub-issues one duplicate may copy; the cap a template create already holds."""
+
 CLOSING_CATEGORIES: tuple[str, ...] = ("completed", "cancelled")
 """The status categories a converted issue may close into, in order of preference."""
 
@@ -51,25 +56,58 @@ def duplicate_title(title: str) -> str:
     return title[: TITLE_MAX - len(COPY_SUFFIX)].rstrip() + COPY_SUFFIX
 
 
-def duplicate_issue(repositories: Repositories, context: AuthzContext, issue: Issue) -> Issue:
-    """Create a copy of one visible issue in its own team through the ordinary create path.
+def _child_order(issue: Issue) -> tuple[bool, str, str, str]:
+    """The order sub-issues show in: manual order first, then creation."""
+    return (issue.sort_order is None, issue.sort_order or "", issue.created_at.isoformat(), issue.issue_id)
 
-    The caller must be able to write in the team, as for any new issue. The copy
-    never asks for triage, though a caller the team would send there still lands
-    there, as their own new issue would.
+
+def sub_issues_to_copy(repositories: Repositories, workspace_id: str, issue: Issue) -> list[Issue]:
+    """Every live sub-issue of one issue, open and closed, in display order, read before anything is copied.
+
+    Sub-issues are one level deep, so the direct children are the whole tree. More
+    than `DUPLICATE_SUB_ISSUES_MAX` is refused with a 422, so a refused duplicate
+    writes nothing, and the read stops one row past the cap.
     """
-    payload = IssueCreate(
+    rows = repositories.issues.iter_children(workspace_id, issue.issue_id, max_items=DUPLICATE_SUB_ISSUES_MAX + 1)
+    live = sorted((row for row in rows if row.deleted_at is None), key=_child_order)
+    if len(live) > DUPLICATE_SUB_ISSUES_MAX:
+        raise unprocessable(f"A duplicate can copy at most {DUPLICATE_SUB_ISSUES_MAX} sub-issues")
+    return live
+
+
+def _copy_payload(issue: Issue, *, title: str, parent_id: str | None, sort_order: str | None) -> IssueCreate:
+    """The create body a copy of one issue takes, under `parent_id` at `sort_order`."""
+    return IssueCreate(
         team_id=issue.team_id,
-        title=duplicate_title(issue.title),
+        title=title,
         body=issue.body,
         priority=cast(PriorityField, issue.priority),
         label_ids=list(issue.label_ids),
         estimate=issue.estimate,
-        parent_id=issue.parent_id,
+        parent_id=parent_id,
         project_id=issue.project_id,
         project_milestone_id=issue.project_milestone_id,
+        sort_order=sort_order,
     )
-    return create_issue(repositories, context, payload)
+
+
+def duplicate_issue(
+    repositories: Repositories, context: AuthzContext, issue: Issue, *, include_sub_issues: bool = False
+) -> Issue:
+    """Create a copy of one visible issue in its own team through the ordinary create path.
+
+    The caller must be able to write in the team, as for any new issue. The copy
+    never asks for triage, though a caller the team would send there still lands
+    there, as their own new issue would. With `include_sub_issues` every live
+    sub-issue is copied under the copy in the same order, keeping its own title.
+    """
+    children = sub_issues_to_copy(repositories, context.workspace_id, issue) if include_sub_issues else []
+    payload = _copy_payload(issue, title=duplicate_title(issue.title), parent_id=issue.parent_id, sort_order=None)
+    copy = create_issue(repositories, context, payload)
+    for child in children:
+        child_payload = _copy_payload(child, title=child.title, parent_id=copy.issue_id, sort_order=child.sort_order)
+        create_issue(repositories, context, child_payload)
+    return copy
 
 
 def project_name(title: str) -> str:

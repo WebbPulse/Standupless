@@ -23,16 +23,28 @@ export type ConvertibleIssue = Pick<
   'id' | 'key' | 'title' | 'team_id' | 'progress'
 >;
 
+/** The duplicate dialog's toggle, which copies the sub-issue tree too. */
+export const INCLUDE_SUB_ISSUES_LABEL = 'Include sub-issues';
+
 /**
- * Files a copy of one issue and answers it, raising a notice either way. The
- * caller opens the copy, since a page and a list open issues differently.
+ * Whether Duplicate asks first: only an issue with sub-issues offers the
+ * Include sub-issues toggle, and any other issue is copied at once.
+ */
+export const duplicateAsks = (issue: ConvertibleIssue): boolean =>
+  issue.progress.total > 0;
+
+/**
+ * Files a copy of one issue, and its sub-issues when `includeSubIssues`, and
+ * answers it, raising a notice either way. The caller opens the copy, since a
+ * page and a list open issues differently.
  */
 export const runDuplicate = async (
   workspaceId: string,
-  issue: ConvertibleIssue
+  issue: ConvertibleIssue,
+  includeSubIssues = false
 ): Promise<IssueRead | null> => {
   try {
-    const copy = await duplicateIssue(workspaceId, issue.id);
+    const copy = await duplicateIssue(workspaceId, issue.id, includeSubIssues);
     showToast(`Duplicated ${issue.key} as ${copy.key}`);
     return copy;
   } catch (cause) {

@@ -10235,6 +10235,18 @@
         "title": "IssueDraftWrite",
         "type": "object"
       },
+      "IssueDuplicate": {
+        "description": "The optional body a duplicate takes: whether the sub-issue tree is copied too.",
+        "properties": {
+          "include_sub_issues": {
+            "default": false,
+            "title": "Include Sub Issues",
+            "type": "boolean"
+          }
+        },
+        "title": "IssueDuplicate",
+        "type": "object"
+      },
       "IssueExportRead": {
         "description": "One page of a CSV export.\n\n`csv` is RFC 4180 text with CRLF line endings, and the first page starts with\nthe header row, so the pages concatenated in order are the whole file. The\nexport is finished when `next_cursor` is null; a page may hold no rows and still\ncarry a cursor when it stopped at its read budget.",
         "properties": {
@@ -45005,7 +45017,7 @@
     },
     "/api/workspaces/{workspace_id}/issues/{issue_id}/duplicate": {
       "post": {
-        "description": "Create a copy of an issue in its team, answering the new issue under its own key.\n\nThe copy carries the title with a copy suffix, the description, labels,\npriority, estimate, parent, project and milestone, and starts in the team's\ndefault status, unassigned and outside any cycle, as in Linear.",
+        "description": "Create a copy of an issue in its team, answering the new issue under its own key.\n\nThe copy carries the title with a copy suffix, the description, labels,\npriority, estimate, parent, project and milestone, and starts in the team's\ndefault status, unassigned and outside any cycle, as in Linear. With\n`include_sub_issues` its sub-issues are copied under it too, and more than\nthe cap is refused with a 422.",
         "operationId": "duplicate_api_workspaces__workspace_id__issues__issue_id__duplicate_post",
         "parameters": [
           {
@@ -45029,6 +45041,23 @@
             }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/IssueDuplicate"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Payload"
+              }
+            }
+          }
+        },
         "responses": {
           "201": {
             "content": {

@@ -47,7 +47,7 @@ from app.common.filter_resolution import resolve_issue_filter
 from app.common.insights import insights_for
 from app.common.issue_activity import activity_page
 from app.common.issue_archive import archive_issue, unarchive_issue
-from app.common.issue_conversion import duplicate_issue
+from app.common.issue_conversion import DUPLICATE_SUB_ISSUES_MAX, duplicate_issue
 from app.common.issue_descriptions import list_description_versions
 from app.common.issue_filters import UnknownStatusCategory, build_issue_filter, subscribed_by_caller
 from app.common.issue_keys import current
@@ -674,7 +674,8 @@ def _move_issue(call: ToolCall) -> Any:
 def _duplicate_issue(call: ToolCall) -> Any:
     """Copy an issue into a new one in its team through the route's own path."""
     issue = issue_ref(call, call.require("issue_id"))
-    return _answer(call, duplicate_issue(call.repositories, call.context, issue))
+    include = call.optional("include_sub_issues") is True
+    return _answer(call, duplicate_issue(call.repositories, call.context, issue, include_sub_issues=include))
 
 
 def _unarchive_issue(call: ToolCall) -> Any:
@@ -1424,10 +1425,18 @@ ISSUE_TOOLS: tuple[Tool, ...] = (
         description=(
             "Copy an issue into a new issue in the same team. The copy keeps the title with a (copy) suffix, "
             "the body, labels, priority, estimate, parent, project and milestone, and starts in the team's "
-            "default status, unassigned, outside any cycle and with no dates or relations."
+            "default status, unassigned, outside any cycle and with no dates or relations. With "
+            "include_sub_issues every sub-issue is copied under the copy by the same rules, "
+            f"keeping its title and order; more than {DUPLICATE_SUB_ISSUES_MAX} sub-issues is refused."
         ),
         scopes=("issues:write",),
-        schema=object_schema({"issue_id": string(ISSUE_REF)}, required=("issue_id",)),
+        schema=object_schema(
+            {
+                "issue_id": string(ISSUE_REF),
+                "include_sub_issues": boolean("Copy the issue's sub-issues under the copy too; default false"),
+            },
+            required=("issue_id",),
+        ),
         handler=_duplicate_issue,
     ),
     Tool(
