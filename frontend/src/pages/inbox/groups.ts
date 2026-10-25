@@ -36,6 +36,9 @@ export const KIND_LABELS: Record<InboxKind, string> = {
   triage_new: 'New in triage',
   view_issue_added: 'New issue in view',
   view_project_added: 'New project in view',
+  project_lead_assigned: 'Made project lead',
+  project_member_added: 'Added to project',
+  initiative_owner_assigned: 'Made initiative owner',
   reaction: 'Reaction',
   issue_completed: 'Completed',
   issue_cancelled: 'Canceled',
@@ -80,6 +83,14 @@ const PROJECT_KINDS: ReadonlySet<InboxKind> = new Set<InboxKind>([
   'project_update_comment',
   'project_update_due',
   'view_project_added',
+  'project_lead_assigned',
+  'project_member_added',
+]);
+
+/** Kinds about an initiative rather than an issue. */
+const INITIATIVE_KINDS: ReadonlySet<InboxKind> = new Set<InboxKind>([
+  'initiative_update_due',
+  'initiative_owner_assigned',
 ]);
 
 /**
@@ -93,7 +104,7 @@ export const groupKey = (row: NotificationRead): string => {
   if (row.kind === 'project_update_comment' && row.initiative_id)
     return `initiative:${row.initiative_id}`;
   if (PROJECT_KINDS.has(row.kind)) return alone;
-  if (row.kind === 'initiative_update_due')
+  if (INITIATIVE_KINDS.has(row.kind))
     return row.initiative_id ? `initiative:${row.initiative_id}` : alone;
   if (row.kind === 'document_comment')
     return row.document_id ? `document:${row.document_id}` : alone;
@@ -188,6 +199,9 @@ export const INBOX_CATEGORIES: InboxCategory[] = [
       'project_update_comment',
       'project_update_due',
       'initiative_update_due',
+      'project_lead_assigned',
+      'project_member_added',
+      'initiative_owner_assigned',
     ],
   },
   { id: 'due', label: 'Due dates', kinds: ['due_soon', 'overdue'] },

@@ -181,6 +181,9 @@ NotificationKindField = Literal[
     "document_comment",
     "team_issue_created",
     "view_project_added",
+    "project_lead_assigned",
+    "project_member_added",
+    "initiative_owner_assigned",
 ]
 
 FILTER_FIELDS: frozenset[str] = frozenset(

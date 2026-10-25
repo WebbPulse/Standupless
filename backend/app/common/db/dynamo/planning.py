@@ -690,7 +690,9 @@ class Initiative(BaseModel):
     workspace level, seen by every member but a guest.
     `sort_order` is the workspace-wide manual position, a base 62 fractional
     key shared by every viewer; None on a row never placed, which the manual
-    ordering puts last.
+    ordering puts last. `updated_by` is the person whose edit last changed the
+    initiative, None on a row only its creator or a background write touched, so
+    the notify consumer can tell a new owner who handed it to them.
     """
 
     workspace_id: str
@@ -712,6 +714,7 @@ class Initiative(BaseModel):
     update_interval_days: int | None = None
     sort_order: str | None = None
     created_by: str
+    updated_by: str | None = None
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
     import_batch_id: str | None = None
@@ -1089,6 +1092,7 @@ INITIATIVE_OPTIONAL_FIELDS: tuple[str, ...] = (
     "update_interval_days",
     "sort_order",
     "import_batch_id",
+    "updated_by",
 )
 """The initiative attributes a null value removes from the row rather than storing."""
 

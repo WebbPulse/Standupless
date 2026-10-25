@@ -109,6 +109,19 @@ const KIND_COPY: Record<NotificationKind, { title: string; detail: string }> = {
     title: 'Initiative update reminders',
     detail: 'An update is due or overdue on an initiative you own.',
   },
+  project_lead_assigned: {
+    title: 'Made a project lead',
+    detail: 'Someone else makes you the lead of a project.',
+  },
+  project_member_added: {
+    title: 'Added to a project',
+    detail:
+      "Someone else adds you to a project's members. Being removed stays quiet.",
+  },
+  initiative_owner_assigned: {
+    title: 'Made an initiative owner',
+    detail: 'Someone else makes you the owner of an initiative.',
+  },
   due_soon: {
     title: 'Due date approaching',
     detail: 'An issue assigned to you is due tomorrow or today.',
@@ -235,6 +248,9 @@ const KIND_SECTIONS: readonly KindSection[] = [
       'project_update_comment',
       'project_update_due',
       'initiative_update_due',
+      'project_lead_assigned',
+      'project_member_added',
+      'initiative_owner_assigned',
     ],
   },
 ];

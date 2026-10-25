@@ -61,6 +61,9 @@ NotificationKind = Literal[
     "document_comment",
     "team_issue_created",
     "view_project_added",
+    "project_lead_assigned",
+    "project_member_added",
+    "initiative_owner_assigned",
 ]
 
 NOTIFICATION_KINDS: tuple[str, ...] = (
@@ -90,6 +93,9 @@ NOTIFICATION_KINDS: tuple[str, ...] = (
     "document_comment",
     "team_issue_created",
     "view_project_added",
+    "project_lead_assigned",
+    "project_member_added",
+    "initiative_owner_assigned",
 )
 
 PROJECT_UPDATE_REPLIED = "project_update_comment"
@@ -112,6 +118,15 @@ VIEW_PROJECT_ADDED = "view_project_added"
 
 Unlike an issue view, a project that leaves the view and comes back notifies again.
 """
+
+PROJECT_LEAD_ASSIGNED = "project_lead_assigned"
+"""The kind that tells a person someone else made them a project's lead, naming the project."""
+
+PROJECT_MEMBER_ADDED = "project_member_added"
+"""The kind that tells a person someone else added them to a project's members, naming the project."""
+
+INITIATIVE_OWNER_ASSIGNED = "initiative_owner_assigned"
+"""The kind that tells a person someone else made them an initiative's owner, naming the initiative."""
 
 REACTION = "reaction"
 """The kind that tells a comment's author someone reacted to it, naming the emoji in `new_value`."""

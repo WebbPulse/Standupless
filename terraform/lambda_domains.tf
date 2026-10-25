@@ -487,7 +487,7 @@ locals {
               eventName = ["INSERT"]
               dynamodb  = { NewImage = { kind = { S = ["project_update", "project_update_comment", "initiative_update_comment"] } } }
             }),
-            jsonencode({ eventName = ["INSERT", "MODIFY"], dynamodb = { NewImage = { kind = { S = ["project"] } } } }),
+            jsonencode({ eventName = ["INSERT", "MODIFY"], dynamodb = { NewImage = { kind = { S = ["project", "initiative"] } } } }),
           ]
         })
         relations = merge(local.lambda_domain_stream_defaults, {

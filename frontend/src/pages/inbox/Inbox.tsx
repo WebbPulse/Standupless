@@ -75,6 +75,8 @@ import {
   LuTrash2,
   LuTriangleAlert,
   LuUpload,
+  LuUserPlus,
+  LuUserRoundCheck,
   LuX,
 } from 'react-icons/lu';
 import { useNavigate, useSearchParams } from 'react-router-dom';
@@ -200,22 +202,32 @@ const isInitiativeReplyRow = (row: NotificationRead): boolean =>
   !row.project_id &&
   Boolean(row.initiative_id);
 
-/** Whether a row is about a project rather than an issue: one of its updates, or its entering a view. */
+/** Whether a row tells someone they were made a project's lead or added to its members. */
+const isProjectRoleRow = (row: NotificationRead): boolean =>
+  row.kind === 'project_lead_assigned' || row.kind === 'project_member_added';
+
+/**
+ * Whether a row is about a project rather than an issue: one of its updates,
+ * its entering a view, or a role on it handed to the reader.
+ */
 const isProjectRow = (row: NotificationRead): boolean =>
-  (row.kind === 'project_update' ||
+  ((row.kind === 'project_update' ||
     row.kind === 'project_update_comment' ||
     row.kind === 'project_update_due' ||
     row.kind === 'view_project_added') &&
-  !isInitiativeReplyRow(row);
+    !isInitiativeReplyRow(row)) ||
+  isProjectRoleRow(row);
 
 /**
  * Whether a row is about an initiative: a reminder to its owner that its
- * update is due or overdue, or a reply on one of its updates. It is workspace
- * level, so `team_id` is empty and the issue fields are blank;
- * `initiative_name` and `due_state` carry what it says.
+ * update is due or overdue, a reply on one of its updates, or its ownership
+ * handed to the reader. It is workspace level, so `team_id` is empty and the
+ * issue fields are blank; `initiative_name` and `due_state` carry what it says.
  */
 const isInitiativeRow = (row: NotificationRead): boolean =>
-  row.kind === 'initiative_update_due' || isInitiativeReplyRow(row);
+  row.kind === 'initiative_update_due' ||
+  row.kind === 'initiative_owner_assigned' ||
+  isInitiativeReplyRow(row);
 
 /** The link to one initiative's updates tab. */
 const initiativeUpdatesTabPath = (
@@ -316,7 +328,7 @@ const rowPath = (slug: string, row: NotificationRead): string =>
     ? documentPath(slug, row.document_id ?? '')
     : isReviewRow(row)
       ? reviewsPath(slug)
-      : row.kind === 'view_project_added'
+      : row.kind === 'view_project_added' || isProjectRoleRow(row)
         ? projectPath(slug, {
             project_id: row.project_id ?? '',
             name: row.project_name,
@@ -326,28 +338,33 @@ const rowPath = (slug: string, row: NotificationRead): string =>
               project_id: row.project_id ?? '',
               name: row.project_name,
             })
-          : isInitiativeRow(row)
-            ? initiativeUpdatesTabPath(slug, {
+          : row.kind === 'initiative_owner_assigned'
+            ? initiativePath(slug, {
                 initiative_id: row.initiative_id ?? '',
                 name: row.initiative_name,
               })
-            : isChannelRow(row)
-              ? row.issue_key
-                ? teamSettingsPath(slug, row.issue_key)
-                : integrationsSettingsPath(slug)
-              : isExportRow(row)
-                ? exportSettingsPath(slug)
-                : isImportRow(row)
-                  ? importSettingsPath(slug)
-                  : isAppApprovalRow(row)
-                    ? connectedAppsPath(slug)
-                    : isStandupRow(row)
-                      ? `${teamStandupPath(slug, row.issue_key)}${
-                          row.standup_date
-                            ? `?date=${encodeURIComponent(row.standup_date)}`
-                            : ''
-                        }`
-                      : issuePath(slug, row.issue_key);
+            : isInitiativeRow(row)
+              ? initiativeUpdatesTabPath(slug, {
+                  initiative_id: row.initiative_id ?? '',
+                  name: row.initiative_name,
+                })
+              : isChannelRow(row)
+                ? row.issue_key
+                  ? teamSettingsPath(slug, row.issue_key)
+                  : integrationsSettingsPath(slug)
+                : isExportRow(row)
+                  ? exportSettingsPath(slug)
+                  : isImportRow(row)
+                    ? importSettingsPath(slug)
+                    : isAppApprovalRow(row)
+                      ? connectedAppsPath(slug)
+                      : isStandupRow(row)
+                        ? `${teamStandupPath(slug, row.issue_key)}${
+                            row.standup_date
+                              ? `?date=${encodeURIComponent(row.standup_date)}`
+                              : ''
+                          }`
+                        : issuePath(slug, row.issue_key);
 
 /** Props for DocumentCommentPane: the selected row and how to leave it. */
 interface DocumentCommentPaneProps {
@@ -665,7 +682,7 @@ interface ProjectUpdatePaneProps {
   onClose: () => void;
 }
 
-/** The pane beside a project update row, which links to the project. */
+/** The pane beside a project row, which links to the project's updates, or its overview for a view or role notice. */
 const ProjectUpdatePane: React.FC<ProjectUpdatePaneProps> = ({
   row,
   slug,
@@ -684,6 +701,16 @@ const ProjectUpdatePane: React.FC<ProjectUpdatePaneProps> = ({
         <p className="text-sm text-text">
           <span className="font-medium">{project}</span> was added to{' '}
           <span className="font-medium">{row.new_value ?? 'a view'}</span>
+        </p>
+      ) : row.kind === 'project_lead_assigned' ? (
+        <p className="text-sm text-text">
+          <span className="font-medium">{actor}</span> made you the lead of{' '}
+          <span className="font-medium">{project}</span>
+        </p>
+      ) : row.kind === 'project_member_added' ? (
+        <p className="text-sm text-text">
+          <span className="font-medium">{actor}</span> added you to{' '}
+          <span className="font-medium">{project}</span>
         </p>
       ) : row.kind === 'project_update_due' ? (
         <p className="text-sm text-text">
@@ -712,7 +739,7 @@ const ProjectUpdatePane: React.FC<ProjectUpdatePaneProps> = ({
             void navigate(rowPath(slug, row));
           }}
         >
-          {row.kind === 'view_project_added'
+          {row.kind === 'view_project_added' || isProjectRoleRow(row)
             ? 'Open project'
             : 'Open project updates'}
         </Button>
@@ -728,7 +755,7 @@ interface InitiativeUpdatePaneProps {
   onClose: () => void;
 }
 
-/** The pane beside an initiative update reminder or reply, which links to the initiative's updates. */
+/** The pane beside an initiative update reminder or reply, which links to the initiative's updates, or its overview for an ownership notice. */
 const InitiativeUpdatePane: React.FC<InitiativeUpdatePaneProps> = ({
   row,
   slug,
@@ -737,18 +764,22 @@ const InitiativeUpdatePane: React.FC<InitiativeUpdatePaneProps> = ({
   const navigate = useNavigate();
   const initiative = row.initiative_name ?? 'an initiative';
   const state = row.due_state === 'overdue' ? 'overdue' : 'due';
+  const owner = row.kind === 'initiative_owner_assigned';
+  const actor = row.actor_name === '' ? 'Someone' : row.actor_name;
   return (
     <aside
       aria-label="Initiative update"
       className="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center"
     >
       <LuGoal aria-hidden="true" className="h-8 w-8 text-text-faint" />
-      {isInitiativeReplyRow(row) ? (
+      {owner ? (
         <p className="text-sm text-text">
-          <span className="font-medium">
-            {row.actor_name === '' ? 'Someone' : row.actor_name}
-          </span>{' '}
-          replied to an update on{' '}
+          <span className="font-medium">{actor}</span> made you the owner of{' '}
+          <span className="font-medium">{initiative}</span>
+        </p>
+      ) : isInitiativeReplyRow(row) ? (
+        <p className="text-sm text-text">
+          <span className="font-medium">{actor}</span> replied to an update on{' '}
           <span className="font-medium">{initiative}</span>
         </p>
       ) : (
@@ -771,7 +802,7 @@ const InitiativeUpdatePane: React.FC<InitiativeUpdatePaneProps> = ({
             void navigate(rowPath(slug, row));
           }}
         >
-          Open initiative updates
+          {owner ? 'Open initiative' : 'Open initiative updates'}
         </Button>
       </div>
     </aside>
@@ -809,6 +840,24 @@ const KIND_ICONS: Partial<Record<InboxKind, React.ReactNode>> = {
   ),
   priority_urgent: <PriorityGlyph priority="urgent" className="h-3 w-3" />,
   blocking_changed: <BlockedIcon className="h-3 w-3" />,
+  project_lead_assigned: (
+    <LuUserRoundCheck
+      aria-hidden="true"
+      className="h-3 w-3 shrink-0 text-text-faint"
+    />
+  ),
+  project_member_added: (
+    <LuUserPlus
+      aria-hidden="true"
+      className="h-3 w-3 shrink-0 text-text-faint"
+    />
+  ),
+  initiative_owner_assigned: (
+    <LuUserRoundCheck
+      aria-hidden="true"
+      className="h-3 w-3 shrink-0 text-text-faint"
+    />
+  ),
 };
 
 /** The icon for a blocking row: the blocking flag when this issue blocks another, the blocked flag otherwise. */

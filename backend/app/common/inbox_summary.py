@@ -38,6 +38,9 @@ _ACTED: dict[str, tuple[str, str]] = {
     "review_requested": ("{actor} requested your review", "Review requested"),
     "priority_urgent": ("{actor} marked as urgent", "Marked as urgent"),
     "team_issue_created": ("{actor} created an issue", "New issue"),
+    "project_lead_assigned": ("{actor} made you lead", "You lead this project"),
+    "project_member_added": ("{actor} added you", "Added to project"),
+    "initiative_owner_assigned": ("{actor} made you owner", "You own this initiative"),
 }
 
 
