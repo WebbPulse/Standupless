@@ -63,10 +63,12 @@ const clearPlan: AccountDeletionPlanRead = {
   leaving: [{ id: 'w2', name: 'Team Space', slug: 'team-space' }],
 };
 
+const authState = { sessionEnded: null };
+
 /** The client the shared step-up reads from context. */
 const fakeClient = {
   subscribe: () => () => undefined,
-  getState: () => ({ sessionEnded: null }),
+  getState: () => authState,
   initialize: () => Promise.resolve(),
   stepUpWithPasskey: () => stepUpWithPasskey(),
   stepUp: vi.fn(),

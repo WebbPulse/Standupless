@@ -179,10 +179,12 @@ const resolved = (
   };
 };
 
+const authState = { sessionEnded: null };
+
 /** The client the shared step-up reads from context. */
 const fakeClient = {
   subscribe: () => () => undefined,
-  getState: () => ({ sessionEnded: null }),
+  getState: () => authState,
   initialize: () => Promise.resolve(),
   stepUpWithPasskey: () => stepUpWithPasskey(),
   stepUp: (input: { code: string }) => stepUp(input),

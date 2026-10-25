@@ -13,9 +13,11 @@ import ConfirmDeletionDialog from './ConfirmDeletionDialog';
 const stepUpWithPasskey = vi.fn<() => Promise<unknown>>();
 const stepUp = vi.fn<(input: { code: string }) => Promise<unknown>>();
 
+const authState = { sessionEnded: null };
+
 const fakeClient = {
   subscribe: () => () => undefined,
-  getState: () => ({ sessionEnded: null }),
+  getState: () => authState,
   initialize: () => Promise.resolve(),
   stepUpWithPasskey: () => stepUpWithPasskey(),
   stepUp: (input: { code: string }) => stepUp(input),
