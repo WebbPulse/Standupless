@@ -35,6 +35,7 @@ from app.common.api.schemas.views import (
     ViewUpdate,
     grouping_pattern,
 )
+from app.common.db.dynamo.issue_reminders import REMINDER_ENTITIES
 from app.common.db.dynamo.views import TEAM_SUBSCRIPTION_EVENTS, SavedView
 from app.common.inbox import (
     INBOX_BUCKETS,
@@ -48,7 +49,6 @@ from app.common.inbox import (
     priority_kinds,
     snooze,
 )
-from app.common.db.dynamo.issue_reminders import REMINDER_ENTITIES
 from app.common.issue_reminders import (
     cancel_entity_reminder,
     cancel_reminder,
