@@ -1,6 +1,6 @@
 /**
- * Copying an issue's ID or address, shared by the list, the issue page and
- * the command palette so the keys, the wording and the toasts agree
+ * Copying an issue's ID, address or Markdown, shared by the list, the issue
+ * page and the command palette so the keys, the wording and the toasts agree
  * everywhere, as they do in Linear.
  *
  * Copying a git branch name also starts the issue when the person's workflow
@@ -9,8 +9,17 @@
  * the calling surface makes so its own undo notice covers it.
  */
 
-import type { IssueRead, StatusCategory, StatusRead } from '../types/Api';
+import type {
+  CycleRead,
+  IssueRead,
+  LabelRead,
+  ProjectRead,
+  StatusCategory,
+  StatusRead,
+} from '../types/Api';
 import { gitBranchName } from './gitBranch';
+import { PRIORITY_LABELS } from './issueDisplay';
+import { personLabel, type Assignable } from './issuePeople';
 import { issuePath } from './paths';
 import { readPreferences, type InterfacePreferences } from './preferences';
 import { sortStatuses } from './propertyOptions';
@@ -24,6 +33,9 @@ export const COPY_ISSUE_URL_KEYS = 'mod+shift+,';
 
 /** The keys that copy the issue in focus's git branch name. */
 export const COPY_BRANCH_KEYS = 'mod+shift+.';
+
+/** The command that copies the issue in focus as Markdown, which has no keys. */
+export const COPY_ISSUE_MARKDOWN_LABEL = 'Copy issue as Markdown';
 
 /** The full address of an issue in this workspace. */
 export const issueUrl = (slug: string, key: string): string =>
@@ -138,4 +150,100 @@ export const copyBranchName = (
     );
     if (patch !== null) start.apply(patch);
   });
+};
+
+/** The lists an issue's ids are named from when it is copied as Markdown. */
+export interface IssueMarkdownContext {
+  statuses: readonly Pick<StatusRead, 'id' | 'name'>[];
+  labels: readonly Pick<LabelRead, 'id' | 'name'>[];
+  people: readonly Assignable[];
+  projects: readonly Pick<ProjectRead, 'project_id' | 'name'>[];
+  cycles: readonly Pick<CycleRead, 'cycle_id' | 'name' | 'number'>[];
+}
+
+/** The issue fields its Markdown copy reads. */
+export type MarkdownIssue = Pick<
+  IssueRead,
+  | 'key'
+  | 'title'
+  | 'body'
+  | 'status_id'
+  | 'priority'
+  | 'assignee_id'
+  | 'label_ids'
+  | 'project_id'
+  | 'cycle_id'
+>;
+
+/** Escapes the characters that would end a Markdown link's text early. */
+const linkText = (text: string): string => text.replace(/([\\[\]])/g, '\\$1');
+
+/** How a cycle reads: its name, or its number when it has none. */
+const cycleName = (
+  cycle: Pick<CycleRead, 'name' | 'number'>
+): string | undefined => {
+  const name = cycle.name.trim();
+  if (name !== '') return name;
+  return typeof cycle.number === 'number'
+    ? `Cycle ${String(cycle.number)}`
+    : undefined;
+};
+
+/**
+ * The issue as Markdown: a `# KEY Title` heading linked to `url`, a line of
+ * the properties that are set (status, priority, assignee, labels, project,
+ * cycle), then the description as stored. The same issue always gives the
+ * same text.
+ */
+export const issueMarkdown = (
+  issue: MarkdownIssue,
+  url: string,
+  context: IssueMarkdownContext
+): string => {
+  const properties: string[] = [];
+  const status = context.statuses.find((item) => item.id === issue.status_id);
+  if (status !== undefined) properties.push(`**Status:** ${status.name}`);
+  if (issue.priority !== 'none') {
+    properties.push(`**Priority:** ${PRIORITY_LABELS[issue.priority]}`);
+  }
+  if (issue.assignee_id !== null) {
+    const person = context.people.find(
+      (item) => item.user_id === issue.assignee_id
+    );
+    if (person !== undefined) {
+      properties.push(`**Assignee:** ${personLabel(person)}`);
+    }
+  }
+  const labels = issue.label_ids.flatMap((id) => {
+    const label = context.labels.find((item) => item.id === id);
+    return label === undefined ? [] : [label.name];
+  });
+  if (labels.length > 0) properties.push(`**Labels:** ${labels.join(', ')}`);
+  if (issue.project_id !== null) {
+    const project = context.projects.find(
+      (item) => item.project_id === issue.project_id
+    );
+    if (project !== undefined) properties.push(`**Project:** ${project.name}`);
+  }
+  if (issue.cycle_id !== null) {
+    const cycle = context.cycles.find(
+      (item) => item.cycle_id === issue.cycle_id
+    );
+    const name = cycle === undefined ? undefined : cycleName(cycle);
+    if (name !== undefined) properties.push(`**Cycle:** ${name}`);
+  }
+  const parts = [`# [${linkText(`${issue.key} ${issue.title}`)}](${url})`];
+  if (properties.length > 0) parts.push(properties.join(' · '));
+  const body = issue.body ?? '';
+  if (body.trim() !== '') parts.push(body.replace(/\s+$/, ''));
+  return `${parts.join('\n\n')}\n`;
+};
+
+/** Copies the issue as Markdown and confirms it as the other copies do. */
+export const copyIssueMarkdown = (
+  issue: MarkdownIssue,
+  url: string,
+  context: IssueMarkdownContext
+): void => {
+  copyText(issueMarkdown(issue, url, context), 'Issue copied as Markdown');
 };

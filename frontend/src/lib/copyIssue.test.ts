@@ -5,6 +5,8 @@
  * workflow switches on, copying the branch of an issue that is not started
  * yet moves it to the team's first started status and assigns it to the
  * copier in one patch, and leaves a started, done or triaged issue alone.
+ * Copying an issue as Markdown gives a linked heading, the properties that
+ * are set and the description, the same text every time.
  */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -13,7 +15,11 @@ import {
   COPY_BRANCH_KEYS,
   branchStartPatch,
   copyBranchName,
+  copyIssueMarkdown,
+  issueMarkdown,
   type BranchWorkflow,
+  type IssueMarkdownContext,
+  type MarkdownIssue,
 } from './copyIssue';
 import { DEFAULT_PREFERENCES, setPreferences } from './preferences';
 
@@ -263,5 +269,94 @@ describe('copyBranchName', () => {
       expect(showErrorToast).toHaveBeenCalled();
     });
     expect(apply).not.toHaveBeenCalled();
+  });
+});
+
+const MARKDOWN_CONTEXT: IssueMarkdownContext = {
+  statuses: [{ id: 'st-1', name: 'In Progress' }],
+  labels: [
+    { id: 'lb-1', name: 'Bug' },
+    { id: 'lb-2', name: 'Frontend' },
+  ],
+  people: [{ user_id: 'u-1', email: 'ada@example.com', display_name: 'ada' }],
+  projects: [{ project_id: 'pr-1', name: 'Parity' }],
+  cycles: [
+    { cycle_id: 'cy-1', name: 'Sprint 4', number: 4 },
+    { cycle_id: 'cy-2', name: '', number: 7 },
+  ],
+};
+
+const BARE: MarkdownIssue = {
+  key: 'ENG-7',
+  title: 'Cache the token',
+  body: null,
+  status_id: 'st-1',
+  priority: 'none',
+  assignee_id: null,
+  label_ids: [],
+  project_id: null,
+  cycle_id: null,
+};
+
+const ISSUE_URL = 'https://app.example/acme/issue/ENG-7';
+
+describe('issueMarkdown', () => {
+  it('gives the heading and status alone for an issue with nothing else set', () => {
+    expect(issueMarkdown(BARE, ISSUE_URL, MARKDOWN_CONTEXT)).toBe(
+      `# [ENG-7 Cache the token](${ISSUE_URL})\n\n**Status:** In Progress\n`
+    );
+  });
+
+  it('lists every set property in order, then the description as stored', () => {
+    const full: MarkdownIssue = {
+      ...BARE,
+      body: 'Steps:\n\n- open it\n- [ ] check it\n\n',
+      priority: 'high',
+      assignee_id: 'u-1',
+      label_ids: ['lb-2', 'lb-1'],
+      project_id: 'pr-1',
+      cycle_id: 'cy-1',
+    };
+    expect(issueMarkdown(full, ISSUE_URL, MARKDOWN_CONTEXT)).toBe(
+      [
+        `# [ENG-7 Cache the token](${ISSUE_URL})`,
+        '**Status:** In Progress · **Priority:** High · **Assignee:** ada · ' +
+          '**Labels:** Frontend, Bug · **Project:** Parity · **Cycle:** Sprint 4',
+        'Steps:\n\n- open it\n- [ ] check it',
+      ].join('\n\n') + '\n'
+    );
+  });
+
+  it('names an unnamed cycle by its number and skips ids it cannot resolve', () => {
+    const issue: MarkdownIssue = {
+      ...BARE,
+      title: 'Fix [draft] links',
+      status_id: 'gone',
+      assignee_id: 'u-gone',
+      label_ids: ['lb-gone'],
+      project_id: 'pr-gone',
+      cycle_id: 'cy-2',
+      body: '   ',
+    };
+    expect(issueMarkdown(issue, ISSUE_URL, MARKDOWN_CONTEXT)).toBe(
+      `# [ENG-7 Fix \\[draft\\] links](${ISSUE_URL})\n\n**Cycle:** Cycle 7\n`
+    );
+  });
+});
+
+describe('copyIssueMarkdown', () => {
+  it('copies the Markdown and confirms it', async () => {
+    const writeText = vi.fn(() => Promise.resolve());
+    Object.defineProperty(globalThis.navigator, 'clipboard', {
+      value: { writeText },
+      configurable: true,
+    });
+    copyIssueMarkdown(BARE, ISSUE_URL, MARKDOWN_CONTEXT);
+    await vi.waitFor(() => {
+      expect(showToast).toHaveBeenCalledWith('Issue copied as Markdown');
+    });
+    expect(writeText).toHaveBeenCalledWith(
+      issueMarkdown(BARE, ISSUE_URL, MARKDOWN_CONTEXT)
+    );
   });
 });

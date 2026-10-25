@@ -79,8 +79,10 @@ import {
 import {
   COPY_BRANCH_KEYS,
   COPY_ISSUE_ID_KEYS,
+  COPY_ISSUE_MARKDOWN_LABEL,
   COPY_ISSUE_URL_KEYS,
   copyBranchName,
+  copyIssueMarkdown,
   copyText,
   issueUrl,
   type BranchStart,
@@ -836,6 +838,9 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
         : `Copied ${String(issues.length)} issue URLs`
     );
   };
+  const copyMarkdown = (issue: OrderedIssueRead): void => {
+    copyIssueMarkdown(issue, issueUrl(slug, issue.key), context);
+  };
   const remove = collection.remove;
   const archive = collection.archive;
   const toggleArchive = (issues: readonly OrderedIssueRead[]): void => {
@@ -953,6 +958,15 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
       if (single !== undefined) {
         copyBranchName(single.key, single.title, branchStart(single));
       }
+    },
+  });
+  useShortcut({
+    keys: '',
+    label: COPY_ISSUE_MARKDOWN_LABEL,
+    scope: 'issue',
+    enabled: single !== undefined,
+    handler: () => {
+      if (single !== undefined) copyMarkdown(single);
     },
   });
   useShortcut({
@@ -1553,6 +1567,13 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
                     menuSingle.title,
                     branchStart(menuSingle)
                   );
+                }
+          }
+          onCopyMarkdown={
+            menuSingle === undefined
+              ? undefined
+              : () => {
+                  copyMarkdown(menuSingle);
                 }
           }
           onOpen={

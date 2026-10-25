@@ -50,6 +50,7 @@ import {
   LuCopyPlus,
   LuCornerUpLeft,
   LuEllipsis,
+  LuFileText,
   LuGitBranch,
   LuHexagon,
   LuHistory,
@@ -102,9 +103,12 @@ import { canWriteIssues, isTeamAdmin } from '../../lib/capabilities';
 import {
   COPY_BRANCH_KEYS,
   COPY_ISSUE_ID_KEYS,
+  COPY_ISSUE_MARKDOWN_LABEL,
   COPY_ISSUE_URL_KEYS,
   copyBranchName,
+  copyIssueMarkdown,
   copyText,
+  issueUrl,
 } from '../../lib/copyIssue';
 import { errorMessage } from '../../lib/errors';
 import { useRecordRecentIssue } from '../../lib/recentIssues';
@@ -764,6 +768,21 @@ export const IssueView: React.FC<IssueViewProps> = ({
             <LuGitBranch aria-hidden="true" className="h-3.5 w-3.5" />
             Copy git branch name
             <MenuShortcut keys={COPY_BRANCH_KEYS} />
+          </MenuItem>
+          <MenuItem
+            onSelect={() => {
+              if (issue === null) return;
+              copyIssueMarkdown(issue, issueUrl(slug, issue.key), {
+                statuses: options.statuses,
+                labels: options.labels,
+                people: options.people,
+                projects: projects?.projects ?? [],
+                cycles: cycles?.cycles ?? [],
+              });
+            }}
+          >
+            <LuFileText aria-hidden="true" className="h-3.5 w-3.5" />
+            {COPY_ISSUE_MARKDOWN_LABEL}
           </MenuItem>
           {canAct && (
             <>
