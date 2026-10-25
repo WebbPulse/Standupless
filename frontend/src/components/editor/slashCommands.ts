@@ -25,7 +25,9 @@ import {
   LuSquareCode,
   LuTable,
   LuTextQuote,
+  LuWorkflow,
 } from 'react-icons/lu';
+import { MERMAID_LANGUAGE, MERMAID_STARTER } from '../../lib/mermaid';
 
 /** What a surface can do that some commands depend on. */
 export interface SlashContext {
@@ -123,6 +125,24 @@ export const SLASH_COMMANDS: SlashCommand[] = [
     hint: '```',
     run: (editor, range) => {
       editor.chain().focus().deleteRange(range).setCodeBlock().run();
+    },
+  },
+  {
+    id: 'diagram',
+    label: 'Mermaid diagram',
+    icon: LuWorkflow,
+    keywords: ['diagram', 'mermaid', 'flowchart', 'chart', 'sequence', 'graph'],
+    run: (editor, range) => {
+      editor
+        .chain()
+        .focus()
+        .deleteRange(range)
+        .insertContent({
+          type: 'codeBlock',
+          attrs: { language: MERMAID_LANGUAGE },
+          content: [{ type: 'text', text: MERMAID_STARTER }],
+        })
+        .run();
     },
   },
   {

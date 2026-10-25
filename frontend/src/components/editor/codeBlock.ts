@@ -3,7 +3,8 @@
  * picker and a copy button sitting on the block. The fence language is the
  * node's `language` attribute, written back exactly as it was read, so a
  * block opened as ```` ```ts ```` stays `ts` unless someone picks another.
- * Without a language the highlighter detects one.
+ * Without a language the highlighter detects one. A `mermaid` block also
+ * draws its diagram, with a Code and Preview toggle on the bar.
  *
  * Tab and Shift+Tab indent and outdent inside the block rather than moving
  * focus. Pressing Enter three times at the end leaves the block, as does the
@@ -27,6 +28,7 @@ import {
   loadedHighlighter,
   loadHighlighter,
 } from '../../lib/highlight';
+import { MermaidControls } from './mermaidBlock';
 import '../ui/codeBlock.css';
 
 /** The spaces one press of Tab indents by. */
@@ -140,6 +142,7 @@ class CodeBlockView implements NodeView {
   private readonly picker: HTMLSelectElement;
   private readonly label: HTMLElement;
   private readonly copyButton: HTMLButtonElement;
+  private readonly mermaid: MermaidControls;
   private copiedTimer: ReturnType<typeof setTimeout> | undefined;
 
   /** Draws the block for a node. */
@@ -165,7 +168,9 @@ class CodeBlockView implements NodeView {
     this.contentDOM = element('code', 'code-highlight');
     pre.append(this.contentDOM);
     this.bar.append(this.label, this.picker, this.copyButton);
-    this.dom.append(pre, this.bar);
+    this.mermaid = new MermaidControls(this.dom, node, editor, getPos);
+    this.bar.insertBefore(this.mermaid.toggle, this.copyButton);
+    this.dom.append(pre, this.mermaid.preview, this.bar);
     this.picker.addEventListener('change', () => {
       this.choose(this.picker.value);
     });
@@ -254,12 +259,16 @@ class CodeBlockView implements NodeView {
       node.attrs['language'] !== this.node.attrs['language'];
     this.node = node;
     if (languageChanged) this.sync();
+    this.mermaid.update(node);
     return true;
   }
 
   /** Leaves the bar's own events to the bar. */
   stopEvent(event: Event): boolean {
-    return event.target instanceof Node && this.bar.contains(event.target);
+    return (
+      event.target instanceof Node &&
+      (this.bar.contains(event.target) || this.mermaid.contains(event.target))
+    );
   }
 
   /** Ignores changes to the bar, which the editor does not own. */
@@ -271,6 +280,7 @@ class CodeBlockView implements NodeView {
   /** Stops the copy confirmation when the block goes away. */
   destroy(): void {
     clearTimeout(this.copiedTimer);
+    this.mermaid.destroy();
   }
 }
 

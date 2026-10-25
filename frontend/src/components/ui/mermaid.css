@@ -1,0 +1,70 @@
+@reference '../../index.css';
+
+.mermaid-preview {
+  @apply flex min-h-16 items-center justify-center overflow-x-auto rounded-md border border-line bg-surface px-3 py-3 whitespace-normal;
+}
+
+.mermaid-preview[data-activatable='true'] {
+  @apply cursor-pointer;
+}
+
+.mermaid-preview[data-state='error'] {
+  @apply block;
+}
+
+.mermaid-diagram {
+  @apply flex w-full justify-center;
+}
+
+.mermaid-diagram svg {
+  @apply h-auto max-w-full;
+}
+
+.mermaid-status {
+  @apply text-xs text-text-faint;
+}
+
+.mermaid-preview .mermaid-source {
+  @apply m-0 overflow-x-auto border-0 bg-transparent p-0 font-mono text-xs leading-5 whitespace-pre text-text;
+}
+
+.mermaid-preview .mermaid-source code {
+  @apply rounded-none bg-transparent p-0 text-xs;
+}
+
+.mermaid-error {
+  @apply mt-2 text-xs text-danger;
+}
+
+.mermaid-toggle {
+  @apply inline-flex h-6 items-center gap-px rounded-sm border border-line bg-surface p-px text-2xs opacity-0 transition-opacity select-none pointer-coarse:h-11;
+}
+
+.mermaid-toggle button {
+  @apply h-full cursor-pointer rounded-xs px-1.5 text-text-muted hover:text-text focus-visible:outline-2 focus-visible:outline-focus;
+}
+
+.mermaid-toggle button[aria-pressed='true'] {
+  @apply bg-raised text-text;
+}
+
+.code-block:hover .mermaid-toggle,
+.code-block:focus-within .mermaid-toggle,
+.mermaid-toggle:focus-within {
+  @apply opacity-100;
+}
+
+@media (hover: none) {
+  .mermaid-toggle {
+    @apply opacity-100;
+  }
+}
+
+.rich-code-block[data-mermaid='preview'] > pre {
+  @apply hidden;
+}
+
+.rich-code-block[data-mermaid='code'] > .rich-mermaid-preview,
+.rich-code-block:not([data-mermaid]) > .rich-mermaid-preview {
+  @apply hidden;
+}

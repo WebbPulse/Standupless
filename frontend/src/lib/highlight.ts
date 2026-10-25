@@ -63,6 +63,7 @@ export const CODE_LANGUAGES: CodeLanguage[] = [
   { id: 'lua', label: 'Lua', aliases: [] },
   { id: 'makefile', label: 'Makefile', aliases: ['make', 'mk'] },
   { id: 'markdown', label: 'Markdown', aliases: ['md', 'mkdown'] },
+  { id: 'mermaid', label: 'Mermaid', aliases: [] },
   { id: 'objectivec', label: 'Objective-C', aliases: ['objc', 'mm'] },
   { id: 'perl', label: 'Perl', aliases: ['pl', 'pm'] },
   { id: 'php', label: 'PHP', aliases: [] },
