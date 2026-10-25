@@ -29,8 +29,10 @@ from app.common.api.dependencies.authz import (
 )
 from app.common.api.dependencies.repositories import Repositories, get_repositories
 from app.common.billing import sync_seats
+from app.common.core.config import settings
 from app.common.db.dynamo.invites import hash_token
 from app.common.db.dynamo.memberships import Membership, workspace_member_key
+from app.common.db.dynamo.users import User
 from app.common.db.dynamo.workspaces import Workspace, new_workspace_id
 from app.common.email import deliver
 from app.common.plan_limits import LimitedResource
@@ -78,8 +80,8 @@ INVITE_EMAIL_MISMATCH = {
 ACCOUNT_DELETED = {"error_code": "ACCOUNT_DELETED", "message": "This account has been deleted"}
 
 
-def refuse_deleted_caller(repositories: Repositories, subject: str) -> None:
-    """Refuse with a 401 a caller whose account is deleted or already purged.
+def refuse_deleted_caller(repositories: Repositories, subject: str) -> User:
+    """Refuse with a 401 a caller whose account is deleted or already purged, and return the live account.
 
     Guards the two routes that need no membership, creating a workspace and accepting
     an invite, so a token issued before the account was deleted cannot join or
@@ -89,6 +91,17 @@ def refuse_deleted_caller(repositories: Repositories, subject: str) -> None:
     user = repositories.users.get(subject)
     if user is None or user.is_deleted:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=ACCOUNT_DELETED)
+    return user
+
+
+def is_e2e_user(user: User) -> bool:
+    """Whether this account is an e2e user: one the ephemeral e2e route created, or a listed durable one.
+
+    Neither source is something the person can write. `e2e_user` is set only by the
+    identity hooks on the admin-only ephemeral route, and the durable ids come from
+    deployment config.
+    """
+    return user.e2e_user or user.id in settings.plan_limit_e2e_user_ids
 
 
 @router.get("/health", include_in_schema=False)
@@ -150,10 +163,16 @@ def create_workspace(
     The membership is written after the workspace, because a workspace with no
     owner is recoverable while an owner row pointing at nothing is not. The
     creation opens the new workspace's audit log with its creator as the actor,
-    since there is no earlier admin to act for.
+    since there is no earlier admin to act for. A workspace an e2e user creates is
+    stamped `e2e_owned`, which is what the e2e plan limit exemption reads.
     """
-    refuse_deleted_caller(repositories, subject)
-    workspace = Workspace(id=new_workspace_id(), name=payload.name, slug=payload.slug)
+    creator = refuse_deleted_caller(repositories, subject)
+    workspace = Workspace(
+        id=new_workspace_id(),
+        name=payload.name,
+        slug=payload.slug,
+        e2e_owned=is_e2e_user(creator),
+    )
     try:
         created = repositories.workspaces.create(workspace)
     except ConditionFailed as exc:

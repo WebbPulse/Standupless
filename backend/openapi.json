@@ -34479,7 +34479,7 @@
         ]
       },
       "post": {
-        "description": "Create a workspace and make the caller its first owner.\n\nThe membership is written after the workspace, because a workspace with no\nowner is recoverable while an owner row pointing at nothing is not. The\ncreation opens the new workspace's audit log with its creator as the actor,\nsince there is no earlier admin to act for.",
+        "description": "Create a workspace and make the caller its first owner.\n\nThe membership is written after the workspace, because a workspace with no\nowner is recoverable while an owner row pointing at nothing is not. The\ncreation opens the new workspace's audit log with its creator as the actor,\nsince there is no earlier admin to act for. A workspace an e2e user creates is\nstamped `e2e_owned`, which is what the e2e plan limit exemption reads.",
         "operationId": "create_workspace_api_workspaces_post",
         "requestBody": {
           "content": {

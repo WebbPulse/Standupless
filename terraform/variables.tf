@@ -257,6 +257,23 @@ variable "billing_enabled" {
   default     = false
 }
 
+variable "plan_limit_e2e_exemption_enabled" {
+  description = "Keep the free plan's preview limits on workspaces an e2e user created, so the e2e suite runs with billing on. Sets PLAN_LIMIT_E2E_EXEMPTION on every function. Staging only: the backend ignores it in production, and production must leave it off."
+  type        = bool
+  default     = false
+
+  validation {
+    condition     = !var.plan_limit_e2e_exemption_enabled || var.environment != "production"
+    error_message = "plan_limit_e2e_exemption_enabled must stay off in production."
+  }
+}
+
+variable "plan_limit_e2e_user_ids" {
+  description = "Ids of the durable e2e users, whose new workspaces count as e2e owned for plan_limit_e2e_exemption_enabled. Ephemeral e2e users are marked by the identity hooks and need no entry."
+  type        = list(string)
+  default     = []
+}
+
 variable "billing_business_enabled" {
   description = "Whether the Business plan is on sale. Needs billing_enabled too, and stays off until private teams ship."
   type        = bool
