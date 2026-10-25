@@ -69573,6 +69573,94 @@
         ]
       }
     },
+    "/api/workspaces/{workspace_id}/views/members/{user_id}/issues": {
+      "get": {
+        "description": "The issues a member recently changed or commented on, one row per issue with their latest action.\n\nNewest first, only issues the caller can read. `next_cursor` resumes the feed,\nso a later page can repeat an issue an earlier one listed, which the caller drops.",
+        "operationId": "list_member_touched_issues_api_workspaces__workspace_id__views_members__user_id__issues_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "maxLength": 64,
+              "minLength": 1,
+              "title": "User Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemberActivityListRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "List Member Touched Issues",
+        "tags": [
+          "views"
+        ]
+      }
+    },
     "/api/workspaces/{workspace_id}/views/teams/{team_id}/subscription": {
       "get": {
         "description": "Which of one team's issue events reach the caller, every one off until turned on.\n\nA 404 when the caller cannot see the team.",
