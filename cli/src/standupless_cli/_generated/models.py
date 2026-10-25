@@ -1244,6 +1244,57 @@ class IssueDescriptionVersionRead(TypedDict):
     version_id: str
 
 
+class IssueDraftRead(TypedDict):
+    answers: NotRequired[dict[str, bool | str]]
+    assignee_id: NotRequired[str | None]
+    body: str
+    created_at: str
+    cycle_id: NotRequired[str | None]
+    draft_id: str
+    due_date: NotRequired[str | None]
+    estimate: NotRequired[str | None]
+    label_ids: NotRequired[list[str]]
+    parent_id: NotRequired[str | None]
+    parent_key: NotRequired[str | None]
+    parent_title: NotRequired[str | None]
+    priority: NotRequired[str]
+    project_id: NotRequired[str | None]
+    project_milestone_id: NotRequired[str | None]
+    start_date: NotRequired[str | None]
+    status_id: NotRequired[str | None]
+    sub_issues: NotRequired[list[str]]
+    team_id: str
+    template_body: NotRequired[str]
+    template_id: NotRequired[str | None]
+    template_title: NotRequired[str]
+    title: str
+    updated_at: str
+
+
+class IssueDraftWrite(TypedDict):
+    answers: NotRequired[dict[str, bool | str]]
+    assignee_id: NotRequired[str | None]
+    body: NotRequired[str]
+    cycle_id: NotRequired[str | None]
+    due_date: NotRequired[str | None]
+    estimate: NotRequired[str | None]
+    label_ids: NotRequired[list[str]]
+    parent_id: NotRequired[str | None]
+    parent_key: NotRequired[str | None]
+    parent_title: NotRequired[str | None]
+    priority: NotRequired[Literal["none", "urgent", "high", "medium", "low"]]
+    project_id: NotRequired[str | None]
+    project_milestone_id: NotRequired[str | None]
+    start_date: NotRequired[str | None]
+    status_id: NotRequired[str | None]
+    sub_issues: NotRequired[list[str]]
+    team_id: str
+    template_body: NotRequired[str]
+    template_id: NotRequired[str | None]
+    template_title: NotRequired[str]
+    title: NotRequired[str]
+
+
 class IssueExportRead(TypedDict):
     csv: str
     next_cursor: NotRequired[str | None]
@@ -4053,6 +4104,11 @@ class IssueBulkRead(TypedDict):
 
 class IssueDescriptionVersionListRead(TypedDict):
     versions: list[IssueDescriptionVersionRead]
+
+
+class IssueDraftListRead(TypedDict):
+    drafts: list[IssueDraftRead]
+    limit: int
 
 
 class IssueImportPreviewRead(TypedDict):

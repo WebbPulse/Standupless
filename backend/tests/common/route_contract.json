@@ -2270,6 +2270,36 @@
   {
     "auth": "workspace:read",
     "domain": "views",
+    "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/drafts/new-issues"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "views",
+    "method": "POST",
+    "path": "/api/workspaces/{workspace_id}/drafts/new-issues"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "views",
+    "method": "DELETE",
+    "path": "/api/workspaces/{workspace_id}/drafts/new-issues/{draft_id}"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "views",
+    "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/drafts/new-issues/{draft_id}"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "views",
+    "method": "PUT",
+    "path": "/api/workspaces/{workspace_id}/drafts/new-issues/{draft_id}"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "views",
     "method": "DELETE",
     "path": "/api/workspaces/{workspace_id}/drafts/{issue_id}"
   },

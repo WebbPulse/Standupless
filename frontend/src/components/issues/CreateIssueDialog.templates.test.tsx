@@ -83,6 +83,12 @@ vi.mock('../../api/planning', () => ({
   listProjects: () => Promise.resolve({ projects: [], next_cursor: null }),
 }));
 
+vi.mock('../../api/newIssueDrafts', () => ({
+  listNewIssueDrafts: () => Promise.resolve([]),
+  saveNewIssueDraft: () => Promise.resolve(undefined),
+  deleteNewIssueDraft: () => Promise.resolve(undefined),
+}));
+
 vi.mock('@webbpulse/auth/react', async () => {
   const actual = await vi.importActual<typeof import('@webbpulse/auth/react')>(
     '@webbpulse/auth/react'

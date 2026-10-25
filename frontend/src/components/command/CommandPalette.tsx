@@ -645,6 +645,15 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
         },
       });
       built.push({
+        id: 'action-open-issue-drafts',
+        label: 'Open drafts',
+        keywords: 'draft drafts unfinished saved new issue resume',
+        icon: <LuFileText className={ICON} />,
+        run: () => {
+          createIssue.open({ showDrafts: true });
+        },
+      });
+      built.push({
         id: 'action-create-issue-template',
         label: 'Create issue from template',
         keywords: 'new template prefill',

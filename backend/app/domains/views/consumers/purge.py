@@ -43,6 +43,7 @@ def step(repositories: Repositories, job: PurgeJob, deadline: Deadline) -> int |
             repositories.views.delete(workspace_id, view.view_key)
             repositories.views.delete_view_subscriptions(workspace_id, view.view_id)
     repositories.views.delete_drafts_for_team(workspace_id, team_id)
+    repositories.views.delete_issue_drafts_for_team(workspace_id, team_id)
     while repositories.search_index.delete_team_page(workspace_id, team_id):
         if deadline.expired():
             return 0
@@ -76,6 +77,7 @@ def account_step(repositories: Repositories, job: PurgeJob, deadline: Deadline) 
         repositories.views.clear_favorites(workspace_id, job.user_id)
         repositories.views.delete_subscriptions_for_user(workspace_id, job.user_id)
         repositories.views.delete_drafts_for_user(workspace_id, job.user_id)
+        repositories.views.delete_issue_drafts_for_user(workspace_id, job.user_id)
         repositories.inbox.delete_all(workspace_id, job.user_id)
     return None
 

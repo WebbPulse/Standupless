@@ -253,6 +253,62 @@ class CommentDraft(BaseModel):
     updated_at: datetime = Field(default_factory=utc_now)
 
 
+ISSUE_DRAFT_PREFIX = "issuedraft#"
+"""The sort key prefix every new issue draft shares, apart from the comment drafts' own."""
+
+ISSUE_DRAFTS_MAX = 200
+"""The most new issue drafts one member may hold in a workspace, and so what one listing reads."""
+
+
+def issue_draft_user_prefix(user_id: str) -> str:
+    """The sort key prefix every new issue draft of one member shares."""
+    return f"{ISSUE_DRAFT_PREFIX}{user_id}#"
+
+
+def issue_draft_key(user_id: str, draft_id: str) -> str:
+    """The sort key of one member's new issue draft."""
+    return f"{issue_draft_user_prefix(user_id)}{draft_id}"
+
+
+class IssueDraft(BaseModel):
+    """One member's unfiled new issue, everything the create dialog held when it was saved.
+
+    Stored beside saved views for the reason comment drafts are: the table has no
+    stream, so saving never notifies, and the key starts with the author, so a
+    member reads only their own. The ids it names are not checked against their
+    rows here, because filing the issue checks them, and a draft must keep what
+    was typed even after a label or project it named is gone.
+    """
+
+    workspace_id: str
+    view_key: str
+    user_id: str
+    draft_id: str
+    team_id: str
+    title: str = ""
+    body: str = ""
+    template_id: str | None = None
+    template_title: str = ""
+    template_body: str = ""
+    answers: dict[str, str | bool] = Field(default_factory=dict)
+    status_id: str | None = None
+    priority: str = "none"
+    assignee_id: str | None = None
+    label_ids: list[str] = Field(default_factory=list)
+    estimate: str | None = None
+    project_id: str | None = None
+    project_milestone_id: str | None = None
+    cycle_id: str | None = None
+    start_date: str | None = None
+    due_date: str | None = None
+    parent_id: str | None = None
+    parent_key: str | None = None
+    parent_title: str | None = None
+    sub_issues: list[str] = Field(default_factory=list)
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
+
+
 VIEW_SUBSCRIPTION_PREFIX = "viewsub#"
 """The sort key prefix every view subscription shares."""
 
@@ -547,6 +603,64 @@ class ViewRepository:
         for item in list(
             self._repository.iter_query(
                 Key("workspace_id").eq(workspace_id) & Key("view_key").begins_with(DRAFT_PREFIX)
+            )
+        ):
+            if item.get("team_id") == team_id:
+                self._repository.delete({"workspace_id": workspace_id, "view_key": item["view_key"]})
+                removed += 1
+        return removed
+
+    def get_issue_draft(self, workspace_id: str, user_id: str, draft_id: str) -> IssueDraft | None:
+        """One member's new issue draft, or `None`."""
+        if not workspace_id or not user_id or not draft_id:
+            return None
+        item = self._repository.get({"workspace_id": workspace_id, "view_key": issue_draft_key(user_id, draft_id)})
+        return IssueDraft.model_validate(dict(item)) if item is not None else None
+
+    def put_issue_draft(self, draft: IssueDraft) -> IssueDraft:
+        """Store a new issue draft, replacing the one with its id."""
+        self._repository.put(as_item(draft))
+        return draft
+
+    def delete_issue_draft(self, workspace_id: str, user_id: str, draft_id: str) -> None:
+        """Remove one member's new issue draft, a no-op when there is none."""
+        if not workspace_id or not user_id or not draft_id:
+            return
+        self._repository.delete({"workspace_id": workspace_id, "view_key": issue_draft_key(user_id, draft_id)})
+
+    def list_issue_drafts(self, workspace_id: str, user_id: str, *, limit: int = ISSUE_DRAFTS_MAX) -> list[IssueDraft]:
+        """One member's new issue drafts, newest saved first."""
+        if not workspace_id or not user_id:
+            return []
+        items = self._repository.iter_query(
+            Key("workspace_id").eq(workspace_id) & Key("view_key").begins_with(issue_draft_user_prefix(user_id)),
+            max_items=limit,
+        )
+        rows = [IssueDraft.model_validate(dict(item)) for item in items]
+        return sorted(rows, key=lambda row: (row.updated_at, row.draft_id), reverse=True)
+
+    def delete_issue_drafts_for_user(self, workspace_id: str, user_id: str) -> int:
+        """Delete every new issue draft one member holds in a workspace, for the account purge."""
+        if not workspace_id or not user_id:
+            return 0
+        removed = 0
+        for item in list(
+            self._repository.iter_query(
+                Key("workspace_id").eq(workspace_id) & Key("view_key").begins_with(issue_draft_user_prefix(user_id))
+            )
+        ):
+            self._repository.delete({"workspace_id": workspace_id, "view_key": item["view_key"]})
+            removed += 1
+        return removed
+
+    def delete_issue_drafts_for_team(self, workspace_id: str, team_id: str) -> int:
+        """Delete every new issue draft filed to one team, whoever wrote it, for the team purge."""
+        if not workspace_id or not team_id:
+            return 0
+        removed = 0
+        for item in list(
+            self._repository.iter_query(
+                Key("workspace_id").eq(workspace_id) & Key("view_key").begins_with(ISSUE_DRAFT_PREFIX)
             )
         ):
             if item.get("team_id") == team_id:

@@ -5480,6 +5480,65 @@ export interface DraftWrite {
   body: string;
 }
 
+/** Everything a new issue draft save takes, replacing what the draft held. */
+export interface IssueDraftWrite {
+  team_id: string;
+  title?: string;
+  body?: string;
+  template_id?: string | null;
+  template_title?: string;
+  template_body?: string;
+  answers?: Record<string, string | boolean>;
+  status_id?: string | null;
+  priority?: IssuePriority;
+  assignee_id?: string | null;
+  label_ids?: string[];
+  estimate?: string | null;
+  project_id?: string | null;
+  project_milestone_id?: string | null;
+  cycle_id?: string | null;
+  start_date?: string | null;
+  due_date?: string | null;
+  parent_id?: string | null;
+  parent_key?: string | null;
+  parent_title?: string | null;
+  sub_issues?: string[];
+}
+
+/** One of the caller's new issue drafts, with every field the create dialog held. */
+export interface IssueDraftRead {
+  draft_id: string;
+  team_id: string;
+  title: string;
+  body: string;
+  template_id?: string | null;
+  template_title?: string;
+  template_body?: string;
+  answers?: Record<string, string | boolean>;
+  status_id?: string | null;
+  priority?: string;
+  assignee_id?: string | null;
+  label_ids?: string[];
+  estimate?: string | null;
+  project_id?: string | null;
+  project_milestone_id?: string | null;
+  cycle_id?: string | null;
+  start_date?: string | null;
+  due_date?: string | null;
+  parent_id?: string | null;
+  parent_key?: string | null;
+  parent_title?: string | null;
+  sub_issues?: string[];
+  created_at: string;
+  updated_at: string;
+}
+
+/** The caller's new issue drafts, newest saved first, with the most they may keep. */
+export interface IssueDraftListRead {
+  drafts: IssueDraftRead[];
+  limit: number;
+}
+
 /** The two kinds of record a customer request can name. */
 export type CustomerTargetKind = 'issue' | 'project';
 

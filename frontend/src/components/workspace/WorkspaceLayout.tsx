@@ -28,7 +28,12 @@ import {
   useCommandPalette,
 } from '../../hooks/useCommandPalette';
 import { CreateIssueContext } from '../../hooks/useCreateIssue';
-import { useHasIssueDraft } from '../../lib/issueDraft';
+import {
+  flushIssueDrafts,
+  migrateLegacyIssueDraft,
+  refreshIssueDrafts,
+  useIssueDrafts,
+} from '../../lib/issueDraft';
 import type {
   CreateIssueOptions,
   CreateIssueState,
@@ -102,6 +107,8 @@ interface CreateIssueHostProps {
   preset: CreateIssuePreset;
   /** Whether the dialog opens expanded. */
   expanded: boolean;
+  /** Whether the dialog opens on its Drafts list. */
+  showDrafts: boolean;
 }
 
 /** The dialog preset a create request carries, leaving out what it does not set. */
@@ -140,6 +147,7 @@ const CreateIssueHost: React.FC<CreateIssueHostProps> = ({
   currentUserId,
   preset,
   expanded,
+  showDrafts,
 }) => {
   const auth = useQueryAuth();
   const { data: statuses } = usePolledQuery(
@@ -173,6 +181,7 @@ const CreateIssueHost: React.FC<CreateIssueHostProps> = ({
       {...(currentUserId === undefined ? {} : { currentUserId })}
       preset={preset}
       initialExpanded={expanded}
+      initialShowDrafts={showDrafts}
       onClose={onClose}
     />
   );
@@ -262,7 +271,15 @@ const WorkspaceOverlays: React.FC = () => {
     [writable, routePrefix]
   );
 
-  const hasDraft = useHasIssueDraft(workspaceId, user?.id);
+  const viewerId = user?.id;
+  useEffect(() => {
+    if (workspaceId === '' || viewerId === undefined) return;
+    migrateLegacyIssueDraft(workspaceId, viewerId);
+    void flushIssueDrafts(workspaceId, viewerId).then(() =>
+      refreshIssueDrafts(workspaceId, viewerId)
+    );
+  }, [workspaceId, viewerId]);
+  const hasDraft = useIssueDrafts(workspaceId, viewerId).length > 0;
 
   const closeCreateIssue = useCallback(() => {
     setRequest(null);
@@ -420,6 +437,7 @@ const WorkspaceOverlays: React.FC = () => {
                         currentUserId={user?.id}
                         preset={presetOf(request)}
                         expanded={request.expanded === true}
+                        showDrafts={request.showDrafts === true}
                       />
                     )}
 
