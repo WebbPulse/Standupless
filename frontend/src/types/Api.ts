@@ -2935,8 +2935,8 @@ export interface InitiativeUpdateListRead {
   next_cursor: string | null;
 }
 
-/** Which Pulse feed a page reads: what the caller follows, or everything they may read. */
-export type PulseScope = 'for_me' | 'recent';
+/** Which Pulse feed a page reads: what the caller follows, the last two weeks' updates by engagement, or everything they may read. */
+export type PulseScope = 'for_me' | 'popular' | 'recent';
 
 /** What one Pulse entry reports. */
 export type PulseEventType =

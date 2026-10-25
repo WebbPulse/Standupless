@@ -43677,7 +43677,7 @@
     },
     "/api/workspaces/{workspace_id}/pulse": {
       "get": {
-        "description": "One page of the caller's Pulse, newest first: what they follow, or everything they may read.",
+        "description": "One page of the caller's Pulse: what they follow, everything they may read, or recent updates by engagement.",
         "operationId": "list_pulse_api_workspaces__workspace_id__pulse_get",
         "parameters": [
           {
@@ -43698,6 +43698,7 @@
               "default": "for_me",
               "enum": [
                 "for_me",
+                "popular",
                 "recent"
               ],
               "title": "Scope",

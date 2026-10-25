@@ -1738,7 +1738,7 @@ PulseEventTypeField = Literal[
     "project_update", "initiative_update", "project_health", "initiative_health", "milestone_completed"
 ]
 
-PulseScopeField = Literal["for_me", "recent"]
+PulseScopeField = Literal["for_me", "popular", "recent"]
 
 
 class PulseItemRead(BaseModel):

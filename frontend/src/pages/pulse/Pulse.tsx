@@ -1,15 +1,16 @@
 /**
  * The caller's Pulse, like Linear's: one centred feed of project and
  * initiative updates, health changes and completed milestones, newest first.
- * "For me" holds what the caller leads, is a member of, owns or follows, and
- * "Recent" everything they may read. Opening the page reads the feed, so the
- * entries that were new keep their dot for this visit while the sidebar badge
- * clears.
+ * "For me" holds what the caller leads, is a member of, owns or follows,
+ * "Popular" the last two weeks' updates ranked by replies plus reactions, and
+ * "Recent" everything they may read. The tab lives in the URL, so a link lands
+ * on it. Opening the page reads the feed, so the entries that were new keep
+ * their dot for this visit while the sidebar badge clears.
  */
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { LuActivity } from 'react-icons/lu';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useQueryAuth } from '@webbpulse/auth/react';
 import { invalidateQueries, usePolledQuery } from '@webbpulse/api-client/react';
 import { listPulse, markPulseRead } from '../../api/pulse';
@@ -34,13 +35,22 @@ const POLL_MS = 60000;
 /** The feeds the page switches between, in the order the switch shows them. */
 const SCOPES: { id: PulseScope; label: string }[] = [
   { id: 'for_me', label: 'For me' },
+  { id: 'popular', label: 'Popular' },
   { id: 'recent', label: 'Recent' },
 ];
+
+/** The URL parameter holding the tab; absent means For me. */
+const TAB_PARAM = 'tab';
+
+/** Reads the tab from the URL, falling back to For me for anything unknown. */
+const readScope = (value: string | null): PulseScope =>
+  SCOPES.find((option) => option.id === value)?.id ?? 'for_me';
 
 /** What an empty feed says, per scope. */
 const EMPTY_MESSAGES: Record<PulseScope, string> = {
   for_me:
     'No updates yet. Follow a project or initiative to see its updates here.',
+  popular: 'No updates from the last two weeks yet.',
   recent: 'No project or initiative updates yet.',
 };
 
@@ -139,6 +149,19 @@ const PulseFeed: React.FC<PulseFeedProps> = ({ workspaceId, slug, scope }) => {
     resetKey: scope,
   });
 
+  const renderEntry = (item: PulseItemRead, index: number): React.ReactNode => (
+    <PulseEntry
+      key={item.event_id}
+      item={item}
+      slug={slug}
+      active={activeIndex === index}
+      entryRef={registerItem(index)}
+      onPointerEnter={() => {
+        setActiveIndex(index);
+      }}
+    />
+  );
+
   const loadMore = (): void => {
     if (nextCursor === null || loadingMore) return;
     setLoadingMore(true);
@@ -175,34 +198,31 @@ const PulseFeed: React.FC<PulseFeedProps> = ({ workspaceId, slug, scope }) => {
         <section
           aria-label={SCOPES.find((option) => option.id === scope)?.label}
         >
-          {groupByDay(items, new Date()).map((group) => (
-            <section
-              key={group.key}
-              aria-labelledby={`pulse-day-${group.key}`}
-              className="pb-2"
-            >
-              <h2
-                id={`pulse-day-${group.key}`}
-                className="sticky top-0 z-10 bg-bg/95 pt-6 pb-3 text-xs font-medium text-text-muted backdrop-blur-sm"
+          {scope === 'popular' ? (
+            <div className="flex flex-col gap-3 pt-6">
+              {items.map((item, index) => renderEntry(item, index))}
+            </div>
+          ) : (
+            groupByDay(items, new Date()).map((group) => (
+              <section
+                key={group.key}
+                aria-labelledby={`pulse-day-${group.key}`}
+                className="pb-2"
               >
-                {group.heading}
-              </h2>
-              <div className="flex flex-col gap-3">
-                {group.entries.map(({ item, index }) => (
-                  <PulseEntry
-                    key={item.event_id}
-                    item={item}
-                    slug={slug}
-                    active={activeIndex === index}
-                    entryRef={registerItem(index)}
-                    onPointerEnter={() => {
-                      setActiveIndex(index);
-                    }}
-                  />
-                ))}
-              </div>
-            </section>
-          ))}
+                <h2
+                  id={`pulse-day-${group.key}`}
+                  className="sticky top-0 z-10 bg-bg/95 pt-6 pb-3 text-xs font-medium text-text-muted backdrop-blur-sm"
+                >
+                  {group.heading}
+                </h2>
+                <div className="flex flex-col gap-3">
+                  {group.entries.map(({ item, index }) =>
+                    renderEntry(item, index)
+                  )}
+                </div>
+              </section>
+            ))
+          )}
         </section>
         {moreError !== null && (
           <div className="mt-3">
@@ -219,7 +239,11 @@ const PulseFeed: React.FC<PulseFeedProps> = ({ workspaceId, slug, scope }) => {
               disabled={loadingMore}
               onClick={loadMore}
             >
-              {loadingMore ? 'Loading' : 'Show older'}
+              {loadingMore
+                ? 'Loading'
+                : scope === 'popular'
+                  ? 'Show more'
+                  : 'Show older'}
             </Button>
           </div>
         )}
@@ -233,7 +257,16 @@ export const Pulse: React.FC = () => {
   const { workspace } = useWorkspace();
   const workspaceId = workspace?.id ?? '';
   const slug = workspace?.slug ?? '';
-  const [scope, setScope] = useState<PulseScope>('for_me');
+  const [params, setParams] = useSearchParams();
+  const scope = readScope(params.get(TAB_PARAM));
+  const setScope = (next: PulseScope): void => {
+    setParams((current) => {
+      const updated = new URLSearchParams(current);
+      if (next === 'for_me') updated.delete(TAB_PARAM);
+      else updated.set(TAB_PARAM, next);
+      return updated;
+    });
+  };
 
   return (
     <WorkspaceShell
