@@ -2040,8 +2040,28 @@ def _progress(counts: Any, separator: str = "/") -> str:
     return f"{counts.get('done', 0)}{separator}{max(scope, 0)}"
 
 
+MONTH_ABBREVIATIONS = ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
+"""Month names as a coarse planning date shows them."""
+
 CADENCE_CHOICES: dict[str, int | None] = {"off": 0, "weekly": 7, "biweekly": 14, "monthly": 30, "inherit": None}
 """The project update cadences `project cadence` takes, by name."""
+
+
+def _date_label(value: Any, resolution: Any) -> str:
+    """A planning date at its resolution: `2026-11-15`, `Nov 2026`, `Q3 2026`, `H2 2026` or `2026`."""
+    if not value:
+        return ""
+    text = str(value)
+    if not resolution or resolution == "day":
+        return text
+    year, month = int(text[:4]), int(text[5:7])
+    if resolution == "month":
+        return f"{MONTH_ABBREVIATIONS[month - 1]} {year}"
+    if resolution == "quarter":
+        return f"Q{(month - 1) // 3 + 1} {year}"
+    if resolution == "half":
+        return f"H{1 if month <= 6 else 2} {year}"
+    return str(year)
 
 
 def _update_due(project: Any) -> str:
@@ -2226,7 +2246,7 @@ def project_list(
                 project["name"],
                 project["status"],
                 people.get(lead, lead),
-                project.get("target_date") or "",
+                _date_label(project.get("target_date"), project.get("target_date_resolution")),
                 _progress(counts),
                 _update_due(project),
                 project["project_id"],
@@ -2262,8 +2282,8 @@ def project_view(
         ("Health", found.get("health") or ""),
         ("Lead", people.get(lead, lead)),
         ("Teams", ", ".join(teams)),
-        ("Start", found.get("start_date") or ""),
-        ("Target", found.get("target_date") or ""),
+        ("Start", _date_label(found.get("start_date"), found.get("start_date_resolution"))),
+        ("Target", _date_label(found.get("target_date"), found.get("target_date_resolution"))),
         ("Progress", _progress(counts, " of ") + " done"),
         ("Updates", _cadence(found)),
         ("Next due", _update_due(found)),
@@ -2335,7 +2355,7 @@ def initiative_list(
                 initiative["status"],
                 initiative.get("health") or "",
                 people.get(owner, owner),
-                initiative.get("target_date") or "",
+                _date_label(initiative.get("target_date"), initiative.get("target_date_resolution")),
                 initiative.get("project_count", 0),
                 _progress(initiative.get("counts") or {}),
                 initiative["initiative_id"],
@@ -2368,7 +2388,7 @@ def initiative_view(
         ("Status", found["status"]),
         ("Health", found.get("health") or ""),
         ("Owner", people.get(owner, owner)),
-        ("Target", found.get("target_date") or ""),
+        ("Target", _date_label(found.get("target_date"), found.get("target_date_resolution"))),
         ("Projects", _health_mix(found)),
         ("Progress", _progress(found.get("counts") or {}, " of ") + " done"),
         ("Updates", _cadence(found)),

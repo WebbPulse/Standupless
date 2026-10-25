@@ -36,7 +36,7 @@ import {
   removeInitiativeProject,
   updateInitiative,
 } from '../../api/initiatives';
-import { DatePicker } from '../../components/issues/PropertyPickers';
+import PlanningDatePicker from '../../components/planning/PlanningDatePicker';
 import BurnUpChart from '../../components/planning/BurnUpChart';
 import CreateInitiativeDialog from '../../components/planning/CreateInitiativeDialog';
 import DocumentsSection from '../../components/planning/DocumentsSection';
@@ -84,7 +84,7 @@ import {
   progressPercent,
 } from '../../lib/planningDisplay';
 import { canEditProject, daysBetween } from '../../lib/planningModel';
-import { shortDateLabel } from '../../lib/propertyOptions';
+import { isCoarse, planningDateLabel } from '../../lib/dateResolution';
 import {
   initiativeDetailKey,
   initiativeProgressKey,
@@ -696,14 +696,21 @@ export const InitiativeDetail: React.FC = () => {
           void update({ owner_id: ownerId });
         }}
       />
-      <DatePicker
+      <PlanningDatePicker
         variant="chip"
         field="Target date"
+        edge="end"
         value={initiative.target_date}
+        resolution={initiative.target_date_resolution}
         disabled={!canEdit}
         icon={<LuCalendarCheck className="h-3.5 w-3.5" />}
-        onChange={(value) => {
-          void update({ target_date: value });
+        onChange={(value, resolution) => {
+          void update({
+            target_date: value,
+            ...(isCoarse(resolution)
+              ? { target_date_resolution: resolution }
+              : {}),
+          });
         }}
       />
       <CadencePicker
@@ -1011,7 +1018,10 @@ export const InitiativeDetail: React.FC = () => {
                           <span className="hidden w-16 text-xs text-text-muted tabular-nums sm:block">
                             {project.target_date === null
                               ? 'No date'
-                              : shortDateLabel(project.target_date)}
+                              : planningDateLabel(
+                                  project.target_date,
+                                  project.target_date_resolution
+                                )}
                           </span>
                           <span className="flex w-12 items-center justify-end gap-1 text-xs text-text-muted tabular-nums">
                             <ProgressRing percent={percent} />
@@ -1066,7 +1076,10 @@ export const InitiativeDetail: React.FC = () => {
                           <span className="hidden w-16 text-xs text-text-muted tabular-nums sm:block">
                             {project.target_date === null
                               ? 'No date'
-                              : shortDateLabel(project.target_date)}
+                              : planningDateLabel(
+                                  project.target_date,
+                                  project.target_date_resolution
+                                )}
                           </span>
                           <span className="flex w-12 items-center justify-end gap-1 text-xs text-text-muted tabular-nums">
                             <ProgressRing percent={percent} />

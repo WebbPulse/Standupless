@@ -61,6 +61,8 @@ PROJECT_FIELDS: dict[str, str] = {
     "lead_id": "leadId",
     "start_date": "startDate",
     "target_date": "targetDate",
+    "start_date_resolution": "startDateResolution",
+    "target_date_resolution": "targetDateResolution",
     "team_ids": "teamIds",
     "icon": "icon",
     "color": "color",

@@ -162,3 +162,33 @@ def test_sub_initiatives_are_nested_by_name_and_roll_up(
     assert progress["days"]
     assert "sub-initiatives" in cycle
     assert detached["parent_initiative_id"] is None
+
+
+def test_an_initiative_target_round_trips_its_resolution(
+    client: TestClient, repositories: Any, planning: dict[str, str]
+) -> None:
+    """The initiative tools take a resolution beside the date and answer it with a readable label."""
+    secret = mint_for(repositories, MEMBER, PROJECTS)
+
+    created = answer(
+        tool(
+            client,
+            secret,
+            "create_initiative",
+            {"name": "Scale", "target_date": "2027-08-01", "target_date_resolution": "quarter"},
+        )
+    )
+    plain = answer(tool(client, secret, "create_initiative", {"name": "Plain", "target_date": "2027-08-01"}))
+    updated = answer(
+        tool(
+            client,
+            secret,
+            "update_initiative",
+            {"initiative_id": created["initiative_id"], "target_date_resolution": "year"},
+        )
+    )
+
+    assert (created["target_date"], created["target_date_resolution"]) == ("2027-09-30", "quarter")
+    assert created["target_date_label"] == "Q3 2027"
+    assert (plain["target_date_resolution"], plain["target_date_label"]) == ("day", "2027-08-01")
+    assert (updated["target_date"], updated["target_date_label"]) == ("2027-12-31", "2027")

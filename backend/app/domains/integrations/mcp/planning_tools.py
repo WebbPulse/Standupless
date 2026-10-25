@@ -45,6 +45,7 @@ from app.common.api.schemas.planning import (
 from app.common.cycle_rollover import start_cycle_today_read
 from app.common.cycle_schedule import RELATIVE_CYCLES, relative_cycle
 from app.common.cycle_writes import create_cycle, delete_cycle, list_cycles, update_cycle
+from app.common.date_resolution import DATE_RESOLUTIONS, date_label
 from app.common.db.dynamo.issues import Issue
 from app.common.issue_conversion import convert_to_project
 from app.common.issue_keys import current
@@ -123,6 +124,8 @@ PROJECT_FIELDS: tuple[str, ...] = (
     "description",
     "start_date",
     "target_date",
+    "start_date_resolution",
+    "target_date_resolution",
     "icon",
     "color",
     "health",
@@ -273,6 +276,10 @@ def _project_json(project: ProjectRead, names: dict[str, str]) -> dict[str, Any]
         "initiative_id": project.initiative_id,
         "start_date": project.start_date,
         "target_date": project.target_date,
+        "start_date_resolution": project.start_date_resolution,
+        "target_date_resolution": project.target_date_resolution,
+        "start_date_label": date_label(project.start_date, project.start_date_resolution),
+        "target_date_label": date_label(project.target_date, project.target_date_resolution),
         "counts": project.counts.model_dump(),
         "status_counts": project.status_counts,
         "last_update_at": project.last_update_at.isoformat() if project.last_update_at else None,
@@ -846,8 +853,18 @@ PROJECT_PROPERTIES: dict[str, Any] = {
     "name": string("The project name"),
     "description": nullable("The description, in Markdown"),
     "lead_id": nullable("The lead: user id, email, 'me' for the caller, or null"),
-    "start_date": nullable("Start date, YYYY-MM-DD"),
-    "target_date": nullable("Target date, YYYY-MM-DD"),
+    "start_date": nullable("Start date, YYYY-MM-DD; any day in the period when start_date_resolution is coarse"),
+    "target_date": nullable("Target date, YYYY-MM-DD; any day in the period when target_date_resolution is coarse"),
+    "start_date_resolution": enum(
+        DATE_RESOLUTIONS,
+        "How wide start_date is: day (the default), or the month, quarter, half or year it opens; "
+        "the date moves to that period's first day",
+    ),
+    "target_date_resolution": enum(
+        DATE_RESOLUTIONS,
+        "How wide target_date is: day (the default), or the month, quarter, half or year it closes; "
+        "the date moves to that period's last day",
+    ),
     "status": string(STATUS_HELP),
     "status_id": string("The project status by id or name, as list_project_statuses names it"),
     "team_ids": string_list(

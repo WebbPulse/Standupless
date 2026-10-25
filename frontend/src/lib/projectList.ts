@@ -753,7 +753,9 @@ export type ProjectMove = Partial<
     | 'initiative_id'
     | 'lead_id'
     | 'start_date'
+    | 'start_date_resolution'
     | 'target_date'
+    | 'target_date_resolution'
     | 'member_ids'
     | 'label_ids'
   >

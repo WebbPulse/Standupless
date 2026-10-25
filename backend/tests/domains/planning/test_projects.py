@@ -739,3 +739,90 @@ def test_a_project_created_closed_carries_its_close_time(client: TestClient, wor
     body = seed_project(client, workspace, status="completed")
     assert body["completed_at"] is not None
     assert seed_project(client, workspace, name="Open")["completed_at"] is None
+
+
+def test_a_coarse_target_is_stored_at_the_end_of_its_period(client: TestClient, workspace: str) -> None:
+    """A quarter target lands on the quarter's last day and a month start on the month's first."""
+    sign_in(client, MEMBER)
+
+    body = seed_project(
+        client,
+        workspace,
+        start_date="2026-08-14",
+        start_date_resolution="month",
+        target_date="2026-08-14",
+        target_date_resolution="quarter",
+    )
+    roadmap = client.get(f"/api/workspaces/{workspace}/roadmap").json()["entries"]
+
+    assert (body["start_date"], body["start_date_resolution"]) == ("2026-08-01", "month")
+    assert (body["target_date"], body["target_date_resolution"]) == ("2026-09-30", "quarter")
+    assert [(row["target_date"], row["target_date_resolution"]) for row in roadmap] == [("2026-09-30", "quarter")]
+
+
+def test_an_exact_date_reads_as_day_and_a_dateless_project_as_none(client: TestClient, workspace: str) -> None:
+    """Existing callers that send only a date get a day resolution back."""
+    sign_in(client, MEMBER)
+
+    dated = seed_project(client, workspace, name="Dated", target_date="2026-11-15")
+    undated = seed_project(client, workspace, name="Undated")
+
+    assert (dated["target_date"], dated["target_date_resolution"]) == ("2026-11-15", "day")
+    assert undated["target_date_resolution"] is None
+    assert undated["start_date_resolution"] is None
+
+
+def test_a_resolution_without_a_date_is_refused(client: TestClient, workspace: str) -> None:
+    """There is no period to widen without a date, on create or on a patch."""
+    sign_in(client, MEMBER)
+    project = seed_project(client, workspace)
+
+    created = client.post(_path(workspace), json={"team_id": TEAM, "name": "X", "target_date_resolution": "year"})
+    patched = client.patch(_path(workspace, project["project_id"]), json={"target_date_resolution": "year"})
+    unknown = client.post(
+        _path(workspace),
+        json={"team_id": TEAM, "name": "X", "target_date": "2026-01-01", "target_date_resolution": "week"},
+    )
+
+    assert created.status_code == 422
+    assert patched.status_code == 422
+    assert unknown.status_code == 422
+
+
+def test_a_patch_widens_narrows_and_clears_a_coarse_date(client: TestClient, workspace: str) -> None:
+    """A resolution alone widens the held date, a date alone is a day again, and clearing drops both."""
+    sign_in(client, MEMBER)
+    project = seed_project(client, workspace, target_date="2026-08-14")
+    path = _path(workspace, project["project_id"])
+
+    widened = client.patch(path, json={"target_date_resolution": "half"}).json()
+    exact = client.patch(path, json={"target_date": "2026-10-02"}).json()
+    yearly = client.patch(path, json={"target_date": "2027-03-01", "target_date_resolution": "year"}).json()
+    cleared = client.patch(path, json={"target_date": None}).json()
+
+    assert (widened["target_date"], widened["target_date_resolution"]) == ("2026-12-31", "half")
+    assert (exact["target_date"], exact["target_date_resolution"]) == ("2026-10-02", "day")
+    assert (yearly["target_date"], yearly["target_date_resolution"]) == ("2027-12-31", "year")
+    assert (cleared["target_date"], cleared["target_date_resolution"]) == (None, None)
+
+
+def test_coarse_dates_are_ordered_by_the_end_of_their_period(client: TestClient, workspace: str) -> None:
+    """A quarter target sorts after an exact day inside that quarter, since it closes later."""
+    sign_in(client, MEMBER)
+    seed_project(client, workspace, name="Quarter", target_date="2026-07-01", target_date_resolution="quarter")
+    seed_project(client, workspace, name="Day", target_date="2026-08-15")
+
+    listed = client.get(_path(workspace)).json()["projects"]
+
+    assert [row["name"] for row in listed] == ["Day", "Quarter"]
+
+
+def test_the_order_check_reads_the_widened_dates(client: TestClient, workspace: str) -> None:
+    """A month target whose day precedes the start is still fine once it closes at the month's end."""
+    sign_in(client, MEMBER)
+
+    body = seed_project(
+        client, workspace, start_date="2026-05-20", target_date="2026-05-01", target_date_resolution="month"
+    )
+
+    assert (body["start_date"], body["target_date"]) == ("2026-05-20", "2026-05-31")

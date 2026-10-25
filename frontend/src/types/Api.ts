@@ -1928,6 +1928,7 @@ export interface SearchProjectRead {
   lead_id: string | null;
   team_ids: string[];
   target_date: string | null;
+  target_date_resolution?: DateResolution | null;
   updated_at: string;
 }
 
@@ -1939,6 +1940,7 @@ export interface SearchInitiativeRead {
   health: ProjectHealth | null;
   owner_id: string | null;
   target_date: string | null;
+  target_date_resolution?: DateResolution | null;
   updated_at: string;
 }
 
@@ -2273,6 +2275,7 @@ export interface ProjectHistoryRead {
   project_id: string;
   start_date: string | null;
   target_date: string | null;
+  target_date_resolution?: DateResolution | null;
   today: string;
   measure: 'points' | 'issues';
   recorded_since: string | null;
@@ -2637,6 +2640,9 @@ export type ProjectIconName =
   | 'users'
   | 'wrench';
 
+/** How precise a planning date is: an exact day, or a whole month, quarter, half or year. */
+export type DateResolution = 'day' | 'month' | 'quarter' | 'half' | 'year';
+
 /**
  * One workspace level project shared by one or more teams. `team_ids` lists
  * only the teams the caller can see, and `team_id` is the first of them.
@@ -2650,7 +2656,9 @@ export interface ProjectRead {
   description: string | null;
   lead_id: string | null;
   start_date: string | null;
+  start_date_resolution?: DateResolution | null;
   target_date: string | null;
+  target_date_resolution?: DateResolution | null;
   status: ProjectStatus;
   /** The workspace project status the project sits in, within `status`. */
   status_id?: string;
@@ -2868,7 +2876,9 @@ export interface ProjectCreate {
   description?: string | null;
   lead_id?: string | null;
   start_date?: string | null;
+  start_date_resolution?: DateResolution | null;
   target_date?: string | null;
+  target_date_resolution?: DateResolution | null;
   status?: ProjectStatus;
   /** A workspace project status by id; `status` then may only name its category. */
   status_id?: string;
@@ -2893,7 +2903,9 @@ export interface ProjectUpdate {
   description?: string | null;
   lead_id?: string | null;
   start_date?: string | null;
+  start_date_resolution?: DateResolution | null;
   target_date?: string | null;
+  target_date_resolution?: DateResolution | null;
   status?: ProjectStatus;
   /** A workspace project status by id; a bare category keeps a status already in it. */
   status_id?: string;
@@ -3154,6 +3166,7 @@ export interface InitiativeRead {
   status: InitiativeStatus;
   health: ProjectHealth | null;
   target_date: string | null;
+  target_date_resolution?: DateResolution | null;
   /** The initiative this one sits under, or null at the top level. */
   parent_initiative_id?: string | null;
   /** The chain of parents, root first. */
@@ -3226,6 +3239,7 @@ export interface InitiativeCreate {
   status?: InitiativeStatus;
   health?: ProjectHealth | null;
   target_date?: string | null;
+  target_date_resolution?: DateResolution | null;
   update_interval_days?: ProjectUpdateInterval | null;
   parent_initiative_id?: string | null;
 }
@@ -3238,6 +3252,7 @@ export interface InitiativeUpdate {
   status?: InitiativeStatus;
   health?: ProjectHealth | null;
   target_date?: string | null;
+  target_date_resolution?: DateResolution | null;
   update_interval_days?: ProjectUpdateInterval | null;
   parent_initiative_id?: string | null;
 }
@@ -3353,7 +3368,9 @@ export interface RoadmapEntryRead {
   team_ids: string[];
   name: string;
   target_date: string | null;
+  target_date_resolution?: DateResolution | null;
   start_date: string | null;
+  start_date_resolution?: DateResolution | null;
   status: string;
   /** A project entry's workspace project status. */
   status_id?: string | null;

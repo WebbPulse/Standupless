@@ -4,7 +4,8 @@
  * a drag moves a bar by whole days, whatever the viewer's time zone.
  */
 
-import type { RollupCounts } from '../types/Api';
+import type { DateResolution, RollupCounts } from '../types/Api';
+import { isCoarse, periodLabel } from './dateResolution';
 import type { ProgressMeasure } from './planningDisplay';
 import { weekStartDay } from './preferences';
 
@@ -332,3 +333,12 @@ export const milestoneMarks = (
       },
     ];
   });
+
+/**
+ * How a bar's end reads in its hover text: the period for a coarse date, so a
+ * quarter target says `Q3 2026` rather than the last day it is drawn to.
+ */
+export const timelineDate = (
+  value: string,
+  resolution: DateResolution | null | undefined
+): string => (isCoarse(resolution) ? periodLabel(value, resolution) : value);

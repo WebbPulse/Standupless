@@ -51,10 +51,9 @@ import {
   updateProject,
   updateProjectLink,
 } from '../../api/planning';
-import {
-  DatePicker,
-  PriorityPicker,
-} from '../../components/issues/PropertyPickers';
+import { PriorityPicker } from '../../components/issues/PropertyPickers';
+import PlanningDatePicker from '../../components/planning/PlanningDatePicker';
+import { isCoarse } from '../../lib/dateResolution';
 import EditableText from '../../components/planning/EditableText';
 import CustomerRequestsSection from '../../components/customers/CustomerRequestsSection';
 import DocumentsSection from '../../components/planning/DocumentsSection';
@@ -619,32 +618,46 @@ export const ProjectDetail: React.FC = () => {
         }}
       />
       <span className="inline-flex items-center gap-1">
-        <DatePicker
+        <PlanningDatePicker
           variant="chip"
           field="Start date"
+          edge="start"
           value={project.start_date}
+          resolution={project.start_date_resolution}
           disabled={!canEdit}
           icon={<LuCalendar className="h-3.5 w-3.5" />}
           {...(project.target_date === null
             ? {}
             : { max: project.target_date })}
-          onChange={(value) => {
-            void update({ start_date: value });
+          onChange={(value, resolution) => {
+            void update({
+              start_date: value,
+              ...(isCoarse(resolution)
+                ? { start_date_resolution: resolution }
+                : {}),
+            });
           }}
         />
         <LuArrowRight
           aria-hidden="true"
           className="h-3 w-3 shrink-0 text-text-faint"
         />
-        <DatePicker
+        <PlanningDatePicker
           variant="chip"
           field="Target date"
+          edge="end"
           value={project.target_date}
+          resolution={project.target_date_resolution}
           disabled={!canEdit}
           icon={<LuCalendarCheck className="h-3.5 w-3.5" />}
           {...(project.start_date === null ? {} : { min: project.start_date })}
-          onChange={(value) => {
-            void update({ target_date: value });
+          onChange={(value, resolution) => {
+            void update({
+              target_date: value,
+              ...(isCoarse(resolution)
+                ? { target_date_resolution: resolution }
+                : {}),
+            });
           }}
         />
       </span>

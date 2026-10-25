@@ -68,7 +68,7 @@ import {
   progressPercent,
 } from '../../lib/planningDisplay';
 import { PROJECT_HEALTHS, PROJECT_HEALTH_LABELS } from '../../lib/projectLook';
-import { shortDateLabel } from '../../lib/propertyOptions';
+import { planningDateLabel } from '../../lib/dateResolution';
 import type { InitiativeStatus } from '../../types/Api';
 
 /** The grid every header and row lines up on, its tracks set by the shown properties. */
@@ -225,7 +225,10 @@ const InitiativeRow: React.FC<InitiativeRowProps> = ({
         >
           {initiative.target_date === null
             ? 'No date'
-            : shortDateLabel(initiative.target_date)}
+            : planningDateLabel(
+                initiative.target_date,
+                initiative.target_date_resolution
+              )}
         </span>
       )}
       {shown.includes('progress') && (

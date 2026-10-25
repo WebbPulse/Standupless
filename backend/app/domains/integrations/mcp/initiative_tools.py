@@ -23,6 +23,7 @@ from app.common.api.schemas.planning import (
     InitiativeUpdateRead,
     ProjectHealthField,
 )
+from app.common.date_resolution import DATE_RESOLUTIONS, date_label
 from app.common.initiative_progress import initiative_progress
 from app.common.initiative_writes import (
     add_project_to_initiative,
@@ -62,7 +63,7 @@ INITIATIVE_HELP = "The initiative: id or name"
 
 PROJECT_HELP = "The project: id or name"
 
-TEXT_FIELDS: tuple[str, ...] = ("name", "description", "status", "health", "target_date")
+TEXT_FIELDS: tuple[str, ...] = ("name", "description", "status", "health", "target_date", "target_date_resolution")
 
 CLEARABLE_FIELDS: tuple[str, ...] = ("description", "health", "target_date")
 """The initiative fields a tool call clears by passing null."""
@@ -78,6 +79,8 @@ def _initiative_json(initiative: InitiativeRead) -> dict[str, Any]:
         "status": initiative.status,
         "health": initiative.health,
         "target_date": initiative.target_date,
+        "target_date_resolution": initiative.target_date_resolution,
+        "target_date_label": date_label(initiative.target_date, initiative.target_date_resolution),
         "parent_initiative_id": initiative.parent_initiative_id,
         "ancestors": [ancestor.model_dump() for ancestor in initiative.ancestors],
         "sub_initiative_ids": initiative.sub_initiative_ids,
@@ -263,7 +266,12 @@ INITIATIVE_PROPERTIES: dict[str, Any] = {
     "owner_id": nullable("The owner: user id, 'me' for the caller, or null"),
     "status": enum(INITIATIVE_STATUSES, "The initiative status"),
     "health": nullable_enum(HEALTHS, "The initiative health, or null for none"),
-    "target_date": nullable("Target date, YYYY-MM-DD"),
+    "target_date": nullable("Target date, YYYY-MM-DD; any day in the period when target_date_resolution is coarse"),
+    "target_date_resolution": enum(
+        DATE_RESOLUTIONS,
+        "How wide target_date is: day (the default), or the month, quarter, half or year it closes; "
+        "the date moves to that period's last day",
+    ),
     "parent_initiative_id": nullable(
         "The parent initiative to nest this one under, by id or name; null makes it top level"
     ),

@@ -39,6 +39,7 @@ from app.common.api.schemas.planning import (
     InitiativeUpdateRead,
     ProjectRead,
 )
+from app.common.date_resolution import settle_date_fields, stored_resolution
 from app.common.db.dynamo.base import utc_now
 from app.common.db.dynamo.planning import (
     INITIATIVE_STATUSES,
@@ -205,6 +206,7 @@ def create_initiative(repositories: Repositories, context: AuthzContext, payload
         status=payload.status,
         health=payload.health,
         target_date=payload.target_date,
+        target_date_resolution=stored_resolution(payload.target_date_resolution),
         update_interval_days=payload.update_interval_days,
         created_by=context.user_id,
     )
@@ -233,6 +235,9 @@ def update_initiative(
     parent_id = fields.get("parent_initiative_id")
     if parent_id is not None and parent_id != existing.parent_initiative_id:
         require_parent(repositories, context, existing.initiative_id, parent_id)
+    refusal = settle_date_fields(fields, "target_date", "target_date_resolution", "end", existing.target_date)
+    if refusal is not None:
+        raise unprocessable(refusal)
     updated = existing.model_copy(update={**fields, "updated_at": utc_now()})
     try:
         stored = repositories.planning.replace_initiative(updated)
