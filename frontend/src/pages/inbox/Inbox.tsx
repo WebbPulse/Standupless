@@ -45,6 +45,10 @@
  *
  * A project update row names its project rather than an issue, and its pane
  * offers the project's Updates tab, since there is no issue to peek.
+ *
+ * Below the `lg` breakpoint the list and the pane stack: the list fills the
+ * page until a row opens, then the pane takes its place. On a phone the page
+ * bar carries a back arrow to the list while a row is open.
  */
 
 import React, {
@@ -61,6 +65,7 @@ import {
 } from '@webbpulse/api-client/react';
 import { useQueryAuth } from '@webbpulse/auth/react';
 import {
+  LuArrowLeft,
   LuBan,
   LuCheck,
   LuCheckCheck,
@@ -2093,6 +2098,18 @@ export const Inbox: React.FC = () => {
     <WorkspaceShell
       title="Inbox"
       flush
+      leading={
+        selected === null ? undefined : (
+          <IconButton
+            label="Back to notifications"
+            size="sm"
+            className="sm:hidden"
+            onClick={closePane}
+          >
+            <LuArrowLeft className="h-4 w-4" aria-hidden="true" />
+          </IconButton>
+        )
+      }
       toolbar={
         priority.enabled ? (
           <div

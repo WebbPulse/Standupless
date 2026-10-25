@@ -2,6 +2,11 @@
  * The slim 40px bar at the top of every page: the title on the left, the actions on
  * the right, and an optional second row for filters. The same bar carries the
  * phone menu button, so it is the one place the page and the shell meet.
+ *
+ * Pages put their filter chips in a {@link FilterRow} inside the toolbar. On a
+ * desktop the row dissolves into the toolbar and wraps with it; below the `sm`
+ * breakpoint it takes the toolbar's full width and scrolls sideways in one
+ * line, so a long set of filters never pushes the page wider than the phone.
  */
 
 import React from 'react';
@@ -66,5 +71,25 @@ export const PageHeader: React.FC<PageHeaderProps> = ({
     </header>
   );
 };
+
+/** Props for FilterRow: the filter controls and any extra classes. */
+export interface FilterRowProps {
+  children: React.ReactNode;
+  className?: string;
+}
+
+/** The classes that keep a filter row in one sideways scrolling line on a phone. */
+export const FILTER_ROW_CLASS =
+  'flex items-center gap-1.5 max-sm:w-full max-sm:overflow-x-auto max-sm:overscroll-x-contain max-sm:[scrollbar-width:none] max-sm:*:shrink-0 sm:contents';
+
+/** A page header's filter chips, in one sideways scrolling line on a phone. */
+export const FilterRow: React.FC<FilterRowProps> = ({
+  children,
+  className,
+}) => (
+  <div data-filter-row="" className={cn(FILTER_ROW_CLASS, className)}>
+    {children}
+  </div>
+);
 
 export default PageHeader;

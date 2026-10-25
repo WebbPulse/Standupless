@@ -23,6 +23,11 @@
  *
  * Print, on the overview from the menu, the palette or Cmd or Ctrl+P, prints
  * the name, the property chips, the description and the sections under it.
+ *
+ * Below the `sm` breakpoint the header is compact: the action buttons keep
+ * only their icons, the update due badge leaves the title to the overview's
+ * nudge, and the property chips scroll sideways in one line under a smaller
+ * name. Desktop layouts are unchanged.
  */
 
 import React, { useCallback, useMemo, useRef, useState } from 'react';
@@ -667,7 +672,7 @@ export const ProjectDetail: React.FC = () => {
       ref={propertiesRow}
       role="group"
       aria-label="Properties"
-      className="flex flex-wrap items-center gap-1.5"
+      className="phone-scroll-row flex flex-wrap items-center gap-1.5"
     >
       <ProjectStatusPicker
         variant="chip"
@@ -825,7 +830,10 @@ export const ProjectDetail: React.FC = () => {
         <span className="flex min-w-0 items-center gap-2">
           <ProjectIcon icon={project.icon} color={project.color} />
           <span className="truncate">{project.name}</span>
-          <UpdateDueBadge project={project} className="shrink-0" />
+          <UpdateDueBadge
+            project={project}
+            className="shrink-0 max-sm:hidden"
+          />
         </span>
       }
       titleAccessory={
@@ -851,7 +859,7 @@ export const ProjectDetail: React.FC = () => {
           {mayCreate && (
             <Button variant="secondary" size="sm" onClick={createIssue}>
               <LuPlus aria-hidden="true" />
-              New issue
+              <span className="max-sm:sr-only">New issue</span>
             </Button>
           )}
           <Menu
@@ -960,7 +968,7 @@ export const ProjectDetail: React.FC = () => {
         />
       ) : (
         <div className="min-h-0 flex-1 overflow-y-auto">
-          <div className="print-page mx-auto flex max-w-6xl flex-col gap-8 px-4 py-8 lg:flex-row lg:px-8">
+          <div className="print-page mx-auto flex max-w-6xl flex-col gap-8 px-4 py-8 max-sm:gap-6 max-sm:py-5 lg:flex-row lg:px-8">
             <div className="min-w-0 flex-1 space-y-8">
               <div ref={heading} className="space-y-3">
                 <ProjectLookPicker
@@ -977,7 +985,7 @@ export const ProjectDetail: React.FC = () => {
                   placeholder="Project name"
                   value={project.name}
                   disabled={!canEdit}
-                  className="text-2xl font-semibold"
+                  className="text-2xl font-semibold max-sm:text-xl"
                   onSave={(name) => {
                     if (name !== '') void update({ name });
                   }}

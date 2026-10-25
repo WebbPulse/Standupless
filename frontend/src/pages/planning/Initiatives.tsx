@@ -65,6 +65,7 @@ import Dialog from '../../components/ui/dialog';
 import EmptyState from '../../components/ui/empty-state';
 import { FAVORITE_SHORTCUT } from '../../components/ui/FavoriteButton';
 import FilterButton from '../../components/ui/filter-button';
+import { FilterRow } from '../../components/ui/page-header';
 import { SkeletonRows } from '../../components/ui/skeleton';
 import WorkspaceShell from '../../components/workspace/WorkspaceShell';
 import { deleteInitiative } from '../../api/initiatives';
@@ -1110,7 +1111,7 @@ export const Initiatives: React.FC = () => {
       toolbar={
         isMember ? (
           <div className="flex flex-wrap items-center gap-1.5">
-            <div className="flex items-center gap-1.5 max-sm:w-full max-sm:overflow-x-auto max-sm:[scrollbar-width:none] max-sm:*:shrink-0 sm:contents">
+            <FilterRow>
               <LuListFilter
                 aria-hidden="true"
                 className="mr-0.5 h-3.5 w-3.5 text-text-faint"
@@ -1181,7 +1182,7 @@ export const Initiatives: React.FC = () => {
                   Clear
                 </Button>
               )}
-            </div>
+            </FilterRow>
             <div className="ml-auto flex items-center gap-1">
               <InitiativesDisplayMenu
                 layout={layout}

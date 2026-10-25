@@ -9,6 +9,8 @@
  * edits and deletes them, and a quiet live project nudges for one. The
  * overview's activity interleaves property changes with the updates. R
  * focuses the name and Cmd or Ctrl+Shift+Comma copies the project's address.
+ * On a phone the header keeps its actions to icons and the property chips
+ * scroll in one line.
  */
 
 import type { Editor } from '@tiptap/core';
@@ -1309,5 +1311,42 @@ describe('ProjectDetail offline', () => {
     expect(
       within(row).getByRole('button', { name: /^Priority: / })
     ).toBeDisabled();
+  });
+});
+
+describe('ProjectDetail on a phone', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    useWorkspaceMock.mockReturnValue(resolved('admin'));
+    listTeams.mockResolvedValue([engine]);
+    getProject.mockResolvedValue({
+      ...launch,
+      update_due_state: 'overdue',
+    });
+    listProjects.mockResolvedValue({ projects: [], next_cursor: null });
+    listIssues.mockResolvedValue({ issues: [], next_cursor: null });
+    listMilestones.mockResolvedValue([]);
+    listProjectUpdates.mockResolvedValue({ updates: [], next_cursor: null });
+    listProjectActivity.mockResolvedValue({ activity: [], next_cursor: null });
+    listTeamMembers.mockResolvedValue([ada]);
+    getFollow.mockResolvedValue({ following: true, explicit: false });
+  });
+
+  it('keeps the header actions to their icons below the sm breakpoint', async () => {
+    renderPage();
+
+    const follow = await screen.findByRole('button', { name: 'Following' });
+    expect(within(follow).getByText('Following')).toHaveClass('max-sm:sr-only');
+    const badge = screen
+      .getAllByText('Update overdue')
+      .find((element) => element.closest('h1') !== null);
+    expect(badge).toHaveClass('max-sm:hidden');
+  });
+
+  it('scrolls the property chips sideways in one line on a phone', async () => {
+    renderPage();
+
+    const row = await screen.findByRole('group', { name: 'Properties' });
+    expect(row).toHaveClass('phone-scroll-row', 'flex-wrap');
   });
 });
