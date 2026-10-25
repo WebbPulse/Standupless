@@ -5,6 +5,7 @@
 import React from 'react';
 import { Navigate, Outlet, useLocation } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
+import { usePinnedViewport } from '../../hooks/usePinnedViewport';
 import BootSplash from '../layout/BootSplash';
 
 /**
@@ -22,10 +23,15 @@ import BootSplash from '../layout/BootSplash';
  * long page can never stretch the document past the viewport. The document
  * itself is locked while the column is mounted, through the `data-app-shell`
  * rule in the global stylesheet, so only the panes inside the shell scroll.
+ * That rule also drops the body's minimum height, so the document is exactly
+ * as tall as the shell and has no room to scroll, and `usePinnedViewport`
+ * returns the document to its origin if script or the on screen keyboard
+ * moves it anyway, so the top bar is never left above the screen on a phone.
  */
 const ProtectedRoute: React.FC = () => {
   const { isAuthenticated, isLoading } = useAuth();
   const location = useLocation();
+  usePinnedViewport();
 
   if (isLoading) {
     return <BootSplash />;
