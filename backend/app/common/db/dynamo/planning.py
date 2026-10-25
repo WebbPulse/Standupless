@@ -680,6 +680,9 @@ class Initiative(BaseModel):
     held on the child so a parent keeps no list of children to hold in step.
     `target_date_resolution` widens the target to its month, quarter, half or
     year, the date held at that period's last day; None is an exact day.
+    `team_id` names a lead team, so the team's page lists it and a private
+    team's initiative is seen only by that team's members; None keeps it
+    workspace level, seen by every member but a guest.
     """
 
     workspace_id: str
@@ -689,6 +692,7 @@ class Initiative(BaseModel):
     name: str
     description: str | None = None
     owner_id: str | None = None
+    team_id: str | None = None
     parent_initiative_id: str | None = None
     status: str = "planned"
     health: str | None = None
@@ -986,6 +990,7 @@ PROJECT_OPTIONAL_FIELDS: tuple[str, ...] = (
 INITIATIVE_OPTIONAL_FIELDS: tuple[str, ...] = (
     "description",
     "owner_id",
+    "team_id",
     "parent_initiative_id",
     "health",
     "target_date",

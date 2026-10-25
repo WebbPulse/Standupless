@@ -23,7 +23,7 @@ from fastapi import HTTPException, status
 
 from app.common.api.dependencies.authz import IMPLIED_TEAM_ROLE, TEAM_ROLES, AuthzContext
 from app.common.api.dependencies.repositories import Repositories
-from app.common.db.dynamo.planning import Cycle, Project
+from app.common.db.dynamo.planning import Cycle, Initiative, Project
 from app.common.db.dynamo.teams import Team
 from app.common.team_retirement import is_retired, refuse_if_retired, team_retired
 
@@ -137,6 +137,17 @@ def load_readable_cycle(
     if cycle is None:
         raise not_found()
     return cycle
+
+
+def can_see_initiative(context: AuthzContext, initiative: Initiative) -> bool:
+    """Whether the caller may see one initiative.
+
+    Every member but a guest sees a workspace level one, and a lead team that is
+    private narrows it to that team's members, as it narrows the team's own work.
+    """
+    if context.is_guest:
+        return False
+    return initiative.team_id is None or context.can_see_team(initiative.team_id)
 
 
 def visible_project_teams(project: Project, visible: list[str] | set[str]) -> list[str]:

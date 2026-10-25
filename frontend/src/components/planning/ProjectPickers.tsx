@@ -1,6 +1,6 @@
 /**
  * The pickers a project's own properties are edited with: status, health,
- * lead, members, labels, teams, update cadence, the projects it waits on or holds up,
+ * lead, members, labels, teams, an initiative's lead team, update cadence, the projects it waits on or holds up,
  * and its icon and colour. They draw the same `rail` and `chip` triggers as the issue property
  * pickers, so a project reads and edits the way an issue does, and like those
  * they are controlled and write nothing themselves.
@@ -420,6 +420,96 @@ export const TeamsPicker: React.FC<TeamsPickerProps> = ({
           );
         }}
       />
+    </Popover>
+  );
+};
+
+/** Props for LeadTeamPicker: the teams that may lead and the chosen one. */
+export interface LeadTeamPickerProps extends ProjectPickerBaseProps {
+  value: string | null;
+  teams: TeamRead[];
+  onChange: (value: string | null) => void;
+}
+
+/** The option value for an initiative no team leads. */
+const NO_LEAD_TEAM = '';
+
+/**
+ * Picks the one team leading an initiative, or none for a workspace level one.
+ * A private team hides the initiative from everyone outside it.
+ */
+export const LeadTeamPicker: React.FC<LeadTeamPickerProps> = ({
+  value,
+  teams,
+  onChange,
+  disabled = false,
+  variant = 'rail',
+  align = 'start',
+  className = '',
+}) => {
+  const chosen = teams.find((team) => team.id === value);
+  const options: ComboboxOption[] = [
+    {
+      value: NO_LEAD_TEAM,
+      label: 'No team',
+      icon: <LuUsers className="h-3.5 w-3.5" />,
+    },
+    ...teamTree(teams).map(({ team, nested, parentName }) => ({
+      value: team.id,
+      label: team.name,
+      icon: <TeamKey keyPrefix={team.key_prefix} />,
+      indent: nested,
+      keywords: [
+        team.key_prefix,
+        ...(parentName === undefined ? [] : [parentName]),
+      ],
+    })),
+  ];
+  const text =
+    value === null
+      ? variant === 'chip'
+        ? 'Team'
+        : 'No team'
+      : (chosen?.name ?? 'Private team');
+  return (
+    <Popover
+      label="Team"
+      align={align}
+      block={variant === 'rail'}
+      contentClassName="w-64"
+      trigger={(trigger) => (
+        <Trigger
+          trigger={trigger}
+          field="Team"
+          icon={
+            chosen === undefined ? (
+              <LuUsers className="h-3.5 w-3.5" />
+            ) : (
+              <TeamKey keyPrefix={chosen.key_prefix} />
+            )
+          }
+          text={text}
+          empty={value === null}
+          variant={variant}
+          disabled={disabled}
+          className={className}
+        />
+      )}
+    >
+      {(close) => (
+        <Combobox
+          label="Team"
+          placeholder="Set team"
+          options={options}
+          selected={[value ?? NO_LEAD_TEAM]}
+          emptyMessage="No team matches"
+          onSelect={(picked) => {
+            close();
+            const next = picked === NO_LEAD_TEAM ? null : picked;
+            if (next !== value) onChange(next);
+          }}
+        />
+      )}
     </Popover>
   );
 };

@@ -2,7 +2,8 @@
  * The workspace-wide create project and create initiative dialogs, rendered
  * by the workspace layout so the command palette can open either over any
  * page. A new project starts on the team the route is inside when the caller
- * can write there, and a new initiative is owned by its creator, the same
+ * can write there, and a new initiative is owned by its creator and led by
+ * the route's team when the caller can write there, the same
  * presets the Projects and Initiatives pages use. Either one opens on creation.
  */
 
@@ -37,6 +38,10 @@ export interface CreatePlanningHostProps {
 interface InitiativeHostProps {
   workspaceId: string;
   currentUserId: string | undefined;
+  /** The teams a lead team is picked from. */
+  teams: readonly TeamRead[];
+  /** The lead team the initiative starts with, or null. */
+  initialTeamId: string | null;
   onClose: () => void;
   onCreated: (initiativeId: string) => void;
 }
@@ -45,6 +50,8 @@ interface InitiativeHostProps {
 const InitiativeHost: React.FC<InitiativeHostProps> = ({
   workspaceId,
   currentUserId,
+  teams,
+  initialTeamId,
   onClose,
   onCreated,
 }) => {
@@ -54,6 +61,8 @@ const InitiativeHost: React.FC<InitiativeHostProps> = ({
       workspaceId={workspaceId}
       people={members}
       initialOwnerId={currentUserId ?? null}
+      teams={[...teams]}
+      initialTeamId={initialTeamId}
       onClose={onClose}
       onCreated={(initiative) => {
         onCreated(initiative.initiative_id);
@@ -80,6 +89,11 @@ export const CreatePlanningHost: React.FC<CreatePlanningHostProps> = ({
       <InitiativeHost
         workspaceId={workspaceId}
         currentUserId={currentUserId}
+        teams={writableTeams}
+        initialTeamId={
+          writableTeams.find((team) => team.key_prefix === routePrefix)?.id ??
+          null
+        }
         onClose={onClose}
         onCreated={(initiativeId) => {
           onClose();

@@ -18,7 +18,7 @@ from webbpulse.events import deserialize_image
 from app.common.api.dependencies.repositories import Repositories
 from app.common.db.dynamo.documents import Document
 from app.common.db.dynamo.inbox import DOCUMENT_COMMENTED, Notification, expires_at, inbox_partition, notification_id
-from app.common.team_privacy import person_can_see_team
+from app.common.team_privacy import person_can_see_initiative, person_can_see_team
 
 
 def _text(image: Mapping[str, Any], name: str) -> str:
@@ -51,7 +51,8 @@ def can_read_document(repositories: Repositories, document: Document, user_id: s
     if membership is None:
         return False
     if document.parent_kind == "initiative":
-        return membership.role != "guest"
+        initiative = repositories.planning.get_initiative(workspace_id, document.parent_id)
+        return initiative is not None and person_can_see_initiative(repositories, initiative, user_id)
     if document.parent_kind == "team":
         return person_can_see_team(repositories, workspace_id, document.parent_id, user_id)
     project = repositories.planning.get_project(workspace_id, document.parent_id)

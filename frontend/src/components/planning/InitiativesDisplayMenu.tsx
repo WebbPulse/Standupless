@@ -1,6 +1,6 @@
 /**
- * The Display button of the initiatives list: what order initiatives run in
- * inside each status group, whether completed initiatives show, and which
+ * The Display button of the initiatives list: whether rows group by status or
+ * lead team, what order initiatives run in inside each group, whether completed initiatives show, and which
  * properties show beside the name. It reads like the projects list's Display
  * menu so every planning list is arranged the same way, and it writes nothing
  * itself.
@@ -12,10 +12,13 @@ import { cn } from '../../lib/cn';
 import {
   INITIATIVE_COLUMNS,
   INITIATIVE_COLUMN_LABELS,
+  INITIATIVE_GROUPINGS,
+  INITIATIVE_GROUPING_LABELS,
   INITIATIVE_ORDERINGS,
   INITIATIVE_ORDERING_LABELS,
   type CompletedChoice,
   type InitiativeColumn,
+  type InitiativeGrouping,
   type InitiativeOrdering,
 } from '../../lib/initiativeList';
 import Button from '../ui/button';
@@ -24,6 +27,8 @@ import { ChoiceRow, SwitchRow } from './ProjectsDisplayMenu';
 
 /** Props for InitiativesDisplayMenu: the current choices and their setters. */
 export interface InitiativesDisplayMenuProps {
+  grouping: InitiativeGrouping;
+  onGroupingChange: (grouping: InitiativeGrouping) => void;
   ordering: InitiativeOrdering;
   onOrderingChange: (ordering: InitiativeOrdering) => void;
   completed: CompletedChoice;
@@ -34,8 +39,10 @@ export interface InitiativesDisplayMenuProps {
   onReset?: (() => void) | undefined;
 }
 
-/** The Display button and its ordering, completed and property panel. */
+/** The Display button and its grouping, ordering, completed and property panel. */
 export const InitiativesDisplayMenu: React.FC<InitiativesDisplayMenuProps> = ({
+  grouping,
+  onGroupingChange,
   ordering,
   onOrderingChange,
   completed,
@@ -56,6 +63,14 @@ export const InitiativesDisplayMenu: React.FC<InitiativesDisplayMenuProps> = ({
     )}
   >
     <div className="flex flex-col gap-3 p-3">
+      <ChoiceRow
+        id="initiatives-grouping"
+        label="Grouping"
+        value={grouping}
+        choices={INITIATIVE_GROUPINGS}
+        labels={INITIATIVE_GROUPING_LABELS}
+        onChange={onGroupingChange}
+      />
       <ChoiceRow
         id="initiatives-order"
         label="Ordering"

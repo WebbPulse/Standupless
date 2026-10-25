@@ -532,13 +532,15 @@ _PLANNING_REPOSITORIES = (
     "activity",
     "subscriptions",
     "counters",
+    "audit",
 )
 """What the planning image writes.
 
 `issues`, `activity` and `subscriptions` are for completing or canceling a
 project, which can move or cancel its open issues through the issue patch path,
 and for a project made from a template, whose issues go through the issue create
-path, which allocates their keys from `counters`.
+path, which allocates their keys from `counters`. `audit` records an
+initiative's lead team changing.
 """
 
 _PLANNING_READ_REPOSITORIES = (

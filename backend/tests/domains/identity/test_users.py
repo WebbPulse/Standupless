@@ -83,9 +83,10 @@ def test_the_caller_reads_their_own_row(client: TestClient, repositories: Any) -
         },
         "projects_display_saved": False,
         "initiatives_display": {
+            "grouping": "status",
             "order": "target",
             "completed": "show",
-            "columns": "health,owner,projects,target,progress",
+            "columns": "health,team,owner,projects,target,progress",
         },
         "initiatives_display_saved": False,
         "auto_assign_to_self": False,

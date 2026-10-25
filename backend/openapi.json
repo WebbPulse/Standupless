@@ -7486,6 +7486,19 @@
             "description": "How wide the target date is: an exact day, or the month, quarter, half or year it closes",
             "title": "Target Date Resolution"
           },
+          "team_id": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The lead team, by id; its page lists the initiative, and a private team's initiative is seen only by its members",
+            "title": "Team Id"
+          },
           "update_interval_days": {
             "anyOf": [
               {
@@ -7801,6 +7814,18 @@
             "description": "How wide the target date is, null without one; a coarse target is its period's last day",
             "title": "Target Date Resolution"
           },
+          "team_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The lead team, null for a workspace level initiative",
+            "title": "Team Id"
+          },
           "update_due_state": {
             "anyOf": [
               {
@@ -7869,7 +7894,7 @@
         "type": "object"
       },
       "InitiativeUpdate": {
-        "description": "The body an initiative patch takes; null clears the description, owner, health, date, cadence or parent.",
+        "description": "The body an initiative patch takes; null clears the description, owner, team, health, date, cadence or parent.",
         "properties": {
           "description": {
             "anyOf": [
@@ -7981,6 +8006,19 @@
             ],
             "description": "How wide the target date is: an exact day, or the month, quarter, half or year it closes; set alone it widens the stored date",
             "title": "Target Date Resolution"
+          },
+          "team_id": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The lead team, by id; its page lists the initiative, and a private team's initiative is seen only by its members; null makes it workspace level",
+            "title": "Team Id"
           },
           "update_interval_days": {
             "anyOf": [
@@ -8192,10 +8230,10 @@
         "type": "object"
       },
       "InitiativesDisplay": {
-        "description": "How the person arranges the workspace initiatives list.\n\n`order` sorts the initiatives inside each status group, sub-initiatives\nstaying under their parent. `completed` shows or hides the completed group.\n`columns` names the properties shown beside the name, comma separated in the\nlist's own order, and empty shows the name alone.",
+        "description": "How the person arranges the workspace initiatives list.\n\n`grouping` groups the list by status or by lead team, with a group for the\nworkspace level ones. `order` sorts the initiatives inside each group,\nsub-initiatives staying under their parent. `completed` shows or hides the\ncompleted initiatives.\n`columns` names the properties shown beside the name, comma separated in the\nlist's own order, and empty shows the name alone.",
         "properties": {
           "columns": {
-            "default": "health,owner,projects,target,progress",
+            "default": "health,team,owner,projects,target,progress",
             "title": "Columns",
             "type": "string"
           },
@@ -8206,6 +8244,15 @@
               "hide"
             ],
             "title": "Completed",
+            "type": "string"
+          },
+          "grouping": {
+            "default": "status",
+            "enum": [
+              "status",
+              "team"
+            ],
+            "title": "Grouping",
             "type": "string"
           },
           "order": {
@@ -39377,7 +39424,7 @@
     },
     "/api/workspaces/{workspace_id}/initiatives": {
       "get": {
-        "description": "One page of the workspace's initiatives by target date, undated last, each rolled up.",
+        "description": "One page of the initiatives the caller sees by target date, undated last, each rolled up.",
         "operationId": "list_initiative_page_api_workspaces__workspace_id__initiatives_get",
         "parameters": [
           {
@@ -39404,6 +39451,25 @@
                 }
               ],
               "title": "Status"
+            }
+          },
+          {
+            "description": "Keep one lead team's initiatives, or `none` for the workspace level ones",
+            "in": "query",
+            "name": "team_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Keep one lead team's initiatives, or `none` for the workspace level ones",
+              "title": "Team Id"
             }
           },
           {
@@ -39632,7 +39698,7 @@
         ]
       },
       "patch": {
-        "description": "Patch an initiative's fields; null clears the description, owner, health, date, cadence or parent.",
+        "description": "Patch an initiative's fields; null clears the description, owner, team, health, date, cadence or parent.",
         "operationId": "update_initiative_row_api_workspaces__workspace_id__initiatives__initiative_id__patch",
         "parameters": [
           {

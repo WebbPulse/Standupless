@@ -40,7 +40,7 @@ from app.common.db.dynamo.views import (
 )
 from app.common.issue_keys import current
 from app.common.issue_rules import not_found, unprocessable
-from app.common.planning_rules import visible_project_teams
+from app.common.planning_rules import can_see_initiative, visible_project_teams
 from app.common.saved_views import load_visible_view
 
 
@@ -162,7 +162,7 @@ class _Resolver:
             if self.context.is_guest:
                 return None
             initiative = self.repositories.planning.get_initiative(workspace_id, row.target_id)
-            if initiative is None:
+            if initiative is None or not can_see_initiative(self.context, initiative):
                 return None
             return FavoriteRead(kind="initiative", target_id=initiative.initiative_id, title=initiative.name)
         if row.kind == "document":
@@ -178,7 +178,8 @@ class _Resolver:
             return None
         document, _ = found
         if document.parent_kind == "initiative":
-            if self.context.is_guest:
+            parent = self.repositories.planning.get_initiative(self.context.workspace_id, document.parent_id)
+            if parent is None or not can_see_initiative(self.context, parent):
                 return None
         elif document.parent_kind == "team":
             if document.parent_id not in self.visible:

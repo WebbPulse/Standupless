@@ -124,6 +124,7 @@ EVENTS: dict[str, str] = {
     "github.repository_unpinned": "GitHub repository unpinned",
     "github.label_set_updated": "GitHub workspace label set changed",
     "label.merged": "Labels merged",
+    "initiative.team_changed": "Initiative team changed",
     "platform_admin.granted": "Platform admin granted",
     "platform_admin.revoked": "Platform admin revoked",
 }
