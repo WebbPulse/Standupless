@@ -39,6 +39,7 @@ export const MermaidModeToggle: React.FC<MermaidModeToggleProps> = ({
       <button
         key={value}
         type="button"
+        className="hover:text-text"
         aria-pressed={mode === value}
         onClick={() => {
           onChange(value);
