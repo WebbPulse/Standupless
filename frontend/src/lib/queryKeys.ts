@@ -670,6 +670,12 @@ export const workspaceConnectedAppsKey = (workspaceId: string): QueryKey => [
   workspaceId,
 ];
 
+/** A workspace's third-party app approval records, for an admin. */
+export const appApprovalsKey = (workspaceId: string): QueryKey => [
+  'app-approvals',
+  workspaceId,
+];
+
 /** The signed in person's private agent profiles. */
 export const MY_AGENT_PROFILES_KEY: QueryKey = ['agent-profiles', 'me'];
 

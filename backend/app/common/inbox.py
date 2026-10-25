@@ -42,6 +42,8 @@ INBOX_KINDS: tuple[str, ...] = (
     "export_failed",
     "import_ready",
     "import_failed",
+    "app_approval_requested",
+    "app_approval_decided",
 )
 """Every kind an inbox row can carry: the member facing ones plus the workspace notices."""
 

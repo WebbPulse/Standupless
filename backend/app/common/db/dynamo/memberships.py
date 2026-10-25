@@ -42,6 +42,10 @@ membership it stands for. None of these rows carries a `user_id`, so the user
 index never meets them, and none starts with `user#` or `team#`, so no member or
 team membership read does either.
 
+`app_approval#<client_id>` records whether the workspace lets its members authorize
+one third-party OAuth app, read by the identity function's consent gate under the
+grant it already holds here. It carries no `user_id`, so the user index never meets it.
+
 The workspace membership also carries the person's own sidebar team order,
 because it is the one row that is already per person and per workspace.
 
@@ -332,6 +336,43 @@ MEMBERSHIP_SCAN_LIMIT = 100_000
 def private_team_key(team_id: str) -> str:
     """The sort key of the marker that makes one team private."""
     return f"{PRIVATE_TEAM_PREFIX}{team_id}"
+
+
+APP_APPROVAL_PREFIX = "app_approval#"
+
+APP_APPROVAL_LIMIT = 1000
+"""The abuse ceiling on approval records one workspace lists, far above the apps any team connects."""
+
+AppApprovalStatus = Literal["pending", "approved", "denied"]
+
+APP_APPROVAL_STATUSES: tuple[str, ...] = ("pending", "approved", "denied")
+
+
+def app_approval_key(client_id: str) -> str:
+    """The sort key of one third-party app's approval record."""
+    return f"{APP_APPROVAL_PREFIX}{client_id}"
+
+
+class AppApproval(BaseModel):
+    """Whether a workspace lets its members authorize one third-party OAuth app.
+
+    One row per app, under `app_approval#<client_id>`. A request writes it pending
+    with who asked and why, a decision moves it to approved or denied with who
+    decided and why, and a fresh request after a denial moves it back to pending
+    while keeping the earlier decision readable until the next one replaces it.
+    """
+
+    workspace_id: str
+    client_id: str
+    client_name: str = ""
+    status: AppApprovalStatus = "pending"
+    requested_by: str | None = None
+    request_reason: str = ""
+    requested_at: datetime | None = None
+    decided_by: str | None = None
+    decision_reason: str = ""
+    decided_at: datetime | None = None
+    updated_at: datetime = Field(default_factory=utc_now)
 
 
 class Membership(BaseModel):
@@ -1183,6 +1224,32 @@ class MembershipRepository:
     def delete_scim_member(self, workspace_id: str, team_id: str, scim_id: str) -> None:
         """Forget one directory user in one linked group. Idempotent."""
         self._repository.delete({"workspace_id": workspace_id, "member_key": scim_member_key(team_id, scim_id)})
+
+    def get_app_approval(self, workspace_id: str, client_id: str) -> AppApproval | None:
+        """One third-party app's approval record in this workspace, or `None` when it has none."""
+        if not workspace_id or not client_id:
+            return None
+        item = self._repository.get(
+            {"workspace_id": workspace_id, "member_key": app_approval_key(client_id)}, consistent=True
+        )
+        return None if item is None else AppApproval.model_validate(dict(item))
+
+    def put_app_approval(self, row: AppApproval) -> AppApproval:
+        """Store one third-party app's approval record, replacing the earlier one."""
+        self._repository.put(as_item(row, member_key=app_approval_key(row.client_id)))
+        return row
+
+    def list_app_approvals(self, workspace_id: str) -> list[AppApproval]:
+        """Every third-party app approval record of this workspace, most recently updated first."""
+        if not workspace_id:
+            return []
+        items = self._repository.iter_query(
+            Key("workspace_id").eq(workspace_id) & Key("member_key").begins_with(APP_APPROVAL_PREFIX),
+            max_items=APP_APPROVAL_LIMIT,
+            consistent=True,
+        )
+        rows = [AppApproval.model_validate(dict(item)) for item in items]
+        return sorted(rows, key=lambda row: row.updated_at, reverse=True)
 
 
 def _as_membership(item: Mapping[str, Any]) -> Membership:

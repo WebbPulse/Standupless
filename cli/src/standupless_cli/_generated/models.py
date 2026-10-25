@@ -127,6 +127,34 @@ class ApiKeyRead(TypedDict):
     scopes: list[str]
 
 
+class AppAccessRequestCreate(TypedDict):
+    reason: NotRequired[str]
+    ticket: str
+
+
+class AppApprovalDecision(TypedDict):
+    client_name: NotRequired[str]
+    reason: NotRequired[str]
+
+
+class AppApprovalPersonRead(TypedDict):
+    display_name: str
+    id: str
+
+
+class AppApprovalRead(TypedDict):
+    client_id: str
+    client_name: str
+    decided_at: NotRequired[str | None]
+    decided_by: NotRequired[AppApprovalPersonRead | None]
+    decision_reason: NotRequired[str]
+    request_reason: NotRequired[str]
+    requested_at: NotRequired[str | None]
+    requested_by: NotRequired[AppApprovalPersonRead | None]
+    status: Literal["pending", "approved", "denied"]
+    updated_at: str
+
+
 class ApprovedDomainCreate(TypedDict):
     domain: str
 
@@ -3546,6 +3574,7 @@ class WorkspaceRead(TypedDict):
     role: NotRequired[Literal["owner", "admin", "member", "guest"] | None]
     slug: str
     team_creation_permission: NotRequired[Literal["admins", "members"]]
+    third_party_app_approvals: NotRequired[bool]
 
 
 class WorkspaceSummaryRead(TypedDict):
@@ -3562,6 +3591,7 @@ class WorkspaceUpdate(TypedDict):
     name: NotRequired[str | None]
     project_update_interval_days: NotRequired[int | None]
     team_creation_permission: NotRequired[Literal["admins", "members"] | None]
+    third_party_app_approvals: NotRequired[bool | None]
 
 
 class AppCommonApiSchemasIssuesIssueRead(TypedDict):
@@ -3663,6 +3693,21 @@ class AgentProfileVersionListRead(TypedDict):
 
 class ApiKeyListRead(TypedDict):
     api_keys: list[ApiKeyRead]
+
+
+class AppAccessRequestRead(TypedDict):
+    approval: NotRequired[AppApprovalRead | None]
+    client_id: str
+    client_name: str
+    enabled: bool
+    return_to: str
+    workspace_id: str
+    workspace_name: str
+
+
+class AppApprovalListRead(TypedDict):
+    approvals: list[AppApprovalRead]
+    enabled: bool
 
 
 class ApprovedDomainListRead(TypedDict):

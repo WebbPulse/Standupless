@@ -141,6 +141,8 @@ class Workspace(BaseModel):
     `branch_format` is how every member's copied git branch name is built.
     `invite_permission` and `team_creation_permission` say whether admins alone
     or every member may invite people and create teams; guests never may.
+    `third_party_app_approvals` makes a member ask an admin before authorizing an
+    OAuth app that is not first party.
     """
 
     id: str = Field(default_factory=new_workspace_id)
@@ -170,6 +172,7 @@ class Workspace(BaseModel):
     branch_format: str = DEFAULT_BRANCH_FORMAT
     invite_permission: str = DEFAULT_INVITE_PERMISSION
     team_creation_permission: str = DEFAULT_TEAM_CREATION_PERMISSION
+    third_party_app_approvals: bool = False
 
     def comp_active(self, now: datetime | None = None) -> bool:
         """Whether a comp grant naming a known plan holds right now, its expiry not yet reached."""
@@ -304,6 +307,16 @@ class WorkspaceRepository:
             raise ValueError(f"not permission fields: {sorted(unknown)}")
         try:
             item = self._repository.set_attributes({"id": workspace_id}, fields, condition=Attr("id").exists())
+        except ConditionFailed:
+            return None
+        return _as_workspace(item) if item is not None else None
+
+    def set_third_party_app_approvals(self, workspace_id: str, enabled: bool) -> Workspace | None:
+        """Turn admin approval for third-party apps on or off, or `None` when the workspace does not exist."""
+        try:
+            item = self._repository.set_attributes(
+                {"id": workspace_id}, {"third_party_app_approvals": enabled}, condition=Attr("id").exists()
+            )
         except ConditionFailed:
             return None
         return _as_workspace(item) if item is not None else None

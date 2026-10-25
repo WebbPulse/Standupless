@@ -760,6 +760,226 @@
         "title": "ApiKeyRead",
         "type": "object"
       },
+      "AppAccessRequestCreate": {
+        "description": "A member's request to connect the app their ticket names, with an optional reason.",
+        "properties": {
+          "reason": {
+            "default": "",
+            "maxLength": 1000,
+            "title": "Reason",
+            "type": "string"
+          },
+          "ticket": {
+            "maxLength": 8192,
+            "minLength": 1,
+            "title": "Ticket",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ticket"
+        ],
+        "title": "AppAccessRequestCreate",
+        "type": "object"
+      },
+      "AppAccessRequestRead": {
+        "description": "What the request page shows: the app, where to resume, and any earlier decision.",
+        "properties": {
+          "approval": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AppApprovalRead"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "client_id": {
+            "title": "Client Id",
+            "type": "string"
+          },
+          "client_name": {
+            "title": "Client Name",
+            "type": "string"
+          },
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "return_to": {
+            "title": "Return To",
+            "type": "string"
+          },
+          "workspace_id": {
+            "title": "Workspace Id",
+            "type": "string"
+          },
+          "workspace_name": {
+            "title": "Workspace Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "workspace_id",
+          "workspace_name",
+          "client_id",
+          "client_name",
+          "return_to",
+          "enabled"
+        ],
+        "title": "AppAccessRequestRead",
+        "type": "object"
+      },
+      "AppApprovalDecision": {
+        "description": "An admin's decision, with an optional reason, and the app's name when it has no record yet.",
+        "properties": {
+          "client_name": {
+            "default": "",
+            "maxLength": 200,
+            "title": "Client Name",
+            "type": "string"
+          },
+          "reason": {
+            "default": "",
+            "maxLength": 1000,
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "title": "AppApprovalDecision",
+        "type": "object"
+      },
+      "AppApprovalListRead": {
+        "description": "Every approval record in this workspace, and whether approvals are required.",
+        "properties": {
+          "approvals": {
+            "items": {
+              "$ref": "#/components/schemas/AppApprovalRead"
+            },
+            "title": "Approvals",
+            "type": "array"
+          },
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "enabled",
+          "approvals"
+        ],
+        "title": "AppApprovalListRead",
+        "type": "object"
+      },
+      "AppApprovalPersonRead": {
+        "description": "Who requested or decided, by display name.",
+        "properties": {
+          "display_name": {
+            "title": "Display Name",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "display_name"
+        ],
+        "title": "AppApprovalPersonRead",
+        "type": "object"
+      },
+      "AppApprovalRead": {
+        "description": "One third-party app's approval record in this workspace.",
+        "properties": {
+          "client_id": {
+            "title": "Client Id",
+            "type": "string"
+          },
+          "client_name": {
+            "title": "Client Name",
+            "type": "string"
+          },
+          "decided_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decided At"
+          },
+          "decided_by": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AppApprovalPersonRead"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "decision_reason": {
+            "default": "",
+            "title": "Decision Reason",
+            "type": "string"
+          },
+          "request_reason": {
+            "default": "",
+            "title": "Request Reason",
+            "type": "string"
+          },
+          "requested_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Requested At"
+          },
+          "requested_by": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AppApprovalPersonRead"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "enum": [
+              "pending",
+              "approved",
+              "denied"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "client_id",
+          "client_name",
+          "status",
+          "updated_at"
+        ],
+        "title": "AppApprovalRead",
+        "type": "object"
+      },
       "ApprovedDomainCreate": {
         "description": "The body `POST /api/workspaces/{workspace_id}/approved-domains` takes.",
         "properties": {
@@ -23846,7 +24066,7 @@
                 "items": {
                   "type": "string"
                 },
-                "maxItems": 29,
+                "maxItems": 31,
                 "type": "array"
               },
               {
@@ -26313,6 +26533,12 @@
             ],
             "title": "Team Creation Permission",
             "type": "string"
+          },
+          "third_party_app_approvals": {
+            "default": false,
+            "description": "Whether members need an admin's approval before authorizing a third-party app",
+            "title": "Third Party App Approvals",
+            "type": "boolean"
           }
         },
         "required": [
@@ -26355,7 +26581,7 @@
         "type": "object"
       },
       "WorkspaceUpdate": {
-        "description": "The body `PATCH /api/workspaces/{workspace_id}` takes.\n\nThe name, the accent color, the default project update cadence, the git\nbranch name format and who may invite people or create teams are editable.\nThe slug is not: it is the tenant's public handle and changing one\nwould break every link that carries it. An absent field is left alone, and an\nexplicit null `accent_color` goes back to the Standupless default.",
+        "description": "The body `PATCH /api/workspaces/{workspace_id}` takes.\n\nThe name, the accent color, the default project update cadence, the git\nbranch name format, who may invite people or create teams and whether\nthird-party apps need an admin's approval are editable.\nThe slug is not: it is the tenant's public handle and changing one\nwould break every link that carries it. An absent field is left alone, and an\nexplicit null `accent_color` goes back to the Standupless default.",
         "properties": {
           "accent_color": {
             "anyOf": [
@@ -26441,6 +26667,18 @@
             ],
             "description": "Who may create teams: admins, or every member",
             "title": "Team Creation Permission"
+          },
+          "third_party_app_approvals": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Whether members need an admin's approval before authorizing a third-party app",
+            "title": "Third Party App Approvals"
           }
         },
         "title": "WorkspaceUpdate",
@@ -29946,6 +30184,405 @@
         ]
       }
     },
+    "/api/workspaces/{workspace_id}/app-approvals": {
+      "get": {
+        "description": "Every app's approval record for an admin, newest first, optionally one status only.",
+        "operationId": "list_app_approvals_api_workspaces__workspace_id__app_approvals_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "pending",
+                    "approved",
+                    "denied"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppApprovalListRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "List App Approvals",
+        "tags": [
+          "integrations"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/app-approvals/request": {
+      "get": {
+        "description": "The app a request ticket names, for the member it stopped, with the app's current record.\n\nAn expired or foreign ticket is a 404, because the page can only offer to start the\nauthorization again.",
+        "operationId": "get_app_access_request_api_workspaces__workspace_id__app_approvals_request_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "ticket",
+            "required": true,
+            "schema": {
+              "maxLength": 8192,
+              "minLength": 1,
+              "title": "Ticket",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppAccessRequestRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Get App Access Request",
+        "tags": [
+          "integrations"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/app-approvals/requests": {
+      "post": {
+        "description": "Ask the workspace's admins to approve the app the ticket names.\n\nAn app already approved is returned as it stands. Otherwise the record moves to\npending under this member, keeping any earlier decision readable, and every admin\nbut the requester hears about it unless the same member already has it pending.",
+        "operationId": "request_app_access_api_workspaces__workspace_id__app_approvals_requests_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AppAccessRequestCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppApprovalRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Request App Access",
+        "tags": [
+          "integrations"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/app-approvals/{client_id}/approve": {
+      "post": {
+        "description": "Approve one app, so any member may authorize it, and tell whoever asked.",
+        "operationId": "approve_app_api_workspaces__workspace_id__app_approvals__client_id__approve_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "client_id",
+            "required": true,
+            "schema": {
+              "maxLength": 256,
+              "minLength": 1,
+              "title": "Client Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AppApprovalDecision"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppApprovalRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Approve App",
+        "tags": [
+          "integrations"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/app-approvals/{client_id}/deny": {
+      "post": {
+        "description": "Deny one app with an optional reason the requester sees, and tell them.",
+        "operationId": "deny_app_api_workspaces__workspace_id__app_approvals__client_id__deny_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "client_id",
+            "required": true,
+            "schema": {
+              "maxLength": 256,
+              "minLength": 1,
+              "title": "Client Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AppApprovalDecision"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppApprovalRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Deny App",
+        "tags": [
+          "integrations"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/app-approvals/{client_id}/revoke": {
+      "post": {
+        "description": "Withdraw an app's approval, including one authorized before approvals were on.\n\nMarks it denied, which stops its grants refreshing while approvals are on. The\ngrants themselves are removed by the identity route the admin page calls next.\nNobody is notified: the members who held a grant see it gone from their apps.",
+        "operationId": "revoke_app_api_workspaces__workspace_id__app_approvals__client_id__revoke_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "client_id",
+            "required": true,
+            "schema": {
+              "maxLength": 256,
+              "minLength": 1,
+              "title": "Client Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AppApprovalDecision"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppApprovalRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Revoke App",
+        "tags": [
+          "integrations"
+        ]
+      }
+    },
     "/api/workspaces/{workspace_id}/approved-domains": {
       "get": {
         "description": "Every email domain whose verified addresses may join without an invite.",
@@ -31783,6 +32420,59 @@
           }
         ],
         "summary": "List Workspace Connected Apps",
+        "tags": [
+          "identity"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/connected-apps/{client_id}": {
+      "delete": {
+        "description": "Revoke every member's grant to one client in this workspace, for an admin revoking the app.\n\nNarrowed to this workspace's tenant like the single-member revoke. Answers 204 even\nwhen no member held a grant, because revoking an app is also how an admin closes\none that was only ever requested, and the approval record is the integrations\nfunction's to change.",
+        "operationId": "revoke_workspace_app_api_workspaces__workspace_id__connected_apps__client_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "client_id",
+            "required": true,
+            "schema": {
+              "maxLength": 256,
+              "minLength": 1,
+              "title": "Client Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Revoke Workspace App",
         "tags": [
           "identity"
         ]
@@ -37334,7 +38024,7 @@
               "items": {
                 "type": "string"
               },
-              "maxItems": 29,
+              "maxItems": 31,
               "title": "Kind",
               "type": "array"
             }

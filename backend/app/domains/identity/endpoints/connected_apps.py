@@ -308,6 +308,61 @@ def revoke_workspace_connected_app(
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
+@workspace_router.delete(
+    "/{workspace_id}/connected-apps/{client_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+def revoke_workspace_app(
+    context: Annotated[AuthzContext, Depends(require(Capability.WORKSPACE_ADMIN))],
+    repositories: Annotated[Repositories, Depends(get_repositories)],
+    server: Annotated[AuthorizationServer, Depends(get_authorization_server)],
+    client_id: str = Path(..., min_length=1, max_length=256),
+) -> Response:
+    """Revoke every member's grant to one client in this workspace, for an admin revoking the app.
+
+    Narrowed to this workspace's tenant like the single-member revoke. Answers 204 even
+    when no member held a grant, because revoking an app is also how an admin closes
+    one that was only ever requested, and the approval record is the integrations
+    function's to change.
+    """
+    refuse_api_key_actor(context)
+    revoker = Revoker(
+        id=context.user_id,
+        kind=context.actor.value,
+        source=context.source,
+        ip=context.ip,
+        reason="connected_app_revoked",
+        workspace_ids=(context.workspace_id,),
+    )
+    member_ids = [membership.user_id for membership in repositories.memberships.list_members(context.workspace_id)]
+    holders = sorted(
+        {
+            grant.user_id
+            for grant in grants_for_workspace(server.stores, member_ids, context.workspace_id)
+            if grant.client_id == client_id
+        }
+    )
+    label = _client_label(server, client_id)
+    for user_id in holders:
+        with revoked_by(revoker):
+            revocation = server.service.revoke_authorization(user_id, client_id, tenant_id=context.workspace_id)
+        if not revocation.consents:
+            continue
+        audit.record(
+            repositories,
+            context,
+            "connected_app.revoked",
+            target_type="connected_app",
+            target_id=client_id,
+            target_label=label,
+            before={
+                "scopes": sorted({scope for consent in revocation.consents for scope in consent.scopes}),
+                "user_id": user_id,
+            },
+        )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
 def _client_label(server: AuthorizationServer, client_id: str) -> str:
     """The client's registered name for the audit log, or its id when unknown."""
     try:

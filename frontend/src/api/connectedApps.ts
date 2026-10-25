@@ -91,3 +91,18 @@ export const revokeWorkspaceConnectedApp = async (
     workspaceConnectedAppPath(workspaceId, userId, clientId)
   );
 };
+
+/** The route every member's grant to one client in a workspace is revoked through. */
+export const workspaceAppPath = (
+  workspaceId: string,
+  clientId: string
+): string =>
+  `${workspaceConnectedAppsPath(workspaceId)}/${encodeURIComponent(clientId)}`;
+
+/** Revokes every member's grant to one client in this workspace. Refused to anyone but an admin. */
+export const revokeWorkspaceApp = async (
+  workspaceId: string,
+  clientId: string
+): Promise<void> => {
+  await apiClient.delete(workspaceAppPath(workspaceId, clientId));
+};

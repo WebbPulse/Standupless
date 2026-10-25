@@ -68,6 +68,7 @@ import {
   LuGoal,
   LuInbox,
   LuMailOpen,
+  LuPlug,
   LuSearch,
   LuSmilePlus,
   LuTarget,
@@ -131,6 +132,7 @@ import { compactAge, fullTimestamp } from '../../lib/relativeTime';
 import { showErrorToast, showToast } from '../../lib/toast';
 import { pushUndo, UNDO_TOAST_MS } from '../../lib/undo';
 import {
+  connectedAppsPath,
   documentPath,
   exportSettingsPath,
   importSettingsPath,
@@ -225,9 +227,16 @@ const isExportRow = (row: NotificationRead): boolean =>
 const isImportRow = (row: NotificationRead): boolean =>
   row.kind === 'import_ready' || row.kind === 'import_failed';
 
-/** Whether a row is a workspace job notice, an export or an import. */
+/**
+ * Whether a row is about a third-party app approval, asked of an admin or
+ * decided for the member who asked. Its `issue_title` carries the app's name.
+ */
+const isAppApprovalRow = (row: NotificationRead): boolean =>
+  row.kind === 'app_approval_requested' || row.kind === 'app_approval_decided';
+
+/** Whether a row is a workspace notice with its own settings page: an export, an import or an app approval. */
 const isJobRow = (row: NotificationRead): boolean =>
-  isExportRow(row) || isImportRow(row);
+  isExportRow(row) || isImportRow(row) || isAppApprovalRow(row);
 
 /**
  * Whether a row is a team's scheduled standup digest. Its `issue_key` carries
@@ -302,13 +311,15 @@ const rowPath = (slug: string, row: NotificationRead): string =>
               ? exportSettingsPath(slug)
               : isImportRow(row)
                 ? importSettingsPath(slug)
-                : isStandupRow(row)
-                  ? `${teamStandupPath(slug, row.issue_key)}${
-                      row.standup_date
-                        ? `?date=${encodeURIComponent(row.standup_date)}`
-                        : ''
-                    }`
-                  : issuePath(slug, row.issue_key);
+                : isAppApprovalRow(row)
+                  ? connectedAppsPath(slug)
+                  : isStandupRow(row)
+                    ? `${teamStandupPath(slug, row.issue_key)}${
+                        row.standup_date
+                          ? `?date=${encodeURIComponent(row.standup_date)}`
+                          : ''
+                      }`
+                    : issuePath(slug, row.issue_key);
 
 /** Props for DocumentCommentPane: the selected row and how to leave it. */
 interface DocumentCommentPaneProps {
@@ -547,6 +558,16 @@ const JOB_NOTICE_COPY: Partial<Record<InboxKind, JobNoticeCopy>> = {
     hint: 'Issues written before the failure stay. Running the same file again creates them a second time.',
     action: 'Open imports',
   },
+  app_approval_requested: {
+    label: 'App approval notice',
+    hint: 'Nothing is connected until an admin approves the app.',
+    action: 'Review request',
+  },
+  app_approval_decided: {
+    label: 'App approval notice',
+    hint: 'Connected apps shows the decision and its reason.',
+    action: 'Open connected apps',
+  },
 };
 
 /** The pane beside a workspace export or import row, which links to its settings page. */
@@ -556,9 +577,16 @@ const JobNoticePane: React.FC<JobNoticePaneProps> = ({
   onClose,
 }) => {
   const navigate = useNavigate();
-  const ready = row.kind === 'export_ready' || row.kind === 'import_ready';
+  const ready =
+    row.kind === 'export_ready' ||
+    row.kind === 'import_ready' ||
+    (isAppApprovalRow(row) && row.new_value !== 'denied');
   const copy = JOB_NOTICE_COPY[row.kind] ?? EXPORT_FAILED_COPY;
-  const Icon = isImportRow(row) ? LuUpload : LuDownload;
+  const Icon = isAppApprovalRow(row)
+    ? LuPlug
+    : isImportRow(row)
+      ? LuUpload
+      : LuDownload;
   return (
     <aside
       aria-label={copy.label}
@@ -572,7 +600,14 @@ const JobNoticePane: React.FC<JobNoticePaneProps> = ({
           className="h-8 w-8 text-text-faint"
         />
       )}
-      <p className="text-sm text-text">{row.issue_title}</p>
+      <p className="text-sm text-text">
+        {isAppApprovalRow(row)
+          ? (row.summary ?? row.issue_title)
+          : row.issue_title}
+      </p>
+      {row.kind === 'app_approval_requested' && row.new_value && (
+        <p className="text-xs text-text-muted">{row.new_value}</p>
+      )}
       <p className="text-xs text-text-muted">{copy.hint}</p>
       <p className="text-xs text-text-faint">
         {timestampLabel(row.created_at)}
@@ -891,6 +926,11 @@ const InboxRow: React.FC<InboxRowProps> = ({
             />
           ) : isImportRow(row) ? (
             <LuUpload
+              aria-hidden="true"
+              className="h-3 w-3 shrink-0 text-text-faint"
+            />
+          ) : isAppApprovalRow(row) ? (
+            <LuPlug
               aria-hidden="true"
               className="h-3 w-3 shrink-0 text-text-faint"
             />

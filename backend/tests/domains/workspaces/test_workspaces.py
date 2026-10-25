@@ -133,6 +133,7 @@ def test_a_workspace_carries_the_fields_the_frontend_reads(client: TestClient, r
         "branch_format",
         "invite_permission",
         "team_creation_permission",
+        "third_party_app_approvals",
     }
     assert row["id"] == WORKSPACE
     assert row["plan"] == "free"
@@ -789,3 +790,33 @@ def test_an_admin_sets_the_branch_format(client: TestClient, repositories: Any) 
     assert repositories.workspaces.get(WORKSPACE).branch_format == "user_key_title"
     assert client.patch(path, json={"branch_format": "title"}).status_code == 422
     assert client.patch(path, json={"name": "Renamed"}).json()["branch_format"] == "user_key_title"
+
+
+def test_an_admin_turns_on_third_party_app_approvals(client: TestClient, repositories: Any) -> None:
+    """The switch defaults off, is saved for an admin, and is refused to a member."""
+    make_workspace(repositories, WORKSPACE, "mine", OWNER)
+    add_member(repositories, WORKSPACE, ADMIN, "admin")
+    add_member(repositories, WORKSPACE, MEMBER, "member")
+    path = f"/api/workspaces/{WORKSPACE}"
+    sign_in(client, ADMIN)
+
+    assert client.get(path).json()["third_party_app_approvals"] is False
+    response = client.patch(path, json={"third_party_app_approvals": True})
+    assert response.status_code == 200
+    assert response.json()["third_party_app_approvals"] is True
+    assert repositories.workspaces.get(WORKSPACE).third_party_app_approvals is True
+
+    sign_in(client, MEMBER)
+    assert client.patch(path, json={"third_party_app_approvals": False}).status_code == 403
+
+
+def test_an_api_key_cannot_change_third_party_app_approvals(client: TestClient, repositories: Any) -> None:
+    """A delegated credential cannot lift the gate that governs credentials like it."""
+    make_workspace(repositories, WORKSPACE, "mine", OWNER)
+    repositories.workspaces.set_third_party_app_approvals(WORKSPACE, True)
+    sign_in(client, OWNER, actor="api_key", workspace_id=WORKSPACE)
+
+    response = client.patch(f"/api/workspaces/{WORKSPACE}", json={"third_party_app_approvals": False})
+
+    assert response.status_code in (401, 403)
+    assert repositories.workspaces.get(WORKSPACE).third_party_app_approvals is True

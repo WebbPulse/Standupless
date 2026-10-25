@@ -246,6 +246,10 @@ class Notification(BaseModel):
     read when the row was written; rows written before that field existed have none.
     A document comment carries an empty `team_id` and names its document in
     `document_id` and `document_title`.
+
+    A third-party app approval row, `app_approval_requested` for an admin or
+    `app_approval_decided` for the requester, carries an empty `team_id`, the app's
+    name in `issue_title`, and the request reason or the decision in `new_value`.
     """
 
     ws_user: str

@@ -14,7 +14,7 @@ from webbpulse.audit import changed_fields
 from webbpulse.dynamodb import TransactionCanceled
 
 from app.common import audit, plan_usage
-from app.common.api.dependencies.authz import AuthzContext
+from app.common.api.dependencies.authz import AuthzContext, refuse_api_key_actor
 from app.common.api.dependencies.repositories import Repositories
 from app.common.api.schemas.workspaces import (
     InviteCreate,
@@ -63,8 +63,12 @@ def update_workspace(repositories: Repositories, context: AuthzContext, payload:
     """Rename the workspace or change its accent, update cadence, branch format or permissions. The slug is fixed.
 
     `accent_color` is written only when the body names it, so a rename never
-    resets the accent, and an explicit null returns it to the default.
+    resets the accent, and an explicit null returns it to the default. Only a
+    signed-in person may change whether third-party apps need approval, so a
+    delegated credential cannot lift the gate that governs credentials like it.
     """
+    if payload.third_party_app_approvals is not None:
+        refuse_api_key_actor(context)
     workspace = repositories.workspaces.get(context.workspace_id)
     previous = _settings_of(workspace)
     if workspace is not None and payload.name is not None:
@@ -80,6 +84,10 @@ def update_workspace(repositories: Repositories, context: AuthzContext, payload:
     permissions = {name: getattr(payload, name) for name in PERMISSION_FIELDS if getattr(payload, name) is not None}
     if workspace is not None and permissions:
         workspace = repositories.workspaces.set_permissions(context.workspace_id, **permissions)
+    if workspace is not None and payload.third_party_app_approvals is not None:
+        workspace = repositories.workspaces.set_third_party_app_approvals(
+            context.workspace_id, payload.third_party_app_approvals
+        )
     if workspace is None:
         raise _not_found()
     before, after = changed_fields(previous, _settings_of(workspace))
@@ -108,6 +116,7 @@ def _settings_of(workspace: Workspace | None) -> dict[str, object]:
         "branch_format": workspace.branch_format,
         "invite_permission": workspace.invite_permission,
         "team_creation_permission": workspace.team_creation_permission,
+        "third_party_app_approvals": bool(workspace.third_party_app_approvals),
     }
 
 

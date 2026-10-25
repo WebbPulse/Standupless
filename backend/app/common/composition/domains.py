@@ -337,13 +337,15 @@ def _admin_routers() -> "Sequence[RouterSpec]":
 
 
 def _integrations_routers() -> "Sequence[RouterSpec]":
-    """The integrations domain: the GitHub install, links, transitions, issue sync, webhooks, standups and CSV imports.
+    """The integrations domain: the GitHub install, links, transitions, issue sync, webhooks, standups, CSV imports
+    and third-party app approvals.
 
     The transition rules sit under a team and the issue links under an issue,
     because each is read where it is shown rather than from a settings page that
     would have to know every team.
     """
     from app.domains.integrations.endpoints import (
+        app_approvals,
         asana_imports,
         channels,
         discord,
@@ -377,6 +379,7 @@ def _integrations_routers() -> "Sequence[RouterSpec]":
         (imports.router, "/workspaces", ("integrations",)),
         (asana_imports.router, "/workspaces", ("integrations",)),
         (jira_imports.router, "/workspaces", ("integrations",)),
+        (app_approvals.router, "/workspaces", ("integrations",)),
     ]
 
 
