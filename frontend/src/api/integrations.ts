@@ -22,6 +22,8 @@ import type {
   DiscordConnectionRead,
   DiscordLinkRead,
   DiscordLinkUrlRead,
+  EmailIntakeList,
+  EmailIntakeRead,
   GithubInstallationRead,
   GithubIssueLinkRead,
   GithubLabelSetRead,
@@ -85,6 +87,10 @@ export const transitionPath = (
 /** The route a team's issue sync link is read, set and removed through. */
 export const teamSyncPath = (workspaceId: string, teamId: string): string =>
   `/workspaces/${workspaceId}/teams/${teamId}/github-sync`;
+
+/** The route a team's create by email addresses are read and changed through. */
+export const emailIntakePath = (workspaceId: string, teamId: string): string =>
+  `/workspaces/${workspaceId}/teams/${teamId}/email-intake`;
 
 /** The route the GitHub issue one issue mirrors is read from. */
 export const issueSyncPath = (workspaceId: string, issueId: string): string =>
@@ -478,6 +484,60 @@ export const deleteTeamSync = async (
   teamId: string
 ): Promise<void> => {
   await apiClient.delete(teamSyncPath(workspaceId, teamId));
+};
+
+/** Reads a team's live create by email addresses, its own and its templates'. */
+export const getEmailIntake = async (
+  workspaceId: string,
+  teamId: string,
+  signal?: AbortSignal
+): Promise<EmailIntakeList> => {
+  const response = await apiClient.get<EmailIntakeList>(
+    emailIntakePath(workspaceId, teamId),
+    signalOptions(signal)
+  );
+  return response.data;
+};
+
+/**
+ * Turns the team's address, or one template's, on. An address already on is
+ * answered unchanged, and a deployment with no intake domain answers 409.
+ */
+export const enableEmailIntake = async (
+  workspaceId: string,
+  teamId: string,
+  templateId: string | null = null
+): Promise<EmailIntakeRead> => {
+  const response = await apiClient.put<EmailIntakeRead>(
+    emailIntakePath(workspaceId, teamId),
+    templateId === null ? {} : { template_id: templateId }
+  );
+  return response.data;
+};
+
+/** Gives a live address a fresh token, so mail to the old one is dropped. */
+export const regenerateEmailIntake = async (
+  workspaceId: string,
+  teamId: string,
+  templateId: string | null = null
+): Promise<EmailIntakeRead> => {
+  const response = await apiClient.post<EmailIntakeRead>(
+    `${emailIntakePath(workspaceId, teamId)}/regenerate`,
+    templateId === null ? {} : { template_id: templateId }
+  );
+  return response.data;
+};
+
+/** Turns the team's address, or one template's, off. */
+export const disableEmailIntake = async (
+  workspaceId: string,
+  teamId: string,
+  templateId: string | null = null
+): Promise<void> => {
+  await apiClient.delete(
+    emailIntakePath(workspaceId, teamId),
+    templateId === null ? undefined : { query: { template_id: templateId } }
+  );
 };
 
 /** Reads the GitHub issue one issue mirrors, or null when it mirrors none. */

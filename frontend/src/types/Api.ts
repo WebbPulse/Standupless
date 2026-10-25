@@ -1477,10 +1477,11 @@ export interface LinkCreate {
 
 /**
  * Which client a change came through, read off the credential that made it.
- * The web app, GitHub and jobs render unlabelled; the rest show "via MCP" and
- * the like.
+ * The web app, GitHub and jobs render unlabelled; the rest show "via MCP",
+ * "via email" and the like.
  */
-export type ChangeSource = 'web' | 'mcp' | 'cli' | 'api' | 'github' | 'system';
+export type ChangeSource =
+  'web' | 'mcp' | 'cli' | 'api' | 'github' | 'system' | 'email';
 
 /** One entry in an issue's history. */
 export interface ActivityRead {
@@ -3653,6 +3654,32 @@ export interface TeamSyncRead {
   created_by: string;
   created_at: string;
   updated_at: string;
+}
+
+/** One live create by email address of a team, or of one of its templates. */
+export interface EmailIntakeRead {
+  team_id: string;
+  /** The template the address files with, or null for the team's own address. */
+  template_id: string | null;
+  /** Where mail is sent: `<team key>-<token>@<intake domain>`. */
+  address: string;
+  /** Who turned the address on; the issues it files are created as them. */
+  enabled_by: string;
+  created_at: string;
+  updated_at: string;
+}
+
+/** A team's live create by email addresses, its own first. */
+export interface EmailIntakeList {
+  team_id: string;
+  /** Whether this deployment takes intake mail at all. */
+  available: boolean;
+  addresses: EmailIntakeRead[];
+}
+
+/** Which address a change names: a template's, or the team's when absent. */
+export interface EmailIntakeWrite {
+  template_id?: string | null;
 }
 
 /** What a team admin sets when linking a team to a repository. */

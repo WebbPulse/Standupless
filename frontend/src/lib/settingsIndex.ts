@@ -726,6 +726,12 @@ export const TEAM_SETTINGS_SECTIONS: readonly TeamSettingsSection[] = [
     synonyms: ['team triage', 'intake', 'inbox'],
   },
   {
+    id: 'email',
+    title: 'Create by email',
+    paletteLabel: 'Create by email settings',
+    synonyms: ['email', 'intake address', 'forward', 'mail to issue'],
+  },
+  {
     id: 'sla',
     title: 'SLAs',
     paletteLabel: 'SLA settings',

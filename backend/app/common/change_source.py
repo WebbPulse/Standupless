@@ -1,4 +1,4 @@
-"""Which client a change came through: the web app, MCP, the CLI, the API, GitHub or a job.
+"""Which client a change came through: the web app, MCP, the CLI, the API, GitHub, email or a job.
 
 The source is attribution only. It is derived from the credential that authenticated
 the request, never from a request field, so a client cannot claim to be another one.
@@ -10,9 +10,9 @@ from __future__ import annotations
 
 from typing import Literal, Optional
 
-ChangeSource = Literal["web", "mcp", "cli", "api", "github", "system"]
+ChangeSource = Literal["web", "mcp", "cli", "api", "github", "system", "email"]
 
-CHANGE_SOURCES: tuple[str, ...] = ("web", "mcp", "cli", "api", "github", "system")
+CHANGE_SOURCES: tuple[str, ...] = ("web", "mcp", "cli", "api", "github", "system", "email")
 
 WEB = "web"
 MCP = "mcp"
@@ -20,6 +20,7 @@ CLI = "cli"
 API = "api"
 GITHUB = "github"
 SYSTEM = "system"
+EMAIL = "email"
 
 AUTOMATED_ACTOR_KINDS: frozenset[str] = frozenset({GITHUB, SYSTEM})
 """Actor kinds that are their own source, because no person's client made the change."""
