@@ -19,6 +19,7 @@ import TeamsSettings from './TeamsSettings';
 
 const listTeams = vi.fn<() => Promise<TeamRead[]>>();
 const unretireTeam = vi.fn<() => Promise<TeamRead>>();
+const downloadText = vi.fn<(text: string, name: string) => void>();
 
 vi.mock('../../hooks/useAuth', () => ({
   useAuth: () => ({
@@ -36,6 +37,17 @@ vi.mock('../../api/teams', () => ({
   listTeams: () => listTeams(),
   unretireTeam: () => unretireTeam(),
 }));
+
+vi.mock('../../lib/download', async () => {
+  const actual =
+    await vi.importActual<typeof import('../../lib/download')>(
+      '../../lib/download'
+    );
+  return {
+    ...actual,
+    downloadText: (text: string, name: string) => downloadText(text, name),
+  };
+});
 
 vi.mock('@webbpulse/auth/react', async () => {
   const actual = await vi.importActual<typeof import('@webbpulse/auth/react')>(
@@ -255,5 +267,35 @@ describe('retired teams', () => {
     expect(
       screen.queryByRole('button', { name: 'Un-retire Design' })
     ).not.toBeInTheDocument();
+  });
+});
+
+describe('exporting the teams', () => {
+  it('downloads every team as CSV, retired ones included', async () => {
+    const user = userEvent.setup();
+    downloadText.mockReset();
+    listTeams.mockResolvedValue([
+      engine,
+      {
+        ...design,
+        parent_team_id: 'team-1',
+        private: true,
+        retired_at: '2026-10-01T00:00:00Z',
+      },
+    ]);
+    renderPage({ open: vi.fn(), openSubTeam: vi.fn(), canCreate: true });
+
+    await screen.findByRole('link', { name: /Engine/ });
+    await user.click(screen.getByRole('button', { name: 'Export CSV' }));
+
+    expect(downloadText).toHaveBeenCalledTimes(1);
+    const [text, name] = downloadText.mock.calls[0] ?? ['', ''];
+    expect(name).toMatch(/^mine-teams-\d{4}-\d{2}-\d{2}\.csv$/);
+    expect(text.split('\r\n')).toEqual([
+      'Name,Key,Parent team key,Visibility,Members,Created,Retired',
+      'Engine,ENG,,Public,,2026-09-17,',
+      'Design,DES,ENG,Private,,2026-09-17,2026-10-01',
+      '',
+    ]);
   });
 });
