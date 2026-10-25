@@ -203,3 +203,45 @@
 .rich-markdown .rich-code-block:focus-within .rich-code-label {
   @apply text-text-muted;
 }
+
+.rich-markdown .rich-collapsible {
+  @apply relative pl-5;
+}
+
+.rich-markdown .rich-collapsible-toggle {
+  @apply absolute top-1 left-0 flex h-4 w-4 cursor-pointer items-center justify-center rounded-xs text-text-faint outline-none select-none hover:bg-raised hover:text-text focus-visible:ring-1 focus-visible:ring-accent;
+}
+
+.rich-markdown .rich-collapsible-toggle::before {
+  @apply block h-1.5 w-1.5 rotate-45 border-t-[1.5px] border-r-[1.5px] border-current transition-transform content-[''];
+}
+
+.rich-markdown
+  .rich-collapsible[data-open='true']
+  > .rich-collapsible-toggle::before {
+  @apply rotate-135;
+}
+
+.rich-markdown .rich-collapsible-summary {
+  @apply font-medium text-text;
+}
+
+.rich-markdown .rich-collapsible-summary.is-empty::before {
+  @apply pointer-events-none float-left h-0 font-normal text-text-muted;
+  content: attr(data-placeholder);
+}
+
+.rich-markdown .rich-collapsible-body {
+  @apply mt-2;
+}
+
+.rich-markdown .rich-collapsible-body > * + * {
+  @apply mt-2;
+}
+
+.rich-markdown
+  .rich-collapsible[data-open='false']
+  > .rich-collapsible-content
+  > .rich-collapsible-body {
+  @apply hidden;
+}

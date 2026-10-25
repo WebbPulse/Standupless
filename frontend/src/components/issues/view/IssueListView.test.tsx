@@ -1,11 +1,12 @@
 /**
  * The list's own keys beyond movement and the pickers: that I assigns the
  * issue in focus to the signed in person, or unassigns it when it is theirs, that Cmd or Ctrl+B flips the list to
- * a board, that Cmd or Ctrl+. copies the focused issue's ID, and that Cmd or
- * Ctrl+Shift+. copies its git branch name.
+ * a board, that Cmd or Ctrl+. copies the focused issue's ID, that Cmd or
+ * Ctrl+Shift+. copies its git branch name, and that R renames the focused
+ * issue through the collection's update.
  */
 
-import { act, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { OrderedIssueRead } from '../../../api/issues';
@@ -202,6 +203,69 @@ describe('IssueListView keys', () => {
     press('>', { ctrlKey: true, shiftKey: true, code: 'Period' });
 
     expect(writeText).toHaveBeenCalledWith('eng-1-cache-the-token');
+  });
+
+  it('renames the focused issue on R through the update path', () => {
+    renderView();
+
+    press('j');
+    press('r');
+
+    const field = screen.getByRole('textbox', { name: 'Title' });
+    expect(field).toHaveValue('Cache the token');
+    fireEvent.change(field, {
+      target: { value: '  Cache the refresh token ' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Rename' }));
+
+    expect(update).toHaveBeenCalledWith(['iss-1'], {
+      title: 'Cache the refresh token',
+    });
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('writes nothing when the rename keeps the title or is cancelled', () => {
+    renderView();
+
+    press('j');
+    press('r');
+    fireEvent.click(screen.getByRole('button', { name: 'Rename' }));
+    expect(screen.queryByRole('dialog')).toBeNull();
+
+    press('r');
+    fireEvent.change(screen.getByRole('textbox', { name: 'Title' }), {
+      target: { value: 'Something else' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it('offers no rename with no issue in focus', () => {
+    renderView();
+
+    press('r');
+
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(
+      registry
+        .list()
+        .some((shortcut) => shortcut.keys === 'r' && shortcut.scope === 'issue')
+    ).toBe(false);
+  });
+
+  it('lists R under Issue for the overlay and the palette', () => {
+    renderView();
+
+    press('j');
+
+    expect(
+      registry
+        .list()
+        .filter((shortcut) => shortcut.keys === 'r')
+        .map((shortcut) => [shortcut.scope, shortcut.group, shortcut.label])
+    ).toEqual([['issue', 'Issue', 'Rename issue…']]);
   });
 
   it('does not copy a branch name with no issue in focus', () => {

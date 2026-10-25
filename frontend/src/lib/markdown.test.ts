@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { isSafeUrl, parseInline, parseMarkdown } from './markdown';
+import {
+  isSafeUrl,
+  parseInline,
+  parseMarkdown,
+  readSummary,
+  writeSummary,
+} from './markdown';
 
 describe('parseInline', () => {
   it('reads emphasis, code and strikethrough', () => {
@@ -192,5 +198,98 @@ describe('isSafeUrl', () => {
     expect(isSafeUrl('mailto:a@b.c')).toBe(true);
     expect(isSafeUrl('javascript:alert(1)')).toBe(false);
     expect(isSafeUrl('data:text/html,x')).toBe(false);
+  });
+});
+
+describe('collapsible sections', () => {
+  it('reads a details block with its summary and body', () => {
+    expect(
+      parseMarkdown(
+        '<details>\n<summary>Logs</summary>\n\nbody\n\n</details>\n\nafter'
+      )
+    ).toEqual([
+      {
+        type: 'details',
+        summary: 'Logs',
+        children: [
+          { type: 'paragraph', children: [{ type: 'text', value: 'body' }] },
+        ],
+      },
+      { type: 'paragraph', children: [{ type: 'text', value: 'after' }] },
+    ]);
+  });
+
+  it('reads the GitHub one line form and drops tags from the summary', () => {
+    expect(
+      parseMarkdown(
+        '<details open><summary><b>Logs</b></summary>\nbody\n</details>'
+      )
+    ).toEqual([
+      {
+        type: 'details',
+        summary: 'Logs',
+        children: [
+          { type: 'paragraph', children: [{ type: 'text', value: 'body' }] },
+        ],
+      },
+    ]);
+  });
+
+  it('nests sections and skips a closing tag inside fenced code', () => {
+    const [outer] = parseMarkdown(
+      [
+        '<details>',
+        '<summary>Outer</summary>',
+        '',
+        '<details>',
+        '<summary>Inner</summary>',
+        '',
+        '```',
+        '</details>',
+        '```',
+        '',
+        '</details>',
+        '',
+        '</details>',
+      ].join('\n')
+    );
+    expect(outer).toEqual({
+      type: 'details',
+      summary: 'Outer',
+      children: [
+        {
+          type: 'details',
+          summary: 'Inner',
+          children: [{ type: 'code', language: '', value: '</details>' }],
+        },
+      ],
+    });
+  });
+
+  it('breaks a paragraph at a section and reads one without a summary', () => {
+    expect(parseMarkdown('intro\n<details>\nbody\n</details>')).toEqual([
+      { type: 'paragraph', children: [{ type: 'text', value: 'intro' }] },
+      {
+        type: 'details',
+        summary: '',
+        children: [
+          { type: 'paragraph', children: [{ type: 'text', value: 'body' }] },
+        ],
+      },
+    ]);
+  });
+
+  it('leaves a section that never closes as text', () => {
+    const blocks = parseMarkdown('<details>\n<summary>Logs</summary>\n\nbody');
+    expect(blocks.map((block) => block.type)).toEqual([
+      'paragraph',
+      'paragraph',
+    ]);
+  });
+
+  it('escapes a summary only where it would read as markup', () => {
+    expect(writeSummary('a <b> &lt; c & d')).toBe('a &lt;b&gt; &amp;lt; c & d');
+    expect(readSummary('a &lt;b&gt; &amp;lt; c & d')).toBe('a <b> &lt; c & d');
+    expect(writeSummary('  two\n lines ')).toBe('two lines');
   });
 });

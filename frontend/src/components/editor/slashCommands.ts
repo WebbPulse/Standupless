@@ -18,6 +18,7 @@ import {
   LuHeading3,
   LuImage,
   LuList,
+  LuListCollapse,
   LuListOrdered,
   LuListTodo,
   LuMinus,
@@ -122,6 +123,16 @@ export const SLASH_COMMANDS: SlashCommand[] = [
     hint: '```',
     run: (editor, range) => {
       editor.chain().focus().deleteRange(range).setCodeBlock().run();
+    },
+  },
+  {
+    id: 'collapsible',
+    label: 'Collapsible section',
+    icon: LuListCollapse,
+    keywords: ['toggle', 'details', 'collapse', 'fold', 'expand', 'section'],
+    hint: '>>>',
+    run: (editor, range) => {
+      editor.chain().focus().deleteRange(range).setCollapsibleSection().run();
     },
   },
   {

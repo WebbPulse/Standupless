@@ -2,15 +2,18 @@
  * An issue's title, edited as the heading itself. Someone who may edit sees a
  * borderless field set in the heading's own type, so clicking the title puts
  * a caret in it and nothing moves; a reader sees the plain heading. Enter or
- * leaving the field saves, and Escape puts the saved title back.
+ * leaving the field saves, and Escape puts the saved title back. R, or the
+ * palette's Rename issue, puts the caret in the field with the title selected.
  */
 
 import React, { useRef, useState } from 'react';
 import { useAutoGrow } from '../../hooks/useAutoGrow';
 import { useKeyboardFocus } from '../../hooks/useKeyboardFocus';
+import { useShortcut } from '../../hooks/useShortcuts';
 import { cn } from '../../lib/cn';
 import { validateTitle } from '../../lib/validation';
 import { ErrorAlert } from '../ui/alert';
+import { RENAME_ISSUE_KEYS } from './view/propertyKeys';
 
 /** Props for IssueTitle: the saved title, whether it may change, and the save. */
 export interface IssueTitleProps {
@@ -37,6 +40,19 @@ export const IssueTitle: React.FC<IssueTitleProps> = ({
   const reverting = useRef(false);
   const { keyboardFocused, focusProps } = useKeyboardFocus();
   useAutoGrow(field);
+
+  useShortcut({
+    keys: RENAME_ISSUE_KEYS,
+    label: 'Rename issue',
+    scope: 'issue',
+    group: 'Issue',
+    enabled: canEdit,
+    handler: (event) => {
+      event?.preventDefault();
+      field.current?.focus();
+      field.current?.select();
+    },
+  });
 
   const [seen, setSeen] = useState(title);
   if (title !== seen) {
