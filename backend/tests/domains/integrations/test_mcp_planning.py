@@ -91,6 +91,7 @@ def test_destructive_tools_say_so(name: str) -> None:
         ("create_cycle", ("cycles:write",)),
         ("update_cycle", ("cycles:write",)),
         ("start_cycle_today", ("cycles:write",)),
+        ("end_cycle_today", ("cycles:write",)),
         ("delete_cycle", ("cycles:write",)),
         ("add_issues_to_cycle", ("issues:write",)),
         ("remove_issues_from_cycle", ("issues:write",)),
@@ -210,6 +211,40 @@ def test_update_cycle_refuses_a_guest_outside_the_team(
 
     assert text == team_not_found_message(OTHER_TEAM)
     assert repositories.planning.get_cycle(WORKSPACE, OTHER_TEAM, elsewhere["cycle_id"]).name == "Other cycle"
+
+
+def test_update_cycle_refuses_a_started_cycles_start(
+    client: TestClient, repositories: Any, planning: dict[str, str]
+) -> None:
+    """The date rules the route applies refuse the tool too, and nothing is written."""
+    secret = mint_for(repositories, MEMBER, CYCLES)
+    tomorrow = (date.today() + timedelta(days=1)).isoformat()
+
+    text = refusal(
+        tool(client, secret, "update_cycle", {"team_id": TEAM, "cycle_id": "current", "start_date": tomorrow})
+    )
+
+    assert "already started" in text
+    assert repositories.planning.get_cycle(WORKSPACE, TEAM, planning["cycle_id"]).start_date == "2026-01-01"
+
+
+def test_end_cycle_today_ends_the_current_cycle(
+    client: TestClient, repositories: Any, planning: dict[str, str]
+) -> None:
+    """The current cycle ends today; an upcoming one is refused."""
+    secret = mint_for(repositories, MEMBER, CYCLES)
+    start = (date.today() + timedelta(days=30)).isoformat()
+    end = (date.today() + timedelta(days=43)).isoformat()
+    upcoming = answer(
+        tool(client, secret, "create_cycle", {"team_id": TEAM, "name": "Later", "start_date": start, "end_date": end})
+    )
+
+    ended = answer(tool(client, secret, "end_cycle_today", {"team_id": "abc", "cycle_id": "current"}))
+    text = refusal(tool(client, secret, "end_cycle_today", {"team_id": TEAM, "cycle_id": upcoming["cycle_id"]}))
+
+    assert ended["cycle_id"] == planning["cycle_id"]
+    assert ended["end_date"] == date.today().isoformat()
+    assert text == "Only the current cycle can end today"
 
 
 def test_delete_cycle_needs_a_team_admin(client: TestClient, repositories: Any, planning: dict[str, str]) -> None:

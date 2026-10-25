@@ -17,8 +17,11 @@ from app.common.cycle_schedule import (
     align_forward,
     auto_cycle_id,
     ensure_cycles,
+    following_cycle,
+    gaps_before,
     next_number,
     plan_cycles,
+    trailing_number,
 )
 from app.common.db.dynamo.planning import Cycle, cycle_key
 from app.common.db.dynamo.team_config import CycleSettings
@@ -135,6 +138,46 @@ def test_numbering_continues_past_manual_and_numbered_cycles() -> None:
     assert next_number([]) == 1
     assert next_number([_cycle("2026-01-01", "2026-01-14", cid="a")]) == 2
     assert next_number([_cycle("2026-01-01", "2026-01-14", number=7, cid="a")]) == 8
+
+
+def test_numbering_continues_from_the_latest_numbered_cycle() -> None:
+    """A renumbered cycle restarts the sequence, counting hand-made cycles after it."""
+    chain = [
+        _cycle("2026-01-01", "2026-01-14", number=9, cid="a"),
+        _cycle("2026-01-15", "2026-01-28", number=3, cid="b"),
+        _cycle("2026-01-29", "2026-02-11", cid="c"),
+    ]
+
+    assert next_number(chain) == 5
+
+
+def test_a_trailing_number_is_read_off_a_name() -> None:
+    """Only a number at the end of the name counts."""
+    assert trailing_number("Sprint 40") == 40
+    assert trailing_number("Q3 planning") is None
+    assert trailing_number("Cycle 7 ") == 7
+
+
+def test_the_following_cycle_skips_cancelled_ones() -> None:
+    """The next live cycle by start date follows, a cancelled one in between does not."""
+    current = _cycle("2026-01-01", "2026-01-14", cid="a")
+    cancelled = _cycle("2026-01-15", "2026-01-28", cid="b", cancelled=True)
+    later = _cycle("2026-01-29", "2026-02-11", cid="c")
+
+    assert following_cycle([later, cancelled, current], current) == later
+    assert following_cycle([current], current) is None
+
+
+def test_gaps_count_the_days_between_live_cycles() -> None:
+    """The first cycle and a cancelled one read none, touching cycles 0, a pause its days."""
+    chain = [
+        _cycle("2026-01-01", "2026-01-10", cid="a"),
+        _cycle("2026-01-11", "2026-01-20", cid="b"),
+        _cycle("2026-01-22", "2026-01-30", cid="gone", cancelled=True),
+        _cycle("2026-01-26", "2026-02-08", cid="c"),
+    ]
+
+    assert gaps_before(chain) == {"a": None, "b": 0, "gone": None, "c": 5}
 
 
 def test_active_cycle_skips_cancelled_ones() -> None:

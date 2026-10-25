@@ -371,7 +371,13 @@ class CycleUpdate(BaseModel):
 
 
 class CycleRead(BaseModel):
-    """One cycle as the API returns it, with its status derived from its dates."""
+    """One cycle as the API returns it, with its status derived from its dates.
+
+    `gap_before_days` is set on the cycle list: the days with no live cycle
+    between the team's cycles before this one and its start, which the cycles
+    page draws as "Cycles paused". It is null on the first live cycle, on a
+    cancelled one, and on reads other than the list.
+    """
 
     cycle_id: str
     workspace_id: str
@@ -387,6 +393,7 @@ class CycleRead(BaseModel):
     points: CountsRead = Field(default_factory=CountsRead)
     unestimated: CountsRead = Field(default_factory=CountsRead)
     carry: CarryOverRead = Field(default_factory=CarryOverRead)
+    gap_before_days: Optional[int] = None
     created_by: str
     created_at: datetime
     updated_at: datetime
@@ -432,6 +439,12 @@ CycleListRead = cursor_page(CycleRead, "cycles", model_name="CycleListRead")
 
 class CycleStartToday(BaseModel):
     """The body `POST /api/workspaces/{workspace_id}/cycles/{cycle_id}/start-today` takes."""
+
+    team_id: str = Field(min_length=1)
+
+
+class CycleEndToday(BaseModel):
+    """The body `POST /api/workspaces/{workspace_id}/cycles/{cycle_id}/end-today` takes."""
 
     team_id: str = Field(min_length=1)
 

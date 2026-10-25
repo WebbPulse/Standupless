@@ -3912,6 +3912,21 @@
         "title": "CycleCreate",
         "type": "object"
       },
+      "CycleEndToday": {
+        "description": "The body `POST /api/workspaces/{workspace_id}/cycles/{cycle_id}/end-today` takes.",
+        "properties": {
+          "team_id": {
+            "minLength": 1,
+            "title": "Team Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "team_id"
+        ],
+        "title": "CycleEndToday",
+        "type": "object"
+      },
       "CycleHistoryPoint": {
         "description": "One day of a cycle's burn-up, in issues and in estimate points.\n\n`scope` excludes cancelled work, `started` includes finished work, and\n`completed` is finished work alone, matching the cycle page's own figures.",
         "properties": {
@@ -4037,7 +4052,7 @@
         "type": "object"
       },
       "CycleRead": {
-        "description": "One cycle as the API returns it, with its status derived from its dates.",
+        "description": "One cycle as the API returns it, with its status derived from its dates.\n\n`gap_before_days` is set on the cycle list: the days with no live cycle\nbetween the team's cycles before this one and its start, which the cycles\npage draws as \"Cycles paused\". It is null on the first live cycle, on a\ncancelled one, and on reads other than the list.",
         "properties": {
           "cancelled": {
             "title": "Cancelled",
@@ -4065,6 +4080,17 @@
           "end_date": {
             "title": "End Date",
             "type": "string"
+          },
+          "gap_before_days": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gap Before Days"
           },
           "goal": {
             "anyOf": [
@@ -32900,7 +32926,7 @@
         ]
       },
       "patch": {
-        "description": "Patch a cycle's name, dates, goal or cancellation.\n\nThe row is read first and written whole, so the counters the consumer maintains\nride along untouched: a patch here must never become a second write path into\nthe numbers the stream owns.",
+        "description": "Patch a cycle's name, dates, goal or cancellation, under Linear's cycle rules.\n\nThe row is read first and written whole, so the counters the consumer maintains\nride along untouched: a patch here must never become a second write path into\nthe numbers the stream owns. A 422 answers a start date already in the past or\nany date moved behind today. Extending a cycle into the next one moves that\nnext cycle's start to the day after, and a 409 answers an extension that would\nleave it no days. A name ending in a number renumbers the automatically named\ncycles after it.",
         "operationId": "update_cycle_api_workspaces__workspace_id__cycles__cycle_id__patch",
         "parameters": [
           {
@@ -32961,6 +32987,74 @@
           }
         ],
         "summary": "Update Cycle",
+        "tags": [
+          "planning"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/cycles/{cycle_id}/end-today": {
+      "post": {
+        "description": "End the team's current cycle at the close of today, as Linear's \"End cycle today\" does.\n\nToday is the team's own day in its timezone. The cycle after keeps its dates,\nand the hourly cycle close rolls the unfinished issues on once today is over.\nA 409 answers a cycle that is not current.",
+        "operationId": "end_cycle_today_api_workspaces__workspace_id__cycles__cycle_id__end_today_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "cycle_id",
+            "required": true,
+            "schema": {
+              "title": "Cycle Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CycleEndToday"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CycleRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "End Cycle Today",
         "tags": [
           "planning"
         ]
