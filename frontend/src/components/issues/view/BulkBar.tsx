@@ -4,8 +4,8 @@
  * the same property list the keyboard does, so a bulk change and a single
  * change are the same gesture. A More menu holds the rest, as Linear's does,
  * each entry with its key, and archive and delete close the bar's actions.
- * The menu entries come from the caller, so another kind of selection can
- * fill the same bar with its own.
+ * The menu entries, and when given the bar's own buttons, come from the
+ * caller, so another kind of selection can fill the same bar with its own.
  */
 
 import React from 'react';
@@ -49,12 +49,14 @@ export interface BulkBarProps {
   /** What the toolbar is announced as. */
   label?: string;
   /** Whether estimates can be set, false when the teams have them off. */
-  estimates: boolean;
+  estimates?: boolean;
   /** Whether a milestone can be set, true only inside one project's list. */
   milestones?: boolean;
   /** True when every selected issue is archived, so archive restores. */
   archived?: boolean;
-  onProperty: (property: CommandProperty) => void;
+  onProperty?: (property: CommandProperty) => void;
+  /** The bar's buttons in place of the issue properties, for another kind of selection. */
+  actions?: readonly BulkBarMenuItem[] | undefined;
   /** Archives or restores the selection, absent when the caller cannot. */
   onArchive?: (() => void) | undefined;
   /** Deletes the selection after a confirmation, absent when it cannot. */
@@ -64,6 +66,8 @@ export interface BulkBarProps {
   keys?: Record<CommandProperty, string>;
   /** The More menu's entries, in groups split by a rule; empty hides it. */
   more?: readonly (readonly BulkBarMenuItem[])[];
+  /** The key the Delete button names, when the selection deletes on another. */
+  deleteKeys?: string;
 }
 
 const ACTION_BASE =
@@ -119,18 +123,35 @@ const ACTIONS: {
 export const BulkBar: React.FC<BulkBarProps> = ({
   count,
   label = 'Selected issues',
-  estimates,
+  estimates = true,
   milestones = false,
   archived = false,
   onProperty,
+  actions,
   onArchive,
   onDelete,
   onClear,
   keys = PROPERTY_KEYS,
   more = [],
+  deleteKeys = DELETE_ISSUE_KEYS,
 }) => {
   if (count === 0) return null;
   const groups = more.filter((group) => group.length > 0);
+  const buttons: readonly BulkBarMenuItem[] =
+    actions ??
+    ACTIONS.filter(
+      (action) =>
+        (estimates || action.property !== 'estimate') &&
+        (milestones || action.property !== 'milestone')
+    ).map((action) => ({
+      id: action.property,
+      label: action.label,
+      icon: action.icon,
+      keys: keys[action.property],
+      onSelect: () => {
+        onProperty?.(action.property);
+      },
+    }));
   return (
     <div
       role="toolbar"
@@ -150,22 +171,18 @@ export const BulkBar: React.FC<BulkBarProps> = ({
             <LuX className="h-3 w-3" />
           </IconButton>
         </span>
-        {ACTIONS.filter(
-          (action) =>
-            (estimates || action.property !== 'estimate') &&
-            (milestones || action.property !== 'milestone')
-        ).map((action) => (
+        {buttons.map((action) => (
           <button
-            key={action.property}
+            key={action.id}
             type="button"
-            onClick={() => {
-              onProperty(action.property);
-            }}
+            onClick={action.onSelect}
             className={ACTION_CLASS}
           >
             {action.icon}
             {action.label}
-            <BarKeys keys={keys[action.property]} />
+            {action.keys !== undefined && action.keys !== '' && (
+              <BarKeys keys={action.keys} />
+            )}
           </button>
         ))}
         {groups.length > 0 && (
@@ -225,7 +242,7 @@ export const BulkBar: React.FC<BulkBarProps> = ({
           >
             <LuTrash2 className="h-3.5 w-3.5" />
             Delete
-            <BarKeys keys={DELETE_ISSUE_KEYS} />
+            <BarKeys keys={deleteKeys} />
           </button>
         )}
       </div>

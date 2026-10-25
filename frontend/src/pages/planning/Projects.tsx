@@ -21,7 +21,10 @@
  * toggle to show the team alone. The arrangement and filters save as a view
  * of projects, and opened as that view the page starts from what it stores,
  * keeps changes in the URL until they are saved over it or as a new view,
- * and leaves the account's own arrangement alone.
+ * and leaves the account's own arrangement alone. Projects on the list and
+ * the board select the way issues do, with x, Shift and an arrow, a Shift
+ * click or Cmd and A, and the bar that rises sets status, lead, priority,
+ * target date, labels or initiative on all of them, or deletes them.
  */
 
 import React, { useCallback, useMemo, useRef, useState } from 'react';
@@ -29,16 +32,22 @@ import { invalidateQueries } from '@webbpulse/api-client/react';
 import {
   LuBookmarkPlus,
   LuBuilding2,
+  LuCalendar,
   LuChevronRight,
+  LuCircleDashed,
   LuDiamond,
+  LuGoal,
   LuListFilter,
   LuPencil,
   LuPlus,
+  LuSignal,
+  LuTag,
   LuTarget,
+  LuUserRound,
   LuX,
 } from 'react-icons/lu';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { updateProject } from '../../api/planning';
+import { deleteProject, updateProject } from '../../api/planning';
 import {
   createView,
   updateView,
@@ -50,7 +59,16 @@ import {
   refreshViewLists,
   type ViewDetails,
 } from '../../components/issues/view/IssueViewPage';
+import BulkBar, {
+  type BulkBarMenuItem,
+} from '../../components/issues/view/BulkBar';
 import CreateProjectDialog from '../../components/planning/CreateProjectDialog';
+import {
+  ConfirmDeleteProjectsDialog,
+  ProjectBulkCommand,
+  type ProjectBulkProperty,
+  type ProjectBulkWrite,
+} from '../../components/planning/ProjectBulkCommand';
 import ProgressRing from '../../components/planning/ProgressRing';
 import {
   DatePicker,
@@ -98,6 +116,7 @@ import { useListKeyboardNav } from '../../hooks/useListKeyboardNav';
 import { usePlanningTeamLists } from '../../hooks/usePlanningTeamLists';
 import { useShortcut } from '../../hooks/useShortcuts';
 import { useProjectMoves } from '../../hooks/useProjectMoves';
+import { useProjectSelection } from '../../hooks/useProjectSelection';
 import { useProjectsDisplay } from '../../hooks/useProjectsDisplay';
 import { useProjectsDisplayDefault } from '../../hooks/useProjectsDisplayDefault';
 import { useTeam } from '../../hooks/useTeam';
@@ -105,7 +124,7 @@ import { useTimelineShortcuts } from '../../hooks/useTimelineShortcuts';
 import { useWorkspace } from '../../hooks/useWorkspace';
 import { useWorkspaceProjects } from '../../hooks/useWorkspaceProjects';
 import { ROLL_UP_PARAM, useSubTeamRollUp } from '../../hooks/useSubTeamRollUp';
-import { canWriteIssues } from '../../lib/capabilities';
+import { canWriteIssues, isTeamAdmin } from '../../lib/capabilities';
 import { cn } from '../../lib/cn';
 import { slotIndex } from '../../lib/dropSlot';
 import { errorMessage } from '../../lib/errors';
@@ -318,6 +337,12 @@ interface ProjectRowProps {
   /** Starts dragging the row to reorder it, or undefined where it cannot move. */
   onDragStart?: ((event: React.DragEvent) => void) | undefined;
   onDragEnd?: (() => void) | undefined;
+  /** Whether the row is selected. */
+  selected?: boolean;
+  /** Whether anything is selected, which keeps every checkbox showing. */
+  selecting?: boolean;
+  /** Picks or drops the row, or the run from the last pick with `range`. */
+  onSelect?: ((range: boolean) => void) | undefined;
 }
 
 /**
@@ -342,6 +367,9 @@ const ProjectRow: React.FC<ProjectRowProps> = ({
   dragging = false,
   onDragStart,
   onDragEnd,
+  selected = false,
+  selecting = false,
+  onSelect,
 }) => {
   const { value, update } = useOptimisticRecord<ProjectRead, ProjectUpdate>(
     server,
@@ -372,6 +400,7 @@ const ProjectRow: React.FC<ProjectRowProps> = ({
     <li
       ref={rowRef}
       data-project-id={project.project_id}
+      aria-selected={selected}
       draggable={editable && onDragStart !== undefined}
       onDragStart={onDragStart}
       onDragEnd={onDragEnd}
@@ -379,8 +408,9 @@ const ProjectRow: React.FC<ProjectRowProps> = ({
       style={projectGridTracks(shown)}
       className={cn(
         PROJECT_GRID,
-        'relative h-11 border-b border-line px-4 text-sm transition-colors duration-100 hover:bg-surface has-[a:active]:bg-raised lg:px-6',
+        'group/row relative h-11 border-b border-line px-4 text-sm transition-colors duration-100 hover:bg-surface has-[a:active]:bg-raised lg:px-6',
         isActive && 'bg-surface',
+        selected && 'bg-accent-soft hover:bg-accent-soft',
         dragging && 'opacity-40'
       )}
     >
@@ -390,10 +420,47 @@ const ProjectRow: React.FC<ProjectRowProps> = ({
         aria-label={project.name}
         data-hover="parent"
         {...nameTip.handlers}
+        onClick={(event) => {
+          if (event.shiftKey && onSelect !== undefined) {
+            event.preventDefault();
+            onSelect(true);
+          }
+        }}
         className="absolute inset-0 focus-visible:ring-1 focus-visible:ring-accent focus-visible:outline-none focus-visible:ring-inset"
       />
       <div className="pointer-events-none flex min-w-0 items-center gap-2.5">
-        <ProjectIcon icon={project.icon} color={project.color} />
+        {onSelect === undefined ? (
+          <ProjectIcon icon={project.icon} color={project.color} />
+        ) : (
+          <span className="relative flex shrink-0 items-center justify-center">
+            <ProjectIcon
+              icon={project.icon}
+              color={project.color}
+              className={cn(
+                selecting || selected
+                  ? 'invisible'
+                  : 'group-hover/row:invisible pointer-coarse:visible!'
+              )}
+            />
+            <input
+              type="checkbox"
+              aria-label={`Select ${project.name}`}
+              checked={selected}
+              onChange={(event) => {
+                onSelect((event.nativeEvent as MouseEvent).shiftKey);
+              }}
+              onKeyDown={(event) => {
+                if (event.key === ' ') event.stopPropagation();
+              }}
+              className={cn(
+                'pointer-events-auto absolute inset-0 z-10 m-auto h-3.5 w-3.5 cursor-pointer accent-accent',
+                !selecting &&
+                  !selected &&
+                  'opacity-0 group-hover/row:opacity-100 focus-visible:opacity-100 pointer-coarse:hidden'
+              )}
+            />
+          </span>
+        )}
         <span
           ref={nameTip.ref}
           className="min-w-0 shrink truncate font-medium text-text"
@@ -980,6 +1047,121 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading }) => {
     resetKey: `${params.toString()}:${folded.join(',')}:${String(rows.length)}`,
     enabled: creating === null && layout === 'list',
   });
+
+  const [bulk, setBulk] = useState<ProjectBulkProperty | null>(null);
+  const [deleting, setDeleting] = useState<ProjectRead[] | null>(null);
+  const [boardFocus, setBoardFocus] = useState<string | null>(null);
+  const selectionOrder = useMemo(() => {
+    if (layout === 'list') return visible.map((project) => project.project_id);
+    if (layout !== 'board') return [];
+    const seen = new Set<string>();
+    for (const column of columns)
+      for (const project of column.rows) seen.add(project.project_id);
+    return [...seen];
+  }, [layout, visible, columns]);
+  const focusedProjectId =
+    layout === 'list'
+      ? (visible[activeIndex]?.project_id ?? null)
+      : layout === 'board'
+        ? boardFocus
+        : null;
+  const {
+    selected: selectedIds,
+    toggle: toggleSelected,
+    clear: clearSelection,
+  } = useProjectSelection({
+    order: selectionOrder,
+    focusedId: focusedProjectId,
+    onFocus: (projectId) => {
+      if (layout === 'list')
+        setActiveIndex(
+          visible.findIndex((project) => project.project_id === projectId)
+        );
+      else setBoardFocus(projectId);
+    },
+    enabled:
+      creating === null &&
+      saving === null &&
+      bulk === null &&
+      deleting === null &&
+      layout !== 'timeline',
+  });
+  const selectedProjects = useMemo(
+    () => rows.filter((project) => selectedIds.has(project.project_id)),
+    [rows, selectedIds]
+  );
+  const { initiatives: bulkInitiatives } = useInitiatives(
+    workspaceId,
+    selectedIds.size > 0
+  );
+  const canDelete = (project: ProjectRead): boolean =>
+    isTeamAdmin(workspace?.role, undefined) ||
+    teams.some(
+      (team) =>
+        project.team_ids.includes(team.id) &&
+        isTeamAdmin(workspace?.role, team.role)
+    );
+  const plural = (count: number): string =>
+    count === 1 ? '1 project' : `${String(count)} projects`;
+  const writeBulk: ProjectBulkWrite = (changes) => {
+    const allowed = changes.filter(({ project }) =>
+      canEditProject(workspace?.role, project, teams)
+    );
+    if (allowed.length === 0) {
+      showErrorToast(
+        changes.length === 0
+          ? 'Nothing to change.'
+          : 'You cannot edit the selected projects.'
+      );
+      return;
+    }
+    for (const { project, change } of allowed) moveProject(project, change);
+    showToast(`Updated ${plural(allowed.length)}.`);
+  };
+  const removeProjects = async (targets: ProjectRead[]): Promise<void> => {
+    const results = await Promise.allSettled(
+      targets.map((project) => deleteProject(workspaceId, project.project_id))
+    );
+    const done = results.filter(
+      (result) => result.status === 'fulfilled'
+    ).length;
+    invalidateQueries(queryKey);
+    clearSelection();
+    if (done > 0) showToast(`Deleted ${plural(done)}.`);
+    if (done < targets.length)
+      showErrorToast(`Could not delete ${plural(targets.length - done)}.`);
+  };
+  const deletable = selectedProjects.filter(canDelete);
+  useShortcut({
+    keys: 'mod+backspace',
+    label: 'Delete selected projects',
+    group: 'List',
+    enabled: deletable.length > 0 && deleting === null && bulk === null,
+    handler: (event) => {
+      event?.preventDefault();
+      setDeleting(deletable);
+    },
+  });
+  const bulkAction = (
+    id: ProjectBulkProperty,
+    label: string,
+    icon: React.ReactNode
+  ): BulkBarMenuItem => ({
+    id,
+    label,
+    icon,
+    onSelect: () => {
+      setBulk(id);
+    },
+  });
+  const bulkActions: BulkBarMenuItem[] = [
+    bulkAction('status', 'Status', <LuCircleDashed />),
+    bulkAction('lead', 'Lead', <LuUserRound />),
+    bulkAction('priority', 'Priority', <LuSignal />),
+    bulkAction('target', 'Target date', <LuCalendar />),
+    bulkAction('labels', 'Labels', <LuTag />),
+    bulkAction('initiative', 'Initiative', <LuGoal />),
+  ];
 
   const writeParam = (
     next: URLSearchParams,
@@ -1627,6 +1809,11 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading }) => {
                               });
                             }}
                             onDragEnd={endListDrag}
+                            selected={selectedIds.has(project.project_id)}
+                            selecting={selectedIds.size > 0}
+                            onSelect={(range) => {
+                              toggleSelected(project.project_id, range);
+                            }}
                           />
                         </React.Fragment>
                       );
@@ -1736,6 +1923,10 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading }) => {
           onOrderingChange={(value) => {
             changeDisplay({ order: value });
           }}
+          selected={selectedIds}
+          focusedId={boardFocus}
+          onToggleSelect={toggleSelected}
+          onFocusProject={setBoardFocus}
           createIn={(column) => {
             if (!canCreate) return undefined;
             if (column.kind === 'team') {
@@ -1840,6 +2031,43 @@ export const Projects: React.FC<ProjectsProps> = ({ view, leading }) => {
             description: view.description ?? null,
           }}
           onSave={saveDetails}
+        />
+      )}
+      {bulk !== null && selectedProjects.length > 0 && (
+        <ProjectBulkCommand
+          property={bulk}
+          projects={selectedProjects}
+          people={people}
+          projectLabels={projectLabels}
+          initiatives={bulkInitiatives}
+          onWrite={writeBulk}
+          onClose={() => {
+            setBulk(null);
+          }}
+        />
+      )}
+      {deleting !== null && (
+        <ConfirmDeleteProjectsDialog
+          projects={deleting}
+          onClose={() => {
+            setDeleting(null);
+          }}
+          onConfirm={() => removeProjects(deleting)}
+        />
+      )}
+      {layout !== 'timeline' && (
+        <BulkBar
+          count={selectedProjects.length}
+          label="Selected projects"
+          actions={bulkActions}
+          onDelete={
+            deletable.length > 0
+              ? () => {
+                  setDeleting(deletable);
+                }
+              : undefined
+          }
+          onClear={clearSelection}
         />
       )}
     </WorkspaceShell>
