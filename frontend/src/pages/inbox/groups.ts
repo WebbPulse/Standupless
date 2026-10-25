@@ -88,8 +88,11 @@ const PROJECT_KINDS: ReadonlySet<InboxKind> = new Set<InboxKind>([
  */
 export const groupKey = (row: NotificationRead): string => {
   const alone = `n:${row.notification_id}`;
-  if (PROJECT_KINDS.has(row.kind))
-    return row.project_id ? `project:${row.project_id}` : alone;
+  if (PROJECT_KINDS.has(row.kind) && row.project_id)
+    return `project:${row.project_id}`;
+  if (row.kind === 'project_update_comment' && row.initiative_id)
+    return `initiative:${row.initiative_id}`;
+  if (PROJECT_KINDS.has(row.kind)) return alone;
   if (row.kind === 'initiative_update_due')
     return row.initiative_id ? `initiative:${row.initiative_id}` : alone;
   if (row.kind === 'document_comment')

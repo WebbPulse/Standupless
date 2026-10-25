@@ -25,7 +25,7 @@ from webbpulse.dynamodb import ConditionFailed, Page, Repository, new_ulid
 from app.common.bulk_import import IMPORT_BATCH_ATTRIBUTE
 from app.common.db.dynamo.base import build_repository, delete_partition, utc_now
 from app.common.db.dynamo.tables import PLANNING
-from app.common.db.dynamo.update_threads import UpdateThreadStore
+from app.common.db.dynamo.update_threads import INITIATIVE_THREADS, UpdateThreadStore
 
 TARGET_DATE_INDEX = "ws_team-target_date-index"
 
@@ -1426,6 +1426,7 @@ class PlanningRepository:
         """Take an injected package repository, or build this table's own."""
         self._repository = build_repository(PLANNING, repository)
         self.update_threads = UpdateThreadStore(self._repository)
+        self.initiative_update_threads = UpdateThreadStore(self._repository, INITIATIVE_THREADS)
 
     def delete_workspace_rows(self, workspace_id: str) -> int:
         """Delete every row this table holds for one workspace, for the workspace purge."""
@@ -2003,10 +2004,10 @@ class PlanningRepository:
         return True
 
     def delete_initiative_updates(self, workspace_id: str, initiative_id: str, *, limit: int = 100) -> int:
-        """Remove every update row of one initiative, returning how many went."""
+        """Remove every update row of one initiative and every reply and reaction on them, returning how many went."""
         if not workspace_id or not initiative_id:
             return 0
-        removed = 0
+        removed = self.initiative_update_threads.delete_project_threads(workspace_id, initiative_id)
         while True:
             page = self._query_prefix(workspace_id, initiative_update_prefix(initiative_id), limit, None)
             if not page.items:

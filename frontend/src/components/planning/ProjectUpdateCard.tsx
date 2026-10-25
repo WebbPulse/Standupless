@@ -3,10 +3,11 @@
  * and the text as Markdown. The author and a workspace admin edit it in place
  * or delete it from a menu, which is what the server's `can_edit` says.
  *
- * A project update also carries its thread, as Linear's do: a reaction bar
- * with counts, the reader's own reactions pressed, and a reply toggle naming
- * how many replies there are, which opens the replies and a reply box under
- * the update. An initiative update has no thread, so it shows neither.
+ * Every update also carries its thread, as Linear's do: a reaction bar with
+ * counts, the reader's own reactions pressed, and a reply toggle naming how
+ * many replies there are, which opens the replies and a reply box under the
+ * update. A project update's thread and an initiative update's run on the
+ * same component, each under its own parent's routes.
  *
  * Under a project update's text sits its progress report: what moved since the
  * update before it, or a baseline for the first one, drawn from the snapshots
@@ -30,12 +31,13 @@ import {
 import {
   addProjectUpdateReaction,
   removeProjectUpdateReaction,
+  type UpdateParent,
 } from '../../api/projectUpdateThreads';
 import { errorMessage } from '../../lib/errors';
 import { personLabel, type Assignable } from '../../lib/issuePeople';
 import { PROJECT_HEALTH_LABELS } from '../../lib/projectLook';
 import { updateReport } from '../../lib/projectUpdateDiff';
-import { projectUpdatesKey } from '../../lib/queryKeys';
+import { statusUpdatesKey } from '../../lib/queryKeys';
 import { replyCountLabel } from '../../lib/threadResolution';
 import { showErrorToast, showToast } from '../../lib/toast';
 import { toggleReactionGroup } from '../../lib/updateThreads';
@@ -94,11 +96,20 @@ export interface ProjectUpdateCardProps {
 /** The author id prefix of an update imported from Linear whose author is not a member. */
 const LINEAR_AUTHOR_PREFIX = 'linear:';
 
-/** Whether an update is a project's, which is what carries a thread. */
+/** Whether an update is a project's rather than an initiative's. */
 const isProjectUpdate = (
   update: StatusUpdateRead
 ): update is ProjectUpdateRead =>
   typeof (update as Partial<ProjectUpdateRead>).project_id === 'string';
+
+/** The project or initiative an update is about, which its thread's routes sit under. */
+const parentOf = (update: StatusUpdateRead): UpdateParent =>
+  isProjectUpdate(update)
+    ? { kind: 'project', id: update.project_id }
+    : {
+        kind: 'initiative',
+        id: (update as Partial<InitiativeUpdateRead>).initiative_id ?? '',
+      };
 
 /** The report lines of an update and whether it has a report to hide at all. */
 const reportOf = (
@@ -140,13 +151,15 @@ const ProgressReport: React.FC<ProgressReportProps> = ({ lines }) => (
 
 /** Props for UpdateThreadFooter. */
 interface UpdateThreadFooterProps {
-  update: ProjectUpdateRead;
+  update: StatusUpdateRead;
+  parent: UpdateParent;
   people: Assignable[];
 }
 
-/** A project update's reaction bar and reply toggle, and its thread when open. */
+/** An update's reaction bar and reply toggle, and its thread when open. */
 const UpdateThreadFooter: React.FC<UpdateThreadFooterProps> = ({
   update,
+  parent,
   people,
 }) => {
   const [open, setOpen] = useState(false);
@@ -155,7 +168,7 @@ const UpdateThreadFooter: React.FC<UpdateThreadFooterProps> = ({
     groups: ReactionGroup[];
   } | null>(null);
   const [reactionError, setReactionError] = useState<unknown>(null);
-  const { workspace_id: workspaceId, project_id: projectId } = update;
+  const { workspace_id: workspaceId } = update;
   const reactions =
     toggled !== null && toggled.base === update.reactions
       ? toggled.groups
@@ -171,23 +184,22 @@ const UpdateThreadFooter: React.FC<UpdateThreadFooterProps> = ({
       if (reacted) {
         await removeProjectUpdateReaction(
           workspaceId,
-          projectId,
+          parent,
           update.update_id,
           { emoji }
         );
       } else {
-        await addProjectUpdateReaction(
-          workspaceId,
-          projectId,
-          update.update_id,
-          { emoji }
-        );
+        await addProjectUpdateReaction(workspaceId, parent, update.update_id, {
+          emoji,
+        });
       }
     } catch (failure: unknown) {
       setToggled(null);
       setReactionError(failure);
     } finally {
-      invalidateQueries([projectUpdatesKey(workspaceId, projectId)]);
+      invalidateQueries([
+        statusUpdatesKey(workspaceId, parent.kind, parent.id),
+      ]);
     }
   };
 
@@ -218,7 +230,7 @@ const UpdateThreadFooter: React.FC<UpdateThreadFooterProps> = ({
       {open && (
         <ProjectUpdateThread
           workspaceId={workspaceId}
-          projectId={projectId}
+          parent={parent}
           updateId={update.update_id}
           people={people}
           autoFocus={count === 0}
@@ -243,6 +255,7 @@ export const ProjectUpdateCard: React.FC<ProjectUpdateCardProps> = ({
     : personLabel(people.find((person) => person.user_id === update.author_id));
 
   const { lines: report, hasReport } = reportOf(update, people);
+  const parent = parentOf(update);
 
   const save = (
     body: string,
@@ -369,8 +382,8 @@ export const ProjectUpdateCard: React.FC<ProjectUpdateCardProps> = ({
         )}
       </div>
 
-      {isProjectUpdate(update) && (
-        <UpdateThreadFooter update={update} people={people} />
+      {parent.id !== '' && (
+        <UpdateThreadFooter update={update} parent={parent} people={people} />
       )}
 
       {confirming && (

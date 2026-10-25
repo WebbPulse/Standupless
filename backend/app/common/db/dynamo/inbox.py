@@ -256,6 +256,8 @@ class Notification(BaseModel):
     `issue_title` and its GitHub address in `url`. An initiative update reminder
     is about a workspace level subject, so it carries an empty `team_id`, the
     initiative fields, and `due_state` saying whether the update is due or overdue.
+    A reply on an initiative update is a `project_update_comment` row with an
+    empty `team_id`, the initiative fields and the update in `project_update_id`.
     A status change carries the status it moved to in `new_value`, by name as it
     read when the row was written; rows written before that field existed have none.
     A document comment carries an empty `team_id` and names its document in

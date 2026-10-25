@@ -120,7 +120,7 @@ def _initiative_json(initiative: InitiativeRead) -> dict[str, Any]:
 
 
 def _update_json(update: InitiativeUpdateRead) -> dict[str, Any]:
-    """One initiative update as the tools answer it, with whether the caller may change it and its report."""
+    """One initiative update as the tools answer it, with the caller's edit right, its report and thread summary."""
     return {
         "update_id": update.update_id,
         "initiative_id": update.initiative_id,
@@ -133,6 +133,8 @@ def _update_json(update: InitiativeUpdateRead) -> dict[str, Any]:
         "can_edit": update.can_edit,
         "hide_details": update.hide_details,
         "report": update.report,
+        "reactions": [group.model_dump(mode="json") for group in update.reactions],
+        "comment_count": update.comment_count,
     }
 
 

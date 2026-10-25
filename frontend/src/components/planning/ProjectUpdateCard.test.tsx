@@ -3,8 +3,8 @@
  * update's groups with the reader's own pressed and toggles through the update
  * thread routes, that the reply toggle names the count and opens the replies
  * only when asked, that a reply posts through the shared editor and reacts on
- * itself by comment id, that an initiative update carries no thread, and that
- * each kind of update draws its progress report.
+ * itself by comment id, that an initiative update carries the same thread
+ * under its own routes, and that each kind of update draws its progress report.
  *
  * The emoji dataset is loaded once before the tests, so its cold import is not
  * paid inside a wait.
@@ -150,7 +150,7 @@ describe('project update thread', () => {
     await waitFor(() => {
       expect(removeProjectUpdateReaction).toHaveBeenCalledWith(
         'ws-1',
-        'prj-1',
+        { kind: 'project', id: 'prj-1' },
         'upd-1',
         { emoji: '👍' }
       );
@@ -176,7 +176,7 @@ describe('project update thread', () => {
     expect(within(replies).getByText('Agreed')).toBeVisible();
     expect(listProjectUpdateComments.mock.calls[0]?.slice(0, 3)).toEqual([
       'ws-1',
-      'prj-1',
+      { kind: 'project', id: 'prj-1' },
       'upd-1',
     ]);
     expect(
@@ -210,7 +210,7 @@ describe('project update thread', () => {
     await waitFor(() => {
       expect(createProjectUpdateComment).toHaveBeenCalledWith(
         'ws-1',
-        'prj-1',
+        { kind: 'project', id: 'prj-1' },
         'upd-1',
         'On it'
       );
@@ -237,14 +237,23 @@ describe('project update thread', () => {
     await waitFor(() => {
       expect(addProjectUpdateReaction).toHaveBeenCalledWith(
         'ws-1',
-        'prj-1',
+        { kind: 'project', id: 'prj-1' },
         'upd-1',
         { emoji: '🎉', comment_id: 'c-1' }
       );
     });
   });
 
-  it('leaves an initiative update without a thread', () => {
+  it('posts a reply on an initiative update through its own routes', async () => {
+    const user = userEvent.setup();
+    listProjectUpdateComments.mockResolvedValue([]);
+    createProjectUpdateComment.mockResolvedValue(
+      reply('c-4', 'Looks good', {
+        update_id: 'upd-2',
+        project_id: null,
+        initiative_id: 'ini-1',
+      })
+    );
     const initiativeUpdate: InitiativeUpdateRead = {
       update_id: 'upd-2',
       initiative_id: 'ini-1',
@@ -256,11 +265,38 @@ describe('project update thread', () => {
       updated_at: '2026-10-20T00:00:00Z',
       edited_at: null,
       can_edit: false,
+      reactions: [],
+      comment_count: 0,
     };
     renderCard(initiativeUpdate);
 
-    expect(screen.queryByRole('button', { name: /replies|Reply/ })).toBeNull();
-    expect(screen.queryByRole('button', { name: /Thumbs up/ })).toBeNull();
+    await user.click(screen.getByRole('button', { name: 'Reply' }));
+    const surface = await screen.findByRole(
+      'textbox',
+      { name: 'Reply to update' },
+      { timeout: 10_000 }
+    );
+    act(() => {
+      (surface as HTMLElement & { editor: Editor }).editor.commands.setContent(
+        'Looks good'
+      );
+    });
+    const replies = screen.getByRole('region', { name: 'Replies' });
+    await user.click(within(replies).getByRole('button', { name: /^Reply/ }));
+
+    await waitFor(() => {
+      expect(createProjectUpdateComment).toHaveBeenCalledWith(
+        'ws-1',
+        { kind: 'initiative', id: 'ini-1' },
+        'upd-2',
+        'Looks good'
+      );
+    });
+    expect(listProjectUpdateComments.mock.calls[0]?.slice(0, 3)).toEqual([
+      'ws-1',
+      { kind: 'initiative', id: 'ini-1' },
+      'upd-2',
+    ]);
   });
 });
 

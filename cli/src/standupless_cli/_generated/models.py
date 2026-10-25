@@ -4452,12 +4452,14 @@ class InitiativeUpdateRead(TypedDict):
     author_id: str
     body: str
     can_edit: NotRequired[bool]
+    comment_count: NotRequired[int]
     created_at: str
     edited_at: NotRequired[str | None]
     health: Literal["on_track", "at_risk", "off_track"]
     hide_details: NotRequired[bool]
     initiative_id: str
     previous_snapshot: NotRequired[InitiativeUpdateSnapshotRead | None]
+    reactions: NotRequired[list[ReactionGroupRead]]
     report: NotRequired[list[str]]
     snapshot: NotRequired[InitiativeUpdateSnapshotRead | None]
     source: NotRequired[Literal["web", "mcp", "cli", "api", "github", "system", "email"] | None]
@@ -4834,8 +4836,9 @@ class ProjectUpdateCommentRead(TypedDict):
     comment_id: str
     created_at: str
     edited_at: NotRequired[str | None]
+    initiative_id: NotRequired[str | None]
     mentions: NotRequired[list[str]]
-    project_id: str
+    project_id: NotRequired[str | None]
     reactions: NotRequired[list[ReactionGroupRead]]
     source: NotRequired[Literal["web", "mcp", "cli", "api", "github", "system", "email"] | None]
     update_id: str

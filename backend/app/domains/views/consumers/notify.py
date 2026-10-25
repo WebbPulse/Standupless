@@ -10,10 +10,11 @@ guessing from the attributes present, because a filtered record carries no
 marker of its own.
 
 A project has no subscriptions of its own, so a project update reaches the
-project's lead and members, never its author. A reply on an update reaches the
-update's author, everyone who replied before and anyone it mentions, in the inbox
-only. A project created or changed into a saved project view reaches the view's
-subscribers, except the person whose write moved it there, each time it enters.
+project's lead and members, never its author. A reply on a project or initiative
+update reaches the update's author, an initiative's owner, everyone who replied
+before and anyone it mentions, in the inbox only. A project created or changed
+into a saved project view reaches the view's subscribers, except the person whose
+write moved it there, each time it enters.
 
 Who hears about an issue is its subscribers, as in Linear: a comment or a status
 change reaches everyone following the issue except the person who made it, while
@@ -74,7 +75,7 @@ from app.common.db.dynamo.inbox import (
 )
 from app.common.db.dynamo.notify_digests import DigestEntry
 from app.common.db.dynamo.planning import PROJECT, PROJECT_UPDATE, Project
-from app.common.db.dynamo.update_threads import PROJECT_UPDATE_COMMENT
+from app.common.db.dynamo.update_threads import INITIATIVE_UPDATE_COMMENT, PROJECT_UPDATE_COMMENT
 from app.common.db.dynamo.users import User
 from app.common.db.dynamo.views import SavedView
 from app.common.issue_keys import display_key
@@ -86,6 +87,7 @@ from app.common.triage_duty import duty_notified
 from app.domains.views.consumers.chat_digest import flush_due_chats, hold_for_chat, wants_chat
 from app.domains.views.consumers.digest import flush_due, is_digest_flush, send_immediately
 from app.domains.views.consumers.document_comments import handle_document_comment
+from app.domains.views.consumers.initiative_update_replies import handle_initiative_update_reply
 from app.domains.views.consumers.project_view_watch import image_project, newly_entered_projects
 from app.domains.views.consumers.view_watch import image_issue, newly_entered
 from app.domains.views.email import excerpt
@@ -1067,6 +1069,8 @@ def handle_planning_record(repositories: Repositories, record: Mapping[str, Any]
         return 0
     if new_image and _text(new_image, "kind") == PROJECT_UPDATE_COMMENT:
         return handle_update_reply(repositories, new_image)
+    if new_image and _text(new_image, "kind") == INITIATIVE_UPDATE_COMMENT:
+        return handle_initiative_update_reply(repositories, new_image, limit=MAX_RECIPIENTS_PER_EVENT)
     if not new_image or _text(new_image, "kind") != PROJECT_UPDATE:
         return 0
 

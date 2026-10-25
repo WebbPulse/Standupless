@@ -190,20 +190,32 @@ const PAGE_SIZE = 50;
 /** The URL parameter holding the selected notification. */
 const SELECTED_PARAM = 'n';
 
+/**
+ * Whether a row is a reply on an initiative update. It shares the project
+ * update reply kind, so one preference covers both, and names the initiative
+ * where a project reply names the project.
+ */
+const isInitiativeReplyRow = (row: NotificationRead): boolean =>
+  row.kind === 'project_update_comment' &&
+  !row.project_id &&
+  Boolean(row.initiative_id);
+
 /** Whether a row is about a project rather than an issue: one of its updates, or its entering a view. */
 const isProjectRow = (row: NotificationRead): boolean =>
-  row.kind === 'project_update' ||
-  row.kind === 'project_update_comment' ||
-  row.kind === 'project_update_due' ||
-  row.kind === 'view_project_added';
+  (row.kind === 'project_update' ||
+    row.kind === 'project_update_comment' ||
+    row.kind === 'project_update_due' ||
+    row.kind === 'view_project_added') &&
+  !isInitiativeReplyRow(row);
 
 /**
- * Whether a row reminds an initiative's owner that its update is due or
- * overdue. It is workspace level, so `team_id` is empty and the issue fields
- * are blank; `initiative_name` and `due_state` carry what it says.
+ * Whether a row is about an initiative: a reminder to its owner that its
+ * update is due or overdue, or a reply on one of its updates. It is workspace
+ * level, so `team_id` is empty and the issue fields are blank;
+ * `initiative_name` and `due_state` carry what it says.
  */
 const isInitiativeRow = (row: NotificationRead): boolean =>
-  row.kind === 'initiative_update_due';
+  row.kind === 'initiative_update_due' || isInitiativeReplyRow(row);
 
 /** The link to one initiative's updates tab. */
 const initiativeUpdatesTabPath = (
@@ -716,7 +728,7 @@ interface InitiativeUpdatePaneProps {
   onClose: () => void;
 }
 
-/** The pane beside an initiative update reminder, which links to the initiative's updates. */
+/** The pane beside an initiative update reminder or reply, which links to the initiative's updates. */
 const InitiativeUpdatePane: React.FC<InitiativeUpdatePaneProps> = ({
   row,
   slug,
@@ -731,10 +743,20 @@ const InitiativeUpdatePane: React.FC<InitiativeUpdatePaneProps> = ({
       className="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center"
     >
       <LuGoal aria-hidden="true" className="h-8 w-8 text-text-faint" />
-      <p className="text-sm text-text">
-        An update is {state} on{' '}
-        <span className="font-medium">{initiative}</span>
-      </p>
+      {isInitiativeReplyRow(row) ? (
+        <p className="text-sm text-text">
+          <span className="font-medium">
+            {row.actor_name === '' ? 'Someone' : row.actor_name}
+          </span>{' '}
+          replied to an update on{' '}
+          <span className="font-medium">{initiative}</span>
+        </p>
+      ) : (
+        <p className="text-sm text-text">
+          An update is {state} on{' '}
+          <span className="font-medium">{initiative}</span>
+        </p>
+      )}
       <p className="text-xs text-text-faint">
         {timestampLabel(row.created_at)}
       </p>
