@@ -12,6 +12,7 @@ import React from 'react';
 import { invalidateQueries } from '@webbpulse/api-client/react';
 import { LuX } from 'react-icons/lu';
 import { Link } from 'react-router-dom';
+import { IssueHoverTrigger } from '../ui/IssueHoverCard';
 import { deleteLink } from '../../api/issues';
 import { errorMessage } from '../../lib/errors';
 import { issuePath } from '../../lib/paths';
@@ -122,19 +123,23 @@ export const IssueRelations: React.FC<IssueRelationsProps> = ({
                         status={status}
                         {...(status === undefined ? {} : { name: status.name })}
                       />
-                      <Link
-                        to={issuePath(slug, link.target_key)}
-                        title={link.target_title}
-                        data-hover="parent"
-                        className="flex min-w-0 flex-1 items-center gap-1.5 rounded-xs"
-                      >
-                        <span className="shrink-0 font-mono text-text-faint">
-                          {link.target_key}
-                        </span>
-                        <span className="min-w-0 truncate text-text">
-                          {link.target_title}
-                        </span>
-                      </Link>
+                      <IssueHoverTrigger issueKey={link.target_key}>
+                        {(hover) => (
+                          <Link
+                            to={issuePath(slug, link.target_key)}
+                            {...hover}
+                            data-hover="parent"
+                            className="flex min-w-0 flex-1 items-center gap-1.5 rounded-xs"
+                          >
+                            <span className="shrink-0 font-mono text-text-faint">
+                              {link.target_key}
+                            </span>
+                            <span className="min-w-0 truncate text-text">
+                              {link.target_title}
+                            </span>
+                          </Link>
+                        )}
+                      </IssueHoverTrigger>
                       {canEdit && (
                         <IconButton
                           label={`Remove relation to ${link.target_key}`}

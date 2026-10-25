@@ -246,6 +246,7 @@ const referenceDecorations = (
       found.push(
         Decoration.inline(start, start + match[0].length, {
           class: 'rich-reference rich-issue-ref',
+          'data-issue-key': match[0],
         })
       );
     }

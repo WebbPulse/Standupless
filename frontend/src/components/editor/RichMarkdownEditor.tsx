@@ -71,6 +71,7 @@ import { DocumentLinkMenu } from './DocumentLinkMenu';
 import { formattingToolbarKey, type FormatContext } from './formatting';
 import { FormattingToolbar } from './FormattingToolbar';
 import { markdownExtensions, referenceChipsKey } from './markdownExtensions';
+import { useDelegatedIssueHoverCard } from '../ui/IssueHoverCard';
 import { readMarkdown, writeMarkdown } from './markdownCodec';
 import {
   hasUploadsInFlight,
@@ -226,6 +227,7 @@ export const RichMarkdownEditor: React.FC<RichMarkdownEditorProps> = ({
   ref,
 }) => {
   const surface = useRef<HTMLDivElement>(null);
+  const issueHoverCard = useDelegatedIssueHoverCard(surface, '.rich-issue-ref');
   const baseline = useRef<string | null>(null);
   const latest = useRef<string | null>(null);
   const committed = useRef(value);
@@ -887,6 +889,7 @@ export const RichMarkdownEditor: React.FC<RichMarkdownEditorProps> = ({
       onClick={followLink}
     >
       <EditorContent editor={editor} />
+      {issueHoverCard}
       {editable && (
         <FormattingToolbar editor={editor} context={formatContext} />
       )}
