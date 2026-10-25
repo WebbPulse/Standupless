@@ -1199,7 +1199,7 @@ export const IssueView: React.FC<IssueViewProps> = ({
                 <button
                   type="button"
                   aria-expanded={phoneProperties}
-                  className="screen-only order-2 flex h-9 items-center gap-1.5 rounded-lg border border-line bg-surface px-3 text-sm text-text-muted sm:hidden"
+                  className="screen-only order-2 flex h-9 items-center gap-1.5 rounded-lg border border-line bg-surface px-3 text-sm text-text-muted hover:text-text sm:hidden"
                   onClick={() => {
                     setPhoneProperties((open) => !open);
                   }}
