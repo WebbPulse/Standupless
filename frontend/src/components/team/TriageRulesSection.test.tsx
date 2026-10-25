@@ -126,10 +126,11 @@ describe('TriageRulesSection', () => {
       within(dialog).getByLabelText('Title or description contains'),
       'crash'
     );
-    const bug = await within(dialog).findAllByRole('checkbox', {
+    const [, addBug] = await within(dialog).findAllByRole('checkbox', {
       name: 'Bug',
     });
-    await user.click(bug[1]);
+    if (addBug === undefined) throw new Error('No add label checkbox');
+    await user.click(addBug);
     await user.selectOptions(
       within(dialog).getByLabelText('Set priority'),
       'urgent'
@@ -139,9 +140,11 @@ describe('TriageRulesSection', () => {
     await waitFor(() => {
       expect(onSave).toHaveBeenCalledTimes(1);
     });
-    const [rules, done] = onSave.mock.calls[0];
+    const call = onSave.mock.calls[0];
+    if (call === undefined) throw new Error('Nothing was saved');
+    const [rules, done] = call;
     expect(done).toBe('Triage rule saved.');
-    expect(rules[0].rule_id).toBe('r-1');
+    expect(rules[0]?.rule_id).toBe('r-1');
     expect(rules[1]).toMatchObject({
       rule_id: null,
       name: 'Crashes',
@@ -212,7 +215,7 @@ describe('TriageRulesSection', () => {
     await user.click(screen.getByRole('button', { name: 'Turn off First' }));
 
     await waitFor(() => {
-      expect(onSave.mock.calls.at(-1)?.[0][0].enabled).toBe(false);
+      expect(onSave.mock.calls.at(-1)?.[0][0]?.enabled).toBe(false);
     });
   });
 

@@ -582,6 +582,7 @@ export const TriageRulesSection: React.FC<TriageRulesSectionProps> = ({
   const move = (index: number, by: number): void => {
     const next = rules.map((rule) => bodyOf(rule));
     const [picked] = next.splice(index, 1);
+    if (picked === undefined) return;
     next.splice(index + by, 0, picked);
     saveList(next, 'Triage rules reordered.');
   };

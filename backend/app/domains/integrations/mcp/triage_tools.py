@@ -10,8 +10,8 @@ from datetime import datetime
 from typing import Any
 
 from app.common import issue_triage
-from app.common.api.schemas.issues import TriageAccept, TriageDecline, TriageDuplicate, TriageSnooze
 from app.common.api.dependencies.repositories import Repositories
+from app.common.api.schemas.issues import TriageAccept, TriageDecline, TriageDuplicate, TriageSnooze
 from app.common.api.schemas.teams import TriageSettingsRead, TriageSettingsUpdate
 from app.common.db.dynamo.team_config import TriageSettings
 from app.common.triage_rules import rule_warnings
