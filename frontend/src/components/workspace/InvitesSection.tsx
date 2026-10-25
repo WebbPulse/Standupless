@@ -2,6 +2,8 @@
  * The outstanding invites of one workspace: creating them, revoking them, and
  * showing a new invite's token. The token comes back on creation only and is
  * never readable again, so it is held in state and surfaced until dismissed.
+ * A member the workspace lets invite sees the form alone, offering member or
+ * guest, because listing and revoking others' invites stays with admins.
  */
 
 import React, { useState } from 'react';
@@ -11,7 +13,7 @@ import {
   useMutationWithRefetch,
 } from '@webbpulse/api-client/react';
 import { createInvite, listInvites, revokeInvite } from '../../api/workspaces';
-import { roleLabel } from '../../lib/capabilities';
+import { canManageMembers, roleLabel } from '../../lib/capabilities';
 import { errorMessage } from '../../lib/errors';
 import { inviteLink, invitesKey } from '../../lib/queryKeys';
 import type {
@@ -37,6 +39,9 @@ const POLL_MS = 30000;
 /** The roles an invite may carry. The contract never issues an owner invite. */
 const INVITE_ROLES: InviteRole[] = ['admin', 'member', 'guest'];
 
+/** The roles a member who is not an admin may invite at. */
+const MEMBER_INVITE_ROLES: InviteRole[] = ['member', 'guest'];
+
 /** The column layout the header and every row share. */
 const COLUMNS =
   'grid grid-cols-[minmax(0,1fr)_5rem_auto_auto] items-center gap-3 px-3';
@@ -47,16 +52,10 @@ const expiryLabel = (value: string): string => {
   return Number.isNaN(parsed.getTime()) ? '-' : parsed.toLocaleDateString();
 };
 
-/** Lists and creates invites, and shows a new one's token once. */
-export const InvitesSection: React.FC<InvitesSectionProps> = ({
-  workspace,
-}) => {
+/** The outstanding invites with a revoke on each, which only an admin reads. */
+const PendingInvites: React.FC<InvitesSectionProps> = ({ workspace }) => {
   const auth = useQueryAuth();
   const queryKey = invitesKey(workspace.id);
-  const [email, setEmail] = useState('');
-  const [role, setRole] = useState<InviteRole>('member');
-  const [created, setCreated] = useState<InviteCreatedRead | null>(null);
-  const [copied, setCopied] = useState(false);
 
   const { data, error, isLoading } = usePolledQuery(
     ({ signal }) => listInvites(workspace.id, signal),
@@ -67,55 +66,13 @@ export const InvitesSection: React.FC<InvitesSectionProps> = ({
     }
   );
 
-  const {
-    mutate: invite,
-    isMutating,
-    error: createError,
-  } = useMutationWithRefetch(
-    (body: { email: string; role: InviteRole }) =>
-      createInvite(workspace.id, body),
-    queryKey
-  );
-
   const { mutate: revoke, error: revokeError } = useMutationWithRefetch(
     (inviteId: string) => revokeInvite(workspace.id, inviteId),
     queryKey
   );
 
-  const canSubmit = email.trim() !== '' && !isMutating;
-
-  const onSubmit = (event: React.FormEvent): void => {
-    event.preventDefault();
-    if (!canSubmit) return;
-    void invite({ email: email.trim(), role })
-      .then((result) => {
-        setCreated(result);
-        setCopied(false);
-        setEmail('');
-        setRole('member');
-      })
-      .catch(() => undefined);
-  };
-
-  const onCopy = (): void => {
-    if (created === null) return;
-    void globalThis.navigator.clipboard
-      ?.writeText(inviteLink(created.token))
-      .then(() => {
-        setCopied(true);
-      })
-      .catch(() => undefined);
-  };
-
   return (
-    <section className="space-y-4">
-      <div className="space-y-1">
-        <h2 className="text-base font-semibold">Invites</h2>
-        <p className="text-sm text-text-muted">
-          Invites waiting to be accepted, and a form to send another.
-        </p>
-      </div>
-
+    <>
       {error !== null && (
         <ErrorAlert
           message={errorMessage(error, 'Could not load the invites.')}
@@ -126,36 +83,6 @@ export const InvitesSection: React.FC<InvitesSectionProps> = ({
           message={errorMessage(revokeError, 'Could not revoke that invite.')}
         />
       )}
-
-      {created !== null && (
-        <div
-          role="status"
-          className="space-y-3 rounded-md border border-success/30 bg-success-soft p-3"
-        >
-          <p className="text-sm text-text">
-            Invite created for {created.email}. This link is shown once, so copy
-            it now and send it to them.
-          </p>
-          <code className="block overflow-x-auto rounded-sm border border-line bg-bg px-2 py-1 font-mono text-xs text-text">
-            {inviteLink(created.token)}
-          </code>
-          <div className="flex gap-1.5">
-            <Button variant="primary" size="sm" onClick={onCopy}>
-              {copied ? 'Copied' : 'Copy link'}
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => {
-                setCreated(null);
-              }}
-            >
-              Dismiss
-            </Button>
-          </div>
-        </div>
-      )}
-
       {isLoading || data === null ? (
         <Spinner label="Loading invites" />
       ) : data.length === 0 ? (
@@ -204,6 +131,98 @@ export const InvitesSection: React.FC<InvitesSectionProps> = ({
           </ul>
         </div>
       )}
+    </>
+  );
+};
+
+/** Lists and creates invites, and shows a new one's token once. */
+export const InvitesSection: React.FC<InvitesSectionProps> = ({
+  workspace,
+}) => {
+  const queryKey = invitesKey(workspace.id);
+  const manages = canManageMembers(workspace.role);
+  const roles = manages ? INVITE_ROLES : MEMBER_INVITE_ROLES;
+  const [email, setEmail] = useState('');
+  const [role, setRole] = useState<InviteRole>('member');
+  const [created, setCreated] = useState<InviteCreatedRead | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  const {
+    mutate: invite,
+    isMutating,
+    error: createError,
+  } = useMutationWithRefetch(
+    (body: { email: string; role: InviteRole }) =>
+      createInvite(workspace.id, body),
+    queryKey
+  );
+
+  const canSubmit = email.trim() !== '' && !isMutating;
+
+  const onSubmit = (event: React.FormEvent): void => {
+    event.preventDefault();
+    if (!canSubmit) return;
+    void invite({ email: email.trim(), role })
+      .then((result) => {
+        setCreated(result);
+        setCopied(false);
+        setEmail('');
+        setRole('member');
+      })
+      .catch(() => undefined);
+  };
+
+  const onCopy = (): void => {
+    if (created === null) return;
+    void globalThis.navigator.clipboard
+      ?.writeText(inviteLink(created.token))
+      .then(() => {
+        setCopied(true);
+      })
+      .catch(() => undefined);
+  };
+
+  return (
+    <section className="space-y-4">
+      <div className="space-y-1">
+        <h2 className="text-base font-semibold">Invites</h2>
+        <p className="text-sm text-text-muted">
+          {manages
+            ? 'Invites waiting to be accepted, and a form to send another.'
+            : 'Invite someone to this workspace as a member or a guest.'}
+        </p>
+      </div>
+
+      {created !== null && (
+        <div
+          role="status"
+          className="space-y-3 rounded-md border border-success/30 bg-success-soft p-3"
+        >
+          <p className="text-sm text-text">
+            Invite created for {created.email}. This link is shown once, so copy
+            it now and send it to them.
+          </p>
+          <code className="block overflow-x-auto rounded-sm border border-line bg-bg px-2 py-1 font-mono text-xs text-text">
+            {inviteLink(created.token)}
+          </code>
+          <div className="flex gap-1.5">
+            <Button variant="primary" size="sm" onClick={onCopy}>
+              {copied ? 'Copied' : 'Copy link'}
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                setCreated(null);
+              }}
+            >
+              Dismiss
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {manages && <PendingInvites workspace={workspace} />}
 
       <form
         className="space-y-4 rounded-md border border-line p-4"
@@ -237,7 +256,7 @@ export const InvitesSection: React.FC<InvitesSectionProps> = ({
               setRole(event.target.value as InviteRole);
             }}
           >
-            {INVITE_ROLES.map((item) => (
+            {roles.map((item) => (
               <option key={item} value={item}>
                 {roleLabel(item)}
               </option>

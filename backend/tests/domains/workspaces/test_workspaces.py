@@ -131,6 +131,8 @@ def test_a_workspace_carries_the_fields_the_frontend_reads(client: TestClient, r
         "auth_policy_reason",
         "auth_policy_allowed_methods",
         "branch_format",
+        "invite_permission",
+        "team_creation_permission",
     }
     assert row["id"] == WORKSPACE
     assert row["plan"] == "free"

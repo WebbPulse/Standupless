@@ -238,6 +238,9 @@ export type StatusCategory =
 /** How a workspace builds the git branch names its members copy. */
 export type BranchFormat = 'key_title' | 'user_key_title' | 'key';
 
+/** Who a workspace permission setting lets act: admins only, or every member. */
+export type PermissionLevel = 'admins' | 'members';
+
 /** One workspace the signed in user belongs to. */
 export interface WorkspaceRead {
   id: string;
@@ -265,6 +268,10 @@ export interface WorkspaceRead {
   auth_policy_reason?: AuthPolicyReason | null;
   /** How every member's copied git branch names are built. */
   branch_format?: BranchFormat;
+  /** Who may invite people, admins only by default. */
+  invite_permission?: PermissionLevel;
+  /** Who may create teams, every member by default. */
+  team_creation_permission?: PermissionLevel;
   /** The sign-in methods the workspace allows, when the session used another. */
   auth_policy_allowed_methods?: SignInMethod[] | null;
 }
@@ -517,6 +524,8 @@ export interface WorkspaceUpdate {
   accent_color?: string | null;
   project_update_interval_days?: ProjectUpdateInterval;
   branch_format?: BranchFormat;
+  invite_permission?: PermissionLevel;
+  team_creation_permission?: PermissionLevel;
 }
 
 /** One member of a workspace. */

@@ -4,7 +4,12 @@
  * server authorizes every call, and hiding a control is presentation only.
  */
 
-import type { TeamRole, WorkspaceRole } from '../types/Api';
+import type {
+  PermissionLevel,
+  TeamRole,
+  WorkspaceRead,
+  WorkspaceRole,
+} from '../types/Api';
 
 /** Whether the role may schedule or cancel the workspace's deletion. */
 export const canDeleteWorkspace = (role: WorkspaceRole | undefined): boolean =>
@@ -25,9 +30,27 @@ export const canManageMembers = (role: WorkspaceRole | undefined): boolean =>
 export const canGrantOwner = (role: WorkspaceRole | undefined): boolean =>
   role === 'owner';
 
-/** Whether the role may create a team. A guest may not. */
-export const canCreateTeam = (role: WorkspaceRole | undefined): boolean =>
-  role === 'owner' || role === 'admin' || role === 'member';
+/**
+ * Whether the role may create a team. A guest never may, and a member only
+ * while the workspace lets every member create teams, which is the default.
+ */
+export const canCreateTeam = (
+  role: WorkspaceRole | undefined,
+  permission: PermissionLevel | undefined = 'members'
+): boolean =>
+  role === 'owner' ||
+  role === 'admin' ||
+  (role === 'member' && permission === 'members');
+
+/**
+ * Whether the caller may invite people. Admins always may, and a member only
+ * while the workspace lets every member invite. A guest never may.
+ */
+export const canInviteMembers = (
+  workspace: Pick<WorkspaceRead, 'role' | 'invite_permission'>
+): boolean =>
+  canManageMembers(workspace.role) ||
+  (workspace.role === 'member' && workspace.invite_permission === 'members');
 
 /** Whether the role may delete a team, which the contract reserves. */
 export const canDeleteTeam = (role: WorkspaceRole | undefined): boolean =>

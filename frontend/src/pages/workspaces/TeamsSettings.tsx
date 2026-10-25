@@ -48,6 +48,7 @@ const TeamsSettings: React.FC = () => {
       Create team
     </Button>
   ) : undefined;
+  const limited = workspace?.role === 'member' && !createTeam.canCreate;
 
   return (
     <WorkspaceShell
@@ -66,6 +67,11 @@ const TeamsSettings: React.FC = () => {
           </div>
           {create}
         </div>
+        {limited && (
+          <p className="text-sm text-text-muted">
+            Only workspace admins can create teams in this workspace.
+          </p>
+        )}
 
         {error !== null && (
           <ErrorAlert message={errorMessage(error, 'Could not load teams.')} />

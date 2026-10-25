@@ -367,7 +367,7 @@ def list_invites(
 @router.post("/{workspace_id}/invites", response_model=InviteCreated, status_code=status.HTTP_201_CREATED)
 def create_invite(
     payload: InviteCreate,
-    context: Annotated[AuthzContext, Depends(require(Capability.WORKSPACE_ADMIN))],
+    context: Annotated[AuthzContext, Depends(require(Capability.INVITE_CREATE))],
     repositories: Annotated[Repositories, Depends(get_repositories)],
 ) -> InviteCreated:
     """Store an invite, mail it, and return its token exactly once.
@@ -375,7 +375,8 @@ def create_invite(
     Only the token's SHA-256 hash is stored, so this response is the only place
     the token is readable. It is still returned after the mail goes out, because
     the copy-link flow is what an admin falls back on when the address is one this
-    environment cannot reach, and a failed send never fails the invite.
+    environment cannot reach, and a failed send never fails the invite. A member
+    may invite at member or guest when the workspace's invite setting allows it.
     """
     return workspace_members.create_invite(repositories, context, payload)
 
@@ -383,10 +384,10 @@ def create_invite(
 @router.delete("/{workspace_id}/invites/{invite_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_invite(
     invite_id: Annotated[str, Path(min_length=1)],
-    context: Annotated[AuthzContext, Depends(require(Capability.WORKSPACE_ADMIN))],
+    context: Annotated[AuthzContext, Depends(require(Capability.INVITE_REVOKE))],
     repositories: Annotated[Repositories, Depends(get_repositories)],
 ) -> Response:
-    """Revoke an invite before it is accepted."""
+    """Revoke an invite before it is accepted. A member may revoke only an invite they sent."""
     workspace_members.revoke_invite(repositories, context, invite_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 

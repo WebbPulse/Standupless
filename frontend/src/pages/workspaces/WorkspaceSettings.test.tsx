@@ -128,7 +128,8 @@ const invite: InviteRead = {
 /** A resolved workspace context with the caller holding `role`. */
 const resolved = (
   role: WorkspaceRole,
-  purgeAfter: string | null = null
+  purgeAfter: string | null = null,
+  invitePermission: WorkspaceRead['invite_permission'] = 'admins'
 ): WorkspaceContextType => {
   const workspace: WorkspaceRead = {
     id: 'ws-1',
@@ -138,6 +139,7 @@ const resolved = (
     created_at: '2026-09-17T00:00:00Z',
     role,
     purge_after: purgeAfter,
+    invite_permission: invitePermission,
   };
   return {
     workspace,
@@ -183,6 +185,39 @@ describe('WorkspaceSettings access', () => {
     ).toBeInTheDocument();
     expect(screen.queryByText('Members')).not.toBeInTheDocument();
     expect(listMembers).not.toHaveBeenCalled();
+    expect(screen.queryByText('Invite someone')).not.toBeInTheDocument();
+  });
+
+  it('gives a member the invite form alone when the workspace lets members invite', async () => {
+    createInvite.mockResolvedValue({ ...invite, token: 'tok-abc' });
+    useWorkspaceMock.mockReturnValue(resolved('member', null, 'members'));
+    const user = userEvent.setup();
+    renderPage();
+
+    const roles = screen.getByLabelText('Role');
+    expect(
+      Array.from(roles.querySelectorAll('option')).map((item) => item.value)
+    ).toEqual(['member', 'guest']);
+    expect(listInvites).not.toHaveBeenCalled();
+    expect(screen.queryByText('Members')).not.toBeInTheDocument();
+
+    await user.type(screen.getByLabelText('Email'), 'new@example.com');
+    await user.selectOptions(roles, 'guest');
+    await user.click(screen.getByRole('button', { name: 'Create invite' }));
+
+    await waitFor(() => {
+      expect(createInvite).toHaveBeenCalledWith({
+        email: 'new@example.com',
+        role: 'guest',
+      });
+    });
+  });
+
+  it('never gives a guest the invite form', () => {
+    useWorkspaceMock.mockReturnValue(resolved('guest', null, 'members'));
+    renderPage();
+
+    expect(screen.queryByText('Invite someone')).not.toBeInTheDocument();
   });
 });
 

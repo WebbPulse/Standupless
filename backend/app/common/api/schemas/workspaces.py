@@ -29,6 +29,8 @@ InvitableRoleField = Literal["admin", "member", "guest"]
 
 BranchFormatField = Literal["key_title", "user_key_title", "key"]
 
+PermissionLevelField = Literal["admins", "members"]
+
 
 class WorkspaceCreate(BaseModel):
     """The body `POST /api/workspaces` takes."""
@@ -62,8 +64,9 @@ class WorkspaceCreate(BaseModel):
 class WorkspaceUpdate(BaseModel):
     """The body `PATCH /api/workspaces/{workspace_id}` takes.
 
-    The name, the accent color, the default project update cadence and the git
-    branch name format are editable. The slug is not: it is the tenant's public handle and changing one
+    The name, the accent color, the default project update cadence, the git
+    branch name format and who may invite people or create teams are editable.
+    The slug is not: it is the tenant's public handle and changing one
     would break every link that carries it. An absent field is left alone, and an
     explicit null `accent_color` goes back to the Standupless default.
     """
@@ -74,6 +77,14 @@ class WorkspaceUpdate(BaseModel):
     branch_format: Optional[BranchFormatField] = Field(
         default=None,
         description="How copied git branch names are built: key_title, user_key_title or key",
+    )
+    invite_permission: Optional[PermissionLevelField] = Field(
+        default=None,
+        description="Who may invite new members: admins, or every member",
+    )
+    team_creation_permission: Optional[PermissionLevelField] = Field(
+        default=None,
+        description="Who may create teams: admins, or every member",
     )
 
     @field_validator("accent_color")
@@ -137,6 +148,14 @@ class WorkspaceRead(BaseModel):
         default="key_title",
         description="How copied git branch names are built: key_title, user_key_title or key",
     )
+    invite_permission: PermissionLevelField = Field(
+        default="admins",
+        description="Who may invite new members: admins, or every member",
+    )
+    team_creation_permission: PermissionLevelField = Field(
+        default="members",
+        description="Who may create teams: admins, or every member",
+    )
 
     @classmethod
     def from_row(
@@ -170,6 +189,8 @@ class WorkspaceRead(BaseModel):
             auth_policy_reason=auth_policy_reason,  # pyright: ignore[reportArgumentType]
             auth_policy_allowed_methods=auth_policy_allowed_methods,
             branch_format=workspace.branch_format,  # pyright: ignore[reportArgumentType]
+            invite_permission=workspace.invite_permission,  # pyright: ignore[reportArgumentType]
+            team_creation_permission=workspace.team_creation_permission,  # pyright: ignore[reportArgumentType]
         )
 
 

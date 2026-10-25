@@ -279,7 +279,10 @@ const WorkspaceOverlays: React.FC = () => {
     [openCreateIssue, closeCreateIssue, request, writable.length, hasDraft]
   );
 
-  const mayCreateTeam = canCreateTeam(role);
+  const mayCreateTeam = canCreateTeam(
+    role,
+    workspace?.team_creation_permission
+  );
   const createTeam = useMemo<CreateTeamState>(
     () => ({
       open: () => {

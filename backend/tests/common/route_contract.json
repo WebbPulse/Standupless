@@ -2766,13 +2766,13 @@
     "path": "/api/workspaces/{workspace_id}/invites"
   },
   {
-    "auth": "workspace:admin",
+    "auth": "invite:create",
     "domain": "workspaces",
     "method": "POST",
     "path": "/api/workspaces/{workspace_id}/invites"
   },
   {
-    "auth": "workspace:admin",
+    "auth": "invite:revoke",
     "domain": "workspaces",
     "method": "DELETE",
     "path": "/api/workspaces/{workspace_id}/invites/{invite_id}"

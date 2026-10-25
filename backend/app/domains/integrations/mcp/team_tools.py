@@ -997,7 +997,8 @@ TEAM_TOOLS: tuple[Tool, ...] = (
     Tool(
         name="create_team",
         description=(
-            "Create a team with the default statuses and the caller as its admin. Guests may not create teams. "
+            "Create a team with the default statuses and the caller as its admin. Guests may not create teams, and "
+            "members only while the workspace lets every member create them. "
             "A private team is seen only by its members, who join by being added. parent_team_id creates it as a "
             "sub-team of that top-level team, inheriting its statuses, labels, estimates and cycle settings. "
             "copy_settings_from_team_id instead starts it with a copy of another team's statuses, labels, "

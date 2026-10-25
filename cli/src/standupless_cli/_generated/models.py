@@ -3535,12 +3535,14 @@ class WorkspaceRead(TypedDict):
     deletion_scheduled_by: NotRequired[str | None]
     icon_url: NotRequired[str | None]
     id: str
+    invite_permission: NotRequired[Literal["admins", "members"]]
     name: str
     plan: str
     project_update_interval_days: NotRequired[int]
     purge_after: NotRequired[str | None]
     role: NotRequired[Literal["owner", "admin", "member", "guest"] | None]
     slug: str
+    team_creation_permission: NotRequired[Literal["admins", "members"]]
 
 
 class WorkspaceSummaryRead(TypedDict):
@@ -3553,8 +3555,10 @@ class WorkspaceSummaryRead(TypedDict):
 class WorkspaceUpdate(TypedDict):
     accent_color: NotRequired[str | None]
     branch_format: NotRequired[Literal["key_title", "user_key_title", "key"] | None]
+    invite_permission: NotRequired[Literal["admins", "members"] | None]
     name: NotRequired[str | None]
     project_update_interval_days: NotRequired[int | None]
+    team_creation_permission: NotRequired[Literal["admins", "members"] | None]
 
 
 class AppCommonApiSchemasIssuesIssueRead(TypedDict):

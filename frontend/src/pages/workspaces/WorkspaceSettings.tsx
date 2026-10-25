@@ -23,7 +23,7 @@ import WebhooksSection from '../../components/workspace/WebhooksSection';
 import WorkspaceLogoSection from '../../components/workspace/WorkspaceLogoSection';
 import WorkspaceShell from '../../components/workspace/WorkspaceShell';
 import { useWorkspace } from '../../hooks/useWorkspace';
-import { canManageMembers } from '../../lib/capabilities';
+import { canInviteMembers, canManageMembers } from '../../lib/capabilities';
 
 /** Renders the logo, accent color, member, invite, GitHub and webhook management for this workspace, and its danger zone. */
 const WorkspaceSettings: React.FC = () => {
@@ -66,9 +66,16 @@ const WorkspaceSettings: React.FC = () => {
               </SettingsAnchor>
             </>
           ) : (
-            <p className="text-sm text-text-muted">
-              Only an owner or an admin can manage this workspace.
-            </p>
+            <>
+              <p className="text-sm text-text-muted">
+                Only an owner or an admin can manage this workspace.
+              </p>
+              {canInviteMembers(workspace) && (
+                <SettingsAnchor id="invites">
+                  <InvitesSection workspace={workspace} />
+                </SettingsAnchor>
+              )}
+            </>
           )}
           <DangerZoneSection workspace={workspace} />
         </div>
