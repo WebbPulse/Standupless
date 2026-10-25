@@ -375,7 +375,7 @@ describe('the trash routes', () => {
       retention_days: 30,
     });
     expect(get).toHaveBeenCalledWith('/workspaces/ws-mine/issues/deleted', {
-      params: { team_id: 'proj-1' },
+      query: { team_id: 'proj-1' },
     });
   });
 });

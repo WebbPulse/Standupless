@@ -484,7 +484,7 @@ export const listDeletedIssues = async (
 ): Promise<DeletedIssueListRead> => {
   const response = await apiClient.get<DeletedIssueListRead>(
     `${issuesPath(workspaceId)}/deleted`,
-    { params: { team_id: teamId } }
+    { query: { team_id: teamId } }
   );
   const data = response.data;
   return {
