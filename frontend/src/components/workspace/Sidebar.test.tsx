@@ -443,7 +443,10 @@ describe('the workspace menu', () => {
     const labels = screen
       .getAllByRole('menuitem')
       .map((item) => item.textContent);
-    expect(labels.slice(-2)).toEqual(['All workspaces', 'Log out']);
+    expect(labels.slice(-2)).toEqual([
+      'All workspaces',
+      expect.stringMatching(/^Log out/),
+    ]);
   });
 
   it('shows the one workspace and Create workspace when the caller has only one', async () => {

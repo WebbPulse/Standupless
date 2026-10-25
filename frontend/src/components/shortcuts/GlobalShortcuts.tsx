@@ -8,7 +8,8 @@
  * Shift+V for views, Ctrl+Shift+1 to 9 for the teams in sidebar order,
  * `O` then `M` for the viewer's own member page,
  * `O` then a letter to open a favorite, project, cycle, team, view, member or
- * workspace from a picker, `/` to search, Ctrl+Z to undo the last issue change and `?` for the
+ * workspace from a picker, `/` to search, Ctrl+Z to undo the last issue change,
+ * Alt+Shift+Q to log out and `?` for the
  * list of every shortcut. Registered through the
  * same registry as any page's own shortcuts, so the help overlay and the
  * command palette list them without a second source of truth.
@@ -25,6 +26,7 @@ import {
   CREATE_FULLSCREEN_KEYS,
   useCreateIssue,
 } from '../../hooks/useCreateIssue';
+import { LOG_OUT_KEYS } from '../../lib/logOut';
 import { useShortcut } from '../../hooks/useShortcuts';
 import {
   SIDEBAR_TOGGLE_KEYS,
@@ -70,6 +72,8 @@ export interface GlobalShortcutsProps {
   currentUserId?: string | undefined;
   /** Opens the list of every shortcut. */
   onShowHelp: () => void;
+  /** Signs the viewer out. Without it Alt+Shift+Q is not bound. */
+  onLogOut?: (() => void) | undefined;
 }
 
 /** The heading the navigation shortcuts are listed under. */
@@ -133,6 +137,7 @@ export const GlobalShortcuts: React.FC<GlobalShortcutsProps> = ({
   teams,
   currentUserId,
   onShowHelp,
+  onLogOut,
 }) => {
   const navigate = useNavigate();
   const location = useLocation();
@@ -372,6 +377,14 @@ export const GlobalShortcuts: React.FC<GlobalShortcutsProps> = ({
     label: UNDO_LABEL,
     handler: undo.undo,
     enabled: undo.canUndo,
+  });
+  useShortcut({
+    keys: LOG_OUT_KEYS,
+    label: 'Log out',
+    handler: () => {
+      onLogOut?.();
+    },
+    enabled: onLogOut !== undefined,
   });
   useShortcut({
     keys: '?',
