@@ -56,6 +56,7 @@ import {
   LuLock,
   LuLogOut,
   LuMap,
+  LuPanelLeftClose,
   LuPlus,
   LuRefreshCcw,
   LuRocket,
@@ -147,6 +148,8 @@ export interface SidebarProps {
   workspace: WorkspaceRead;
   /** Called after any link is followed, so a drawer can close. */
   onNavigate?: () => void;
+  /** Collapses the desktop sidebar. Without it no collapse button shows. */
+  onCollapse?: () => void;
 }
 
 const ICON = 'h-4 w-4 shrink-0';
@@ -560,7 +563,11 @@ const TeamSection: React.FC<TeamSectionProps> = ({
  * saves that like a manual expand, once per arrival, so the active sub-team
  * shows in its nested place and collapsing the parent afterwards still hides it.
  */
-export const Sidebar: React.FC<SidebarProps> = ({ workspace, onNavigate }) => {
+export const Sidebar: React.FC<SidebarProps> = ({
+  workspace,
+  onNavigate,
+  onCollapse,
+}) => {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
@@ -928,6 +935,11 @@ export const Sidebar: React.FC<SidebarProps> = ({ workspace, onNavigate }) => {
                 className="absolute top-1 right-1 h-1.5 w-1.5 rounded-full bg-accent"
               />
             )}
+          </IconButton>
+        )}
+        {onCollapse !== undefined && (
+          <IconButton label="Collapse sidebar" size="sm" onClick={onCollapse}>
+            <LuPanelLeftClose className="h-3.5 w-3.5" />
           </IconButton>
         )}
       </div>

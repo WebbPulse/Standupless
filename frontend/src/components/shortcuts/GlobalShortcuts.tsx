@@ -22,6 +22,10 @@ import {
   useCreateIssue,
 } from '../../hooks/useCreateIssue';
 import { useShortcut } from '../../hooks/useShortcuts';
+import {
+  SIDEBAR_TOGGLE_KEYS,
+  toggleSidebarCollapsed,
+} from '../../hooks/useSidebarLayout';
 import { UNDO_KEYS, UNDO_LABEL, useUndo } from '../../hooks/useUndo';
 import {
   currentOrFirstTeam,
@@ -218,6 +222,12 @@ export const GlobalShortcuts: React.FC<GlobalShortcutsProps> = ({
     label: insideTeam === undefined ? 'Go to views' : 'Go to team views',
     group: NAVIGATION,
     handler: go(viewsLanding(slug, insideTeam)),
+  });
+  useShortcut({
+    keys: SIDEBAR_TOGGLE_KEYS,
+    label: 'Toggle sidebar',
+    group: NAVIGATION,
+    handler: toggleSidebarCollapsed,
   });
   useShortcut({
     keys: 'o f',
