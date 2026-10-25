@@ -280,9 +280,7 @@ def test_a_step_up_keeps_the_grant_and_adds_the_new_scopes(client: TestClient, s
     assert refreshed["scope"].split() == ["issues:read", "issues:write", "releases:read"]
 
 
-def test_a_step_up_in_another_workspace_is_a_separate_grant(
-    client: TestClient, server: Any, workspaces: None
-) -> None:
+def test_a_step_up_in_another_workspace_is_a_separate_grant(client: TestClient, server: Any, workspaces: None) -> None:
     """The union is per workspace, so a grant elsewhere neither gains nor lends scopes."""
     authorize_for(server, OWNER, CLAUDE, WORKSPACE_ONE, "issues:read issues:write")
 
