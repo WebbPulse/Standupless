@@ -11,6 +11,7 @@ import { useQueryAuth } from '@webbpulse/auth/react';
 import { usePolledQuery, type QueryKey } from '@webbpulse/api-client/react';
 import { listProjects } from '../api/planning';
 import { projectsKey } from '../lib/queryKeys';
+import { useLiveQueryKey } from '../lib/realtime';
 import type {
   ProjectListQuery,
   ProjectRead,
@@ -116,6 +117,7 @@ export const useWorkspaceProjects = (
     [workspaceId, teamId, rollUp, narrowingKey]
   );
 
+  useLiveQueryKey(queryKey, enabled && workspaceId !== '');
   const { data, error, isLoading, refetch } = usePolledQuery(read, {
     intervalMs: POLL_MS,
     enabled: enabled && workspaceId !== '',

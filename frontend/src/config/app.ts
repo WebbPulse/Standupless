@@ -54,3 +54,19 @@ export const parseDesktopHandoffSchemes = (value: unknown): string[] => {
 /** The custom URL schemes this build may hand a desktop sign-in to. */
 export const desktopHandoffSchemes: readonly string[] =
   parseDesktopHandoffSchemes(import.meta.env['VITE_DESKTOP_HANDOFF_SCHEMES']);
+
+/**
+ * Reads the change socket URL. Only a `wss://` URL, or `ws://` for a local
+ * stack, is taken; anything else answers empty, which leaves the build on
+ * polling alone.
+ */
+export const parseRealtimeUrl = (value: unknown): string => {
+  if (typeof value !== 'string') return '';
+  const raw = value.trim().replace(/\/+$/, '');
+  return /^wss?:\/\/[^\s?#]+$/i.test(raw) ? raw : '';
+};
+
+/** The change socket this build connects to, or empty for none. */
+export const realtimeUrl: string = parseRealtimeUrl(
+  import.meta.env['VITE_REALTIME_URL']
+);

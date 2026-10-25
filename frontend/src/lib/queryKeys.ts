@@ -905,3 +905,10 @@ export const memberActivityKey = (
   workspaceId: string,
   userId: string
 ): QueryKey => ['member', workspaceId, userId, 'activity'];
+
+/** One cycle's detail as the cycle page reads it. */
+export const cycleKey = (
+  workspaceId: string,
+  teamId: string,
+  cycleId: string
+): QueryKey => ['cycle', workspaceId, teamId, cycleId];
