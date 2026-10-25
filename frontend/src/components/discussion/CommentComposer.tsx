@@ -417,6 +417,7 @@ export const CommentComposer: React.FC<CommentComposerProps> = ({
           }}
           onSubmit={submit}
           onFocusChange={setFocused}
+          selectionIssue={{ issueId }}
           {...(onCancel === undefined ? {} : { onCancel })}
         />
       </Suspense>

@@ -478,6 +478,7 @@ const CommentItem: React.FC<CommentItemProps> = ({
                 onCancel={() => {
                   setEditing(false);
                 }}
+                selectionIssue={{ issueId }}
               />
             </Suspense>
             <div className="flex items-center justify-end gap-1.5">

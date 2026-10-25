@@ -589,6 +589,14 @@ export const DocumentDetail: React.FC = () => {
                   {...(page.can_edit
                     ? { placeholder: 'Start writing...' }
                     : {})}
+                  {...(page.can_edit
+                    ? {
+                        selectionIssue:
+                          page.parent_kind === 'team'
+                            ? { teamId: page.parent_id }
+                            : {},
+                      }
+                    : {})}
                   {...(isMember ? { mentionPeople: people } : {})}
                 />
               </div>

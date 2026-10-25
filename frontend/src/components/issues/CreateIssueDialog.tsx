@@ -215,6 +215,12 @@ export interface CreateIssuePreset {
   parentKey?: string;
   /** The template the draft starts from, in place of the team's default. */
   templateId?: string;
+  /** The title the draft starts with, such as a selected line of text. */
+  title?: string;
+  /** The description Markdown the draft starts with, beside `title`. */
+  description?: string;
+  /** An issue the new one is filed as related to, kept across a team change. */
+  relatedIssueId?: string;
 }
 
 /** The properties a draft holds, all of them team scoped except the last. */
@@ -304,6 +310,18 @@ const withTemplate = (draft: Draft, fill: TemplatePrefill): Draft => {
     cycleId: draft.cycleId ?? fill.cycleId ?? null,
   };
 };
+
+/**
+ * The text a caller started the draft on, such as a selection. A draft seeded
+ * with text belongs to where the text came from, so it is never stored as the
+ * browser's draft, and closing it only asks first once the text is edited.
+ */
+const seedTextOf = (
+  preset: CreateIssuePreset | undefined
+): TemplateText | null =>
+  preset?.title === undefined
+    ? null
+    : { title: preset.title, body: preset.description ?? '' };
 
 /** Whether a caller preset anything on the dialog. */
 const hasPreset = (preset: CreateIssuePreset | undefined): boolean =>
@@ -554,9 +572,10 @@ export const CreateIssueDialog: React.FC<CreateIssueDialogProps> = ({
       ? currentUserId
       : null;
   const [saved] = useState(() => readIssueDraft(workspaceId, currentUserId));
+  const [seed] = useState(() => seedTextOf(preset));
   const restored = saved !== null && !hasPreset(preset) ? saved : null;
   const [heldDraft, setHeldDraft] = useState<IssueDraft | null>(
-    restored === null ? saved : null
+    restored === null && seed === null ? saved : null
   );
   const discarded = useRef(false);
   const draftKey = issueDraftStorageKey(workspaceId, currentUserId);
@@ -573,8 +592,8 @@ export const CreateIssueDialog: React.FC<CreateIssueDialogProps> = ({
   const pendingTemplate = useRef<{ teamId: string; id: string | null } | null>(
     restored === null ? { teamId, id: preset?.templateId ?? null } : null
   );
-  const [title, setTitle] = useState(restored?.title ?? '');
-  const [body, setBody] = useState(restored?.body ?? '');
+  const [title, setTitle] = useState(restored?.title ?? seed?.title ?? '');
+  const [body, setBody] = useState(restored?.body ?? seed?.body ?? '');
   const [draft, setDraft] = useState<Draft>(() =>
     restored === null
       ? withSelf(presetDraft(preset), selfAssignee)
@@ -724,6 +743,12 @@ export const CreateIssueDialog: React.FC<CreateIssueDialogProps> = ({
     subIssues.some(
       (row) => row.templateKey === undefined && row.title.trim() !== ''
     );
+  const edited =
+    seed === null
+      ? dirty
+      : title.trim() !== seed.title.trim() ||
+        body.trim() !== seed.body.trim() ||
+        attached.length > 0;
   const canNest = draft.parent === null;
 
   const prefillOf = (template: TemplateRead): TemplatePrefill =>
@@ -809,10 +834,11 @@ export const CreateIssueDialog: React.FC<CreateIssueDialogProps> = ({
     subIssues: subIssues.map((row) => row.title),
   };
   const storedJson = JSON.stringify(stored);
-  const persisting = heldDraft === null && draftKey !== null;
+  const persisting = heldDraft === null && draftKey !== null && seed === null;
 
   const state = useRef({
     dirty,
+    edited,
     confirming,
     lastCreated,
     onCreated,
@@ -823,6 +849,7 @@ export const CreateIssueDialog: React.FC<CreateIssueDialogProps> = ({
   useEffect(() => {
     state.current = {
       dirty,
+      edited,
       confirming,
       lastCreated,
       onCreated,
@@ -867,7 +894,7 @@ export const CreateIssueDialog: React.FC<CreateIssueDialogProps> = ({
       titleInput.current?.focus();
       return;
     }
-    if (current.dirty && !saveDraft()) {
+    if (current.edited && !saveDraft()) {
       setConfirming(true);
       return;
     }
@@ -1094,6 +1121,7 @@ export const CreateIssueDialog: React.FC<CreateIssueDialogProps> = ({
     setIsSaving(true);
     setError(null);
     const original = duplicateOf;
+    const related = preset?.relatedIssueId;
     const sentBody = attached.length === 0 ? body : stripPending(body);
     const form = formTemplate;
     const chosen =
@@ -1127,6 +1155,17 @@ export const CreateIssueDialog: React.FC<CreateIssueDialogProps> = ({
           }).catch(() => {
             showToast(
               `Created ${issue.key}, but could not mark it a duplicate of ${original.key}`,
+              'error'
+            );
+          });
+        }
+        if (related !== undefined) {
+          await createLink(workspaceId, issue.id, {
+            type: 'relates_to',
+            target_issue_id: related,
+          }).catch(() => {
+            showToast(
+              `Created ${issue.key}, but could not relate it to the issue it came from`,
               'error'
             );
           });
