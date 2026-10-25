@@ -1801,11 +1801,11 @@ export const hiddenSubGroupKey = (group: string, sub: string): string =>
   hiddenColumnKey(`${group}/${sub}`);
 
 /** A group hidden from a list, with the parent it sits in when it is a sub-group. */
-export interface HiddenGroup<G extends { key: string } = IssueGroup> {
+export interface HiddenGroup {
   /** The folded-set key that hides the group. */
   key: string;
-  group: G;
-  parent?: G | undefined;
+  group: IssueGroup;
+  parent?: IssueGroup | undefined;
 }
 
 /**
@@ -1814,14 +1814,13 @@ export interface HiddenGroup<G extends { key: string } = IssueGroup> {
  * no header to hide, so its one section always shows.
  */
 export const splitHiddenSections = <
-  G extends { key: string; field: string },
-  S extends { group: G; subs: G[] | null },
+  S extends { group: IssueGroup; subs: IssueGroup[] | null },
 >(
   sections: readonly S[],
   collapsed: ReadonlySet<string>
-): { shown: S[]; hidden: HiddenGroup<G>[] } => {
+): { shown: S[]; hidden: HiddenGroup[] } => {
   const shown: S[] = [];
-  const hidden: HiddenGroup<G>[] = [];
+  const hidden: HiddenGroup[] = [];
   for (const section of sections) {
     const { group, subs } = section;
     const key = hiddenColumnKey(group.key);
@@ -1833,7 +1832,7 @@ export const splitHiddenSections = <
       shown.push(section);
       continue;
     }
-    const kept: G[] = [];
+    const kept: IssueGroup[] = [];
     for (const sub of subs) {
       const subKey = hiddenSubGroupKey(group.key, sub.key);
       if (collapsed.has(subKey))
