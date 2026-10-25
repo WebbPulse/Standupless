@@ -18,6 +18,9 @@
  * On a parent team the cycle rolls up its visible sub-teams' cycles with the
  * same dates: the header, the burn-up, the breakdown and the issues all cover
  * the same set, with the toolbar's toggle to show the team alone.
+ *
+ * The title is a switcher over the team's cycles, with arrows to step to the
+ * previous or next one.
  */
 
 import React, { useCallback, useMemo, useState } from 'react';
@@ -41,6 +44,7 @@ import {
 import IssueListView from '../../components/issues/view/IssueListView';
 import CapacityDial from '../../components/planning/CapacityDial';
 import CycleProgressPanel from '../../components/planning/CycleProgressPanel';
+import CycleSwitcher from '../../components/planning/CycleSwitcher';
 import EditableText from '../../components/planning/EditableText';
 import ProgressRing from '../../components/planning/ProgressRing';
 import { ErrorAlert } from '../../components/ui/alert';
@@ -675,7 +679,16 @@ export const CycleDetail: React.FC = () => {
 
   return (
     <WorkspaceShell
-      title={<span className="truncate">{cycleTitle(cycle)}</span>}
+      title={
+        <CycleSwitcher
+          workspaceId={workspaceId}
+          slug={slug}
+          teamId={team.id}
+          keyPrefix={team.key_prefix}
+          cycle={cycle}
+        />
+      }
+      tabTitle={cycleTitle(cycle)}
       titleAccessory={
         <FavoriteButton
           workspaceId={workspaceId}
