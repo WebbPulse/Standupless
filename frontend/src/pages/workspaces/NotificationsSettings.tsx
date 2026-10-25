@@ -4,7 +4,8 @@
  * Slack or Discord.
  *
  * Email arrives in the format the person picks: a short digest by default, or
- * one email per notification.
+ * one email per notification. Desktop notifications are switched per device,
+ * since the browser holds their permission.
  *
  * Preferences belong to the person, not to the workspace, so a change here
  * applies in every workspace they are a member of. Each switch saves as soon
@@ -32,6 +33,7 @@ import { ErrorAlert } from '../../components/ui/alert';
 import Checkbox from '../../components/ui/checkbox';
 import { Select } from '../../components/ui/select';
 import Spinner from '../../components/ui/spinner';
+import DesktopNotificationsSettings from '../../components/workspace/DesktopNotificationsSettings';
 import DiscordDirectMessages from '../../components/workspace/DiscordDirectMessages';
 import ReturnToast from '../../components/workspace/ReturnToast';
 import SettingsNav from '../../components/workspace/SettingsNav';
@@ -531,6 +533,8 @@ const NotificationsSettings: React.FC = () => {
                 </label>
               ))}
             </fieldset>
+
+            <DesktopNotificationsSettings />
 
             {slackLink !== null && slackLink.configured && (
               <SlackDirectMessages

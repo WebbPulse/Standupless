@@ -21,6 +21,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { LuMenu, LuPanelLeftOpen, LuX } from 'react-icons/lu';
 import { useLocation } from 'react-router-dom';
+import { useDesktopNotifications } from '../../hooks/useDesktopNotifications';
 import { useDesktopTabTitle } from '../../hooks/useDesktopTabTitle';
 import { useSidebarLayout } from '../../hooks/useSidebarLayout';
 import { useWorkspace } from '../../hooks/useWorkspace';
@@ -97,6 +98,7 @@ export const WorkspaceShell: React.FC<WorkspaceShellProps> = ({
   useDesktopTabTitle(
     tabTitle ?? textTitle ?? (title === undefined ? workspace?.name : undefined)
   );
+  useDesktopNotifications(workspace);
   const location = useLocation();
   const [openedAt, setOpenedAt] = useState<string | null>(null);
   const drawerOpen = openedAt === location.pathname;
