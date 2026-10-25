@@ -197,6 +197,11 @@ describe('the workspace webhooks section', () => {
           'projects',
           'project_updates',
           'labels',
+          'documents',
+          'initiatives',
+          'initiative_updates',
+          'customers',
+          'customer_requests',
         ],
         enabled: true,
         team_id: 'team-1',
@@ -288,6 +293,11 @@ describe('the workspace webhooks section', () => {
       'Project updates',
       'Cycles',
       'Labels',
+      'Documents',
+      'Initiatives',
+      'Initiative updates',
+      'Customers',
+      'Customer requests',
     ]) {
       await userEvent.click(screen.getByLabelText(label));
     }

@@ -1,7 +1,8 @@
 """The stream consumer that turns product writes into outbound work.
 
-Issue, comment, cycle, project and label changes each become a delivery for every
-enabled webhook subscribed to that resource type and team, and issue, comment and
+Issue, comment, cycle, project, project update, label, document, initiative,
+initiative update, customer and customer request changes each become a delivery
+for every enabled webhook subscribed to that resource type and team, and issue, comment and
 project update changes a message for every team channel that wants them. Issue and
 comment writes may also queue a job carrying the change to GitHub, for a team whose
 issues sync with a repository, and an issue whose labels changed queues a label
@@ -17,6 +18,12 @@ subscribed.
 
 Nothing is sent for a workspace that is scheduled for deletion or being purged, or
 for a team that is being deleted, so a purge does not announce every row it removes.
+
+A document is heard through its summary row and a customer request through its
+copy under the issue or project it names. A document moved to another parent and
+a request moved to another target are each written as a new row and the removal
+of the old one, and the pair is sent as one update: the new row is skipped, and
+the removal is described against the row that replaced it.
 
 A workspace's endpoint list is remembered for `ENDPOINT_CACHE_SECONDS` inside one
 consumer process. A stream batch holds up to 100 records and most of them come from
@@ -40,8 +47,10 @@ from app.common.api.dependencies.repositories import Repositories
 from app.common.bulk_import import from_bulk_import
 from app.common.composition.consumers import CONSUMERS
 from app.common.core.config import settings
+from app.common.db.dynamo.customers import CUSTOMER, CUSTOMER_TARGET, CustomerRequest
+from app.common.db.dynamo.documents import DOCUMENT
 from app.common.db.dynamo.github import WebhookEndpoint
-from app.common.db.dynamo.planning import CYCLE, PROJECT, PROJECT_UPDATE
+from app.common.db.dynamo.planning import CYCLE, INITIATIVE, INITIATIVE_UPDATE, PROJECT, PROJECT_UPDATE
 from app.common.db.dynamo.team_config import WORKSPACE_LABEL_PREFIX
 from app.common.team_privacy import destination_can_carry
 from app.common.trash_stream import live_view, touches_trash
@@ -126,16 +135,29 @@ def _live_teams(repositories: Repositories, workspace_id: str, team_ids: tuple[s
     return live
 
 
+type Change = tuple[str, Mapping[str, Any], Mapping[str, Any]]
+"""One row change as its stream event name, new image and old image."""
+
+type Resolver = Callable[[Repositories, Change], Change | None]
+"""Turn the half of a two row write into the change it stands for, or `None` to send nothing."""
+
+
 def publish(
-    repositories: Repositories, kind: payloads.Kind, record: Mapping[str, Any], cache: EndpointCache | None = None
+    repositories: Repositories,
+    kind: payloads.Kind,
+    record: Mapping[str, Any],
+    cache: EndpointCache | None = None,
+    resolve: Resolver | None = None,
 ) -> int:
     """Schedule a delivery of one row change to every webhook that wants it.
 
     Returns how many deliveries were scheduled. The delivery ids are derived from
     the stream record, so a batch the stream hands over twice schedules nothing new.
+    `resolve`, when given, runs only once some webhook wants the type, so the
+    reads it makes cost nothing in a workspace without one.
     """
-    new_image = deserialize_image(record, "NewImage")
-    old_image = deserialize_image(record, "OldImage")
+    new_image: Mapping[str, Any] = deserialize_image(record, "NewImage")
+    old_image: Mapping[str, Any] = deserialize_image(record, "OldImage")
     image = new_image or old_image
     if not image:
         return 0
@@ -143,7 +165,13 @@ def publish(
     endpoints = _subscribed(repositories, workspace_id, kind.resource_type, cache)
     if not endpoints:
         return 0
-    event = payloads.describe(repositories, kind, str(record.get("eventName", "")), new_image, old_image)
+    event_name = str(record.get("eventName", ""))
+    if resolve is not None:
+        change = resolve(repositories, (event_name, new_image, old_image))
+        if change is None:
+            return 0
+        event_name, new_image, old_image = change
+    event = payloads.describe(repositories, kind, event_name, new_image, old_image)
     if event is None:
         return 0
     teams = _live_teams(repositories, workspace_id, event.team_ids)
@@ -181,17 +209,98 @@ def _private_only(team_ids: tuple[str, ...], private: set[str]) -> bool:
     return all(team_id in private for team_id in team_ids)
 
 
+PLANNING_KINDS: dict[str, payloads.Kind] = {
+    CYCLE: payloads.CYCLE,
+    PROJECT: payloads.PROJECT,
+    PROJECT_UPDATE: payloads.PROJECT_UPDATE,
+    DOCUMENT: payloads.DOCUMENT,
+    INITIATIVE: payloads.INITIATIVE,
+    INITIATIVE_UPDATE: payloads.INITIATIVE_UPDATE,
+    CUSTOMER: payloads.CUSTOMER,
+    CUSTOMER_TARGET: payloads.CUSTOMER_REQUEST,
+}
+"""The planning row kinds worth sending, by the type each is sent as.
+
+A customer request is heard through its target copy alone, so each change sends
+once, and a merge of two customers, which rewrites that copy in place, reads as
+an update rather than a removal and a creation.
+"""
+
+
 def _planning_kind(record: Mapping[str, Any]) -> payloads.Kind | None:
-    """Whether a planning row is a cycle, a project or a project update, the three worth sending."""
+    """The type a planning row is sent as, or `None` for a row no webhook hears."""
     image = deserialize_image(record, "NewImage") or deserialize_image(record, "OldImage")
-    row_kind = str(image.get("kind", "")) if image else ""
-    if row_kind == CYCLE:
-        return payloads.CYCLE
-    if row_kind == PROJECT:
-        return payloads.PROJECT
-    if row_kind == PROJECT_UPDATE:
-        return payloads.PROJECT_UPDATE
-    return None
+    return PLANNING_KINDS.get(str(image.get("kind", ""))) if image else None
+
+
+def resolve_document(repositories: Repositories, change: Change) -> Change | None:
+    """Fold a document move's two summary writes into one update.
+
+    A move writes the summary under the new parent and then removes the old one,
+    and every other write keeps one summary row. The new row is told apart by a
+    creation time older than its update, since a new document starts with the two
+    equal. The removal is a move while the body row still stands under another
+    parent, and is then described against the summary that replaced it.
+    """
+    event_name, new_image, old_image = change
+    if event_name == "INSERT":
+        return None if new_image.get("created_at") != new_image.get("updated_at") else change
+    if event_name != "REMOVE":
+        return change
+    workspace_id = str(old_image.get("workspace_id", ""))
+    document_id = str(old_image.get("document_id", ""))
+    body = repositories.documents.get_body(workspace_id, document_id)
+    if body is None or (body.parent_kind, body.parent_id) == (old_image.get("parent_kind"), old_image.get("parent_id")):
+        return change
+    moved = repositories.documents.get_summary(workspace_id, body.parent_kind, body.parent_id, document_id)
+    if moved is None:
+        return change
+    return "MODIFY", moved.model_dump(mode="json"), old_image
+
+
+def _surviving_request(repositories: Repositories, old_image: Mapping[str, Any]) -> CustomerRequest | None:
+    """The request a removed target copy belonged to, when the request itself still stands.
+
+    It is looked for under its old customer first, which finds every move to
+    another target. A customer that is gone took its requests with it. Only a
+    request moved to another customer and another target in one edit needs the
+    workspace's request list.
+    """
+    workspace_id = str(old_image.get("workspace_id", ""))
+    customer_id = str(old_image.get("customer_id", ""))
+    request_id = str(old_image.get("request_id", ""))
+    found = repositories.customers.get_request(workspace_id, customer_id, request_id)
+    if found is not None or repositories.customers.get(workspace_id, customer_id) is None:
+        return found
+    return next(
+        (row for row in repositories.customers.list_requests(workspace_id) if row.request_id == request_id), None
+    )
+
+
+def resolve_customer_request(repositories: Repositories, change: Change) -> Change | None:
+    """Fold a request's move to another issue or project into one update.
+
+    The move writes a target copy under the new target and removes the old one.
+    The new copy is told apart by its update time, which a new request does not
+    have yet, and the removal is a move while the request still stands, described
+    against the request as it now reads.
+    """
+    event_name, new_image, old_image = change
+    if event_name == "INSERT":
+        return None if new_image.get("updated_at") else change
+    if event_name != "REMOVE":
+        return change
+    surviving = _surviving_request(repositories, old_image)
+    if surviving is None:
+        return change
+    return "MODIFY", surviving.as_target_copy().model_dump(mode="json"), old_image
+
+
+RESOLVERS: dict[str, Resolver] = {
+    payloads.DOCUMENT.resource_type: resolve_document,
+    payloads.CUSTOMER_REQUEST.resource_type: resolve_customer_request,
+}
+"""The types whose one change can arrive as two row writes."""
 
 
 def _is_label(record: Mapping[str, Any]) -> bool:
@@ -389,7 +498,7 @@ def handle_record(
             return
         kind = _planning_kind(record)
         if kind is not None:
-            publish(repositories, kind, record, cache)
+            publish(repositories, kind, record, cache, RESOLVERS.get(kind.resource_type))
         if kind is payloads.PROJECT_UPDATE:
             channel_events.on_planning(repositories, record, channel_cache)
     elif physical == table_name("team_config", prefix):

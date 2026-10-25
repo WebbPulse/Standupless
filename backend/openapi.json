@@ -28132,7 +28132,12 @@
                 "projects",
                 "project_updates",
                 "cycles",
-                "labels"
+                "labels",
+                "documents",
+                "initiatives",
+                "initiative_updates",
+                "customers",
+                "customer_requests"
               ],
               "type": "string"
             },
@@ -28336,7 +28341,12 @@
                     "projects",
                     "project_updates",
                     "cycles",
-                    "labels"
+                    "labels",
+                    "documents",
+                    "initiatives",
+                    "initiative_updates",
+                    "customers",
+                    "customer_requests"
                   ],
                   "type": "string"
                 },

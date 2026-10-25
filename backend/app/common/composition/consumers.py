@@ -141,6 +141,8 @@ CONSUMERS: Dict[str, ConsumerScope] = {
                 "activity",
                 "comments",
                 "planning",
+                "documents",
+                "customers",
             ),
         ),
     )

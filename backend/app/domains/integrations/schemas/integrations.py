@@ -17,7 +17,19 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 from app.common.db.dynamo.comments import GithubThread
 from app.common.db.dynamo.team_config import TRIGGERS
 
-RESOURCE_TYPE = Literal["issues", "comments", "projects", "project_updates", "cycles", "labels"]
+RESOURCE_TYPE = Literal[
+    "issues",
+    "comments",
+    "projects",
+    "project_updates",
+    "cycles",
+    "labels",
+    "documents",
+    "initiatives",
+    "initiative_updates",
+    "customers",
+    "customer_requests",
+]
 """The kinds of change a webhook may subscribe to, named as the settings page shows them."""
 
 

@@ -11,8 +11,9 @@ A customer lives in the workspace partition in three row shapes:
   under the issue or project it names, so a target's requests are one query.
 
 The `customer#` prefix never matches the other two, whose next character after
-`customer` is an underscore. None of these kinds pass the planning stream
-filters, so no consumer reads them.
+`customer` is an underscore. The customer and the target copy pass the planning
+stream filters, which the integrations stream consumer reads to send customer and
+customer request webhooks.
 """
 
 from __future__ import annotations

@@ -3777,7 +3777,21 @@ class WebhookDeliveryRead(TypedDict):
 class WebhookEndpointCreate(TypedDict, closed=True):
     enabled: NotRequired[bool]
     label: str
-    resource_types: list[Literal["issues", "comments", "projects", "project_updates", "cycles", "labels"]]
+    resource_types: list[
+        Literal[
+            "issues",
+            "comments",
+            "projects",
+            "project_updates",
+            "cycles",
+            "labels",
+            "documents",
+            "initiatives",
+            "initiative_updates",
+            "customers",
+            "customer_requests",
+        ]
+    ]
     team_id: NotRequired[str | None]
     url: str
 
@@ -3805,7 +3819,22 @@ class WebhookEndpointUpdate(TypedDict, closed=True):
     enabled: NotRequired[bool | None]
     label: NotRequired[str | None]
     resource_types: NotRequired[
-        list[Literal["issues", "comments", "projects", "project_updates", "cycles", "labels"]] | None
+        list[
+            Literal[
+                "issues",
+                "comments",
+                "projects",
+                "project_updates",
+                "cycles",
+                "labels",
+                "documents",
+                "initiatives",
+                "initiative_updates",
+                "customers",
+                "customer_requests",
+            ]
+        ]
+        | None
     ]
     team_id: NotRequired[str | None]
     url: NotRequired[str | None]
