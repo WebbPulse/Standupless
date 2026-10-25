@@ -213,6 +213,10 @@ const renderPage = (entry = '/w/mine/inbox') =>
           <Route path="/w/:slug/inbox" element={<Inbox />} />
           <Route path="/w/:slug/issues/:key" element={<p>Issue page</p>} />
           <Route path="/w/:slug/projects/:id" element={<p>Project page</p>} />
+          <Route
+            path="/w/:slug/initiatives/:id"
+            element={<p>Initiative page</p>}
+          />
         </Routes>
         <Where />
       </ShortcutProvider>
@@ -1117,6 +1121,106 @@ describe('inbox', () => {
     expect(await screen.findByText('Project page')).toBeInTheDocument();
     expect(screen.getByLabelText('location')).toHaveTextContent(
       '/w/mine/projects/prj-1'
+    );
+    expect(screen.getByLabelText('location')).not.toHaveTextContent(
+      'tab=updates'
+    );
+  });
+
+  it('says who made you a project lead and opens the project', async () => {
+    const user = userEvent.setup();
+    listInbox.mockResolvedValue({
+      notifications: [
+        notification({
+          notification_id: 'n-11',
+          kind: 'project_lead_assigned',
+          issue_id: '',
+          issue_key: '',
+          issue_title: '',
+          project_id: 'prj-2',
+          project_name: 'Billing revamp',
+        }),
+      ],
+      next_cursor: null,
+    });
+    renderPage();
+
+    await user.click(
+      await screen.findByRole('button', { name: /^Billing revamp/ })
+    );
+
+    expect(
+      await screen.findByRole('complementary', { name: 'Project update' })
+    ).toHaveTextContent('Grace made you the lead of Billing revamp');
+
+    await user.click(screen.getByRole('button', { name: 'Open project' }));
+
+    expect(await screen.findByText('Project page')).toBeInTheDocument();
+    expect(screen.getByLabelText('location')).toHaveTextContent(
+      '/w/mine/projects/prj-2'
+    );
+    expect(screen.getByLabelText('location')).not.toHaveTextContent(
+      'tab=updates'
+    );
+  });
+
+  it('says who added you to a project', async () => {
+    const user = userEvent.setup();
+    listInbox.mockResolvedValue({
+      notifications: [
+        notification({
+          notification_id: 'n-12',
+          kind: 'project_member_added',
+          issue_id: '',
+          issue_key: '',
+          issue_title: '',
+          project_id: 'prj-3',
+          project_name: 'Payments',
+        }),
+      ],
+      next_cursor: null,
+    });
+    renderPage();
+
+    await user.click(await screen.findByRole('button', { name: /^Payments/ }));
+
+    expect(
+      await screen.findByRole('complementary', { name: 'Project update' })
+    ).toHaveTextContent('Grace added you to Payments');
+  });
+
+  it('says who made you an initiative owner and opens the initiative', async () => {
+    const user = userEvent.setup();
+    listInbox.mockResolvedValue({
+      notifications: [
+        notification({
+          notification_id: 'n-13',
+          kind: 'initiative_owner_assigned',
+          issue_id: '',
+          issue_key: '',
+          issue_title: '',
+          team_id: '',
+          initiative_id: 'init-1',
+          initiative_name: 'Expand to Europe',
+        }),
+      ],
+      next_cursor: null,
+    });
+    renderPage();
+
+    await user.click(
+      await screen.findByRole('button', { name: /^Expand to Europe/ })
+    );
+
+    expect(
+      await screen.findByRole('complementary', { name: 'Initiative update' })
+    ).toHaveTextContent('Grace made you the owner of Expand to Europe');
+
+    await user.click(screen.getByRole('button', { name: 'Open initiative' }));
+
+    expect(await screen.findByText('Initiative page')).toBeInTheDocument();
+    expect(screen.getByLabelText('location')).toHaveTextContent(
+      '/w/mine/initiatives/'
     );
     expect(screen.getByLabelText('location')).not.toHaveTextContent(
       'tab=updates'

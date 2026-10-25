@@ -336,7 +336,7 @@ def update_initiative(
         refusal = settle_date_fields(fields, date_name, f"{date_name}_resolution", edge, current)
         if refusal is not None:
             raise unprocessable(refusal)
-    updated = existing.model_copy(update={**fields, "updated_at": utc_now()})
+    updated = existing.model_copy(update={**fields, "updated_at": utc_now(), "updated_by": context.user_id})
     if updated.start_date and updated.target_date and updated.target_date < updated.start_date:
         raise unprocessable("target_date must not be before start_date")
     try:

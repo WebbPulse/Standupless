@@ -140,6 +140,9 @@ UNREPLYABLE_KINDS = frozenset(
         "project_update_comment",
         "project_update_due",
         "initiative_update_due",
+        "project_lead_assigned",
+        "project_member_added",
+        "initiative_owner_assigned",
         "document_comment",
         "standup_digest",
     }

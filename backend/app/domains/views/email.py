@@ -68,6 +68,9 @@ _HEADLINES: Mapping[str, str] = {
     "no_longer_blocking": "$actor removed an issue this one was blocking.",
     "blocker_resolved": "$actor resolved an issue blocking this one.",
     "team_issue_created": "$actor created an issue in a team you follow.",
+    "project_lead_assigned": "$actor made you the lead of this project.",
+    "project_member_added": "$actor added you to this project.",
+    "initiative_owner_assigned": "$actor made you the owner of this initiative.",
 }
 
 DUE_KINDS: frozenset[str] = frozenset({"due_soon", "overdue", "sla_at_risk", "sla_breached"})
@@ -342,6 +345,56 @@ def render_view_project_added_notification(
     )
 
 
+PROJECT_LEAD_ASSIGNED = "project_lead_assigned"
+PROJECT_MEMBER_ADDED = "project_member_added"
+INITIATIVE_OWNER_ASSIGNED = "initiative_owner_assigned"
+
+PROJECT_ROLE_KINDS: frozenset[str] = frozenset({PROJECT_LEAD_ASSIGNED, PROJECT_MEMBER_ADDED})
+"""The kinds telling a person they were handed a project, linked to its overview."""
+
+_PROJECT_ROLE_REASON = (
+    "You are receiving this because someone made you this project's lead or added you to its members. "
+    "Turn these off in your {product} notification settings."
+)
+_INITIATIVE_ROLE_REASON = (
+    "You are receiving this because someone made you this initiative's owner. "
+    "Turn these off in your {product} notification settings."
+)
+
+
+def render_project_role_notification(
+    *,
+    kind: str,
+    to: str,
+    actor_name: str,
+    project_id: str,
+    project_name: str,
+    workspace_slug: str,
+    accent: str | None = None,
+) -> EmailMessage:
+    """Render the email a person gets when someone else makes them a project's lead or adds them to its members.
+
+    The subject is `[Project] Name`, so it threads with the project's other mail.
+    """
+    title = project_name.strip() or "Untitled project"
+    actor = actor_name.strip() or "Someone"
+    line = Template(_HEADLINES[kind]).substitute(actor=actor)
+    return render(
+        to=to,
+        subject=f"[Project] {title}",
+        preheader=f"{title}: {line}",
+        blocks=[
+            Heading(title),
+            Paragraph(line),
+            Button("Open project", project_page_url(workspace_slug, project_id, project_name), show_url=True),
+        ],
+        footer_note=_PROJECT_ROLE_REASON.format(product=settings.PROJECT_NAME),
+        footer_links=_settings_link(workspace_slug),
+        tags={"purpose": "notification", "kind": kind},
+        accent=accent,
+    )
+
+
 PROJECT_UPDATE_DUE = "project_update_due"
 
 _DUE_REASON = (
@@ -404,6 +457,49 @@ def initiative_url(workspace_slug: str, initiative_id: str, initiative_name: str
     if not workspace_slug:
         return f"{settings.frontend_base_url}/workspaces"
     return f"{initiative_web_url(workspace_slug, initiative_id, initiative_name)}?tab=updates"
+
+
+def initiative_page_url(workspace_slug: str, initiative_id: str, initiative_name: str = "") -> str:
+    """The SPA link to one initiative's overview, or to the workspace list when the slug is gone."""
+    if not workspace_slug:
+        return f"{settings.frontend_base_url}/workspaces"
+    return initiative_web_url(workspace_slug, initiative_id, initiative_name)
+
+
+def render_initiative_owner_notification(
+    *,
+    to: str,
+    actor_name: str,
+    initiative_id: str,
+    initiative_name: str,
+    workspace_slug: str,
+    accent: str | None = None,
+) -> EmailMessage:
+    """Render the email a person gets when someone else makes them an initiative's owner.
+
+    The subject is `[Initiative] Name`, so it threads with the initiative's reminders.
+    """
+    title = initiative_name.strip() or "Untitled initiative"
+    actor = actor_name.strip() or "Someone"
+    line = Template(_HEADLINES[INITIATIVE_OWNER_ASSIGNED]).substitute(actor=actor)
+    return render(
+        to=to,
+        subject=f"[Initiative] {title}",
+        preheader=f"{title}: {line}",
+        blocks=[
+            Heading(title),
+            Paragraph(line),
+            Button(
+                "Open initiative",
+                initiative_page_url(workspace_slug, initiative_id, initiative_name),
+                show_url=True,
+            ),
+        ],
+        footer_note=_INITIATIVE_ROLE_REASON.format(product=settings.PROJECT_NAME),
+        footer_links=_settings_link(workspace_slug),
+        tags={"purpose": "notification", "kind": INITIATIVE_OWNER_ASSIGNED},
+        accent=accent,
+    )
 
 
 def _initiative_due_line(due_state: str) -> str:
@@ -471,26 +567,32 @@ def _entry_line(entry: DigestEntry) -> str:
     return Template(template).substitute(actor=actor)
 
 
-PROJECT_KINDS: frozenset[str] = frozenset({"project_update", PROJECT_UPDATE_DUE, VIEW_PROJECT_ADDED})
+PROJECT_KINDS: frozenset[str] = frozenset(
+    {"project_update", PROJECT_UPDATE_DUE, VIEW_PROJECT_ADDED, *PROJECT_ROLE_KINDS}
+)
 """The kinds about a project rather than an issue, grouped and linked under the project."""
+
+INITIATIVE_KINDS: frozenset[str] = frozenset({INITIATIVE_UPDATE_DUE, INITIATIVE_OWNER_ASSIGNED})
+"""The kinds about an initiative, grouped and linked under the initiative."""
 
 
 def _entry_group(entry: DigestEntry, workspace_slug: str) -> tuple[str, str, str]:
     """The group one entry is listed under: its grouping key, its label and its link."""
     if entry.kind in PROJECT_KINDS:
         name = entry.project_name.strip() or "Untitled project"
-        link = project_page_url if entry.kind == VIEW_PROJECT_ADDED else project_url
+        link = project_page_url if entry.kind in (VIEW_PROJECT_ADDED, *PROJECT_ROLE_KINDS) else project_url
         return (
             f"project#{entry.project_id}",
             f"Project: {name}",
             link(workspace_slug, entry.project_id, entry.project_name),
         )
-    if entry.kind == INITIATIVE_UPDATE_DUE:
+    if entry.kind in INITIATIVE_KINDS:
         name = entry.initiative_name.strip() or "Untitled initiative"
+        link = initiative_page_url if entry.kind == INITIATIVE_OWNER_ASSIGNED else initiative_url
         return (
             f"initiative#{entry.initiative_id}",
             f"Initiative: {name}",
-            initiative_url(workspace_slug, entry.initiative_id, entry.initiative_name),
+            link(workspace_slug, entry.initiative_id, entry.initiative_name),
         )
     title = entry.issue_title.strip() or "Untitled issue"
     label = f"{entry.issue_key} {title}" if entry.issue_key else title
@@ -521,6 +623,25 @@ def render_single(
             initiative_id=entry.initiative_id,
             initiative_name=entry.initiative_name,
             due_state=entry.due_state,
+            workspace_slug=workspace_slug,
+            accent=accent,
+        )
+    if entry.kind in PROJECT_ROLE_KINDS:
+        return render_project_role_notification(
+            kind=entry.kind,
+            to=to,
+            actor_name=entry.actor_name,
+            project_id=entry.project_id,
+            project_name=entry.project_name,
+            workspace_slug=workspace_slug,
+            accent=accent,
+        )
+    if entry.kind == INITIATIVE_OWNER_ASSIGNED:
+        return render_initiative_owner_notification(
+            to=to,
+            actor_name=entry.actor_name,
+            initiative_id=entry.initiative_id,
+            initiative_name=entry.initiative_name,
             workspace_slug=workspace_slug,
             accent=accent,
         )
@@ -585,7 +706,7 @@ def render_digest(
         groups.setdefault(key, (label, link, []))[2].append(entry)
 
     subjects = {_entry_group(entry, workspace_slug)[0] for entry in ordered}
-    if len(subjects) == 1 and ordered[0].kind not in (*PROJECT_KINDS, INITIATIVE_UPDATE_DUE):
+    if len(subjects) == 1 and ordered[0].kind not in (*PROJECT_KINDS, *INITIATIVE_KINDS):
         title = ordered[0].issue_title.strip() or "Untitled issue"
         subject = f"[{ordered[0].issue_key}] {title}" if ordered[0].issue_key else title
     else:

@@ -43,6 +43,9 @@ export const NOTIFICATION_KINDS: readonly NotificationKind[] = [
   'view_issue_added',
   'team_issue_created',
   'view_project_added',
+  'project_lead_assigned',
+  'project_member_added',
+  'initiative_owner_assigned',
   'document_comment',
 ];
 

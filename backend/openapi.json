@@ -26296,7 +26296,10 @@
                     "blocking_changed",
                     "document_comment",
                     "team_issue_created",
-                    "view_project_added"
+                    "view_project_added",
+                    "project_lead_assigned",
+                    "project_member_added",
+                    "initiative_owner_assigned"
                   ]
                 },
                 "type": "object"
@@ -26335,7 +26338,7 @@
                 "items": {
                   "type": "string"
                 },
-                "maxItems": 33,
+                "maxItems": 36,
                 "type": "array"
               },
               {
@@ -41351,7 +41354,7 @@
               "items": {
                 "type": "string"
               },
-              "maxItems": 33,
+              "maxItems": 36,
               "title": "Kind",
               "type": "array"
             }
