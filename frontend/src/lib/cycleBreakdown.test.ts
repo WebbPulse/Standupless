@@ -1,13 +1,19 @@
 /**
  * The cycle breakdown and title. Covers that each row counts its issues and
  * those done, that cancelled issues are left out, that like named labels of
- * two teams share one row, that the unset row sorts last, and that a cycle
+ * two teams share one row, that the unset row sorts last, that priorities
+ * keep their fixed order from urgent down to no priority, and that a cycle
  * left with its generated name never reads as the raw slug.
  */
 
 import { describe, expect, it } from 'vitest';
 import type { IssueRead, ProjectRead, StatusRead } from '../types/Api';
-import { breakdownPercent, cycleBreakdown, cycleTitle } from './cycleBreakdown';
+import {
+  breakdownPercent,
+  cycleBreakdown,
+  cycleTitle,
+  PRIORITY_ORDER,
+} from './cycleBreakdown';
 import type { IssueContext } from './issueView';
 
 const statuses: StatusRead[] = [
@@ -100,6 +106,38 @@ describe('cycleBreakdown', () => {
       { id: 'p-1', name: 'Launch', total: 2, completed: 0, started: 0 },
       { id: 'none', name: 'No project', total: 2, completed: 1, started: 2 },
     ]);
+  });
+
+  it('orders priorities from urgent down to no priority', () => {
+    const byPriority = [
+      issue('1', 'todo', { priority: 'low' }),
+      issue('2', 'done', { priority: 'urgent' }),
+      issue('3', 'todo', { priority: 'low' }),
+      issue('4', 'doing', { priority: 'high' }),
+      issue('5', 'todo'),
+      issue('6', 'done', { priority: 'medium' }),
+      issue('7', 'dropped', { priority: 'urgent' }),
+      issue('8', 'todo', { priority: 'urgent' }),
+    ];
+    expect(cycleBreakdown(byPriority, statuses, 'priority', context)).toEqual([
+      { id: 'urgent', name: 'Urgent', total: 2, completed: 1, started: 1 },
+      { id: 'high', name: 'High', total: 1, completed: 0, started: 1 },
+      { id: 'medium', name: 'Medium', total: 1, completed: 1, started: 1 },
+      { id: 'low', name: 'Low', total: 2, completed: 0, started: 0 },
+      { id: 'none', name: 'No priority', total: 1, completed: 0, started: 0 },
+    ]);
+  });
+
+  it('leaves out the priorities no issue holds', () => {
+    expect(
+      cycleBreakdown(
+        [issue('1', 'todo', { priority: 'low' }), issue('2', 'done')],
+        statuses,
+        'priority',
+        context
+      ).map((row) => row.id)
+    ).toEqual(['low', 'none']);
+    expect(PRIORITY_ORDER).toEqual(['urgent', 'high', 'medium', 'low', 'none']);
   });
 
   it('reads a row as a whole percent done', () => {

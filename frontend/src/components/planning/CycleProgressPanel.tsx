@@ -1,7 +1,7 @@
 /**
  * The side panel of a cycle: scope, started and completed with their shares,
  * the burn-up over the cycle's days, and the cycle's issues broken down by
- * assignee, label or project. A breakdown row filters the issue list to it,
+ * assignee, label, project or priority. A breakdown row filters the issue list to it,
  * and a second click on the active row clears that filter.
  */
 
@@ -18,8 +18,14 @@ import { personAvatar } from '../../lib/issuePeople';
 import type { IssueContext } from '../../lib/issueView';
 import type { BurnUpPoint, PlanningMeasure } from '../../lib/planningModel';
 import { projectionLabel } from '../../lib/planningModel';
-import type { CycleRead, IssueRead, StatusRead } from '../../types/Api';
+import type {
+  CycleRead,
+  IssuePriority,
+  IssueRead,
+  StatusRead,
+} from '../../types/Api';
 import Avatar from '../ui/avatar';
+import { PriorityGlyph } from '../ui/glyphs';
 import BurnUpChart from './BurnUpChart';
 import MeasureToggle from './MeasureToggle';
 import ProgressRing from './ProgressRing';
@@ -54,6 +60,7 @@ const TABS: { field: BreakdownField; label: string }[] = [
   { field: 'assignee', label: 'Assignees' },
   { field: 'label', label: 'Labels' },
   { field: 'project', label: 'Projects' },
+  { field: 'priority', label: 'Priorities' },
 ];
 
 /** A small heading for one block of the panel. */
@@ -139,6 +146,9 @@ const RowGlyph: React.FC<{
         className={row.id === NONE ? 'opacity-50' : ''}
       />
     );
+  }
+  if (field === 'priority') {
+    return <PriorityGlyph priority={row.id as IssuePriority} />;
   }
   if (field === 'project') {
     const project = context.projects.find((item) => item.project_id === row.id);
