@@ -94,14 +94,17 @@ describe('setStatusByPosition', () => {
     const write = vi.fn<StatusPositionWrite>();
 
     setStatusByPosition(
-      [issue('a'), issue('b', { team_id: 'team-2', status_id: 't2-todo' })],
+      [
+        issue('a', { status_id: 't1-backlog' }),
+        issue('b', { team_id: 'team-2', status_id: 't2-todo' }),
+      ],
       2,
       statusesFor,
       write
     );
 
-    expect(write).toHaveBeenCalledWith(['a'], { status_id: 't1-todo' });
     expect(write).toHaveBeenCalledTimes(2);
+    expect(write).toHaveBeenCalledWith(['a'], { status_id: 't1-todo' });
     expect(write).toHaveBeenCalledWith(['b'], { status_id: 't2-done' });
   });
 
