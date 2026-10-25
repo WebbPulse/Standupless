@@ -163,7 +163,7 @@ def test_the_create_keeps_only_the_sub_issues_it_names(
     assert unknown.status_code == 422
     assert "no sub-issue s9" in unknown.text
     assert untemplated.status_code == 422
-    assert len(repositories.issues.page_for_workspace(WORKSPACE, limit=50)) == 2
+    assert len(repositories.issues.page_for_workspace(WORKSPACE, limit=50)) == 4
 
 
 def test_a_sub_issue_cannot_add_template_sub_issues(
