@@ -34,7 +34,12 @@ import type {
   ViewGroupBy,
 } from '../types/Api';
 import { PRIORITIES, PRIORITY_LABELS } from './issueDisplay';
-import { isLabelGroup, pickableLabels, replacedSiblings } from './labelGroups';
+import {
+  allowsMultiple,
+  isLabelGroup,
+  pickableLabels,
+  replacedSiblings,
+} from './labelGroups';
 import { completionPercent, progressPercent } from './planningDisplay';
 import { personLabel, type Assignable } from './issuePeople';
 import { STATUS_CATEGORY_ORDER } from './propertyOptions';
@@ -472,6 +477,32 @@ export const labelGroupMembers = (
         );
   cached.set(field, members);
   return members;
+};
+
+/**
+ * Whether the label group a grouping names lets this issue carry several of
+ * its labels, read from the group in the issue's own team when the list spans
+ * teams and from the named group otherwise.
+ */
+export const groupAllowsMultiple = (
+  issue: Pick<IssueRead, 'team_id'>,
+  field: LabelGroupField,
+  context: Pick<IssueContext, 'labels'>
+): boolean => {
+  const parents = new Set(
+    labelGroupMembers(field, context)
+      .filter(
+        (label) =>
+          label.team_id === undefined || label.team_id === issue.team_id
+      )
+      .map((label) => label.parent_id)
+  );
+  const groups = context.labels.filter(
+    (label) => isLabelGroup(label) && parents.has(label.id)
+  );
+  return groups.length === 0
+    ? allowsMultiple(labelGroupOf(field, context))
+    : groups.some(allowsMultiple);
 };
 
 /**
@@ -1764,10 +1795,13 @@ export const groupKeysOf = (
       const members = new Set(
         labelGroupMembers(field, context).map((label) => label.id)
       );
-      const held = labelsOf(issue, context).find((label) =>
+      const held = labelsOf(issue, context).filter((label) =>
         members.has(label.id)
       );
-      return [held === undefined ? NONE : labelGroupKey(held)];
+      if (held.length === 0) return [NONE];
+      return groupAllowsMultiple(issue, field, context)
+        ? [...new Set(held.map(labelGroupKey))]
+        : [labelGroupKey(held[0])];
     }
   }
 };
@@ -2402,12 +2436,15 @@ const labelsForKey = (
 /**
  * The change that moves an issue into another column of a label group
  * grouping: the label it holds from the group swapped for the target's, or
- * dropped for No <group>. Answers null when the issue's team has no label of
- * that name in the group.
+ * every label of the group dropped for No <group>. In a group that allows
+ * several labels only the source column's label is dropped and the others
+ * stay. Answers null when the issue's team has no label of that name in the
+ * group.
  */
 const labelGroupMove = (
   issue: OrderedIssueRead,
   field: LabelGroupField,
+  fromKey: string,
   toKey: string,
   context: IssueContext
 ): IssueChange | null => {
@@ -2429,9 +2466,21 @@ const labelGroupMove = (
     ),
   ];
   if (adding.length === 0) return null;
-  const dropping = carried.filter((id) => !adding.includes(id));
+  const multiple = groupAllowsMultiple(issue, field, context);
+  const dropping = carried.filter(
+    (id) =>
+      !adding.includes(id) &&
+      (!multiple ||
+        members.some(
+          (label) => label.id === id && labelGroupKey(label) === fromKey
+        ))
+  );
+  const missing = adding.filter((id) => !issue.label_ids.includes(id));
+  if (multiple && missing.length === 0) {
+    return dropping.length === 0 ? {} : { remove_label_ids: dropping };
+  }
   return {
-    add_label_ids: adding,
+    add_label_ids: multiple ? missing : adding,
     ...(dropping.length === 0 ? {} : { remove_label_ids: dropping }),
   };
 };
@@ -2523,7 +2572,7 @@ export const moveChange = (
       return {};
     default:
       return isLabelGroupField(field)
-        ? labelGroupMove(issue, field, toKey, context)
+        ? labelGroupMove(issue, field, fromKey, toKey, context)
         : {};
   }
 };

@@ -1,7 +1,8 @@
 /**
  * Grouping by one label group: each group is offered after the plain label
  * grouping, every issue falls in the column of its label from the group or in
- * No <group>, a drag swaps the label within the group, and the grouping rides
+ * No <group>, a drag swaps the label within the group, a group that allows
+ * several labels places an issue under each it holds, and the grouping rides
  * the URL and a saved view.
  */
 
@@ -69,6 +70,14 @@ const labels: ScopedLabel[] = withGroupNames([
   label('lb-loose', 'Loose', { team_id: 'team-1' }),
   label('grp-area-2', 'Area', { is_group: true, team_id: 'team-2' }),
   label('lb-api-2', 'API', { parent_id: 'grp-area-2', team_id: 'team-2' }),
+  label('grp-os', 'OS', {
+    is_group: true,
+    allow_multiple: true,
+    team_id: 'team-1',
+  }),
+  label('lb-mac', 'Mac', { parent_id: 'grp-os', team_id: 'team-1' }),
+  label('lb-linux', 'Linux', { parent_id: 'grp-os', team_id: 'team-1' }),
+  label('lb-windows', 'Windows', { parent_id: 'grp-os', team_id: 'team-1' }),
 ]);
 
 const context: IssueContext = {
@@ -80,6 +89,7 @@ const context: IssueContext = {
 };
 
 const area = labelGroupField('grp-area');
+const os = labelGroupField('grp-os');
 
 describe('label group grouping', () => {
   it('offers each label group once, after the plain label grouping', () => {
@@ -89,9 +99,10 @@ describe('label group grouping', () => {
     expect(fields.slice(at, at + 3)).toEqual([
       'label',
       'label_group:grp-area',
+      'label_group:grp-os',
       'label_group:grp-type',
     ]);
-    expect(fields.filter(isLabelGroupField)).toHaveLength(2);
+    expect(fields.filter(isLabelGroupField)).toHaveLength(3);
     expect(groupFieldLabel(area, context)).toBe('Area');
     expect(groupFieldLabel('label_group:gone', context)).toBe('Label group');
     expect(groupFieldLabel('status', context)).toBe('Status');
@@ -155,6 +166,57 @@ describe('label group grouping', () => {
         context
       )
     ).toBeNull();
+  });
+
+  it('keeps an exclusive group to one label per issue', () => {
+    const both = issue({ label_ids: ['lb-web', 'lb-api'] });
+
+    expect(groupKeysOf(both, area, context)).toEqual(['area/api']);
+  });
+
+  it('places an issue under every label it holds in a multi-select group', () => {
+    const both = issue({
+      id: 'b',
+      estimate: '3',
+      label_ids: ['lb-mac', 'lb-linux', 'lb-bug'],
+    });
+    const mac = issue({ id: 'm', label_ids: ['lb-mac'] });
+    const bare = issue({ id: 'n', label_ids: ['lb-bug'] });
+
+    expect(groupKeysOf(both, os, context)).toEqual(['os/mac', 'os/linux']);
+    expect(groupKeysOf(bare, os, context)).toEqual([NONE]);
+
+    const groups = groupIssues([both, mac, bare], os, context, true);
+
+    expect(
+      groups.map((group) => [
+        group.label,
+        group.issues.map((entry) => entry.id),
+      ])
+    ).toEqual([
+      ['No OS', ['n']],
+      ['Linux', ['b']],
+      ['Mac', ['b', 'm']],
+      ['Windows', []],
+    ]);
+  });
+
+  it('moves only the dragged from and dragged to labels in a multi-select group', () => {
+    const both = issue({ label_ids: ['lb-mac', 'lb-linux', 'lb-bug'] });
+
+    expect(moveChange(both, os, 'os/mac', 'os/windows', context)).toEqual({
+      add_label_ids: ['lb-windows'],
+      remove_label_ids: ['lb-mac'],
+    });
+    expect(moveChange(both, os, 'os/mac', 'os/linux', context)).toEqual({
+      remove_label_ids: ['lb-mac'],
+    });
+    expect(moveChange(both, os, 'os/linux', NONE, context)).toEqual({
+      remove_label_ids: ['lb-mac', 'lb-linux'],
+    });
+    expect(
+      moveChange(issue({ label_ids: ['lb-bug'] }), os, NONE, 'os/mac', context)
+    ).toEqual({ add_label_ids: ['lb-mac'] });
   });
 
   it('rides the URL and a saved view', () => {
