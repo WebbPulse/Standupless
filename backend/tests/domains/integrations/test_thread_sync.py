@@ -17,7 +17,7 @@ from webbpulse.identity.oauth import OAuthLinkRecord
 
 from app.common.db.dynamo.activity import as_activity
 from app.common.db.dynamo.base import as_item, utc_now
-from app.common.db.dynamo.comments import Comment, ThreadResolution, build_comment
+from app.common.db.dynamo.comments import Comment, CommentAnchor, ThreadResolution, build_comment
 from app.common.db.dynamo.github import IssueLink, IssueSync, issue_sync_key, link_key
 from app.common.db.dynamo.issues import Issue
 from app.domains.integrations import issue_sync, thread_sync
@@ -301,6 +301,34 @@ def test_the_opener_quotes_the_root_and_replies_post_with_attribution(
     assert "ABC-1" in opener
     assert "> Should we cache the board query?" in opener
     assert github.comments[1] == (PR_NUMBER, "**Mel Member** commented in Standupless:\n\nYes, behind a flag")
+
+
+def test_an_anchored_root_quotes_its_passage_in_the_opener(
+    client: TestClient, repositories: Any, linked: Issue, github: FakeGithub
+) -> None:
+    """A thread pinned to the description shows the passage on GitHub, which has no highlight."""
+    root = repositories.comments.create(
+        build_comment(
+            WORKSPACE,
+            linked.issue_id,
+            TEAM,
+            MEMBER,
+            "Is this still true?",
+            anchor=CommentAnchor(quote="cache the board query"),
+        )
+    )
+    sync(client, linked, root)
+    push(repositories, repositories.comments.get(WORKSPACE, linked.issue_id, root.comment_id))
+
+    _, opener = github.comments[0]
+    assert "On the description:\n\n> cache the board query\n\n> Is this still true?" in opener
+
+
+def test_an_anchored_comment_quotes_its_passage_on_github(repositories: Any, linked: Issue) -> None:
+    """The App's copy of an anchored comment quotes the passage ahead of the text."""
+    body = issue_sync.outbound_comment_body(repositories, MEMBER, "Yes", CommentAnchor(quote="the board query"))
+
+    assert body == "**Mel Member** commented in Standupless:\n\nOn the description:\n\n> the board query\n\nYes"
 
 
 def test_an_edit_updates_the_github_copy(

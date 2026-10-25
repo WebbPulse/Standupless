@@ -6,6 +6,7 @@
  * can expand.
  */
 
+import type { AnchoredThread } from '../components/editor/commentAnchors';
 import type { ActivityRead, CommentRead } from '../types/Api';
 import {
   describeActivity,
@@ -151,3 +152,19 @@ export const commentAttachmentIds = (comments: CommentRead[]): Set<string> =>
       (row.attachments ?? []).map((item) => item.attachment_id)
     )
   );
+
+/**
+ * The open threads pinned to passages of the description, oldest first. A
+ * resolved thread lets its passage go, so it is left out.
+ */
+export const anchoredThreads = (comments: CommentRead[]): AnchoredThread[] =>
+  comments
+    .filter(
+      (row) =>
+        row.parent_comment_id === null && (row.resolution ?? null) === null
+    )
+    .sort((left, right) => left.created_at.localeCompare(right.created_at))
+    .flatMap((row) => {
+      const anchor = row.anchor ?? null;
+      return anchor === null ? [] : [{ commentId: row.comment_id, anchor }];
+    });

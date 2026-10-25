@@ -19,9 +19,10 @@ from webbpulse.http import cursor_page
 from webbpulse.storage import UPLOAD_CONTENT_TYPES, disposition_for
 
 from app.common.change_source import ChangeSource
+from app.common.comment_anchors import ANCHOR_CONTEXT_MAX, ANCHOR_QUOTE_MAX
 from app.common.core.constants import ISSUE_BODY_MAX_BYTES
 from app.common.db.dynamo.attachments import Attachment
-from app.common.db.dynamo.comments import Comment, GithubThread, ThreadResolution
+from app.common.db.dynamo.comments import Comment, CommentAnchor, GithubThread, ThreadResolution
 from app.common.discussion_reads import AuthorRead, ReactionGroupRead, check_emoji
 
 TargetKindField = Literal["issue", "comment"]
@@ -273,7 +274,8 @@ class CommentRead(BaseModel):
 
     `github_thread` is set on a root comment whose thread is synced to a GitHub
     pull request or issue, and `resolution` on a root whose thread is resolved,
-    which a reader collapses to one line.
+    which a reader collapses to one line. `anchor` is set on a root pinned to a
+    passage of the issue description.
     """
 
     comment_id: str
@@ -293,6 +295,7 @@ class CommentRead(BaseModel):
     edited_at: Optional[datetime] = None
     github_thread: Optional[GithubThread] = None
     resolution: Optional[ThreadResolution] = None
+    anchor: Optional[CommentAnchor] = None
 
     @classmethod
     def from_row(
@@ -328,6 +331,7 @@ class CommentRead(BaseModel):
             edited_at=comment.edited_at,
             github_thread=comment.github_thread,
             resolution=comment.resolution,
+            anchor=comment.anchor,
         )
 
 
@@ -342,12 +346,31 @@ class CommentCreate(BaseModel):
     linked first through the attachment routes, which the comment then shows
     inline. The route holds that each one exists under this issue. The body may
     be empty only when the comment carries an attachment, so a screenshot can be
-    posted without a caption while a comment is never blank.
+    posted without a caption while a comment is never blank. `anchor` pins a new
+    thread to a passage of the description, so a reply cannot carry one.
     """
 
     body: str = ""
     parent_comment_id: Optional[str] = None
     attachment_ids: list[str] = Field(default_factory=list, max_length=COMMENT_ATTACHMENTS_MAX)
+    anchor: Optional[CommentAnchor] = None
+
+    @field_validator("anchor")
+    @classmethod
+    def check_anchor(cls, value: Optional[CommentAnchor]) -> Optional[CommentAnchor]:
+        """Hold the passage to a non-blank quote under the caps, trimming its context."""
+        if value is None:
+            return None
+        quote = value.quote.strip()
+        if not quote:
+            raise ValueError("anchor quote must not be blank")
+        if len(quote) > ANCHOR_QUOTE_MAX:
+            raise ValueError(f"anchor quote must be at most {ANCHOR_QUOTE_MAX} characters")
+        return CommentAnchor(
+            quote=quote,
+            prefix=value.prefix[-ANCHOR_CONTEXT_MAX:] if value.prefix else "",
+            suffix=value.suffix[:ANCHOR_CONTEXT_MAX],
+        )
 
     @field_validator("attachment_ids")
     @classmethod
@@ -360,6 +383,8 @@ class CommentCreate(BaseModel):
     @model_validator(mode="after")
     def check_body(self) -> CommentCreate:
         """Hold the body to the shared cap, letting it be blank only beside an attachment."""
+        if self.anchor is not None and self.parent_comment_id is not None:
+            raise ValueError("a reply cannot be pinned to a passage")
         if self.attachment_ids and not self.body.strip():
             self.body = ""
             return self

@@ -43,10 +43,11 @@ from webbpulse.dynamodb import ConditionFailed
 
 from app.common.api.dependencies.repositories import Repositories
 from app.common.change_source import GITHUB
+from app.common.comment_anchors import quoted_passage
 from app.common.core.config import settings
 from app.common.db.dynamo.activity import build_activity
 from app.common.db.dynamo.base import utc_now
-from app.common.db.dynamo.comments import Comment, build_comment, new_comment_id
+from app.common.db.dynamo.comments import Comment, CommentAnchor, build_comment, new_comment_id
 from app.common.db.dynamo.github import (
     CommentSync,
     IssueBacklink,
@@ -825,11 +826,17 @@ def _escape(text: str) -> str:
     return _MARKDOWN_SPECIAL.sub(r"\\\1", " ".join(text.split()))
 
 
-def outbound_comment_body(repositories: Repositories, author_id: str, body: str) -> str:
-    """A Standupless comment as posted by the App, naming who wrote it."""
+def outbound_comment_body(
+    repositories: Repositories, author_id: str, body: str, anchor: CommentAnchor | None = None
+) -> str:
+    """A Standupless comment as posted by the App, naming who wrote it.
+
+    A comment pinned to a passage of the description quotes that passage first,
+    since GitHub has no highlight to show which words it is about.
+    """
     user = repositories.users.get(author_id)
     name = (user.display_name or "") if user is not None else ""
-    return f"**{_escape(name) or 'Someone'}** commented in Standupless:\n\n{body}"
+    return f"**{_escape(name) or 'Someone'}** commented in Standupless:\n\n{quoted_passage(anchor)}{body}"
 
 
 def push_comment(repositories: Repositories, job: Mapping[str, Any]) -> None:
@@ -878,7 +885,7 @@ def _push_issue_comment(repositories: Repositories, comment: Comment) -> None:
             token(),
             sync.repository_id,
             sync.number,
-            outbound_comment_body(repositories, comment.author_id, comment.body),
+            outbound_comment_body(repositories, comment.author_id, comment.body, comment.anchor),
         )
         repositories.github.save_comment_sync(
             pending.model_copy(update={"github_comment_id": str(response.get("id", "")), "state": "linked"})
@@ -891,7 +898,7 @@ def _push_issue_comment(repositories: Repositories, comment: Comment) -> None:
         token(),
         sync.repository_id,
         existing.github_comment_id,
-        outbound_comment_body(repositories, comment.author_id, comment.body),
+        outbound_comment_body(repositories, comment.author_id, comment.body, comment.anchor),
     )
     repositories.github.save_comment_sync(existing.model_copy(update={"body": comment.body}))
 

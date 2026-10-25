@@ -21,6 +21,9 @@
  *
  * A quoted passage arrives as a request and is added after whatever is
  * already written, so quoting into a reply in progress keeps the reply.
+ *
+ * A composer given an anchor starts a thread pinned to that passage of the
+ * description. It keeps no draft, since it lives only as long as its popover.
  */
 
 import React, {
@@ -57,7 +60,11 @@ import { attachmentsKey, commentsKey } from '../../lib/queryKeys';
 import { PUBLIC_THREAD_WARNING, targetKey } from '../../lib/threadSync';
 import { showErrorToast } from '../../lib/toast';
 import { UPLOAD_CONTENT_TYPES } from '../../lib/uploads';
-import type { GithubThreadTargetRead } from '../../types/Api';
+import type {
+  CommentAnchor,
+  CommentRead,
+  GithubThreadTargetRead,
+} from '../../types/Api';
 import type { RichMarkdownHandle } from '../editor/RichMarkdownEditor';
 import type { UploadFile } from '../editor/mediaNodes';
 import { COMMENT_ISSUE_KEYS } from '../issues/view/propertyKeys';
@@ -74,8 +81,8 @@ export interface CommentComposerProps {
   people: Assignable[];
   /** The root comment this replies to, or undefined for a new thread. */
   parentCommentId?: string;
-  /** Called once the comment posted. */
-  onPosted?: () => void;
+  /** Called once the comment posted, with the comment as saved. */
+  onPosted?: (comment: CommentRead) => void;
   /** Shows a Cancel button, for a reply box that can be dismissed. */
   onCancel?: () => void;
   autoFocus?: boolean;
@@ -91,6 +98,8 @@ export interface CommentComposerProps {
    * line under it. Each request is applied once.
    */
   quote?: QuoteRequest | null;
+  /** The passage of the description a new thread is pinned to. */
+  anchor?: CommentAnchor;
 }
 
 /** Props for ThreadSyncToggle. */
@@ -199,6 +208,7 @@ export const CommentComposer: React.FC<CommentComposerProps> = ({
   threadTargets = [],
   jumpShortcut = false,
   quote = null,
+  anchor,
 }) => {
   const [draft, setDraft] = useState('');
   const [chosenKey, setChosenKey] = useState<string | null>(null);
@@ -213,7 +223,8 @@ export const CommentComposer: React.FC<CommentComposerProps> = ({
     workspaceId,
     issueId,
     parentCommentId,
-    editor
+    editor,
+    anchor === undefined
   );
   const { upload: sendFile } = uploads;
   const { refresh } = useMedia();
@@ -275,6 +286,9 @@ export const CommentComposer: React.FC<CommentComposerProps> = ({
         ...(attachmentIds.length === 0
           ? {}
           : { attachment_ids: attachmentIds }),
+        ...(anchor === undefined || parentCommentId !== undefined
+          ? {}
+          : { anchor }),
       }),
     commentsKey(issueId)
   );
@@ -336,7 +350,7 @@ export const CommentComposer: React.FC<CommentComposerProps> = ({
         uploads.settle(linked);
         commentDraft.clear();
         editor.current?.setMarkdown('');
-        onPosted?.();
+        onPosted?.(created);
       })
       .catch((failure: unknown) => {
         showErrorToast(errorMessage(failure, 'Could not post that comment.'));
@@ -460,7 +474,13 @@ export const CommentComposer: React.FC<CommentComposerProps> = ({
             onClick={submit}
           >
             {compact ? (
-              isMutating ? (
+              parentCommentId === undefined ? (
+                isMutating ? (
+                  'Commenting'
+                ) : (
+                  'Comment'
+                )
+              ) : isMutating ? (
                 'Replying'
               ) : (
                 'Reply'

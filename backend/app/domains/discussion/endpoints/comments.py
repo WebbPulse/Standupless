@@ -177,6 +177,7 @@ def create_comment(
         payload.body,
         parent_comment_id=payload.parent_comment_id,
         attachment_ids=payload.attachment_ids,
+        anchor=payload.anchor,
     )
     return _render(repositories, context, [created])[0]
 

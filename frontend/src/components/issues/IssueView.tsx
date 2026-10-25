@@ -996,6 +996,7 @@ export const IssueView: React.FC<IssueViewProps> = ({
                     onSaved={receive}
                     people={options.people}
                     onDropFiles={attachFiles}
+                    canComment={canEdit}
                     {...(canEdit ? { onQuote: descriptionQuotes.ask } : {})}
                   />
 

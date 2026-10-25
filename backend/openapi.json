@@ -2497,9 +2497,43 @@
         "title": "CheckoutCreate",
         "type": "object"
       },
-      "CommentCreate": {
-        "description": "The body a comment create takes.\n\n`attachment_ids` names attachments already on the same issue, uploaded or\nlinked first through the attachment routes, which the comment then shows\ninline. The route holds that each one exists under this issue. The body may\nbe empty only when the comment carries an attachment, so a screenshot can be\nposted without a caption while a comment is never blank.",
+      "CommentAnchor": {
+        "description": "The passage of the issue description a root comment is pinned to.\n\nThe quoted text plus a little of the text either side, which is what finds the\npassage again among repeats of it. Never written into the description, so an\nedit that removes the passage leaves the quote here and the reader shows it as\nchanged.",
         "properties": {
+          "prefix": {
+            "default": "",
+            "title": "Prefix",
+            "type": "string"
+          },
+          "quote": {
+            "title": "Quote",
+            "type": "string"
+          },
+          "suffix": {
+            "default": "",
+            "title": "Suffix",
+            "type": "string"
+          }
+        },
+        "required": [
+          "quote"
+        ],
+        "title": "CommentAnchor",
+        "type": "object"
+      },
+      "CommentCreate": {
+        "description": "The body a comment create takes.\n\n`attachment_ids` names attachments already on the same issue, uploaded or\nlinked first through the attachment routes, which the comment then shows\ninline. The route holds that each one exists under this issue. The body may\nbe empty only when the comment carries an attachment, so a screenshot can be\nposted without a caption while a comment is never blank. `anchor` pins a new\nthread to a passage of the description, so a reply cannot carry one.",
+        "properties": {
+          "anchor": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CommentAnchor"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "attachment_ids": {
             "items": {
               "type": "string"
@@ -2556,8 +2590,18 @@
         "type": "object"
       },
       "CommentRead": {
-        "description": "One comment as the API returns it.\n\n`github_thread` is set on a root comment whose thread is synced to a GitHub\npull request or issue, and `resolution` on a root whose thread is resolved,\nwhich a reader collapses to one line.",
+        "description": "One comment as the API returns it.\n\n`github_thread` is set on a root comment whose thread is synced to a GitHub\npull request or issue, and `resolution` on a root whose thread is resolved,\nwhich a reader collapses to one line. `anchor` is set on a root pinned to a\npassage of the issue description.",
         "properties": {
+          "anchor": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CommentAnchor"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "attachments": {
             "items": {
               "$ref": "#/components/schemas/AttachmentRead"

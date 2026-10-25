@@ -29,6 +29,10 @@
  * selected passage of it from the Quote button that floats under the
  * selection. The quote lands as a blockquote after whatever the reply already
  * says, with the caret on a new line under it.
+ *
+ * A thread pinned to a passage of the description opens with that passage.
+ * Pressing it scrolls to the highlight in the description, and when the
+ * description no longer holds the text the thread says so and keeps the quote.
  */
 
 import React, { Suspense, lazy, useRef, useState } from 'react';
@@ -59,6 +63,8 @@ import {
 } from '../../api/discussion';
 import { syncThread, unsyncThread } from '../../api/integrations';
 import { useQuoteRequest } from '../../hooks/useQuoteRequest';
+import { usePassageThreads } from '../../contexts/PassageThreadsContextDefinition';
+import { cn } from '../../lib/cn';
 import { errorMessage } from '../../lib/errors';
 import {
   actorLabel,
@@ -77,7 +83,11 @@ import {
 } from '../../lib/threadSync';
 import { commentExcerpt, replyCountLabel } from '../../lib/threadResolution';
 import { showErrorToast, showToast } from '../../lib/toast';
-import type { CommentRead, GithubThreadTargetRead } from '../../types/Api';
+import type {
+  CommentAnchor,
+  CommentRead,
+  GithubThreadTargetRead,
+} from '../../types/Api';
 import type { RichMarkdownHandle } from '../editor/RichMarkdownEditor';
 import Avatar from '../ui/avatar';
 import Button, { IconButton } from '../ui/button';
@@ -119,6 +129,49 @@ interface CommentItemProps extends ReaderProps {
 
 /** The anchor a comment is linked to, so a copied link scrolls to it. */
 const anchorOf = (commentId: string): string => `comment-${commentId}`;
+
+/** Props for PassageQuote. */
+interface PassageQuoteProps {
+  anchor: CommentAnchor;
+  /** Whether the description still holds the passage; unknown counts as held. */
+  held: boolean;
+  /** Scrolls to the passage, or undefined when there is none to scroll to. */
+  onShow?: (() => void) | undefined;
+}
+
+/** The passage of the description a thread is pinned to, at the top of its card. */
+const PassageQuote: React.FC<PassageQuoteProps> = ({
+  anchor,
+  held,
+  onShow,
+}) => {
+  const text = (
+    <span className="line-clamp-3 border-l-2 border-warning/60 pl-2 text-left whitespace-pre-line">
+      {anchor.quote}
+    </span>
+  );
+  return (
+    <div className="space-y-1 border-b border-line px-4 py-2 text-xs text-text-muted">
+      {held && onShow !== undefined ? (
+        <button
+          type="button"
+          aria-label="Show the passage in the description"
+          className="block w-full rounded-sm transition-colors duration-100 hover:text-text"
+          onClick={onShow}
+        >
+          {text}
+        </button>
+      ) : (
+        <p>{text}</p>
+      )}
+      {!held && (
+        <p className="text-2xs text-text-faint">
+          The description no longer has this text.
+        </p>
+      )}
+    </div>
+  );
+};
 
 /** One comment: header, body, attachments and reactions. */
 const CommentItem: React.FC<CommentItemProps> = ({
@@ -238,8 +291,9 @@ const CommentItem: React.FC<CommentItemProps> = ({
   return (
     <article
       id={anchorOf(comment.comment_id)}
+      tabIndex={-1}
       aria-label={`Comment by ${author}`}
-      className="group/comment px-4 py-3"
+      className="group/comment px-4 py-3 outline-none"
     >
       <header className="flex items-center gap-2">
         <MemberLink
@@ -499,8 +553,15 @@ export const CommentCard: React.FC<CommentCardProps> = ({
   const [replying, setReplying] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const quotes = useQuoteRequest();
+  const passages = usePassageThreads();
   const queryKey = commentsKey(reader.issueId);
   const resolution = comment.resolution ?? null;
+  const anchor = comment.anchor ?? null;
+  const commentId = comment.comment_id;
+  const located = passages?.located ?? null;
+  const held =
+    resolution !== null || located === null || located.has(commentId);
+  const active = passages !== null && passages.activeId === commentId;
 
   const { mutate: resolve } = useMutationWithRefetch(
     () => resolveThread(reader.workspaceId, reader.issueId, comment.comment_id),
@@ -595,7 +656,12 @@ export const CommentCard: React.FC<CommentCardProps> = ({
   }
 
   return (
-    <div className="rounded-lg border border-line bg-surface">
+    <div
+      className={cn(
+        'rounded-lg border bg-surface transition-colors duration-150',
+        active ? 'border-warning/70' : 'border-line'
+      )}
+    >
       {resolution !== null && (
         <div className="flex items-center gap-2 border-b border-line px-4 py-1.5 text-xs text-text-faint">
           <LuCircleCheck
@@ -624,6 +690,19 @@ export const CommentCard: React.FC<CommentCardProps> = ({
             </IconButton>
           </div>
         </div>
+      )}
+      {anchor !== null && (
+        <PassageQuote
+          anchor={anchor}
+          held={held}
+          onShow={
+            passages === null || resolution !== null
+              ? undefined
+              : () => {
+                  passages.showPassage(commentId);
+                }
+          }
+        />
       )}
       <CommentItem
         comment={comment}

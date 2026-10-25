@@ -71,6 +71,20 @@ class ThreadResolution(BaseModel):
     resolved_at: datetime = Field(default_factory=utc_now)
 
 
+class CommentAnchor(BaseModel):
+    """The passage of the issue description a root comment is pinned to.
+
+    The quoted text plus a little of the text either side, which is what finds the
+    passage again among repeats of it. Never written into the description, so an
+    edit that removes the passage leaves the quote here and the reader shows it as
+    changed.
+    """
+
+    quote: str
+    prefix: str = ""
+    suffix: str = ""
+
+
 class Comment(BaseModel):
     """One comment on an issue.
 
@@ -78,7 +92,8 @@ class Comment(BaseModel):
     replied to, which is what keeps `reply_count` a count of direct replies rather
     than a tree walk. `github_thread` is set on a root comment whose thread is
     mirrored to a GitHub pull request or issue, and `resolution` on a root
-    whose thread was marked resolved.
+    whose thread was marked resolved. `anchor` is set on a root comment started
+    from a selected passage of the description.
     """
 
     ws_issue: str
@@ -97,6 +112,7 @@ class Comment(BaseModel):
     import_batch_id: str | None = None
     github_thread: GithubThread | None = None
     resolution: ThreadResolution | None = None
+    anchor: CommentAnchor | None = None
 
 
 def build_comment(
@@ -110,6 +126,7 @@ def build_comment(
     mentions: list[str] | None = None,
     attachment_ids: list[str] | None = None,
     source: str | None = None,
+    anchor: CommentAnchor | None = None,
 ) -> Comment:
     """One comment with its partition key already composed.
 
@@ -127,6 +144,7 @@ def build_comment(
         mentions=list(mentions or []),
         attachment_ids=list(attachment_ids or []),
         source=source,
+        anchor=anchor,
     )
 
 
@@ -145,6 +163,8 @@ def as_comment_item(comment: Comment) -> dict[str, Any]:
         item.pop("github_thread", None)
     if item.get("resolution") is None:
         item.pop("resolution", None)
+    if item.get("anchor") is None:
+        item.pop("anchor", None)
     return item
 
 
