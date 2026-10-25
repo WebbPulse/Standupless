@@ -59,6 +59,7 @@ def test_the_caller_reads_their_own_row(client: TestClient, repositories: Any) -
         "font_size": "default",
         "theme": None,
         "pointer_cursors": False,
+        "convert_emoticons": True,
         "activity_filter": "all",
         "sidebar_items": {item: "show" for item in SIDEBAR_ITEMS},
         "sidebar_badge_style": "count",
@@ -307,6 +308,23 @@ def test_theme_and_pointer_cursors_are_stored_on_the_account(client: TestClient,
 
     repositories.users.update(OWNER, theme="sepia")
     assert client.get("/api/users/me").json()["theme"] is None
+
+
+def test_emoticon_conversion_starts_on_and_toggles(client: TestClient, repositories: Any) -> None:
+    """Emoticon conversion reads on for a new account and follows the account once turned off."""
+    make_user(repositories, OWNER, "owner@example.com", display_name="Owner")
+    sign_in(client, OWNER)
+
+    assert client.get("/api/users/me").json()["convert_emoticons"] is True
+
+    body = client.patch("/api/users/me/preferences", json={"convert_emoticons": False}).json()
+    assert body["convert_emoticons"] is False
+    assert repositories.users.get(OWNER).convert_emoticons is False
+
+    body = client.patch("/api/users/me/preferences", json={"font_size": "large"}).json()
+    assert body["convert_emoticons"] is False
+
+    assert client.patch("/api/users/me/preferences", json={"convert_emoticons": "sometimes"}).status_code == 422
 
 
 def test_a_retired_stored_preference_reads_as_the_default(client: TestClient, repositories: Any) -> None:

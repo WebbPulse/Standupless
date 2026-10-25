@@ -142,7 +142,8 @@ class User(BaseModel):
     the interface used before they existed, so an older row reads unchanged.
     `theme` is the interface theme, None until the person first saves one, so a
     browser's earlier local choice can be uploaded once. `pointer_cursors` shows
-    the pointer cursor on interactive elements, off by default.
+    the pointer cursor on interactive elements, off by default. `convert_emoticons`
+    turns typed emoticons such as `:)` into emoji in the editor, on by default.
     `activity_filter` is whether every issue's activity shows all of it or only
     its comments, all by default.
     `sidebar_items` holds only the sidebar items the person moved off the
@@ -186,6 +187,7 @@ class User(BaseModel):
     font_size: str = "default"
     theme: Optional[str] = None
     pointer_cursors: bool = False
+    convert_emoticons: bool = True
     activity_filter: str = "all"
     sidebar_items: dict[str, str] = Field(default_factory=dict)
     sidebar_badge_style: str = "count"

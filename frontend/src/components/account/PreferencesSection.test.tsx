@@ -145,4 +145,22 @@ describe('PreferencesSection interface', () => {
     expect(updatePreferences).toHaveBeenCalledWith({ pointer_cursors: true });
     await waitFor(() => expect(login).toHaveBeenCalledWith(saved));
   });
+
+  it('turns emoticon conversion off, on by default', async () => {
+    const saved = { ...base, convert_emoticons: false };
+    updatePreferences.mockResolvedValue(saved);
+    const user = userEvent.setup();
+    render(<PreferencesSection />);
+
+    expect(toggle('Turn emoticons into emoji')).toHaveAttribute(
+      'aria-checked',
+      'true'
+    );
+    await user.click(toggle('Turn emoticons into emoji'));
+
+    expect(updatePreferences).toHaveBeenCalledWith({
+      convert_emoticons: false,
+    });
+    await waitFor(() => expect(login).toHaveBeenCalledWith(saved));
+  });
 });

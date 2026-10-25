@@ -134,6 +134,7 @@ const usePreferenceSync = (user: UserRead | null): void => {
   const nameDisplay = user?.name_display;
   const fontSize = user?.font_size;
   const pointerCursors = user?.pointer_cursors;
+  const convertEmoticons = user?.convert_emoticons;
   const autoAssign = user?.auto_assign_to_self;
   const branchStarts = user?.branch_copy_starts;
   const branchAssigns = user?.branch_copy_assigns;
@@ -148,6 +149,7 @@ const usePreferenceSync = (user: UserRead | null): void => {
         name_display: nameDisplay,
         font_size: fontSize,
         pointer_cursors: pointerCursors,
+        convert_emoticons: convertEmoticons,
         auto_assign_to_self: autoAssign,
         branch_copy_starts: branchStarts,
         branch_copy_assigns: branchAssigns,
@@ -160,6 +162,7 @@ const usePreferenceSync = (user: UserRead | null): void => {
     nameDisplay,
     fontSize,
     pointerCursors,
+    convertEmoticons,
     autoAssign,
     branchStarts,
     branchAssigns,

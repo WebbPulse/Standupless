@@ -48,6 +48,7 @@ import { CollapsibleSectionKit } from './CollapsibleSection';
 import { EditorShortcuts } from './editorShortcuts';
 import { DocumentLinkSuggestion } from './DocumentLinkSuggestion';
 import { EmojiSuggestion } from './EmojiSuggestion';
+import { EmoticonConversion } from './emoticons';
 import { MediaImage, MediaUpload } from './mediaNodes';
 import { SpreadsheetPaste } from './tablePaste';
 
@@ -330,6 +331,7 @@ export const markdownExtensions = (
     EditorShortcuts,
     MentionChips,
     EmojiSuggestion,
+    EmoticonConversion,
     DocumentLinkSuggestion,
     ReferenceChips.configure({
       ...(options.isIssueKey === undefined

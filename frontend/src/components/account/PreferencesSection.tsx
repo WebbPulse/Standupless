@@ -1,7 +1,7 @@
 /**
  * The person's interface preferences: where a workspace opens, the first day
  * of the week, whether people read by full name or username, the text size,
- * the colour theme and pointer cursors, and the workflow switches: assigning new issues to
+ * the colour theme, pointer cursors and emoticon conversion, and the workflow switches: assigning new issues to
  * themselves, and starting and assigning an issue when its git branch name is
  * copied.
  *
@@ -320,6 +320,15 @@ export const PreferencesSection: React.FC = () => {
             disabled={saving}
             onChange={(on) => {
               save({ pointer_cursors: on });
+            }}
+          />
+          <ToggleRow
+            label="Turn emoticons into emoji"
+            detail="Typing an emoticon such as :) or <3 followed by a space or punctuation turns it into the emoji while you write."
+            checked={preferences.convertEmoticons}
+            disabled={saving}
+            onChange={(on) => {
+              save({ convert_emoticons: on });
             }}
           />
         </div>
