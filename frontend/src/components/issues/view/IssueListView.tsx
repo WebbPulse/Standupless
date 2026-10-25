@@ -1643,6 +1643,7 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
           onFoldMany={onFoldMany}
           nest={nest}
           createIn={createIn}
+          onStateChange={onStateChange}
         />
         {collection.truncated && (
           <p className="px-4 py-3 text-xs text-text-muted lg:px-6">

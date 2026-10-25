@@ -32,16 +32,8 @@ import { LuChevronRight, LuEllipsis, LuEyeOff, LuPlus } from 'react-icons/lu';
 import type { OrderedIssueRead } from '../../../api/issues';
 import { cn } from '../../../lib/cn';
 import {
-  customerMove,
-  GROUP_LABELS,
   groupIssues,
   hiddenColumnKey,
-  isLabelGroupField,
-  isMovableGroupField,
-  moveChange,
-  type CustomerMove,
-  type GroupField,
-  type IssueChange,
   type IssueGroup,
   type ViewState,
   withinStatusCategories,
@@ -49,12 +41,6 @@ import {
 import type { StatusCategory } from '../../../types/Api';
 import { parentRefOf } from '../../../lib/issueTree';
 import { issuePath } from '../../../lib/paths';
-import {
-  issueCount,
-  movedNotice,
-  skippedNotice,
-} from '../../../lib/bulkIssueActions';
-import { showToast } from '../../../lib/toast';
 import { IconButton } from '../../ui/button';
 import { Menu, MenuItem } from '../../ui/menu';
 import { TruncatedText, useTruncationTooltip } from '../../ui/truncated-text';
@@ -72,8 +58,13 @@ import {
   draggedIds,
   isNoOpDrop,
   setCountDragImage,
-  slotPlacements,
 } from '../../../lib/boardDrop';
+import {
+  canDragIssue,
+  landIssueDrop,
+  type DropCell,
+  type DropLanding,
+} from './issueDrop';
 import { useIssuePrefetch } from '../../../hooks/useIssuePrefetch';
 
 /** Where a dragged card would land. */
@@ -87,11 +78,7 @@ interface DropTarget {
  * Where a drop lands: a slot in a cell, or a hidden column in the rail, which
  * has no lane and no slot, so each card keeps its own lane and position.
  */
-interface Landing {
-  lane: string | null;
-  column: string;
-  index: number | null;
-}
+type Landing = DropLanding;
 
 /**
  * The cards being dragged, in display order, the lead card the drag started
@@ -106,10 +93,7 @@ interface DragSource {
 }
 
 /** A card's cell: its lane and column keys. */
-interface CellRef {
-  lane: string;
-  column: string;
-}
+type CellRef = DropCell;
 
 /** The shortest placeholder drawn, for a card that reports no height. */
 const MIN_PLACEHOLDER = 40;
@@ -119,28 +103,6 @@ const COLUMN_WIDTH = 'w-[min(20rem,calc(100vw-3rem))]';
 
 /** The lane key used when the board has no swimlanes. */
 const ONE_LANE = 'all';
-
-/** Joins two changes, adding their label edits together. */
-const joinChanges = (left: IssueChange, right: IssueChange): IssueChange => {
-  const merged: IssueChange = { ...left, ...right };
-  const adds = [...(left.add_label_ids ?? []), ...(right.add_label_ids ?? [])];
-  const removes = [
-    ...(left.remove_label_ids ?? []),
-    ...(right.remove_label_ids ?? []),
-  ];
-  if (adds.length > 0) merged.add_label_ids = adds;
-  if (removes.length > 0) merged.remove_label_ids = removes;
-  return merged;
-};
-
-/**
- * Why a drop was refused: a column the grouping cannot set by dragging, or a
- * value the issue's own team does not have.
- */
-const refusedMove = (key: string, field: GroupField): string =>
-  isLabelGroupField(field) || isMovableGroupField(field)
-    ? `${key} cannot move there, its team has no matching value.`
-    : `${key} stays put, ${GROUP_LABELS[field].toLowerCase()} is not set by dragging.`;
 
 /** Props for BoardCard. */
 interface BoardCardProps {
@@ -353,7 +315,7 @@ export const BoardLayout: React.FC<BoardLayoutProps> = ({
       ?.cells.find((item) => item.key === column)?.issues ?? [];
 
   const editable = (issue: OrderedIssueRead): boolean =>
-    env.canEdit && (env.canEditIssue?.(issue) ?? true);
+    canDragIssue(env, issue);
 
   const endDrag = (): void => {
     setDrag(null);
@@ -364,168 +326,27 @@ export const BoardLayout: React.FC<BoardLayoutProps> = ({
   const drop = (to: Landing): void => {
     const source = drag;
     endDrag();
-    if (source === null || !env.canEdit) return;
-    const movers = source.ids.flatMap((id) => {
-      const issue = byId.get(id);
-      return issue === undefined ? [] : [issue];
+    if (source === null) return;
+    landIssueDrop({
+      env,
+      onStateChange,
+      movers: source.ids.flatMap((id) => {
+        const issue = byId.get(id);
+        return issue === undefined ? [] : [issue];
+      }),
+      lead: source.lead,
+      source: { lane: source.lane, column: source.column },
+      cellOf: (id) => cellOf.get(id),
+      to,
+      columnField,
+      laneField,
+      cellIssues,
+      columnLabel: (key) =>
+        [...columns, ...hidden].find((column) => column.key === key)?.label ??
+        key,
+      laneLabel: (key) =>
+        lanes.find((item) => item.lane.key === key)?.lane.label ?? key,
     });
-    if (movers.length === 0) return;
-    const alone = movers.length === 1;
-    const fromOf = (issue: OrderedIssueRead): CellRef =>
-      issue.id === source.lead
-        ? { lane: source.lane, column: source.column }
-        : (cellOf.get(issue.id) ?? {
-            lane: source.lane,
-            column: source.column,
-          });
-
-    const allowed = movers.filter(editable);
-    const locked = movers.length - allowed.length;
-    const changes = new Map<string, IssueChange>();
-    const customerMoves: { issue: OrderedIssueRead; move: CustomerMove }[] = [];
-    let unmatched = 0;
-    let refusal = '';
-    let columnMoved = false;
-    let laneMoved = false;
-    for (const issue of allowed) {
-      const from = fromOf(issue);
-      const lane = to.lane ?? from.lane;
-      let change: IssueChange = {};
-      let refused = false;
-      if (to.column !== from.column) {
-        const moved = moveChange(
-          issue,
-          columnField,
-          from.column,
-          to.column,
-          context
-        );
-        if (moved === null) {
-          refused = true;
-          refusal = refusedMove(issue.key, columnField);
-        } else {
-          change = joinChanges(change, moved);
-        }
-      }
-      if (!refused && laneField !== 'none' && lane !== from.lane) {
-        const moved = moveChange(issue, laneField, from.lane, lane, context);
-        if (moved === null) {
-          refused = true;
-          refusal = refusedMove(issue.key, laneField);
-        } else {
-          change = joinChanges(change, moved);
-        }
-      }
-      if (refused) {
-        unmatched += 1;
-        continue;
-      }
-      if (to.column !== from.column) columnMoved = true;
-      if (laneField !== 'none' && lane !== from.lane) laneMoved = true;
-      if (columnField === 'customer' && to.column !== from.column) {
-        customerMoves.push({
-          issue,
-          move: customerMove(issue, from.column, to.column, context),
-        });
-      }
-      if (laneField === 'customer' && lane !== from.lane) {
-        customerMoves.push({
-          issue,
-          move: customerMove(issue, from.lane, lane, context),
-        });
-      }
-      changes.set(issue.id, change);
-    }
-
-    if (alone && unmatched === 1) {
-      showToast(refusal, 'info');
-      return;
-    }
-    const moving = allowed.filter((issue) => changes.has(issue.id));
-    const skipped = skippedNotice({ locked, unmatched });
-    if (moving.length === 0) {
-      if (skipped !== '') showToast(`Nothing moved. ${skipped}`, 'info');
-      return;
-    }
-    if (customerMoves.length > 0 && env.moveCustomer === undefined) {
-      showToast(
-        alone
-          ? `${issueCount(moving)} stays put, customer requests are not set from here.`
-          : `${issueCount(moving)} stay put, customer requests are not set from here.`,
-        'info'
-      );
-      return;
-    }
-
-    if (to.lane !== null && to.index !== null) {
-      const slotLane = to.lane;
-      const sameCell = moving.every((issue) => {
-        const from = fromOf(issue);
-        return from.column === to.column && from.lane === slotLane;
-      });
-      if (state.ordering === 'manual' || sameCell) {
-        const placements = slotPlacements(
-          cellIssues(slotLane, to.column),
-          to.index,
-          moving.map((issue) => issue.id)
-        );
-        if (sameCell && placements === null) {
-          if (skipped !== '') showToast(skipped, 'info');
-          return;
-        }
-        for (const placement of placements ?? []) {
-          const change = changes.get(placement.id);
-          if (change !== undefined) change.sort_order = placement.sort_order;
-        }
-        if (
-          placements !== null &&
-          (state.ordering !== 'manual' || state.reverse)
-        ) {
-          onStateChange({ ...state, ordering: 'manual', reverse: false });
-        }
-      }
-    }
-
-    const written = moving.filter(
-      (issue) => Object.keys(changes.get(issue.id) ?? {}).length > 0
-    );
-    if (written.length > 0) {
-      const destinations = [
-        ...(columnMoved
-          ? [
-              [...columns, ...hidden].find((column) => column.key === to.column)
-                ?.label ?? to.column,
-            ]
-          : []),
-        ...(laneMoved && to.lane !== null
-          ? [
-              lanes.find((item) => item.lane.key === to.lane)?.lane.label ??
-                to.lane,
-            ]
-          : []),
-      ];
-      const fieldsMoved = columnMoved || laneMoved;
-      env.update(
-        written.map((issue) => issue.id),
-        (issue) => changes.get(issue.id) ?? null,
-        fieldsMoved && (!alone || skipped !== '')
-          ? {
-              message: movedNotice(written, destinations, {
-                locked,
-                unmatched,
-              }),
-            }
-          : undefined
-      );
-      if (!fieldsMoved && skipped !== '') showToast(skipped, 'info');
-    } else if (skipped !== '') {
-      showToast(skipped, 'info');
-    }
-    for (const { issue, move } of customerMoves) {
-      if (move.add !== undefined || move.remove !== undefined) {
-        env.moveCustomer?.(issue, move);
-      }
-    }
   };
 
   const overCell =
