@@ -11,6 +11,9 @@
  *
  * The open threads pinned to passages of the description are reported to the
  * issue's anchored threads, so the description can highlight their passages.
+ *
+ * A filter in the header shows all activity or comments only. The choice is
+ * saved to the account, so it follows the person to every issue and device.
  */
 
 import React, {
@@ -24,6 +27,7 @@ import React, {
 import {
   LuBox,
   LuCalendar,
+  LuCheck,
   LuChevronDown,
   LuChevronRight,
   LuCircleDot,
@@ -44,8 +48,11 @@ import {
 } from 'react-icons/lu';
 import type { IconType } from 'react-icons';
 import { Link, useLocation } from 'react-router-dom';
+import { invalidateQueries } from '@webbpulse/api-client/react';
 import { appendComments, listComments } from '../../api/discussion';
 import { appendActivity, listActivity } from '../../api/issues';
+import { updatePreferences } from '../../api/notifications';
+import { useAuth } from '../../hooks/useAuth';
 import { usePassageThreads } from '../../contexts/PassageThreadsContextDefinition';
 import { useCursorPages, type CursorPage } from '../../hooks/useCursorPages';
 import type { QuoteRequest } from '../../hooks/useQuoteRequest';
@@ -68,12 +75,22 @@ import {
   type TimelineGroup,
 } from '../../lib/issueTimeline';
 import { cyclePath, issuePath, projectPath } from '../../lib/paths';
-import { activityKey, commentsKey } from '../../lib/queryKeys';
-import type { ActivityRead, CommentRead } from '../../types/Api';
+import {
+  activityKey,
+  commentsKey,
+  CURRENT_USER_KEY,
+} from '../../lib/queryKeys';
+import { showErrorToast } from '../../lib/toast';
+import type {
+  ActivityFilter,
+  ActivityRead,
+  CommentRead,
+} from '../../types/Api';
 import CommentCard from '../discussion/CommentCard';
 import CommentComposer from '../discussion/CommentComposer';
 import { ErrorAlert } from '../ui/alert';
 import Avatar from '../ui/avatar';
+import Menu, { MenuItem } from '../ui/menu';
 import { StatusIcon } from '../ui/StatusIcon';
 import RelativeTime from '../ui/relative-time';
 import Skeleton from '../ui/skeleton';
@@ -111,6 +128,82 @@ const PAGE_SIZE = 50;
 /** How often the newest page of each list is re-read. */
 const ACTIVITY_POLL_MS = 60000;
 const COMMENTS_POLL_MS = 20000;
+
+/** The filter choices, in menu order, with the words each reads as. */
+const FILTERS: { value: ActivityFilter; label: string }[] = [
+  { value: 'all', label: 'All activity' },
+  { value: 'comments', label: 'Comments only' },
+];
+
+/** The header control that picks what the timeline shows. */
+const FilterMenu: React.FC<{
+  value: ActivityFilter;
+  onChange: (value: ActivityFilter) => void;
+}> = ({ value, onChange }) => {
+  const current = FILTERS.find((option) => option.value === value);
+  return (
+    <Menu
+      label="Filter activity"
+      align="end"
+      trigger={(props) => (
+        <button
+          type="button"
+          aria-label={`Filter activity: ${current?.label ?? 'All activity'}`}
+          className="inline-flex items-center gap-1 rounded-xs px-1 text-xs text-text-faint hover:text-text"
+          {...props}
+        >
+          {current?.label ?? 'All activity'}
+          <LuChevronDown aria-hidden="true" className="h-3 w-3" />
+        </button>
+      )}
+    >
+      {FILTERS.map((option) => (
+        <MenuItem
+          key={option.value}
+          onSelect={() => {
+            onChange(option.value);
+          }}
+        >
+          <span className="flex-1">{option.label}</span>
+          <LuCheck
+            aria-hidden="true"
+            className={
+              option.value === value
+                ? 'h-3.5 w-3.5 text-text'
+                : 'invisible h-3.5 w-3.5'
+            }
+          />
+        </MenuItem>
+      ))}
+    </Menu>
+  );
+};
+
+/** The saved activity filter, with a change that saves the new one to the account. */
+const useActivityFilter = (): [
+  ActivityFilter,
+  (value: ActivityFilter) => void,
+] => {
+  const { user, login } = useAuth();
+  const [chosen, setChosen] = useState<ActivityFilter | null>(null);
+  const filter = chosen ?? user?.activity_filter ?? 'all';
+  const change = useCallback(
+    (next: ActivityFilter): void => {
+      setChosen(next);
+      if (user === null || user.activity_filter === next) return;
+      void updatePreferences({ activity_filter: next })
+        .then((answer) => {
+          login(answer);
+          invalidateQueries(CURRENT_USER_KEY);
+        })
+        .catch(() => {
+          showErrorToast('Could not save the activity filter to your account.');
+        });
+    },
+    [user, login]
+  );
+  return [filter, change];
+};
 
 /** The glyph each kind of entry is drawn with. */
 const ICONS: Record<ActivityIcon, IconType> = {
@@ -438,10 +531,30 @@ export const IssueTimeline: React.FC<IssueTimelineProps> = ({
     }
   }, [moreComments, pagingComments, loadingComments, loadMoreComments]);
 
+  const [filter, setFilter] = useActivityFilter();
+  const commentsOnly = filter === 'comments';
+
   const items = useMemo(
-    () => buildTimeline(activity.rows, comments.rows, context),
-    [activity.rows, comments.rows, context]
+    () =>
+      buildTimeline(commentsOnly ? [] : activity.rows, comments.rows, context),
+    [commentsOnly, activity.rows, comments.rows, context]
   );
+
+  const older = commentsOnly
+    ? {
+        hasMore: comments.hasMore,
+        isPaging: comments.isPaging,
+        loadMore: comments.loadMore,
+        idle: 'Show older comments',
+        busy: 'Loading older comments',
+      }
+    : {
+        hasMore: activity.hasMore,
+        isPaging: activity.isPaging,
+        loadMore: activity.loadMore,
+        idle: 'Show older activity',
+        busy: 'Loading older activity',
+      };
 
   useEffect(() => {
     onCommentAttachments?.(commentAttachmentIds(comments.rows));
@@ -465,16 +578,21 @@ export const IssueTimeline: React.FC<IssueTimelineProps> = ({
     }
   }, [hash, comments.rows]);
 
-  const loading = activity.isLoading || comments.isLoading;
+  const loading = commentsOnly
+    ? comments.isLoading
+    : activity.isLoading || comments.isLoading;
   const headingId = useId();
 
   return (
     <section aria-labelledby={headingId} className="space-y-4">
-      <h2 id={headingId} className="text-sm font-semibold text-text">
-        Activity
-      </h2>
+      <div className="flex items-center justify-between gap-2">
+        <h2 id={headingId} className="text-sm font-semibold text-text">
+          Activity
+        </h2>
+        <FilterMenu value={filter} onChange={setFilter} />
+      </div>
 
-      {activity.error !== null && (
+      {!commentsOnly && activity.error !== null && (
         <ErrorAlert
           message={errorMessage(activity.error, 'Could not load the activity.')}
         />
@@ -499,24 +617,24 @@ export const IssueTimeline: React.FC<IssueTimelineProps> = ({
             </div>
           ))}
         </div>
+      ) : commentsOnly && items.length === 0 && !older.hasMore ? (
+        <p className="py-2 text-xs text-text-faint">No comments yet</p>
       ) : (
         <ol aria-label="Timeline" className="relative space-y-1">
           <span
             aria-hidden="true"
             className="absolute top-2 bottom-2 left-2.5 w-px bg-line"
           />
-          {activity.hasMore && (
+          {older.hasMore && (
             <li className="relative flex min-h-7 items-center gap-3">
               <span className="relative z-10 h-5 w-5 shrink-0 rounded-full bg-bg" />
               <button
                 type="button"
-                disabled={activity.isPaging}
+                disabled={older.isPaging}
                 className="rounded-xs text-xs text-text-faint hover:text-text disabled:opacity-50"
-                onClick={activity.loadMore}
+                onClick={older.loadMore}
               >
-                {activity.isPaging
-                  ? 'Loading older activity'
-                  : 'Show older activity'}
+                {older.isPaging ? older.busy : older.idle}
               </button>
             </li>
           )}
