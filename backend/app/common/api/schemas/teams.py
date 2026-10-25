@@ -13,6 +13,7 @@ from typing import Literal, Optional, Union
 
 from pydantic import BaseModel, Field, StrictBool, field_validator, model_validator
 
+from app.common.api.schemas.member_status import UserStatusRead
 from app.common.api.schemas.projects_display import ProjectsDisplay, stored_projects_display
 from app.common.api.schemas.views import (
     VISIBLE_PROPERTIES,
@@ -291,6 +292,8 @@ class TeamMemberRead(BaseModel):
 
     `full_name` rides along with the handle so a reader who prefers full names
     sees them in the team's pickers too, the way the workspace member list does.
+    `user_status` is the member's away status while it is in force, read from
+    their workspace row, so a picker can say who is away.
     """
 
     user_id: str
@@ -300,10 +303,13 @@ class TeamMemberRead(BaseModel):
     avatar_url: Optional[str] = None
     role: TeamRoleField
     added_at: datetime
+    user_status: Optional[UserStatusRead] = None
 
     @classmethod
-    def from_rows(cls, membership: Membership, user: Optional[User]) -> "TeamMemberRead":
-        """Build the response from a team membership and its user row."""
+    def from_rows(
+        cls, membership: Membership, user: Optional[User], *, user_status: Optional[UserStatusRead] = None
+    ) -> "TeamMemberRead":
+        """Build the response from a team membership, its user row and the member's current status."""
         return cls(
             user_id=membership.user_id,
             email=user.email if user is not None else "",
@@ -312,6 +318,7 @@ class TeamMemberRead(BaseModel):
             avatar_url=icon_url(user.icon_key) if user is not None else None,
             role=membership.role,  # pyright: ignore[reportArgumentType]
             added_at=membership.joined_at,
+            user_status=user_status,
         )
 
 

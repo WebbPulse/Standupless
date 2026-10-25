@@ -267,6 +267,7 @@ def test_the_contract_fixes_the_tool_set() -> None:
         "search_issues",
         "set_github_transitions",
         "set_standup_note",
+        "set_my_status",
         "set_issue_reminder",
         "list_issue_reminders",
         "cancel_issue_reminder",

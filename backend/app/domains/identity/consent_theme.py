@@ -39,7 +39,8 @@ SCOPE_LABELS: dict[str, tuple[str, str, Literal["read", "write"]]] = {
     "members:read": ("Read members", "Workspace and team members with their roles.", "read"),
     "members:write": (
         "Manage members",
-        "Add or remove team members and, as an admin, invite, change roles or remove workspace members.",
+        "Set your own status, add or remove team members and, as an admin, invite, change roles"
+        " or remove workspace members.",
         "write",
     ),
     "statuses:read": ("Read workflow statuses", "", "read"),

@@ -42,6 +42,7 @@ import {
 } from '../../lib/issuePeople';
 import { useProjectStatuses } from '../../hooks/useProjectStatuses';
 import { CYCLE_STATUS_LABELS } from '../../lib/planningDisplay';
+import { awayNote, isAway, statusSummary } from '../../lib/userStatus';
 import {
   STATUS_CATEGORY_LABELS,
   dateInRange,
@@ -345,6 +346,17 @@ export const PriorityPicker: React.FC<PriorityPickerProps> = ({
   );
 };
 
+/** The detail an assignee option shows: "You" for the caller, then their status. */
+const personDetail = (
+  person: Assignable,
+  isMe: boolean
+): { detail?: string } => {
+  const detail = [isMe ? 'You' : '', statusSummary(person.user_status)]
+    .filter(Boolean)
+    .join(' · ');
+  return detail === '' ? {} : { detail };
+};
+
 /** Props for AssigneePicker: the people who may be assigned and the choice. */
 export interface AssigneePickerProps extends PickerBaseProps {
   people: Assignable[];
@@ -354,7 +366,12 @@ export interface AssigneePickerProps extends PickerBaseProps {
   currentUserId?: string;
 }
 
-/** Picks an assignee, with "No assignee" first and the caller next. */
+/**
+ * Picks an assignee, with "No assignee" first and the caller next. Each person
+ * shows the status they set, with a dot on the avatar of anyone away, and an
+ * away assignee carries an "Away until" note beside the pick. Being away never
+ * blocks the pick: the note is there so the choice is made knowingly.
+ */
 export const AssigneePicker: React.FC<AssigneePickerProps> = ({
   people,
   value,
@@ -387,13 +404,15 @@ export const AssigneePicker: React.FC<AssigneePickerProps> = ({
           name={personLabel(person)}
           src={personAvatar(person)}
           size="xs"
+          away={isAway(person.user_status)}
         />
       ),
       keywords: [person.email],
-      ...(person === me ? { detail: 'You' } : {}),
+      ...personDetail(person, person === me),
     })),
   ];
-  return (
+  const note = awayNote(current?.user_status);
+  const picker = (
     <SinglePicker
       {...base}
       field="Assignee"
@@ -411,6 +430,7 @@ export const AssigneePicker: React.FC<AssigneePickerProps> = ({
             name={current === undefined ? '?' : personLabel(current)}
             src={personAvatar(current)}
             size="xs"
+            away={note !== null}
           />
         )
       }
@@ -422,6 +442,28 @@ export const AssigneePicker: React.FC<AssigneePickerProps> = ({
       empty={value === null}
     />
   );
+  if (note === null || base.renderTrigger !== undefined) return picker;
+  if (variant === 'rail') {
+    return (
+      <div className="flex w-full flex-col">
+        {picker}
+        <p className="px-2 text-xs text-warning" data-testid="assignee-away">
+          {note}
+        </p>
+      </div>
+    );
+  }
+  if (variant === 'chip') {
+    return (
+      <span className="inline-flex items-center gap-1.5">
+        {picker}
+        <span className="text-xs text-warning" data-testid="assignee-away">
+          {note}
+        </span>
+      </span>
+    );
+  }
+  return picker;
 };
 
 /** A label's colour as a small dot. */

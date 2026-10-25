@@ -40,6 +40,7 @@ import type {
   SsoDomainRead,
   SsoJoinRead,
   SsoSettingsRead,
+  UserStatusUpdate,
   WorkspaceCreate,
   WorkspaceDeletionRequest,
   WorkspaceListRead,
@@ -561,6 +562,32 @@ export const updateMember = async (
 };
 
 /** Removes one member. The API refuses to remove the last owner. */
+/** The route the caller's own status in a workspace is set and cleared at. */
+export const myStatusPath = (workspaceId: string): string =>
+  `${membersPath(workspaceId)}/me/status`;
+
+/** Sets the caller's own status in a workspace, answering their member row. */
+export const setMyStatus = async (
+  workspaceId: string,
+  body: UserStatusUpdate
+): Promise<MemberRead> => {
+  const response = await apiClient.put<MemberRead>(
+    myStatusPath(workspaceId),
+    body
+  );
+  return response.data;
+};
+
+/** Clears the caller's own status in a workspace, answering their member row. */
+export const clearMyStatus = async (
+  workspaceId: string
+): Promise<MemberRead> => {
+  const response = await apiClient.delete<MemberRead>(
+    myStatusPath(workspaceId)
+  );
+  return response.data;
+};
+
 export const removeMember = async (
   workspaceId: string,
   userId: string

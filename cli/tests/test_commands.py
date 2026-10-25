@@ -1851,3 +1851,38 @@ def test_a_planning_date_shows_at_its_resolution(value: str | None, resolution: 
     from standupless_cli.main import _date_label
 
     assert _date_label(value, resolution) == label
+
+
+def test_workspace_status_sets_your_own_status(runner: CliRunner, api: respx.MockRouter) -> None:
+    """The flags become the status body and the answer is echoed back."""
+    status = {"emoji": "🌴", "text": "On vacation", "away": True, "until": "2026-11-01T00:00:00Z", "set_at": "x"}
+    put = api.put(f"/api/workspaces/{WS}/members/me/status").respond(
+        json={"user_id": "u-me", "role": "member", "user_status": status}
+    )
+    flags = ["--emoji", "🌴", "--away", "--until", "2026-11-01T00:00:00Z"]
+    result = invoke(runner, "workspace", "status", "On vacation", *flags)
+    assert result.exit_code == 0, result.output
+    assert json.loads(put.calls[0].request.content) == {
+        "emoji": "🌴",
+        "text": "On vacation",
+        "away": True,
+        "until": "2026-11-01T00:00:00Z",
+    }
+    assert "On vacation" in result.output
+
+
+def test_workspace_status_clear_removes_it(runner: CliRunner, api: respx.MockRouter) -> None:
+    """--clear calls the delete route."""
+    deleted = api.delete(f"/api/workspaces/{WS}/members/me/status").respond(
+        json={"user_id": "u-me", "role": "member", "user_status": None}
+    )
+    result = invoke(runner, "workspace", "status", "--clear")
+    assert result.exit_code == 0, result.output
+    assert deleted.called
+    assert "Cleared" in result.output
+
+
+def test_workspace_status_needs_text_or_clear(runner: CliRunner, api: respx.MockRouter) -> None:
+    """Nothing to set and no --clear is refused before any call."""
+    result = invoke(runner, "workspace", "status")
+    assert result.exit_code != 0

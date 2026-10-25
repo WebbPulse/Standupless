@@ -19,6 +19,7 @@
 import React, { useMemo } from 'react';
 import { LuChevronRight } from 'react-icons/lu';
 import { useMentionLabel } from '../../contexts/MentionDirectoryContextDefinition';
+import { useMentionMember } from '../../contexts/MentionMembersContextDefinition';
 import {
   useLinkedPullRequest,
   useLinkedReference,
@@ -39,6 +40,7 @@ import HighlightedCode from './highlighted-code';
 import MathFormula from './math';
 import MermaidBlock from './mermaid-block';
 import IssueChip from './IssueChip';
+import MemberHoverTrigger from './MemberHoverCard';
 import MarkdownCallout from './markdown-callout';
 import ReferenceChip from './ReferenceChip';
 
@@ -63,16 +65,22 @@ export interface MarkdownProps {
   density?: MarkdownDensity;
 }
 
-/** A mention, shown as the handle the person uses today. */
+/** A mention, shown as the handle the person uses today, opening the person's card on hover. */
 const Mention: React.FC<{ handle: string }> = ({ handle }) => {
   const label = useMentionLabel(handle);
+  const member = useMentionMember(handle);
   return (
-    <span
-      data-md={`@${handle}`}
-      className="rounded-xs bg-accent-soft px-0.5 font-medium text-accent"
-    >
-      @{label}
-    </span>
+    <MemberHoverTrigger person={member}>
+      {(trigger) => (
+        <span
+          {...trigger}
+          data-md={`@${handle}`}
+          className="rounded-xs bg-accent-soft px-0.5 font-medium text-accent"
+        >
+          @{label}
+        </span>
+      )}
+    </MemberHoverTrigger>
   );
 };
 

@@ -92,6 +92,7 @@ from standupless_cli._generated.models import (
     TriageSettingsUpdate,
     TriageSnooze,
     UserRead,
+    UserStatusUpdate,
     ViewListRead,
     ViewRead,
     WorkspaceExportCreate,
@@ -495,6 +496,16 @@ class StanduplessClient:
     def list_members(self, workspace_id: str) -> list[MemberRead]:
         """The workspace's members."""
         return cast(MemberListRead, self._request("GET", f"/api/workspaces/{workspace_id}/members"))["members"]
+
+    def set_my_status(self, workspace_id: str, body: UserStatusUpdate) -> MemberRead:
+        """Set the caller's own status in the workspace, replacing any earlier one."""
+        path = f"/api/workspaces/{workspace_id}/members/me/status"
+        return cast(MemberRead, self._request("PUT", path, json=body))
+
+    def clear_my_status(self, workspace_id: str) -> MemberRead:
+        """Clear the caller's own status in the workspace."""
+        path = f"/api/workspaces/{workspace_id}/members/me/status"
+        return cast(MemberRead, self._request("DELETE", path))
 
     def list_issues(self, workspace_id: str, params: Mapping[str, Any], limit: int | None = 50) -> list[Issue]:
         """Issues matching the filter params, following cursors up to `limit`."""

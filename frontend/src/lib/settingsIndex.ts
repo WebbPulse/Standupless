@@ -139,6 +139,12 @@ export const SETTINGS_PAGES: readonly SettingsPage[] = [
         anchor: settingsAnchorId('profile'),
       },
       {
+        id: 'status',
+        title: 'Status',
+        synonyms: ['away', 'vacation', 'out of office', 'out sick', 'focus'],
+        anchor: settingsAnchorId('status'),
+      },
+      {
         id: 'avatar',
         title: 'Avatar',
         synonyms: ['photo', 'picture', 'profile image'],

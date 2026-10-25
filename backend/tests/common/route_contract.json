@@ -3213,6 +3213,18 @@
     "auth": "workspace:read",
     "domain": "workspaces",
     "method": "DELETE",
+    "path": "/api/workspaces/{workspace_id}/members/me/status"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "workspaces",
+    "method": "PUT",
+    "path": "/api/workspaces/{workspace_id}/members/me/status"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "workspaces",
+    "method": "DELETE",
     "path": "/api/workspaces/{workspace_id}/members/{user_id}"
   },
   {

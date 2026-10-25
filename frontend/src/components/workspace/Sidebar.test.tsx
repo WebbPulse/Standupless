@@ -39,6 +39,7 @@ import { triageSummaryKey } from '../../lib/queryKeys';
 import type {
   CycleSettingsRead,
   FavoriteRead,
+  MemberRead,
   ReviewsRead,
   SavedViewRead,
   TeamRead,
@@ -91,6 +92,15 @@ vi.mock('../../api/teams', () => ({
   setTeamOrder: (workspaceId: string, teamIds: string[]) =>
     setTeamOrder(workspaceId, teamIds),
   getCycleSettings: (_w: string, teamId: string) => getCycleSettings(teamId),
+}));
+
+const listMembers = vi.fn<() => Promise<MemberRead[]>>();
+const setMyStatus = vi.fn();
+
+vi.mock('../../api/workspaces', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../api/workspaces')>()),
+  listMembers: () => listMembers(),
+  setMyStatus: (...args: unknown[]) => setMyStatus(...args),
 }));
 
 vi.mock('../../api/views', () => ({
@@ -290,6 +300,8 @@ const dragData = (): { dataTransfer: Partial<DataTransfer> } => ({
 });
 
 beforeEach(() => {
+  listMembers.mockReset();
+  listMembers.mockResolvedValue([]);
   listTeams.mockReset();
   getCycleSettings.mockReset();
   getCycleSettings.mockResolvedValue(cycleSettings(false));
@@ -465,6 +477,58 @@ describe('the sign-out affordance', () => {
     expect(await screen.findByTestId('sign-out')).toHaveAccessibleName(
       'Sign out'
     );
+  });
+});
+
+describe('the status the caller set', () => {
+  it('shows the away dot and emoji in the footer and opens the status dialog from it and from the menu', async () => {
+    auth.user.id = 'me-1';
+    listMembers.mockResolvedValue([
+      {
+        user_id: 'me-1',
+        email: 'me@example.com',
+        display_name: 'Me',
+        role: 'owner',
+        joined_at: '2026-09-17T00:00:00Z',
+        user_status: {
+          emoji: '🌴',
+          text: 'On vacation',
+          away: true,
+          until: null,
+          set_at: '2026-10-20T00:00:00Z',
+        },
+      },
+    ]);
+    const user = userEvent.setup();
+    try {
+      renderSidebar();
+
+      const footer = await screen.findByRole('button', {
+        name: 'Status: 🌴 On vacation',
+      });
+      expect(within(footer).getByTestId('avatar-away')).toBeInTheDocument();
+      await user.click(footer);
+      expect(
+        await screen.findByRole('dialog', { name: 'Set status' })
+      ).toBeInTheDocument();
+      expect(screen.getByLabelText('Status')).toHaveValue('On vacation');
+    } finally {
+      delete auth.user.id;
+    }
+  });
+
+  it('offers Set status in the workspace menu when none is set', async () => {
+    const user = userEvent.setup();
+    renderSidebar();
+
+    await user.click(await screen.findByRole('button', { name: /Mine/ }));
+    await user.click(
+      await screen.findByRole('menuitem', { name: 'Set status' })
+    );
+
+    expect(
+      await screen.findByRole('dialog', { name: 'Set status' })
+    ).toBeInTheDocument();
   });
 });
 

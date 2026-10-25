@@ -83,6 +83,7 @@ import {
   type DateMentionOption,
 } from '../../lib/dateChips';
 import { matchPeople, mentionHandle, mentionQuery } from '../../lib/mentions';
+import { isAway, statusSummary } from '../../lib/userStatus';
 import {
   currentOrigin,
   isSearchable,
@@ -1288,10 +1289,19 @@ export const RichMarkdownEditor: React.FC<RichMarkdownEditorProps> = ({
                   name={personLabel(person)}
                   src={personAvatar(person)}
                   size="sm"
+                  away={isAway(person.user_status)}
                 />
                 <span className="min-w-0 flex-1 truncate text-text">
                   {personLabel(person)}
                 </span>
+                {statusSummary(person.user_status) !== '' && (
+                  <span
+                    className="max-w-32 shrink truncate text-xs text-text-muted"
+                    data-testid="mention-status"
+                  >
+                    {statusSummary(person.user_status)}
+                  </span>
+                )}
                 <span className="shrink-0 text-xs text-text-faint">
                   @{mentionHandle(person)}
                 </span>

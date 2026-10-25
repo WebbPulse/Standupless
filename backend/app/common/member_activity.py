@@ -24,6 +24,7 @@ from app.common.api.dependencies.repositories import Repositories
 from app.common.api.pagination import resume_key
 from app.common.api.schemas.issues import ActivityRead
 from app.common.api.schemas.member_pages import MemberActivityRead, MemberCommentRead, MemberProfileRead
+from app.common.api.schemas.member_status import current_status
 from app.common.api.schemas.workspaces import display_name_for
 from app.common.db.dynamo.activity import Activity
 from app.common.db.dynamo.comments import Comment
@@ -91,7 +92,17 @@ def member_profile(repositories: Repositories, context: AuthzContext, user_id: s
         role=membership.role,  # pyright: ignore[reportArgumentType]
         joined_at=membership.joined_at,
         team_ids=team_ids,
+        user_status=current_status(membership.user_status) if _status_shown(context, member_id, team_ids) else None,
     )
+
+
+def _status_shown(context: AuthzContext, member_id: str, team_ids: list[str]) -> bool:
+    """Whether the caller may see this member's status.
+
+    Anyone but a guest may, and so may a guest looking at themselves or at someone
+    on one of their teams, which is when `team_ids` holds a team they can see.
+    """
+    return not context.is_guest or member_id == context.user_id or bool(team_ids)
 
 
 def _boundary(cursor: Optional[str], scope: str) -> Optional[tuple[datetime, str]]:

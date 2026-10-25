@@ -14,6 +14,7 @@ from pydantic import BaseModel, Field
 from webbpulse.http import cursor_page
 
 from app.common.api.schemas.issues import ActivityRead
+from app.common.api.schemas.member_status import UserStatusRead
 from app.common.api.schemas.workspaces import WorkspaceRoleField
 
 MemberActivityType = Literal["issue_change", "comment"]
@@ -24,7 +25,8 @@ class MemberProfileRead(BaseModel):
     """One workspace member as their page shows them.
 
     `team_ids` are the teams they belong to that the caller can see, so a private
-    team stays hidden from anyone outside it.
+    team stays hidden from anyone outside it. `user_status` is their away status
+    while it is in force, hidden from a guest who shares no team with them.
     """
 
     user_id: str
@@ -34,6 +36,7 @@ class MemberProfileRead(BaseModel):
     role: WorkspaceRoleField
     joined_at: datetime
     team_ids: list[str] = Field(default_factory=list)
+    user_status: Optional[UserStatusRead] = None
 
 
 class MemberCommentRead(BaseModel):

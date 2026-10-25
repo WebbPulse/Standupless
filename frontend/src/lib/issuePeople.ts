@@ -5,13 +5,22 @@
  */
 
 import { prefersFullNames } from './preferences';
-import type { MemberRead, MemberStatus, TeamMemberRead } from '../types/Api';
+import type {
+  MemberRead,
+  MemberStatus,
+  TeamMemberRead,
+  UserStatusRead,
+} from '../types/Api';
 
 /** Anyone an issue may be assigned to, from either membership list. */
 export type Assignable = Pick<
   MemberRead | TeamMemberRead,
   'user_id' | 'email' | 'display_name' | 'avatar_url' | 'full_name'
-> & { status?: MemberStatus };
+> & {
+  status?: MemberStatus;
+  /** The person's status while it is in force, when the list carries it. */
+  user_status?: UserStatusRead | null;
+};
 
 /** Whether a person may be offered for new work: anyone not suspended. */
 export const isPickable = (person: Assignable): boolean =>

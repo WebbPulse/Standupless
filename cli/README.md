@@ -120,6 +120,7 @@ standupless standup -t ENG [-d 2026-10-06] [--weekly] [--web]
 standupless standup note -t ENG "On ENG-12, blocked by the review" [-d 2026-10-07] [--clear]
 standupless standup settings -t ENG [--cadence off|daily|weekly] [--send-time 09:00]
                                     [--timezone America/New_York] [--weekday monday]
+standupless workspace status "On vacation" [--emoji 🌴] [--away] [--until 2026-11-01T00:00:00Z] [--clear]
 ```
 
 A release records what shipped where. Recording a `--sha` that already has a release
