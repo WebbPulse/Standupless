@@ -570,6 +570,7 @@ export const ProjectDetail: React.FC = () => {
       <ProjectStatusPicker
         variant="chip"
         value={project.status}
+        statusId={project.status_id}
         percent={percent}
         disabled={!canEdit}
         onChange={closePrompt.changeStatus}

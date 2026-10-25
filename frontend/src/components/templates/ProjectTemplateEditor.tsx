@@ -435,6 +435,7 @@ const ProjectTemplateForm: React.FC<ProjectTemplateFormProps> = ({
         />
         <ProjectStatusPicker
           variant="chip"
+          categoriesOnly
           value={form.status ?? 'planned'}
           onChange={(status) => {
             set({ status });

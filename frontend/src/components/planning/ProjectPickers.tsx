@@ -16,6 +16,13 @@ import {
   LuUsers,
 } from 'react-icons/lu';
 import { cn } from '../../lib/cn';
+import { useProjectStatuses } from '../../hooks/useProjectStatuses';
+import {
+  DEFAULT_PROJECT_STATUSES,
+  defaultStatusFor,
+  orderProjectStatuses,
+  projectStatusOf,
+} from '../../lib/projectStatuses';
 import {
   personAvatar,
   personLabel,
@@ -25,8 +32,6 @@ import {
   INITIATIVE_STATUSES,
   INITIATIVE_STATUS_GLYPHS,
   INITIATIVE_STATUS_LABELS,
-  PROJECT_STATUSES,
-  PROJECT_STATUS_LABELS,
   PROJECT_UPDATE_INTERVALS,
   PROJECT_UPDATE_INTERVAL_LABELS,
 } from '../../lib/planningDisplay';
@@ -139,26 +144,44 @@ const Trigger: React.FC<TriggerProps> = ({
 
 /** Props for ProjectStatusPicker: the chosen status and its progress. */
 export interface ProjectStatusPickerProps extends ProjectPickerBaseProps {
+  /** The chosen status's category. */
   value: ProjectStatus;
-  onChange: (value: ProjectStatus) => void;
+  /** The chosen workspace status, its category's default when left out. */
+  statusId?: string | null | undefined;
+  /**
+   * Called with the picked status's category and id, the id left out when the
+   * category's default is picked from another category, where a bare category lands.
+   */
+  onChange: (value: ProjectStatus, statusId?: string) => void;
   percent?: number;
+  /** Offer only the six categories, for a template that stores a category. */
+  categoriesOnly?: boolean;
 }
 
-/** Picks a project's status, with number keys for each choice. */
+/** Picks a project's status from the workspace's, with number keys for the first nine. */
 export const ProjectStatusPicker: React.FC<ProjectStatusPickerProps> = ({
   value,
+  statusId,
   onChange,
   percent,
+  categoriesOnly = false,
   disabled = false,
   variant = 'rail',
   align = 'start',
   className = '',
 }) => {
-  const options: ComboboxOption[] = PROJECT_STATUSES.map((status, index) => ({
-    value: status,
-    label: PROJECT_STATUS_LABELS[status],
-    icon: <ProjectStatusGlyph status={status} />,
-    shortcut: String(index + 1),
+  const workspaceStatuses = useProjectStatuses();
+  const statuses = categoriesOnly
+    ? DEFAULT_PROJECT_STATUSES
+    : orderProjectStatuses(workspaceStatuses.statuses);
+  const current = categoriesOnly
+    ? defaultStatusFor(statuses, value)
+    : projectStatusOf({ status: value, status_id: statusId }, statuses);
+  const options: ComboboxOption[] = statuses.map((status, index) => ({
+    value: status.id,
+    label: status.name,
+    icon: <ProjectStatusGlyph status={status.category} color={status.color} />,
+    ...(index < 9 ? { shortcut: String(index + 1) } : {}),
   }));
   return (
     <Popover
@@ -173,10 +196,11 @@ export const ProjectStatusPicker: React.FC<ProjectStatusPickerProps> = ({
           icon={
             <ProjectStatusGlyph
               status={value}
+              color={current.color}
               {...(percent === undefined ? {} : { percent })}
             />
           }
-          text={PROJECT_STATUS_LABELS[value]}
+          text={current.name}
           empty={false}
           variant={variant}
           disabled={disabled}
@@ -189,10 +213,16 @@ export const ProjectStatusPicker: React.FC<ProjectStatusPickerProps> = ({
           label="Status"
           placeholder="Change status"
           options={options}
-          selected={[value]}
+          selected={[current.id]}
           onSelect={(picked) => {
             close();
-            if (picked !== value) onChange(picked as ProjectStatus);
+            const chosen = statuses.find((row) => row.id === picked);
+            if (chosen === undefined || chosen.id === current.id) return;
+            if (chosen.is_default && chosen.category !== value) {
+              onChange(chosen.category);
+            } else {
+              onChange(chosen.category, chosen.id);
+            }
           }}
         />
       )}
@@ -424,6 +454,7 @@ export const DependencyPicker: React.FC<DependencyPickerProps> = ({
   align = 'start',
   className = '',
 }) => {
+  const { statusOf } = useProjectStatuses();
   const field = type === 'blocked_by' ? 'Blocked by' : 'Blocking';
   const Glyph = type === 'blocked_by' ? BlockedGlyph : BlockingGlyph;
   const tone = type === 'blocked_by' ? BLOCKED_TONE : BLOCKING_TONE;
@@ -433,7 +464,7 @@ export const DependencyPicker: React.FC<DependencyPickerProps> = ({
   const options: ComboboxOption[] = candidates.map((project) => ({
     value: project.project_id,
     label: project.name,
-    detail: PROJECT_STATUS_LABELS[project.status],
+    detail: statusOf(project).name,
     icon: <ProjectIcon icon={project.icon} color={project.color} />,
     disabled: opposite.includes(project.project_id),
   }));

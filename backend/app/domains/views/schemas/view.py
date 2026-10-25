@@ -282,6 +282,7 @@ class SearchProjectRead(BaseModel):
     project_id: str
     name: str
     status: str
+    status_id: str = Field(default="", description="The workspace project status the project sits in")
     health: Optional[str] = None
     icon: Optional[str] = None
     color: Optional[str] = None

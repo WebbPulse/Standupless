@@ -21,9 +21,12 @@ import {
   personLabel,
   type Assignable,
 } from '../../lib/issuePeople';
-import { PROJECT_STATUS_LABELS } from '../../lib/planningDisplay';
-import { PROJECT_STATUS_ORDER } from '../../lib/planningModel';
+import { useProjectStatuses } from '../../hooks/useProjectStatuses';
 import type { ProjectMove } from '../../lib/projectList';
+import {
+  listOrderedProjectStatuses,
+  statusPatch,
+} from '../../lib/projectStatuses';
 import {
   dateInRange,
   datePresets,
@@ -35,7 +38,6 @@ import type {
   IssuePriority,
   ProjectLabelRead,
   ProjectRead,
-  ProjectStatus,
 } from '../../types/Api';
 
 /** A property the projects bulk bar sets on every selected project. */
@@ -88,6 +90,7 @@ export const ProjectBulkCommand: React.FC<ProjectBulkCommandProps> = ({
   onClose,
 }) => {
   const [today] = useState(() => new Date());
+  const { statuses, statusOf } = useProjectStatuses();
   const every = (change: ProjectMove): void => {
     onWrite(projects.map((project) => ({ project, change })));
     onClose();
@@ -102,14 +105,18 @@ export const ProjectBulkCommand: React.FC<ProjectBulkCommandProps> = ({
 
   switch (property) {
     case 'status': {
-      options = PROJECT_STATUS_ORDER.map((status) => ({
-        value: status,
-        label: PROJECT_STATUS_LABELS[status],
-        icon: <ProjectStatusGlyph status={status} />,
+      const ordered = listOrderedProjectStatuses(statuses);
+      options = ordered.map((status) => ({
+        value: status.id,
+        label: status.name,
+        icon: (
+          <ProjectStatusGlyph status={status.category} color={status.color} />
+        ),
       }));
-      selected = shared(projects.map((project) => [project.status]));
+      selected = shared(projects.map((project) => [statusOf(project).id]));
       pick = (value) => {
-        every({ status: value as ProjectStatus });
+        const status = ordered.find((row) => row.id === value);
+        if (status !== undefined) every(statusPatch(status));
       };
       break;
     }

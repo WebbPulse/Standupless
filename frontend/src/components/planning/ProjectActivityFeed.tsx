@@ -26,6 +26,7 @@ import {
   LuUsers,
 } from 'react-icons/lu';
 import { useProjectActivity } from '../../hooks/useProjectActivity';
+import { useProjectStatuses } from '../../hooks/useProjectStatuses';
 import { viaLabel } from '../../lib/changeSource';
 import { errorMessage } from '../../lib/errors';
 import { actorLabel, avatarOf, type Assignable } from '../../lib/issuePeople';
@@ -115,7 +116,11 @@ const Part: React.FC<{ part: ProjectActivityPart }> = ({ part }) => {
   if (part.kind === 'status') {
     return (
       <span className="inline-flex items-center gap-1 align-middle font-medium text-text">
-        <ProjectStatusGlyph status={part.status} className="h-3 w-3" />
+        <ProjectStatusGlyph
+          status={part.status}
+          color={part.color ?? null}
+          className="h-3 w-3"
+        />
         {part.text}
       </span>
     );
@@ -228,11 +233,19 @@ export const ProjectActivityFeed: React.FC<ProjectActivityFeedProps> = ({
   onOpenUpdates,
 }) => {
   const feed = useProjectActivity(workspaceId, projectId);
+  const { statuses: projectStatuses } = useProjectStatuses(workspaceId);
   const [limit, setLimit] = useState(INITIAL_ROWS);
 
   const lookups = useMemo<ProjectActivityLookups>(
-    () => ({ people, teams, initiatives, milestones, projectLabels }),
-    [people, teams, initiatives, milestones, projectLabels]
+    () => ({
+      people,
+      teams,
+      initiatives,
+      milestones,
+      projectLabels,
+      projectStatuses,
+    }),
+    [people, teams, initiatives, milestones, projectLabels, projectStatuses]
   );
 
   const entries = useMemo<FeedEntry[]>(() => {

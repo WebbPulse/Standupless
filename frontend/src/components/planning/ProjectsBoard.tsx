@@ -335,10 +335,15 @@ const BoardCard: React.FC<BoardCardProps> = ({
             <ProjectStatusPicker
               variant="icon"
               value={project.status}
+              statusId={project.status_id}
               percent={percent}
               disabled={!editable}
-              onChange={(status) => {
-                onChange({ status });
+              onChange={(status, statusId) => {
+                onChange(
+                  statusId === undefined
+                    ? { status }
+                    : { status, status_id: statusId }
+                );
               }}
             />
           </span>

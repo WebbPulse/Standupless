@@ -83,6 +83,15 @@ PROJECT_LABEL_KEY_PREFIX = "project_label#"
 label row.
 """
 
+PROJECT_STATUS = "project_status"
+
+PROJECT_STATUS_KEY_PREFIX = "project_status#"
+"""Where the workspace's own project statuses are filed, one row per status.
+
+`begins_with("project#")` never matches it, so the project listing never reads a
+status row. A workspace with no rows reads the six seeded defaults.
+"""
+
 PROJECT_LINK = "project_link"
 
 PROJECT_LINK_KEY_PREFIX = "project_link#"
@@ -304,6 +313,11 @@ def project_relation_key(blocker_id: str, blocked_id: str) -> str:
 def project_label_key(label_id: str) -> str:
     """The sort key of one project label row."""
     return f"{PROJECT_LABEL_KEY_PREFIX}{label_id}"
+
+
+def project_status_key(status_id: str) -> str:
+    """The sort key of one project status row."""
+    return f"{PROJECT_STATUS_KEY_PREFIX}{status_id}"
 
 
 def project_link_prefix(project_id: str) -> str:
@@ -596,6 +610,9 @@ class Project(BaseModel):
     `sort_order` is the workspace-wide manual position, a base 62 fractional
     key; None on a row never placed, which the manual ordering puts last.
     `archived_at` is when the project was archived, None while it is live.
+    `status` is the category the project's status sits in, which every rule
+    reads, and `status_id` the workspace project status itself; None on a row
+    written before custom statuses, which reads as its category's seeded default.
     """
 
     workspace_id: str
@@ -609,6 +626,7 @@ class Project(BaseModel):
     start_date: str | None = None
     target_date: str | None = None
     status: str = "backlog"
+    status_id: str | None = None
     icon: str | None = None
     color: str | None = None
     health: str | None = None
@@ -639,6 +657,11 @@ class Project(BaseModel):
     def progress(self) -> RollupCounts:
         """The buckets progress is measured by: points when a team estimates, issue counts otherwise."""
         return self.points if self.measure == "points" else self.counts
+
+    @property
+    def effective_status_id(self) -> str:
+        """The project status the row sits in, its category's seeded default when none was stored."""
+        return self.status_id or self.status
 
 
 class Initiative(BaseModel):
@@ -773,6 +796,34 @@ class ProjectLabel(BaseModel):
             self.planning_key = project_label_key(self.label_id)
 
 
+class ProjectStatusRow(BaseModel):
+    """One project status of the workspace, a named stage inside one fixed category.
+
+    `category` is one of `PROJECT_STATUSES` and never changes, so every rule that
+    reads a project's category holds however the status is renamed. `position`
+    orders the statuses within their category. A null `color` draws the
+    category's own tone.
+    """
+
+    workspace_id: str
+    planning_key: str = ""
+    status_id: str = Field(default_factory=new_planning_id)
+    kind: str = PROJECT_STATUS
+    name: str
+    category: str
+    color: str | None = None
+    description: str | None = None
+    position: int = 0
+    created_by: str
+    created_at: datetime = Field(default_factory=utc_now)
+    updated_at: datetime = Field(default_factory=utc_now)
+
+    def model_post_init(self, _context: Any) -> None:
+        """Derive the sort key from the id when none was given."""
+        if not self.planning_key:
+            self.planning_key = project_status_key(self.status_id)
+
+
 class ProjectLink(BaseModel):
     """One external link in a project's Resources section.
 
@@ -905,6 +956,7 @@ def as_cycle_item(cycle: Cycle) -> dict[str, Any]:
 
 
 PROJECT_OPTIONAL_FIELDS: tuple[str, ...] = (
+    "status_id",
     "target_date",
     "start_date",
     "lead_id",
@@ -1584,6 +1636,43 @@ class PlanningRepository:
         condition = Attr("planning_key").not_exists() if create else Attr("planning_key").exists()
         self._repository.put(item, condition=condition)
         return label
+
+    def get_project_status(self, workspace_id: str, status_id: str) -> ProjectStatusRow | None:
+        """One stored project status of the workspace, or `None`; the seeded defaults are not read here."""
+        if not status_id:
+            return None
+        item = self._get(workspace_id, project_status_key(status_id))
+        if item is None or str(item.get("kind", "")) != PROJECT_STATUS:
+            return None
+        return ProjectStatusRow.model_validate(dict(item))
+
+    def list_project_statuses(self, workspace_id: str, *, max_items: int = 1000) -> list[ProjectStatusRow]:
+        """Every stored project status of the workspace, by category then position; empty before the first edit."""
+        if not workspace_id:
+            return []
+        items = self._repository.iter_query(
+            Key("workspace_id").eq(workspace_id) & Key("planning_key").begins_with(PROJECT_STATUS_KEY_PREFIX),
+            max_items=max_items,
+        )
+        rows = [ProjectStatusRow.model_validate(dict(item)) for item in items if item.get("kind") == PROJECT_STATUS]
+        order = {category: index for index, category in enumerate(PROJECT_STATUSES)}
+        return sorted(rows, key=lambda row: (order.get(row.category, len(order)), row.position, row.status_id))
+
+    def put_project_status(self, row: ProjectStatusRow, *, create: bool) -> ProjectStatusRow:
+        """Store a new project status or write an edited one, raising `ConditionFailed` on a taken or missing key."""
+        item = row.model_dump(mode="json")
+        for name in ("color", "description"):
+            if item.get(name) is None:
+                item.pop(name, None)
+        condition = Attr("planning_key").not_exists() if create else Attr("planning_key").exists()
+        self._repository.put(item, condition=condition)
+        return row
+
+    def delete_project_status(self, workspace_id: str, status_id: str) -> None:
+        """Remove one project status row; the projects in it are moved by the caller first."""
+        if not workspace_id or not status_id:
+            return
+        self._repository.delete({"workspace_id": workspace_id, "planning_key": project_status_key(status_id)})
 
     def get_project_link(self, workspace_id: str, project_id: str, link_id: str) -> ProjectLink | None:
         """One Resources link of one project, or `None`; the project is part of the key."""

@@ -24,6 +24,7 @@ import ProjectStatusGlyph from '../../../components/planning/ProjectStatusGlyph'
 import UpdateDueBadge from '../../../components/planning/UpdateDueBadge';
 import { Kbd } from '../../../components/ui/badge';
 import RelativeTime from '../../../components/ui/relative-time';
+import { useProjectStatuses } from '../../../hooks/useProjectStatuses';
 import { cn } from '../../../lib/cn';
 import {
   completionPercent,
@@ -359,6 +360,8 @@ export const ProjectRow: React.FC<
   HomeRowProps & { project: ProjectRead; href: string }
 > = ({ project, href, isActive, rowRef, onPointerEnter }) => {
   const percent = progressPercent(project);
+  const { statusOf } = useProjectStatuses();
+  const status = statusOf(project);
   return (
     <li
       ref={rowRef}
@@ -366,7 +369,12 @@ export const ProjectRow: React.FC<
       onPointerEnter={onPointerEnter}
       className={rowClass(isActive)}
     >
-      <ProjectStatusGlyph status={project.status} percent={percent} />
+      <ProjectStatusGlyph
+        status={project.status}
+        percent={percent}
+        name={status.name}
+        color={status.color}
+      />
       <Link
         to={href}
         data-hover="parent"

@@ -14,6 +14,7 @@ import type {
   ProjectActivityRead,
   ProjectHealth,
   ProjectStatus,
+  ProjectStatusRead,
 } from '../types/Api';
 
 /** The glyph a row draws beside its sentence. */
@@ -37,7 +38,13 @@ export type ProjectActivityIcon =
 export type ProjectActivityPart =
   | { kind: 'text'; text: string }
   | { kind: 'name'; text: string }
-  | { kind: 'status'; status: ProjectStatus; text: string }
+  | {
+      kind: 'status';
+      status: ProjectStatus;
+      text: string;
+      /** A workspace status's own color, null for its category's tone. */
+      color?: string | null;
+    }
   | { kind: 'health'; health: ProjectHealth; text: string };
 
 /** How one row reads. */
@@ -54,6 +61,8 @@ export interface ProjectActivityLookups {
   milestones: { milestone_id: string; name: string }[];
   /** The workspace's project labels, for label changes; a missing one reads "a label". */
   projectLabels?: { id: string; name: string }[] | undefined;
+  /** The workspace's project statuses, which a status change names by id. */
+  projectStatuses?: ProjectStatusRead[] | undefined;
 }
 
 const text = (value: string): ProjectActivityPart => ({
@@ -73,9 +82,6 @@ const asList = (value: unknown): string[] =>
   Array.isArray(value)
     ? value.filter((item): item is string => typeof item === 'string')
     : [];
-
-const isStatus = (value: string | null): value is ProjectStatus =>
-  value !== null && value in PROJECT_STATUS_LABELS;
 
 const isHealth = (value: string | null): value is ProjectHealth =>
   value !== null && value in PROJECT_HEALTH_LABELS;
@@ -122,24 +128,43 @@ const listChange = (
   return parts;
 };
 
-const statusPart = (status: ProjectStatus): ProjectActivityPart => ({
-  kind: 'status',
-  status,
-  text: PROJECT_STATUS_LABELS[status],
-});
+/**
+ * A recorded status as a sentence part: a workspace status by its id, else a
+ * category by its label, or null for a status since deleted.
+ */
+const statusPart = (
+  value: string | null,
+  lookups: ProjectActivityLookups
+): ProjectActivityPart | null => {
+  if (value === null) return null;
+  const status = lookups.projectStatuses?.find((row) => row.id === value);
+  if (status !== undefined) {
+    return {
+      kind: 'status',
+      status: status.category,
+      text: status.name,
+      color: status.color,
+    };
+  }
+  return value in PROJECT_STATUS_LABELS
+    ? {
+        kind: 'status',
+        status: value as ProjectStatus,
+        text: PROJECT_STATUS_LABELS[value as ProjectStatus],
+      }
+    : null;
+};
 
 const describeStatus = (
-  from: string | null,
-  to: string | null
+  fromValue: string | null,
+  toValue: string | null,
+  lookups: ProjectActivityLookups
 ): ProjectActivityPart[] => {
-  if (!isStatus(to)) return [text('changed the status')];
-  if (!isStatus(from)) return [text('set the status to '), statusPart(to)];
-  return [
-    text('changed the status from '),
-    statusPart(from),
-    text(' to '),
-    statusPart(to),
-  ];
+  const to = statusPart(toValue, lookups);
+  const from = statusPart(fromValue, lookups);
+  if (to === null) return [text('changed the status')];
+  if (from === null) return [text('set the status to '), to];
+  return [text('changed the status from '), from, text(' to '), to];
 };
 
 const describeDate = (
@@ -163,7 +188,7 @@ const describeField = (
         parts: [text('renamed the project to '), name(to ?? 'Untitled')],
       };
     case 'status':
-      return { icon: 'status', parts: describeStatus(from, to) };
+      return { icon: 'status', parts: describeStatus(from, to, lookups) };
     case 'health':
       return {
         icon: 'health',

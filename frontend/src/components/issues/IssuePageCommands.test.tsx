@@ -32,6 +32,11 @@ import { issuePath } from '../../lib/paths';
 import { SUB_ISSUE_DISPLAY_KEY } from '../../lib/subIssues';
 import IssuePageCommands from './IssuePageCommands';
 
+vi.mock(
+  '../../hooks/useProjectStatuses',
+  () => import('../../test/projectStatuses')
+);
+
 const issue: IssueRead = {
   id: 'iss-1',
   workspace_id: 'ws-1',

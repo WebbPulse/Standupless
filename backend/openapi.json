@@ -12668,6 +12668,7 @@
           },
           "status": {
             "default": "backlog",
+            "description": "The status category; alone it lands on the category's default status",
             "enum": [
               "backlog",
               "planned",
@@ -12678,6 +12679,19 @@
             ],
             "title": "Status",
             "type": "string"
+          },
+          "status_id": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The workspace project status; its category wins over `status`",
+            "title": "Status Id"
           },
           "target_date": {
             "anyOf": [
@@ -13602,6 +13616,7 @@
             "title": "Start Date"
           },
           "status": {
+            "description": "The category of the project's status, which every rule reads",
             "enum": [
               "backlog",
               "planned",
@@ -13620,6 +13635,12 @@
             "description": "Issues per status id, beside the category totals in `counts`",
             "title": "Status Counts",
             "type": "object"
+          },
+          "status_id": {
+            "default": "",
+            "description": "The workspace project status the project sits in",
+            "title": "Status Id",
+            "type": "string"
           },
           "target_date": {
             "anyOf": [
@@ -13791,6 +13812,226 @@
           "created_at"
         ],
         "title": "ProjectRelationRead",
+        "type": "object"
+      },
+      "ProjectStatusCreate": {
+        "description": "The body a project status create takes; it lands last in its category unless a position is given.",
+        "properties": {
+          "category": {
+            "enum": [
+              "backlog",
+              "planned",
+              "in_progress",
+              "paused",
+              "completed",
+              "canceled"
+            ],
+            "title": "Category",
+            "type": "string"
+          },
+          "color": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Color"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "name": {
+            "maxLength": 60,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "position": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Position"
+          }
+        },
+        "required": [
+          "name",
+          "category"
+        ],
+        "title": "ProjectStatusCreate",
+        "type": "object"
+      },
+      "ProjectStatusListRead": {
+        "description": "The body the project statuses list route answers with, by category then position.",
+        "properties": {
+          "statuses": {
+            "items": {
+              "$ref": "#/components/schemas/ProjectStatusRead"
+            },
+            "title": "Statuses",
+            "type": "array"
+          }
+        },
+        "required": [
+          "statuses"
+        ],
+        "title": "ProjectStatusListRead",
+        "type": "object"
+      },
+      "ProjectStatusRead": {
+        "description": "One project status as the API returns it, with how many projects sit in it.",
+        "properties": {
+          "category": {
+            "enum": [
+              "backlog",
+              "planned",
+              "in_progress",
+              "paused",
+              "completed",
+              "canceled"
+            ],
+            "title": "Category",
+            "type": "string"
+          },
+          "color": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A `#rrggbb` colour, or null to draw the category's tone",
+            "title": "Color"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "is_default": {
+            "description": "Whether this is the status a bare category value lands on",
+            "title": "Is Default",
+            "type": "boolean"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "position": {
+            "title": "Position",
+            "type": "integer"
+          },
+          "project_count": {
+            "default": 0,
+            "description": "Projects the caller can see that sit in the status",
+            "title": "Project Count",
+            "type": "integer"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "category",
+          "position",
+          "is_default",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "ProjectStatusRead",
+        "type": "object"
+      },
+      "ProjectStatusUpdate": {
+        "description": "The body a project status patch takes; an omitted field keeps its value, a null colour or description clears it.\n\nThe category never changes: a status lives in the category it was made in.",
+        "properties": {
+          "color": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Color"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "maxLength": 60,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "position": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Position"
+          }
+        },
+        "title": "ProjectStatusUpdate",
         "type": "object"
       },
       "ProjectTemplateFields": {
@@ -14153,7 +14394,21 @@
                 "type": "null"
               }
             ],
+            "description": "The status category; a project already in it keeps its status",
             "title": "Status"
+          },
+          "status_id": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The workspace project status to move the project to",
+            "title": "Status Id"
           },
           "target_date": {
             "anyOf": [
@@ -17165,6 +17420,18 @@
             "title": "Status",
             "type": "string"
           },
+          "status_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A project's workspace project status, null on a cycle",
+            "title": "Status Id"
+          },
           "target_date": {
             "anyOf": [
               {
@@ -17594,6 +17861,12 @@
           },
           "status": {
             "title": "Status",
+            "type": "string"
+          },
+          "status_id": {
+            "default": "",
+            "description": "The workspace project status the project sits in",
+            "title": "Status Id",
             "type": "string"
           },
           "target_date": {
@@ -43624,6 +43897,246 @@
           }
         ],
         "summary": "Edit Label",
+        "tags": [
+          "planning"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/project-statuses": {
+      "get": {
+        "description": "Every project status by category then position, each with how many projects the caller can see sit in it.",
+        "operationId": "list_statuses_api_workspaces__workspace_id__project_statuses_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectStatusListRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "List Statuses",
+        "tags": [
+          "planning"
+        ]
+      },
+      "post": {
+        "description": "Add a project status to a category, as a workspace admin; a taken name answers 409.",
+        "operationId": "add_status_api_workspaces__workspace_id__project_statuses_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProjectStatusCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectStatusRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Add Status",
+        "tags": [
+          "planning"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/project-statuses/{status_id}": {
+      "delete": {
+        "description": "Delete a project status and move its projects onto a replacement in the same category, as a workspace admin.",
+        "operationId": "remove_status_api_workspaces__workspace_id__project_statuses__status_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "status_id",
+            "required": true,
+            "schema": {
+              "title": "Status Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "replacement_status_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Replacement Status Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Remove Status",
+        "tags": [
+          "planning"
+        ]
+      },
+      "patch": {
+        "description": "Rename, recolour, redescribe or reorder a project status, as a workspace admin.",
+        "operationId": "edit_status_api_workspaces__workspace_id__project_statuses__status_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "status_id",
+            "required": true,
+            "schema": {
+              "title": "Status Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProjectStatusUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectStatusRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Edit Status",
         "tags": [
           "planning"
         ]

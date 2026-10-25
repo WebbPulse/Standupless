@@ -122,6 +122,12 @@ export const customEmojiKey = (workspaceId: string): QueryKey => [
   workspaceId,
 ];
 
+/** The workspace's project statuses. */
+export const projectStatusesKey = (workspaceId: string): QueryKey => [
+  'project-statuses',
+  workspaceId,
+];
+
 /** The workspace's project labels. */
 export const projectLabelsKey = (workspaceId: string): QueryKey => [
   'project-labels',

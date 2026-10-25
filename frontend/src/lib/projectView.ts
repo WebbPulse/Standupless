@@ -9,7 +9,7 @@
  */
 
 import type { ProjectViewFilter, SavedViewDisplayRead } from '../api/views';
-import type { ProjectStatus, TeamRead } from '../types/Api';
+import type { TeamRead } from '../types/Api';
 import { PROJECT_STATUS_ORDER } from './planningModel';
 import { resolveDisplay, type ProjectsDisplay } from './projectList';
 
@@ -19,7 +19,8 @@ export interface ProjectViewBase {
   team: string;
   /** The stored team id, kept so a team the caller cannot see survives a save. */
   teamId: string;
-  status: ProjectStatus[];
+  /** Status categories and workspace project status ids. */
+  status: string[];
   /** A lead's user id, `none` for projects without one, or empty. */
   lead: string;
   /** `true` or `false` to keep only projects an open blocker does or does not hold up, or empty. */
@@ -38,7 +39,7 @@ export interface ProjectViewBase {
 /** The page state a view of projects is saved from. */
 export interface ProjectViewState {
   teamId: string;
-  status: readonly ProjectStatus[];
+  status: readonly string[];
   lead: string;
   blocked: FlagFilter;
   blocking: FlagFilter;
@@ -58,9 +59,17 @@ const flagOf = (value: string | undefined): FlagFilter =>
 const asList = (value: string | readonly string[] | undefined): string[] =>
   value === undefined ? [] : typeof value === 'string' ? [value] : [...value];
 
-/** The statuses in the page's order, unknown ones dropped. */
-export const orderedStatuses = (values: readonly string[]): ProjectStatus[] =>
-  PROJECT_STATUS_ORDER.filter((status) => values.includes(status));
+/** The shape of a workspace project status id. */
+const STATUS_ID = /^[0-9A-Z]{26}$/;
+
+/**
+ * The status filter values in the page's order: categories first, then
+ * workspace status ids as given, unknown values dropped.
+ */
+export const orderedStatuses = (values: readonly string[]): string[] => [
+  ...PROJECT_STATUS_ORDER.filter((status) => values.includes(status)),
+  ...[...new Set(values)].filter((value) => STATUS_ID.test(value)),
+];
 
 /** The filter a view of projects stores, read whether it holds one value or a list. */
 export const projectViewFilter = (

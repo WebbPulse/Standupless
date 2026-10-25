@@ -60,6 +60,8 @@ export interface CreateProjectDialogProps {
   /** The teams the new project starts on. */
   initialTeamIds: string[];
   initialStatus?: ProjectStatus;
+  /** The workspace status the project starts in, inside `initialStatus`. */
+  initialStatusId?: string;
   /**
    * Fields the project starts with, such as the health, priority, lead or
    * initiative of the board column it is created in.
@@ -135,6 +137,7 @@ export const CreateProjectDialog: React.FC<CreateProjectDialogProps> = ({
   teams,
   initialTeamIds,
   initialStatus = 'planned',
+  initialStatusId,
   preset = {},
   onClose,
   onCreated,
@@ -142,6 +145,7 @@ export const CreateProjectDialog: React.FC<CreateProjectDialogProps> = ({
   const [name, setName] = useState('');
   const [summary, setSummary] = useState('');
   const [status, setStatus] = useState<ProjectStatus>(initialStatus);
+  const [statusId, setStatusId] = useState<string | undefined>(initialStatusId);
   const [icon, setIcon] = useState<ProjectIconName | null>(null);
   const [color, setColor] = useState<string | null>(null);
   const [health, setHealth] = useState<ProjectHealth | null>(
@@ -187,6 +191,7 @@ export const CreateProjectDialog: React.FC<CreateProjectDialogProps> = ({
       setSummary(fill.description ?? '');
     }
     setStatus(fill.status ?? initialStatus);
+    setStatusId(fill.status === undefined ? initialStatusId : undefined);
     setPriority(fill.priority ?? preset.priority ?? 'none');
     setLeadId(fill.leadId ?? preset.lead_id ?? null);
     setMemberIds(fill.memberIds ?? []);
@@ -229,6 +234,10 @@ export const CreateProjectDialog: React.FC<CreateProjectDialogProps> = ({
     if (fill.startDate !== startDate) body.start_date = startDate;
     if (fill.targetDate !== targetDate) body.target_date = targetDate;
     if (fill.status !== status) body.status = status;
+    if (statusId !== undefined && statusId !== status) {
+      body.status = status;
+      body.status_id = statusId;
+    }
     if (fill.icon !== icon) body.icon = icon;
     if (fill.color !== color) body.color = color;
     if (fill.priority !== priority) body.priority = priority;
@@ -333,7 +342,11 @@ export const CreateProjectDialog: React.FC<CreateProjectDialogProps> = ({
           <ProjectStatusPicker
             variant="chip"
             value={status}
-            onChange={setStatus}
+            statusId={statusId}
+            onChange={(category, id) => {
+              setStatus(category);
+              setStatusId(id);
+            }}
           />
           <HealthPicker variant="chip" value={health} onChange={setHealth} />
           <PriorityPicker

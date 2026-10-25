@@ -105,6 +105,15 @@ vi.mock('../../api/planning', () => ({
   updateProject: vi.fn(),
 }));
 
+vi.mock('../../api/projectStatuses', () => ({
+  projectStatusesPath: (workspaceId: string) =>
+    `/workspaces/${workspaceId}/project-statuses`,
+  listProjectStatuses: () => Promise.resolve([]),
+  createProjectStatus: vi.fn(),
+  updateProjectStatus: vi.fn(),
+  deleteProjectStatus: vi.fn(),
+}));
+
 vi.mock('../../api/projectLabels', () => ({
   projectLabelsPath: (workspaceId: string) =>
     `/workspaces/${workspaceId}/project-labels`,

@@ -1885,6 +1885,7 @@ export interface SearchProjectRead {
   project_id: string;
   name: string;
   status: ProjectStatus;
+  status_id?: string;
   health: ProjectHealth | null;
   icon: string | null;
   color: string | null;
@@ -2615,6 +2616,8 @@ export interface ProjectRead {
   start_date: string | null;
   target_date: string | null;
   status: ProjectStatus;
+  /** The workspace project status the project sits in, within `status`. */
+  status_id?: string;
   icon: ProjectIconName | null;
   color: string | null;
   health: ProjectHealth | null;
@@ -2683,6 +2686,48 @@ export interface ProjectLabelRead {
   project_count: number;
   created_at: string;
   updated_at: string;
+}
+
+/**
+ * One workspace project status: a named stage inside one of the six fixed
+ * categories, which every rule reads. The six seeded defaults have the
+ * category as their id.
+ */
+export interface ProjectStatusRead {
+  id: string;
+  name: string;
+  category: ProjectStatus;
+  color: string | null;
+  description: string | null;
+  position: number;
+  /** The first status of its category, where a bare category lands. */
+  is_default: boolean;
+  /** How many projects the caller can see sit in the status. */
+  project_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+/** The body the project status list answers with, by category then position. */
+export interface ProjectStatusListRead {
+  statuses: ProjectStatusRead[];
+}
+
+/** A new project status; names are unique ignoring case. */
+export interface ProjectStatusCreate {
+  name: string;
+  category: ProjectStatus;
+  color?: string | null;
+  description?: string | null;
+  position?: number;
+}
+
+/** The editable fields on a project status; a null color clears it. */
+export interface ProjectStatusUpdate {
+  name?: string;
+  color?: string | null;
+  description?: string | null;
+  position?: number;
 }
 
 /** The body the project label list answers with, in name order. */
@@ -2789,6 +2834,8 @@ export interface ProjectCreate {
   start_date?: string | null;
   target_date?: string | null;
   status?: ProjectStatus;
+  /** A workspace project status by id; `status` then may only name its category. */
+  status_id?: string;
   icon?: ProjectIconName | null;
   color?: string | null;
   health?: ProjectHealth | null;
@@ -2812,6 +2859,8 @@ export interface ProjectUpdate {
   start_date?: string | null;
   target_date?: string | null;
   status?: ProjectStatus;
+  /** A workspace project status by id; a bare category keeps a status already in it. */
+  status_id?: string;
   icon?: ProjectIconName | null;
   color?: string | null;
   health?: ProjectHealth | null;
@@ -3232,7 +3281,8 @@ export interface PulseFollowRead {
 /** The filters the project list reads. Without a team it is workspace wide. */
 export interface ProjectListQuery {
   team_id?: string;
-  status?: ProjectStatus;
+  /** A category, or one workspace project status by id. */
+  status?: string;
   /** Only the projects in this initiative. */
   initiative_id?: string;
   /** With `team_id`, also list the projects of its sub-teams the caller can see. */
@@ -3269,6 +3319,8 @@ export interface RoadmapEntryRead {
   target_date: string | null;
   start_date: string | null;
   status: string;
+  /** A project entry's workspace project status. */
+  status_id?: string | null;
   icon?: ProjectIconName | null;
   color?: string | null;
   health?: ProjectHealth | null;

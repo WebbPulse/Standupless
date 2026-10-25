@@ -27,6 +27,7 @@ import { SelectField } from '../../components/ui/select';
 import Spinner from '../../components/ui/spinner';
 import { StatusIcon } from '../../components/ui/StatusIcon';
 import WorkspaceShell from '../../components/workspace/WorkspaceShell';
+import { useProjectStatuses } from '../../hooks/useProjectStatuses';
 import { useWorkspace } from '../../hooks/useWorkspace';
 import { useWorkspaceMembers } from '../../hooks/useWorkspaceMembers';
 import { cn } from '../../lib/cn';
@@ -38,10 +39,7 @@ import {
   issuePath,
   projectPath,
 } from '../../lib/paths';
-import {
-  INITIATIVE_STATUS_LABELS,
-  PROJECT_STATUS_LABELS,
-} from '../../lib/planningDisplay';
+import { INITIATIVE_STATUS_LABELS } from '../../lib/planningDisplay';
 import {
   STATUS_CATEGORY_LABELS,
   STATUS_CATEGORY_ORDER,
@@ -129,6 +127,7 @@ const SectionHeading: React.FC<{
 /** Searches issues, projects, initiatives, documents and comments across the visible teams. */
 export const Search: React.FC = () => {
   const { workspace } = useWorkspace();
+  const { statusOf: projectStatusOf } = useProjectStatuses();
   const navigate = useNavigate();
   const auth = useQueryAuth();
   const [params, setParams] = useSearchParams();
@@ -462,7 +461,8 @@ export const Search: React.FC = () => {
                       >
                         <ProjectStatusGlyph
                           status={project.status}
-                          name={PROJECT_STATUS_LABELS[project.status]}
+                          name={projectStatusOf(project).name}
+                          color={projectStatusOf(project).color}
                         />
                         <span className="min-w-0 flex-1 truncate text-sm font-medium text-text">
                           {project.name}
@@ -474,7 +474,7 @@ export const Search: React.FC = () => {
                             .join(', ')}
                         </span>
                         <span className="w-20 shrink-0 truncate text-right text-xs text-text-faint">
-                          {PROJECT_STATUS_LABELS[project.status]}
+                          {projectStatusOf(project).name}
                         </span>
                       </Link>
                     </li>

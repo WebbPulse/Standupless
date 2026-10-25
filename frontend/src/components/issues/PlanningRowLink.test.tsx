@@ -14,6 +14,11 @@ import type { ProjectRead } from '../../types/Api';
 import PlanningRowLink from './PlanningRowLink';
 import { ProjectPicker } from './PropertyPickers';
 
+vi.mock(
+  '../../hooks/useProjectStatuses',
+  () => import('../../test/projectStatuses')
+);
+
 const project = (id: string, name: string): ProjectRead => ({
   project_id: id,
   workspace_id: 'ws-1',
