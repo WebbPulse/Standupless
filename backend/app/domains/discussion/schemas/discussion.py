@@ -118,6 +118,22 @@ def content_disposition(content_type: str, filename: str) -> str:
     return disposition
 
 
+def _check_anchor(value: Optional[CommentAnchor]) -> Optional[CommentAnchor]:
+    """Hold a passage to a non-blank quote under the caps, trimming its context to the cap either side."""
+    if value is None:
+        return None
+    quote = value.quote.strip()
+    if not quote:
+        raise ValueError("anchor quote must not be blank")
+    if len(quote) > ANCHOR_QUOTE_MAX:
+        raise ValueError(f"anchor quote must be at most {ANCHOR_QUOTE_MAX} characters")
+    return CommentAnchor(
+        quote=quote,
+        prefix=value.prefix[-ANCHOR_CONTEXT_MAX:] if value.prefix else "",
+        suffix=value.suffix[:ANCHOR_CONTEXT_MAX],
+    )
+
+
 def _check_body(value: str) -> str:
     """Hold a comment body to the shared byte cap and to being non-empty.
 
@@ -280,18 +296,7 @@ class CommentCreate(BaseModel):
     @classmethod
     def check_anchor(cls, value: Optional[CommentAnchor]) -> Optional[CommentAnchor]:
         """Hold the passage to a non-blank quote under the caps, trimming its context."""
-        if value is None:
-            return None
-        quote = value.quote.strip()
-        if not quote:
-            raise ValueError("anchor quote must not be blank")
-        if len(quote) > ANCHOR_QUOTE_MAX:
-            raise ValueError(f"anchor quote must be at most {ANCHOR_QUOTE_MAX} characters")
-        return CommentAnchor(
-            quote=quote,
-            prefix=value.prefix[-ANCHOR_CONTEXT_MAX:] if value.prefix else "",
-            suffix=value.suffix[:ANCHOR_CONTEXT_MAX],
-        )
+        return _check_anchor(value)
 
     @field_validator("attachment_ids")
     @classmethod
@@ -327,16 +332,34 @@ class CommentUpdate(BaseModel):
 
 
 class DocumentCommentCreate(BaseModel):
-    """The body a comment on a document takes: text, and the root it replies to if any."""
+    """The body a comment on a document takes: text, the root it replies to if any, and its passage.
+
+    `anchor` pins a new thread to a passage of the document's body, held to the
+    same caps as an issue comment's, so a reply cannot carry one.
+    """
 
     body: str = Field(min_length=1)
     parent_comment_id: Optional[str] = None
+    anchor: Optional[CommentAnchor] = None
 
     @field_validator("body")
     @classmethod
     def check_body(cls, value: str) -> str:
         """Hold the body to the shared byte cap."""
         return _check_body(value)
+
+    @field_validator("anchor")
+    @classmethod
+    def check_anchor(cls, value: Optional[CommentAnchor]) -> Optional[CommentAnchor]:
+        """Hold the passage to a non-blank quote under the caps, trimming its context."""
+        return _check_anchor(value)
+
+    @model_validator(mode="after")
+    def check_reply(self) -> DocumentCommentCreate:
+        """Refuse a passage on a reply, which belongs to its root's passage."""
+        if self.anchor is not None and self.parent_comment_id is not None:
+            raise ValueError("a reply cannot be pinned to a passage")
+        return self
 
 
 class DocumentCommentUpdate(BaseModel):

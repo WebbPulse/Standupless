@@ -1753,9 +1753,9 @@ export interface ReactionGroup {
 }
 
 /**
- * The passage of the issue description a root comment is pinned to: the
- * quoted text and a little of the text either side, which finds it again
- * among repeats. The description itself is never rewritten.
+ * The passage of the issue description or the document a root comment is
+ * pinned to: the quoted text and a little of the text either side, which finds it again
+ * among repeats. The text itself is never rewritten.
  */
 export interface CommentAnchor {
   quote: string;
@@ -1790,7 +1790,7 @@ export interface CommentRead {
   slack_thread?: SlackThread | null;
   /** Who resolved a root comment's thread and when, while it is resolved. */
   resolution?: ThreadResolution | null;
-  /** The description passage a root comment is pinned to, when it is. */
+  /** The passage of the description or document a root comment is pinned to, when it is. */
   anchor?: CommentAnchor | null;
   /** The document the comment was written on; null on an issue's comment. */
   document_id?: string | null;

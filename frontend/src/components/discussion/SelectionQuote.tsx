@@ -6,7 +6,9 @@
  *
  * Where the text may carry comment threads, as the description does, a Comment
  * button sits beside it and hands on the selected range, so the caller can pin
- * a new thread to that passage.
+ * a new thread to that passage. Cmd or Ctrl Alt M does the same while the
+ * selection is held, as in Linear, even with the caret in editable text, and
+ * the shortcut registry lists it under Editor so help and the palette show it.
  *
  * Where the text sits on an issue that may take sub-issues, a Sub-issue button
  * hands the selected passage on as Markdown, and Ctrl or Cmd Shift O does the
@@ -20,6 +22,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { LuListTree, LuMessageSquarePlus, LuTextQuote } from 'react-icons/lu';
+import { displayKeys, useShortcut } from '../../hooks/useShortcuts';
 import { cn } from '../../lib/cn';
 import { quoteMarkdown, rangeMarkdown } from '../../lib/quote';
 
@@ -55,6 +58,16 @@ const rangeBox = (range: Range): Anchor => {
   return { top: box.bottom + GAP, left: box.left + box.width / 2 };
 };
 
+/** The chord that comments on the selected passage, as in Linear. */
+export const COMMENT_PASSAGE_KEYS = 'mod+alt+m';
+
+/** True when a key event is Cmd or Ctrl Alt M, read by the physical key. */
+const isCommentChord = (event: KeyboardEvent): boolean =>
+  (event.metaKey || event.ctrlKey) &&
+  event.altKey &&
+  !event.shiftKey &&
+  (event.code === 'KeyM' || event.key.toLowerCase() === 'm');
+
 /** The look of each button on the bar. */
 const BUTTON_CLASS =
   'inline-flex h-7 items-center gap-1.5 px-2 text-xs font-medium text-text-muted hover:bg-hover hover:text-text';
@@ -77,6 +90,7 @@ export const SelectionQuote: React.FC<SelectionQuoteProps> = ({
   const subIssuer = useRef(onSubIssue);
   subIssuer.current = onSubIssue;
   const subIssueRef = useRef<() => void>(() => undefined);
+  const commentRef = useRef<() => void>(() => undefined);
   const [anchor, setAnchor] = useState<Anchor | null>(null);
   const enabled =
     onQuote !== undefined ||
@@ -111,6 +125,26 @@ export const SelectionQuote: React.FC<SelectionQuoteProps> = ({
       setAnchor(rangeBox(range));
     };
     const press = (event: KeyboardEvent): void => {
+      if (
+        commenter.current !== undefined &&
+        selected.current !== null &&
+        isCommentChord(event)
+      ) {
+        event.preventDefault();
+        event.stopPropagation();
+        commentRef.current();
+        return;
+      }
+      if (
+        commenter.current !== undefined &&
+        isCommentChord(event) &&
+        event.target instanceof Node &&
+        box.current?.contains(event.target) === true
+      ) {
+        event.preventDefault();
+        event.stopPropagation();
+        return;
+      }
       if (
         subIssuer.current === undefined ||
         selected.current === null ||
@@ -154,6 +188,15 @@ export const SelectionQuote: React.FC<SelectionQuoteProps> = ({
     if (range === null) return;
     commenter.current?.(range);
   };
+  commentRef.current = comment;
+
+  useShortcut({
+    keys: COMMENT_PASSAGE_KEYS,
+    label: 'Comment on the selected passage',
+    group: 'Editor',
+    enabled: onComment !== undefined,
+    handler: comment,
+  });
 
   const subIssue = (): void => {
     const range = selected.current;
@@ -184,6 +227,7 @@ export const SelectionQuote: React.FC<SelectionQuoteProps> = ({
               <button
                 type="button"
                 aria-label="Comment on selection"
+                title={`Comment (${displayKeys(COMMENT_PASSAGE_KEYS)[0] ?? ''})`}
                 className={BUTTON_CLASS}
                 onMouseDown={keepSelection}
                 onClick={comment}
