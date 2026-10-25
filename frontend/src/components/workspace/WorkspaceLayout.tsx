@@ -7,7 +7,8 @@
  * directory and the one toast stack every page raises notices into.
  *
  * It also records the workspace as the one this browser last opened, which
- * the home page resumes for a signed in visitor.
+ * the home page resumes for a signed in visitor, and the last page outside
+ * settings, which Escape and Back to app return to from any settings page.
  *
  * Keeping these above the pages means a `g` pressed on one page completes on
  * the next, a palette opened anywhere is the same palette, and a dialog opened
@@ -55,6 +56,7 @@ import { isFeatureOn } from '../../lib/features';
 import { activeTeams } from '../../lib/teamRetirement';
 import { emptyFilters } from '../../lib/issueFilters';
 import { rememberWorkspace } from '../../lib/lastWorkspace';
+import { rememberAppRoute } from '../../lib/settingsReturn';
 import { showToast } from '../../lib/toast';
 import MentionDirectoryProvider from '../../contexts/MentionDirectoryContext';
 import SidebarDataProvider from '../../contexts/SidebarDataContext';
@@ -254,6 +256,9 @@ const WorkspaceOverlays: React.FC = () => {
   useEffect(() => {
     rememberWorkspace(slug);
   }, [slug]);
+  useEffect(() => {
+    rememberAppRoute(slug, location.pathname, location.search, location.hash);
+  }, [slug, location.pathname, location.search, location.hash]);
   useWorkspaceSwitchCacheClear(workspaceId);
   usePublishCustomEmoji(workspaceId);
 

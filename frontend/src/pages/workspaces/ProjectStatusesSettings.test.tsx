@@ -146,14 +146,11 @@ const renderPage = () =>
   );
 
 describe('the project statuses page', () => {
-  it('groups the statuses by category and links from the settings tabs', async () => {
+  it('groups the statuses by category', async () => {
     renderPage();
     const started = await screen.findByRole('region', { name: 'In progress' });
     expect(within(started).getByDisplayValue('In review')).toBeInTheDocument();
     expect(within(started).getByText('3 projects')).toBeInTheDocument();
-    expect(
-      screen.getByRole('link', { name: 'Project statuses' })
-    ).toHaveAttribute('href', '/w/mine/settings/project-statuses');
   });
 
   it('adds a status to a category', async () => {

@@ -22,7 +22,6 @@ import {
   discordRowCopy,
   slackRowCopy,
 } from '../../components/workspace/chatAppCopy';
-import SettingsNav from '../../components/workspace/SettingsNav';
 import WorkspaceShell from '../../components/workspace/WorkspaceShell';
 import {
   deleteDiscordConnection,
@@ -164,12 +163,7 @@ const IntegrationsSettings: React.FC = () => {
   const { workspace } = useWorkspace();
 
   return (
-    <WorkspaceShell
-      title="Settings"
-      toolbar={
-        workspace === null ? undefined : <SettingsNav workspace={workspace} />
-      }
-    >
+    <WorkspaceShell title="Settings">
       {workspace !== null &&
         (canManageMembers(workspace.role) ? (
           <Integrations workspace={workspace} />

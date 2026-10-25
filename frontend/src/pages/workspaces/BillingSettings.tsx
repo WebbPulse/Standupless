@@ -23,7 +23,6 @@ import { ConfirmationAlert, ErrorAlert } from '../../components/ui/alert';
 import Badge from '../../components/ui/badge';
 import Button from '../../components/ui/button';
 import { SkeletonRows } from '../../components/ui/skeleton';
-import SettingsNav from '../../components/workspace/SettingsNav';
 import WorkspaceShell from '../../components/workspace/WorkspaceShell';
 import { useWorkspace } from '../../hooks/useWorkspace';
 import {
@@ -399,12 +398,7 @@ const BillingSettings: React.FC = () => {
     billing !== null && billing.plan === 'free' && !isComped(billing);
 
   return (
-    <WorkspaceShell
-      title="Settings"
-      toolbar={
-        workspace === null ? undefined : <SettingsNav workspace={workspace} />
-      }
-    >
+    <WorkspaceShell title="Settings">
       <div className="max-w-2xl space-y-8">
         {outcome !== null &&
           (outcome.tone === 'success' ? (

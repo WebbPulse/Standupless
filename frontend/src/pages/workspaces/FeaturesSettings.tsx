@@ -8,7 +8,6 @@
  */
 
 import React, { useState } from 'react';
-import SettingsNav from '../../components/workspace/SettingsNav';
 import { SettingsAnchor } from '../../components/workspace/SettingsSearch';
 import WorkspaceShell from '../../components/workspace/WorkspaceShell';
 import Checkbox from '../../components/ui/checkbox';
@@ -89,12 +88,7 @@ const FeaturesSettings: React.FC = () => {
   const { workspace } = useWorkspace();
 
   return (
-    <WorkspaceShell
-      title="Settings"
-      toolbar={
-        workspace === null ? undefined : <SettingsNav workspace={workspace} />
-      }
-    >
+    <WorkspaceShell title="Settings">
       {workspace !== null && (
         <div className="max-w-2xl space-y-8">
           {canManageMembers(workspace.role) ? (

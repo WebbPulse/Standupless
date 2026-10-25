@@ -41,7 +41,6 @@ import DesktopNotificationsSettings from '../../components/workspace/DesktopNoti
 import DiscordDirectMessages from '../../components/workspace/DiscordDirectMessages';
 import NotificationScheduleSettings from '../../components/workspace/NotificationScheduleSettings';
 import ReturnToast from '../../components/workspace/ReturnToast';
-import SettingsNav from '../../components/workspace/SettingsNav';
 import SlackDirectMessages from '../../components/workspace/SlackDirectMessages';
 import WorkspaceShell from '../../components/workspace/WorkspaceShell';
 import { discordLinkOutcome } from '../../components/workspace/discordLinkOutcomes';
@@ -437,12 +436,7 @@ const NotificationsSettings: React.FC = () => {
   }, [workspaceId]);
 
   return (
-    <WorkspaceShell
-      title="Settings"
-      toolbar={
-        workspace === null ? undefined : <SettingsNav workspace={workspace} />
-      }
-    >
+    <WorkspaceShell title="Settings">
       <ReturnToast
         param="discord_dm"
         describe={discordLinkOutcome}

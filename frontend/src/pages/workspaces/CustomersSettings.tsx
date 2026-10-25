@@ -7,7 +7,6 @@
 
 import React from 'react';
 import CustomerFieldsEditor from '../../components/customers/CustomerFieldsEditor';
-import SettingsNav from '../../components/workspace/SettingsNav';
 import WorkspaceShell from '../../components/workspace/WorkspaceShell';
 import { useWorkspace } from '../../hooks/useWorkspace';
 import { canManageMembers } from '../../lib/capabilities';
@@ -20,12 +19,7 @@ const CustomersSettings: React.FC = () => {
   const isGuest = workspace?.role === 'guest';
 
   return (
-    <WorkspaceShell
-      title="Settings"
-      toolbar={
-        workspace === null ? undefined : <SettingsNav workspace={workspace} />
-      }
-    >
+    <WorkspaceShell title="Settings">
       <div className="max-w-2xl space-y-4">
         <div className="space-y-1">
           <h2 className="text-base font-semibold">Customers</h2>
