@@ -38,7 +38,6 @@ import {
   workflowSettingsPath,
   workspaceSecuritySettingsPath,
 } from './paths';
-import { isFeatureOn } from './features';
 import type { TeamRead, WorkspaceRead } from '../types/Api';
 
 /** Which group of settings an entry belongs to. */
@@ -906,7 +905,7 @@ export const visibleSettingsPages = (
 export const teamSettingsSectionsFor = (
   features?: WorkspaceRead['features']
 ): readonly TeamSettingsSection[] =>
-  isFeatureOn({ features }, 'releases')
+  features?.releases !== false
     ? TEAM_SETTINGS_SECTIONS
     : TEAM_SETTINGS_SECTIONS.filter((section) => section.id !== 'releases');
 

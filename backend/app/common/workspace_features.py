@@ -68,7 +68,7 @@ def features_for_route(method: str, route_path: Optional[str]) -> tuple[Workspac
 
 
 def features_for_tool(feature: WorkspaceFeature | None, arguments: Mapping[str, Any]) -> tuple[WorkspaceFeature, ...]:
-    """The areas a write tool touches: its own area, if it has one, and the area of any document or initiative it names."""
+    """The areas a write tool touches: its own area, if any, and the area of a document or initiative it names."""
     found: list[WorkspaceFeature] = [feature] if feature is not None else []
     for argument, area in _ARGUMENT_FEATURES.items():
         if arguments.get(argument) and area not in found:

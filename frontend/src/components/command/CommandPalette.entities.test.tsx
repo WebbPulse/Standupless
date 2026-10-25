@@ -162,7 +162,12 @@ const renderPalette = (
         <CommandPalette
           open
           onClose={() => undefined}
-          workspace={{ id: 'ws-1', slug: 'mine', role, features }}
+          workspace={{
+            id: 'ws-1',
+            slug: 'mine',
+            role,
+            ...(features === undefined ? {} : { features }),
+          }}
           teams={[engine]}
         />
       </ShortcutProvider>

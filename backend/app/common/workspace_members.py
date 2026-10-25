@@ -82,7 +82,9 @@ def read_workspace(repositories: Repositories, context: AuthzContext) -> Workspa
 
 
 def update_workspace(repositories: Repositories, context: AuthzContext, payload: WorkspaceUpdate) -> WorkspaceRead:
-    """Rename the workspace or change its accent, update cadence, branch format, permissions or features. The slug is fixed.
+    """Rename the workspace or change its accent, update cadence, branch format, permissions or features.
+
+    The slug is fixed.
 
     `accent_color` is written only when the body names it, so a rename never
     resets the accent, and an explicit null returns it to the default. Only a
