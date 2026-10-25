@@ -57,13 +57,13 @@ from app.common.planning_rules import (
 from app.common.project_cadence import workspace_interval
 from app.common.project_labels import label_match, label_scope, label_values, require_project_labels
 from app.common.project_link_writes import with_links
+from app.common.project_relations import Dependencies, dependency_map, fill_one, with_dependencies
 from app.common.project_statuses import (
     choose_project_status,
     project_in_filter,
     status_filter_match,
     workspace_project_statuses,
 )
-from app.common.project_relations import Dependencies, dependency_map, fill_one, with_dependencies
 from app.common.project_templates import add_template_rows, fill_project, find_project_template
 from app.common.relation_effects import cancelled_status, categories_for
 from app.common.sub_teams import listed_teams
