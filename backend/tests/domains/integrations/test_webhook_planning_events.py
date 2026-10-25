@@ -158,7 +158,7 @@ def test_the_webhook_routes_accept_the_new_types(
     )
 
     assert created.status_code == 201, created.text
-    assert created.json()["resource_types"] == wanted
+    assert sorted(created.json()["resource_types"]) == sorted(wanted)
     assert refused.status_code == 422
 
 
