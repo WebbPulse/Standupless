@@ -151,6 +151,12 @@ NULLABLE_FIELDS: tuple[str, ...] = (
 PLAIN_FIELDS: tuple[str, ...] = ("title", "status_id", "priority", "label_ids")
 """The patchable fields a null leaves alone, because the row cannot hold one."""
 
+_DAY_BOUND = (
+    "exclusive: YYYY-MM-DD, or relative to today as today, -14d, +7d, -2w, -1m or +1y, "
+    "which keeps rolling in a saved view"
+)
+"""How a date bound filter is written, shared by every date field's description."""
+
 
 def _status_name(call: ToolCall, issue: Issue) -> str:
     """The display name of one issue's status, or empty when it has been deleted."""
@@ -318,30 +324,14 @@ def _filter_properties(*, with_assignee: bool = True) -> dict[str, Any]:
         },
         "release_id": one_or_many("Shipped in any of these releases; 'none' is issues in no release"),
         "release_id_not": one_or_many("Shipped in none of these releases; 'none' keeps released issues only"),
-        "due_before": string(
-            "Due before this day, exclusive: YYYY-MM-DD, or relative to today as today, -14d, +7d, -2w, -1m or +1y, which keeps rolling in a saved view"
-        ),
-        "due_after": string(
-            "Due after this day, exclusive: YYYY-MM-DD, or relative to today as today, -14d, +7d, -2w, -1m or +1y, which keeps rolling in a saved view"
-        ),
-        "created_after": string(
-            "Created after this day, exclusive: YYYY-MM-DD, or relative to today as today, -14d, +7d, -2w, -1m or +1y, which keeps rolling in a saved view"
-        ),
-        "created_before": string(
-            "Created before this day, exclusive: YYYY-MM-DD, or relative to today as today, -14d, +7d, -2w, -1m or +1y, which keeps rolling in a saved view"
-        ),
-        "updated_after": string(
-            "Updated after this day, exclusive: YYYY-MM-DD, or relative to today as today, -14d, +7d, -2w, -1m or +1y, which keeps rolling in a saved view"
-        ),
-        "updated_before": string(
-            "Updated before this day, exclusive: YYYY-MM-DD, or relative to today as today, -14d, +7d, -2w, -1m or +1y, which keeps rolling in a saved view"
-        ),
-        "completed_after": string(
-            "Completed after this day, exclusive: YYYY-MM-DD, or relative to today as today, -14d, +7d, -2w, -1m or +1y, which keeps rolling in a saved view; only completed issues match"
-        ),
-        "completed_before": string(
-            "Completed before this day, exclusive: YYYY-MM-DD, or relative to today as today, -14d, +7d, -2w, -1m or +1y, which keeps rolling in a saved view; only completed issues match"
-        ),
+        "due_before": string(f"Due before this day, {_DAY_BOUND}"),
+        "due_after": string(f"Due after this day, {_DAY_BOUND}"),
+        "created_after": string(f"Created after this day, {_DAY_BOUND}"),
+        "created_before": string(f"Created before this day, {_DAY_BOUND}"),
+        "updated_after": string(f"Updated after this day, {_DAY_BOUND}"),
+        "updated_before": string(f"Updated before this day, {_DAY_BOUND}"),
+        "completed_after": string(f"Completed after this day, {_DAY_BOUND}; only completed issues match"),
+        "completed_before": string(f"Completed before this day, {_DAY_BOUND}; only completed issues match"),
         "content": string("Title or description contains this text, case insensitive"),
         "content_not": string("Neither title nor description contains this text"),
         "match": enum(("all", "any"), "How the conditions combine: all of them (default) or any one"),

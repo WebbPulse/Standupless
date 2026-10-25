@@ -15,7 +15,7 @@ import pytest
 
 from app.common.customer_index import CustomerIndex, CustomerProfile
 from app.common.db.dynamo.issues import Issue
-from app.common.issue_filters import IssueFilter, InvalidFilterValue, UnknownStatusCategory, build_issue_filter
+from app.common.issue_filters import InvalidFilterValue, IssueFilter, UnknownStatusCategory, build_issue_filter
 
 CALLER = "01JB0000000000000000CALLER"
 
