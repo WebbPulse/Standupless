@@ -669,6 +669,37 @@ class TestDiscussionDomain:
         gone = api.get(path)
         assert gone.status_code == 404, gone.text[:400]
 
+    @WRITES
+    def test_a_new_issue_draft_is_saved_resumed_and_discarded(
+        self, api: Any, run_scope: RunScope, workspace: "dict[str, Any]", team: "dict[str, Any]"
+    ) -> None:
+        """A new issue draft created, saved again under its id, read, listed and discarded twice."""
+        drafts = f"/api/workspaces/{workspace['id']}/drafts/new-issues"
+        title = run_scope.name("issue draft")
+
+        created = api.post(drafts, json={"team_id": team["id"], "title": title, "priority": "high"})
+        assert created.status_code == 201, created.text[:400]
+        path = f"{drafts}/{created.json()['draft_id']}"
+
+        saved = api.put(path, json={"team_id": team["id"], "title": title, "body": "More detail"})
+        assert saved.status_code == 200, saved.text[:400]
+        assert saved.json()["created_at"] == created.json()["created_at"]
+
+        readback = api.get(path)
+        assert readback.status_code == 200, readback.text[:400]
+        assert readback.json()["body"] == "More detail"
+
+        listed = api.get(drafts)
+        assert listed.status_code == 200, listed.text[:400]
+        assert title in [row["title"] for row in listed.json()["drafts"]]
+
+        for _ in range(2):
+            discarded = api.delete(path)
+            assert discarded.status_code == 204, discarded.text[:400]
+
+        gone = api.get(path)
+        assert gone.status_code == 404, gone.text[:400]
+
 
 class TestViewsDomain:
     """The read surfaces a signed in user lands on: the board, the inbox and search."""

@@ -23,8 +23,11 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { WorkspaceContextType } from '../../contexts/WorkspaceContextDefinition';
 import { WorkspaceContext } from '../../contexts/WorkspaceContextDefinition';
+import { ApiError } from '@webbpulse/api-client';
 import type {
   IssueCreate,
+  IssueDraftRead,
+  IssueDraftWrite,
   IssueRead,
   LabelRead,
   LinkCreate,
@@ -34,7 +37,11 @@ import type {
   TriageSettingsRead,
 } from '../../types/Api';
 import type { Assignable } from '../../lib/issuePeople';
-import { readIssueDraft, writeIssueDraft } from '../../lib/issueDraft';
+import {
+  readIssueDrafts,
+  resetIssueDraftCache,
+  type IssueDraft,
+} from '../../lib/issueDraft';
 import { DEFAULT_PREFERENCES, setPreferences } from '../../lib/preferences';
 import CreateIssueDialog, { type CreateIssuePreset } from './CreateIssueDialog';
 
@@ -136,6 +143,31 @@ vi.mock('../../api/planning', () => ({
   listProjects: () => Promise.resolve({ projects: [], next_cursor: null }),
 }));
 
+const server = vi.hoisted(() => ({
+  viewer: 'user-1',
+  drafts: new Map<string, Map<string, unknown>>(),
+  refuse: null as unknown,
+}));
+
+const saveNewIssueDraft =
+  vi.fn<(draftId: string, write: IssueDraftWrite) => Promise<IssueDraftRead>>();
+const deleteNewIssueDraft = vi.fn<(draftId: string) => Promise<void>>();
+
+/** The fake server's drafts for the viewer the test is acting as. */
+const viewerDrafts = (): Map<string, unknown> => {
+  const held = server.drafts.get(server.viewer) ?? new Map<string, unknown>();
+  server.drafts.set(server.viewer, held);
+  return held;
+};
+
+vi.mock('../../api/newIssueDrafts', () => ({
+  listNewIssueDrafts: () => Promise.resolve([...viewerDrafts().values()]),
+  saveNewIssueDraft: (_w: string, draftId: string, write: IssueDraftWrite) =>
+    saveNewIssueDraft(draftId, write),
+  deleteNewIssueDraft: (_w: string, draftId: string) =>
+    deleteNewIssueDraft(draftId),
+}));
+
 vi.mock('@webbpulse/auth/react', async () => {
   const actual = await vi.importActual<typeof import('@webbpulse/auth/react')>(
     '@webbpulse/auth/react'
@@ -216,6 +248,7 @@ const renderDialog = (
     preset?: CreateIssuePreset;
     people?: Assignable[];
     initialExpanded?: boolean;
+    initialShowDrafts?: boolean;
   } = {}
 ) =>
   render(
@@ -240,6 +273,29 @@ let counter = 0;
 beforeEach(() => {
   counter = 0;
   triage.on = false;
+  resetIssueDraftCache();
+  server.viewer = 'user-1';
+  server.drafts.clear();
+  server.refuse = null;
+  saveNewIssueDraft.mockReset();
+  deleteNewIssueDraft.mockReset();
+  saveNewIssueDraft.mockImplementation((draftId, write) => {
+    if (server.refuse !== null) return Promise.reject(server.refuse);
+    const row = {
+      ...write,
+      draft_id: draftId,
+      title: write.title ?? '',
+      body: write.body ?? '',
+      created_at: '2026-10-25T00:00:00Z',
+      updated_at: new Date().toISOString(),
+    };
+    viewerDrafts().set(draftId, row);
+    return Promise.resolve(row);
+  });
+  deleteNewIssueDraft.mockImplementation((draftId) => {
+    viewerDrafts().delete(draftId);
+    return Promise.resolve();
+  });
   duty.settings = null;
   setPreferences(DEFAULT_PREFERENCES);
   for (const spy of [
@@ -504,7 +560,42 @@ describe('closing', () => {
 describe('drafts', () => {
   const viewer = { currentUserId: 'user-1' };
 
-  it('keeps a dirty draft on Escape without asking, and restores it', async () => {
+  const savedWork: IssueDraft = {
+    teamId: 't-1',
+    title: 'Saved work',
+    body: 'Kept notes',
+    templateId: null,
+    templateTitle: '',
+    templateBody: '',
+    answers: {},
+    statusId: '',
+    priority: 'low',
+    assigneeId: null,
+    labelIds: [],
+    estimate: null,
+    projectId: null,
+    projectMilestoneId: null,
+    cycleId: null,
+    startDate: null,
+    dueDate: null,
+    parent: null,
+    subIssues: [],
+  };
+
+  /** Puts one draft on the fake server for the acting viewer. */
+  const holdOnServer = (draftId: string, draft: IssueDraft): void => {
+    viewerDrafts().set(draftId, {
+      draft_id: draftId,
+      team_id: draft.teamId,
+      title: draft.title,
+      body: draft.body,
+      priority: draft.priority,
+      created_at: '2026-10-24T00:00:00Z',
+      updated_at: '2026-10-24T00:00:00Z',
+    });
+  };
+
+  it('saves a dirty draft on Escape without asking, and resumes it from Drafts', async () => {
     const user = userEvent.setup();
     const first = renderDialog(viewer);
 
@@ -518,18 +609,31 @@ describe('drafts', () => {
 
     expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
     expect(onClose).toHaveBeenCalledTimes(1);
-    expect(readIssueDraft('ws-1', 'user-1')).toMatchObject({
-      teamId: 't-1',
-      title: 'Draft',
-      body: 'Some notes',
-      priority: 'high',
+    await waitFor(() => {
+      expect(saveNewIssueDraft).toHaveBeenLastCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          team_id: 't-1',
+          title: 'Draft',
+          body: 'Some notes',
+          priority: 'high',
+        })
+      );
     });
 
     first.unmount();
+    resetIssueDraftCache();
     renderDialog(viewer);
 
+    expect(screen.getByRole('textbox', { name: 'Title' })).toHaveValue('');
+    await user.click(await screen.findByRole('button', { name: 'Drafts (1)' }));
+    await user.click(screen.getByRole('button', { name: 'Open draft Draft' }));
+
     expect(screen.getByRole('textbox', { name: 'Title' })).toHaveValue('Draft');
-    expect(await findDescription()).toHaveTextContent('Some notes');
+    const description = await findDescription();
+    await waitFor(() => {
+      expect(description).toHaveTextContent('Some notes');
+    });
     expect(
       screen.getByRole('button', { name: 'Priority: High' })
     ).toBeInTheDocument();
@@ -541,84 +645,56 @@ describe('drafts', () => {
 
     await user.type(screen.getByRole('textbox', { name: 'Title' }), 'Mine');
     await user.keyboard('{Escape}');
+    await waitFor(() => {
+      expect(saveNewIssueDraft).toHaveBeenCalled();
+    });
     first.unmount();
+    server.viewer = 'user-2';
     renderDialog({ currentUserId: 'user-2' });
 
-    expect(screen.getByRole('textbox', { name: 'Title' })).toHaveValue('');
+    expect(
+      await screen.findByRole('button', { name: 'Drafts (0)' })
+    ).toBeInTheDocument();
+    expect(readIssueDrafts('ws-1', 'user-2')).toEqual([]);
   });
 
   it('discards the draft only when asked', async () => {
     const user = userEvent.setup();
-    const first = renderDialog(viewer);
+    renderDialog(viewer);
 
     await user.type(screen.getByRole('textbox', { name: 'Title' }), 'Draft');
+    expect(readIssueDrafts('ws-1', 'user-1')).toHaveLength(1);
     await user.click(screen.getByRole('button', { name: 'Discard draft' }));
 
     expect(onClose).toHaveBeenCalledTimes(1);
-    expect(readIssueDraft('ws-1', 'user-1')).toBeNull();
-
-    first.unmount();
-    renderDialog(viewer);
-    expect(screen.getByRole('textbox', { name: 'Title' })).toHaveValue('');
+    expect(readIssueDrafts('ws-1', 'user-1')).toEqual([]);
+    await waitFor(() => {
+      expect(deleteNewIssueDraft).toHaveBeenCalled();
+    });
   });
 
-  it('clears the draft once the issue is created', async () => {
+  it('removes the draft once the issue is created', async () => {
     const user = userEvent.setup();
     renderDialog(viewer);
 
     await user.type(screen.getByRole('textbox', { name: 'Title' }), 'Ship it');
-    expect(readIssueDraft('ws-1', 'user-1')).not.toBeNull();
+    expect(readIssueDrafts('ws-1', 'user-1')).toHaveLength(1);
     await user.click(screen.getByRole('button', { name: /Create issue/ }));
 
     await waitFor(() => {
       expect(onCreated).toHaveBeenCalled();
     });
-    expect(readIssueDraft('ws-1', 'user-1')).toBeNull();
+    expect(readIssueDrafts('ws-1', 'user-1')).toEqual([]);
   });
 
-  it('leaves a saved draft alone when opened with presets, until restored', async () => {
+  it('opens on the Drafts list when asked and resumes the one picked', async () => {
     const user = userEvent.setup();
-    const saved = {
-      teamId: 't-1',
-      title: 'Saved work',
-      body: 'Kept notes',
-      templateId: null,
-      templateTitle: '',
-      templateBody: '',
-      answers: {},
-      statusId: '',
-      priority: 'low' as const,
-      assigneeId: null,
-      labelIds: [],
-      estimate: null,
-      projectId: null,
-      projectMilestoneId: null,
-      cycleId: null,
-      startDate: null,
-      dueDate: null,
-      parent: null,
-      subIssues: [],
-    };
-    writeIssueDraft('ws-1', 'user-1', saved);
-    renderDialog({ ...viewer, preset: { statusId: 'st-2' } });
+    holdOnServer('d-1', savedWork);
+    renderDialog({ ...viewer, initialShowDrafts: true });
 
-    expect(screen.getByRole('textbox', { name: 'Title' })).toHaveValue('');
-    expect(
-      screen.getByRole('status', { name: 'Saved draft' })
-    ).toHaveTextContent('Saved work');
-
-    await user.type(screen.getByRole('textbox', { name: 'Title' }), 'Other');
-    expect(readIssueDraft('ws-1', 'user-1')).toMatchObject({
-      title: 'Saved work',
-    });
-    await user.keyboard('{Escape}');
-    expect(onClose).not.toHaveBeenCalled();
-    expect(
-      screen.getByRole('alertdialog', { name: 'Discard this issue?' })
-    ).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: 'Keep editing' }));
-
-    await user.click(screen.getByRole('button', { name: 'Restore draft' }));
+    await user.click(
+      await screen.findByRole('button', { name: 'Open draft Saved work' })
+    );
 
     expect(screen.getByRole('textbox', { name: 'Title' })).toHaveValue(
       'Saved work'
@@ -631,46 +707,66 @@ describe('drafts', () => {
       screen.getByRole('button', { name: 'Priority: Low' })
     ).toBeInTheDocument();
     expect(
-      screen.queryByRole('status', { name: 'Saved draft' })
-    ).not.toBeInTheDocument();
+      screen.getByRole('button', { name: 'Drafts (0)' })
+    ).toBeInTheDocument();
   });
 
-  it('starts fresh when the saved draft is set aside', async () => {
+  it('keeps what is typed when switching to another draft', async () => {
     const user = userEvent.setup();
-    writeIssueDraft('ws-1', 'user-1', {
-      teamId: 't-1',
-      title: 'Saved work',
-      body: '',
-      templateId: null,
-      templateTitle: '',
-      templateBody: '',
-      answers: {},
-      statusId: '',
-      priority: 'none',
-      assigneeId: null,
-      labelIds: [],
-      estimate: null,
-      projectId: null,
-      projectMilestoneId: null,
-      cycleId: null,
-      startDate: null,
-      dueDate: null,
-      parent: null,
-      subIssues: [],
-    });
-    renderDialog({ ...viewer, preset: { statusId: 'st-2' } });
+    holdOnServer('d-1', savedWork);
+    renderDialog(viewer);
+
+    await user.type(screen.getByRole('textbox', { name: 'Title' }), 'Fresh');
+    await user.click(await screen.findByRole('button', { name: 'Drafts (1)' }));
+    await user.click(
+      screen.getByRole('button', { name: 'Open draft Saved work' })
+    );
+
+    expect(screen.getByRole('textbox', { name: 'Title' })).toHaveValue(
+      'Saved work'
+    );
+    expect(
+      readIssueDrafts('ws-1', 'user-1').map((saved) => saved.draft.title)
+    ).toEqual(expect.arrayContaining(['Fresh', 'Saved work']));
+  });
+
+  it('deletes a draft from the list', async () => {
+    const user = userEvent.setup();
+    holdOnServer('d-1', savedWork);
+    renderDialog({ ...viewer, initialShowDrafts: true });
 
     await user.click(
-      screen.getByRole('button', { name: 'Discard saved draft' })
+      await screen.findByRole('button', { name: 'Delete draft Saved work' })
     );
-    await user.type(screen.getByRole('textbox', { name: 'Title' }), 'New');
-    await user.keyboard('{Escape}');
 
-    expect(onClose).toHaveBeenCalledTimes(1);
-    expect(readIssueDraft('ws-1', 'user-1')).toMatchObject({
-      title: 'New',
-      statusId: 'st-2',
+    await waitFor(() => {
+      expect(deleteNewIssueDraft).toHaveBeenCalledWith('d-1');
     });
+    expect(readIssueDrafts('ws-1', 'user-1')).toEqual([]);
+  });
+
+  it('says so at the draft cap and keeps the text', async () => {
+    const user = userEvent.setup();
+    server.refuse = new ApiError({
+      status: 409,
+      statusText: 'Conflict',
+      body: null,
+      url: '/api/workspaces/ws-1/drafts/new-issues/x',
+      method: 'PUT',
+    });
+    renderDialog(viewer);
+
+    await user.type(screen.getByRole('textbox', { name: 'Title' }), 'One more');
+
+    expect(
+      await screen.findByText(/most drafts you can keep/, undefined, {
+        timeout: 3000,
+      })
+    ).toBeInTheDocument();
+    expect(screen.getByRole('textbox', { name: 'Title' })).toHaveValue(
+      'One more'
+    );
+    expect(readIssueDrafts('ws-1', 'user-1')).toHaveLength(1);
   });
 });
 

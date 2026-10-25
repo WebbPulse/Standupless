@@ -15,11 +15,12 @@
  * the draft starts from in place of the team's default. `title` and
  * `description` start the draft on text, such as a selection, and
  * `relatedIssueId` relates the new issue to the one the text came from.
- * `expanded` opens the dialog already expanded, as `V` does.
+ * `expanded` opens the dialog already expanded, as `V` does, and `showDrafts`
+ * opens it on its Drafts list.
  *
- * {@link CreateIssueState.hasDraft} says whether the viewer has a draft saved
- * in this workspace, so the new issue button can show that pressing it brings
- * the draft back.
+ * {@link CreateIssueState.hasDraft} says whether the viewer has any new issue
+ * draft saved in this workspace, so the new issue button can show that the
+ * Drafts list holds something to resume.
  */
 
 import { createContext, useContext } from 'react';
@@ -51,6 +52,8 @@ export interface CreateIssueOptions {
   relatedIssueId?: string;
   /** Whether the dialog opens expanded, as `V` opens it. */
   expanded?: boolean;
+  /** Whether the dialog opens on its Drafts list, as the command palette does. */
+  showDrafts?: boolean;
   /** Called with the new issue after the dialog closes on success. */
   onCreated?: (issue: IssueRead) => void;
 }
@@ -67,7 +70,7 @@ export interface CreateIssueState {
   canCreate: boolean;
   /** The options the open dialog was asked for, with the team resolved. */
   request: (CreateIssueOptions & { teamId: string }) | null;
-  /** Whether a closed dialog left a draft to restore. */
+  /** Whether the viewer has a saved draft to resume. */
   hasDraft?: boolean;
 }
 
