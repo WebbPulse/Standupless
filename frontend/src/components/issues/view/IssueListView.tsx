@@ -3,7 +3,8 @@
  * is worked in practice: j and k move, x selects, Shift extends, Enter opens,
  * Space peeks, s, p, a, l, e, Shift+M, Shift+C, Shift+P and Shift+D change a
  * property on the selection or the focused issue, Cmd or Ctrl+Shift+P sets
- * or removes their parent issue, r renames the focused issue, i assigns them to the
+ * or removes their parent issue, Cmd or Ctrl+Shift+M moves them to another
+ * team, r renames the focused issue, i assigns them to the
  * viewer or back off them, the palette and the row menu duplicate one issue
  * or convert it into a project, M then B, X, R or D marks one issue as
  * blocked by, blocking, related to or a duplicate of another, Cmd or
@@ -15,7 +16,9 @@
  * holding a card, and labels move to Shift+L. In a list that nests
  * sub-issues, the right arrow unfolds a parent or steps into its first
  * sub-issue and the left arrow folds it or steps back out to the parent. A right
- * click on a row or a card opens the same commands as a menu. Opening an
+ * click on a row or a card opens the same commands as a menu, and the bulk
+ * bar under a selection, on a list or a board, offers them as buttons and a
+ * More menu, subscribing and unsubscribing included. Opening an
  * issue remembers the view's order, so the issue page can step through it.
  * In a manually ordered view, Alt+Up and Alt+Down move the focused issue a
  * place within its group, or its board column, and save the order a drag would.
@@ -83,6 +86,7 @@ import {
   type BranchStart,
 } from '../../../lib/copyIssue';
 import { allArchived } from '../../../lib/issueDisplay';
+import { setSubscriptions } from '../../../lib/bulkIssueActions';
 import { boardStep } from '../../../lib/boardNav';
 import {
   CONVERT_TO_PROJECT_LABEL,
@@ -101,6 +105,17 @@ import type {
   LinkType,
   StatusCategory,
 } from '../../../types/Api';
+import {
+  LuBell,
+  LuBellOff,
+  LuCalendar,
+  LuCopy,
+  LuCornerUpLeft,
+  LuHexagon,
+  LuLink2,
+  LuRefreshCw,
+  LuUsers,
+} from 'react-icons/lu';
 import { ErrorAlert } from '../../ui/alert';
 import { Kbd } from '../../ui/badge';
 import { Button } from '../../ui/button';
@@ -108,7 +123,7 @@ import EmptyState from '../../ui/empty-state';
 import { SkeletonRows } from '../../ui/skeleton';
 import ConfirmDeleteIssuesDialog from '../ConfirmDeleteIssuesDialog';
 import BoardLayout from './BoardLayout';
-import BulkBar from './BulkBar';
+import BulkBar, { type BulkBarMenuItem } from './BulkBar';
 import { IssueViewEnvContext, type IssueViewEnv } from './IssueViewContext';
 import IssueRowMenu from './IssueRowMenu';
 import ListRows, { type IssueSection } from './ListRows';
@@ -116,6 +131,11 @@ import PropertyCommand from './PropertyCommand';
 import { usePropertyValues } from './propertyValues';
 import AddRelationDialog from '../AddRelationDialog';
 import ConvertToProjectDialog from '../ConvertToProjectDialog';
+import {
+  MOVE_ISSUE_KEYS,
+  MOVE_ISSUE_LABEL,
+  SelectionMoveDialog,
+} from '../MoveIssueDialog';
 import RenameIssueDialog from '../RenameIssueDialog';
 import { RELATION_COMMANDS } from '../RelationGlyphs';
 import SetParentDialog, { SET_PARENT_KEYS } from '../SetParentDialog';
@@ -233,7 +253,8 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
 }) => {
   const navigate = useNavigate();
   const location = useLocation();
-  const workspaceId = useContext(WorkspaceContext)?.workspace?.id ?? '';
+  const workspace = useContext(WorkspaceContext)?.workspace;
+  const workspaceId = workspace?.id ?? '';
   const { peekIssue, peekedKey } = usePeekIssue();
   const creator = useCreateIssue();
   const { context: listContext, forTeam, createLabel } = lists;
@@ -264,6 +285,7 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
   const [relating, setRelating] = useState<OpenRelation | null>(null);
   const [menu, setMenu] = useState<OpenMenu | null>(null);
   const [deleting, setDeleting] = useState<OrderedIssueRead[] | null>(null);
+  const [moving, setMoving] = useState<string[] | null>(null);
   const scrollOnFocus = useRef(false);
 
   const { showSubIssues, completed } = state;
@@ -787,7 +809,9 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
   const copyIds = (issues: readonly OrderedIssueRead[]): void => {
     copyText(
       issues.map((issue) => issue.key).join(', '),
-      issues.length === 1 ? 'Issue ID copied' : 'Issue IDs copied'
+      issues.length === 1
+        ? 'Issue ID copied'
+        : `Copied ${String(issues.length)} issue IDs`
     );
   };
   const branchStart = (issue: OrderedIssueRead): BranchStart | undefined =>
@@ -807,7 +831,9 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
   const copyUrls = (issues: readonly OrderedIssueRead[]): void => {
     copyText(
       issues.map((issue) => issueUrl(slug, issue.key)).join('\n'),
-      issues.length === 1 ? 'Issue URL copied' : 'Issue URLs copied'
+      issues.length === 1
+        ? 'Issue URL copied'
+        : `Copied ${String(issues.length)} issue URLs`
     );
   };
   const remove = collection.remove;
@@ -883,6 +909,20 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
     handler: (event) => {
       event?.preventDefault();
       if (single !== undefined) setRenaming(single.id);
+    },
+  });
+  const canMove = canCommand && workspaceId !== '';
+  const openMove = (issues: readonly OrderedIssueRead[]): void => {
+    setMoving(issues.map((issue) => issue.id));
+  };
+  useShortcut({
+    keys: MOVE_ISSUE_KEYS,
+    label: `${MOVE_ISSUE_LABEL}…`,
+    scope: 'issue',
+    enabled: canMove,
+    handler: (event) => {
+      event?.preventDefault();
+      openMove(targets);
     },
   });
   useShortcut({
@@ -1127,9 +1167,107 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
   const [convertIssue] = converting === null ? [] : resolve([converting]);
   const [renameIssue] = renaming === null ? [] : resolve([renaming]);
   const [relationIssue] = relating === null ? [] : resolve([relating.id]);
+  const movingIssues = moving === null ? [] : resolve(moving);
   const menuIssues = menu === null ? [] : resolve(menu.ids);
   const menuSingle = menuIssues.length === 1 ? menuIssues[0] : undefined;
   const openInNewTab = desktopOpenInNewTab();
+
+  const iconClass = 'h-3.5 w-3.5';
+  const bulkMenu: BulkBarMenuItem[][] = [
+    canEdit
+      ? [
+          ...(canMove
+            ? [
+                {
+                  id: 'move',
+                  label: `${MOVE_ISSUE_LABEL}…`,
+                  icon: <LuUsers className={iconClass} />,
+                  keys: MOVE_ISSUE_KEYS,
+                  onSelect: () => {
+                    openMove(targets);
+                  },
+                },
+              ]
+            : []),
+          {
+            id: 'cycle',
+            label: 'Cycle',
+            icon: <LuRefreshCw className={iconClass} />,
+            keys: propertyKeys.cycle,
+            onSelect: () => {
+              openCommand('cycle', targets);
+            },
+          },
+          {
+            id: 'project',
+            label: 'Project',
+            icon: <LuHexagon className={iconClass} />,
+            keys: propertyKeys.project,
+            onSelect: () => {
+              openCommand('project', targets);
+            },
+          },
+          {
+            id: 'dueDate',
+            label: 'Due date',
+            icon: <LuCalendar className={iconClass} />,
+            keys: propertyKeys.dueDate,
+            onSelect: () => {
+              openCommand('dueDate', targets);
+            },
+          },
+          {
+            id: 'parent',
+            label: 'Set parent…',
+            icon: <LuCornerUpLeft className={iconClass} />,
+            keys: SET_PARENT_KEYS,
+            onSelect: () => {
+              openParent(targets);
+            },
+          },
+        ]
+      : [],
+    workspaceId === ''
+      ? []
+      : [
+          {
+            id: 'subscribe',
+            label: 'Subscribe',
+            icon: <LuBell className={iconClass} />,
+            onSelect: () => {
+              void setSubscriptions(workspaceId, targets, true);
+            },
+          },
+          {
+            id: 'unsubscribe',
+            label: 'Unsubscribe',
+            icon: <LuBellOff className={iconClass} />,
+            onSelect: () => {
+              void setSubscriptions(workspaceId, targets, false);
+            },
+          },
+        ],
+    [
+      {
+        id: 'copyIds',
+        label: 'Copy IDs',
+        icon: <LuCopy className={iconClass} />,
+        keys: COPY_ISSUE_ID_KEYS,
+        onSelect: () => {
+          copyIds(targets);
+        },
+      },
+      {
+        id: 'copyUrls',
+        label: 'Copy links',
+        icon: <LuLink2 className={iconClass} />,
+        keys: COPY_ISSUE_URL_KEYS,
+        onSelect: () => {
+          copyUrls(targets);
+        },
+      },
+    ],
+  ];
 
   const loading =
     lists.isLoading || (collection.isLoading && collection.issues.length === 0);
@@ -1306,6 +1444,20 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
           }}
         />
       )}
+      {moving !== null && movingIssues.length > 0 && (
+        <SelectionMoveDialog
+          open
+          workspaceId={workspaceId}
+          workspaceRole={workspace?.role}
+          issues={movingIssues}
+          onClose={() => {
+            setMoving(null);
+          }}
+          onMoved={() => {
+            invalidateQueries(queryKey);
+          }}
+        />
+      )}
       {renameIssue !== undefined && (
         <RenameIssueDialog
           issueKey={renameIssue.key}
@@ -1450,6 +1602,7 @@ export const IssueListView: React.FC<IssueListViewProps> = ({
         milestones={context.milestones !== undefined}
         archived={allArchived(targets)}
         keys={propertyKeys}
+        more={bulkMenu}
         onProperty={(property) => {
           openCommand(property, targets);
         }}
