@@ -578,6 +578,7 @@ class Project(BaseModel):
     None while it is open or on a row closed before the field existed.
     `sort_order` is the workspace-wide manual position, a base 62 fractional
     key; None on a row never placed, which the manual ordering puts last.
+    `archived_at` is when the project was archived, None while it is live.
     """
 
     workspace_id: str
@@ -606,6 +607,7 @@ class Project(BaseModel):
     initiative_id: str | None = None
     completed_at: datetime | None = None
     sort_order: str | None = None
+    archived_at: datetime | None = None
     created_by: str
     created_at: datetime = Field(default_factory=utc_now)
     updated_at: datetime = Field(default_factory=utc_now)
@@ -897,6 +899,7 @@ PROJECT_OPTIONAL_FIELDS: tuple[str, ...] = (
     "update_interval_days",
     "initiative_id",
     "sort_order",
+    "archived_at",
     "import_batch_id",
 )
 """The project attributes a null value removes from the row rather than storing."""

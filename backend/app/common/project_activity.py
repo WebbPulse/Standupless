@@ -95,6 +95,11 @@ def record_project_created(repositories: Repositories, context: AuthzContext, pr
     repositories.planning.record_project_activity([_row(context, project.project_id, "created")])
 
 
+def record_project_archive(repositories: Repositories, context: AuthzContext, project_id: str, event: str) -> None:
+    """Record that the caller archived or restored a project, `event` being `archived` or `unarchived`."""
+    repositories.planning.record_project_activity([_row(context, project_id, event)])
+
+
 def record_project_changes(
     repositories: Repositories, context: AuthzContext, before: Project, after: Project
 ) -> list[ProjectActivityRow]:

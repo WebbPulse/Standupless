@@ -2474,6 +2474,8 @@ export interface ProjectRead {
   label_ids?: string[];
   /** The short project id: the lowercased tail of `project_id`. */
   slug_id?: string;
+  /** When the project was archived, null while it is live. */
+  archived_at?: string | null;
   created_by: string;
   created_at: string;
   updated_at: string;
@@ -2796,7 +2798,9 @@ export type ProjectActivityKind =
   | 'milestone_changed'
   | 'link_added'
   | 'link_removed'
-  | 'link_changed';
+  | 'link_changed'
+  | 'archived'
+  | 'unarchived';
 
 /**
  * One recorded change to a project: a property a patch moved, with its old and
@@ -3046,6 +3050,8 @@ export interface ProjectListQuery {
   /** Leaves out the projects these customers asked for, `none` for projects no customer asked for. */
   customer_id_not?: string[];
   sort?: ProjectSortField;
+  /** Lists archived projects too, which the list leaves out by default. */
+  include_archived?: boolean;
   cursor?: string;
   limit?: number;
 }

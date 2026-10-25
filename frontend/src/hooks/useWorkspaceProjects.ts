@@ -23,7 +23,7 @@ const POLL_MS = 60000;
 /** The customer filter and sort the server applies, which only the projects page asks for. */
 export type ProjectNarrowing = Pick<
   ProjectListQuery,
-  'customer_id' | 'customer_id_not' | 'sort'
+  'customer_id' | 'customer_id_not' | 'sort' | 'include_archived'
 >;
 
 /** What {@link useWorkspaceProjects} hands back. */
@@ -91,26 +91,26 @@ export const useWorkspaceProjects = (
     narrowing.customer_id ?? [],
     narrowing.customer_id_not ?? [],
     narrowing.sort ?? '',
+    narrowing.include_archived === true,
   ]);
   const queryKey = projectsKey(
     workspaceId,
     rollUp ? `${teamId}:sub-teams` : teamId,
-    narrowingKey === '[[],[],""]' ? '' : narrowingKey
+    narrowingKey === '[[],[],"",false]' ? '' : narrowingKey
   );
 
   const read = useCallback(
     ({ signal }: { signal?: AbortSignal }) => {
-      const [customerIds, customerIdsNot, sort] = JSON.parse(narrowingKey) as [
-        string[],
-        string[],
-        string,
-      ];
+      const [customerIds, customerIdsNot, sort, includeArchived] = JSON.parse(
+        narrowingKey
+      ) as [string[], string[], string, boolean];
       return listAllProjects(workspaceId, teamId, signal, rollUp, {
         ...(customerIds.length === 0 ? {} : { customer_id: customerIds }),
         ...(customerIdsNot.length === 0
           ? {}
           : { customer_id_not: customerIdsNot }),
         ...(sort === '' ? {} : { sort: sort as ProjectSortField }),
+        ...(includeArchived ? { include_archived: true } : {}),
       });
     },
     [workspaceId, teamId, rollUp, narrowingKey]

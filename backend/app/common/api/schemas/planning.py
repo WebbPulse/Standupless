@@ -960,6 +960,9 @@ class ProjectRead(BaseModel):
     completed_at: Optional[datetime] = Field(
         default=None, description="When the project last became completed or canceled, null while it is open"
     )
+    archived_at: Optional[datetime] = Field(
+        default=None, description="When the project was archived, null while it is live"
+    )
     skipped_template_issues: Optional[list[SkippedTemplateIssueRead]] = Field(
         default=None,
         description="Template issues left out, answered by a create from a project template, empty when none were",
@@ -1042,6 +1045,7 @@ class ProjectRead(BaseModel):
             initiative_id=project.initiative_id,
             sort_order=project.sort_order,
             completed_at=project.completed_at,
+            archived_at=project.archived_at,
             created_by=project.created_by,
             created_at=project.created_at,
             updated_at=project.updated_at,
@@ -1186,6 +1190,8 @@ ProjectActivityKindField = Literal[
     "link_added",
     "link_removed",
     "link_changed",
+    "archived",
+    "unarchived",
 ]
 
 PROJECT_ACTIVITY_DEFAULT_LIMIT = 50

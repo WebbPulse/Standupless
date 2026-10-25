@@ -284,6 +284,11 @@ const BoardCard: React.FC<BoardCardProps> = ({
           {project.name}
         </Link>
         {nameTip.tip}
+        {project.archived_at != null && (
+          <span className="shrink-0 rounded border border-line px-1 text-[11px] text-text-muted">
+            Archived
+          </span>
+        )}
         {shown.includes('dependencies') && (
           <ProjectDependencyMarkers project={project} byId={byId} />
         )}

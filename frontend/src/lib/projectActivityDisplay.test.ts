@@ -60,6 +60,11 @@ describe('describeProjectActivity', () => {
     expect(sentence({ kind: 'created' })).toBe('created the project');
   });
 
+  it('reads an archive and a restore', () => {
+    expect(sentence({ kind: 'archived' })).toBe('archived the project');
+    expect(sentence({ kind: 'unarchived' })).toBe('restored the project');
+  });
+
   it('reads a status move with both statuses as glyphs', () => {
     const description = describeProjectActivity(
       row({ field: 'status', from: 'backlog', to: 'in_progress' }),

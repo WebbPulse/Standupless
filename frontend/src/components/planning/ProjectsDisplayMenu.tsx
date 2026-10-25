@@ -85,6 +85,9 @@ export interface ProjectsDisplayMenuProps {
   /** Whether the timeline draws its dependency lines, left out off the timeline. */
   dependencies?: DependencyLinesChoice;
   onDependenciesChange?: (dependencies: DependencyLinesChoice) => void;
+  /** Whether archived projects list too, left out where they never show. */
+  archived?: boolean;
+  onArchivedChange?: (archived: boolean) => void;
   /** The shown properties, left out where the layout draws no columns. */
   columns?: readonly ProjectColumn[];
   onColumnsChange?: (columns: ProjectColumn[]) => void;
@@ -221,6 +224,8 @@ export const ProjectsDisplayMenu: React.FC<ProjectsDisplayMenuProps> = ({
   onEmptyChange,
   dependencies,
   onDependenciesChange,
+  archived,
+  onArchivedChange,
   layout,
   ordering,
   closed,
@@ -361,6 +366,14 @@ export const ProjectsDisplayMenu: React.FC<ProjectsDisplayMenuProps> = ({
           onChange={(checked) => {
             onDependenciesChange(checked ? 'show' : 'hide');
           }}
+        />
+      )}
+      {archived !== undefined && onArchivedChange !== undefined && (
+        <SwitchRow
+          id="projects-archived"
+          label="Show archived projects"
+          checked={archived}
+          onChange={onArchivedChange}
         />
       )}
     </div>
