@@ -5,22 +5,39 @@
  */
 
 import React from 'react';
+import type { SidebarBadgeStyle } from '../../types/Api';
 import { usePulseCount } from '../../hooks/useSidebarData';
 
 /** Props for PulseBadge: the workspace whose Pulse is counted. */
 export interface PulseBadgeProps {
   workspaceId: string;
+  /** Draws a dot in place of the number. */
+  badgeStyle?: SidebarBadgeStyle;
 }
 
 /** The count past which the badge shows "99+". */
 const SATURATES_AT = 100;
 
 /** Shows how many Pulse entries are unread, or nothing when none are. */
-export const PulseBadge: React.FC<PulseBadgeProps> = ({ workspaceId }) => {
+export const PulseBadge: React.FC<PulseBadgeProps> = ({
+  workspaceId,
+  badgeStyle = 'count',
+}) => {
   const unread = usePulseCount(workspaceId) ?? 0;
   if (unread <= 0) return null;
 
   const shown = unread >= SATURATES_AT ? '99+' : String(unread);
+
+  if (badgeStyle === 'dot') {
+    return (
+      <span
+        role="img"
+        aria-label={`${shown} unread in Pulse`}
+        data-testid="sidebar-badge-dot"
+        className="h-1.5 w-1.5 shrink-0 rounded-full bg-text-muted"
+      />
+    );
+  }
 
   return (
     <span

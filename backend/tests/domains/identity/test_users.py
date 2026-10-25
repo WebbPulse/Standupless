@@ -10,6 +10,7 @@ from fastapi.testclient import TestClient
 from app.common.composition.domains import DOMAINS
 from app.common.composition.wiring import build_domain_app
 from app.common.db.dynamo.inbox import NOTIFICATION_KINDS
+from app.common.db.dynamo.users import SIDEBAR_ITEMS
 from tests.domains.helpers import OWNER, make_user, sign_in, sign_in_through_gate
 
 ALL_ON = {"in_app": True, "email": True, "chat": True}
@@ -59,6 +60,8 @@ def test_the_caller_reads_their_own_row(client: TestClient, repositories: Any) -
         "theme": None,
         "pointer_cursors": False,
         "activity_filter": "all",
+        "sidebar_items": {item: "show" for item in SIDEBAR_ITEMS},
+        "sidebar_badge_style": "count",
         "projects_display": {
             "layout": "list",
             "group": "status",
@@ -196,6 +199,65 @@ def test_the_activity_filter_defaults_to_all_and_saves_comments_only(client: Tes
     assert client.patch("/api/users/me/preferences", json={"activity_filter": "all"}).json()["activity_filter"] == "all"
 
 
+def test_the_sidebar_starts_with_every_item_shown_and_count_badges(client: TestClient, repositories: Any) -> None:
+    """A person who never customized the sidebar reads every item shown and numbered badges."""
+    make_user(repositories, OWNER, "owner@example.com", display_name="Owner")
+    sign_in(client, OWNER)
+
+    body = client.get("/api/users/me").json()
+    assert body["sidebar_items"] == {item: "show" for item in SIDEBAR_ITEMS}
+    assert body["sidebar_badge_style"] == "count"
+
+
+def test_sidebar_items_move_between_shown_more_and_hidden(client: TestClient, repositories: Any) -> None:
+    """Each item moves alone to the More menu, to hidden and back, and only moved items are stored."""
+    make_user(repositories, OWNER, "owner@example.com", display_name="Owner")
+    sign_in(client, OWNER)
+
+    response = client.patch("/api/users/me/preferences", json={"sidebar_items": {"customers": "hide"}})
+    assert response.status_code == 200
+    assert response.json()["sidebar_items"]["customers"] == "hide"
+    assert response.json()["sidebar_items"]["roadmap"] == "show"
+
+    response = client.patch("/api/users/me/preferences", json={"sidebar_items": {"roadmap": "more"}})
+    assert response.json()["sidebar_items"]["customers"] == "hide"
+    assert response.json()["sidebar_items"]["roadmap"] == "more"
+    assert repositories.users.get(OWNER).sidebar_items == {"customers": "hide", "roadmap": "more"}
+
+    response = client.patch("/api/users/me/preferences", json={"sidebar_items": {"customers": "show"}})
+    assert response.json()["sidebar_items"]["customers"] == "show"
+    assert repositories.users.get(OWNER).sidebar_items == {"roadmap": "more"}
+    assert client.get("/api/users/me").json()["sidebar_items"]["roadmap"] == "more"
+
+
+def test_the_sidebar_refuses_an_unknown_item_or_place(client: TestClient, repositories: Any) -> None:
+    """An item the sidebar does not have, or a place it cannot sit, is a 422 and changes nothing."""
+    make_user(repositories, OWNER, "owner@example.com", display_name="Owner")
+    sign_in(client, OWNER)
+
+    assert client.patch("/api/users/me/preferences", json={"sidebar_items": {"documents": "hide"}}).status_code == 422
+    assert client.patch("/api/users/me/preferences", json={"sidebar_items": {"views": "pinned"}}).status_code == 422
+    assert repositories.users.get(OWNER).sidebar_items == {}
+
+
+def test_the_sidebar_badge_style_switches_to_a_dot_and_back(client: TestClient, repositories: Any) -> None:
+    """The badge style saves a dot, refuses a style it does not have and returns to a count."""
+    make_user(repositories, OWNER, "owner@example.com", display_name="Owner")
+    sign_in(client, OWNER)
+
+    response = client.patch("/api/users/me/preferences", json={"sidebar_badge_style": "dot"})
+    assert response.status_code == 200
+    assert response.json()["sidebar_badge_style"] == "dot"
+    assert repositories.users.get(OWNER).sidebar_badge_style == "dot"
+    assert client.get("/api/users/me").json()["sidebar_badge_style"] == "dot"
+
+    assert client.patch("/api/users/me/preferences", json={"sidebar_badge_style": "ring"}).status_code == 422
+    assert (
+        client.patch("/api/users/me/preferences", json={"sidebar_badge_style": "count"}).json()["sidebar_badge_style"]
+        == "count"
+    )
+
+
 def test_workflow_preferences_default_and_toggle_each_way(client: TestClient, repositories: Any) -> None:
     """Auto assign starts off and the branch copy switches start on; each turns on and off alone and is stored."""
     make_user(repositories, OWNER, "owner@example.com", display_name="Owner")
@@ -250,12 +312,22 @@ def test_theme_and_pointer_cursors_are_stored_on_the_account(client: TestClient,
 def test_a_retired_stored_preference_reads_as_the_default(client: TestClient, repositories: Any) -> None:
     """A value written before a choice was withdrawn reads as the default rather than failing the read."""
     make_user(repositories, OWNER, "owner@example.com", display_name="Owner")
-    repositories.users.update(OWNER, home_view="roadmap", font_size="tiny", activity_filter="history")
+    repositories.users.update(
+        OWNER,
+        home_view="roadmap",
+        font_size="tiny",
+        activity_filter="history",
+        sidebar_items={"views": "pinned", "documents": "hide"},
+        sidebar_badge_style="ring",
+    )
     sign_in(client, OWNER)
     body = client.get("/api/users/me").json()
     assert body["home_view"] == "home"
     assert body["font_size"] == "default"
     assert body["activity_filter"] == "all"
+    assert body["sidebar_items"]["views"] == "show"
+    assert "documents" not in body["sidebar_items"]
+    assert body["sidebar_badge_style"] == "count"
 
 
 def test_the_projects_display_is_kept_whole_and_refuses_unknown_choices(client: TestClient, repositories: Any) -> None:

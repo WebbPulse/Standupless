@@ -41,6 +41,10 @@ export interface UserRead {
   pointer_cursors?: boolean;
   /** Whether issue activity shows every change or only comments. */
   activity_filter?: ActivityFilter;
+  /** Where every sidebar item sits: shown, in the More menu, or hidden. */
+  sidebar_items?: Record<SidebarItem, SidebarVisibility>;
+  /** Whether the sidebar's unread badges show a count or a dot. */
+  sidebar_badge_style?: SidebarBadgeStyle;
   /** How the projects page is laid out, grouped, ordered and windowed. */
   projects_display?: ProjectsDisplayPreference;
   /** Whether the person arranged the projects page, so their own arrangement wins over the defaults. */
@@ -118,6 +122,26 @@ export type Theme = 'system' | 'light' | 'dark';
 /** Whether an issue's activity shows every change or only its comments. */
 export type ActivityFilter = 'all' | 'comments';
 
+/** A top-level workspace sidebar item a person may move or hide. */
+export type SidebarItem =
+  | 'home'
+  | 'inbox'
+  | 'my_issues'
+  | 'reviews'
+  | 'pulse'
+  | 'projects'
+  | 'initiatives'
+  | 'customers'
+  | 'views'
+  | 'roadmap'
+  | 'teams';
+
+/** Where a sidebar item sits: in the sidebar, in its More menu, or nowhere. */
+export type SidebarVisibility = 'show' | 'more' | 'hide';
+
+/** Whether the sidebar's unread badges show a number or a dot. */
+export type SidebarBadgeStyle = 'count' | 'dot';
+
 /** How often a person's Pulse email digest goes out. */
 export type PulseDigest = 'off' | 'daily' | 'weekly';
 
@@ -177,6 +201,9 @@ export interface UserPreferencesUpdate {
   theme?: Theme;
   pointer_cursors?: boolean;
   activity_filter?: ActivityFilter;
+  /** Moves the named sidebar items, leaving the others where they are. */
+  sidebar_items?: Partial<Record<SidebarItem, SidebarVisibility>>;
+  sidebar_badge_style?: SidebarBadgeStyle;
   /** Replaces the saved projects page arrangement whole, null forgets it. */
   projects_display?: ProjectsDisplayPreference | null;
   /** Replaces the saved initiatives page arrangement whole, null forgets it. */

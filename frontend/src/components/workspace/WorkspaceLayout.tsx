@@ -35,6 +35,10 @@ import type {
 } from '../../hooks/useCreateIssue';
 import { useAuth } from '../../hooks/useAuth';
 import { CreateTeamContext } from '../../hooks/useCreateTeam';
+import {
+  CustomizeSidebarContext,
+  type CustomizeSidebarState,
+} from '../../hooks/useCustomizeSidebar';
 import type { CreateTeamState } from '../../hooks/useCreateTeam';
 import { CreatePlanningContext } from '../../hooks/useCreatePlanning';
 import type { CreatePlanningState } from '../../hooks/useCreatePlanning';
@@ -72,6 +76,7 @@ import CreatePlanningHost, {
 } from '../planning/CreatePlanningHost';
 import DesktopInboxReporter from '../desktop/DesktopInboxReporter';
 import { Toaster } from '../ui/toast';
+import CustomizeSidebarDialog from './CustomizeSidebarDialog';
 import { PeekProvider } from './PeekPane';
 import WorkspaceShell from './WorkspaceShell';
 import { estimateOptionsOf } from '../../lib/validation';
@@ -203,6 +208,15 @@ const WorkspaceOverlays: React.FC = () => {
     parentTeamId: string | null;
   } | null>(null);
   const [planning, setPlanning] = useState<PlanningDialog>(null);
+  const [customizing, setCustomizing] = useState(false);
+  const customizeSidebar = useMemo<CustomizeSidebarState>(
+    () => ({
+      open: () => {
+        setCustomizing(true);
+      },
+    }),
+    []
+  );
 
   const workspaceId = workspace?.id ?? '';
   const slug = workspace?.slug ?? '';
@@ -336,80 +350,90 @@ const WorkspaceOverlays: React.FC = () => {
       <CommandPaletteContext.Provider value={palette}>
         <CreateIssueContext.Provider value={createIssue}>
           <CreateTeamContext.Provider value={createTeam}>
-            <CreatePlanningContext.Provider value={createPlanning}>
-              <MentionDirectoryProvider workspaceId={workspaceId}>
-                <PeekProvider>
-                  <Toaster />
-                  <RouteErrorBoundary fallback={WorkspaceRouteError}>
-                    <Outlet />
-                  </RouteErrorBoundary>
+            <CustomizeSidebarContext.Provider value={customizeSidebar}>
+              <CreatePlanningContext.Provider value={createPlanning}>
+                <MentionDirectoryProvider workspaceId={workspaceId}>
+                  <PeekProvider>
+                    <Toaster />
+                    <RouteErrorBoundary fallback={WorkspaceRouteError}>
+                      <Outlet />
+                    </RouteErrorBoundary>
 
-                  {workspace !== null && (
-                    <>
-                      <DesktopInboxReporter
-                        workspaceId={workspace.id}
-                        slug={workspace.slug}
-                      />
-                      <GlobalShortcuts
-                        workspace={workspace}
-                        teams={teams}
-                        onShowHelp={showHelp}
-                      />
-                      <CommandPalette
-                        open={palette.open}
-                        onClose={palette.closePalette}
-                        picker={palette.picker}
-                        workspace={workspace}
-                        teams={teams}
-                        onShowShortcuts={showHelp}
-                        currentUserId={user?.id}
-                      />
-                    </>
-                  )}
+                    {workspace !== null && (
+                      <>
+                        <DesktopInboxReporter
+                          workspaceId={workspace.id}
+                          slug={workspace.slug}
+                        />
+                        <GlobalShortcuts
+                          workspace={workspace}
+                          teams={teams}
+                          onShowHelp={showHelp}
+                        />
+                        <CommandPalette
+                          open={palette.open}
+                          onClose={palette.closePalette}
+                          picker={palette.picker}
+                          workspace={workspace}
+                          teams={teams}
+                          onShowShortcuts={showHelp}
+                          currentUserId={user?.id}
+                        />
+                      </>
+                    )}
 
-                  <ShortcutHelp
-                    open={helpOpen}
-                    onClose={() => {
-                      setHelpOpen(false);
-                    }}
-                  />
-
-                  {request !== null && requestTeam !== undefined && (
-                    <CreateIssueHost
-                      workspaceId={workspaceId}
-                      team={requestTeam}
-                      onClose={closeCreateIssue}
-                      onCreated={onIssueCreated}
-                      onCreatedMore={onIssueCreatedMore}
-                      currentUserId={user?.id}
-                      preset={presetOf(request)}
-                    />
-                  )}
-
-                  {creatingTeam !== null && workspaceId !== '' && (
-                    <CreateTeamDialog
-                      workspaceId={workspaceId}
-                      teams={teams}
-                      initialParentTeamId={creatingTeam.parentTeamId}
+                    <ShortcutHelp
+                      open={helpOpen}
                       onClose={() => {
-                        setCreatingTeam(null);
+                        setHelpOpen(false);
                       }}
-                      onCreated={onTeamCreated}
                     />
-                  )}
 
-                  <CreatePlanningHost
-                    open={planning}
-                    workspaceId={workspaceId}
-                    slug={slug}
-                    writableTeams={writable}
-                    routePrefix={routePrefix}
-                    currentUserId={user?.id}
-                    onClose={closePlanning}
-                  />
-                </PeekProvider>
-              </MentionDirectoryProvider>
-            </CreatePlanningContext.Provider>
+                    {request !== null && requestTeam !== undefined && (
+                      <CreateIssueHost
+                        workspaceId={workspaceId}
+                        team={requestTeam}
+                        onClose={closeCreateIssue}
+                        onCreated={onIssueCreated}
+                        onCreatedMore={onIssueCreatedMore}
+                        currentUserId={user?.id}
+                        preset={presetOf(request)}
+                      />
+                    )}
+
+                    {creatingTeam !== null && workspaceId !== '' && (
+                      <CreateTeamDialog
+                        workspaceId={workspaceId}
+                        teams={teams}
+                        initialParentTeamId={creatingTeam.parentTeamId}
+                        onClose={() => {
+                          setCreatingTeam(null);
+                        }}
+                        onCreated={onTeamCreated}
+                      />
+                    )}
+
+                    <CustomizeSidebarDialog
+                      open={customizing}
+                      role={role}
+                      onClose={() => {
+                        setCustomizing(false);
+                      }}
+                    />
+
+                    <CreatePlanningHost
+                      open={planning}
+                      workspaceId={workspaceId}
+                      slug={slug}
+                      writableTeams={writable}
+                      routePrefix={routePrefix}
+                      currentUserId={user?.id}
+                      onClose={closePlanning}
+                    />
+                  </PeekProvider>
+                </MentionDirectoryProvider>
+              </CreatePlanningContext.Provider>
+            </CustomizeSidebarContext.Provider>
           </CreateTeamContext.Provider>
         </CreateIssueContext.Provider>
       </CommandPaletteContext.Provider>

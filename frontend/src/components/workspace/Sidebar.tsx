@@ -21,6 +21,13 @@
  * teams, documents and initiatives, in their own order. The star is kept by the
  * server per person, so the section agrees on every device they sign in on.
  *
+ * Each person picks which top-level items show, which sit in the More menu at
+ * the foot of the Workspace section and which are hidden, from the Customize
+ * sidebar dialog or a right click on an item, and whether the unread badges
+ * show a count or a dot. The choice is kept on the account, so it follows them
+ * to every device; a hidden item is still reached by its shortcut and the
+ * command palette.
+ *
  * The footer's sign-out button carries the same `sign-out` test id as the
  * account shell's, because signing in lands a person with one workspace inside
  * it, and the post-deploy suite signs out through that one id wherever it lands.
@@ -56,12 +63,16 @@ import {
   LuSquarePen,
   LuTarget,
   LuUserRound,
+  LuUsersRound,
 } from 'react-icons/lu';
+import type { IconType } from 'react-icons';
 import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { setTeamOrder } from '../../api/teams';
 import { useAuth } from '../../hooks/useAuth';
 import { useCreateIssue } from '../../hooks/useCreateIssue';
 import { useCreateTeam } from '../../hooks/useCreateTeam';
+import { useCustomizeSidebar } from '../../hooks/useCustomizeSidebar';
+import { useSidebarPreference } from '../../hooks/useSidebarPreference';
 import { useCyclesOn } from '../../hooks/useCyclesOn';
 import { cn } from '../../lib/cn';
 import { useTriageSummary } from '../../hooks/useSidebarData';
@@ -79,6 +90,7 @@ import {
   roadmapPath,
   routeTeamPrefix,
   searchPath,
+  settingsTeamsPath,
   teamArchivePath,
   teamBoardPath,
   teamCurrentCyclePath,
@@ -104,11 +116,23 @@ import {
   siblingIndex,
 } from '../../lib/teamOrder';
 import { settingsLanding } from '../../lib/workspaceNav';
+import {
+  PERSONAL_ITEMS,
+  SIDEBAR_ITEMS,
+  WORKSPACE_ITEMS,
+  itemAvailable,
+  sidebarItemLabel,
+} from '../../lib/sidebarItems';
 import { Logo } from '../../brand';
-import type { TeamRead, WorkspaceRead } from '../../types/Api';
+import type {
+  SidebarItem,
+  SidebarVisibility,
+  TeamRead,
+  WorkspaceRead,
+} from '../../types/Api';
 import Avatar from '../ui/avatar';
 import { IconButton } from '../ui/button';
-import Menu, { MenuItem, MenuSeparator } from '../ui/menu';
+import Menu, { ContextMenu, MenuItem, MenuSeparator } from '../ui/menu';
 import { Skeleton } from '../ui/skeleton';
 import ThemeToggle from '../ui/theme-toggle';
 import { TruncatedText } from '../ui/truncated-text';
@@ -210,13 +234,29 @@ const SectionHeading: React.FC<{
   children: React.ReactNode;
   action?: React.ReactNode;
 }> = ({ id, children, action }) => (
-  <div className="group/heading flex h-6 items-center pr-1 pl-2 pointer-coarse:h-11">
+  <div
+    data-sidebar-heading=""
+    className="group/heading flex h-6 items-center pr-1 pl-2 pointer-coarse:h-11"
+  >
     <h2 id={id} className="flex-1 text-2xs font-medium text-text-faint">
       {children}
     </h2>
     {action}
   </div>
 );
+
+/** One top-level sidebar row: where it goes, how it reads, and its badge. */
+interface RowSpec {
+  item: SidebarItem;
+  label: string;
+  icon: IconType;
+  to: string;
+  badge?: React.ReactNode;
+  /** Whether the row is lit, for a row whose page the route alone cannot tell. */
+  active?: boolean;
+  /** Lights the row on every page under its path, not only the path itself. */
+  prefix?: boolean;
+}
 
 /** Which edge of a team section the drop line is drawn on, if either. */
 type DropEdge = 'before' | 'after' | null;
@@ -546,6 +586,150 @@ export const Sidebar: React.FC<SidebarProps> = ({ workspace, onNavigate }) => {
   const saveToken = useRef(0);
   const [pointerMoved, setPointerMoved] = useState(false);
 
+  const preference = useSidebarPreference();
+  const customize = useCustomizeSidebar();
+  const [itemMenu, setItemMenu] = useState<{
+    item: SidebarItem;
+    x: number;
+    y: number;
+  } | null>(null);
+  const openItemMenu = (item: SidebarItem, x: number, y: number): void => {
+    setItemMenu({ item, x, y });
+  };
+  const closeItemMenu = useCallback(() => {
+    setItemMenu(null);
+  }, []);
+  const placeOf = (item: SidebarItem): SidebarVisibility =>
+    itemAvailable(item, workspace.role) ? preference.items[item] : 'hide';
+  const badgeStyle = preference.badgeStyle;
+
+  const rowSpecs: Record<SidebarItem, RowSpec> = {
+    home: {
+      item: 'home',
+      label: 'Home',
+      icon: LuHouse,
+      to: workspacePath(slug),
+    },
+    inbox: {
+      item: 'inbox',
+      label: 'Inbox',
+      icon: LuInbox,
+      to: inboxPath(slug),
+      badge: <InboxBadge workspaceId={workspace.id} badgeStyle={badgeStyle} />,
+    },
+    my_issues: {
+      item: 'my_issues',
+      label: 'My issues',
+      icon: LuUserRound,
+      to: myIssuesPath(slug),
+    },
+    reviews: {
+      item: 'reviews',
+      label: 'Reviews',
+      icon: LuGitPullRequest,
+      to: reviewsPath(slug),
+      badge: (
+        <ReviewsBadge workspaceId={workspace.id} badgeStyle={badgeStyle} />
+      ),
+    },
+    pulse: {
+      item: 'pulse',
+      label: 'Pulse',
+      icon: LuActivity,
+      to: pulsePath(slug),
+      badge: <PulseBadge workspaceId={workspace.id} badgeStyle={badgeStyle} />,
+    },
+    projects: {
+      item: 'projects',
+      label: 'Projects',
+      icon: LuTarget,
+      to: projectsPath(slug),
+      active: allProjectsActive,
+    },
+    initiatives: {
+      item: 'initiatives',
+      label: 'Initiatives',
+      icon: LuGoal,
+      to: initiativesPath(slug),
+      prefix: true,
+    },
+    customers: {
+      item: 'customers',
+      label: 'Customers',
+      icon: LuBuilding2,
+      to: customersPath(slug),
+      prefix: true,
+    },
+    views: {
+      item: 'views',
+      label: 'Views',
+      icon: LuLayers,
+      to: viewsPath(slug),
+    },
+    roadmap: {
+      item: 'roadmap',
+      label: 'Roadmap',
+      icon: LuMap,
+      to: roadmapPath(slug),
+    },
+    teams: {
+      item: 'teams',
+      label: 'Your teams',
+      icon: LuUsersRound,
+      to: settingsTeamsPath(slug),
+    },
+  };
+  const shownIn = (items: SidebarItem[]): RowSpec[] =>
+    items
+      .filter((item) => placeOf(item) === 'show')
+      .map((item) => rowSpecs[item]);
+  const personalRows = shownIn(PERSONAL_ITEMS);
+  const workspaceRows = shownIn(WORKSPACE_ITEMS);
+  const moreRows = SIDEBAR_ITEMS.filter(
+    ({ item }) => placeOf(item) === 'more'
+  ).map(({ item }) => rowSpecs[item]);
+
+  const renderRow = (row: RowSpec): React.ReactNode => {
+    const Icon = row.icon;
+    const content = (
+      <>
+        <Icon className={ICON} aria-hidden="true" />
+        <span className="flex-1">{row.label}</span>
+        {row.badge}
+      </>
+    );
+    const onContextMenu = (event: React.MouseEvent): void => {
+      event.preventDefault();
+      openItemMenu(row.item, event.clientX, event.clientY);
+    };
+    if (row.active !== undefined) {
+      return (
+        <Link
+          key={row.item}
+          to={row.to}
+          className={itemClass({ isActive: row.active })}
+          aria-current={row.active ? 'page' : undefined}
+          onClick={onNavigate}
+          onContextMenu={onContextMenu}
+        >
+          {content}
+        </Link>
+      );
+    }
+    return (
+      <NavLink
+        key={row.item}
+        to={row.to}
+        end={row.prefix !== true}
+        className={itemClass}
+        onClick={onNavigate}
+        onContextMenu={onContextMenu}
+      >
+        {content}
+      </NavLink>
+    );
+  };
+
   const triage = useTriageSummary(workspace.id);
   const triageCounts = useMemo(
     () => new Map((triage?.teams ?? []).map((row) => [row.team_id, row.count])),
@@ -694,6 +878,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ workspace, onNavigate }) => {
           {createTeam.canCreate && (
             <MenuItem onSelect={createTeam.open}>Create team</MenuItem>
           )}
+          <MenuItem onSelect={customize.open}>Customize sidebar</MenuItem>
           <MenuItem to={ALL_WORKSPACES_PATH}>All workspaces</MenuItem>
           <MenuItem to={profileSettingsPath(workspace.slug)}>
             Edit profile
@@ -760,56 +945,9 @@ export const Sidebar: React.FC<SidebarProps> = ({ workspace, onNavigate }) => {
         data-testid="sidebar-nav"
         className="group/nav relative min-h-0 min-w-0 flex-1 space-y-4 overflow-x-hidden overflow-y-auto px-2 py-1 scrollbar-thin"
       >
-        <div className="space-y-px">
-          <NavLink
-            to={workspacePath(slug)}
-            end
-            className={itemClass}
-            onClick={onNavigate}
-          >
-            <LuHouse className={ICON} aria-hidden="true" />
-            Home
-          </NavLink>
-          <NavLink
-            to={inboxPath(slug)}
-            end
-            className={itemClass}
-            onClick={onNavigate}
-          >
-            <LuInbox className={ICON} aria-hidden="true" />
-            <span className="flex-1">Inbox</span>
-            <InboxBadge workspaceId={workspace.id} />
-          </NavLink>
-          <NavLink
-            to={myIssuesPath(slug)}
-            end
-            className={itemClass}
-            onClick={onNavigate}
-          >
-            <LuUserRound className={ICON} aria-hidden="true" />
-            My issues
-          </NavLink>
-          <NavLink
-            to={reviewsPath(slug)}
-            end
-            className={itemClass}
-            onClick={onNavigate}
-          >
-            <LuGitPullRequest className={ICON} aria-hidden="true" />
-            <span className="flex-1">Reviews</span>
-            <ReviewsBadge workspaceId={workspace.id} />
-          </NavLink>
-          <NavLink
-            to={pulsePath(slug)}
-            end
-            className={itemClass}
-            onClick={onNavigate}
-          >
-            <LuActivity className={ICON} aria-hidden="true" />
-            <span className="flex-1">Pulse</span>
-            <PulseBadge workspaceId={workspace.id} />
-          </NavLink>
-        </div>
+        {personalRows.length > 0 && (
+          <div className="space-y-px">{personalRows.map(renderRow)}</div>
+        )}
 
         <FavoritesSection
           workspaceId={workspace.id}
@@ -822,163 +960,199 @@ export const Sidebar: React.FC<SidebarProps> = ({ workspace, onNavigate }) => {
           }
         />
 
-        <section aria-labelledby="sidebar-workspace">
-          <SectionHeading id="sidebar-workspace">Workspace</SectionHeading>
-          <div className="space-y-px">
-            <Link
-              to={projectsPath(slug)}
-              className={itemClass({ isActive: allProjectsActive })}
-              aria-current={allProjectsActive ? 'page' : undefined}
-              onClick={onNavigate}
-            >
-              <LuTarget className={ICON} aria-hidden="true" />
-              Projects
-            </Link>
-            {workspace.role !== 'guest' && (
-              <NavLink
-                to={initiativesPath(slug)}
-                className={itemClass}
-                onClick={onNavigate}
-              >
-                <LuGoal className={ICON} aria-hidden="true" />
-                Initiatives
-              </NavLink>
-            )}
-            {workspace.role !== 'guest' && (
-              <NavLink
-                to={customersPath(slug)}
-                className={itemClass}
-                onClick={onNavigate}
-              >
-                <LuBuilding2 className={ICON} aria-hidden="true" />
-                Customers
-              </NavLink>
-            )}
-            <NavLink
-              to={viewsPath(slug)}
-              end
-              className={itemClass}
-              onClick={onNavigate}
-            >
-              <LuLayers className={ICON} aria-hidden="true" />
-              Views
-            </NavLink>
-            <NavLink
-              to={roadmapPath(slug)}
-              end
-              className={itemClass}
-              onClick={onNavigate}
-            >
-              <LuMap className={ICON} aria-hidden="true" />
-              Roadmap
-            </NavLink>
-          </div>
-        </section>
-
-        <section aria-labelledby="sidebar-teams">
-          <SectionHeading
-            id="sidebar-teams"
-            action={
-              createTeam.canCreate ? (
-                <IconButton
-                  label="Create team"
-                  size="sm"
-                  className="h-5 w-5"
-                  onClick={createTeam.open}
+        {(workspaceRows.length > 0 || moreRows.length > 0) && (
+          <section aria-labelledby="sidebar-workspace">
+            <SectionHeading id="sidebar-workspace">Workspace</SectionHeading>
+            <div className="space-y-px">
+              {workspaceRows.map(renderRow)}
+              {moreRows.length > 0 && (
+                <Menu
+                  label="More"
+                  className="w-full"
+                  trigger={(props) => (
+                    <button
+                      type="button"
+                      data-testid="sidebar-more"
+                      className={cn(itemClass({ isActive: false }), 'w-full')}
+                      {...props}
+                    >
+                      <LuEllipsis className={ICON} aria-hidden="true" />
+                      More
+                    </button>
+                  )}
                 >
-                  <LuPlus className="h-3 w-3" />
-                </IconButton>
-              ) : undefined
-            }
+                  {moreRows.map((row) => {
+                    const Icon = row.icon;
+                    return (
+                      <MenuItem
+                        key={row.item}
+                        textValue={row.label}
+                        onSelect={() => {
+                          onNavigate?.();
+                          void navigate(row.to);
+                        }}
+                      >
+                        <Icon className={ICON} aria-hidden="true" />
+                        <span className="flex-1">{row.label}</span>
+                        {row.badge}
+                      </MenuItem>
+                    );
+                  })}
+                  <MenuSeparator />
+                  <MenuItem onSelect={customize.open}>
+                    Customize sidebar
+                  </MenuItem>
+                </Menu>
+              )}
+            </div>
+          </section>
+        )}
+
+        {placeOf('teams') === 'show' && (
+          <section
+            aria-labelledby="sidebar-teams"
+            onContextMenu={(event) => {
+              if (
+                event.target instanceof Element &&
+                event.target.closest('[data-sidebar-heading]') === null
+              ) {
+                return;
+              }
+              event.preventDefault();
+              openItemMenu('teams', event.clientX, event.clientY);
+            }}
           >
-            Your teams
-          </SectionHeading>
-          <div className="space-y-px">
-            {rows.map((team, index) =>
-              isShown(team) ? (
-                <TeamSection
-                  key={team.id}
-                  slug={slug}
-                  workspaceId={workspace.id}
-                  team={team}
-                  nested={isNested(team, rows)}
-                  isOpen={isOpen(team)}
-                  onToggle={() => {
-                    toggle(team.key_prefix);
-                  }}
-                  onNavigate={onNavigate}
-                  pathname={location.pathname}
-                  isProjectsActive={projectsTeam === team.key_prefix}
-                  triageCount={triageCounts.get(team.id) ?? null}
-                  upTo={siblingIndex(rows, index, -1)}
-                  downTo={siblingIndex(rows, index, 1)}
-                  canReorder={rows.length > 1}
-                  dragging={dragFrom === index}
-                  dropEdge={dropEdgeOf(index)}
-                  onMove={(to) => {
-                    moveTo(index, to, true);
-                  }}
-                  onDragStart={() => {
-                    setDragFrom(index);
-                  }}
-                  onDragEnter={() => {
-                    if (dragFrom !== null) setDragOver(index);
-                  }}
-                  onDragEnd={endDrag}
-                  onCreateSubTeam={
-                    createTeam.canCreate &&
-                    (team.parent_team_id === null ||
-                      team.parent_team_id === undefined)
-                      ? () => {
-                          createTeam.openSubTeam(team.id);
-                        }
-                      : undefined
-                  }
-                  onDrop={() => {
-                    if (
-                      dragFrom !== null &&
-                      areSiblings(rows, dragFrom, index)
-                    ) {
-                      moveTo(dragFrom, index, false);
+            <SectionHeading
+              id="sidebar-teams"
+              action={
+                createTeam.canCreate ? (
+                  <IconButton
+                    label="Create team"
+                    size="sm"
+                    className="h-5 w-5"
+                    onClick={createTeam.open}
+                  >
+                    <LuPlus className="h-3 w-3" />
+                  </IconButton>
+                ) : undefined
+              }
+            >
+              Your teams
+            </SectionHeading>
+            <div className="space-y-px">
+              {rows.map((team, index) =>
+                isShown(team) ? (
+                  <TeamSection
+                    key={team.id}
+                    slug={slug}
+                    workspaceId={workspace.id}
+                    team={team}
+                    nested={isNested(team, rows)}
+                    isOpen={isOpen(team)}
+                    onToggle={() => {
+                      toggle(team.key_prefix);
+                    }}
+                    onNavigate={onNavigate}
+                    pathname={location.pathname}
+                    isProjectsActive={projectsTeam === team.key_prefix}
+                    triageCount={triageCounts.get(team.id) ?? null}
+                    upTo={siblingIndex(rows, index, -1)}
+                    downTo={siblingIndex(rows, index, 1)}
+                    canReorder={rows.length > 1}
+                    dragging={dragFrom === index}
+                    dropEdge={dropEdgeOf(index)}
+                    onMove={(to) => {
+                      moveTo(index, to, true);
+                    }}
+                    onDragStart={() => {
+                      setDragFrom(index);
+                    }}
+                    onDragEnter={() => {
+                      if (dragFrom !== null) setDragOver(index);
+                    }}
+                    onDragEnd={endDrag}
+                    onCreateSubTeam={
+                      createTeam.canCreate &&
+                      (team.parent_team_id === null ||
+                        team.parent_team_id === undefined)
+                        ? () => {
+                            createTeam.openSubTeam(team.id);
+                          }
+                        : undefined
                     }
-                    endDrag();
-                  }}
-                />
-              ) : null
-            )}
-            <p role="status" aria-live="polite" className="sr-only">
-              {announcement}
-            </p>
-            {teams === null && (
-              <div
-                role="status"
-                aria-label="Loading teams"
-                className="space-y-2 px-2 py-1.5"
-              >
-                <Skeleton className="h-3 w-3/5" />
-                <Skeleton className="h-3 w-2/5" />
-              </div>
-            )}
-            {rows.length === 0 && teams !== null && !createTeam.canCreate && (
-              <p className="px-2 py-1 text-xs text-text-faint">No teams yet.</p>
-            )}
-            {createTeam.canCreate && (
-              <button
-                type="button"
-                onClick={createTeam.open}
-                className={cn(
-                  'flex h-7 w-full items-center gap-2 rounded-sm px-2 text-sm text-text-faint transition-colors duration-100 pointer-coarse:h-11',
-                  HOVER,
-                  FOCUS
-                )}
-              >
-                <LuPlus className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-                Add team
-              </button>
-            )}
-          </div>
-        </section>
+                    onDrop={() => {
+                      if (
+                        dragFrom !== null &&
+                        areSiblings(rows, dragFrom, index)
+                      ) {
+                        moveTo(dragFrom, index, false);
+                      }
+                      endDrag();
+                    }}
+                  />
+                ) : null
+              )}
+              <p role="status" aria-live="polite" className="sr-only">
+                {announcement}
+              </p>
+              {teams === null && (
+                <div
+                  role="status"
+                  aria-label="Loading teams"
+                  className="space-y-2 px-2 py-1.5"
+                >
+                  <Skeleton className="h-3 w-3/5" />
+                  <Skeleton className="h-3 w-2/5" />
+                </div>
+              )}
+              {rows.length === 0 && teams !== null && !createTeam.canCreate && (
+                <p className="px-2 py-1 text-xs text-text-faint">
+                  No teams yet.
+                </p>
+              )}
+              {createTeam.canCreate && (
+                <button
+                  type="button"
+                  onClick={createTeam.open}
+                  className={cn(
+                    'flex h-7 w-full items-center gap-2 rounded-sm px-2 text-sm text-text-faint transition-colors duration-100 pointer-coarse:h-11',
+                    HOVER,
+                    FOCUS
+                  )}
+                >
+                  <LuPlus className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                  Add team
+                </button>
+              )}
+            </div>
+          </section>
+        )}
       </nav>
+      {itemMenu !== null && (
+        <ContextMenu
+          x={itemMenu.x}
+          y={itemMenu.y}
+          label={`${sidebarItemLabel(itemMenu.item)} sidebar options`}
+          onClose={closeItemMenu}
+        >
+          <MenuItem onSelect={customize.open}>Customize sidebar</MenuItem>
+          <MenuSeparator />
+          <MenuItem
+            onSelect={() => {
+              preference.place(itemMenu.item, 'hide');
+            }}
+          >
+            Hide
+          </MenuItem>
+          <MenuItem
+            onSelect={() => {
+              preference.place(itemMenu.item, 'more');
+            }}
+          >
+            Move to More
+          </MenuItem>
+        </ContextMenu>
+      )}
 
       <div className="flex h-topbar items-center gap-1 border-t border-line px-2">
         {user !== null && (

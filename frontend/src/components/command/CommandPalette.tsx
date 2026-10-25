@@ -103,6 +103,7 @@ import ViewIcon from '../views/ViewIcon';
 import { StatusIcon } from '../ui/StatusIcon';
 import { useCreateIssue } from '../../hooks/useCreateIssue';
 import { useCreatePlanning } from '../../hooks/useCreatePlanning';
+import { useCustomizeSidebar } from '../../hooks/useCustomizeSidebar';
 import { useCreateTeam } from '../../hooks/useCreateTeam';
 import type { PalettePicker } from '../../hooks/useCommandPalette';
 import { useIssueSubject } from '../../hooks/useIssueSubject';
@@ -392,6 +393,7 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
   const createIssue = useCreateIssue();
   const createTeam = useCreateTeam();
   const createPlanning = useCreatePlanning();
+  const customizeSidebar = useCustomizeSidebar();
   const { theme, setTheme } = useTheme();
   const registered = useRegisteredShortcuts();
   const { canUndo, undo } = useUndo(workspace.id);
@@ -649,6 +651,13 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
         },
       });
     }
+    built.push({
+      id: 'action-customize-sidebar',
+      label: 'Customize sidebar',
+      keywords: 'hide show more menu badge navigation personalize',
+      icon: <LuSlidersHorizontal className={ICON} />,
+      run: customizeSidebar.open,
+    });
     if (onShowShortcuts !== undefined) {
       built.push({
         id: 'action-shortcuts',
@@ -707,6 +716,7 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
     createIssue,
     createTeam,
     createPlanning,
+    customizeSidebar,
     slug,
     team,
     teams,

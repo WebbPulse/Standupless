@@ -6,7 +6,8 @@
  * a team by drag, keyboard or menu into the caller's saved order, and that a
  * team's triage entry survives a navigation that mounts a new sidebar while
  * the triage summary is being re-read, and that a team with cycles on offers
- * its current cycle under Cycles.
+ * its current cycle under Cycles, and that each person's sidebar
+ * customization shows, tucks into More or hides each item and draws dot badges.
  */
 
 import {
@@ -32,6 +33,7 @@ import {
   CreateTeamContext,
   type CreateTeamState,
 } from '../../hooks/useCreateTeam';
+import { CustomizeSidebarContext } from '../../hooks/useCustomizeSidebar';
 import { triageSummaryKey } from '../../lib/queryKeys';
 import type {
   CycleSettingsRead,
@@ -57,13 +59,23 @@ const getPulseCount = vi.fn<() => Promise<number>>();
 const getCycleSettings =
   vi.fn<(teamId: string) => Promise<CycleSettingsRead>>();
 
+const auth = vi.hoisted(() => ({
+  user: { email: 'me@example.com', display_name: 'Me' } as Record<
+    string,
+    unknown
+  >,
+  login: vi.fn(),
+}));
+const updatePreferences =
+  vi.fn<(changes: Record<string, unknown>) => Promise<unknown>>();
+
 vi.mock('../../hooks/useAuth', () => ({
   useAuth: () => ({
     isAuthenticated: true,
-    user: { email: 'me@example.com', display_name: 'Me' },
+    user: auth.user,
     isLoading: false,
     isBusy: false,
-    login: vi.fn(),
+    login: auth.login,
     logout: vi.fn(),
     checkAuthStatus: vi.fn(),
   }),
@@ -95,6 +107,11 @@ vi.mock('../../api/triage', () => ({
 
 vi.mock('../../api/reviews', () => ({
   getReviews: () => getReviews(),
+}));
+
+vi.mock('../../api/notifications', () => ({
+  updatePreferences: (changes: Record<string, unknown>) =>
+    updatePreferences(changes),
 }));
 
 vi.mock('../../api/pulse', () => ({
@@ -258,6 +275,12 @@ beforeEach(() => {
   getPulseCount.mockReset();
   getPulseCount.mockResolvedValue(0);
   globalThis.localStorage.clear();
+  auth.user = { email: 'me@example.com', display_name: 'Me' };
+  auth.login.mockReset();
+  updatePreferences.mockReset();
+  updatePreferences.mockImplementation((changes) =>
+    Promise.resolve({ ...auth.user, ...changes })
+  );
 });
 
 describe('the workspace level links', () => {
@@ -1006,5 +1029,120 @@ describe('the triage entry across navigation', () => {
         screen.queryByRole('link', { name: /^Triage/ })
       ).not.toBeInTheDocument();
     });
+  });
+});
+
+describe('the sidebar customization', () => {
+  it('shows every item while nothing has been moved', async () => {
+    renderSidebar();
+
+    expect(
+      await screen.findByRole('link', { name: 'Views' })
+    ).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Roadmap' })).toBeInTheDocument();
+    expect(screen.queryByTestId('sidebar-more')).not.toBeInTheDocument();
+  });
+
+  it('tucks an item moved to More into the More menu', async () => {
+    const user = userEvent.setup();
+    auth.user = { ...auth.user, sidebar_items: { roadmap: 'more' } };
+    renderSidebar();
+
+    await screen.findByRole('link', { name: 'Projects' });
+    expect(
+      screen.queryByRole('link', { name: 'Roadmap' })
+    ).not.toBeInTheDocument();
+    await user.click(screen.getByTestId('sidebar-more'));
+    expect(
+      await screen.findByRole('menuitem', { name: 'Roadmap' })
+    ).toBeInTheDocument();
+  });
+
+  it('leaves a hidden item out of the sidebar and the More menu', async () => {
+    const user = userEvent.setup();
+    auth.user = {
+      ...auth.user,
+      sidebar_items: { roadmap: 'hide', views: 'more' },
+    };
+    renderSidebar();
+
+    await screen.findByRole('link', { name: 'Projects' });
+    expect(
+      screen.queryByRole('link', { name: 'Roadmap' })
+    ).not.toBeInTheDocument();
+    await user.click(screen.getByTestId('sidebar-more'));
+    await screen.findByRole('menuitem', { name: 'Views' });
+    expect(
+      screen.queryByRole('menuitem', { name: 'Roadmap' })
+    ).not.toBeInTheDocument();
+  });
+
+  it('draws a dot in place of the count when the dot style is chosen', async () => {
+    auth.user = { ...auth.user, sidebar_badge_style: 'dot' };
+    getPulseCount.mockResolvedValue(4);
+    renderSidebar();
+
+    expect(await screen.findByLabelText('4 unread in Pulse')).toHaveAttribute(
+      'data-testid',
+      'sidebar-badge-dot'
+    );
+    expect(screen.queryByText('4')).not.toBeInTheDocument();
+  });
+
+  it('hides an item from its right-click menu and saves it', async () => {
+    const user = userEvent.setup();
+    renderSidebar();
+
+    fireEvent.contextMenu(await screen.findByRole('link', { name: 'Views' }));
+    await user.click(await screen.findByRole('menuitem', { name: 'Hide' }));
+
+    expect(updatePreferences).toHaveBeenCalledWith({
+      sidebar_items: { views: 'hide' },
+    });
+    expect(auth.login).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sidebar_items: expect.objectContaining({ views: 'hide' }),
+      })
+    );
+  });
+
+  it('moves an item to More from its right-click menu', async () => {
+    const user = userEvent.setup();
+    renderSidebar();
+
+    fireEvent.contextMenu(await screen.findByRole('link', { name: 'Roadmap' }));
+    await user.click(
+      await screen.findByRole('menuitem', { name: 'Move to More' })
+    );
+
+    expect(updatePreferences).toHaveBeenCalledWith({
+      sidebar_items: { roadmap: 'more' },
+    });
+  });
+});
+
+describe('opening Customize sidebar', () => {
+  it('opens from an item right-click menu', async () => {
+    const user = userEvent.setup();
+    const open = vi.fn();
+    render(
+      <CustomizeSidebarContext.Provider value={{ open }}>
+        <MemoryRouter initialEntries={['/w/mine']}>
+          <Routes>
+            <Route
+              path="/w/:slug"
+              element={<Sidebar workspace={workspace('owner')} />}
+            />
+          </Routes>
+        </MemoryRouter>
+      </CustomizeSidebarContext.Provider>
+    );
+
+    fireEvent.contextMenu(await screen.findByRole('link', { name: 'Pulse' }));
+    await user.click(
+      await screen.findByRole('menuitem', { name: 'Customize sidebar' })
+    );
+
+    expect(open).toHaveBeenCalled();
   });
 });
