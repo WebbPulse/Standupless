@@ -630,6 +630,11 @@ export interface TeamCreate {
   private?: boolean;
   /** A top-level team to sit under, inheriting its statuses and labels. */
   parent_team_id?: string | null;
+  /**
+   * A team whose statuses, labels, templates, estimates and workflow settings
+   * the new team starts with. Exclusive with `parent_team_id`.
+   */
+  copy_settings_from_team_id?: string | null;
 }
 
 /** The editable fields on a team. */

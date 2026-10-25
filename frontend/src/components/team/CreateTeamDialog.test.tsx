@@ -298,3 +298,108 @@ describe('the parent team', () => {
     ).not.toBeInTheDocument();
   });
 });
+
+describe('copying settings', () => {
+  const engineering: TeamRead = {
+    ...created,
+    id: 'team-1',
+    name: 'Engineering',
+    key_prefix: 'ENG',
+    parent_team_id: null,
+  };
+  const mobile: TeamRead = {
+    ...created,
+    id: 'team-2',
+    name: 'Mobile',
+    key_prefix: 'MOB',
+    parent_team_id: 'team-1',
+  };
+  const teams = [engineering, mobile];
+
+  it('defaults to none and offers only top-level teams', async () => {
+    const { user } = renderDialog({ teams });
+
+    await user.click(
+      screen.getByRole('button', { name: 'Copy settings from: None' })
+    );
+
+    expect(
+      await screen.findByRole('option', { name: /None/ })
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('option', { name: /Engineering/ })
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole('option', { name: /Mobile/ })
+    ).not.toBeInTheDocument();
+  });
+
+  it('creates the team with the copy source, leaving estimates to it', async () => {
+    createTeam.mockResolvedValue(created);
+    const { user, onCreated } = renderDialog({ teams });
+
+    await user.type(screen.getByLabelText('Name'), 'Platform');
+    await user.click(
+      screen.getByRole('button', { name: 'Copy settings from: None' })
+    );
+    await user.click(
+      await screen.findByRole('option', { name: /Engineering/ })
+    );
+
+    expect(screen.getByText('Copied from Engineering.')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Estimates')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Create team' }));
+
+    await waitFor(() => {
+      expect(onCreated).toHaveBeenCalled();
+    });
+    expect(createTeam).toHaveBeenCalledWith({
+      name: 'Platform',
+      key_prefix: 'PLA',
+      copy_settings_from_team_id: 'team-1',
+    });
+  });
+
+  it('is disabled while a parent team is picked, and the parent wins', async () => {
+    createTeam.mockResolvedValue(created);
+    const { user } = renderDialog({ teams });
+
+    await user.type(screen.getByLabelText('Name'), 'Platform');
+    await user.click(
+      screen.getByRole('button', { name: 'Copy settings from: None' })
+    );
+    await user.click(
+      await screen.findByRole('option', { name: /Engineering/ })
+    );
+    await user.click(
+      screen.getByRole('button', { name: 'Parent team: No parent team' })
+    );
+    await user.click(
+      await screen.findByRole('option', { name: /Engineering/ })
+    );
+
+    expect(
+      screen.getByRole('button', { name: 'Copy settings from: Engineering' })
+    ).toBeDisabled();
+    expect(
+      screen.getByText('A sub-team takes its settings from its parent.')
+    ).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Create team' }));
+
+    await waitFor(() => {
+      expect(createTeam).toHaveBeenCalledWith({
+        name: 'Platform',
+        key_prefix: 'PLA',
+        parent_team_id: 'team-1',
+      });
+    });
+  });
+
+  it('shows no copy picker when there is no team to copy', () => {
+    renderDialog();
+
+    expect(
+      screen.queryByRole('button', { name: /Copy settings from/ })
+    ).not.toBeInTheDocument();
+  });
+});

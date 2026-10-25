@@ -20457,8 +20457,20 @@
         "type": "object"
       },
       "TeamCreate": {
-        "description": "The body `POST /api/workspaces/{workspace_id}/teams` takes.\n\n`parent_team_id` creates the team as a sub-team of a top-level team, whose\nstatuses and labels it inherits.",
+        "description": "The body `POST /api/workspaces/{workspace_id}/teams` takes.\n\n`parent_team_id` creates the team as a sub-team of a top-level team, whose\nstatuses and labels it inherits. `copy_settings_from_team_id` starts the team\nwith a copy of another team's workflow, labels, templates and settings\ninstead; a sub-team already inherits, so the two are exclusive.",
         "properties": {
+          "copy_settings_from_team_id": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Copy Settings From Team Id"
+          },
           "description": {
             "anyOf": [
               {
@@ -48651,7 +48663,7 @@
         ]
       },
       "post": {
-        "description": "Create a team, make the caller its admin and seed the default statuses.\n\nAll three land as one `TransactWriteItems` across the three tables, seven items\nin total, because a team written without its statuses is unusable and cannot\nbe recreated: the prefix is taken, so a retry 409s while issue creation 422s on\nthe missing statuses. All or nothing means a failure leaves the prefix free.\nA parent team must be one the caller can find, and a team created under one\nrecords the parent change as joining it later does.",
+        "description": "Create a team, make the caller its admin and seed the default statuses.\n\nAll three land as one `TransactWriteItems` across the three tables, seven items\nin total, because a team written without its statuses is unusable and cannot\nbe recreated: the prefix is taken, so a retry 409s while issue creation 422s on\nthe missing statuses. All or nothing means a failure leaves the prefix free.\nA parent team must be one the caller can find, and a team created under one\nrecords the parent change as joining it later does. A team copied from\nanother must copy one whose content the caller can read.",
         "operationId": "create_team_api_workspaces__workspace_id__teams_post",
         "parameters": [
           {

@@ -73,7 +73,9 @@ class TeamCreate(BaseModel):
     """The body `POST /api/workspaces/{workspace_id}/teams` takes.
 
     `parent_team_id` creates the team as a sub-team of a top-level team, whose
-    statuses and labels it inherits.
+    statuses and labels it inherits. `copy_settings_from_team_id` starts the team
+    with a copy of another team's workflow, labels, templates and settings
+    instead; a sub-team already inherits, so the two are exclusive.
     """
 
     name: str = Field(min_length=1, max_length=80)
@@ -85,6 +87,7 @@ class TeamCreate(BaseModel):
     estimate_count_unestimated: bool = False
     private: bool = False
     parent_team_id: Optional[str] = Field(default=None, min_length=1)
+    copy_settings_from_team_id: Optional[str] = Field(default=None, min_length=1)
 
     @field_validator("key_prefix")
     @classmethod
@@ -104,6 +107,13 @@ class TeamCreate(BaseModel):
         if not candidate:
             raise ValueError("name must not be blank")
         return candidate
+
+    @model_validator(mode="after")
+    def check_copy_source(self) -> "TeamCreate":
+        """Refuse copying settings onto a sub-team, which takes its parent's instead."""
+        if self.copy_settings_from_team_id is not None and self.parent_team_id is not None:
+            raise ValueError("copy_settings_from_team_id cannot be combined with parent_team_id")
+        return self
 
 
 class TeamUpdate(BaseModel):
