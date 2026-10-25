@@ -24,6 +24,7 @@ from typing import Any, Protocol
 from app.common.api.dependencies.repositories import Repositories
 from app.common.core.config import settings
 from app.common.db.dynamo.realtime_connections import RealtimeConnection, RealtimeConnectionRepository
+from app.common.db.dynamo.realtime_presence import Audience
 from app.common.team_privacy import person_can_see_team
 from app.domains.integrations.realtime.notices import Notice
 
@@ -119,16 +120,33 @@ class Visibility:
 
     def allows(self, notice: Notice, user_id: str) -> bool:
         """Whether one member may hear one notice, by the rule the HTTP API reads it under."""
-        role = self._role(notice.workspace_id, user_id)
+        if notice.kind == "project":
+            audience = Audience(team_ids=notice.team_ids)
+        elif notice.kind == "initiative":
+            audience = Audience(team_id=notice.team_id, members_only=True)
+        else:
+            if notice.team_id is None:
+                return False
+            audience = Audience(team_id=notice.team_id)
+        return self.can_read(notice.workspace_id, user_id, audience)
+
+    def can_read(self, workspace_id: str, user_id: str, audience: Audience) -> bool:
+        """Whether one member may read what an audience describes.
+
+        A project's teams admit anyone who sees one of them. Otherwise the one team
+        decides, and with no team a members only entity is the whole workspace but
+        its guests.
+        """
+        role = self._role(workspace_id, user_id)
         if role is None:
             return False
-        if notice.kind == "project":
-            return any(self._team(notice.workspace_id, team, user_id) for team in notice.team_ids)
-        if notice.kind == "initiative":
-            if role == "guest":
-                return False
-            return notice.team_id is None or self._team(notice.workspace_id, notice.team_id, user_id)
-        return notice.team_id is not None and self._team(notice.workspace_id, notice.team_id, user_id)
+        if audience.members_only and role == "guest":
+            return False
+        if audience.team_ids:
+            return any(self._team(workspace_id, team, user_id) for team in audience.team_ids)
+        if audience.team_id is None:
+            return audience.members_only
+        return self._team(workspace_id, audience.team_id, user_id)
 
 
 def fan_out(

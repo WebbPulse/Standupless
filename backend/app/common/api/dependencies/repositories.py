@@ -33,6 +33,7 @@ if TYPE_CHECKING:  # pragma: no cover
     from app.common.db.dynamo.issues import IssueRepository
     from app.common.db.dynamo.memberships import MembershipRepository
     from app.common.db.dynamo.realtime_connections import RealtimeConnectionRepository
+    from app.common.db.dynamo.realtime_presence import RealtimePresenceRepository
     from app.common.db.dynamo.relations import RelationRepository
     from app.common.db.dynamo.search_index import SearchIndexRepository
     from app.common.db.dynamo.team_config import TeamConfigRepository
@@ -204,6 +205,7 @@ class RepositoryBundle:
         audit: "AuditRepository"
         agent_profiles: "AgentProfileRepository"
         realtime_connections: "RealtimeConnectionRepository"
+        realtime_presence: "RealtimePresenceRepository"
 
 
 Repositories = RepositoryBundle

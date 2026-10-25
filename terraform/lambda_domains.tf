@@ -75,7 +75,7 @@ locals {
       ses         = true
       memory      = 512
       tables      = ["github", "idempotency", "team_config", "issues", "comments", "reactions", "attachments", "counters", "activity", "planning", "relations", "subscriptions", "teams", "memberships", "workspaces", "invites", "views", "inbox", "audit", "agent_profiles", "rate-limits"]
-      read_tables = ["users", "api-keys", "oauth-links", "search_index", "realtime_connections"]
+      read_tables = ["users", "api-keys", "oauth-links", "search_index", "realtime_connections", "realtime_presence"]
     }
     integrations-events-consumer = {
       secrets     = true
@@ -102,8 +102,8 @@ locals {
       secrets     = false
       ses         = false
       memory      = 512
-      tables      = ["realtime_connections", "rate-limits"]
-      read_tables = ["memberships"]
+      tables      = ["realtime_connections", "realtime_presence", "rate-limits"]
+      read_tables = ["memberships", "issues", "planning"]
     }
     admin = {
       secrets     = true
@@ -326,7 +326,7 @@ locals {
         "TEAM_PURGE_${upper(stage)}_QUEUE_URL" => module.team_purge_queue[stage].queue_url
       } : {},
 
-      name == "integrations-stream-consumer" ? {
+      contains(["integrations-stream-consumer", "integrations-realtime-consumer"], name) ? {
         REALTIME_ENDPOINT_URL = local.realtime_enabled ? local.realtime_management_url : ""
       } : {},
 
@@ -807,7 +807,7 @@ resource "aws_iam_role_policy" "lambda_domain" {
           Resource = ["${module.attachments_bucket.bucket_arn}/workspaces/*"]
         },
       ] : [],
-      each.key == "integrations-stream-consumer" && local.realtime_enabled ? [
+      contains(["integrations-stream-consumer", "integrations-realtime-consumer"], each.key) && local.realtime_enabled ? [
         {
           Sid      = "PostToRealtimeConnections"
           Effect   = "Allow"

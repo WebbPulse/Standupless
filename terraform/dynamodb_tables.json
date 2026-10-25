@@ -480,6 +480,30 @@
     "stream_view_type": null,
     "ttl_attribute": "expires_at"
   },
+  "realtime_presence": {
+    "attributes": [
+      {
+        "name": "entity_key",
+        "type": "S"
+      },
+      {
+        "name": "connection_id",
+        "type": "S"
+      }
+    ],
+    "global_secondary_indexes": [
+      {
+        "hash_key": "connection_id",
+        "name": "connection_id-index",
+        "projection_type": "ALL",
+        "range_key": null
+      }
+    ],
+    "hash_key": "entity_key",
+    "range_key": "connection_id",
+    "stream_view_type": null,
+    "ttl_attribute": "expires_at"
+  },
   "relations": {
     "attributes": [
       {

@@ -1,10 +1,12 @@
 """The WebSocket API's function, run as its own Lambda function.
 
 Same image as the `integrations` routes, a different command. API Gateway's
-WebSocket integration invokes it for `$connect`, `$disconnect` and `heartbeat`,
-and the Lambda Web Adapter posts each event to the pass-through path, so it serves
-that route and the root probes and nothing else. Its grant is the connections
-table to write and the memberships table to check a connecting member against.
+WebSocket integration invokes it for `$connect`, `$disconnect`, `heartbeat`,
+`presence` and `presence_leave`, and the Lambda Web Adapter posts each event to the
+pass-through path, so it serves that route and the root probes and nothing else.
+Its grant is the connections and presence tables to write, the memberships table
+to check a member against, and the issues and planning tables to learn who may
+read the issue or document a page reports open.
 """
 
 from typing import TYPE_CHECKING

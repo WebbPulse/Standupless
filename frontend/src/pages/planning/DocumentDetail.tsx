@@ -103,6 +103,7 @@ import {
 } from '../../lib/queryKeys';
 import { showErrorToast, showToast } from '../../lib/toast';
 import FavoriteButton from '../../components/ui/FavoriteButton';
+import { PresenceAvatars } from '../../components/ui/PresenceAvatars';
 import type { DocumentPatch, DocumentRead, TeamRead } from '../../types/Api';
 
 const RichMarkdownEditor = lazy(
@@ -241,6 +242,7 @@ export const DocumentDetail: React.FC = () => {
   const teams = useTeams();
   const { user } = useAuth();
   const currentUserId = user?.id ?? '';
+  const [editingBody, setEditingBody] = useState(false);
 
   const { data, error, isLoading, refetch } = usePolledQuery(
     ({ signal }) => getDocument(workspaceId, documentId, signal),
@@ -561,6 +563,12 @@ export const DocumentDetail: React.FC = () => {
       flush
       actions={
         <span className="flex items-center gap-2">
+          <PresenceAvatars
+            workspaceId={workspaceId}
+            kind="document"
+            id={page.document_id}
+            editing={page.can_edit && editingBody}
+          />
           {saveState !== 'idle' && (
             <span role="status" className="text-xs text-text-faint">
               {SAVE_LABEL[saveState]}
@@ -728,6 +736,7 @@ export const DocumentDetail: React.FC = () => {
                   className={`${BODY_CLASS} min-h-48`}
                   onCommit={saveBody}
                   onChange={scheduleSave}
+                  onFocusChange={setEditingBody}
                   onCancel={() => {
                     editor.current?.focus();
                   }}

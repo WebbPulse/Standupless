@@ -51,6 +51,7 @@ import { TRIAGE_STATUS } from '../../lib/triageStatus';
 import type { IssueRead, IssueUpdate, StatusRead } from '../../types/Api';
 import { ErrorAlert } from '../ui/alert';
 import { IconButton } from '../ui/button';
+import { PresenceAvatars } from '../ui/PresenceAvatars';
 import Spinner from '../ui/spinner';
 import { Toaster } from '../ui/toast';
 import { RelationMarkers } from './BlockedMarker';
@@ -155,6 +156,7 @@ export const IssuePeek: React.FC<IssuePeekProps> = ({
   const { user } = useAuth();
   const auth = useQueryAuth();
   const workspaceId = workspace?.id ?? '';
+  const [editingBody, setEditingBody] = useState(false);
   const enabled = workspaceId !== '' && issueId !== '';
 
   const { data, error, isLoading } = usePolledQuery(
@@ -323,6 +325,15 @@ export const IssuePeek: React.FC<IssuePeekProps> = ({
           {issue !== null && <RelationMarkers issue={issue} />}
         </span>
         <div className="flex items-center gap-1">
+          {issue !== null && (
+            <PresenceAvatars
+              workspaceId={workspaceId}
+              kind="issue"
+              id={issue.id}
+              editing={editingBody}
+              className="mr-1"
+            />
+          )}
           {issue !== null && workspace !== null && (
             <Link
               to={issuePath(workspace.slug, issue.key)}
@@ -374,6 +385,7 @@ export const IssuePeek: React.FC<IssuePeekProps> = ({
                 onSaved={receive}
                 people={options.people}
                 canComment={canEdit}
+                onEditingChange={setEditingBody}
                 {...(canEdit ? { onQuote: descriptionQuotes.ask } : {})}
               />
 

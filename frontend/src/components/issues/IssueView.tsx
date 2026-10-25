@@ -161,6 +161,7 @@ import IssueMediaProvider from '../media/IssueMediaProvider';
 import { ErrorAlert } from '../ui/alert';
 import { Button, IconButton } from '../ui/button';
 import Tooltip from '../ui/tooltip';
+import { PresenceAvatars } from '../ui/PresenceAvatars';
 import { LINK_CLASS } from '../ui/link';
 import Menu, { MenuItem, MenuSeparator, MenuShortcut } from '../ui/menu';
 import Spinner from '../ui/spinner';
@@ -275,6 +276,7 @@ export const IssueView: React.FC<IssueViewProps> = ({
   const slug = params.slug ?? workspace?.slug ?? '';
 
   const workspaceId = workspace?.id ?? '';
+  const [editingBody, setEditingBody] = useState(false);
   const enabled = workspaceId !== '' && issueRef !== '';
 
   const { data, error, isLoading } = usePolledQuery(
@@ -612,6 +614,13 @@ export const IssueView: React.FC<IssueViewProps> = ({
   const actions =
     issue === null ? undefined : (
       <div className="flex items-center gap-1">
+        <PresenceAvatars
+          workspaceId={workspaceId}
+          kind="issue"
+          id={issue.id}
+          editing={editingBody}
+          className="mr-1"
+        />
         {!embedded && (
           <span className="hidden sm:contents">
             <IssueTrailNav slug={slug} issueKey={issueRef} />
@@ -1132,6 +1141,7 @@ export const IssueView: React.FC<IssueViewProps> = ({
                     people={options.people}
                     onDropFiles={attachFiles}
                     canComment={canEdit}
+                    onEditingChange={setEditingBody}
                     {...(canEdit ? { onQuote: descriptionQuotes.ask } : {})}
                   />
 
