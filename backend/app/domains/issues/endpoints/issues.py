@@ -22,6 +22,7 @@ from app.common.api.pagination import resume_key
 from app.common.api.schemas.issues import (
     DEFAULT_LIMIT,
     MAX_LIMIT,
+    MAX_LOOKUP_KEYS,
     DeletedIssueListRead,
     IssueBulkRead,
     IssueBulkUpdate,
@@ -29,6 +30,7 @@ from app.common.api.schemas.issues import (
     IssueCreate,
     IssueDuplicate,
     IssueListRead,
+    IssueLookupRead,
     IssueMove,
     IssueRead,
     IssueSyncListRead,
@@ -384,6 +386,43 @@ def read_issue_by_key(
     if issue is None or not context.can_see_team(issue.team_id):
         raise not_found()
     return conditional_response(request, IssueRead.from_row(current(repositories.teams, issue)))
+
+
+@router.get("/{workspace_id}/issues/by-keys", response_model=IssueLookupRead)
+def lookup_issues_by_key(
+    key: Annotated[list[str], Query(min_length=1, max_length=MAX_LOOKUP_KEYS)],
+    context: Annotated[AuthzContext, Depends(require(Capability.WORKSPACE_READ))],
+    repositories: Annotated[Repositories, Depends(get_repositories)],
+) -> IssueLookupRead:
+    """The issues several human keys name, in one read, for the issue chips a body draws.
+
+    Each `key` resolves the way `/issues/by-key/{key}` does, case insensitive and
+    following a key change or a move. A key that is malformed, names no team, names
+    a deleted issue or one in a team the caller cannot see is left out rather than
+    failing the batch, and two keys naming one issue answer it once. Declared before
+    `/issues/{issue_id}` so `by-keys` is not swallowed as an id.
+    """
+    found: dict[str, IssueRead] = {}
+    resolved: dict[str, str] = {}
+    teams: dict[str, str | None] = {}
+    for raw in dict.fromkeys(item.strip().upper() for item in key):
+        parsed = parse_issue_key(raw)
+        if parsed is None:
+            continue
+        prefix, number = parsed
+        if prefix not in teams:
+            team = repositories.teams.get_by_key_prefix(context.workspace_id, prefix)
+            teams[prefix] = None if team is None else team.team_id
+        team_id = teams[prefix]
+        if team_id is None:
+            continue
+        issue = find_issue_by_number(repositories, context.workspace_id, team_id, number)
+        if issue is None or not context.can_see_team(issue.team_id):
+            continue
+        resolved[raw] = issue.issue_id
+        if issue.issue_id not in found:
+            found[issue.issue_id] = IssueRead.from_row(current(repositories.teams, issue))
+    return IssueLookupRead(issues=list(found.values()), resolved=resolved)
 
 
 @router.get("/{workspace_id}/issues/{issue_id}", response_model=IssueRead)

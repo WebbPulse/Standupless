@@ -3,7 +3,8 @@
  * from the tree {@link parseMarkdown} builds. Nothing is set as HTML, so a
  * comment cannot inject markup, and a link opens in a new tab without handing
  * the new page a reference back to this one. An issue key renders as a chip
- * with the issue's status and title, and a link to a project or document of
+ * with the issue's status and title, as does inline code holding nothing but
+ * an issue key, the way agents often write one, and a link to a project or document of
  * the workspace as a chip with its name. Embedded images and videos, and
  * links to attached files, load through the page's media tokens. Fenced code
  * is highlighted, once the highlighter loads, and carries a copy button.
@@ -25,6 +26,7 @@ import {
   useLinkedReference,
 } from '../../hooks/useLinkedReference';
 import { cn } from '../../lib/cn';
+import { codeSpanIssueKey } from '../../lib/issueDisplay';
 import { isContentPath } from '../../lib/media';
 import { isMermaidLanguage } from '../../lib/mermaid';
 import {
@@ -118,8 +120,8 @@ const renderInline = (nodes: InlineNode[], prefix: string): React.ReactNode[] =>
         return <EmojiText key={key} value={node.value} />;
       case 'break':
         return <br key={key} />;
-      case 'code':
-        return (
+      case 'code': {
+        const code = (
           <code
             key={key}
             className="rounded-xs bg-raised px-1 py-px font-mono text-[0.85em] text-text"
@@ -127,6 +129,10 @@ const renderInline = (nodes: InlineNode[], prefix: string): React.ReactNode[] =>
             {node.value}
           </code>
         );
+        const mentioned = codeSpanIssueKey(node.value);
+        if (mentioned === null) return code;
+        return <IssueChip key={key} issueKeyText={mentioned} fallback={code} />;
+      }
       case 'strong':
         return (
           <strong key={key} className="font-semibold text-text">

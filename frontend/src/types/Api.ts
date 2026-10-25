@@ -1248,6 +1248,13 @@ export interface DeletedIssueListRead {
   retention_days: number;
 }
 
+/** The issues a batch of keys names, for the issue chips a body draws. */
+export interface IssueLookupRead {
+  issues: IssueRead[];
+  /** Each requested key, uppercased, to the id of the issue it names. */
+  resolved: Record<string, string>;
+}
+
 /** The body the issue list and children routes answer with. */
 export interface IssueListRead {
   issues: IssueRead[];

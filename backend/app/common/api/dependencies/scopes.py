@@ -267,6 +267,7 @@ ROUTE_SCOPES: Mapping[tuple[str, str], tuple[str, ...]] = {
     ("PATCH", "/{workspace_id}/issues"): ISSUES_WRITE,
     ("GET", "/{workspace_id}/issues/export"): ISSUES_READ,
     ("GET", "/{workspace_id}/issues/by-key/{key}"): ISSUES_READ,
+    ("GET", "/{workspace_id}/issues/by-keys"): ISSUES_READ,
     ("GET", "/{workspace_id}/issues/{issue_id}"): ISSUES_READ,
     ("PATCH", "/{workspace_id}/issues/{issue_id}"): ISSUES_WRITE,
     ("DELETE", "/{workspace_id}/issues/{issue_id}"): NO_KEY_ACCESS,
