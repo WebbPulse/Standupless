@@ -60,6 +60,7 @@ import {
 import { uploadAttachment } from '../../api/discussion';
 import { createIssue, createLink, updateIssue } from '../../api/issues';
 import { listTeamTemplates } from '../../api/templates';
+import { getTriageSettings } from '../../api/triage';
 import { WorkspaceContext } from '../../contexts/WorkspaceContextDefinition';
 import { useAutoGrow } from '../../hooks/useAutoGrow';
 import { useTeamOptions } from '../../hooks/useTeamOptions';
@@ -88,11 +89,12 @@ import {
   templatePrefill,
   type TemplatePrefill,
 } from '../../lib/issueTemplates';
-import { templatesKey } from '../../lib/queryKeys';
+import { templatesKey, triageSettingsKey } from '../../lib/queryKeys';
 import { sortStatuses } from '../../lib/propertyOptions';
 import { issuePath } from '../../lib/paths';
 import { submitKeysLabel } from '../../lib/platform';
 import { showErrorToast, showToast } from '../../lib/toast';
+import { triageDutyLine } from '../../lib/triageDuty';
 import { TRIAGE_STATUS_ID } from '../../lib/triageStatus';
 import {
   UPLOAD_CONTENT_TYPES,
@@ -620,6 +622,22 @@ export const CreateIssueDialog: React.FC<CreateIssueDialogProps> = ({
       : previewLabels(teamLabels, mapping.labelIds, draft.labelIds);
   const shownPriority = previewPriority(mapping, draft.priority);
   const triageShown = landsInTriage || (triageOn && formTemplate !== null);
+  const { data: triageSettings } = usePolledQuery(
+    ({ signal }) => getTriageSettings(workspaceId, activeTeamId, signal),
+    {
+      intervalMs: TEMPLATES_POLL_MS,
+      enabled: triageOn,
+      queryKey: triageSettingsKey(workspaceId, activeTeamId),
+      auth,
+    }
+  );
+  const intoTriage =
+    draft.statusId === TRIAGE_STATUS_ID ||
+    (draft.statusId === '' && triageShown);
+  const dutyLine =
+    intoTriage && triageSettings?.team_id === activeTeamId
+      ? triageDutyLine(triageSettings, teamPeople, draft.assigneeId)
+      : null;
 
   const canSubmit =
     title.trim() !== '' &&
@@ -1377,6 +1395,9 @@ export const CreateIssueDialog: React.FC<CreateIssueDialogProps> = ({
             }}
           />
         </div>
+        {dutyLine !== null && (
+          <p className="text-xs text-text-muted">{dutyLine}</p>
+        )}
         <ErrorAlert message={dateError} />
 
         {canNest && subIssues.length > 0 && (

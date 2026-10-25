@@ -117,6 +117,7 @@ NotificationKindField = Literal[
     "sla_at_risk",
     "sla_breached",
     "reminder",
+    "triage_new",
 ]
 
 FILTER_FIELDS: frozenset[str] = frozenset(

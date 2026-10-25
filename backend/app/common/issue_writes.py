@@ -68,6 +68,7 @@ from app.common.mentions import mentioned_user_ids
 from app.common.relation_effects import child_activity
 from app.common.sla import apply_sla, sla_breach_key
 from app.common.sub_teams import listed_teams
+from app.common.triage_duty import duty_assignee, require_priority
 
 PATCHABLE_FIELDS: tuple[str, ...] = (
     "title",
@@ -432,7 +433,9 @@ def create_issue(
     The counter is allocated after every validation has passed, because a number
     is consumed whether or not the write lands and the contract accepts gaps but not
     wasted ones. `fresh` names rows this request has just written, so a project,
-    milestone or parent created a moment ago is not refused for read lag.
+    milestone or parent created a moment ago is not refused for read lag. An
+    unassigned issue landing in a triage inbox whose team assigns its duty goes
+    to the member on duty.
     """
     fresh = fresh or FreshRows()
     require_team_member(repositories, context, payload.team_id)
@@ -479,6 +482,8 @@ def create_issue(
         status_named=bool(status_ref),
         has_parent=parent_id is not None,
     )
+    if in_triage and assignee_id is None:
+        assignee_id = duty_assignee(repositories, context.workspace_id, payload.team_id)
     number = repositories.counters.allocate_issue_number(context.workspace_id, payload.team_id)
     issue = Issue(
         workspace_id=context.workspace_id,
@@ -567,7 +572,14 @@ def update_issue(repositories: Repositories, context: AuthzContext, issue: Issue
     return store_patch(repositories, context, issue, apply_patch(repositories, context, issue, attributes))
 
 
-def apply_patch(repositories: Repositories, context: AuthzContext, issue: Issue, attributes: dict[str, Any]) -> Issue:
+def apply_patch(
+    repositories: Repositories,
+    context: AuthzContext,
+    issue: Issue,
+    attributes: dict[str, Any],
+    *,
+    accepting: bool = True,
+) -> Issue:
     """The issue as a patch would leave it, validated against its own team, unsaved.
 
     Shared by the single and the bulk patch so both refuse the same values for the
@@ -576,8 +588,15 @@ def apply_patch(repositories: Repositories, context: AuthzContext, issue: Issue,
     team's triage inbox, keeping its hidden status. A real status named by anyone
     but a guest takes an issue out of triage, as accepting it would, even when it
     names the hidden status the issue already holds.
+
+    An unassigned issue sent back to triage is assigned to the member on duty
+    when its team assigns triage duty. An issue taken out of triage into
+    anything but a cancelled status counts as accepted unless `accepting` says
+    otherwise, as a decline or a duplicate does, and so must have a priority
+    when its team requires one.
     """
     updated = issue.model_copy(deep=True)
+    leaving_into: Optional[str] = None
     if attributes.get("status_id") == TRIAGE_STATUS_ID:
         if not issue.in_triage:
             require_triage_on(repositories, context.workspace_id, issue.team_id)
@@ -589,6 +608,7 @@ def apply_patch(repositories: Repositories, context: AuthzContext, issue: Issue,
         if issue.in_triage and not context.is_guest:
             updated.in_triage = False
             updated.snoozed_until = None
+            leaving_into = chosen.category
     if "title" in attributes and attributes["title"] is not None:
         updated.title = attributes["title"]
     if "body" in attributes:
@@ -629,6 +649,10 @@ def apply_patch(repositories: Repositories, context: AuthzContext, issue: Issue,
         updated.project_milestone_id = None
     if "sort_order" in attributes:
         updated.sort_order = attributes["sort_order"]
+    if updated.in_triage and not issue.in_triage and updated.assignee_id is None:
+        updated.assignee_id = duty_assignee(repositories, context.workspace_id, issue.team_id)
+    if accepting and leaving_into is not None and leaving_into != "cancelled":
+        require_priority(repositories, context.workspace_id, issue.team_id, updated.priority)
     return updated
 
 

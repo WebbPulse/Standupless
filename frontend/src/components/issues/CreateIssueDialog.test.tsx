@@ -7,7 +7,8 @@
  * dialog open with the properties held, and a team switch clearing the team
  * scoped choices, the similar issues strip offering to open a possible
  * duplicate or mark the new issue as one, and the auto-assign preference
- * filling the creator in as assignee, which they can still clear.
+ * filling the creator in as assignee, which they can still clear, and the
+ * quiet line naming who on triage duty will see a new triage issue.
  */
 
 import { render, screen, waitFor } from '@testing-library/react';
@@ -23,7 +24,9 @@ import type {
   SimilarIssueRead,
   StatusRead,
   TeamRead,
+  TriageSettingsRead,
 } from '../../types/Api';
+import type { Assignable } from '../../lib/issuePeople';
 import { readIssueDraft, writeIssueDraft } from '../../lib/issueDraft';
 import { DEFAULT_PREFERENCES, setPreferences } from '../../lib/preferences';
 import CreateIssueDialog, { type CreateIssuePreset } from './CreateIssueDialog';
@@ -65,6 +68,24 @@ vi.mock('../../hooks/useTriageTeams', async () => {
       triage.on && teamId === 't-1',
   };
 });
+
+const duty = vi.hoisted(() => ({
+  settings: null as TriageSettingsRead | null,
+}));
+
+vi.mock('../../api/triage', () => ({
+  getTriageSettings: (_w: string, teamId: string) =>
+    Promise.resolve(
+      duty.settings ?? {
+        team_id: teamId,
+        enabled: true,
+        responsible_user_ids: [],
+        responsibility_action: 'notify',
+        require_priority: false,
+        updated_at: null,
+      }
+    ),
+}));
 
 vi.mock('../../api/views', () => ({
   similarIssues: (_w: string, title: string, query?: { team_id?: string }) =>
@@ -156,7 +177,11 @@ const onClose = vi.fn<() => void>();
 const onCreatedMore = vi.fn<(issue: IssueRead) => void>();
 
 const renderDialog = (
-  extra: { currentUserId?: string; preset?: CreateIssuePreset } = {}
+  extra: {
+    currentUserId?: string;
+    preset?: CreateIssuePreset;
+    people?: Assignable[];
+  } = {}
 ) =>
   render(
     <WorkspaceContext.Provider value={workspace}>
@@ -180,6 +205,7 @@ let counter = 0;
 beforeEach(() => {
   counter = 0;
   triage.on = false;
+  duty.settings = null;
   setPreferences(DEFAULT_PREFERENCES);
   for (const spy of [
     createIssue,
@@ -338,6 +364,51 @@ describe('triage', () => {
         status_id: 'st-2',
       });
     });
+  });
+});
+
+describe('triage duty', () => {
+  const PEOPLE: Assignable[] = [
+    { user_id: 'u-ada', email: 'ada@example.com', display_name: 'ada' },
+    { user_id: 'u-bo', email: 'bo@example.com', display_name: 'bo' },
+  ];
+
+  it('names who on triage duty will be notified', async () => {
+    triage.on = true;
+    duty.settings = {
+      team_id: 't-1',
+      enabled: true,
+      responsible_user_ids: ['u-ada', 'u-bo'],
+      responsibility_action: 'notify',
+      require_priority: false,
+      updated_at: null,
+    };
+    renderDialog({ people: PEOPLE });
+
+    expect(
+      await screen.findByText('Triage duty: ada and bo will be notified.')
+    ).toBeInTheDocument();
+  });
+
+  it('drops the line once a status skips triage', async () => {
+    triage.on = true;
+    duty.settings = {
+      team_id: 't-1',
+      enabled: true,
+      responsible_user_ids: ['u-ada'],
+      responsibility_action: 'assign',
+      require_priority: false,
+      updated_at: null,
+    };
+    const user = userEvent.setup();
+    renderDialog({ people: PEOPLE });
+
+    expect(
+      await screen.findByText('Triage duty: ada will be assigned this issue.')
+    ).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Status: Triage' }));
+    await user.click(screen.getByRole('option', { name: /Todo/ }));
+    expect(screen.queryByText(/Triage duty:/)).toBeNull();
   });
 });
 

@@ -160,5 +160,6 @@ def convert_to_project(
         context,
         issue,
         {"project_id": project.project_id, "status_id": closing.status_id},
+        accepting=False,
     )
     return project, store_patch(repositories, context, issue, closed), moved

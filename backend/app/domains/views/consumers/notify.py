@@ -52,6 +52,7 @@ from app.common.composition.consumers import CONSUMERS
 from app.common.core.config import settings
 from app.common.db.dynamo.inbox import (
     PROJECT_UPDATE_REPLIED,
+    TRIAGE_NEW,
     Notification,
     expires_at,
     inbox_partition,
@@ -62,6 +63,7 @@ from app.common.db.dynamo.planning import PROJECT_UPDATE, Project
 from app.common.db.dynamo.update_threads import PROJECT_UPDATE_COMMENT
 from app.common.issue_keys import display_key
 from app.common.team_privacy import person_can_see_team
+from app.common.triage_duty import duty_notified
 from app.domains.views.consumers.chat_digest import flush_due_chats, hold_for_chat, wants_chat
 from app.domains.views.consumers.digest import flush_due, is_digest_flush
 from app.domains.views.email import excerpt
@@ -306,7 +308,8 @@ def handle_issue_record(repositories: Repositories, record: Mapping[str, Any]) -
     description that already mentions someone does not ping them again. A status
     change reaches every subscriber and the assignee. Nobody hears about the same
     record twice, so a person assigned and mentioned in one write gets the
-    assignment alone.
+    assignment alone. An issue entering a team's triage inbox, created there or
+    sent back, tells everyone on that team's triage duty when the team notifies.
 
     The actor is `updated_by`, or on an insert the creator. A modify without an
     `updated_by`, such as a GitHub transition, has no human actor to leave out.
@@ -352,6 +355,11 @@ def handle_issue_record(repositories: Repositories, record: Mapping[str, Any]) -
                 comment_excerpt=_text(new_image, "body"),
                 headline_key="mentioned_in_description",
             )
+
+    if new_image.get("in_triage") and not (old_image and old_image.get("in_triage")):
+        entered_at = _text(new_image, "updated_at") or _text(new_image, "created_at")
+        for user_id in duty_notified(repositories, workspace_id, issue.team_id):
+            plan(user_id, TRIAGE_NEW, f"{issue_id}#triage#{entered_at}")
 
     new_status = _text(new_image, "status_id")
     old_status = _text(old_image, "status_id")

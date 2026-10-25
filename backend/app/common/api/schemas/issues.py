@@ -450,10 +450,13 @@ class TriageAccept(BaseModel):
 
     `comment` is posted on the issue by the person accepting, in the same request,
     so a note such as why it was taken in lands beside the accept in the thread.
+    `priority` is set in the same write, which is how an accept meets a team's
+    rule that an issue leaves triage only with a priority.
     """
 
     status_id: Optional[str] = None
     comment: Optional[str] = None
+    priority: Optional[PriorityField] = None
 
     @field_validator("comment")
     @classmethod

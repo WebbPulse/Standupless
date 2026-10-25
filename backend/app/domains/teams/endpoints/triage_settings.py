@@ -1,4 +1,4 @@
-"""A team's triage switch: read by anyone who can see the team, changed by a team admin."""
+"""A team's triage settings: read by anyone who can see the team, changed by a team admin."""
 
 from __future__ import annotations
 
@@ -19,7 +19,7 @@ def read_triage_settings(
     context: Annotated[AuthzContext, Depends(require(Capability.TEAM_READ))],
     repositories: Annotated[Repositories, Depends(get_repositories)],
 ) -> TriageSettingsRead:
-    """Whether the team routes issues filed from outside it into its triage inbox, off by default."""
+    """The team's triage switch, who is on duty for its inbox and whether accepting needs a priority."""
     team = team_writes.load_team(repositories, context.workspace_id, str(context.team_id))
     return TriageSettingsRead.from_row(issue_triage.triage_settings(repositories, context.workspace_id, team.team_id))
 
@@ -30,7 +30,7 @@ def update_triage_settings(
     context: Annotated[AuthzContext, Depends(require(Capability.TEAM_ADMIN))],
     repositories: Annotated[Repositories, Depends(get_repositories)],
 ) -> TriageSettingsRead:
-    """Turn the team's triage inbox on or off; issues already waiting stay until someone works them."""
+    """Change the team's triage settings; issues already waiting stay until someone works them."""
     team = team_writes.load_team(repositories, context.workspace_id, str(context.team_id))
-    saved = issue_triage.update_triage_settings(repositories, context.workspace_id, team.team_id, payload)
+    saved = issue_triage.update_triage_settings(repositories, context, team, payload)
     return TriageSettingsRead.from_row(saved)

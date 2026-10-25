@@ -1826,7 +1826,8 @@ export type NotificationKind =
   | 'standup_digest'
   | 'sla_at_risk'
   | 'sla_breached'
-  | 'review_requested';
+  | 'review_requested'
+  | 'triage_new';
 
 /**
  * Every kind an inbox row can carry: the ones a member can tune, the notice a
@@ -2246,19 +2247,31 @@ export interface SlaSettingsUpdate {
   paused_status_ids?: string[] | null;
 }
 
+/** What triage duty does as an issue enters the inbox: tell everyone on duty, or assign one of them. */
+export type TriageResponsibilityAction = 'notify' | 'assign';
+
 /**
- * A team's triage switch. While on, issues filed by guests, integrations and
+ * A team's triage settings. While on, issues filed by guests, integrations and
  * people outside the team wait in its triage inbox until someone works them.
+ * The members on duty are notified of each issue that enters, or one of them,
+ * round robin, is assigned it; `require_priority` holds an accept until the
+ * issue has a priority.
  */
 export interface TriageSettingsRead {
   team_id: string;
   enabled: boolean;
+  responsible_user_ids: string[];
+  responsibility_action: TriageResponsibilityAction;
+  require_priority: boolean;
   updated_at: string | null;
 }
 
-/** The editable field of a team's triage switch. */
+/** The editable fields of a team's triage settings; an omitted field keeps its value. */
 export interface TriageSettingsUpdate {
   enabled?: boolean;
+  responsible_user_ids?: string[];
+  responsibility_action?: TriageResponsibilityAction;
+  require_priority?: boolean;
 }
 
 /** One triage-enabled team and how many issues wait in it, snoozed ones aside. */
@@ -2274,11 +2287,13 @@ export interface TriageSummaryRead {
 
 /**
  * Accepts a triage issue, into the named status or the team's first unstarted
- * one. A non-blank `comment` is posted on the issue as the person accepting.
+ * one. A non-blank `comment` is posted on the issue as the person accepting,
+ * and `priority` is set in the same write.
  */
 export interface TriageAccept {
   status_id?: string | null;
   comment?: string | null;
+  priority?: IssuePriority | null;
 }
 
 /** Declines a triage issue, with an optional reason kept in its history. */

@@ -38,6 +38,7 @@ CHAT_KINDS: frozenset[str] = frozenset(
         "sla_at_risk",
         "sla_breached",
         "reminder",
+        "triage_new",
     }
 )
 """The notification kinds a chat direct message carries.

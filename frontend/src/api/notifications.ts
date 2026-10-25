@@ -34,6 +34,7 @@ export const NOTIFICATION_KINDS: readonly NotificationKind[] = [
   'sla_at_risk',
   'sla_breached',
   'review_requested',
+  'triage_new',
 ];
 
 /** The route an issue's subscribers are read from. */

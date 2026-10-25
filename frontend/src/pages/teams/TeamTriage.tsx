@@ -454,6 +454,7 @@ export const TeamTriage: React.FC = () => {
     const body: TriageAccept = {
       ...(choice.statusId === null ? {} : { status_id: choice.statusId }),
       ...(choice.comment === '' ? {} : { comment: choice.comment }),
+      ...(choice.priority === null ? {} : { priority: choice.priority }),
     };
     setPending(null);
     stepPast(row);
@@ -770,6 +771,8 @@ export const TeamTriage: React.FC = () => {
                       <TriageAcceptForm
                         issueKey={selected.key}
                         statuses={statuses ?? []}
+                        requirePriority={settings?.require_priority ?? false}
+                        priority={selected.priority}
                         saving={accepting}
                         onSubmit={(choice) => {
                           acceptRow(selected, choice);
