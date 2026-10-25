@@ -2435,6 +2435,30 @@ export interface IssueReminderListRead {
   reminders: IssueReminderRead[];
 }
 
+/** What a reminder can be set on. */
+export type ReminderEntityType =
+  'issue' | 'project' | 'initiative' | 'document';
+
+/**
+ * One pending reminder the caller set on an issue, a project, an initiative or
+ * a document, with the subject's title as it reads now. `issue_key` is set for
+ * an issue only, and `team_id` is empty for a subject with no single team.
+ */
+export interface ReminderRead {
+  entity_type: ReminderEntityType;
+  entity_id: string;
+  title: string;
+  issue_key?: string | null;
+  team_id: string;
+  remind_at: string;
+  created_at: string;
+}
+
+/** The caller's pending reminders on every kind of subject, soonest first. */
+export interface ReminderListRead {
+  reminders: ReminderRead[];
+}
+
 /** How many rows a mark-read call changed. */
 export interface InboxReadResult {
   updated: number;

@@ -2678,6 +2678,24 @@
   {
     "auth": "workspace:read",
     "domain": "views",
+    "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/inbox/entity-reminders"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "views",
+    "method": "DELETE",
+    "path": "/api/workspaces/{workspace_id}/inbox/entity-reminders/{entity_type}/{entity_id}"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "views",
+    "method": "PUT",
+    "path": "/api/workspaces/{workspace_id}/inbox/entity-reminders/{entity_type}/{entity_id}"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "views",
     "method": "POST",
     "path": "/api/workspaces/{workspace_id}/inbox/read"
   },

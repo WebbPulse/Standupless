@@ -28,14 +28,21 @@ from webbpulse.http import CursorPage
 
 from app.common.api.dependencies.authz import AuthzContext, Capability, require
 from app.common.api.dependencies.repositories import Repositories, get_repositories
-from app.common.api.schemas.views import InboxBucket
+from app.common.api.schemas.views import InboxBucket, ReminderEntityType
 from app.common.inbox import INBOX_KINDS, inbox_counts, list_notifications
 from app.common.inbox import clear_notifications as clear_rows
 from app.common.inbox import delete_notification as delete_row
 from app.common.inbox import mark_read as mark_rows_read
 from app.common.inbox import mark_unread as mark_rows_unread
 from app.common.inbox import snooze as snooze_rows
-from app.common.issue_reminders import cancel_reminder, list_reminders, set_reminder
+from app.common.issue_reminders import (
+    cancel_entity_reminder,
+    cancel_reminder,
+    list_entity_reminders,
+    list_reminders,
+    set_entity_reminder,
+    set_reminder,
+)
 from app.domains.views.schemas.view import (
     INBOX_DEFAULT_LIMIT,
     INBOX_MAX_LIMIT,
@@ -51,6 +58,8 @@ from app.domains.views.schemas.view import (
     IssueReminderRead,
     IssueReminderWrite,
     NotificationRead,
+    ReminderListRead,
+    ReminderRead,
 )
 
 router = APIRouter()
@@ -215,6 +224,54 @@ def cancel_issue_reminder(
 ) -> Response:
     """Cancel the caller's pending reminder on one issue, or 404 when none is pending."""
     cancel_reminder(repositories, context, issue_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.get("/{workspace_id}/inbox/entity-reminders", response_model=ReminderListRead)
+def list_reminders_on_entities(
+    workspace_id: str = Path(..., min_length=1),
+    entity_type: Optional[ReminderEntityType] = Query(default=None),
+    entity_id: Optional[str] = Query(default=None, min_length=1),
+    context: AuthzContext = Depends(require(Capability.WORKSPACE_READ)),
+    repositories: Repositories = Depends(get_repositories),
+) -> ReminderListRead:
+    """The caller's pending reminders on issues, projects, initiatives and documents, soonest first.
+
+    `entity_type` narrows to one kind, and with `entity_id` to one subject. A
+    reminder on a subject that is gone or no longer readable is left out.
+    """
+    return ReminderListRead(reminders=list_entity_reminders(repositories, context, entity_type, entity_id))
+
+
+@router.put("/{workspace_id}/inbox/entity-reminders/{entity_type}/{entity_id}", response_model=ReminderRead)
+def set_reminder_on_entity(
+    payload: IssueReminderWrite,
+    workspace_id: str = Path(..., min_length=1),
+    entity_type: ReminderEntityType = Path(...),
+    entity_id: str = Path(..., min_length=1),
+    context: AuthzContext = Depends(require(Capability.WORKSPACE_READ)),
+    repositories: Repositories = Depends(get_repositories),
+) -> ReminderRead:
+    """Remind the caller about one issue, project, initiative or document at `remind_at`, replacing any set.
+
+    The moment must carry a timezone and be between a minute and 365 days out. A
+    subject the caller cannot read is a 404.
+    """
+    return set_entity_reminder(repositories, context, entity_type, entity_id, payload)
+
+
+@router.delete(
+    "/{workspace_id}/inbox/entity-reminders/{entity_type}/{entity_id}", status_code=status.HTTP_204_NO_CONTENT
+)
+def cancel_reminder_on_entity(
+    workspace_id: str = Path(..., min_length=1),
+    entity_type: ReminderEntityType = Path(...),
+    entity_id: str = Path(..., min_length=1),
+    context: AuthzContext = Depends(require(Capability.WORKSPACE_READ)),
+    repositories: Repositories = Depends(get_repositories),
+) -> Response:
+    """Cancel the caller's pending reminder on one subject, or 404 when none is pending."""
+    cancel_entity_reminder(repositories, context, entity_type, entity_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 

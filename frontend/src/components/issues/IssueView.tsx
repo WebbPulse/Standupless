@@ -1280,7 +1280,7 @@ export const IssueView: React.FC<IssueViewProps> = ({
             />
             <RemindMeDialog
               open={reminding}
-              issueKey={issue.key}
+              subject={issue.key}
               reminder={reminder}
               onClose={() => {
                 setReminding(false);

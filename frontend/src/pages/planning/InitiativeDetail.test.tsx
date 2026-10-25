@@ -57,6 +57,15 @@ const setFollow =
     ) => Promise<PulseFollowRead>
   >();
 
+vi.mock('../../api/views', async () => ({
+  ...(await vi.importActual<typeof import('../../api/views')>(
+    '../../api/views'
+  )),
+  listEntityReminders: () => Promise.resolve([]),
+  setEntityReminder: vi.fn(),
+  cancelEntityReminder: vi.fn(),
+}));
+
 vi.mock('../../api/pulse', () => ({
   getFollow: () => getFollow(),
   setFollow: (_w: string, subject: string, id: string, following: boolean) =>
@@ -396,12 +405,38 @@ describe('InitiativeDetail', () => {
   });
 
   it('hides delete from a member who neither made nor owns it', async () => {
+    const user = userEvent.setup();
     renderPage();
 
     await screen.findByText('Double the users');
+    await user.click(
+      screen.getByRole('button', { name: 'Initiative actions' })
+    );
     expect(
-      screen.queryByRole('button', { name: 'Initiative actions' })
-    ).not.toBeInTheDocument();
+      await screen.findByRole('menuitem', { name: 'Remind me…' })
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole('menuitem', { name: /Delete initiative/ })
+    ).toBeNull();
+  });
+
+  it('opens the reminder dialog from its actions menu', async () => {
+    const user = userEvent.setup();
+    renderPage();
+
+    await screen.findByText('Double the users');
+    await user.click(
+      screen.getByRole('button', { name: 'Initiative actions' })
+    );
+    await user.click(
+      await screen.findByRole('menuitem', { name: 'Remind me…' })
+    );
+
+    expect(
+      await screen.findByText(
+        'Grow comes back to your inbox at the time you pick.'
+      )
+    ).toBeInTheDocument();
   });
 
   it('opens the updates tab for the initiative', async () => {

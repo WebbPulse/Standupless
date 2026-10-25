@@ -6,6 +6,7 @@
  */
 
 import { act, render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { WorkspaceContextType } from '../../contexts/WorkspaceContextDefinition';
@@ -30,6 +31,15 @@ vi.mock('../../api/documents', async () => {
     deleteDocument: vi.fn(),
   };
 });
+
+vi.mock('../../api/views', async () => ({
+  ...(await vi.importActual<typeof import('../../api/views')>(
+    '../../api/views'
+  )),
+  listEntityReminders: () => Promise.resolve([]),
+  setEntityReminder: vi.fn(),
+  cancelEntityReminder: vi.fn(),
+}));
 
 vi.mock('../../api/discussion', async () => {
   const actual = await vi.importActual<typeof import('../../api/discussion')>(
@@ -200,6 +210,37 @@ describe('DocumentDetail keyboard', () => {
     await keysBound('mod+shift+,');
 
     expect(boundKeys()).not.toContain('r');
+  });
+
+  it('opens the reminder dialog from its actions menu', async () => {
+    const user = userEvent.setup();
+    renderWithKeys();
+    await screen.findByRole('textbox', { name: 'Document title' });
+
+    await user.click(screen.getByRole('button', { name: 'Document actions' }));
+    await user.click(
+      await screen.findByRole('menuitem', { name: /Remind me/ })
+    );
+
+    expect(
+      await screen.findByText(
+        'Launch plan comes back to your inbox at the time you pick.'
+      )
+    ).toBeInTheDocument();
+  });
+
+  it('opens the reminder dialog on H', async () => {
+    renderWithKeys();
+    await screen.findByRole('textbox', { name: 'Document title' });
+    await keysBound('h');
+
+    press('h');
+
+    expect(
+      await screen.findByText(
+        'Launch plan comes back to your inbox at the time you pick.'
+      )
+    ).toBeInTheDocument();
   });
 
   it('copies the document URL on Cmd or Ctrl+Shift+,', async () => {

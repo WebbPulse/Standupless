@@ -1022,3 +1022,30 @@ class IssueReminderListRead(BaseModel):
     """The caller's pending reminders, soonest first."""
 
     reminders: list[IssueReminderRead] = Field(default_factory=list)
+
+
+ReminderEntityType = Literal["issue", "project", "initiative", "document"]
+"""The kinds of subject a reminder may be set on."""
+
+
+class ReminderRead(BaseModel):
+    """One pending reminder of the caller's on any kind of subject, with the subject as it reads now.
+
+    `issue_key` is set for an issue alone, and `team_id` is empty for a subject that
+    belongs to the workspace rather than one team, such as an initiative or a
+    workspace document.
+    """
+
+    entity_type: ReminderEntityType
+    entity_id: str
+    title: str
+    issue_key: str | None = None
+    team_id: str = ""
+    remind_at: datetime
+    created_at: datetime
+
+
+class ReminderListRead(BaseModel):
+    """The caller's pending reminders on every kind of subject, soonest first."""
+
+    reminders: list[ReminderRead] = Field(default_factory=list)

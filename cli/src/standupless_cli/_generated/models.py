@@ -2461,6 +2461,16 @@ class ReleaseUpdate(TypedDict):
     version: NotRequired[str | None]
 
 
+class ReminderRead(TypedDict):
+    created_at: str
+    entity_id: str
+    entity_type: Literal["issue", "project", "initiative", "document"]
+    issue_key: NotRequired[str | None]
+    remind_at: str
+    team_id: NotRequired[str]
+    title: str
+
+
 class RepositoryReleaseSourceRead(TypedDict):
     kind: NotRequired[Literal["deployments", "tags", "github_releases"]]
     move_issues: NotRequired[bool]
@@ -5065,6 +5075,10 @@ class ReleaseRead(TypedDict):
     url: NotRequired[str | None]
     version: NotRequired[str | None]
     workspace_id: str
+
+
+class ReminderListRead(TypedDict):
+    reminders: NotRequired[list[ReminderRead]]
 
 
 class RepositoryLinkWrite(TypedDict):
