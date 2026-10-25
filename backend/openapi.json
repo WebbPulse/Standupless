@@ -22910,7 +22910,7 @@
         "type": "object"
       },
       "TeamCreate": {
-        "description": "The body `POST /api/workspaces/{workspace_id}/teams` takes.\n\n`parent_team_id` creates the team as a sub-team of a top-level team, whose\nstatuses and labels it inherits. `copy_settings_from_team_id` starts the team\nwith a copy of another team's workflow, labels, templates and settings\ninstead; a sub-team already inherits, so the two are exclusive.",
+        "description": "The body `POST /api/workspaces/{workspace_id}/teams` takes.\n\n`parent_team_id` creates the team as a sub-team of a top-level team, whose\nstatuses and labels it inherits. `copy_settings_from_team_id` starts the team\nwith a copy of another team's workflow, labels, templates and settings\ninstead; a sub-team already inherits, so the two are exclusive.\n`timezone` is the IANA zone the team's cycles start and end at midnight\nin, UTC by default; a sub-team takes its parent's instead.",
         "properties": {
           "copy_settings_from_team_id": {
             "anyOf": [
@@ -22991,6 +22991,19 @@
             "default": false,
             "title": "Private",
             "type": "boolean"
+          },
+          "timezone": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Timezone"
           }
         },
         "required": [
@@ -23233,7 +23246,7 @@
         "type": "object"
       },
       "TeamRead": {
-        "description": "One team as the API returns it, carrying the caller's team role.\n\n`parent_team_id` names the team this one sits under, `null` for a top-level team.\n`retired_at` is set while the team is retired and read-only, with `retired_by`\nnaming who retired it.",
+        "description": "One team as the API returns it, carrying the caller's team role.\n\n`parent_team_id` names the team this one sits under, `null` for a top-level team.\n`retired_at` is set while the team is retired and read-only, with `retired_by`\nnaming who retired it. `timezone` is the IANA zone the team's cycles\nstart, end and roll over at midnight in.",
         "properties": {
           "created_at": {
             "format": "date-time",
@@ -23368,6 +23381,11 @@
             "default": true,
             "title": "Sync Pr Labels",
             "type": "boolean"
+          },
+          "timezone": {
+            "default": "UTC",
+            "title": "Timezone",
+            "type": "string"
           },
           "updated_at": {
             "format": "date-time",
@@ -23514,7 +23532,7 @@
         "type": "object"
       },
       "TeamUpdate": {
-        "description": "The body a team patch takes.\n\nA new `key_prefix` retires the old one as an alias, so issue keys under the\nold prefix keep resolving and no other team can take it. `sync_pr_labels`\nturns off copying this team's issue labels onto linked pull requests.\n`private` hides the team and its issues from everyone who is not a member.\n`estimate_extended` adds the larger values to the scale, `estimate_allow_zero`\nadds 0, and `estimate_count_unestimated` counts an unestimated issue as one\npoint in cycle and project progress instead of skipping it.\n`parent_team_id` puts the team under a top-level parent team, and an explicit\nnull makes it a top-level team again.",
+        "description": "The body a team patch takes.\n\nA new `key_prefix` retires the old one as an alias, so issue keys under the\nold prefix keep resolving and no other team can take it. `sync_pr_labels`\nturns off copying this team's issue labels onto linked pull requests.\n`private` hides the team and its issues from everyone who is not a member.\n`estimate_extended` adds the larger values to the scale, `estimate_allow_zero`\nadds 0, and `estimate_count_unestimated` counts an unestimated issue as one\npoint in cycle and project progress instead of skipping it.\n`parent_team_id` puts the team under a top-level parent team, and an explicit\nnull makes it a top-level team again. `timezone` is the IANA zone the team's\ncycles start, end and roll over at midnight in; a sub-team takes its\nparent's, so changing a sub-team's own is a 409.",
         "properties": {
           "description": {
             "anyOf": [
@@ -23638,6 +23656,19 @@
               }
             ],
             "title": "Sync Pr Labels"
+          },
+          "timezone": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Timezone"
           }
         },
         "title": "TeamUpdate",

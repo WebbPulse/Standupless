@@ -48,6 +48,7 @@ from app.common.db.dynamo.teams import Team, is_valid_key_prefix
 from app.common.db.dynamo.users import User
 from app.common.icons import icon_url
 from app.common.status_appearance import StatusColor, StatusIcon, check_icon
+from app.common.team_time import check_timezone as _check_timezone
 
 EstimateScaleField = Literal["off", "exponential", "fibonacci", "linear", "tshirt"]
 
@@ -78,6 +79,8 @@ class TeamCreate(BaseModel):
     statuses and labels it inherits. `copy_settings_from_team_id` starts the team
     with a copy of another team's workflow, labels, templates and settings
     instead; a sub-team already inherits, so the two are exclusive.
+    `timezone` is the IANA zone the team's cycles start and end at midnight
+    in, UTC by default; a sub-team takes its parent's instead.
     """
 
     name: str = Field(min_length=1, max_length=80)
@@ -87,6 +90,7 @@ class TeamCreate(BaseModel):
     estimate_extended: bool = False
     estimate_allow_zero: bool = False
     estimate_count_unestimated: bool = False
+    timezone: Optional[str] = Field(default=None, min_length=1, max_length=64)
     private: bool = False
     parent_team_id: Optional[str] = Field(default=None, min_length=1)
     copy_settings_from_team_id: Optional[str] = Field(default=None, min_length=1)
@@ -100,6 +104,12 @@ class TeamCreate(BaseModel):
         conflict the create route has to handle is a prefix already in use.
         """
         return _check_key_prefix(value)
+
+    @field_validator("timezone")
+    @classmethod
+    def check_timezone(cls, value: Optional[str]) -> Optional[str]:
+        """Hold the timezone to an IANA name zoneinfo knows, a 422 naming the field otherwise."""
+        return None if value is None else _check_timezone(value)
 
     @field_validator("name")
     @classmethod
@@ -129,7 +139,9 @@ class TeamUpdate(BaseModel):
     adds 0, and `estimate_count_unestimated` counts an unestimated issue as one
     point in cycle and project progress instead of skipping it.
     `parent_team_id` puts the team under a top-level parent team, and an explicit
-    null makes it a top-level team again.
+    null makes it a top-level team again. `timezone` is the IANA zone the team's
+    cycles start, end and roll over at midnight in; a sub-team takes its
+    parent's, so changing a sub-team's own is a 409.
     """
 
     name: Optional[str] = Field(default=None, min_length=1, max_length=80)
@@ -140,6 +152,7 @@ class TeamUpdate(BaseModel):
     estimate_count_unestimated: Optional[bool] = None
     description: Optional[str] = Field(default=None, max_length=2000)
     sync_pr_labels: Optional[bool] = None
+    timezone: Optional[str] = Field(default=None, min_length=1, max_length=64)
     private: Optional[bool] = None
     parent_team_id: Optional[str] = Field(default=None, min_length=1)
 
@@ -150,6 +163,12 @@ class TeamUpdate(BaseModel):
         if value is None:
             return None
         return _check_key_prefix(value)
+
+    @field_validator("timezone")
+    @classmethod
+    def check_timezone(cls, value: Optional[str]) -> Optional[str]:
+        """Hold a new timezone to an IANA name zoneinfo knows."""
+        return None if value is None else _check_timezone(value)
 
     @field_validator("name")
     @classmethod
@@ -168,7 +187,8 @@ class TeamRead(BaseModel):
 
     `parent_team_id` names the team this one sits under, `null` for a top-level team.
     `retired_at` is set while the team is retired and read-only, with `retired_by`
-    naming who retired it.
+    naming who retired it. `timezone` is the IANA zone the team's cycles
+    start, end and roll over at midnight in.
     """
 
     id: str
@@ -181,6 +201,7 @@ class TeamRead(BaseModel):
     estimate_allow_zero: bool = False
     estimate_count_unestimated: bool = False
     sync_pr_labels: bool = True
+    timezone: str = "UTC"
     private: bool = False
     icon_url: Optional[str] = None
     created_at: datetime
@@ -221,6 +242,7 @@ class TeamRead(BaseModel):
             estimate_allow_zero=team.estimate_allow_zero,
             estimate_count_unestimated=team.estimate_count_unestimated,
             sync_pr_labels=team.sync_pr_labels,
+            timezone=team.timezone,
             private=private,
             icon_url=icon_url(team.icon_key),
             created_at=team.created_at,

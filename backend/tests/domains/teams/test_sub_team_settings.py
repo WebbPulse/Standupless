@@ -152,3 +152,40 @@ def test_a_team_leaving_its_parent_keeps_the_settings_and_may_change_them(client
     assert left.json()["estimate_scale"] == "exponential"
     assert changed.status_code == 200, changed.text
     assert client.patch(f"{BASE}/teams/{LONER}", json={"estimate_scale": "linear"}).status_code == 200
+
+
+def test_a_team_timezone_is_validated_and_defaults_to_utc(client: TestClient) -> None:
+    """A team reads as UTC until set, takes an IANA name, and refuses anything zoneinfo does not know."""
+    assert _team(client, LONER)["timezone"] == "UTC"
+
+    refused = client.patch(f"{BASE}/teams/{LONER}", json={"timezone": "Mars/Olympus"})
+    saved = client.patch(f"{BASE}/teams/{LONER}", json={"timezone": "Europe/Berlin"})
+
+    assert refused.status_code == 422, refused.text
+    assert saved.status_code == 200, saved.text
+    assert saved.json()["timezone"] == "Europe/Berlin"
+
+
+def test_a_sub_team_takes_its_parents_timezone(client: TestClient) -> None:
+    """Created under, joining or following a parent, a sub-team's timezone is the parent's and cannot be its own."""
+    assert client.patch(f"{BASE}/teams/{PARENT}", json={"timezone": "Pacific/Auckland"}).status_code == 200
+
+    created = client.post(
+        f"{BASE}/teams",
+        json={"name": "Sub", "key_prefix": "SUB", "parent_team_id": PARENT, "timezone": "Europe/Berlin"},
+    )
+    client.patch(f"{BASE}/teams/{LONER}", json={"timezone": "Asia/Tokyo"})
+    _join(client)
+    joined = _team(client, LONER)["timezone"]
+    client.patch(f"{BASE}/teams/{PARENT}", json={"timezone": "America/Los_Angeles"})
+    refused = client.patch(f"{BASE}/teams/{LONER}", json={"timezone": "Europe/Berlin"})
+    repeated = client.patch(f"{BASE}/teams/{LONER}", json={"timezone": "America/Los_Angeles"})
+
+    assert created.status_code == 201, created.text
+    assert created.json()["timezone"] == "Pacific/Auckland"
+    assert joined == "Pacific/Auckland"
+    assert _team(client, created.json()["id"])["timezone"] == "America/Los_Angeles"
+    assert refused.status_code == 409, refused.text
+    assert "parent team" in refused.json()["message"]
+    assert repeated.status_code == 200, repeated.text
+    assert _team(client, LONER)["timezone"] == "America/Los_Angeles"

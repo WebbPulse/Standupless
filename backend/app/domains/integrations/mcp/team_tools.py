@@ -101,8 +101,9 @@ ESTIMATE_ARGUMENTS: tuple[str, ...] = (
     "estimate_extended",
     "estimate_allow_zero",
     "estimate_count_unestimated",
+    "timezone",
 )
-"""The team estimate settings create and update both take."""
+"""The team estimate and timezone settings create and update both take."""
 
 STATUS_CATEGORIES: tuple[str, ...] = ("backlog", "unstarted", "started", "completed", "cancelled")
 
@@ -167,6 +168,7 @@ def _team_json(call: ToolCall, team: Team) -> dict[str, Any]:
         "estimate_allow_zero": team.estimate_allow_zero,
         "estimate_count_unestimated": team.estimate_count_unestimated,
         "sync_pr_labels": team.sync_pr_labels,
+        "timezone": team.timezone,
         "private": call.repositories.memberships.is_private_team(call.context.workspace_id, team.team_id),
         "icon_url": icon_url(team.icon_key),
         "retired_at": team.retired_at.isoformat() if team.retired_at else None,
@@ -529,7 +531,7 @@ def _create_team(call: ToolCall) -> Any:
 
 
 def _update_team(call: ToolCall) -> Any:
-    """Change a team's name, key prefix, description, estimate settings, label sync, privacy or parent team.
+    """Change a team's name, key prefix, description, estimate settings, timezone, label sync, privacy or parent team.
 
     A change of parent or of privacy is recorded in the audit log, as the REST patch records it.
     """
@@ -1022,6 +1024,10 @@ def _team_fields(required_name: bool) -> Mapping[str, Any]:
         "estimate_count_unestimated": boolean(
             "Whether cycle and project progress count an unestimated issue as 1 point instead of skipping it"
         ),
+        "timezone": string(
+            "IANA timezone such as America/Los_Angeles, UTC by default. Cycles start, end and roll over at "
+            "midnight in it, and the standup digest defaults to it. A sub-team inherits its parent's"
+        ),
         "private": boolean(
             "Whether only team members can see the team and its issues; needs the Business plan to turn on"
         ),
@@ -1082,8 +1088,9 @@ TEAM_TOOLS: tuple[Tool, ...] = (
     Tool(
         name="update_team",
         description=(
-            "Change a team's name, key prefix, description, estimate settings, privacy or whether its issue labels "
-            "are copied onto linked GitHub pull requests. Needs team admin. team_id: id, key such as ENG, or name."
+            "Change a team's name, key prefix, description, estimate settings, timezone, privacy or whether its issue "
+            "labels are copied onto linked GitHub pull requests. Needs team admin. team_id: id, key such as ENG, "
+            "or name."
         ),
         scopes=("teams:write",),
         schema=object_schema(

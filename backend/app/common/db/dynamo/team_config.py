@@ -849,9 +849,17 @@ class StandupSettings(BaseModel):
     updated_at: datetime | None = None
 
 
-def default_standup_settings(workspace_id: str, team_id: str) -> StandupSettings:
-    """The standup settings a team that never configured them reads as."""
-    return StandupSettings(workspace_id=workspace_id, config_key=standup_settings_key(team_id), team_id=team_id)
+def default_standup_settings(
+    workspace_id: str, team_id: str, timezone: str = DEFAULT_STANDUP_TIMEZONE
+) -> StandupSettings:
+    """The standup settings a team that never configured them reads as.
+
+    `timezone` is the team's own timezone, so an unconfigured digest lands on
+    the team's local clock rather than UTC.
+    """
+    return StandupSettings(
+        workspace_id=workspace_id, config_key=standup_settings_key(team_id), team_id=team_id, timezone=timezone
+    )
 
 
 class StandupNote(BaseModel):

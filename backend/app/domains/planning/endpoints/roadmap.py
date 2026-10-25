@@ -26,6 +26,7 @@ from app.common.api.schemas.planning import (
     RoadmapListRead,
 )
 from app.common.planning_rules import require_team_reader, visible_project_teams, visible_team_ids
+from app.common.team_time import teams_today
 
 router = APIRouter()
 
@@ -72,9 +73,11 @@ def read_roadmap(
 
     entries: list[RoadmapEntryRead] = []
     if kind != "project":
+        days = teams_today(repositories, context.workspace_id, teams)
         for candidate in teams:
+            day = days[candidate].isoformat()
             for cycle in repositories.planning.list_for_roadmap(context.workspace_id, candidate):
-                entries.append(RoadmapEntryRead.from_cycle(cycle))
+                entries.append(RoadmapEntryRead.from_cycle(cycle, day))
     if kind != "cycle":
         visible = set(visible_team_ids(repositories, context)) if team_id is not None else set(teams)
         for project in repositories.planning.list_projects(context.workspace_id):

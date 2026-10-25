@@ -6,17 +6,25 @@ whose cycle settings are on gets its missing current and upcoming cycles. It
 runs in planning because cycles are planning rows. The generator is idempotent,
 so a retried or overlapping run creates nothing twice, and one team failing is
 logged and skipped so it never holds up the rest.
+
+Each team's cycles turn over at midnight in the team's own timezone, so the
+sweep judges every team against its own local date at the moment it runs. An
+hourly run therefore stocks a team's new cycle within the hour after that
+team's midnight, and the deterministic cycle keys keep a later run that lands
+on the same local day from creating it again.
 """
 
 from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime
 from typing import Any, Mapping
 
 from app.common.cycle_schedule import ensure_cycles
+from app.common.db.dynamo.base import utc_now
 from app.common.team_retirement import is_active
+from app.common.team_time import local_date, timezone_of
 
 _log = logging.getLogger(__name__)
 
@@ -39,20 +47,25 @@ class ScheduleSummary:
     failed: int = 0
 
 
-def sweep(repositories: Any, today: date | None = None) -> ScheduleSummary:
+def sweep(repositories: Any, today: date | None = None, now: datetime | None = None) -> ScheduleSummary:
     """Create the missing cycles of every team with automatic cycles on.
 
     A team that is gone or being deleted is skipped, so a settings row the
-    team purge has not reached yet never brings cycles back.
+    team purge has not reached yet never brings cycles back. `today` pins one
+    date for every team; otherwise each team is judged on its own local date at
+    `now`, the current moment by default.
     """
     summary = ScheduleSummary()
+    moment = now or utc_now()
     for settings in repositories.team_config.iter_enabled_cycle_settings():
-        if not is_active(repositories.teams.get(settings.workspace_id, settings.team_id)):
+        team = repositories.teams.get(settings.workspace_id, settings.team_id)
+        if not is_active(team):
             summary.skipped += 1
             continue
         summary.teams += 1
         try:
-            result = ensure_cycles(repositories.planning, settings, today)
+            day = today or local_date(timezone_of(team), moment)
+            result = ensure_cycles(repositories.planning, settings, day)
         except Exception:
             summary.failed += 1
             _log.exception(

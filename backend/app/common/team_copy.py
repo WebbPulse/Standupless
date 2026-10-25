@@ -61,7 +61,10 @@ ESTIMATE_FIELDS: tuple[str, ...] = (
     "estimate_allow_zero",
     "estimate_count_unestimated",
 )
-"""The team row fields a copy takes from the source."""
+"""The estimate fields of the team row a copy takes from the source."""
+
+ROW_FIELDS: tuple[str, ...] = (*ESTIMATE_FIELDS, "timezone")
+"""Every team row field a copy takes from the source: its estimates and the timezone its cycles run in."""
 
 TEMPLATE_KINDS: tuple[str, ...] = ("issue_template", "project_template", "document_template")
 """Every kind of team template a copy carries."""
@@ -73,7 +76,8 @@ class TeamCopy:
 
     `rows` are written before the create's transaction and `settings` ride in
     it. `categories` are the status categories the copied workflow covers, so
-    the create seeds defaults only for the rest. `estimates` go on the team row.
+    the create seeds defaults only for the rest. `estimates` go on the team row,
+    the source's timezone with them.
     """
 
     workspace_id: str
@@ -99,7 +103,7 @@ def plan(repositories: Repositories, source: Team, team_id: str, user_id: str) -
     copy = TeamCopy(
         workspace_id=workspace_id,
         team_id=team_id,
-        estimates={name: getattr(source, name) for name in ESTIMATE_FIELDS},
+        estimates={name: getattr(source, name) for name in ROW_FIELDS},
     )
     status_ids = _copy_statuses(copy, config.list_statuses(workspace_id, source.team_id))
     label_ids = _copy_labels(copy, config.list_labels(workspace_id, source.team_id))

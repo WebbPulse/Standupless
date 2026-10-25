@@ -18,7 +18,7 @@ from fastapi.testclient import TestClient
 
 from app.common.cycle_schedule import ensure_cycles
 from app.common.db.dynamo.planning import Cycle
-from app.common.db.dynamo.team_config import default_cycle_settings, default_standup_settings
+from app.common.db.dynamo.team_config import default_cycle_settings
 from app.domains.issues.cycle_close import sweep as close_sweep
 from tests.domains.helpers import MEMBER, OUTSIDER, sign_in
 from tests.domains.planning.conftest import TEAM, WORKSPACE, seed_cycle, seed_issue
@@ -267,9 +267,8 @@ def test_today_is_the_teams_own_day(
     """Late evening in UTC is already tomorrow in Auckland, so a team there ends on its own date."""
     sign_in(client, MEMBER)
     current = seed_cycle(client, workspace, start_date="2099-03-01", end_date="2099-03-20")
-    settings = default_standup_settings(WORKSPACE, TEAM).model_copy(update={"timezone": "Pacific/Auckland"})
-    repositories.team_config.put_standup_settings(settings)
-    monkeypatch.setattr("app.common.cycle_writes.utc_now", lambda: datetime(2099, 3, 10, 22, 0, tzinfo=timezone.utc))
+    repositories.teams.update(WORKSPACE, TEAM, timezone="Pacific/Auckland")
+    monkeypatch.setattr("app.common.team_time.utc_now", lambda: datetime(2099, 3, 10, 22, 0, tzinfo=timezone.utc))
 
     response = _end_today(client, workspace, current["cycle_id"])
 

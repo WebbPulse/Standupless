@@ -2979,6 +2979,7 @@ class TeamCreate(TypedDict):
     name: str
     parent_team_id: NotRequired[str | None]
     private: NotRequired[bool]
+    timezone: NotRequired[str | None]
 
 
 class TeamDisplayDefaultsRead(TypedDict):
@@ -3035,6 +3036,7 @@ class TeamRead(TypedDict):
     retired_key_prefixes: NotRequired[list[str]]
     role: NotRequired[Literal["admin", "member"] | None]
     sync_pr_labels: NotRequired[bool]
+    timezone: NotRequired[str]
     updated_at: str
     workspace_id: str
 
@@ -3073,6 +3075,7 @@ class TeamUpdate(TypedDict):
     parent_team_id: NotRequired[str | None]
     private: NotRequired[bool | None]
     sync_pr_labels: NotRequired[bool | None]
+    timezone: NotRequired[str | None]
 
 
 class TemplateSettingsRead(TypedDict):

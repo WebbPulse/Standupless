@@ -529,6 +529,17 @@ def test_team_update_makes_a_team_private(runner: CliRunner, api: respx.MockRout
     assert "ENG is now private" in result.output
 
 
+def test_team_update_sets_the_timezone(runner: CliRunner, api: respx.MockRouter) -> None:
+    """`--timezone` patches only the team timezone and the reply names it."""
+    patched = api.patch(f"/api/workspaces/{WS}/teams/team-1").respond(
+        json={"id": "team-1", "key_prefix": "ENG", "name": "Engineering", "timezone": "America/Los_Angeles"}
+    )
+    result = invoke(runner, "team", "update", "-t", "ENG", "--timezone", "America/Los_Angeles")
+    assert result.exit_code == 0, result.output
+    assert json.loads(patched.calls[0].request.content) == {"timezone": "America/Los_Angeles"}
+    assert "midnight America/Los_Angeles" in result.output
+
+
 def test_team_update_sets_the_estimate_settings(runner: CliRunner, api: respx.MockRouter) -> None:
     """The scale and its three toggles patch together and the reply names them."""
     patched = api.patch(f"/api/workspaces/{WS}/teams/team-1").respond(

@@ -9,15 +9,14 @@ An edit follows Linear's cycle rules: dates already in the past stay fixed,
 extending a cycle into the next one shortens that next one, and shortening one
 leaves a gap the list reports as `gap_before_days`. A name ending in a number
 renumbers the automatically named cycles after it, so the schedule continues
-from that number. Every date rule is judged against today in the team's
-timezone, the one its standup digest is cut in.
+from that number. Every date rule, and every status a body derives, is judged
+against today in the team's own timezone, as `team_time` reads it.
 """
 
 from __future__ import annotations
 
-from datetime import date, timedelta
+from datetime import timedelta
 from typing import Optional
-from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import HTTPException, status
 from webbpulse.dynamodb import ConditionFailed, encode_start_key
@@ -46,6 +45,7 @@ from app.common.planning_rules import (
     unprocessable,
 )
 from app.common.sub_teams import listed_teams
+from app.common.team_time import team_today
 
 
 def conflict(message: str) -> HTTPException:
@@ -54,17 +54,6 @@ def conflict(message: str) -> HTTPException:
         status_code=status.HTTP_409_CONFLICT,
         detail={"error_code": "CONFLICT", "message": message},
     )
-
-
-def team_today(repositories: Repositories, workspace_id: str, team_id: str) -> date:
-    """Today's date in the team's timezone, UTC when it never set one or set an unknown one."""
-    settings = repositories.team_config.get_standup_settings(workspace_id, team_id)
-    name = settings.timezone if settings is not None else "UTC"
-    try:
-        zone = ZoneInfo(name)
-    except (ZoneInfoNotFoundError, ValueError):
-        zone = ZoneInfo("UTC")
-    return utc_now().astimezone(zone).date()
 
 
 def with_gaps(bodies: list[CycleRead], cycles: list[Cycle]) -> list[CycleRead]:
@@ -106,7 +95,8 @@ def list_cycles(
         )
         counted = counts_unestimated(repositories, context.workspace_id, team_id)
         chain = repositories.planning.list_for_roadmap(context.workspace_id, team_id)
-        bodies = with_gaps([CycleRead.from_row(row, count_unestimated=counted) for row in rows], chain)
+        today = team_today(repositories, context.workspace_id, team_id).isoformat()
+        bodies = with_gaps([CycleRead.from_row(row, today, count_unestimated=counted) for row in rows], chain)
         if status_filter is not None:
             bodies = [body for body in bodies if body.status == status_filter]
         return bodies, encode_start_key(last_key, scope=scope)
@@ -115,7 +105,8 @@ def list_cycles(
     for member in teams:
         counted = counts_unestimated(repositories, context.workspace_id, member)
         chain = repositories.planning.list_for_roadmap(context.workspace_id, member)
-        for body in with_gaps([CycleRead.from_row(row, count_unestimated=counted) for row in chain], chain):
+        today = team_today(repositories, context.workspace_id, member).isoformat()
+        for body in with_gaps([CycleRead.from_row(row, today, count_unestimated=counted) for row in chain], chain):
             if status_filter is None or body.status == status_filter:
                 merged.append(body)
     merged.sort(key=lambda body: (body.start_date, body.team_id, body.cycle_id))
@@ -157,7 +148,8 @@ def create_cycle(repositories: Repositories, context: AuthzContext, payload: Cyc
             detail={"error_code": "CONFLICT", "message": "That cycle already exists"},
         ) from exc
     counted = counts_unestimated(repositories, context.workspace_id, payload.team_id)
-    return CycleRead.from_row(created, count_unestimated=counted)
+    today = team_today(repositories, context.workspace_id, payload.team_id).isoformat()
+    return CycleRead.from_row(created, today, count_unestimated=counted)
 
 
 def update_cycle(repositories: Repositories, context: AuthzContext, cycle_id: str, payload: CycleUpdate) -> CycleRead:
@@ -206,7 +198,8 @@ def update_cycle(repositories: Repositories, context: AuthzContext, cycle_id: st
     if renumbered is not None:
         renumber_following(repositories, chain, stored, renumbered)
     counted = counts_unestimated(repositories, context.workspace_id, payload.team_id)
-    return CycleRead.from_row(stored, count_unestimated=counted)
+    today = team_today(repositories, context.workspace_id, payload.team_id).isoformat()
+    return CycleRead.from_row(stored, today, count_unestimated=counted)
 
 
 def check_past_dates(existing: Cycle, updated: Cycle, today: str) -> None:

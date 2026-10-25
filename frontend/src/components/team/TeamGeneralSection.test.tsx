@@ -3,7 +3,8 @@
  * show beside a scale that is on and hide when estimates are off, that saving
  * sends them with the scale, and that the extended toggle names the values it
  * adds for the chosen scale, and that a sub-team links to its parent's
- * settings for them.
+ * settings for them. Also covers the timezone field: saving a change, refusing
+ * a name that is not a timezone, and locking a sub-team to its parent's.
  */
 
 import { render, screen, waitFor } from '@testing-library/react';
@@ -115,5 +116,45 @@ describe('the team estimate settings', () => {
       'href',
       '/w/acme/team/ENG/settings#team-settings-general'
     );
+  });
+});
+
+describe('the team timezone', () => {
+  it('saves a new timezone and leaves it out when unchanged', async () => {
+    const user = userEvent.setup();
+    renderSection(team({ timezone: 'UTC' }));
+
+    const field = screen.getByLabelText('Timezone');
+    expect(field).toHaveValue('UTC');
+    await user.clear(field);
+    await user.type(field, 'America/Los_Angeles');
+    await user.click(screen.getByRole('button', { name: 'Save changes' }));
+
+    await waitFor(() => {
+      expect(updateTeam).toHaveBeenCalledWith(
+        expect.objectContaining({ timezone: 'America/Los_Angeles' })
+      );
+    });
+  });
+
+  it('refuses a name that is not a timezone', async () => {
+    const user = userEvent.setup();
+    renderSection(team({ timezone: 'UTC' }));
+
+    const field = screen.getByLabelText('Timezone');
+    await user.clear(field);
+    await user.type(field, 'Mars/Base');
+
+    expect(screen.getByText(/Pick a timezone such as/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Save changes' })).toBeDisabled();
+  });
+
+  it("locks a sub-team's timezone to its parent's", () => {
+    renderSection(team({ parent_team_id: 'team-0', timezone: 'Europe/Paris' }));
+
+    expect(screen.getByLabelText('Timezone')).toBeDisabled();
+    expect(
+      screen.getByText(/run in its parent team's timezone/)
+    ).toBeInTheDocument();
   });
 });

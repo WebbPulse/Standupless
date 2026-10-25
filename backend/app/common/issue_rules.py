@@ -29,6 +29,7 @@ from app.common.estimates import allowed_estimates
 from app.common.team_privacy import needs_team_membership
 from app.common.team_refs import team_not_found
 from app.common.team_retirement import refuse_if_retired
+from app.common.team_time import team_today
 
 COMPLETED_CATEGORIES: frozenset[str] = frozenset({"completed", "cancelled"})
 """Which status categories count an issue as finished for the parent's rollup.
@@ -293,7 +294,7 @@ def resolve_cycle(
     if alias not in RELATIVE_CYCLES or repositories.planning.get_cycle(workspace_id, team_id, cycle_id or ""):
         return check_cycle(repositories, workspace_id, team_id, cycle_id)
     cycles, _ = repositories.planning.list_cycles(workspace_id, team_id, limit=TEAM_CYCLE_LIMIT)
-    found = relative_cycle(cycles, alias, today or date.today())
+    found = relative_cycle(cycles, alias, today or team_today(repositories, workspace_id, team_id))
     if found is None:
         team = repositories.teams.get(workspace_id, team_id)
         name = team.key_prefix if team is not None and team.key_prefix else team_id

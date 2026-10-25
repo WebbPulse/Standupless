@@ -18,6 +18,7 @@ from app.common.standup import (
     next_digest_date,
     resolve_zone,
 )
+from app.common.team_time import team_timezone
 from app.domains.integrations.schemas.standup import (
     StandupNoteRead,
     StandupNoteWrite,
@@ -44,9 +45,9 @@ def note_day(value: str | None, settings: StandupSettings) -> str:
 
 
 def settings_of(repositories: Repositories, workspace_id: str, team_id: str) -> StandupSettings:
-    """A team's stored standup settings, or the defaults."""
+    """A team's stored standup settings, or the defaults on the team's own timezone."""
     stored = repositories.team_config.get_standup_settings(workspace_id, team_id)
-    return stored or default_standup_settings(workspace_id, team_id)
+    return stored or default_standup_settings(workspace_id, team_id, team_timezone(repositories, workspace_id, team_id))
 
 
 def settings_read(settings: StandupSettings) -> StandupSettingsRead:
