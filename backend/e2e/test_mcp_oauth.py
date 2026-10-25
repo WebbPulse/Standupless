@@ -318,6 +318,14 @@ EXPECTED_TOOLS = frozenset(
         "create_dashboard",
         "update_dashboard",
         "delete_dashboard",
+        "update_comment",
+        "delete_comment",
+        "add_comment_reaction",
+        "remove_comment_reaction",
+        "list_issue_links",
+        "create_issue_link",
+        "update_issue_link",
+        "delete_issue_link",
     }
 )
 """The tools `docs/api/m6.md` fixes, named here so a silent addition fails.

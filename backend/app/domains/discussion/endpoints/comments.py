@@ -24,8 +24,10 @@ from webbpulse.http import CursorPage
 
 from app.common.api.dependencies.authz import AuthzContext, Capability, require
 from app.common.api.dependencies.repositories import Repositories, get_repositories
-from app.common.comment_writes import comment_page, edit_comment
+from app.common.comment_writes import comment_page, load_comment
 from app.common.comment_writes import create_comment as create_comment_row
+from app.common.comment_writes import delete_comment as delete_comment_row
+from app.common.comment_writes import update_comment as update_comment_row
 from app.common.db.dynamo.comments import Comment
 from app.common.discussion_reads import authors_for, group_reactions
 from app.common.thread_resolution import resolve_thread, unresolve_thread
@@ -38,13 +40,6 @@ from app.domains.discussion.schemas.discussion import (
     CommentListRead,
     CommentRead,
     CommentUpdate,
-)
-from app.domains.discussion.service import (
-    forbidden,
-    load_visible_issue,
-    may_delete_comment,
-    may_edit_comment,
-    not_found,
 )
 
 router = APIRouter()
@@ -107,19 +102,6 @@ def _attachments_for(
         for attachment_id, row in rows.items():
             found[(issue_id, attachment_id)] = AttachmentRead.from_row(row)
     return found
-
-
-def _load_comment(repositories: Repositories, context: AuthzContext, issue_id: str, comment_id: str) -> Comment:
-    """One comment of a visible issue, or a 404.
-
-    The issue is loaded first, so a comment on an issue the caller cannot see is
-    the same 404 as one that never existed and the comment id itself leaks nothing.
-    """
-    load_visible_issue(repositories, context, issue_id)
-    comment = repositories.comments.get(context.workspace_id, issue_id, comment_id)
-    if comment is None:
-        raise not_found()
-    return comment
 
 
 @router.get("/{workspace_id}/issues/{issue_id}/comments", response_model=CommentListRead)
@@ -194,7 +176,7 @@ def read_comment(
     `issue_id` is required because it is the partition; without it this read would
     be a scan, which the design forbids outside an admin path.
     """
-    comment = _load_comment(repositories, context, issue_id, comment_id)
+    comment = load_comment(repositories, context, issue_id, comment_id)
     counts = repositories.comments.count_replies(repositories.comments.iter_for_issue(context.workspace_id, issue_id))
     return _render(repositories, context, [comment], reply_counts=counts)[0]
 
@@ -215,11 +197,7 @@ def update_comment(
     that person alone and an edit that removes one stops claiming it. A key the
     edit adds leaves a backlink on that issue.
     """
-    comment = _load_comment(repositories, context, payload.issue_id, comment_id)
-    if not may_edit_comment(context, comment):
-        raise forbidden()
-
-    updated = edit_comment(repositories, context, comment, payload.body)
+    updated = update_comment_row(repositories, context, payload.issue_id, comment_id, payload.body)
 
     counts = repositories.comments.count_replies(
         repositories.comments.iter_for_issue(context.workspace_id, payload.issue_id)
@@ -241,17 +219,7 @@ def delete_comment(
     words with it, and the reactions go because nothing but this comment's id names
     their partition.
     """
-    issue = load_visible_issue(repositories, context, issue_id)
-    comment = _load_comment(repositories, context, issue_id, comment_id)
-    if not may_delete_comment(repositories, context, comment, issue.team_id):
-        raise forbidden()
-
-    for reply in repositories.comments.iter_for_issue(context.workspace_id, issue_id):
-        if reply.parent_comment_id == comment_id:
-            repositories.comments.clear_parent(context.workspace_id, issue_id, reply.comment_id)
-
-    repositories.reactions.delete_for_target(context.workspace_id, comment_id)
-    repositories.comments.delete(context.workspace_id, issue_id, comment_id)
+    delete_comment_row(repositories, context, issue_id, comment_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 

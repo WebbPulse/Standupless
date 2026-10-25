@@ -13,6 +13,7 @@ from typing import Any, Callable
 from tests.domains.integrations.mcp_isolation import (
     agent_profiles,
     channels,
+    comments,
     customers,
     dashboards,
     documents,
@@ -58,6 +59,7 @@ AREAS = (
     templates,
     recurring,
     agent_profiles,
+    comments,
 )
 
 AREA_ARGUMENTS: tuple[Callable[[dict[str, str], str], dict[str, dict[str, Any]]], ...] = tuple(

@@ -191,6 +191,34 @@ class AttachmentRepository:
             return None
         return existing
 
+    def update_link(
+        self,
+        workspace_id: str,
+        issue_id: str,
+        attachment_id: str,
+        *,
+        url: str,
+        title: str,
+        favicon_url: str | None,
+    ) -> Attachment | None:
+        """Rewrite one URL attachment's link, title and favicon, or `None` when it is gone or is a file.
+
+        A targeted update conditioned on the row being a link, so a file attachment
+        never gains a URL and an edit racing a delete cannot resurrect the row.
+        """
+        try:
+            item = self._repository.update(
+                {"ws_issue": ws_issue(workspace_id, issue_id), "attachment_id": attachment_id},
+                update_expression="SET #url = :url, #title = :title, #favicon = :favicon",
+                expression_names={"#url": "url", "#title": "title", "#favicon": "favicon_url"},
+                expression_values={":url": url, ":title": title, ":favicon": favicon_url},
+                condition=Attr("attachment_id").exists() & Attr("kind").eq("url"),
+                return_values="ALL_NEW",
+            )
+        except ConditionFailed:
+            return None
+        return as_attachment(item) if item is not None else None
+
     def storage_used(self, workspace_id: str) -> int:
         """The bytes of uploaded files the workspace's attachments hold, never below zero."""
         if not workspace_id:

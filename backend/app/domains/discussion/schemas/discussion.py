@@ -11,7 +11,6 @@ from __future__ import annotations
 
 from datetime import datetime
 from typing import Annotated, Literal, Optional
-from urllib.parse import urlparse
 
 from fastapi import Query
 from pydantic import BaseModel, Field, field_validator, model_validator
@@ -25,6 +24,7 @@ from app.common.db.dynamo.attachments import Attachment
 from app.common.db.dynamo.comments import Comment, CommentAnchor, GithubThread, ThreadResolution
 from app.common.discussion_reads import AuthorRead, ReactionGroupRead, check_emoji
 from app.common.upload_rules import VIDEO_CONTENT_TYPES, normalized_content_type
+from app.common.url_attachments import TITLE_MAX, check_https_url
 
 TargetKindField = Literal["issue", "comment"]
 
@@ -42,7 +42,6 @@ DEFAULT_LIMIT = 50
 
 MAX_LIMIT = 100
 
-TITLE_MAX = 200
 
 COMMENT_ATTACHMENTS_MAX = 10
 """The most attachments one comment may carry.
@@ -51,7 +50,6 @@ Bounds the batch read that renders a thread page and keeps a comment a message
 with a few files rather than a folder.
 """
 
-URL_MAX = 2048
 
 DOWNLOAD_EXPIRES_IN = 300
 """How long a presigned download stays valid, in seconds.
@@ -131,48 +129,6 @@ def _check_body(value: str) -> str:
     if len(value.encode("utf-8")) > ISSUE_BODY_MAX_BYTES:
         raise ValueError(f"body must be at most {ISSUE_BODY_MAX_BYTES} bytes")
     return value
-
-
-def _check_https_url(value: str) -> str:
-    """Hold an attachment URL to `https` and to the contract's length cap.
-
-    `http` is refused rather than upgraded: an attachment renders as a link a reader
-    clicks, and silently rewriting the scheme would point them somewhere the author
-    did not name.
-    """
-    candidate = value.strip()
-    if not candidate:
-        raise ValueError("url must not be empty")
-    if len(candidate) > URL_MAX:
-        raise ValueError(f"url must be at most {URL_MAX} characters")
-    parsed = urlparse(candidate)
-    if parsed.scheme != "https" or not parsed.netloc:
-        raise ValueError("url must be an absolute https URL")
-    return candidate
-
-
-def favicon_for(url: str) -> str | None:
-    """The favicon the MVP shows beside a URL attachment, derived without a fetch.
-
-    Derived rather than crawled: resolving the target would put an outbound request
-    from a Lambda on a user-supplied URL in the write path, which is a request
-    forgery surface for a picture beside a link.
-    """
-    host = urlparse(url).netloc
-    if not host:
-        return None
-    return f"https://www.google.com/s2/favicons?domain={host}"
-
-
-def title_for(url: str, title: str | None) -> str:
-    """The title a URL attachment carries, defaulting to the host.
-
-    The MVP does not crawl the target, so a title the caller does not give is the
-    host rather than a fetched page title.
-    """
-    if title and title.strip():
-        return title.strip()[:TITLE_MAX]
-    return urlparse(url).netloc or url[:TITLE_MAX]
 
 
 class ReactionListRead(BaseModel):
@@ -429,7 +385,7 @@ class UrlAttachmentCreate(BaseModel):
     @classmethod
     def check_url(cls, value: str) -> str:
         """Hold the URL to `https` and to the length cap."""
-        return _check_https_url(value)
+        return check_https_url(value)
 
 
 class UploadTicketCreate(BaseModel):
