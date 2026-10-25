@@ -7,13 +7,15 @@ addresses this environment is still allowed to reach while the account sits in t
 SES sandbox, and that a refused send never fails the caller.
 """
 
-from app.common.email.delivery import deliver, email_sender, reset_email_sender
+from app.common.email.delivery import ReplyableEmail, deliver, email_sender, reset_email_sender, with_reply_to
 from app.common.email.gate import RecipientBlocked, allowed_recipient
 
 __all__ = [
     "RecipientBlocked",
+    "ReplyableEmail",
     "allowed_recipient",
     "deliver",
     "email_sender",
     "reset_email_sender",
+    "with_reply_to",
 ]

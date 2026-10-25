@@ -187,6 +187,9 @@ def _settings_link(workspace_slug: str) -> tuple[EmailLink, ...]:
     return (EmailLink("Notification settings", notification_settings_url(workspace_slug)),)
 
 
+REPLY_HINT = "Reply to this email to add a comment."
+
+
 def render_notification(
     *,
     kind: str,
@@ -198,6 +201,7 @@ def render_notification(
     comment_excerpt: str = "",
     headline_key: str | None = None,
     accent: str | None = None,
+    replyable: bool = False,
 ) -> EmailMessage:
     """Render the email for one inbox notification.
 
@@ -206,7 +210,9 @@ def render_notification(
     kind falls back to the plainest headline rather than raising: the inbox row is
     already written, and a kind added without a template here should still mail.
     `headline_key` picks a more specific headline than the kind's own, such as a
-    mention in a description rather than in a comment.
+    mention in a description rather than in a comment. `replyable` adds the line
+    saying a reply to the email posts as a comment, for an email sent with a
+    reply address.
     """
     actor = actor_name.strip() or "Someone"
     title = issue_title.strip() or "Untitled issue"
@@ -220,6 +226,8 @@ def render_notification(
     if trimmed:
         blocks.append(Quote(trimmed))
     blocks.append(Button("Open issue", link, show_url=True))
+    if replyable:
+        blocks.append(Paragraph(REPLY_HINT))
     return render(
         to=to,
         subject=subject,
@@ -423,11 +431,14 @@ def _entry_group(entry: DigestEntry, workspace_slug: str) -> tuple[str, str, str
     return f"issue#{entry.issue_id or entry.issue_key}", label, issue_url(workspace_slug, entry.issue_key)
 
 
-def render_single(entry: DigestEntry, *, to: str, workspace_slug: str, accent: str | None = None) -> EmailMessage:
+def render_single(
+    entry: DigestEntry, *, to: str, workspace_slug: str, accent: str | None = None, replyable: bool = False
+) -> EmailMessage:
     """Render a window holding one notification as that notification's own email.
 
     A quiet window reads exactly as it did before digests, which keeps the
-    per-issue subject a mail client threads by.
+    per-issue subject a mail client threads by. `replyable` is passed on to an
+    issue notification sent with a reply address.
     """
     if entry.kind == PROJECT_UPDATE_DUE:
         return render_project_update_due_notification(
@@ -468,21 +479,28 @@ def render_single(entry: DigestEntry, *, to: str, workspace_slug: str, accent: s
         comment_excerpt=entry.excerpt,
         headline_key=entry.headline_key,
         accent=accent,
+        replyable=replyable,
     )
 
 
 def render_digest(
-    entries: Sequence[DigestEntry], *, to: str, workspace_slug: str, accent: str | None = None
+    entries: Sequence[DigestEntry],
+    *,
+    to: str,
+    workspace_slug: str,
+    accent: str | None = None,
+    replyable: bool = False,
 ) -> EmailMessage:
     """Render one window's notifications as one email, grouped by issue, project or initiative.
 
     One notification renders as its own email. More are grouped under the issue
     or project they are about, in the order they happened, and the subject is the
     one issue's own when they are all about the same one, so a burst on one issue
-    still threads with its earlier mail.
+    still threads with its earlier mail. `replyable` is passed on to a lone
+    notification, since only that email carries a reply address.
     """
     if len(entries) == 1:
-        return render_single(entries[0], to=to, workspace_slug=workspace_slug, accent=accent)
+        return render_single(entries[0], to=to, workspace_slug=workspace_slug, accent=accent, replyable=replyable)
 
     ordered = sorted(entries, key=lambda entry: (entry.created_at, entry.notification_id))
     listed = ordered[:DIGEST_LINE_LIMIT]

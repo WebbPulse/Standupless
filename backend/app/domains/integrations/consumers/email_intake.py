@@ -4,7 +4,11 @@ SES stores each mail in the intake bucket and S3 queues the object's key, so a
 record names a bucket and key and nothing a sender wrote. The mail is read,
 checked and either filed or dropped, and the object is deleted once it is done
 with either way; only an unexpected failure leaves it, and the message, for a
-retry. Nothing is ever sent back to the sender, whatever happens.
+retry. Nothing is ever sent back to an intake sender, whatever happens.
+
+A mail to a `reply-<token>` address is a reply to a notification email rather
+than intake, and is handed to `app.domains.integrations.email_replies`, which
+posts it as a comment.
 
 A mail is dropped when SES's verdicts fail it, when no live address it was sent
 to resolves, when it replies to a mail already filed, when its address has
@@ -32,12 +36,14 @@ from app.common.core.constants import ISSUE_BODY_MAX_BYTES
 from app.common.db.dynamo.attachments import build_attachment, new_upload_id, object_key, stored_bytes
 from app.common.db.dynamo.email_intake import EmailIntake
 from app.common.db.dynamo.issues import Issue
+from app.common.email_replies import reply_tokens
 from app.common.issue_rules import triage_on
 from app.common.issue_writes import create_issue
 from app.common.plan_limits import storage_limit_of
 from app.common.recurring_issues import creator_context
 from app.common.upload_rules import ATTACHMENT_CONTENT_TYPES, normalized_content_type, upload_ceiling
 from app.domains.integrations.email_intake import intake_domain
+from app.domains.integrations.email_replies import handle_reply
 from app.domains.integrations.intake_mail import (
     IntakeFile,
     IntakeMail,
@@ -132,10 +138,18 @@ def _dropped(reason: str) -> None:
 
 
 def handle_mail(repositories: Repositories, raw: bytes, *, s3: Any = None) -> Optional[Issue]:
-    """File one raw mail as an issue, answering it, or `None` when the mail is dropped."""
+    """File one raw mail as an issue, answering it, or `None` when the mail is dropped or was a reply.
+
+    A reply to a notification email is posted as a comment and answers `None`,
+    since it filed no issue.
+    """
     mail = parse_mail(raw)
     if mail.rejected:
         _dropped(mail.rejected)
+        return None
+    replies = reply_tokens(mail.recipients, intake_domain())
+    if replies:
+        handle_reply(repositories, mail, replies[0])
         return None
     for _key, token in intake_tokens(mail.recipients, intake_domain()):
         intake = repositories.github.email_intake.resolve(token)

@@ -24,6 +24,7 @@ from webbpulse.dynamodb import ConditionFailed, Page, Repository
 
 from app.common.db.dynamo.base import as_item, build_repository, delete_partition, utc_now
 from app.common.db.dynamo.chat_routes import ChatRouteStore
+from app.common.db.dynamo.email_replies import EmailReplyStore
 from app.common.db.dynamo.issue_reminders import IssueReminderStore
 from app.common.db.dynamo.notify_digests import (
     CHAT_DIGEST_WINDOW,
@@ -301,8 +302,9 @@ class InboxRepository:
 
     `digests` holds the pending notification emails, `chat_digests` the pending
     chat direct messages, `chat_routes` the chat accounts members linked and
-    `reminders` the issue reminders members set for themselves, all sharing this
-    table under partitions no inbox can name.
+    `reminders` the issue reminders members set for themselves and
+    `email_replies` the reply addresses notification emails carry, all sharing
+    this table under partitions no inbox can name.
     """
 
     def __init__(self, repository: Repository | None = None) -> None:
@@ -317,6 +319,7 @@ class InboxRepository:
             window=CHAT_DIGEST_WINDOW,
         )
         self.chat_routes = ChatRouteStore(self._repository)
+        self.email_replies = EmailReplyStore(self._repository)
 
     def delete_all(self, workspace_id: str, user_id: str) -> int:
         """Delete one person's whole inbox in one workspace, reminders and chat routes included, for the purges."""

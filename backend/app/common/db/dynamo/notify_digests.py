@@ -80,7 +80,8 @@ class DigestEntry(BaseModel):
     so the flush can re-check the recipient's preference and visibility.
     `unread_when_held` says whether the inbox row was unread when the entry was
     held, so the flush can drop one the person has since read; `None` marks an
-    entry with no inbox row to check.
+    entry with no inbox row to check. `comment_id` is the comment a comment
+    notification is about, which a reply to its email threads under.
     """
 
     workspace_id: str
@@ -93,6 +94,7 @@ class DigestEntry(BaseModel):
     issue_id: str = ""
     issue_key: str = ""
     issue_title: str = ""
+    comment_id: str = ""
     excerpt: str = ""
     project_id: str = ""
     project_name: str = ""

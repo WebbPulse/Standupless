@@ -28,7 +28,8 @@ from webbpulse.identity.email import EmailMessage
 
 from app.common.api.dependencies.repositories import Repositories
 from app.common.db.dynamo.notify_digests import DigestEntry, DueDigest
-from app.common.email import deliver
+from app.common.email import deliver, with_reply_to
+from app.common.email_replies import mint_reply_address
 from app.domains.views.email import render_digest
 
 _log = logging.getLogger(__name__)
@@ -113,7 +114,42 @@ def _compose(
         kept.append(entry)
     if not kept:
         return None
+    if len(kept) == 1 and replyable(kept[0]):
+        entry = kept[0]
+        reply_to = mint_reply_address(
+            repositories.inbox.email_replies,
+            workspace_id=workspace_id,
+            issue_id=entry.issue_id,
+            user_id=recipient_id,
+            comment_id=entry.comment_id,
+        )
+        message = render_digest(
+            kept,
+            to=str(recipient.email),
+            workspace_slug=workspace.slug,
+            accent=workspace.accent_color,
+            replyable=bool(reply_to),
+        )
+        return with_reply_to(message, reply_to)
     return render_digest(kept, to=str(recipient.email), workspace_slug=workspace.slug, accent=workspace.accent_color)
+
+
+UNREPLYABLE_KINDS = frozenset(
+    {
+        "project_update",
+        "project_update_comment",
+        "project_update_due",
+        "initiative_update_due",
+        "document_comment",
+        "standup_digest",
+    }
+)
+"""Kinds whose email is not about one issue, so a reply to it has nowhere to post."""
+
+
+def replyable(entry: DigestEntry) -> bool:
+    """Whether one held notification is about a single issue a reply can comment on."""
+    return bool(entry.issue_id) and entry.kind not in UNREPLYABLE_KINDS
 
 
 def _send(message: EmailMessage | None) -> bool:
