@@ -1019,6 +1019,7 @@ class InitiativeCreate(TypedDict):
     parent_initiative_id: NotRequired[str | None]
     status: NotRequired[Literal["planned", "active", "completed"]]
     target_date: NotRequired[str | None]
+    target_date_resolution: NotRequired[Literal["day", "month", "quarter", "half", "year"] | None]
     update_interval_days: NotRequired[int | None]
 
 
@@ -1050,6 +1051,7 @@ class InitiativeUpdate(TypedDict):
     parent_initiative_id: NotRequired[str | None]
     status: NotRequired[Literal["planned", "active", "completed"] | None]
     target_date: NotRequired[str | None]
+    target_date_resolution: NotRequired[Literal["day", "month", "quarter", "half", "year"] | None]
     update_interval_days: NotRequired[int | None]
 
 
@@ -1667,9 +1669,11 @@ class ProjectCreate(TypedDict):
     name: str
     priority: NotRequired[Literal["none", "urgent", "high", "medium", "low"]]
     start_date: NotRequired[str | None]
+    start_date_resolution: NotRequired[Literal["day", "month", "quarter", "half", "year"] | None]
     status: NotRequired[Literal["backlog", "planned", "in_progress", "paused", "completed", "canceled"]]
     status_id: NotRequired[str | None]
     target_date: NotRequired[str | None]
+    target_date_resolution: NotRequired[Literal["day", "month", "quarter", "half", "year"] | None]
     team_id: NotRequired[str | None]
     team_ids: NotRequired[list[str] | None]
     template_id: NotRequired[str | None]
@@ -1853,9 +1857,11 @@ class ProjectUpdate(TypedDict):
     priority: NotRequired[Literal["none", "urgent", "high", "medium", "low"] | None]
     sort_order: NotRequired[str | None]
     start_date: NotRequired[str | None]
+    start_date_resolution: NotRequired[Literal["day", "month", "quarter", "half", "year"] | None]
     status: NotRequired[Literal["backlog", "planned", "in_progress", "paused", "completed", "canceled"] | None]
     status_id: NotRequired[str | None]
     target_date: NotRequired[str | None]
+    target_date_resolution: NotRequired[Literal["day", "month", "quarter", "half", "year"] | None]
     team_id: NotRequired[str | None]
     team_ids: NotRequired[list[str] | None]
     update_interval_days: NotRequired[int | None]
@@ -2181,9 +2187,11 @@ class RoadmapEntryRead(TypedDict):
     priority: NotRequired[str | None]
     progress: NotRequired[CountsRead]
     start_date: NotRequired[str | None]
+    start_date_resolution: NotRequired[Literal["day", "month", "quarter", "half", "year"] | None]
     status: str
     status_id: NotRequired[str | None]
     target_date: NotRequired[str | None]
+    target_date_resolution: NotRequired[Literal["day", "month", "quarter", "half", "year"] | None]
     team_id: str
     team_ids: list[str]
 
@@ -2243,6 +2251,7 @@ class SearchInitiativeRead(TypedDict):
     owner_id: NotRequired[str | None]
     status: str
     target_date: NotRequired[str | None]
+    target_date_resolution: NotRequired[str | None]
     updated_at: str
 
 
@@ -2256,6 +2265,7 @@ class SearchProjectRead(TypedDict):
     status: str
     status_id: NotRequired[str]
     target_date: NotRequired[str | None]
+    target_date_resolution: NotRequired[str | None]
     team_ids: NotRequired[list[str]]
     updated_at: str
 
@@ -3905,6 +3915,7 @@ class InitiativeRead(TypedDict):
     status_counts: NotRequired[dict[str, int]]
     sub_initiative_ids: NotRequired[list[str]]
     target_date: NotRequired[str | None]
+    target_date_resolution: NotRequired[Literal["day", "month", "quarter", "half", "year"] | None]
     update_due_state: NotRequired[Literal["upcoming", "due", "overdue"] | None]
     update_interval_days: NotRequired[int]
     update_interval_inherited: NotRequired[bool]
@@ -4139,6 +4150,7 @@ class ProjectHistoryRead(TypedDict):
     recorded_since: NotRequired[str | None]
     start_date: NotRequired[str | None]
     target_date: NotRequired[str | None]
+    target_date_resolution: NotRequired[Literal["day", "month", "quarter", "half", "year"] | None]
     today: str
 
 
@@ -4185,10 +4197,12 @@ class ProjectRead(TypedDict):
     slug_id: NotRequired[str]
     sort_order: NotRequired[str | None]
     start_date: NotRequired[str | None]
+    start_date_resolution: NotRequired[Literal["day", "month", "quarter", "half", "year"] | None]
     status: Literal["backlog", "planned", "in_progress", "paused", "completed", "canceled"]
     status_counts: NotRequired[dict[str, int]]
     status_id: NotRequired[str]
     target_date: NotRequired[str | None]
+    target_date_resolution: NotRequired[Literal["day", "month", "quarter", "half", "year"] | None]
     team_id: str
     team_ids: list[str]
     update_due_state: NotRequired[Literal["upcoming", "due", "overdue"] | None]

@@ -35,6 +35,7 @@ from app.common.api.schemas.planning import (
     ProjectSortField,
     ProjectUpdate,
 )
+from app.common.date_resolution import read_resolution
 from app.common.planning_rules import load_readable_project
 from app.common.project_cadence import workspace_interval
 from app.common.project_link_writes import with_links
@@ -170,6 +171,7 @@ def read_project_history(
         project_id=project.project_id,
         start_date=history.days[0].date if history.days else None,
         target_date=project.target_date,
+        target_date_resolution=read_resolution(project.target_date, project.target_date_resolution),
         today=today,
         measure=project.measure,
         recorded_since=history.recorded_since,

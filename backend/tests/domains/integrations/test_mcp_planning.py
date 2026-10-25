@@ -919,3 +919,36 @@ def test_list_projects_filters_by_blocked_and_blocking(
     assert listed({"is_blocking": True}) == {planning["project_id"]}
     assert listed({"is_blocked": False, "is_blocking": False}) == set()
     assert "is_blocked" in refusal(tool(client, secret, "list_projects", {"is_blocked": "yes"}))
+
+
+def test_project_dates_round_trip_their_resolution(
+    client: TestClient, repositories: Any, planning: dict[str, str]
+) -> None:
+    """create_project and update_project take a resolution beside each date and answer it with a label."""
+    secret = mint_for(repositories, MEMBER, PROJECTS)
+
+    created = answer(
+        tool(
+            client,
+            secret,
+            "create_project",
+            {
+                "team_ids": [TEAM],
+                "name": "Roadmap",
+                "start_date": "2026-11-20",
+                "start_date_resolution": "month",
+                "target_date": "2027-02-01",
+                "target_date_resolution": "half",
+            },
+        )
+    )
+    updated = answer(
+        tool(client, secret, "update_project", {"project_id": created["project_id"], "target_date": "2027-03-03"})
+    )
+    fetched = answer(tool(client, secret, "get_project", {"project_id": created["project_id"]}))
+
+    assert (created["start_date"], created["start_date_label"]) == ("2026-11-01", "Nov 2026")
+    assert (created["target_date"], created["target_date_resolution"]) == ("2027-06-30", "half")
+    assert created["target_date_label"] == "H1 2027"
+    assert (updated["target_date"], updated["target_date_resolution"]) == ("2027-03-03", "day")
+    assert fetched["start_date_resolution"] == "month"

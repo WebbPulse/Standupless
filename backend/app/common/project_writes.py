@@ -34,6 +34,7 @@ from app.common.customer_index import (
     load_customer_index,
     require_customer_list_reader,
 )
+from app.common.date_resolution import settle_date_fields, stored_resolution
 from app.common.db.dynamo.base import utc_now
 from app.common.db.dynamo.issues import Issue
 from app.common.db.dynamo.planning import Project, new_planning_id, normalise_project_status, project_key
@@ -344,6 +345,8 @@ def create_project(repositories: Repositories, context: AuthzContext, payload: P
         lead_id=payload.lead_id,
         start_date=payload.start_date,
         target_date=payload.target_date,
+        start_date_resolution=stored_resolution(payload.start_date_resolution),
+        target_date_resolution=stored_resolution(payload.target_date_resolution),
         status=category,
         status_id=status_id,
         icon=payload.icon,
@@ -515,6 +518,13 @@ def update_project(
     )
     if chosen is not None:
         fields["status"], fields["status_id"] = chosen
+    for date_name, edge, current in (
+        ("start_date", "start", existing.start_date),
+        ("target_date", "end", existing.target_date),
+    ):
+        refusal = settle_date_fields(fields, date_name, f"{date_name}_resolution", edge, current)
+        if refusal is not None:
+            raise unprocessable(refusal)
 
     now = utc_now()
     updated = existing.model_copy(update={**fields, "updated_at": now})

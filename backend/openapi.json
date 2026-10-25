@@ -7157,6 +7157,25 @@
             ],
             "title": "Target Date"
           },
+          "target_date_resolution": {
+            "anyOf": [
+              {
+                "enum": [
+                  "day",
+                  "month",
+                  "quarter",
+                  "half",
+                  "year"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "How wide the target date is: an exact day, or the month, quarter, half or year it closes",
+            "title": "Target Date Resolution"
+          },
           "update_interval_days": {
             "anyOf": [
               {
@@ -7453,6 +7472,25 @@
             ],
             "title": "Target Date"
           },
+          "target_date_resolution": {
+            "anyOf": [
+              {
+                "enum": [
+                  "day",
+                  "month",
+                  "quarter",
+                  "half",
+                  "year"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "How wide the target date is, null without one; a coarse target is its period's last day",
+            "title": "Target Date Resolution"
+          },
           "update_due_state": {
             "anyOf": [
               {
@@ -7614,6 +7652,25 @@
               }
             ],
             "title": "Target Date"
+          },
+          "target_date_resolution": {
+            "anyOf": [
+              {
+                "enum": [
+                  "day",
+                  "month",
+                  "quarter",
+                  "half",
+                  "year"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "How wide the target date is: an exact day, or the month, quarter, half or year it closes; set alone it widens the stored date",
+            "title": "Target Date Resolution"
           },
           "update_interval_days": {
             "anyOf": [
@@ -12666,6 +12723,25 @@
             ],
             "title": "Start Date"
           },
+          "start_date_resolution": {
+            "anyOf": [
+              {
+                "enum": [
+                  "day",
+                  "month",
+                  "quarter",
+                  "half",
+                  "year"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "How wide the start date is: an exact day, or the month, quarter, half or year it opens",
+            "title": "Start Date Resolution"
+          },
           "status": {
             "default": "backlog",
             "description": "The status category; alone it lands on the category's default status",
@@ -12703,6 +12779,25 @@
               }
             ],
             "title": "Target Date"
+          },
+          "target_date_resolution": {
+            "anyOf": [
+              {
+                "enum": [
+                  "day",
+                  "month",
+                  "quarter",
+                  "half",
+                  "year"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "How wide the target date is: an exact day, or the month, quarter, half or year it closes",
+            "title": "Target Date Resolution"
           },
           "team_id": {
             "anyOf": [
@@ -12825,6 +12920,25 @@
               }
             ],
             "title": "Target Date"
+          },
+          "target_date_resolution": {
+            "anyOf": [
+              {
+                "enum": [
+                  "day",
+                  "month",
+                  "quarter",
+                  "half",
+                  "year"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "How wide the target date is, null without one",
+            "title": "Target Date Resolution"
           },
           "today": {
             "title": "Today",
@@ -13615,6 +13729,25 @@
             ],
             "title": "Start Date"
           },
+          "start_date_resolution": {
+            "anyOf": [
+              {
+                "enum": [
+                  "day",
+                  "month",
+                  "quarter",
+                  "half",
+                  "year"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "How wide the start date is, null without one; a coarse start is its period's first day",
+            "title": "Start Date Resolution"
+          },
           "status": {
             "description": "The category of the project's status, which every rule reads",
             "enum": [
@@ -13652,6 +13785,25 @@
               }
             ],
             "title": "Target Date"
+          },
+          "target_date_resolution": {
+            "anyOf": [
+              {
+                "enum": [
+                  "day",
+                  "month",
+                  "quarter",
+                  "half",
+                  "year"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "How wide the target date is, null without one; a coarse target is its period's last day",
+            "title": "Target Date Resolution"
           },
           "team_id": {
             "title": "Team Id",
@@ -14377,6 +14529,25 @@
             ],
             "title": "Start Date"
           },
+          "start_date_resolution": {
+            "anyOf": [
+              {
+                "enum": [
+                  "day",
+                  "month",
+                  "quarter",
+                  "half",
+                  "year"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "How wide the start date is: an exact day, or the month, quarter, half or year it opens; set alone it widens the stored date",
+            "title": "Start Date Resolution"
+          },
           "status": {
             "anyOf": [
               {
@@ -14420,6 +14591,25 @@
               }
             ],
             "title": "Target Date"
+          },
+          "target_date_resolution": {
+            "anyOf": [
+              {
+                "enum": [
+                  "day",
+                  "month",
+                  "quarter",
+                  "half",
+                  "year"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "How wide the target date is: an exact day, or the month, quarter, half or year it closes; set alone it widens the stored date",
+            "title": "Target Date Resolution"
           },
           "team_id": {
             "anyOf": [
@@ -17416,6 +17606,25 @@
             ],
             "title": "Start Date"
           },
+          "start_date_resolution": {
+            "anyOf": [
+              {
+                "enum": [
+                  "day",
+                  "month",
+                  "quarter",
+                  "half",
+                  "year"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "How wide a project's start date is; a cycle's start is always a day",
+            "title": "Start Date Resolution"
+          },
           "status": {
             "title": "Status",
             "type": "string"
@@ -17442,6 +17651,25 @@
               }
             ],
             "title": "Target Date"
+          },
+          "target_date_resolution": {
+            "anyOf": [
+              {
+                "enum": [
+                  "day",
+                  "month",
+                  "quarter",
+                  "half",
+                  "year"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "How wide a project's target date is; a cycle's end is always a day",
+            "title": "Target Date Resolution"
           },
           "team_id": {
             "title": "Team Id",
@@ -17789,6 +18017,18 @@
             ],
             "title": "Target Date"
           },
+          "target_date_resolution": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "How wide the target date is: day, month, quarter, half or year",
+            "title": "Target Date Resolution"
+          },
           "updated_at": {
             "format": "date-time",
             "title": "Updated At",
@@ -17879,6 +18119,18 @@
               }
             ],
             "title": "Target Date"
+          },
+          "target_date_resolution": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "How wide the target date is: day, month, quarter, half or year",
+            "title": "Target Date Resolution"
           },
           "team_ids": {
             "items": {

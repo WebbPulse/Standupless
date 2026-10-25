@@ -52,6 +52,7 @@ from app.common.api.dependencies.authz import ActorKind, AuthzContext, Capabilit
 from app.common.api.dependencies.repositories import Repositories, get_repositories
 from app.common.api.dependencies.scopes import PROJECTS_READ
 from app.common.api.schemas.documents import DocumentSummaryRead
+from app.common.date_resolution import read_resolution
 from app.common.db.dynamo.issues import Issue
 from app.common.db.dynamo.search_index import (
     DOCUMENT_COMMENTS,
@@ -390,6 +391,7 @@ def _project_hits(
                     lead_id=project.lead_id,
                     team_ids=shown,
                     target_date=project.target_date,
+                    target_date_resolution=read_resolution(project.target_date, project.target_date_resolution),
                     updated_at=project.updated_at,
                 ),
                 _name_first(project.name, query),
@@ -418,6 +420,7 @@ def _initiative_hits(
                 health=initiative.health,
                 owner_id=initiative.owner_id,
                 target_date=initiative.target_date,
+                target_date_resolution=read_resolution(initiative.target_date, initiative.target_date_resolution),
                 updated_at=initiative.updated_at,
             ),
             _name_first(initiative.name, query),

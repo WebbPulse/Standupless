@@ -1766,3 +1766,22 @@ def test_workspace_export_reports_a_failed_export(
     result = invoke(runner, "workspace", "export", "--id", "ex-1")
     assert result.exit_code == 1
     assert "failed" in result.output
+
+
+@pytest.mark.parametrize(
+    ("value", "resolution", "label"),
+    [
+        ("2026-11-15", None, "2026-11-15"),
+        ("2026-11-15", "day", "2026-11-15"),
+        ("2026-11-30", "month", "Nov 2026"),
+        ("2027-03-31", "quarter", "Q1 2027"),
+        ("2027-12-31", "half", "H2 2027"),
+        ("2027-12-31", "year", "2027"),
+        (None, "year", ""),
+    ],
+)
+def test_a_planning_date_shows_at_its_resolution(value: str | None, resolution: str | None, label: str) -> None:
+    """A coarse target reads as its period, the way the web app shows it."""
+    from standupless_cli.main import _date_label
+
+    assert _date_label(value, resolution) == label

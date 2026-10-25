@@ -46,6 +46,7 @@ from webbpulse.dynamodb import ConditionFailed
 from app.common.core.config import settings
 from app.common.core.constants import ISSUE_BODY_MAX_BYTES
 from app.common.csv_import import RowProblem, parse_datetime
+from app.common.date_resolution import DateEdge, DateResolution, snap
 from app.common.db.dynamo.base import utc_now
 from app.common.linear_api import (
     CYCLES_QUERY,
@@ -324,6 +325,28 @@ def _date(value: Any) -> Optional[str]:
     if re.match(r"^\d{4}-\d{2}-\d{2}", text):
         return text[:10]
     return None
+
+
+LINEAR_RESOLUTIONS: dict[str, DateResolution] = {
+    "month": "month",
+    "quarter": "quarter",
+    "halfYear": "half",
+    "year": "year",
+}
+"""Linear's date resolutions under the names Standupless stores them by."""
+
+
+def _coarse_date(node: dict[str, Any], date_field: str, resolution_field: str, edge: DateEdge) -> dict[str, Any]:
+    """One Linear project date and its resolution as row fields, the date moved to its period's edge."""
+    value = _date(node.get(date_field))
+    name = "start_date" if edge == "start" else "target_date"
+    resolution = LINEAR_RESOLUTIONS.get(str(node.get(resolution_field) or "")) if value else None
+    if value and resolution:
+        try:
+            value = snap(value, resolution, edge)
+        except ValueError:
+            resolution = None
+    return {name: value, f"{name}_resolution": resolution}
 
 
 def _ref(value: Any) -> Optional[dict[str, Any]]:
@@ -655,8 +678,8 @@ def _write_project(
         "name": str(node.get("name") or "Untitled project").strip()[:120] or "Untitled project",
         "description": description,
         "lead_id": lead,
-        "start_date": _date(node.get("startDate")),
-        "target_date": _date(node.get("targetDate")),
+        **_coarse_date(node, "startDate", "startDateResolution", "start"),
+        **_coarse_date(node, "targetDate", "targetDateResolution", "end"),
         "status": status,
         "priority": _priority(node.get("priority")),
         "health": _health(node.get("health")) or (_health(newest.get("health")) if newest else None),
