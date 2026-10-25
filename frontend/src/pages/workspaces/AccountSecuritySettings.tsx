@@ -14,6 +14,7 @@ import ConnectedAccountsPanel from '../../components/auth/ConnectedAccountsPanel
 import PasskeyPanel from '../../components/auth/PasskeyPanel';
 import TwoFactorPanel from '../../components/auth/TwoFactorPanel';
 import SettingsNav from '../../components/workspace/SettingsNav';
+import { SettingsAnchor } from '../../components/workspace/SettingsSearch';
 import WorkspaceShell from '../../components/workspace/WorkspaceShell';
 import { useWorkspace } from '../../hooks/useWorkspace';
 
@@ -30,14 +31,26 @@ const AccountSecuritySettings: React.FC = () => {
     >
       {workspace !== null && (
         <div className="max-w-2xl space-y-8">
-          <EmailSection />
-          <SessionsSection
-            connectedAppsHref={`/w/${workspace.slug}/settings/connected-apps`}
-          />
-          <PasskeyPanel />
-          <TwoFactorPanel />
-          <ConnectedAccountsPanel />
-          <ApiKeysSection workspace={workspace} />
+          <SettingsAnchor id="email">
+            <EmailSection />
+          </SettingsAnchor>
+          <SettingsAnchor id="sessions">
+            <SessionsSection
+              connectedAppsHref={`/w/${workspace.slug}/settings/connected-apps`}
+            />
+          </SettingsAnchor>
+          <SettingsAnchor id="passkeys">
+            <PasskeyPanel />
+          </SettingsAnchor>
+          <SettingsAnchor id="two-factor">
+            <TwoFactorPanel />
+          </SettingsAnchor>
+          <SettingsAnchor id="connected-accounts">
+            <ConnectedAccountsPanel />
+          </SettingsAnchor>
+          <SettingsAnchor id="api-keys">
+            <ApiKeysSection workspace={workspace} />
+          </SettingsAnchor>
           <AccountDeletionPanel />
         </div>
       )}

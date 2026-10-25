@@ -93,3 +93,21 @@ describe('matchesTerm', () => {
     expect(matchesTerm(['Notification settings'], 'notif')).toBe(true);
   });
 });
+
+describe('the settings index behind the palette', () => {
+  it('finds the team cycle settings by a control they hold', () => {
+    const rows = teamSettingsDestinations('mine', 'ENG').filter((row) =>
+      matchesTerm([row.label, row.keywords], 'cooldown')
+    );
+
+    expect(rows.map((row) => row.id)).toEqual(['cycles']);
+  });
+
+  it('finds a workspace page by a section it holds', () => {
+    const rows = settingsDestinations({ slug: 'mine', role: 'owner' }).filter(
+      (row) => matchesTerm([row.label, row.keywords], 'single sign-on')
+    );
+
+    expect(rows.map((row) => row.id)).toContain('security');
+  });
+});

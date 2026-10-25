@@ -9,8 +9,8 @@
  * deleting it. These are a route of
  * their own so a link to them survives being sent to someone else.
  *
- * The sections sit on one scrolling page with a list of anchors beside them
- * rather than a page each, because they are short and a team admin setting up
+ * The sections sit on one scrolling page with the settings search and a list
+ * of anchors beside them rather than a page each, because they are short and a team admin setting up
  * a new team walks through them in order.
  */
 
@@ -42,6 +42,7 @@ import TriageSection from '../../components/team/TriageSection';
 import { ErrorAlert } from '../../components/ui/alert';
 import EmptyState from '../../components/ui/empty-state';
 import Spinner from '../../components/ui/spinner';
+import SettingsSearch from '../../components/workspace/SettingsSearch';
 import WorkspaceShell from '../../components/workspace/WorkspaceShell';
 import TeamTabs from '../../components/workspace/TeamTabs';
 import TeamTitle from '../../components/workspace/TeamTitle';
@@ -192,30 +193,32 @@ const TeamSettings: React.FC = () => {
           message={errorMessage(error, 'Could not load this team.')}
         />
       )}
-      <div className="flex gap-10">
-        <nav
-          aria-label="Team settings sections"
-          className="sticky top-0 hidden w-40 shrink-0 self-start lg:block"
-        >
-          <p className="px-2 pb-1 text-2xs font-medium text-text-faint">
-            {team.name}
-          </p>
-          <ul className="space-y-px">
-            {sections.map((section) => (
-              <li key={section.id}>
-                <a
-                  href={`#team-settings-${section.id}`}
-                  onClick={(event) => {
-                    jumpTo(event, section.id);
-                  }}
-                  className="flex h-7 items-center rounded-sm px-2 text-sm text-text-muted transition-colors duration-100 hover:bg-raised/70 hover:text-text focus-visible:ring-1 focus-visible:ring-accent focus-visible:outline-none"
-                >
-                  {section.label}
-                </a>
-              </li>
-            ))}
-          </ul>
-        </nav>
+      <div className="flex flex-col gap-4 lg:flex-row lg:gap-10">
+        <div className="w-full shrink-0 space-y-3 self-start sm:w-52 lg:sticky lg:top-0 lg:w-40">
+          {workspace !== null && (
+            <SettingsSearch workspace={workspace} teams={[team]} />
+          )}
+          <nav aria-label="Team settings sections" className="hidden lg:block">
+            <p className="px-2 pb-1 text-2xs font-medium text-text-faint">
+              {team.name}
+            </p>
+            <ul className="space-y-px">
+              {sections.map((section) => (
+                <li key={section.id}>
+                  <a
+                    href={`#team-settings-${section.id}`}
+                    onClick={(event) => {
+                      jumpTo(event, section.id);
+                    }}
+                    className="flex h-7 items-center rounded-sm px-2 text-sm text-text-muted transition-colors duration-100 hover:bg-raised/70 hover:text-text focus-visible:ring-1 focus-visible:ring-accent focus-visible:outline-none"
+                  >
+                    {section.label}
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </nav>
+        </div>
 
         <div className="min-w-0 max-w-2xl flex-1 space-y-6">
           {frame(
