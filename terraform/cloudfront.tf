@@ -8,6 +8,9 @@
  * changes its hash, and the frontend CI build fails until this list matches:
  * frontend/cspHashes.ts hashes every inline script in the built documents.
  *
+ * frame-src allows only the player origins of the four video providers the
+ * editor embeds, matching VIDEO_EMBED_ORIGINS in frontend/src/lib/videoEmbeds.ts.
+ *
  * form-action allows GitHub because the GitHub App manifest flow posts the
  * signed manifest to github.com.
  *
@@ -23,6 +26,13 @@ locals {
   attachments_bucket_origins = [
     "https://${module.attachments_bucket.bucket_id}.s3.amazonaws.com",
     "https://${module.attachments_bucket.bucket_id}.s3.${var.aws_region}.amazonaws.com",
+  ]
+
+  video_embed_origins = [
+    "https://www.youtube-nocookie.com",
+    "https://www.loom.com",
+    "https://player.vimeo.com",
+    "https://share.descript.com",
   ]
 
   frontend_inline_script_hashes = [
@@ -65,6 +75,7 @@ module "frontend" {
       connect_src = concat([local.api_origin], local.attachments_bucket_origins)
       img_src     = concat(["blob:", "https://avatars.githubusercontent.com"], local.attachments_bucket_origins)
       media_src   = concat(["blob:"], local.attachments_bucket_origins)
+      frame_src   = local.video_embed_origins
       form_action = ["https://github.com"]
     }
   }

@@ -9,11 +9,14 @@
  *
  * Link targets are limited to http, https, mailto and an attachment's content
  * path, so a `javascript:` URL in a comment renders as text rather than as a
- * link. An embed loads only from https or a content path.
+ * link. An embed loads only from https or a content path. A YouTube, Loom,
+ * Vimeo or Descript link alone in its paragraph is a video embed, as the
+ * editor reads it.
  */
 
 import { calloutFromQuote, type CalloutKind } from './callouts';
 import { isContentPath, isEmbeddableSrc, isVideoSrc } from './media';
+import { videoEmbedOfLine, type VideoEmbed } from './videoEmbeds';
 
 /** One inline run. */
 export type InlineNode =
@@ -41,6 +44,7 @@ export type BlockNode =
   | { type: 'list'; ordered: boolean; start: number; items: ListItem[] }
   | { type: 'details'; summary: string; children: BlockNode[] }
   | { type: 'callout'; kind: CalloutKind; children: BlockNode[] }
+  | { type: 'embed'; embed: VideoEmbed }
   | { type: 'rule' };
 
 /** The schemes a link may point at. */
@@ -436,7 +440,15 @@ export const parseMarkdown = (source: string): BlockNode[] => {
       body.push(current);
       index += 1;
     }
-    blocks.push({ type: 'paragraph', children: parseInline(body.join('\n')) });
+    const embed =
+      body.length === 1 && isBlank(lines[index] ?? '')
+        ? videoEmbedOfLine(body[0] ?? '')
+        : null;
+    blocks.push(
+      embed === null
+        ? { type: 'paragraph', children: parseInline(body.join('\n')) }
+        : { type: 'embed', embed }
+    );
   }
 
   return blocks;

@@ -21,9 +21,10 @@
  * issue's key in its place.
  *
  * Changes commit when focus leaves the surface or on Ctrl or Cmd Enter, and
- * Escape puts back the last committed text. Text input made only of control
- * characters is dropped, so a stray carriage return trailing Ctrl or Cmd
- * Enter never lands in the document. Committing on each pause would
+ * Escape puts back the last committed text, except right after a video link
+ * was pasted as an embed, when it keeps the link instead. Text input made
+ * only of control characters is dropped, so a stray carriage return trailing
+ * Ctrl or Cmd Enter never lands in the document. Committing on each pause would
  * record a history row per pause, since every write of a body is an activity
  * entry, so the commit waits for the person to be done.
  *
@@ -76,6 +77,7 @@ import { toggleChecklistItem } from './editorShortcuts';
 import { formattingToolbarKey, type FormatContext } from './formatting';
 import { FormattingToolbar } from './FormattingToolbar';
 import { markdownExtensions, referenceChipsKey } from './markdownExtensions';
+import { keepPastedVideoAsLink } from './videoEmbed';
 import { useDelegatedIssueHoverCard } from '../ui/IssueHoverCard';
 import { readMarkdown, writeMarkdown } from './markdownCodec';
 import {
@@ -490,6 +492,7 @@ export const RichMarkdownEditor: React.FC<RichMarkdownEditorProps> = ({
           if (event.key === 'Escape') {
             event.preventDefault();
             event.stopPropagation();
+            if (keepPastedVideoAsLink(editorRef.current)) return true;
             const cancel = handlers.current.onCancel;
             if (cancel !== undefined) {
               cancel();

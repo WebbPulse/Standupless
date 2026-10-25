@@ -10,6 +10,7 @@
  * A collapsible section is a native `<details>`, closed until it is opened,
  * so it toggles from the keyboard as well as the caret. A GitHub alert such
  * as `> [!NOTE]` is a callout in its kind's tone, as the editor draws it.
+ * A YouTube, Loom, Vimeo or Descript link alone in its paragraph plays inline.
  */
 
 import React, { useMemo } from 'react';
@@ -25,6 +26,7 @@ import {
   type InlineNode,
 } from '../../lib/markdown';
 import { AttachmentLink, MediaEmbed } from '../media/MediaEmbed';
+import { VideoEmbedFrame } from '../media/VideoEmbedFrame';
 import { EmojiText } from './custom-emoji';
 import HighlightedCode from './highlighted-code';
 import MermaidBlock from './mermaid-block';
@@ -202,6 +204,8 @@ const renderBlock = (block: BlockNode, key: string): React.ReactNode => {
       );
     case 'rule':
       return <hr key={key} className="border-line" />;
+    case 'embed':
+      return <VideoEmbedFrame key={key} embed={block.embed} />;
     case 'details':
       return (
         <details key={key} className="group">
