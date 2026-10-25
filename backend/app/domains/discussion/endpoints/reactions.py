@@ -72,6 +72,11 @@ def _resolve_target(
     return issue.team_id
 
 
+def _issue_of(target_id: str, target_kind: str, issue_id: str | None) -> str:
+    """The issue a resolved issue or issue comment target belongs to, carried on the row for the notify consumer."""
+    return target_id if target_kind == "issue" else issue_id or ""
+
+
 @router.get("/{workspace_id}/reactions", response_model=ReactionListRead)
 def list_reactions(
     target_id: Annotated[str, Query(min_length=1)],
@@ -121,7 +126,7 @@ def add_reaction(
             team_id or NO_TEAM,
             payload.emoji,
             context.user_id,
-            issue_id=issue.issue_id,
+            issue_id="" if team_id is None else _issue_of(payload.target_id, payload.target_kind, payload.issue_id),
         )
     )
 
