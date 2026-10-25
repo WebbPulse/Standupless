@@ -18,6 +18,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 from webbpulse.http import cursor_page
 
 from app.common.api.schemas.teams import COLOR_PATTERN
+from app.common.body_versions import body_version
 from app.common.change_source import ChangeSource
 from app.common.date_resolution import DateEdge, DateResolution, read_resolution, snap
 from app.common.db.dynamo.planning import (
@@ -739,12 +740,23 @@ class ProjectUpdate(BaseModel):
     patch leaves completed or canceled; without it they stay where they are.
     `sort_order` is the project's manual position, a base 62 fractional key
     shared by every viewer, so a drag rewrites only the project moved.
+    `base_body_version` is the description's `body_version` the editor loaded.
+    Sent with a new `description`, the patch is a `BODY_CHANGED` 409 carrying the
+    current description and its version when someone else changed it since.
+    Left out, or sent with a patch that leaves the description alone, it holds
+    nothing back.
     """
 
     team_id: Optional[str] = Field(default=None, min_length=1)
     team_ids: Optional[list[str]] = Field(default=None, min_length=1, max_length=TEAMS_MAX)
     name: Optional[str] = Field(default=None, min_length=1, max_length=NAME_MAX)
     description: Optional[str] = None
+    base_body_version: Optional[str] = Field(
+        default=None,
+        min_length=1,
+        max_length=64,
+        description="The body_version the description edit started from; a stale one is a 409.",
+    )
     lead_id: Optional[str] = Field(default=None, min_length=1)
     start_date: Optional[str] = None
     target_date: Optional[str] = None
@@ -1019,6 +1031,9 @@ class ProjectRead(BaseModel):
     team_ids: list[str]
     name: str
     description: Optional[str] = None
+    body_version: str = Field(
+        default="", description="The description's version, sent back as base_body_version when editing it."
+    )
     lead_id: Optional[str] = None
     start_date: Optional[str] = None
     target_date: Optional[str] = None
@@ -1128,6 +1143,7 @@ class ProjectRead(BaseModel):
             team_ids=teams,
             name=project.name,
             description=project.description,
+            body_version=body_version(project.description),
             lead_id=project.lead_id,
             start_date=project.start_date,
             target_date=project.target_date,

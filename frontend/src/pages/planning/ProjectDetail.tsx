@@ -62,6 +62,7 @@ import CustomerRequestsSection from '../../components/customers/CustomerRequests
 import DocumentsSection from '../../components/planning/DocumentsSection';
 import MilestonesSection from '../../components/planning/MilestonesSection';
 import ProjectIcon from '../../components/planning/ProjectIcon';
+import ProjectOverviewEditor from '../../components/planning/ProjectOverviewEditor';
 import ProjectIssuesView, {
   PROJECT_VIEW_BASE,
 } from '../../components/planning/ProjectIssuesView';
@@ -984,23 +985,20 @@ export const ProjectDetail: React.FC = () => {
                     )}
                   </div>
                 )}
-                <EditableText
-                  multiline
-                  label="Description"
-                  placeholder={
-                    canEdit
-                      ? 'Add a description, the goal and what done looks like...'
-                      : 'No description.'
-                  }
-                  value={project.description ?? ''}
-                  disabled={!canEdit}
-                  className="text-sm leading-relaxed text-text-muted"
-                  onSave={(description) => {
-                    void update({
-                      description: description === '' ? null : description,
-                    });
-                  }}
-                />
+                <DocumentLinkContext.Provider
+                  value={{ kind: 'project', id: projectId }}
+                >
+                  <ProjectOverviewEditor
+                    workspaceId={workspaceId}
+                    project={project}
+                    canEdit={canEdit}
+                    people={people}
+                    onSaved={() => {
+                      invalidateQueries(detailKey);
+                      invalidateQueries(listKey);
+                    }}
+                  />
+                </DocumentLinkContext.Provider>
               </div>
               <MilestonesSection
                 milestones={milestones.milestones}

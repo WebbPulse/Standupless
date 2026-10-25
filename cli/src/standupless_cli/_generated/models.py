@@ -2113,6 +2113,7 @@ class ProjectTemplateFields(TypedDict):
 
 
 class ProjectUpdate(TypedDict):
+    base_body_version: NotRequired[str | None]
     color: NotRequired[str | None]
     description: NotRequired[str | None]
     health: NotRequired[Literal["on_track", "at_risk", "off_track"] | None]
@@ -4856,6 +4857,7 @@ class ProjectRead(TypedDict):
     archived_at: NotRequired[str | None]
     blocked_by_project_ids: NotRequired[list[str]]
     blocking_project_ids: NotRequired[list[str]]
+    body_version: NotRequired[str]
     color: NotRequired[str | None]
     completed_at: NotRequired[str | None]
     counts: CountsRead

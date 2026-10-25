@@ -16333,6 +16333,12 @@
             "title": "Blocking Project Ids",
             "type": "array"
           },
+          "body_version": {
+            "default": "",
+            "description": "The description's version, sent back as base_body_version when editing it.",
+            "title": "Body Version",
+            "type": "string"
+          },
           "color": {
             "anyOf": [
               {
@@ -17259,8 +17265,22 @@
         "type": "object"
       },
       "ProjectUpdate": {
-        "description": "The body a project patch takes.\n\n`team_ids` replaces the teams the caller can see; teams the caller cannot see\nare kept as they are, so a guest's edit never drops a team it was never\nshown. `team_id` is the single-team spelling an older client sends; it moves\nnothing and must name one of the project's teams, or the patch is a 404.\nA null `update_interval_days` returns the project to the workspace's cadence,\nand a null `initiative_id` takes the project out of its initiative.\n`open_issues` says what happens to the issues still open in a project the\npatch leaves completed or canceled; without it they stay where they are.\n`sort_order` is the project's manual position, a base 62 fractional key\nshared by every viewer, so a drag rewrites only the project moved.",
+        "description": "The body a project patch takes.\n\n`team_ids` replaces the teams the caller can see; teams the caller cannot see\nare kept as they are, so a guest's edit never drops a team it was never\nshown. `team_id` is the single-team spelling an older client sends; it moves\nnothing and must name one of the project's teams, or the patch is a 404.\nA null `update_interval_days` returns the project to the workspace's cadence,\nand a null `initiative_id` takes the project out of its initiative.\n`open_issues` says what happens to the issues still open in a project the\npatch leaves completed or canceled; without it they stay where they are.\n`sort_order` is the project's manual position, a base 62 fractional key\nshared by every viewer, so a drag rewrites only the project moved.\n`base_body_version` is the description's `body_version` the editor loaded.\nSent with a new `description`, the patch is a `BODY_CHANGED` 409 carrying the\ncurrent description and its version when someone else changed it since.\nLeft out, or sent with a patch that leaves the description alone, it holds\nnothing back.",
         "properties": {
+          "base_body_version": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The body_version the description edit started from; a stale one is a 409.",
+            "title": "Base Body Version"
+          },
           "color": {
             "anyOf": [
               {

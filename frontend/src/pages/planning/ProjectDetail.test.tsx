@@ -1054,6 +1054,107 @@ describe('ProjectDetail', () => {
     );
   });
 
+  describe('overview', () => {
+    /** The overview surface once the lazy editor has arrived. */
+    const findOverview = (): Promise<HTMLElement> =>
+      screen.findByRole(
+        'textbox',
+        { name: 'Description' },
+        { timeout: 10_000 }
+      );
+
+    it('edits a plain text description in the rich editor with block grips, saving nothing unchanged', async () => {
+      getProject.mockResolvedValue({
+        ...launch,
+        description: 'Getting it out\n\nThen tidying up',
+        body_version: 'v1',
+      });
+      renderPage();
+
+      const surface = await findOverview();
+      expect(surface).toHaveTextContent('Getting it out');
+      expect(surface).toHaveTextContent('Then tidying up');
+      expect(surface.closest('[data-block-handles]')).not.toBeNull();
+      act(() => {
+        surface.focus();
+        surface.blur();
+      });
+
+      expect(updateProject).not.toHaveBeenCalled();
+    });
+
+    it('saves an edit against the version it read', async () => {
+      getProject.mockResolvedValue({ ...launch, body_version: 'v1' });
+      updateProject.mockResolvedValue({
+        ...launch,
+        description: 'Ship it',
+        body_version: 'v2',
+      });
+      renderPage();
+
+      typeInto(await findOverview(), 'Ship it');
+
+      await waitFor(
+        () => {
+          expect(updateProject).toHaveBeenCalledWith({
+            description: 'Ship it',
+            base_body_version: 'v1',
+          });
+        },
+        { timeout: 5_000 }
+      );
+      expect(updateProject).toHaveBeenCalledTimes(1);
+    });
+
+    it('offers the conflict choices when someone else saved first, and keeps mine on request', async () => {
+      const user = userEvent.setup();
+      getProject.mockResolvedValue({ ...launch, body_version: 'v1' });
+      updateProject
+        .mockRejectedValueOnce(
+          new ApiError({
+            status: 409,
+            statusText: 'Conflict',
+            body: {
+              error_code: 'BODY_CHANGED',
+              message: 'Someone else edited this since you opened it',
+              details: { body: 'Theirs', body_version: 'v9' },
+            },
+            url: '/api/workspaces/ws-1/projects/prj-1',
+            method: 'PATCH',
+          })
+        )
+        .mockResolvedValue({
+          ...launch,
+          description: 'Mine',
+          body_version: 'v10',
+        });
+      renderPage();
+
+      typeInto(await findOverview(), 'Mine');
+
+      expect(
+        await screen.findByText(
+          'Someone else edited this. Your changes are not saved yet.',
+          undefined,
+          { timeout: 5_000 }
+        )
+      ).toBeInTheDocument();
+      await user.click(screen.getByRole('button', { name: 'Keep mine' }));
+
+      await waitFor(() => {
+        expect(updateProject).toHaveBeenLastCalledWith({
+          description: 'Mine',
+          base_body_version: 'v9',
+        });
+      });
+      expect(
+        screen.queryByText(
+          'Someone else edited this. Your changes are not saved yet.'
+        )
+      ).not.toBeInTheDocument();
+    });
+  });
+
   describe('keyboard', () => {
     /** Renders the page inside a shortcut registry, as the workspace shell does. */
     const renderWithKeys = (entry = '/w/mine/projects/prj-1') =>
@@ -1097,9 +1198,11 @@ describe('ProjectDetail', () => {
       const name = await screen.findByRole('textbox', {
         name: 'Project name',
       });
-      const description = screen.getByRole('textbox', {
-        name: 'Description',
-      });
+      const description = await screen.findByRole(
+        'textbox',
+        { name: 'Description' },
+        { timeout: 10_000 }
+      );
       await keysBound('r');
 
       await user.click(description);
