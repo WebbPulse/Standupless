@@ -191,6 +191,7 @@ import {
 } from '../../lib/searchTerms';
 import { readRecentIssues, type RecentIssue } from '../../lib/recentIssues';
 import { teamTree } from '../../lib/teamOrder';
+import { activeTeams } from '../../lib/teamRetirement';
 import { TRIAGE_STATUS } from '../../lib/triageStatus';
 import { teamScopePath } from '../../lib/teamIssueScope';
 import type { Theme } from '../../lib/theme';
@@ -223,7 +224,7 @@ export interface CommandPaletteProps {
   onClose: () => void;
   /** The workspace every route and read is built from. */
   workspace: Pick<WorkspaceRead, 'id' | 'slug' | 'role'>;
-  /** The teams the caller can see. */
+  /** The teams the caller can see; retired ones are left out of every list. */
   teams?: readonly TeamRead[];
   /** Opens the keyboard shortcut overlay. */
   onShowShortcuts?: () => void;
@@ -408,7 +409,7 @@ const switchTeamPath = (
 const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
   onClose,
   workspace,
-  teams = [],
+  teams: visibleTeams = [],
   onShowShortcuts,
   picker = null,
   currentUserId,
@@ -418,6 +419,7 @@ const PaletteBody: React.FC<Omit<CommandPaletteProps, 'open'>> = ({
   const navigate = useNavigate();
   const location = useLocation();
   const auth = useQueryAuth();
+  const teams = useMemo(() => activeTeams(visibleTeams), [visibleTeams]);
   const createIssue = useCreateIssue();
   const createTeam = useCreateTeam();
   const createPlanning = useCreatePlanning();

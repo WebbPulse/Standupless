@@ -165,6 +165,8 @@ class TeamRead(BaseModel):
     """One team as the API returns it, carrying the caller's team role.
 
     `parent_team_id` names the team this one sits under, `null` for a top-level team.
+    `retired_at` is set while the team is retired and read-only, with `retired_by`
+    naming who retired it.
     """
 
     id: str
@@ -186,6 +188,8 @@ class TeamRead(BaseModel):
     is_member: bool = False
     retired_key_prefixes: list[str] = Field(default_factory=list)
     parent_team_id: Optional[str] = None
+    retired_at: Optional[datetime] = None
+    retired_by: Optional[str] = None
 
     @classmethod
     def from_row(
@@ -224,6 +228,8 @@ class TeamRead(BaseModel):
             is_member=is_member,
             retired_key_prefixes=retired_key_prefixes or [],
             parent_team_id=team.parent_team_id,
+            retired_at=team.retired_at,
+            retired_by=team.retired_by,
         )
 
 

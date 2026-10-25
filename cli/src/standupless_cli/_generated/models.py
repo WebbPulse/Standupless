@@ -2820,6 +2820,8 @@ class TeamRead(TypedDict):
     name: str
     parent_team_id: NotRequired[str | None]
     private: NotRequired[bool]
+    retired_at: NotRequired[str | None]
+    retired_by: NotRequired[str | None]
     retired_key_prefixes: NotRequired[list[str]]
     role: NotRequired[Literal["admin", "member"] | None]
     sync_pr_labels: NotRequired[bool]

@@ -8,9 +8,13 @@
  * no join or leave here: adding or removing a team member needs a team admin,
  * and a workspace owner, admin or member already holds an implied role on
  * every team, so there is nothing for a person to join or leave on their own.
+ *
+ * Retired teams leave the main table for a list of their own below it, where a
+ * team admin can un-retire one.
  */
 
-import React from 'react';
+import React, { useState } from 'react';
+import { invalidateQueries } from '@webbpulse/api-client/react';
 import { LuEllipsis, LuLock, LuPlus, LuUsersRound } from 'react-icons/lu';
 import { Link } from 'react-router-dom';
 import Avatar from '../../components/ui/avatar';
@@ -18,15 +22,20 @@ import Button, { IconButton } from '../../components/ui/button';
 import { ErrorAlert } from '../../components/ui/alert';
 import EmptyState from '../../components/ui/empty-state';
 import Menu, { MenuItem } from '../../components/ui/menu';
+import RelativeTime from '../../components/ui/relative-time';
 import { SkeletonRows } from '../../components/ui/skeleton';
 import SettingsNav from '../../components/workspace/SettingsNav';
 import WorkspaceShell from '../../components/workspace/WorkspaceShell';
 import { useCreateTeam } from '../../hooks/useCreateTeam';
 import { useTeam } from '../../hooks/useTeam';
 import { useWorkspace } from '../../hooks/useWorkspace';
-import { roleLabel } from '../../lib/capabilities';
+import { unretireTeam } from '../../api/teams';
+import { isTeamAdmin, roleLabel } from '../../lib/capabilities';
 import { errorMessage } from '../../lib/errors';
 import { teamPath, teamSettingsPath } from '../../lib/paths';
+import { teamsKey } from '../../lib/queryKeys';
+import { activeTeams, retiredTeams } from '../../lib/teamRetirement';
+import type { TeamRead, WorkspaceRead } from '../../types/Api';
 
 /** Copies an in-application path as a full link, ignoring a refused clipboard. */
 const copyLink = (path: string): void => {
@@ -35,10 +44,88 @@ const copyLink = (path: string): void => {
     .catch(() => undefined);
 };
 
+/** Props for RetiredTeams. */
+interface RetiredTeamsProps {
+  workspace: WorkspaceRead;
+  teams: TeamRead[];
+}
+
+/** The retired teams, each with when it was retired and an un-retire action for its admins. */
+const RetiredTeams: React.FC<RetiredTeamsProps> = ({ workspace, teams }) => {
+  const [busy, setBusy] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const restore = async (team: TeamRead): Promise<void> => {
+    setBusy(team.id);
+    setError(null);
+    try {
+      await unretireTeam(workspace.id, team.id);
+      invalidateQueries(teamsKey(workspace.id));
+    } catch (caught) {
+      setError(errorMessage(caught, `Could not un-retire ${team.name}.`));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  return (
+    <section aria-labelledby="retired-teams-heading" className="space-y-2 pt-4">
+      <div className="space-y-1">
+        <h2 id="retired-teams-heading" className="text-base font-semibold">
+          Retired teams
+        </h2>
+        <p className="text-sm text-text-muted">
+          A retired team keeps its issues, projects and cycles readable, but
+          nothing in it can change until it is un-retired.
+        </p>
+      </div>
+      {error !== null && <ErrorAlert message={error} />}
+      <ul className="divide-y divide-line rounded-md border border-line">
+        {teams.map((team) => (
+          <li
+            key={team.id}
+            className="flex items-center justify-between gap-3 px-3 py-2 text-sm"
+          >
+            <Link
+              to={teamSettingsPath(workspace.slug, team.key_prefix)}
+              className="flex min-w-0 items-center gap-2 text-text-muted hover:underline"
+            >
+              <span className="truncate font-medium">{team.name}</span>
+              <span className="font-mono text-xs">{team.key_prefix}</span>
+            </Link>
+            <div className="flex shrink-0 items-center gap-3">
+              {team.retired_at !== undefined && team.retired_at !== null && (
+                <span className="text-xs text-text-faint">
+                  Retired <RelativeTime value={team.retired_at} />
+                </span>
+              )}
+              {isTeamAdmin(workspace.role, team.role) && (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="secondary"
+                  disabled={busy !== null}
+                  onClick={() => {
+                    void restore(team);
+                  }}
+                >
+                  {busy === team.id ? 'Un-retiring' : `Un-retire ${team.name}`}
+                </Button>
+              )}
+            </div>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+};
+
 /** The list of teams with their keys, the caller's role and row actions. */
 const TeamsSettings: React.FC = () => {
   const { workspace } = useWorkspace();
-  const { teams, isLoading, error } = useTeam(undefined);
+  const { teams: allTeams, isLoading, error } = useTeam(undefined);
+  const teams = activeTeams(allTeams);
+  const retired = retiredTeams(allTeams);
   const createTeam = useCreateTeam();
   const slug = workspace?.slug ?? '';
 
@@ -172,6 +259,10 @@ const TeamsSettings: React.FC = () => {
               ))}
             </tbody>
           </table>
+        )}
+
+        {workspace !== null && retired.length > 0 && (
+          <RetiredTeams workspace={workspace} teams={retired} />
         )}
       </div>
     </WorkspaceShell>

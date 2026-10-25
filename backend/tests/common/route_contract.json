@@ -2052,6 +2052,12 @@
     "path": "/api/workspaces/{workspace_id}/teams/{team_id}/releases/{release_id}/stages"
   },
   {
+    "auth": "team:admin",
+    "domain": "teams",
+    "method": "POST",
+    "path": "/api/workspaces/{workspace_id}/teams/{team_id}/retire"
+  },
+  {
     "auth": "team:read",
     "domain": "teams",
     "method": "GET",
@@ -2146,6 +2152,12 @@
     "domain": "teams",
     "method": "PATCH",
     "path": "/api/workspaces/{workspace_id}/teams/{team_id}/triage-settings"
+  },
+  {
+    "auth": "team:admin",
+    "domain": "teams",
+    "method": "POST",
+    "path": "/api/workspaces/{workspace_id}/teams/{team_id}/unretire"
   },
   {
     "auth": "workspace:read",

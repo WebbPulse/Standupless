@@ -260,6 +260,14 @@ class StanduplessClient:
         """Change a team's settings, with team admin."""
         return cast(TeamRead, self._request("PATCH", f"/api/workspaces/{workspace_id}/teams/{team_id}", json=body))
 
+    def retire_team(self, workspace_id: str, team_id: str) -> TeamRead:
+        """Retire a team so it turns read-only and leaves the sidebar, with team admin."""
+        return cast(TeamRead, self._request("POST", f"/api/workspaces/{workspace_id}/teams/{team_id}/retire"))
+
+    def unretire_team(self, workspace_id: str, team_id: str) -> TeamRead:
+        """Un-retire a team so it takes changes again, with team admin."""
+        return cast(TeamRead, self._request("POST", f"/api/workspaces/{workspace_id}/teams/{team_id}/unretire"))
+
     def get_team_sync(self, workspace_id: str, team_id: str) -> TeamSyncRead | None:
         """The team's GitHub issue sync link, or `None` when it has none."""
         try:

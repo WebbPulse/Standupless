@@ -155,6 +155,7 @@ import {
 import { DraftParentPicker, type DraftParent } from './DraftParentPicker';
 import { IssueMilestonePicker } from './PlanningPickers';
 import { useTeams } from '../../hooks/useTeams';
+import { activeTeams } from '../../lib/teamRetirement';
 import { SimilarIssues, useSimilarIssues } from './SimilarIssues';
 import { teamTree } from '../../lib/teamOrder';
 import { TemplatePicker } from './TemplatePicker';
@@ -648,7 +649,7 @@ export const CreateIssueDialog: React.FC<CreateIssueDialogProps> = ({
   };
 
   const { data: teams } = useTeams();
-  const writable = (teams ?? []).filter((team) =>
+  const writable = activeTeams(teams ?? []).filter((team) =>
     canWriteIssues(workspace?.role, team.role)
   );
   const activeTeam = teams?.find((team) => team.id === activeTeamId);

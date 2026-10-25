@@ -26,6 +26,7 @@ from webbpulse.events import deserialize_image
 
 from app.common.db.dynamo.team_config import ArchiveTarget
 from app.common.sla import FINISHED_CATEGORIES
+from app.common.team_retirement import is_active
 
 _log = logging.getLogger(__name__)
 
@@ -80,7 +81,7 @@ def sweep(repositories: Any) -> SlaRepairSummary:
     ):
         if repositories.counters.swept(target.workspace_id, target.team_id, NAME, VERSION):
             continue
-        if repositories.teams.get(target.workspace_id, target.team_id) is None:
+        if not is_active(repositories.teams.get(target.workspace_id, target.team_id)):
             continue
         summary.teams += 1
         cleared, finished = repair_team(repositories, target)

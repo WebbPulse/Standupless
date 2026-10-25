@@ -13,6 +13,7 @@ import { LuUsers } from 'react-icons/lu';
 import { issueCount, moveIssues } from '../../lib/bulkIssueActions';
 import { useTeamsFor } from '../../hooks/useTeams';
 import { canWriteIssues } from '../../lib/capabilities';
+import { activeTeams } from '../../lib/teamRetirement';
 import type { IssueRead, TeamRead, WorkspaceRole } from '../../types/Api';
 import { Combobox, type ComboboxOption } from '../ui/combobox';
 import Dialog from '../ui/dialog';
@@ -37,12 +38,12 @@ export interface MoveIssueDialogProps {
   onMoved: (moved: IssueRead[]) => void;
 }
 
-/** The teams an issue may move to, which are the ones the caller writes in. */
+/** The teams an issue may move to: the active ones the caller writes in. */
 const moveTargets = (
   teams: TeamRead[],
   workspaceRole: WorkspaceRole | undefined
 ): TeamRead[] =>
-  teams
+  activeTeams(teams)
     .filter((team) => canWriteIssues(workspaceRole, team.role))
     .sort((left, right) => left.name.localeCompare(right.name));
 

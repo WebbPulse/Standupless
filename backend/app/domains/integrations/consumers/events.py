@@ -34,6 +34,7 @@ from app.common.db.dynamo.github import IssueLink, PullRequestState, link_key, s
 from app.common.issue_key_search import find_keys
 from app.common.issue_move import find_issue_by_number
 from app.common.sla import apply_sla
+from app.common.team_retirement import is_retired
 from app.domains.integrations import linking, pr_labels, pr_resync, pr_status
 from app.domains.integrations.pr_summary import refresh_for_pr
 from app.domains.integrations.service import effective_transitions
@@ -907,8 +908,15 @@ def _apply_transition(
     on staging leaves them there. A merge that holds its issue, because the pull
     request only said `Refs`, still takes a branch rule into a status that is not
     finished, so partial work merged into `staging` reaches On Staging, but it never
-    takes a rule for any branch or one that would finish the issue.
+    takes a rule for any branch or one that would finish the issue. An issue in a
+    retired team is never moved.
     """
+    if is_retired(repositories.teams.get(workspace_id, issue.team_id)):
+        _log.info(
+            "Skipped a transition because the issue's team is retired.",
+            extra={"event": "integrations.transition_team_retired"},
+        )
+        return None
     if not linking.may_apply(getattr(issue, "updated_at", None), event_at):
         _log.info(
             "Skipped a transition because the issue moved after the event.",

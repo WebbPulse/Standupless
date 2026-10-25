@@ -30,6 +30,7 @@ from app.common.plan_limits import PLAN_LIMIT_REACHED
 from app.common.planning_rules import visible_project_teams, visible_team_ids
 from app.common.sla import sla_status
 from app.common.team_refs import TEAM_NOT_FOUND_CODE, find_team, team_not_found_message
+from app.common.team_retirement import refuse_if_retired
 from app.domains.integrations.mcp.arguments import client_schema, with_alternatives
 from app.domains.integrations.mcp.transport import ToolError
 
@@ -239,19 +240,23 @@ def team_id_ref(call: ToolCall, value: Any) -> str:
     return team_ref(call, value).team_id
 
 
-def resolve_team_arguments(call: ToolCall, *, administer: bool = False) -> ToolCall:
+def resolve_team_arguments(call: ToolCall, *, administer: bool = False, writes: bool = False) -> ToolCall:
     """The call with every `team_id` and `team_ids` argument resolved to team ids.
 
     The one place a tool's team reference is read, so every tool accepts an id, a
     key prefix such as SUP or a name without resolving it itself. A null is left
     alone, because on a patch it clears the field rather than naming a team.
     `administer` also resolves a private team a workspace admin is outside, for
-    the tools that manage a team's settings and members.
+    the tools that manage a team's settings and members. `writes` refuses a
+    `team_id` naming a retired team, which is read-only.
     """
     arguments = dict(call.arguments)
     value = arguments.get("team_id")
     if isinstance(value, str) and value.strip():
-        arguments["team_id"] = team_ref(call, value, administer=administer).team_id
+        team = team_ref(call, value, administer=administer)
+        if writes:
+            refuse_if_retired(team)
+        arguments["team_id"] = team.team_id
     values = arguments.get("team_ids")
     if isinstance(values, list):
         arguments["team_ids"] = [

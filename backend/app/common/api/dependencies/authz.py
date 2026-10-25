@@ -39,7 +39,11 @@ from app.common.db.dynamo.memberships import (
     WORKSPACE_ROLES,
     AuthPolicy,
 )
+from app.common.db.dynamo.teams import Team
 from app.common.team_refs import team_not_found
+from app.common.team_retirement import refuse_if_retired
+
+SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
 
 __all__ = [
     "AuthPolicyRefusal",
@@ -909,6 +913,7 @@ def require(
     capability: Capability,
     *,
     team_param: str = "team_id",
+    allow_retired: bool = False,
 ) -> Callable[..., AuthzContext]:
     """The dependency a tenant-scoped route declares, naming what it needs.
 
@@ -916,7 +921,8 @@ def require(
     capability additionally reads `team_param` from the path, which is why the
     parameter name is settable rather than assumed, and answers an absent team
     with the team's own not-found. Deleting a team skips that check, because a
-    repeat delete of a purged team is a 204 by contract.
+    repeat delete of a purged team is a 204 by contract. A write to a retired
+    team is a 409 unless the route sets `allow_retired`, as un-retiring does.
     """
     needs_team = capability in TEAM_SCOPED
     checks_team_exists = capability is not Capability.TEAM_DELETE
@@ -953,15 +959,16 @@ def require(
             team_id = str(request.path_params.get(team_param, "") or "").strip()
             if not team_id:
                 raise _not_found()
-            if (
-                checks_team_exists
-                and "teams" in repositories.repository_names
-                and repositories.teams.get(workspace_id, team_id) is None
-            ):
-                raise team_not_found(team_id)
+            team: Optional[Team] = None
+            if checks_team_exists and "teams" in repositories.repository_names:
+                team = repositories.teams.get(workspace_id, team_id)
+                if team is None:
+                    raise team_not_found(team_id)
             team_role = _check_team(
                 repositories, capability, workspace_id, user_id, role, team_id, team_ids, private_team_ids
             )
+            if not allow_retired and request.method not in SAFE_METHODS:
+                refuse_if_retired(team)
 
         context = AuthzContext(
             workspace_id=workspace_id,

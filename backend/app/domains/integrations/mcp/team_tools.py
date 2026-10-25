@@ -166,6 +166,7 @@ def _team_json(call: ToolCall, team: Team) -> dict[str, Any]:
         "sync_pr_labels": team.sync_pr_labels,
         "private": call.repositories.memberships.is_private_team(call.context.workspace_id, team.team_id),
         "icon_url": icon_url(team.icon_key),
+        "retired_at": team.retired_at.isoformat() if team.retired_at else None,
     }
 
 
@@ -436,9 +437,14 @@ def _workspace_user_ref(call: ToolCall, value: Any) -> str:
 
 
 def _list_teams(call: ToolCall) -> Any:
-    """Every team this credential may read, with what an agent needs to write, or one parent's sub-teams."""
+    """Every team this credential may read, with what an agent needs to write, or one parent's sub-teams.
+
+    Retired teams are left out unless `include_retired` asks for them.
+    """
     teams = call.repositories.teams.list_for_workspace(call.context.workspace_id)
     visible = [row for row in teams if call.context.can_see_team(row.team_id)]
+    if not call.arguments.get("include_retired"):
+        visible = [row for row in visible if row.retired_at is None]
     if call.arguments.get("parent_team_id") is not None:
         parent_id = team_ref(call, call.arguments["parent_team_id"]).team_id
         visible = [row for row in visible if row.parent_team_id == parent_id]
@@ -451,6 +457,7 @@ def _list_teams(call: ToolCall) -> Any:
                 "parent_team_id": row.parent_team_id,
                 "estimate_scale": row.estimate_scale,
                 "private": call.context.is_private_team(row.team_id),
+                "retired_at": row.retired_at.isoformat() if row.retired_at else None,
             }
             for row in sorted(visible, key=lambda row: row.name.lower())
         ]
@@ -558,6 +565,44 @@ def _delete_team(call: ToolCall) -> Any:
             before={"key_prefix": team.key_prefix},
         )
     return {"deleted": True, "team_id": team.team_id, "name": team.name, "key_prefix": team.key_prefix}
+
+
+def _retire_team(call: ToolCall) -> Any:
+    """Retire a team through the retire route's own path, held to team admin."""
+    team = admin_team(call)
+    retired, changed = team_writes.retire_team(
+        call.repositories, call.context.workspace_id, team.team_id, call.context.user_id
+    )
+    if changed:
+        audit.record(
+            call.repositories,
+            call.context,
+            "team.retired",
+            target_type="team",
+            target_id=retired.team_id,
+            target_label=retired.name,
+            before={"retired": False},
+            after={"retired": True},
+        )
+    return _team_json(call, retired)
+
+
+def _unretire_team(call: ToolCall) -> Any:
+    """Bring a retired team back through the un-retire route's own path, held to team admin."""
+    team = admin_team(call)
+    restored, changed = team_writes.unretire_team(call.repositories, call.context.workspace_id, team.team_id)
+    if changed:
+        audit.record(
+            call.repositories,
+            call.context,
+            "team.unretired",
+            target_type="team",
+            target_id=restored.team_id,
+            target_label=restored.name,
+            before={"retired": True},
+            after={"retired": False},
+        )
+    return _team_json(call, restored)
 
 
 def _update_cycle_settings(call: ToolCall) -> Any:
@@ -978,10 +1023,16 @@ TEAM_TOOLS: tuple[Tool, ...] = (
         name="list_teams",
         description=(
             "Every team this credential can read, with key prefix, estimate scale and parent team. "
-            "parent_team_id narrows the list to that team's sub-teams."
+            "parent_team_id narrows the list to that team's sub-teams. Retired teams are read-only and "
+            "left out unless include_retired is true."
         ),
         scopes=("teams:read",),
-        schema=object_schema({"parent_team_id": string("Only this team's sub-teams: id, key such as ENG, or name")}),
+        schema=object_schema(
+            {
+                "parent_team_id": string("Only this team's sub-teams: id, key such as ENG, or name"),
+                "include_retired": boolean("Also list retired teams, which are read-only"),
+            }
+        ),
         handler=_list_teams,
     ),
     Tool(
@@ -1048,6 +1099,31 @@ TEAM_TOOLS: tuple[Tool, ...] = (
         handler=_delete_team,
         destructive=True,
         idempotent=True,
+    ),
+    Tool(
+        name="retire_team",
+        description=(
+            "Retire a team: it leaves the sidebar and team pickers, and its issues, projects and cycles stay "
+            "readable and searchable but can no longer be changed. A parent with active sub-teams cannot be "
+            "retired. Needs team admin. Undo with unretire_team. team_id: id, key such as ENG, or name."
+        ),
+        scopes=("teams:write",),
+        schema=object_schema({"team_id": string(TEAM_ARGUMENT)}, required=("team_id",)),
+        handler=_retire_team,
+        idempotent=True,
+        administers_team=True,
+    ),
+    Tool(
+        name="unretire_team",
+        description=(
+            "Bring a retired team back so it shows in the sidebar and takes changes again. A sub-team "
+            "needs its parent un-retired first. Needs team admin. team_id: id, key such as ENG, or name."
+        ),
+        scopes=("teams:write",),
+        schema=object_schema({"team_id": string(TEAM_ARGUMENT)}, required=("team_id",)),
+        handler=_unretire_team,
+        idempotent=True,
+        administers_team=True,
     ),
     Tool(
         name="update_team_cycle_settings",

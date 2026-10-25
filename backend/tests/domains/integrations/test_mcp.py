@@ -153,6 +153,8 @@ def test_the_contract_fixes_the_tool_set() -> None:
         "react_to_project_update",
         "delete_status",
         "delete_team",
+        "retire_team",
+        "unretire_team",
         "delete_view",
         "export_workspace",
         "delete_workspace_label",

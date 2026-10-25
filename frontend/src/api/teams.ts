@@ -258,6 +258,31 @@ export const updateTeam = async (
   return response.data;
 };
 
+/**
+ * Retires a team: it leaves the sidebar and the team pickers, and its work
+ * turns read-only. Team admin only.
+ */
+export const retireTeam = async (
+  workspaceId: string,
+  teamId: string
+): Promise<TeamRead> => {
+  const response = await apiClient.post<TeamRead>(
+    `${teamPath(workspaceId, teamId)}/retire`
+  );
+  return response.data;
+};
+
+/** Brings a retired team back so it takes changes again. Team admin only. */
+export const unretireTeam = async (
+  workspaceId: string,
+  teamId: string
+): Promise<TeamRead> => {
+  const response = await apiClient.post<TeamRead>(
+    `${teamPath(workspaceId, teamId)}/unretire`
+  );
+  return response.data;
+};
+
 /** Deletes a team. Workspace owner or admin only. */
 export const deleteTeam = async (
   workspaceId: string,

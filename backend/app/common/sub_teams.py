@@ -17,6 +17,7 @@ from app.common.api.dependencies.authz import AuthzContext
 from app.common.api.dependencies.repositories import Repositories
 from app.common.db.dynamo.teams import Team
 from app.common.issue_rules import require_team_reader, unprocessable, visible_team_ids
+from app.common.team_retirement import refuse_if_retired
 
 OWN_PARENT = "A team cannot be its own parent team."
 
@@ -63,13 +64,15 @@ def check_parent(
     """The team `parent_team_id` names, once it may take `team` as a sub-team, or a 422.
 
     `team` is `None` for a team being created. A parent the caller cannot read
-    answers as missing, so the refusal does not reveal a private team.
+    answers as missing, so the refusal does not reveal a private team, and a
+    retired parent is a 409.
     """
     if team is not None and parent_team_id == team.team_id:
         raise unprocessable(OWN_PARENT)
     parent = repositories.teams.get(workspace_id, parent_team_id)
     if parent is None or (can_see is not None and not can_see(parent_team_id)):
         raise unprocessable(NO_SUCH_PARENT.format(team_id=parent_team_id))
+    refuse_if_retired(parent)
     if parent.parent_team_id:
         raise unprocessable(PARENT_IS_SUB_TEAM.format(name=parent.name))
     if team is not None and sub_team_ids(repositories, workspace_id, team.team_id):

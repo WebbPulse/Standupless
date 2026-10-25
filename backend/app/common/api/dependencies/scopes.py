@@ -182,6 +182,8 @@ ROUTE_SCOPES: Mapping[tuple[str, str], tuple[str, ...]] = {
     ("PUT", "/{workspace_id}/teams/{team_id}/icon"): TEAMS_WRITE,
     ("DELETE", "/{workspace_id}/teams/{team_id}/icon"): TEAMS_WRITE,
     ("DELETE", "/{workspace_id}/teams/{team_id}"): NO_KEY_ACCESS,
+    ("POST", "/{workspace_id}/teams/{team_id}/retire"): TEAMS_WRITE,
+    ("POST", "/{workspace_id}/teams/{team_id}/unretire"): TEAMS_WRITE,
     ("GET", "/{workspace_id}/teams/{team_id}/cycle-settings"): TEAMS_READ,
     ("PATCH", "/{workspace_id}/teams/{team_id}/cycle-settings"): TEAMS_WRITE,
     ("GET", "/{workspace_id}/teams/{team_id}/auto-close-settings"): TEAMS_READ,

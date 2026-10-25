@@ -620,6 +620,10 @@ export interface TeamRead {
   private?: boolean;
   /** The parent team this one sits under, or null for a top-level team. */
   parent_team_id?: string | null;
+  /** When the team was retired, or null while it is active. A retired team is read-only. */
+  retired_at?: string | null;
+  /** The user who retired the team, or null while it is active. */
+  retired_by?: string | null;
 }
 
 /** The body the teams list route answers with. */

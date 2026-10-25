@@ -400,6 +400,31 @@ class TestTeamsDomain:
                 api.delete(f"{base}/issues/{created['id']}")
             api.delete(f"{base}/teams/{sub['id']}")
 
+    @WRITES
+    def test_a_retired_team_refuses_writes_until_unretired(
+        self, api: Any, run_scope: RunScope, workspace: "dict[str, Any]"
+    ) -> None:
+        """Retiring a team of the run's own refuses new issues with 409, and un-retiring lets them in again."""
+        base = f"/api/workspaces/{workspace['id']}"
+        body = {"name": run_scope.name("retired-team"), "key_prefix": "RTR"}
+        retiring = _created(api.post(f"{base}/teams", json=body), "team")
+        try:
+            retired = api.post(f"{base}/teams/{retiring['id']}/retire")
+            assert retired.status_code == 200, retired.text[:400]
+            assert retired.json()["retired_at"] is not None
+
+            refused = api.post(f"{base}/issues", json={"team_id": retiring["id"], "title": run_scope.name("refused")})
+            assert refused.status_code == 409, refused.text[:400]
+            assert refused.json()["error_code"] == "TEAM_RETIRED"
+            assert api.get(f"{base}/teams/{retiring['id']}").status_code == 200
+
+            restored = api.post(f"{base}/teams/{retiring['id']}/unretire")
+            assert restored.status_code == 200, restored.text[:400]
+            assert restored.json()["retired_at"] is None
+        finally:
+            api.post(f"{base}/teams/{retiring['id']}/unretire")
+            api.delete(f"{base}/teams/{retiring['id']}")
+
 
 class TestIssuesDomain:
     """Issues: the create, the read back by id and by key, and the list."""

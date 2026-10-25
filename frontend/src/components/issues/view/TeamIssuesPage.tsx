@@ -36,6 +36,7 @@ import { useTeam } from '../../../hooks/useTeam';
 import { useWorkspace } from '../../../hooks/useWorkspace';
 import { canWriteIssues, isTeamAdmin } from '../../../lib/capabilities';
 import { errorMessage } from '../../../lib/errors';
+import { isRetired } from '../../../lib/teamRetirement';
 import type { ViewLayout } from '../../../api/views';
 import { defaultViewState, type ViewState } from '../../../lib/issueView';
 import { LOOKUP_POLL_MS } from '../../../lib/polling';
@@ -47,6 +48,7 @@ import {
   teamScopeEmptyMessage,
   teamScopeFilters,
 } from '../../../lib/teamIssueScope';
+import RetiredTeamBanner from '../../team/RetiredTeamBanner';
 import { ErrorAlert } from '../../ui/alert';
 import EmptyState from '../../ui/empty-state';
 import FavoriteButton from '../../ui/FavoriteButton';
@@ -175,6 +177,9 @@ export const TeamIssuesPage: React.FC<TeamIssuesPageProps> = ({
     );
   }
 
+  const writable =
+    !isRetired(team) && canWriteIssues(workspace?.role, team.role);
+
   if (archive) {
     return (
       <IssueViewPage
@@ -191,7 +196,7 @@ export const TeamIssuesPage: React.FC<TeamIssuesPageProps> = ({
         scope={scope}
         teams={teams}
         base={ARCHIVE_BASE}
-        canEdit={canWriteIssues(workspace?.role, team.role)}
+        canEdit={writable}
         homeTeam={team}
         archive
         emptyMessage={`No archived issues in ${team.name}.`}
@@ -248,10 +253,19 @@ export const TeamIssuesPage: React.FC<TeamIssuesPageProps> = ({
       teams={teams}
       base={base}
       teamDefault={teamDefault}
-      canEdit={canWriteIssues(workspace?.role, team.role)}
+      canEdit={writable}
       homeTeam={team}
       emptyMessage={teamScopeEmptyMessage(preset, team.name)}
       statusCategories={teamScopeCategories(preset)}
+      notice={
+        isRetired(team) ? (
+          <RetiredTeamBanner
+            workspaceId={workspaceId}
+            team={team}
+            canUnretire={admin}
+          />
+        ) : undefined
+      }
     />
   );
 };

@@ -16,6 +16,7 @@ from datetime import date
 from typing import Any, Mapping
 
 from app.common.cycle_schedule import ensure_cycles
+from app.common.team_retirement import is_active
 
 _log = logging.getLogger(__name__)
 
@@ -46,7 +47,7 @@ def sweep(repositories: Any, today: date | None = None) -> ScheduleSummary:
     """
     summary = ScheduleSummary()
     for settings in repositories.team_config.iter_enabled_cycle_settings():
-        if repositories.teams.get(settings.workspace_id, settings.team_id) is None:
+        if not is_active(repositories.teams.get(settings.workspace_id, settings.team_id)):
             summary.skipped += 1
             continue
         summary.teams += 1

@@ -30,6 +30,7 @@ import { errorMessage, hasStatus, CONFLICT } from '../../lib/errors';
 import { teamsKey } from '../../lib/queryKeys';
 import { cn } from '../../lib/cn';
 import { teamTree } from '../../lib/teamOrder';
+import { activeTeams } from '../../lib/teamRetirement';
 import { keyPrefixFromName, validateKeyPrefix } from '../../lib/validation';
 import {
   ESTIMATE_SCALES,
@@ -57,7 +58,7 @@ export interface CreateTeamDialogProps {
    * of the request did not land.
    */
   onCreated: (team: TeamRead, notice?: string) => void;
-  /** The workspace's teams the caller can see, offered as parents. */
+  /** The workspace's teams the caller can see, offered as parents and copy sources once retired ones are left out. */
   teams?: readonly TeamRead[];
   /** The parent team picked when the dialog opens, to create a sub-team of it. */
   initialParentTeamId?: string | null;
@@ -145,9 +146,10 @@ export const CreateTeamDialog: React.FC<CreateTeamDialogProps> = ({
   workspaceId,
   onClose,
   onCreated,
-  teams = [],
+  teams: given = [],
   initialParentTeamId = null,
 }) => {
+  const teams = useMemo(() => activeTeams(given), [given]);
   const [name, setName] = useState('');
   const [keyPrefix, setKeyPrefix] = useState('');
   const [prefixTouched, setPrefixTouched] = useState(false);
