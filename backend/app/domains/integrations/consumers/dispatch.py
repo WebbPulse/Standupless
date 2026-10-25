@@ -26,9 +26,9 @@ from webbpulse.events import register_stream_consumer
 
 from app.common.api.dependencies.repositories import Repositories
 from app.common.chat_digests import CHAT_DIGEST_JOB
-from app.common.cycle_announcements import CHANNEL_CYCLE_JOB
 from app.common.composition.consumers import CONSUMERS
 from app.common.core.config import settings
+from app.common.cycle_announcements import CHANNEL_CYCLE_JOB
 from app.common.db.dynamo.github import IssueLink
 from app.common.project_cadence import CHANNEL_UPDATE_DUE_JOB
 from app.common.standup import CHANNEL_STANDUP_JOB

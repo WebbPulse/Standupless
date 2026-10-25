@@ -28,15 +28,15 @@ from __future__ import annotations
 
 import time
 import uuid
-from datetime import date, datetime, time as day_time, timezone
+from datetime import date, datetime, timezone
 from typing import Any, Callable, Mapping
 
 from webbpulse.events import deserialize_image
 
 from app.common.api.dependencies.repositories import Repositories
 from app.common.core.config import settings
-from app.common.db.dynamo.channels import ChannelDestination
 from app.common.cycle_announcements import CYCLE_COMPLETED, CYCLE_STARTED
+from app.common.db.dynamo.channels import ChannelDestination
 from app.common.db.dynamo.planning import INITIATIVE_UPDATE, PROJECT_UPDATE, Cycle
 from app.common.issue_keys import display_key
 from app.common.project_update_report import report_for_item
@@ -483,9 +483,10 @@ def cycle_message(
 def _day_start(day: str) -> datetime | None:
     """Midnight UTC of one ISO date, the stable moment a cycle's delivery ids derive from."""
     try:
-        return datetime.combine(date.fromisoformat(day), day_time(), tzinfo=timezone.utc)
+        parsed = date.fromisoformat(day)
     except ValueError:
         return None
+    return datetime(parsed.year, parsed.month, parsed.day, tzinfo=timezone.utc)
 
 
 def announce_cycle(

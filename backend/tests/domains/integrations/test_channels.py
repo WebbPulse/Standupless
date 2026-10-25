@@ -1032,7 +1032,7 @@ def initiative_update(initiative_id: str = "I1", update_id: str = "U1", **fields
 def test_an_initiative_update_reaches_every_team_of_its_projects_and_a_workspace_channel_once(
     repositories: Any, workspace: str, queue: Queue
 ) -> None:
-    """Each project team's channel posts once with the health, a workspace channel once, and a redelivery adds nothing."""
+    """Each project team's channel posts once with its health, a workspace channel once, and a redelivery no more."""
     initiative(repositories, project_teams=([TEAM], [TEAM, OTHER_TEAM]))
     ours = make_channel(repositories, events_=["initiative_update_posted"], url=DISCORD_URL)
     theirs = make_channel(repositories, events_=["initiative_update_posted"], team_id=OTHER_TEAM)
