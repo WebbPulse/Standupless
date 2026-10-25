@@ -10,6 +10,7 @@
 
 import apiClient, { type RequestOptions } from './client';
 import type {
+  DocumentParentKind,
   DocumentTemplateListRead,
   TemplateCreate,
   TemplateKind,
@@ -202,7 +203,7 @@ const normalisedOffer = (
  */
 export const listParentDocumentTemplates = async (
   workspaceId: string,
-  parentKind: 'project' | 'initiative',
+  parentKind: DocumentParentKind,
   parentId: string,
   signal?: AbortSignal
 ): Promise<DocumentTemplateListRead> => {

@@ -10,6 +10,7 @@
 
 import type { QueryKey } from '@webbpulse/api-client/react';
 import type { FilterState } from './issueFilters';
+import type { DocumentParentKind } from '../types/Api';
 
 /** The filter values an issue list key varies on. */
 export type IssueListKeyFilters = FilterState;
@@ -80,9 +81,9 @@ export const documentTemplatesKey = (teamId: string): QueryKey => [
   teamId,
 ];
 
-/** The document templates a project or initiative offers, with its defaults. */
+/** The document templates a document parent offers, with its defaults. */
 export const parentDocumentTemplatesKey = (
-  parentKind: 'project' | 'initiative',
+  parentKind: DocumentParentKind,
   parentId: string
 ): QueryKey => ['document-templates', parentKind, parentId];
 

@@ -8,7 +8,7 @@ import { useQueryAuth } from '@webbpulse/auth/react';
 import { usePolledQuery } from '@webbpulse/api-client/react';
 import { listParentDocumentTemplates } from '../api/templates';
 import { parentDocumentTemplatesKey } from '../lib/queryKeys';
-import type { TemplateRead } from '../types/Api';
+import type { DocumentParentKind, TemplateRead } from '../types/Api';
 
 /** How often the offer re-reads; templates change rarely. */
 const POLL_MS = 60000;
@@ -26,7 +26,7 @@ export interface DocumentTemplateOffer {
 /** Reads the document templates one project or initiative offers. */
 export const useDocumentTemplates = (
   workspaceId: string,
-  parentKind: 'project' | 'initiative',
+  parentKind: DocumentParentKind,
   parentId: string,
   enabled = true
 ): DocumentTemplateOffer => {

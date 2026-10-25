@@ -1,4 +1,4 @@
-"""The planning stage of the team purge: cycles and the team's place on projects.
+"""The planning stage of the team purge: cycles, the team's documents and its place on projects.
 
 A project can span teams, so the team is taken off each project's list and only
 a project left with no team is deleted. The first team on the list is the one a
@@ -39,7 +39,7 @@ def detach_projects(repositories: Repositories, workspace_id: str, team_id: str)
 
 
 def step(repositories: Repositories, job: PurgeJob, deadline: Deadline) -> int | None:
-    """Remove the team's cycles and releases, then detach it from its projects."""
+    """Remove the team's cycles, releases and documents, then detach it from its projects."""
     while repositories.planning.delete_cycles_page(job.workspace_id, job.team_id):
         if deadline.expired():
             return 0
@@ -47,6 +47,7 @@ def step(repositories: Repositories, job: PurgeJob, deadline: Deadline) -> int |
         if deadline.expired():
             return 0
     if job.kind != WORKSPACE:
+        repositories.documents.delete_for_parent(job.workspace_id, "team", job.team_id)
         detach_projects(repositories, job.workspace_id, job.team_id)
     return None
 

@@ -4693,6 +4693,17 @@
             ],
             "title": "Body"
           },
+          "icon": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Icon"
+          },
           "template_id": {
             "anyOf": [
               {
@@ -4771,7 +4782,7 @@
         "type": "object"
       },
       "DocumentPatch": {
-        "description": "The body a document patch takes; either field may be left out, neither cleared.\n\n`base_updated_at` is the `updated_at` the editor last read. When it is sent\nand the document has changed since, the patch is a 409 rather than writing\nover someone else's edit.",
+        "description": "The body a document patch takes; any field may be left out, and only `icon` cleared.\n\n`parent_kind` and `parent_id` together move the document under another\nproject, initiative or team the caller may write under. `base_updated_at`\nis the `updated_at` the editor last read. When it is sent and the document\nhas changed since, the patch is a 409 rather than writing over someone\nelse's edit.",
         "properties": {
           "base_updated_at": {
             "anyOf": [
@@ -4795,6 +4806,44 @@
               }
             ],
             "title": "Body"
+          },
+          "icon": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Icon"
+          },
+          "parent_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Id"
+          },
+          "parent_kind": {
+            "anyOf": [
+              {
+                "enum": [
+                  "project",
+                  "initiative",
+                  "team"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Kind"
           },
           "title": {
             "anyOf": [
@@ -4841,6 +4890,17 @@
             "title": "Document Id",
             "type": "string"
           },
+          "icon": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Icon"
+          },
           "mentions": {
             "items": {
               "$ref": "#/components/schemas/DocumentMentionRead"
@@ -4855,7 +4915,8 @@
           "parent_kind": {
             "enum": [
               "project",
-              "initiative"
+              "initiative",
+              "team"
             ],
             "title": "Parent Kind",
             "type": "string"
@@ -4943,6 +5004,17 @@
             "title": "Document Id",
             "type": "string"
           },
+          "icon": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Icon"
+          },
           "parent_id": {
             "title": "Parent Id",
             "type": "string"
@@ -4950,7 +5022,8 @@
           "parent_kind": {
             "enum": [
               "project",
-              "initiative"
+              "initiative",
+              "team"
             ],
             "title": "Parent Kind",
             "type": "string"
@@ -32171,7 +32244,7 @@
         ]
       },
       "patch": {
-        "description": "Rename or rewrite a document; a stale `base_updated_at` is a 409.",
+        "description": "Rename, rewrite, restyle or move a document; a stale `base_updated_at` is a 409.",
         "operationId": "edit_document_api_workspaces__workspace_id__documents__document_id__patch",
         "parameters": [
           {
@@ -47770,6 +47843,188 @@
         "summary": "Update Display Defaults",
         "tags": [
           "teams"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/teams/{team_id}/document-templates": {
+      "get": {
+        "description": "The document templates a team's new documents may start from, and its defaults.",
+        "operationId": "list_team_document_templates_api_workspaces__workspace_id__teams__team_id__document_templates_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "team_id",
+            "required": true,
+            "schema": {
+              "title": "Team Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentTemplateListRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "List Team Document Templates",
+        "tags": [
+          "planning"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/teams/{team_id}/documents": {
+      "get": {
+        "description": "A team's documents, most recently edited first.",
+        "operationId": "list_team_documents_api_workspaces__workspace_id__teams__team_id__documents_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "team_id",
+            "required": true,
+            "schema": {
+              "title": "Team Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentListRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "List Team Documents",
+        "tags": [
+          "planning"
+        ]
+      },
+      "post": {
+        "description": "Write a new document under a team, as a member of it.",
+        "operationId": "create_team_document_api_workspaces__workspace_id__teams__team_id__documents_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "team_id",
+            "required": true,
+            "schema": {
+              "title": "Team Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DocumentCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Create Team Document",
+        "tags": [
+          "planning"
         ]
       }
     },

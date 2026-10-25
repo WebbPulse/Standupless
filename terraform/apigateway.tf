@@ -48,6 +48,8 @@ locals {
       "/api/workspaces/{workspace_id}/pulse",
       "/api/workspaces/{workspace_id}/documents",
       "/api/workspaces/{workspace_id}/issues/{issue_id}/documents",
+      "/api/workspaces/{workspace_id}/teams/{team_id}/documents",
+      "/api/workspaces/{workspace_id}/teams/{team_id}/document-templates",
       "/api/workspaces/{workspace_id}/customers",
       "/api/workspaces/{workspace_id}/issues/{issue_id}/customer-requests",
     ]
