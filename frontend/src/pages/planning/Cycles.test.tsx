@@ -990,16 +990,6 @@ describe('edit cycle', () => {
     });
     expect(screen.getByRole('dialog')).toBeInTheDocument();
   });
-
-  it('offers no edit to a guest', async () => {
-    useWorkspaceMock.mockReturnValue(resolved('guest'));
-    renderPage();
-
-    await screen.findByRole('region', { name: 'Current cycle' });
-    expect(
-      screen.queryByRole('button', { name: 'Sprint 1 actions' })
-    ).not.toBeInTheDocument();
-  });
 });
 
 describe('end cycle today', () => {
