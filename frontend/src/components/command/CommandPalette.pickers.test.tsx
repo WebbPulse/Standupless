@@ -51,7 +51,10 @@ vi.mock('../../api/favorites', () => ({
 }));
 
 vi.mock('../../api/planning', () => ({
-  listProjects: () => listProjects(),
+  listProjects: async () => ({
+    ...(await listProjects()),
+    next_cursor: null,
+  }),
   listCycles: () => listCycles(),
 }));
 
