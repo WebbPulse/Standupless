@@ -37,6 +37,8 @@ locals {
       "/api/workspaces/{workspace_id}/comments",
       "/api/workspaces/{workspace_id}/reactions",
       "/api/workspaces/{workspace_id}/attachments",
+      "/api/workspaces/{workspace_id}/documents/{document_id}/comments",
+      "/api/workspaces/{workspace_id}/documents/{document_id}/subscribers",
     ]
 
     planning = [

@@ -20,6 +20,7 @@ import type {
   ReactionListRead,
   ReactionTarget,
   ReactionWrite,
+  SubscribersRead,
   UploadTicketCreate,
   UploadTicketRead,
   UrlAttachmentCreate,
@@ -42,6 +43,25 @@ export const threadResolutionPath = (
   commentId: string
 ): string =>
   `${issueCommentsPath(workspaceId, issueId)}/${commentId}/resolution`;
+
+/** The route one document's comment thread is read from and posted to. */
+export const documentCommentsPath = (
+  workspaceId: string,
+  documentId: string
+): string => `/workspaces/${workspaceId}/documents/${documentId}/comments`;
+
+/** The route one comment on a document is edited and deleted through. */
+export const documentCommentPath = (
+  workspaceId: string,
+  documentId: string,
+  commentId: string
+): string => `${documentCommentsPath(workspaceId, documentId)}/${commentId}`;
+
+/** The route one document's subscribers are read from. */
+export const documentSubscribersPath = (
+  workspaceId: string,
+  documentId: string
+): string => `/workspaces/${workspaceId}/documents/${documentId}/subscribers`;
 
 /** The route every reaction read and write goes through. */
 export const reactionsPath = (workspaceId: string): string =>
@@ -183,6 +203,106 @@ export const unresolveThread = async (
   return response.data;
 };
 
+/** Lists one document's comments, oldest first so a thread reads in order. */
+export const listDocumentComments = async (
+  workspaceId: string,
+  documentId: string,
+  query: { cursor?: string; limit?: number } = {},
+  signal?: AbortSignal
+): Promise<CommentListRead> => {
+  const response = await apiClient.get<CommentListRead>(
+    documentCommentsPath(workspaceId, documentId),
+    listOptions({ ...query }, signal)
+  );
+  const body = response.data;
+  return {
+    comments: Array.isArray(body?.comments) ? body.comments : [],
+    next_cursor: body?.next_cursor ?? null,
+  };
+};
+
+/** Posts a comment or a reply on a document; mentions are read server side. */
+export const createDocumentComment = async (
+  workspaceId: string,
+  documentId: string,
+  body: { body: string; parent_comment_id?: string | null }
+): Promise<CommentRead> => {
+  const response = await apiClient.post<CommentRead>(
+    documentCommentsPath(workspaceId, documentId),
+    body
+  );
+  return response.data;
+};
+
+/** Edits one's own comment on a document. */
+export const updateDocumentComment = async (
+  workspaceId: string,
+  documentId: string,
+  commentId: string,
+  body: string
+): Promise<CommentRead> => {
+  const response = await apiClient.patch<CommentRead>(
+    documentCommentPath(workspaceId, documentId, commentId),
+    { body }
+  );
+  return response.data;
+};
+
+/** Deletes a comment on a document, reparenting its replies. */
+export const deleteDocumentComment = async (
+  workspaceId: string,
+  documentId: string,
+  commentId: string
+): Promise<void> => {
+  await apiClient.delete<void>(
+    documentCommentPath(workspaceId, documentId, commentId)
+  );
+};
+
+/** Resolves or reopens a thread on a document by its root comment. */
+export const setDocumentThreadResolved = async (
+  workspaceId: string,
+  documentId: string,
+  commentId: string,
+  resolved: boolean
+): Promise<CommentRead> => {
+  const path = `${documentCommentPath(workspaceId, documentId, commentId)}/resolution`;
+  const response = resolved
+    ? await apiClient.put<CommentRead>(path)
+    : await apiClient.delete<CommentRead>(path);
+  return response.data;
+};
+
+/** Reads who follows a document, and whether the caller does. */
+export const listDocumentSubscribers = async (
+  workspaceId: string,
+  documentId: string,
+  signal?: AbortSignal
+): Promise<SubscribersRead> => {
+  const response = await apiClient.get<SubscribersRead>(
+    documentSubscribersPath(workspaceId, documentId),
+    signal === undefined ? undefined : { signal }
+  );
+  const body = response.data;
+  return {
+    subscribers: Array.isArray(body?.subscribers) ? body.subscribers : [],
+    subscribed: body?.subscribed ?? false,
+  };
+};
+
+/** Follows or leaves a document as the caller, answering its subscribers. */
+export const setDocumentSubscribed = async (
+  workspaceId: string,
+  documentId: string,
+  subscribed: boolean
+): Promise<SubscribersRead> => {
+  const path = `${documentSubscribersPath(workspaceId, documentId)}/me`;
+  const response = subscribed
+    ? await apiClient.put<SubscribersRead>(path)
+    : await apiClient.delete<SubscribersRead>(path);
+  return response.data;
+};
+
 /**
  * Lists the reaction groups on one issue or comment. A comment needs the issue
  * it was written on, which partitions it.
@@ -232,6 +352,7 @@ export const removeReaction = async (
       target_kind: target.target_kind,
       emoji: target.emoji,
       issue_id: target.issue_id,
+      document_id: target.document_id,
     },
   });
 };

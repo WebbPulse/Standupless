@@ -1509,6 +1509,8 @@ export interface CommentRead {
   resolution?: ThreadResolution | null;
   /** The description passage a root comment is pinned to, when it is. */
   anchor?: CommentAnchor | null;
+  /** The document the comment was written on; null on an issue's comment. */
+  document_id?: string | null;
   created_at: string;
   edited_at: string | null;
 }
@@ -1601,6 +1603,8 @@ export interface ReactionWrite {
   target_kind: ReactionTarget;
   emoji: string;
   issue_id?: string;
+  /** The document a comment target was written on, in place of `issue_id`. */
+  document_id?: string;
 }
 
 /** Whether an attachment is a link or bytes in the bucket. */
@@ -1911,6 +1915,9 @@ export interface SearchCommentRead {
   author_id: string;
   snippet: string;
   created_at: string;
+  /** The document a hit was written on; issue fields are empty when set. */
+  document_id?: string | null;
+  document_title?: string | null;
 }
 
 /** The kinds of record a search can be narrowed to. */
@@ -1976,7 +1983,8 @@ export type NotificationKind =
   | 'issue_completed'
   | 'issue_cancelled'
   | 'priority_urgent'
-  | 'blocking_changed';
+  | 'blocking_changed'
+  | 'document_comment';
 
 /**
  * Every kind an inbox row can carry: the ones a member can tune, the notice a
@@ -2017,6 +2025,9 @@ export interface NotificationRead {
   due_state?: 'due' | 'overdue' | null;
   /** The digest date a `standup_digest` row is about; null on every other row. */
   standup_date?: string | null;
+  /** The document a `document_comment` row is about; null on every other row. */
+  document_id?: string | null;
+  document_title?: string | null;
   actor_id: string;
   actor_name: string;
   unread: boolean;

@@ -310,6 +310,14 @@ def _load(repositories: Repositories, context: AuthzContext, document_id: str) -
     return parent, document, body
 
 
+def load_readable_document(
+    repositories: Repositories, context: AuthzContext, document_id: str
+) -> tuple[Parent, Document]:
+    """A document the caller may read, with its parent, or a 404."""
+    parent, document, _ = _load(repositories, context, document_id)
+    return parent, document
+
+
 def get_document(repositories: Repositories, context: AuthzContext, document_id: str) -> DocumentRead:
     """One document the caller may read, with its body."""
     parent, document, body = _load(repositories, context, document_id)
@@ -363,6 +371,7 @@ def create_document(
         repositories.documents.create(document, body)
     except ConditionFailed as exc:
         raise conflict("That document already exists") from exc
+    repositories.subscriptions.subscribe(context.workspace_id, document_id, "", context.user_id, "creator")
     return _read(rights, parent, document, body)
 
 
@@ -453,11 +462,12 @@ def update_document(
 
 
 def delete_document(repositories: Repositories, context: AuthzContext, document_id: str) -> None:
-    """Delete a document with its history and backlinks, as its author or an admin."""
+    """Delete a document with its history, backlinks and subscribers, as its author or an admin."""
     parent, document, _ = _load(repositories, context, document_id)
     if not Rights(repositories, context).can_delete(parent, document):
         raise forbidden()
     repositories.documents.delete(context.workspace_id, document)
+    repositories.subscriptions.delete_for_issue(context.workspace_id, document.document_id)
 
 
 def list_document_versions(

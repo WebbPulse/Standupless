@@ -161,6 +161,11 @@ const KIND_COPY: Record<NotificationKind, { title: string; detail: string }> = {
     detail:
       'An issue you are subscribed to or assigned gains or loses a blocking relation, or a blocker is resolved.',
   },
+  document_comment: {
+    title: 'Document comments',
+    detail:
+      'Someone comments on a document you follow or mentions you in one. These stay in your inbox.',
+  },
 };
 
 /** One heading in the settings list and the kinds listed under it. */
@@ -175,7 +180,10 @@ const KIND_SECTIONS: readonly KindSection[] = [
     title: 'Assignments and mentions',
     kinds: ['assigned', 'mentioned', 'subscribed', 'review_requested'],
   },
-  { title: 'Comments and reactions', kinds: ['commented', 'reaction'] },
+  {
+    title: 'Comments and reactions',
+    kinds: ['commented', 'reaction', 'document_comment'],
+  },
   {
     title: 'Issue changes',
     kinds: [
@@ -218,6 +226,7 @@ const sectionsFor = (kinds: readonly NotificationKind[]): KindSection[] => {
 const IN_APP_ONLY: ReadonlySet<NotificationKind> = new Set([
   'project_update_comment',
   'review_requested',
+  'document_comment',
 ]);
 
 /** The kinds a chat direct message never carries: the standup digest is a digest already, and review requests stay in the inbox. */
@@ -225,6 +234,7 @@ const NOT_IN_CHAT: ReadonlySet<NotificationKind> = new Set([
   'standup_digest',
   'project_update_comment',
   'review_requested',
+  'document_comment',
 ]);
 
 /** The switches a kind shows when the profile has no entry for it. */

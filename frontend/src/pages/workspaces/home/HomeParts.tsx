@@ -446,6 +446,7 @@ const NOTIFICATION_VERBS: Partial<Record<NotificationRead['kind'], string>> = {
   issue_cancelled: 'canceled',
   priority_urgent: 'marked as urgent',
   blocking_changed: 'changed blocking',
+  document_comment: 'commented on a document',
 };
 
 /** One unread notification. */
@@ -457,7 +458,10 @@ export const InboxRow: React.FC<
   const subject =
     item.issue_title !== ''
       ? item.issue_title
-      : (item.project_name ?? item.initiative_name ?? item.issue_key);
+      : (item.project_name ??
+        item.initiative_name ??
+        item.document_title ??
+        item.issue_key);
   return (
     <li
       ref={rowRef}

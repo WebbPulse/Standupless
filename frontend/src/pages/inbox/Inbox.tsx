@@ -61,6 +61,7 @@ import {
   LuClock,
   LuDownload,
   LuEllipsis,
+  LuFileText,
   LuGitPullRequest,
   LuGoal,
   LuInbox,
@@ -126,6 +127,7 @@ import { compactAge, fullTimestamp } from '../../lib/relativeTime';
 import { showErrorToast, showToast } from '../../lib/toast';
 import { pushUndo, UNDO_TOAST_MS } from '../../lib/undo';
 import {
+  documentPath,
   exportSettingsPath,
   importSettingsPath,
   initiativePath,
@@ -234,6 +236,13 @@ const isReviewRow = (row: NotificationRead): boolean =>
   row.kind === 'review_requested';
 
 /**
+ * Whether a row is about a comment on a document. It has no team and no issue,
+ * and `document_id` and `document_title` carry what it is about.
+ */
+const isDocumentRow = (row: NotificationRead): boolean =>
+  row.kind === 'document_comment';
+
+/**
  * Whether a row is about one issue, so it offers the issue-only actions:
  * unsubscribing and copying the issue's link.
  */
@@ -244,7 +253,8 @@ const isIssueRow = (row: NotificationRead): boolean =>
   !isChannelRow(row) &&
   !isJobRow(row) &&
   !isStandupRow(row) &&
-  !isReviewRow(row);
+  !isReviewRow(row) &&
+  !isDocumentRow(row);
 
 /** Opens a review request's pull request on GitHub in a new tab. */
 const openPullRequest = (row: NotificationRead): void => {
@@ -253,39 +263,92 @@ const openPullRequest = (row: NotificationRead): void => {
 
 /** What a row is about, as its actions name it: an issue key, a project, an initiative or a team standup. */
 const subjectName = (row: NotificationRead): string =>
-  isProjectRow(row)
-    ? (row.project_name ?? 'Project')
-    : isInitiativeRow(row)
-      ? (row.initiative_name ?? 'Initiative')
-      : isChannelRow(row) || isJobRow(row)
-        ? row.issue_title
-        : isStandupRow(row)
-          ? `${row.issue_title} standup`
-          : row.issue_key;
+  isDocumentRow(row)
+    ? (row.document_title ?? 'Document')
+    : isProjectRow(row)
+      ? (row.project_name ?? 'Project')
+      : isInitiativeRow(row)
+        ? (row.initiative_name ?? 'Initiative')
+        : isChannelRow(row) || isJobRow(row)
+          ? row.issue_title
+          : isStandupRow(row)
+            ? `${row.issue_title} standup`
+            : row.issue_key;
 
 /** Where opening a row goes: its issue, its project's or initiative's updates, team settings, the standup or Reviews. */
 const rowPath = (slug: string, row: NotificationRead): string =>
-  isReviewRow(row)
-    ? reviewsPath(slug)
-    : isProjectRow(row)
-      ? projectUpdatesTabPath(slug, row.project_id ?? '')
-      : isInitiativeRow(row)
-        ? initiativeUpdatesTabPath(slug, row.initiative_id ?? '')
-        : isChannelRow(row)
-          ? row.issue_key
-            ? teamSettingsPath(slug, row.issue_key)
-            : integrationsSettingsPath(slug)
-          : isExportRow(row)
-            ? exportSettingsPath(slug)
-            : isImportRow(row)
-              ? importSettingsPath(slug)
-              : isStandupRow(row)
-                ? `${teamStandupPath(slug, row.issue_key)}${
-                    row.standup_date
-                      ? `?date=${encodeURIComponent(row.standup_date)}`
-                      : ''
-                  }`
-                : issuePath(slug, row.issue_key);
+  isDocumentRow(row)
+    ? documentPath(slug, row.document_id ?? '')
+    : isReviewRow(row)
+      ? reviewsPath(slug)
+      : isProjectRow(row)
+        ? projectUpdatesTabPath(slug, row.project_id ?? '')
+        : isInitiativeRow(row)
+          ? initiativeUpdatesTabPath(slug, row.initiative_id ?? '')
+          : isChannelRow(row)
+            ? row.issue_key
+              ? teamSettingsPath(slug, row.issue_key)
+              : integrationsSettingsPath(slug)
+            : isExportRow(row)
+              ? exportSettingsPath(slug)
+              : isImportRow(row)
+                ? importSettingsPath(slug)
+                : isStandupRow(row)
+                  ? `${teamStandupPath(slug, row.issue_key)}${
+                      row.standup_date
+                        ? `?date=${encodeURIComponent(row.standup_date)}`
+                        : ''
+                    }`
+                  : issuePath(slug, row.issue_key);
+
+/** Props for DocumentCommentPane: the selected row and how to leave it. */
+interface DocumentCommentPaneProps {
+  row: NotificationRead;
+  slug: string;
+  onClose: () => void;
+}
+
+/** The pane beside a document comment, which opens the document where the thread sits. */
+const DocumentCommentPane: React.FC<DocumentCommentPaneProps> = ({
+  row,
+  slug,
+  onClose,
+}) => {
+  const navigate = useNavigate();
+  const actor = row.actor_name === '' ? 'Someone' : row.actor_name;
+  return (
+    <aside
+      aria-label="Document comment"
+      className="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center"
+    >
+      <LuFileText aria-hidden="true" className="h-8 w-8 text-text-faint" />
+      <p className="text-sm text-text">
+        {actor} commented on{' '}
+        <span className="font-medium">{subjectName(row)}</span>
+      </p>
+      {row.summary ? (
+        <p className="text-xs text-text-muted">{row.summary}</p>
+      ) : null}
+      <p className="text-xs text-text-faint">
+        {timestampLabel(row.created_at)}
+      </p>
+      <div className="flex items-center gap-2">
+        <Button variant="ghost" size="sm" onClick={onClose}>
+          Close
+        </Button>
+        <Button
+          variant="primary"
+          size="sm"
+          onClick={() => {
+            void navigate(rowPath(slug, row));
+          }}
+        >
+          Open the document
+        </Button>
+      </div>
+    </aside>
+  );
+};
 
 /** Props for ReviewRequestPane: the selected row and how to leave it. */
 interface ReviewRequestPaneProps {
@@ -771,7 +834,10 @@ const InboxRow: React.FC<InboxRowProps> = ({
               group.unread ? 'font-medium text-text' : 'text-text-muted'
             )}
           >
-            {isProjectRow(row) || isInitiativeRow(row) || isStandupRow(row)
+            {isProjectRow(row) ||
+            isInitiativeRow(row) ||
+            isStandupRow(row) ||
+            isDocumentRow(row)
               ? subjectName(row)
               : row.issue_title}
           </span>
@@ -794,7 +860,12 @@ const InboxRow: React.FC<InboxRowProps> = ({
           </Tooltip>
         </span>
         <span className="flex w-full items-center gap-1.5 text-xs text-text-muted">
-          {isProjectRow(row) ? (
+          {isDocumentRow(row) ? (
+            <LuFileText
+              aria-hidden="true"
+              className="h-3 w-3 shrink-0 text-text-faint"
+            />
+          ) : isProjectRow(row) ? (
             <LuTarget
               aria-hidden="true"
               className="h-3 w-3 shrink-0 text-text-faint"
@@ -1801,6 +1872,13 @@ export const Inbox: React.FC = () => {
                   : 'Select a notification to see its issue.'}
               </p>
             </div>
+          ) : isDocumentRow(current) ? (
+            <DocumentCommentPane
+              key={current.notification_id}
+              row={current}
+              slug={slug}
+              onClose={closePane}
+            />
           ) : isReviewRow(current) ? (
             <ReviewRequestPane
               key={current.notification_id}

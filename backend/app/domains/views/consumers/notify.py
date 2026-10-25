@@ -79,6 +79,7 @@ from app.common.team_privacy import person_can_see_team
 from app.common.triage_duty import duty_notified
 from app.domains.views.consumers.chat_digest import flush_due_chats, hold_for_chat, wants_chat
 from app.domains.views.consumers.digest import flush_due, is_digest_flush, send_immediately
+from app.domains.views.consumers.document_comments import handle_document_comment
 from app.domains.views.consumers.view_watch import image_issue, newly_entered
 from app.domains.views.email import excerpt
 
@@ -575,6 +576,8 @@ def handle_comment_record(repositories: Repositories, record: Mapping[str, Any])
     """
     if from_bulk_import(record):
         return 0
+    if (deserialize_image(record, "NewImage") or {}).get("document_id"):
+        return handle_document_comment(repositories, record, limit=MAX_RECIPIENTS_PER_EVENT)
     event = str(record.get("eventName", "")).upper()
     if event == "MODIFY":
         return handle_comment_edit(repositories, record)

@@ -81,6 +81,7 @@ _VIEWS_CONSUMER_READS = (
     "comments",
     "subscriptions",
     "planning",
+    "documents",
 )
 
 CONSUMERS: Dict[str, ConsumerScope] = {

@@ -93,6 +93,60 @@
     "auth": "workspace:read",
     "domain": "discussion",
     "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/documents/{document_id}/comments"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "discussion",
+    "method": "POST",
+    "path": "/api/workspaces/{workspace_id}/documents/{document_id}/comments"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "discussion",
+    "method": "DELETE",
+    "path": "/api/workspaces/{workspace_id}/documents/{document_id}/comments/{comment_id}"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "discussion",
+    "method": "PATCH",
+    "path": "/api/workspaces/{workspace_id}/documents/{document_id}/comments/{comment_id}"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "discussion",
+    "method": "DELETE",
+    "path": "/api/workspaces/{workspace_id}/documents/{document_id}/comments/{comment_id}/resolution"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "discussion",
+    "method": "PUT",
+    "path": "/api/workspaces/{workspace_id}/documents/{document_id}/comments/{comment_id}/resolution"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "discussion",
+    "method": "GET",
+    "path": "/api/workspaces/{workspace_id}/documents/{document_id}/subscribers"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "discussion",
+    "method": "DELETE",
+    "path": "/api/workspaces/{workspace_id}/documents/{document_id}/subscribers/{user_id}"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "discussion",
+    "method": "PUT",
+    "path": "/api/workspaces/{workspace_id}/documents/{document_id}/subscribers/{user_id}"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "discussion",
+    "method": "GET",
     "path": "/api/workspaces/{workspace_id}/issues/{issue_id}/comments"
   },
   {
