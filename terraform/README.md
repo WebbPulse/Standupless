@@ -167,8 +167,7 @@ Each value lives in exactly one of five places.
 | `VITE_API_URL` | `frontend_api_base_url` |
 | `E2E_API_ID` | `api_id` |
 | `E2E_ACCESS_LOG_GROUP` | `api_access_log_group` |
-| `SLACK_CONFIG_ROLE_ARN` | `slack_config_role_arn`, the same value on both environments |
-| `SLACK_APP_ID` | none: the App ID from the Slack App's **Basic Information** |
+| `SLACK_CONFIG_ROLE_ARN`, optional | `slack_config_role_arn`, the same value on both environments; the deploy workflow defaults to it |
 
 `CI_AWS_ROLE_ARN` is repository-scoped rather than environment-scoped, because a `pull_request` job
 cannot read an Environment whose deployment branch policy admits only `main` and `staging`. Take the

@@ -99,24 +99,36 @@ the first message marks it broken with `messages_tab_disabled`, and linking agai
 after the update resumes delivery.
 
 `scripts/apply_slack_manifest.py` does the same through the manifest API with an
-App configuration token. Agents hold standing access through a refresh token
-stored once, as `SLACK_CONFIG_REFRESH_TOKEN` in `standupless-production/app`, for
-both environments. Each run rotates it with `tooling.tokens.rotate`, merges the new
-refresh token back into that key before applying, and exits 4 without applying when
-the write-back fails. A refresh token works once, so never keep a second copy. Run
-it from `backend/` with the App ID from **Basic Information**:
+App configuration token, and the backend deploy runs it on its own: a push to
+`staging` that changes `slack/manifest.staging.json`, or to `main` that changes
+`slack/manifest.production.json`, applies that manifest once the backend deploy has
+succeeded. Every other push skips the job. The App IDs, from **Basic Information**,
+are committed in `slack/app_ids.json`; they are not secret.
+
+The token is a refresh token stored once, as `SLACK_CONFIG_REFRESH_TOKEN` in its own
+secret `standupless-production/slack-config`, for both environments. Each run
+rotates it with `tooling.tokens.rotate`, writes the new refresh token back before
+applying, and exits 4 without applying when the write-back fails, which fails the
+deploy job. A refresh token works once, so never keep a second copy. The pipeline
+reaches the secret through the `standupless-production-slack-config` role, which
+both deploy roles may assume and which can read and write that one secret only, so
+the staging pipeline never sees the production app secret.
+
+The token used to live in `standupless-production/app`. The first run that finds
+the dedicated secret empty moves it: it rotates the old key, writes the new refresh
+token only into the dedicated secret, and removes the old key. The deploy roles
+cannot read the app secret, so that first run goes from `backend/` on the production
+AdministratorAccess profile, and `--dry-run` does it without writing the manifest:
 
 ```sh
 AWS_PROFILE=Standupless-Production/AdministratorAccess \
-  uv run --no-sync python ../scripts/apply_slack_manifest.py staging --app-id <APP_ID>
-AWS_PROFILE=Standupless-Production/AdministratorAccess \
-  uv run --no-sync python ../scripts/apply_slack_manifest.py production --app-id <APP_ID>
+  uv run --no-sync python ../scripts/apply_slack_manifest.py staging --dry-run
 ```
 
 To seed or replace the refresh token, a person mints one on
 https://api.slack.com/apps under **Your App Configuration Tokens** with **Generate
 Token** for the WebbPulse workspace, and stores the refresh token with
-`uv run webbpulse-config --region us-west-2 --prefix standupless-production secret set SLACK_CONFIG_REFRESH_TOKEN`.
+`uv run webbpulse-config --region us-west-2 --secret-id standupless-production/slack-config secret set SLACK_CONFIG_REFRESH_TOKEN`.
 A 12-hour access token in `SLACK_CONFIG_TOKEN` still works as a fallback and skips
 the rotation:
 

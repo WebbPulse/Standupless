@@ -644,14 +644,7 @@ jobs:
       - name: Apply the manifest
         env:
           ENVIRONMENT: ${{ needs.resolve-env.outputs.name }}
-          SLACK_APP_ID: ${{ vars.SLACK_APP_ID }}
           SLACK_CONFIG_ROLE_ARN: ${{ vars.SLACK_CONFIG_ROLE_ARN || 'arn:aws:iam::147741822161:role/standupless-production-slack-config' }}
         run: |
           set -euo pipefail
-          if [ -z "$SLACK_APP_ID" ]; then
-            echo "vars.SLACK_APP_ID is not set on the ${ENVIRONMENT} environment."
-            exit 1
-          fi
-          python scripts/apply_slack_manifest.py "$ENVIRONMENT" \
-            --app-id "$SLACK_APP_ID" \
-            --role-arn "$SLACK_CONFIG_ROLE_ARN"
+          python scripts/apply_slack_manifest.py "$ENVIRONMENT" --role-arn "$SLACK_CONFIG_ROLE_ARN"

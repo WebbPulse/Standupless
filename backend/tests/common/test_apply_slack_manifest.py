@@ -181,10 +181,185 @@ def test_main_applies_nothing_when_the_write_back_fails(
 
     monkeypatch.delenv("SLACK_CONFIG_TOKEN", raising=False)
     monkeypatch.setattr(script, "call", fake_call)
-    monkeypatch.setattr(script, "open_secret", lambda secret_id, region: script.RefreshTokenSecret(client, secret_id))
+    monkeypatch.setattr(
+        script, "open_secret", lambda secret_id, region, role_arn=None: script.RefreshTokenSecret(client, SECRET_ID)
+    )
     monkeypatch.setattr(sys, "argv", ["apply_slack_manifest.py", "staging", "--app-id", "A0123456789"])
 
     assert script.main() == 4
     assert methods == []
     output = capsys.readouterr()
     assert "xoxe" not in output.out + output.err
+
+
+DEDICATED_ID = "standupless-production/slack-config"
+
+
+class NotFound(Exception):
+    """Stands in for the botocore ``ClientError`` a secret with no value answers."""
+
+    response = {"Error": {"Code": "ResourceNotFoundException"}}
+
+
+class FakeDedicated:
+    """An in-memory dedicated secret that answers only ``GetSecretValue`` and ``PutSecretValue``."""
+
+    def __init__(self, value: dict[str, Any] | None = None, *, fail_put: bool = False) -> None:
+        """Seed the secret, or leave it with no value, optionally failing every write."""
+        self.raw = None if value is None else json.dumps(value)
+        self.fail_put = fail_put
+
+    @property
+    def current(self) -> dict[str, Any] | None:
+        """Return the decoded value, or ``None`` while there is none."""
+        return None if self.raw is None else json.loads(self.raw)
+
+    def get_secret_value(self, SecretId: str) -> dict[str, Any]:
+        """Return the current string, or raise the not found error while there is none."""
+        assert SecretId == DEDICATED_ID
+        if self.raw is None:
+            raise NotFound()
+        return {"SecretString": self.raw}
+
+    def put_secret_value(self, SecretId: str, SecretString: str, ClientRequestToken: str) -> dict[str, Any]:
+        """Store a new value, or fail when told to."""
+        assert SecretId == DEDICATED_ID
+        if self.fail_put:
+            raise RuntimeError("AccessDenied")
+        self.raw = SecretString
+        return {"VersionId": "v1"}
+
+
+class RefusingLegacy:
+    """A legacy secret the caller has no access to, as the deploy roles see the app secret."""
+
+    secret_id = SECRET_ID
+    key = "SLACK_CONFIG_REFRESH_TOKEN"
+
+    def read(self) -> str:
+        """Refuse the read."""
+        raise RuntimeError("AccessDenied")
+
+
+def test_the_dedicated_secret_rotates_in_place() -> None:
+    """With a token in the dedicated secret the app secret is never opened."""
+    dedicated = FakeDedicated({"SLACK_CONFIG_REFRESH_TOKEN": "xoxe-old"})
+    slack = FakeSlack()
+
+    def refuse() -> Any:
+        """Fail if the migration path is taken."""
+        raise AssertionError("the legacy secret was opened")
+
+    access = script.resolve_token({}, lambda: script.TokenSecret(dedicated, DEDICATED_ID), slack.rotate, refuse)
+
+    assert access == "xoxe.xoxp-access-1"
+    assert dedicated.current == {"SLACK_CONFIG_REFRESH_TOKEN": "xoxe-new-1"}
+
+
+def test_an_empty_dedicated_secret_migrates_the_token_out_of_the_app_secret() -> None:
+    """The first run rotates the old key, writes the successor only to the dedicated secret and drops the old key."""
+    legacy = FakeSecrets({"SLACK_CONFIG_REFRESH_TOKEN": "xoxe-old", "OTHER": "kept"})
+    dedicated = FakeDedicated()
+    slack = FakeSlack()
+
+    access = script.resolve_token(
+        {},
+        lambda: script.TokenSecret(dedicated, DEDICATED_ID),
+        slack.rotate,
+        lambda: script.RefreshTokenSecret(legacy, SECRET_ID),
+    )
+
+    assert access == "xoxe.xoxp-access-1"
+    assert dedicated.current == {"SLACK_CONFIG_REFRESH_TOKEN": "xoxe-new-1"}
+    assert legacy.current == {"OTHER": "kept"}
+
+
+def test_a_migration_without_app_secret_access_spends_nothing() -> None:
+    """A deploy role that cannot read the app secret stops before Slack is called."""
+    slack = FakeSlack()
+
+    with pytest.raises(script.TokenError) as raised:
+        script.migrate_config_token(RefusingLegacy(), script.TokenSecret(FakeDedicated(), DEDICATED_ID), slack.rotate)
+
+    assert slack.calls == 0
+    assert "AdministratorAccess" in str(raised.value)
+
+
+def test_a_migration_whose_dedicated_write_fails_keeps_the_token_in_the_app_secret() -> None:
+    """The successor goes back into the app secret so it is not lost, and the run still stops."""
+    legacy = FakeSecrets({"SLACK_CONFIG_REFRESH_TOKEN": "xoxe-old", "OTHER": "kept"})
+    dedicated = FakeDedicated(fail_put=True)
+
+    with pytest.raises(script.WriteBackError) as raised:
+        script.migrate_config_token(
+            script.RefreshTokenSecret(legacy, SECRET_ID),
+            script.TokenSecret(dedicated, DEDICATED_ID),
+            FakeSlack().rotate,
+        )
+
+    assert "xoxe" not in str(raised.value)
+    assert dedicated.current is None
+    assert legacy.current == {"SLACK_CONFIG_REFRESH_TOKEN": "xoxe-new-1", "OTHER": "kept"}
+
+
+def test_a_failed_dedicated_write_back_withholds_the_access_token() -> None:
+    """Outside the migration a failed write to the dedicated secret is a write-back error."""
+    dedicated = FakeDedicated({"SLACK_CONFIG_REFRESH_TOKEN": "xoxe-old"}, fail_put=True)
+
+    with pytest.raises(script.WriteBackError):
+        script.rotate_config_token(script.TokenSecret(dedicated, DEDICATED_ID), FakeSlack().rotate)
+
+
+def test_the_boto3_fallback_removes_only_the_token_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Without webbpulse the removal keeps every other key of the app secret."""
+    monkeypatch.setitem(sys.modules, "webbpulse.ops.config", None)
+    client = FakeSecrets({"SLACK_CONFIG_REFRESH_TOKEN": "xoxe-old", "OTHER": "kept"})
+
+    script.RefreshTokenSecret(client, SECRET_ID).remove()
+
+    assert client.current == {"OTHER": "kept"}
+
+
+def test_the_app_id_defaults_to_the_committed_file(tmp_path: Path) -> None:
+    """``slack/app_ids.json`` supplies the App ID, and an empty entry is refused."""
+    (tmp_path / "app_ids.json").write_text(json.dumps({"staging": "A0STAGING", "production": ""}))
+
+    assert script.committed_app_id("staging", tmp_path) == "A0STAGING"
+    with pytest.raises(script.TokenError):
+        script.committed_app_id("production", tmp_path)
+
+
+def test_main_passes_the_role_to_the_dedicated_secret(monkeypatch: pytest.MonkeyPatch) -> None:
+    """``--role-arn`` reaches the opener of the dedicated secret and the legacy secret keeps the ambient profile."""
+    seen: dict[str, Any] = {}
+    dedicated = FakeDedicated({"SLACK_CONFIG_REFRESH_TOKEN": "xoxe-old"})
+    slack = FakeSlack()
+
+    def open_dedicated(secret_id: str, region: str, role_arn: str | None = None) -> Any:
+        """Record the arguments and hand back the fake."""
+        seen.update(secret_id=secret_id, role_arn=role_arn)
+        return script.TokenSecret(dedicated, secret_id)
+
+    def fake_call(method: str, token: str | None, **params: str) -> dict[str, Any]:
+        """Answer rotation and the manifest calls with the committed manifest."""
+        if method == "tooling.tokens.rotate":
+            return slack.rotate(params["refresh_token"])
+        if method == "apps.manifest.export":
+            return {"ok": True, "manifest": json.loads(params.get("manifest") or MANIFEST.read_text())}
+        return {"ok": True}
+
+    monkeypatch.delenv("SLACK_CONFIG_TOKEN", raising=False)
+    monkeypatch.setattr(script, "call", fake_call)
+    monkeypatch.setattr(script, "open_secret", open_dedicated)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["apply_slack_manifest.py", "staging", "--app-id", "A0123456789", "--role-arn", "arn:aws:iam::1:role/x"],
+    )
+
+    assert script.main() == 0
+    assert seen == {"secret_id": DEDICATED_ID, "role_arn": "arn:aws:iam::1:role/x"}
+    assert dedicated.current == {"SLACK_CONFIG_REFRESH_TOKEN": "xoxe-new-1"}
+
+
+MANIFEST = SCRIPT.parent.parent / "slack" / "manifest.staging.json"
