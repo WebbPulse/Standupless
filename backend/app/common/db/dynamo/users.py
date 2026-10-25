@@ -32,6 +32,11 @@ PulseDigestField = Literal["off", "daily", "weekly"]
 PULSE_DIGESTS: tuple[str, ...] = ("off", "daily", "weekly")
 """How often a person's Pulse digest email comes, if at all."""
 
+EmailFormatField = Literal["digest", "immediate"]
+
+EMAIL_FORMATS: tuple[str, ...] = ("digest", "immediate")
+"""How notification emails reach a person: batched into a short digest, or one email per notification."""
+
 HomeViewField = Literal["home", "inbox", "my_issues", "projects", "pulse", "views"]
 
 HOME_VIEWS: tuple[str, ...] = ("home", "inbox", "my_issues", "projects", "pulse", "views")
@@ -108,6 +113,9 @@ class User(BaseModel):
     `auto_grant_new_scopes` is the person's opt-in, off by default, to have a scope
     the product adds later join every connected app grant that took every scope on
     offer when it was given, at that app's next token refresh.
+
+    `email_format` is how notification emails arrive, one of `EMAIL_FORMATS`:
+    `digest` by default, or `immediate` for one email per notification.
     """
 
     id: str = Field(default_factory=new_user_id)
@@ -119,6 +127,7 @@ class User(BaseModel):
     email_verified: bool = False
     email_notifications: bool = True
     notification_preferences: dict[str, dict[str, bool]] = Field(default_factory=dict)
+    email_format: str = "digest"
     timezone: Optional[str] = None
     pulse_digest: str = "off"
     home_view: str = "home"
@@ -178,6 +187,11 @@ class User(BaseModel):
         if channel == "email" and not self.email_notifications:
             return False
         return bool(self.notification_preferences.get(kind, {}).get(channel, True))
+
+    @property
+    def immediate_email(self) -> bool:
+        """Whether this person asked for one email per notification rather than a digest."""
+        return self.email_format == "immediate"
 
     @property
     def email_lower(self) -> str:

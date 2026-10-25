@@ -2850,6 +2850,7 @@ class UserPreferencesUpdate(TypedDict):
     auto_grant_new_scopes: NotRequired[bool | None]
     branch_copy_assigns: NotRequired[bool | None]
     branch_copy_starts: NotRequired[bool | None]
+    email_format: NotRequired[Literal["digest", "immediate"] | None]
     email_notifications: NotRequired[bool | None]
     font_size: NotRequired[Literal["small", "default", "large"] | None]
     home_view: NotRequired[Literal["home", "inbox", "my_issues", "projects", "pulse", "views"] | None]
@@ -2900,6 +2901,7 @@ class UserRead(TypedDict):
     branch_copy_starts: NotRequired[bool]
     display_name: str
     email: str
+    email_format: NotRequired[Literal["digest", "immediate"]]
     email_notifications: bool
     email_verified: bool
     font_size: NotRequired[Literal["small", "default", "large"]]
