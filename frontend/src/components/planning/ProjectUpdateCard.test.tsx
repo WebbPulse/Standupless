@@ -17,6 +17,7 @@ import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { loadEmojiCatalog } from '../../lib/emojiCatalog';
+import type { Assignable } from '../../lib/issuePeople';
 import type {
   InitiativeUpdateRead,
   ProjectUpdateCommentRead,
@@ -423,13 +424,11 @@ describe('ProjectUpdateCard initiative report', () => {
 });
 
 describe('ProjectUpdateCard Copy as Markdown', () => {
-  const people = [
+  const people: Assignable[] = [
     {
       user_id: 'user-1',
       email: 'ada@example.com',
       display_name: 'Ada Lovelace',
-      avatar_url: null,
-      full_name: null,
     },
   ];
 
