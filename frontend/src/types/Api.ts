@@ -3282,7 +3282,7 @@ export interface PulseFollowRead {
 export interface ProjectListQuery {
   team_id?: string;
   /** A category, or one workspace project status by id. */
-  status?: ProjectStatus | string;
+  status?: string;
   /** Only the projects in this initiative. */
   initiative_id?: string;
   /** With `team_id`, also list the projects of its sub-teams the caller can see. */

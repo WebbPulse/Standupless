@@ -127,7 +127,7 @@ const SectionHeading: React.FC<{
 /** Searches issues, projects, initiatives, documents and comments across the visible teams. */
 export const Search: React.FC = () => {
   const { workspace } = useWorkspace();
-  const { statusOf } = useProjectStatuses();
+  const { statusOf: projectStatusOf } = useProjectStatuses();
   const navigate = useNavigate();
   const auth = useQueryAuth();
   const [params, setParams] = useSearchParams();
@@ -461,8 +461,8 @@ export const Search: React.FC = () => {
                       >
                         <ProjectStatusGlyph
                           status={project.status}
-                          name={statusOf(project).name}
-                          color={statusOf(project).color}
+                          name={projectStatusOf(project).name}
+                          color={projectStatusOf(project).color}
                         />
                         <span className="min-w-0 flex-1 truncate text-sm font-medium text-text">
                           {project.name}
@@ -474,7 +474,7 @@ export const Search: React.FC = () => {
                             .join(', ')}
                         </span>
                         <span className="w-20 shrink-0 truncate text-right text-xs text-text-faint">
-                          {statusOf(project).name}
+                          {projectStatusOf(project).name}
                         </span>
                       </Link>
                     </li>
