@@ -5,8 +5,9 @@
  * j and k moving focus and p opening the focused row's picker, hiding
  * completed sub-issues behind an expandable count remembered for the viewer,
  * filing children one after another from the inline row, Escape leaving it, a
- * failed create giving the title back, and a read only caller seeing no
- * controls.
+ * failed create giving the title back, pasted lines filed in order once
+ * confirmed, picked fields kept on Ctrl+Shift+Enter, the parent's priority and
+ * project inherited, and a read only caller seeing no controls.
  */
 
 import {
@@ -231,6 +232,119 @@ describe('adding sub-issues inline', () => {
 
     await waitFor(() => {
       expect(input).toHaveValue('Lost');
+    });
+  });
+});
+
+describe('filing several sub-issues from the inline row', () => {
+  it('asks before filing pasted lines, then files them in order', async () => {
+    createIssue
+      .mockResolvedValueOnce(child('5', 'One'))
+      .mockResolvedValueOnce(child('6', 'Two'))
+      .mockResolvedValueOnce(child('7', 'Three'));
+    const user = userEvent.setup();
+    renderSection();
+
+    await user.click(screen.getByRole('button', { name: 'Add sub-issue' }));
+    const input = screen.getByRole('textbox', { name: 'New sub-issue title' });
+    await user.click(input);
+    await user.paste('- One\n\n- [ ] Two\n3. Three');
+
+    expect(screen.getByText('Create 3 sub-issues?')).toBeInTheDocument();
+    expect(input).toHaveValue('');
+    expect(createIssue).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole('button', { name: 'Create 3' }));
+
+    await waitFor(() => {
+      expect(createIssue).toHaveBeenCalledTimes(3);
+    });
+    expect(
+      createIssue.mock.calls.map(([body]) => (body as { title: string }).title)
+    ).toEqual(['One', 'Two', 'Three']);
+    expect(await screen.findByText('Three')).toBeInTheDocument();
+  });
+
+  it('pastes a single line as the title without asking', async () => {
+    const user = userEvent.setup();
+    renderSection();
+
+    await user.click(screen.getByRole('button', { name: 'Add sub-issue' }));
+    const input = screen.getByRole('textbox', { name: 'New sub-issue title' });
+    await user.click(input);
+    await user.paste('Just one');
+
+    expect(input).toHaveValue('Just one');
+    expect(screen.queryByText(/sub-issues\?$/)).not.toBeInTheDocument();
+  });
+
+  it('keeps the picked priority for the next title on Ctrl+Shift+Enter', async () => {
+    createIssue
+      .mockResolvedValueOnce(child('5', 'First'))
+      .mockResolvedValueOnce(child('6', 'Second'))
+      .mockResolvedValueOnce(child('7', 'Third'));
+    const user = userEvent.setup();
+    renderSection();
+
+    await user.click(screen.getByRole('button', { name: 'Add sub-issue' }));
+    await user.click(
+      screen.getByRole('button', { name: 'Priority: No priority' })
+    );
+    await user.keyboard('2');
+    const input = screen.getByRole('textbox', { name: 'New sub-issue title' });
+
+    await user.type(input, 'First{Control>}{Shift>}{Enter}{/Shift}{/Control}');
+
+    expect(createIssue).toHaveBeenLastCalledWith({
+      team_id: 'team-1',
+      title: 'First',
+      parent_id: 'p-1',
+      priority: 'high',
+    });
+    expect(input).toHaveValue('');
+
+    await user.type(input, 'Second{Enter}');
+
+    expect(createIssue).toHaveBeenLastCalledWith({
+      team_id: 'team-1',
+      title: 'Second',
+      parent_id: 'p-1',
+      priority: 'high',
+    });
+
+    await user.type(input, 'Third{Enter}');
+
+    expect(createIssue).toHaveBeenLastCalledWith({
+      team_id: 'team-1',
+      title: 'Third',
+      parent_id: 'p-1',
+    });
+  });
+
+  it("inherits the parent's priority and project", async () => {
+    createIssue.mockResolvedValueOnce(child('5', 'First'));
+    const user = userEvent.setup();
+    renderSection({
+      parent: {
+        id: 'p-1',
+        team_id: 'team-1',
+        priority: 'urgent',
+        project_id: 'proj-1',
+      },
+    });
+
+    await user.click(screen.getByRole('button', { name: 'Add sub-issue' }));
+    await user.type(
+      screen.getByRole('textbox', { name: 'New sub-issue title' }),
+      'First{Enter}'
+    );
+
+    expect(createIssue).toHaveBeenCalledWith({
+      team_id: 'team-1',
+      title: 'First',
+      parent_id: 'p-1',
+      priority: 'urgent',
+      project_id: 'proj-1',
     });
   });
 });

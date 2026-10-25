@@ -18,7 +18,10 @@
  * writing only what the Markdown shortcuts already write. A surface given a
  * selection issue source also offers filing an issue from the selection, which
  * opens the workspace's create dialog on the selected text and puts the new
- * issue's key in its place.
+ * issue's key in its place. One that names a parent issue also files
+ * sub-issues of it, from the toolbar when the selection is a list and on
+ * Ctrl or Cmd Shift O for any selection, which with nothing selected is left
+ * to the page.
  *
  * A day goes in as a date chip, from the `/date` picker or from the Date group
  * the `@` menu shows when the text after the `@` reads as a date, and `|--`
@@ -99,6 +102,8 @@ import {
 import { ReferenceMenu } from './ReferenceMenu';
 import {
   createIssueFromSelection,
+  createSubIssuesFromList,
+  subIssuesFromSelection,
   type SelectionIssueSource,
 } from './selectionIssue';
 import {
@@ -409,6 +414,7 @@ export const RichMarkdownEditor: React.FC<RichMarkdownEditorProps> = ({
   );
 
   const commitRef = useRef<() => void>(() => undefined);
+  const subIssueRef = useRef<() => boolean>(() => false);
   const revertRef = useRef<() => void>(() => undefined);
   const openLinkRef = useRef<() => void>(() => undefined);
 
@@ -534,6 +540,19 @@ export const RichMarkdownEditor: React.FC<RichMarkdownEditorProps> = ({
             }
             if (handlers.current.onSubmit === undefined) revertRef.current();
             (event.target as HTMLElement).blur();
+            return true;
+          }
+          if (
+            mod &&
+            event.shiftKey &&
+            !event.altKey &&
+            event.key.toLowerCase() === 'o' &&
+            view.editable &&
+            !view.state.selection.empty &&
+            subIssueRef.current()
+          ) {
+            event.preventDefault();
+            event.stopPropagation();
             return true;
           }
           if (mod && !event.shiftKey && event.key.toLowerCase() === 'k') {
@@ -886,8 +905,37 @@ export const RichMarkdownEditor: React.FC<RichMarkdownEditorProps> = ({
 
   const issueCreator = useCreateIssue();
   const canCreateIssue = selectionIssue !== undefined && issueCreator.canCreate;
-  const selectionIssueRef = useRef({ selectionIssue, open: issueCreator.open });
-  selectionIssueRef.current = { selectionIssue, open: issueCreator.open };
+  const workspaceId = workspace?.id;
+  const canCreateSubIssues =
+    canCreateIssue &&
+    selectionIssue?.parent !== undefined &&
+    workspaceId !== undefined;
+  const selectionIssueRef = useRef({
+    selectionIssue,
+    open: issueCreator.open,
+    workspaceId,
+  });
+  selectionIssueRef.current = {
+    selectionIssue,
+    open: issueCreator.open,
+    workspaceId,
+  };
+  const hideToolbar = useCallback((): void => {
+    editor.view.dispatch(editor.state.tr.setMeta(formattingToolbarKey, 'hide'));
+  }, [editor]);
+  subIssueRef.current = (): boolean => {
+    const {
+      selectionIssue: source,
+      open,
+      workspaceId: id,
+    } = selectionIssueRef.current;
+    const parent = source?.parent;
+    if (!canCreateSubIssues || parent === undefined || id === undefined) {
+      return false;
+    }
+    hideToolbar();
+    return subIssuesFromSelection(editor, id, parent, open);
+  };
 
   const formatContext = useMemo<FormatContext>(
     () => ({
@@ -900,15 +948,25 @@ export const RichMarkdownEditor: React.FC<RichMarkdownEditorProps> = ({
               const { selectionIssue: source, open } =
                 selectionIssueRef.current;
               if (source === undefined) return;
-              editor.view.dispatch(
-                editor.state.tr.setMeta(formattingToolbarKey, 'hide')
-              );
+              hideToolbar();
               createIssueFromSelection(editor, source, open);
             },
           }
         : {}),
+      ...(canCreateSubIssues
+        ? {
+            createSubIssues: () => {
+              const { selectionIssue: source, workspaceId: id } =
+                selectionIssueRef.current;
+              const parent = source?.parent;
+              if (parent === undefined || id === undefined) return;
+              hideToolbar();
+              createSubIssuesFromList(editor, id, parent);
+            },
+          }
+        : {}),
     }),
-    [canCreateIssue, editor]
+    [canCreateIssue, canCreateSubIssues, editor, hideToolbar]
   );
 
   const applyLink = (): void => {

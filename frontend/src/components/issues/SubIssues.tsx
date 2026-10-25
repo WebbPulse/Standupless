@@ -12,7 +12,11 @@
  * pickers rather than the parent's. The Display button sets the ordering and
  * whether completed sub-issues show, remembered for the viewer; hidden ones
  * fold into an "N completed" row that expands them. The add button opens an
- * inline row that files a child per Enter and stays open for the next one.
+ * inline row that files a child per Enter and stays open for the next one,
+ * with status, priority and assignee pickers; Ctrl or Cmd+Shift+Enter keeps
+ * the picked values for the next title, and pasting several lines files one
+ * child per line once confirmed. Children inherit the parent's team, priority
+ * and project, as in Linear.
  */
 
 import React, { useMemo, useRef, useState } from 'react';
@@ -42,17 +46,29 @@ import {
   writeSubIssueDisplay,
   type SubIssueDisplay,
 } from '../../lib/subIssues';
+import {
+  createSubIssues,
+  subIssueBody,
+  type ResolvedSubIssueParent,
+  type SubIssueExtras,
+} from '../../lib/subIssueCreation';
+import { splitTitles } from '../../lib/subIssueLines';
 import { showErrorToast, showToast } from '../../lib/toast';
 import { shownStatusId } from '../../lib/triageStatus';
 import { TITLE_MAX } from '../../lib/validation';
-import type { IssueProgress, IssueRead, StatusRead } from '../../types/Api';
+import type {
+  IssuePriority,
+  IssueProgress,
+  IssueRead,
+  StatusRead,
+} from '../../types/Api';
 import { openPropertyChip } from '../planning/ProjectPropertyKeys';
 import { ErrorAlert } from '../ui/alert';
 import { Popover } from '../ui/popover';
 import { Select } from '../ui/select';
-import { StatusIcon } from '../ui/StatusIcon';
 import Skeleton from '../ui/skeleton';
-import { IconButton } from '../ui/button';
+import Button, { IconButton } from '../ui/button';
+import Dialog from '../ui/dialog';
 import {
   AssigneePicker,
   PriorityPicker,
@@ -64,8 +80,12 @@ import RailSection from './RailSection';
 export interface SubIssuesProps {
   workspaceId: string;
   slug: string;
-  /** The issue the rows hang off, whose team a new child is filed in. */
-  parent: Pick<IssueRead, 'id' | 'team_id'>;
+  /**
+   * The issue the rows hang off. A new child is filed in its team and inherits
+   * its priority and project when given.
+   */
+  parent: Pick<IssueRead, 'id' | 'team_id'> &
+    Partial<Pick<IssueRead, 'key' | 'priority' | 'project_id'>>;
   rows: IssueRead[];
   isLoading: boolean;
   error: unknown;
@@ -104,57 +124,229 @@ const shownProgress = (
   return { total: rows.length, completed };
 };
 
-/** The inline row a child is typed into, Enter filing it and Escape leaving. */
+/** The fields the inline row sets on each child it files. */
+interface RowFields {
+  statusId: string | null;
+  priority: IssuePriority;
+  assigneeId: string | null;
+}
+
+/** The fields as create extras, the priority only when it differs. */
+const rowExtras = (
+  fields: RowFields,
+  inherited: IssuePriority
+): SubIssueExtras => ({
+  ...(fields.statusId === null ? {} : { status_id: fields.statusId }),
+  ...(fields.priority === inherited ? {} : { priority: fields.priority }),
+  ...(fields.assigneeId === null ? {} : { assignee_id: fields.assigneeId }),
+});
+
+/** Asks before pasted lines become that many sub-issues, listing them. */
+const ConfirmPastedTitles: React.FC<{
+  titles: readonly string[];
+  onClose: () => void;
+  onConfirm: () => Promise<void>;
+}> = ({ titles, onClose, onConfirm }) => {
+  const [busy, setBusy] = useState(false);
+  return (
+    <Dialog
+      open
+      onClose={onClose}
+      title={`Create ${String(titles.length)} sub-issues?`}
+      size="sm"
+    >
+      <form
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (busy) return;
+          setBusy(true);
+          void onConfirm().finally(onClose);
+        }}
+        className="space-y-4"
+      >
+        <ol
+          aria-label="Pasted sub-issues"
+          className="max-h-64 list-decimal space-y-1 overflow-y-auto pl-5 text-sm text-text"
+        >
+          {titles.map((title, index) => (
+            <li key={`${String(index)}-${title}`} className="break-words">
+              {title}
+            </li>
+          ))}
+        </ol>
+        <div className="flex justify-end gap-2">
+          <Button type="button" size="sm" variant="ghost" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button type="submit" size="sm" disabled={busy} autoFocus>
+            {busy ? 'Creating' : `Create ${String(titles.length)}`}
+          </Button>
+        </div>
+      </form>
+    </Dialog>
+  );
+};
+
+/**
+ * The inline row a child is typed into. Enter files it and resets the
+ * pickers, Ctrl or Cmd+Shift+Enter files it and keeps them for the next
+ * title, and Escape leaves. Pasting two or more lines asks before filing one
+ * child per line, in order.
+ */
 const AddSubIssueRow: React.FC<{
-  onCreate: (title: string) => Promise<boolean>;
+  statuses: StatusRead[];
+  triage: boolean;
+  people: Assignable[];
+  currentUserId?: string;
+  inheritedPriority: IssuePriority;
+  onCreate: (title: string, extras: SubIssueExtras) => Promise<boolean>;
+  onCreateMany: (
+    titles: readonly string[],
+    extras: SubIssueExtras
+  ) => Promise<void>;
   onDone: () => void;
-}> = ({ onCreate, onDone }) => {
+}> = ({
+  statuses,
+  triage,
+  people,
+  currentUserId,
+  inheritedPriority,
+  onCreate,
+  onCreateMany,
+  onDone,
+}) => {
+  const fresh: RowFields = {
+    statusId: null,
+    priority: inheritedPriority,
+    assigneeId: null,
+  };
   const [title, setTitle] = useState('');
+  const [fields, setFields] = useState<RowFields>(fresh);
+  const [pasted, setPasted] = useState<string[] | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-  const submit = (): void => {
+  const formRef = useRef<HTMLFormElement>(null);
+  const dirty =
+    fields.statusId !== null ||
+    fields.priority !== inheritedPriority ||
+    fields.assigneeId !== null;
+  const submit = (keep: boolean): void => {
     const trimmed = title.trim();
     if (trimmed === '') return;
+    const held = fields;
     setTitle('');
-    void onCreate(trimmed.slice(0, TITLE_MAX)).then((created) => {
+    if (!keep) setFields(fresh);
+    void onCreate(
+      trimmed.slice(0, TITLE_MAX),
+      rowExtras(held, inheritedPriority)
+    ).then((created) => {
       if (created) return;
-      setTitle((held) => (held === '' ? trimmed : held));
+      setTitle((typed) => (typed === '' ? trimmed : typed));
+      setFields(held);
     });
     inputRef.current?.focus();
   };
+  const set = (change: Partial<RowFields>): void => {
+    setFields((current) => ({ ...current, ...change }));
+    inputRef.current?.focus();
+  };
   return (
-    <form
-      className="-mx-1 flex h-7 items-center gap-1.5 px-1"
-      onSubmit={(event) => {
-        event.preventDefault();
-        submit();
-      }}
-    >
-      <span aria-hidden="true" className="flex h-6 w-6 justify-center">
-        <StatusIcon />
-      </span>
-      <input
-        ref={inputRef}
-        aria-label="New sub-issue title"
-        placeholder="Sub-issue title, then Enter"
-        autoFocus
-        maxLength={TITLE_MAX}
-        value={title}
-        onChange={(event) => {
-          setTitle(event.target.value);
+    <>
+      <form
+        ref={formRef}
+        className="-mx-1 flex h-7 items-center gap-1.5 px-1"
+        onSubmit={(event) => {
+          event.preventDefault();
+          submit(false);
         }}
-        onBlur={() => {
-          if (title.trim() === '') onDone();
-        }}
-        onKeyDown={(event) => {
-          if (event.key === 'Escape') {
+      >
+        <StatusPicker
+          variant="icon"
+          statuses={statuses}
+          triage={triage}
+          value={fields.statusId}
+          onChange={(statusId) => {
+            set({ statusId });
+          }}
+          className="shrink-0"
+        />
+        <input
+          ref={inputRef}
+          aria-label="New sub-issue title"
+          placeholder="Sub-issue title, then Enter"
+          autoFocus
+          maxLength={TITLE_MAX}
+          value={title}
+          onChange={(event) => {
+            setTitle(event.target.value);
+          }}
+          onPaste={(event) => {
+            const titles = splitTitles(
+              event.clipboardData.getData('text/plain')
+            );
+            if (titles.length < 2) return;
             event.preventDefault();
-            event.stopPropagation();
-            onDone();
+            setPasted(titles);
+          }}
+          onBlur={(event) => {
+            const next = event.relatedTarget;
+            if (next instanceof Node && formRef.current?.contains(next)) {
+              return;
+            }
+            if (title.trim() === '' && !dirty && pasted === null) onDone();
+          }}
+          onKeyDown={(event) => {
+            if (event.key === 'Escape') {
+              event.preventDefault();
+              event.stopPropagation();
+              onDone();
+              return;
+            }
+            if (
+              event.key === 'Enter' &&
+              event.shiftKey &&
+              (event.metaKey || event.ctrlKey)
+            ) {
+              event.preventDefault();
+              event.stopPropagation();
+              submit(true);
+            }
+          }}
+          className="min-w-0 flex-1 bg-transparent text-xs text-text placeholder:text-text-faint focus:outline-none"
+        />
+        <PriorityPicker
+          variant="icon"
+          align="end"
+          value={fields.priority}
+          onChange={(priority) => {
+            set({ priority });
+          }}
+          className="shrink-0"
+        />
+        <AssigneePicker
+          variant="icon"
+          align="end"
+          people={people}
+          value={fields.assigneeId}
+          onChange={(assigneeId) => {
+            set({ assigneeId });
+          }}
+          {...(currentUserId === undefined ? {} : { currentUserId })}
+          className="shrink-0"
+        />
+      </form>
+      {pasted !== null && (
+        <ConfirmPastedTitles
+          titles={pasted}
+          onClose={() => {
+            setPasted(null);
+            inputRef.current?.focus();
+          }}
+          onConfirm={() =>
+            onCreateMany(pasted, rowExtras(fields, inheritedPriority))
           }
-        }}
-        className="min-w-0 flex-1 bg-transparent text-xs text-text placeholder:text-text-faint focus:outline-none"
-      />
-    </form>
+        />
+      )}
+    </>
   );
 };
 
@@ -374,13 +566,23 @@ export const SubIssues: React.FC<SubIssuesProps> = ({
     }
   };
 
-  const addChild = async (title: string): Promise<boolean> => {
+  const childParent: ResolvedSubIssueParent = {
+    id: parent.id,
+    key: parent.key ?? '',
+    teamId: parent.team_id,
+    priority: parent.priority ?? 'none',
+    projectId: parent.project_id ?? null,
+  };
+
+  const addChild = async (
+    title: string,
+    extras: SubIssueExtras
+  ): Promise<boolean> => {
     try {
-      const child = await createIssue(workspaceId, {
-        team_id: parent.team_id,
-        title,
-        parent_id: parent.id,
-      });
+      const child = await createIssue(
+        workspaceId,
+        subIssueBody(childParent, { title }, extras)
+      );
       setCreated((pending) => [...pending, child]);
     } catch (cause) {
       showErrorToast(errorMessage(cause, 'Could not create that sub-issue.'));
@@ -388,6 +590,19 @@ export const SubIssues: React.FC<SubIssuesProps> = ({
     }
     invalidateQueries([childrenKey(parent.id), activityKey(parent.id)]);
     return true;
+  };
+
+  const addChildren = async (
+    titles: readonly string[],
+    extras: SubIssueExtras
+  ): Promise<void> => {
+    const run = await createSubIssues(
+      workspaceId,
+      childParent,
+      titles.map((title) => ({ title })),
+      extras
+    );
+    setCreated((pending) => [...pending, ...run.created]);
   };
 
   if (!isLoading && shown.length === 0 && !canEdit) return null;
@@ -585,7 +800,13 @@ export const SubIssues: React.FC<SubIssuesProps> = ({
       )}
       {canEdit && adding && (
         <AddSubIssueRow
+          statuses={statuses}
+          triage={triageOn}
+          people={people}
+          {...(currentUserId === undefined ? {} : { currentUserId })}
+          inheritedPriority={childParent.priority}
           onCreate={addChild}
+          onCreateMany={addChildren}
           onDone={() => {
             setAdding(false);
           }}

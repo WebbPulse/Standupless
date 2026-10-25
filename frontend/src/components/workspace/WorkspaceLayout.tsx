@@ -121,6 +121,7 @@ const presetOf = (request: Request): CreateIssuePreset => ({
   ...(request.cycleId === undefined ? {} : { cycleId: request.cycleId }),
   ...(request.parentId === undefined ? {} : { parentId: request.parentId }),
   ...(request.parentKey === undefined ? {} : { parentKey: request.parentKey }),
+  ...(request.priority === undefined ? {} : { priority: request.priority }),
   ...(request.templateId === undefined
     ? {}
     : { templateId: request.templateId }),

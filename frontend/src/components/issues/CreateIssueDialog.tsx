@@ -225,6 +225,8 @@ export interface CreateIssuePreset {
   parentId?: string;
   /** The parent's key, shown in the header so the person sees where it lands. */
   parentKey?: string;
+  /** The priority the draft starts on, such as a parent's for a sub-issue. */
+  priority?: IssuePriority;
   /** The template the draft starts from, in place of the team's default. */
   templateId?: string;
   /** The title the draft starts with, such as a selected line of text. */
@@ -271,6 +273,7 @@ const presetDraft = (preset: CreateIssuePreset | undefined): Draft => ({
   assigneeId: preset?.assigneeId ?? null,
   projectId: preset?.projectId ?? null,
   cycleId: preset?.cycleId ?? null,
+  priority: preset?.priority ?? 'none',
   parent:
     preset?.parentId === undefined
       ? null
