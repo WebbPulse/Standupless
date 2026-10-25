@@ -19,6 +19,7 @@ from app.common.api.dependencies.authz import AuthzContext
 from app.common.api.dependencies.repositories import Repositories
 from app.common.api.schemas.planning import project_slug_id
 from app.common.api.schemas.projects_display import PROJECTS_COLUMNS, PROJECTS_DISPLAY_FIELDS
+from app.common.body_versions import BODY_CHANGED, body_version
 from app.common.db.dynamo.issues import Issue
 from app.common.db.dynamo.teams import Team, TeamRepository
 from app.common.issue_keys import current
@@ -423,6 +424,7 @@ def issue_json(teams: TeamRepository, issue: Issue, *, status_name: str = "") ->
         "team_id": issue.team_id,
         "title": issue.title,
         "body": issue.body or "",
+        "body_version": body_version(issue.body),
         "status_id": shown_status_id(issue),
         "status": TRIAGE_STATUS_NAME if issue.in_triage else status_name,
         "priority": issue.priority,
@@ -501,8 +503,10 @@ def http_error_message(exc: HTTPException) -> str:
     refusal, or a write to an area the workspace turned off, says what is missing
     and carries its code, so a caller with the
     role is not sent chasing credentials. Any other 403 says the credential may not
-    write there. Anything else carries the route's own message, which is written
-    for a person and reads as well to a model.
+    write there. A stale body save carries the body that is there now and its
+    version, so the caller can merge and retry in one more call. Anything else
+    carries the route's own message, which is written for a person and reads as
+    well to a model.
     """
     detail = exc.detail
     message = detail.get("message") if isinstance(detail, Mapping) else detail
@@ -512,6 +516,12 @@ def http_error_message(exc: HTTPException) -> str:
         return NOT_VISIBLE
     if code in PLAN_REFUSAL_CODES:
         return f"{text} ({code})"
+    if code == BODY_CHANGED and isinstance(detail, Mapping) and isinstance(detail.get("details"), Mapping):
+        details = detail["details"]
+        return (
+            f"{text} ({code}). Merge with the current body and retry with base_body_version "
+            f"{details.get('body_version', '')}. The current body:\n\n{details.get('body', '')}"
+        )
     if exc.status_code == 403:
         return f"This credential may not write there. {text}"
     return text

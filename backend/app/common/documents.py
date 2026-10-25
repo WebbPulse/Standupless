@@ -37,6 +37,7 @@ from app.common.api.schemas.documents import (
     DocumentSummaryRead,
     DocumentVersionRead,
 )
+from app.common.body_versions import body_changed, body_condition, body_version, is_stale
 from app.common.change_source import ChangeSource
 from app.common.db.dynamo.base import utc_now
 from app.common.db.dynamo.documents import (
@@ -241,6 +242,7 @@ def _read(rights: Rights, parent: Parent, document: Document, body: DocumentBody
     return DocumentRead(
         **_summary(rights, parent, document).model_dump(),
         body=body.body,
+        body_version=body_version(body.body),
         mentions=[
             DocumentMentionRead(key=mention.key, issue_id=mention.issue_id, team_id=mention.team_id)
             for mention in document.mentions
@@ -430,6 +432,9 @@ def update_document(
             raise unprocessable(f"{name} must not be null")
     if payload.base_updated_at is not None and payload.base_updated_at != existing.updated_at:
         raise conflict("The document changed since you opened it")
+    guarded = payload.base_body_version is not None and fields.get("body", body.body) != body.body
+    if guarded and is_stale(payload.base_body_version, body.body):
+        raise body_changed(body.body)
     destination = _destination(repositories, context, rights, parent, fields)
     moved = destination is not parent
     title = fields.get("title", existing.title)
@@ -471,12 +476,16 @@ def update_document(
     stored_body = body.model_copy(
         update={"body": text, "parent_kind": destination.kind, "parent_id": destination.parent_id}
     )
+    condition = body_condition(body.body) if guarded else None
     try:
         if moved:
-            repositories.documents.move(existing, edited, stored_body)
+            repositories.documents.move(existing, edited, stored_body, condition=condition)
         else:
-            repositories.documents.replace(existing, edited, stored_body)
+            repositories.documents.replace(existing, edited, stored_body, condition=condition)
     except ConditionFailed as exc:
+        current = repositories.documents.get_body(context.workspace_id, existing.document_id) if guarded else None
+        if current is not None and is_stale(payload.base_body_version, current.body):
+            raise body_changed(current.body) from exc
         raise not_found() from exc
     return _read(rights, destination, edited, stored_body)
 

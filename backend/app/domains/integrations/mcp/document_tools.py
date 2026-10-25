@@ -74,6 +74,7 @@ def _document_json(document: DocumentRead) -> dict[str, Any]:
     return {
         **_summary_json(document),
         "body": document.body,
+        "body_version": document.body_version,
         "mentions": [mention.model_dump() for mention in document.mentions],
     }
 
@@ -123,9 +124,13 @@ def _create_document(call: ToolCall) -> Any:
 
 
 def _update_document(call: ToolCall) -> Any:
-    """Rename, rewrite, restyle or move a document."""
+    """Rename, rewrite, restyle or move a document.
+
+    `base_body_version` guards a new body against overwriting a body someone
+    else changed since it was read.
+    """
     fields: dict[str, Any] = {}
-    for name in ("title", "body"):
+    for name in ("title", "body", "base_body_version"):
         if call.optional(name) is not None:
             fields[name] = call.arguments[name]
     if call.present("icon"):
@@ -195,6 +200,10 @@ DOCUMENT_TOOLS: tuple[Tool, ...] = (
                 "document_id": string("The document id"),
                 "title": string("The new title"),
                 "body": string("The new body, in Markdown"),
+                "base_body_version": string(
+                    "The body_version the new body was written against; when the body changed since, the update "
+                    "is refused with the current body and version instead of overwriting it"
+                ),
                 "icon": ICON_PROPERTY,
                 **MOVE_PROPERTIES,
             },

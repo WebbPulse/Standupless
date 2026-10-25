@@ -194,7 +194,7 @@ def edit_document(
     workspace_id: Annotated[str, Path()],
     document_id: Annotated[str, Path()],
 ) -> DocumentRead:
-    """Rename, rewrite, restyle or move a document; a stale `base_updated_at` is a 409."""
+    """Rename, rewrite, restyle or move a document; a stale `base_updated_at` or `base_body_version` is a 409."""
     return update_document(repositories, context, document_id, payload)
 
 

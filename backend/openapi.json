@@ -5858,8 +5858,22 @@
         "type": "object"
       },
       "DocumentPatch": {
-        "description": "The body a document patch takes; any field may be left out, and only `icon` cleared.\n\n`parent_kind` and `parent_id` together move the document under another\nproject, initiative or team the caller may write under. `base_updated_at`\nis the `updated_at` the editor last read. When it is sent and the document\nhas changed since, the patch is a 409 rather than writing over someone\nelse's edit.",
+        "description": "The body a document patch takes; any field may be left out, and only `icon` cleared.\n\n`parent_kind` and `parent_id` together move the document under another\nproject, initiative or team the caller may write under. `base_updated_at`\nis the `updated_at` the editor last read. When it is sent and the document\nhas changed since, the patch is a 409 rather than writing over someone\nelse's edit. `base_body_version` is the narrower guard an editor saving the\nbody sends: the `body_version` it loaded. Only a patch that changes the body\nis held to it, so a rename or a move made meanwhile never makes it stale,\nand a stale one is a `BODY_CHANGED` 409 carrying the current body and its\nversion.",
         "properties": {
+          "base_body_version": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The body_version the body edit started from; a stale one is a 409.",
+            "title": "Base Body Version"
+          },
           "base_updated_at": {
             "anyOf": [
               {
@@ -5945,6 +5959,12 @@
           },
           "body": {
             "title": "Body",
+            "type": "string"
+          },
+          "body_version": {
+            "default": "",
+            "description": "The body's version, sent back as base_body_version.",
+            "title": "Body Version",
             "type": "string"
           },
           "can_delete": {
@@ -12284,7 +12304,7 @@
         "type": "object"
       },
       "IssueUpdate": {
-        "description": "The body an issue patch takes.\n\n`team_id` is absent by design: an issue's key, counter and every index\ncomposite are derived from it, so changing it is the move route's job.",
+        "description": "The body an issue patch takes.\n\n`team_id` is absent by design: an issue's key, counter and every index\ncomposite are derived from it, so changing it is the move route's job.\n`base_body_version` is the `body_version` the editor loaded. Sent with a new\n`body`, the patch is a `BODY_CHANGED` 409 carrying the current description\nand its version when someone else changed the description since, rather\nthan overwriting their edit. Left out, the patch writes as it always has.",
         "properties": {
           "assignee_id": {
             "anyOf": [
@@ -12296,6 +12316,20 @@
               }
             ],
             "title": "Assignee Id"
+          },
+          "base_body_version": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The body_version the description edit started from; a stale one is a 409.",
+            "title": "Base Body Version"
           },
           "body": {
             "anyOf": [
@@ -30644,6 +30678,12 @@
             ],
             "title": "Body"
           },
+          "body_version": {
+            "default": "",
+            "description": "The description's version, sent back as base_body_version when editing it.",
+            "title": "Body Version",
+            "type": "string"
+          },
           "cancelled_at": {
             "anyOf": [
               {
@@ -39272,7 +39312,7 @@
         ]
       },
       "patch": {
-        "description": "Rename, rewrite, restyle or move a document; a stale `base_updated_at` is a 409.",
+        "description": "Rename, rewrite, restyle or move a document; a stale `base_updated_at` or `base_body_version` is a 409.",
         "operationId": "edit_document_api_workspaces__workspace_id__documents__document_id__patch",
         "parameters": [
           {
