@@ -329,3 +329,27 @@ def test_an_initiative_target_may_be_a_month_quarter_half_or_year(client: TestCl
     assert (yearly["target_date"], yearly["target_date_resolution"]) == ("2027-12-31", "year")
     assert refused.status_code == 422
     assert (cleared["target_date"], cleared["target_date_resolution"]) == (None, None)
+
+
+def test_a_new_initiative_is_placed_first_and_a_patch_moves_it_in_the_manual_order(
+    client: TestClient, workspace: str, peer: str
+) -> None:
+    """Each new initiative takes a key ahead of the others, and a reorder is a patch every member reads back."""
+    sign_in(client, MEMBER)
+    older = _create(client, workspace, name="Older")
+    newer = _create(client, workspace, name="Newer")
+
+    assert older["sort_order"] is not None
+    assert newer["sort_order"] is not None
+    assert newer["sort_order"] < older["sort_order"]
+
+    path = f"{_base(workspace)}/{newer['initiative_id']}"
+    moved = client.patch(path, json={"sort_order": older["sort_order"] + "V"})
+    assert moved.status_code == 200, moved.text
+    assert moved.json()["sort_order"] == older["sort_order"] + "V"
+    assert client.patch(path, json={"sort_order": "not a key"}).status_code == 422
+
+    sign_in(client, PEER)
+    seen = _get(client, workspace, newer["initiative_id"])
+    assert seen["sort_order"] == older["sort_order"] + "V"
+    assert seen["name"] == "Newer"

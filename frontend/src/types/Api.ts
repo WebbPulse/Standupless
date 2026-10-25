@@ -73,9 +73,10 @@ export interface UserRead {
 
 /** The initiatives page arrangement an account saves, every field filled. */
 export interface InitiativesDisplayPreference {
-  /** What the list groups rows by: the initiative status or the lead team. */
-  grouping: 'status' | 'team';
-  order: 'target' | 'name' | 'progress' | 'created' | 'updated';
+  /** What the list groups rows by: status, lead team, owner, health or the target date's period. */
+  grouping: 'status' | 'team' | 'owner' | 'health' | 'target_date';
+  /** How rows run inside each group; `manual` follows the shared manual position. */
+  order: 'manual' | 'target' | 'name' | 'progress' | 'created' | 'updated';
   completed: 'show' | 'hide';
   /** The shown properties, comma separated in the list's own order. */
   columns: string;
@@ -3370,6 +3371,8 @@ export interface InitiativeRead {
   update_interval_inherited: boolean;
   next_update_due_at: string | null;
   update_due_state: ProjectUpdateDueState | null;
+  /** The shared manual position, a base 62 fractional key, or null when never placed. */
+  sort_order?: string | null;
   created_by: string;
   created_at: string;
   updated_at: string;
@@ -3436,6 +3439,8 @@ export interface InitiativeUpdate {
   target_date_resolution?: DateResolution | null;
   update_interval_days?: ProjectUpdateInterval | null;
   parent_initiative_id?: string | null;
+  /** The shared manual position, a base 62 fractional key. */
+  sort_order?: string;
 }
 
 /** One written update on an initiative. */

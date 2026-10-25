@@ -1145,6 +1145,7 @@ class InitiativeUpdate(TypedDict):
     name: NotRequired[str | None]
     owner_id: NotRequired[str | None]
     parent_initiative_id: NotRequired[str | None]
+    sort_order: NotRequired[str | None]
     status: NotRequired[Literal["planned", "active", "completed"] | None]
     target_date: NotRequired[str | None]
     target_date_resolution: NotRequired[Literal["day", "month", "quarter", "half", "year"] | None]
@@ -1181,8 +1182,8 @@ class InitiativeUpdateRead(TypedDict):
 class InitiativesDisplay(TypedDict):
     columns: NotRequired[str]
     completed: NotRequired[Literal["show", "hide"]]
-    grouping: NotRequired[Literal["status", "team"]]
-    order: NotRequired[Literal["target", "name", "progress", "created", "updated"]]
+    grouping: NotRequired[Literal["status", "team", "owner", "health", "target_date"]]
+    order: NotRequired[Literal["manual", "target", "name", "progress", "created", "updated"]]
 
 
 class InsightDurations(TypedDict):
@@ -4375,6 +4376,7 @@ class InitiativeRead(TypedDict):
     project_health: NotRequired[HealthBreakdownRead]
     project_ids: NotRequired[list[str]]
     rollup_project_ids: NotRequired[list[str]]
+    sort_order: NotRequired[str | None]
     status: Literal["planned", "active", "completed"]
     status_counts: NotRequired[dict[str, int]]
     sub_initiative_ids: NotRequired[list[str]]

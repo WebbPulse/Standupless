@@ -1692,7 +1692,11 @@ class InitiativeCreate(BaseModel):
 
 
 class InitiativeUpdate(BaseModel):
-    """The body an initiative patch takes; null clears the description, owner, team, health, date, cadence or parent."""
+    """The body an initiative patch takes; null clears the description, owner, team, health, date, cadence or parent.
+
+    `sort_order` is the initiative's manual position, a base 62 fractional key
+    shared by every viewer, so a drag rewrites only the initiative moved.
+    """
 
     name: Optional[str] = Field(default=None, min_length=1, max_length=NAME_MAX)
     description: Optional[str] = None
@@ -1710,12 +1714,21 @@ class InitiativeUpdate(BaseModel):
     parent_initiative_id: Optional[str] = Field(
         default=None, min_length=1, description="The initiative to nest this one under; null makes it top level"
     )
+    sort_order: Optional[str] = Field(
+        default=None, description="The manual position, a base 62 fractional key shared by every viewer"
+    )
 
     @field_validator("update_interval_days")
     @classmethod
     def check_update_interval(cls, value: Optional[int]) -> Optional[int]:
         """Hold the update cadence to the allowed options; null returns it to the workspace default."""
         return check_interval(value)
+
+    @field_validator("sort_order")
+    @classmethod
+    def check_sort_order(cls, value: Optional[str]) -> Optional[str]:
+        """Hold a manual position to the base 62 alphabet and its length cap."""
+        return _check_sort_order(value)
 
     @field_validator("name")
     @classmethod
@@ -1793,6 +1806,9 @@ class InitiativeRead(BaseModel):
     update_interval_inherited: bool = True
     next_update_due_at: Optional[datetime] = None
     update_due_state: Optional[UpdateDueState] = None
+    sort_order: Optional[str] = Field(
+        default=None, description="The manual position, null when the initiative was never placed"
+    )
     created_by: str
     created_at: datetime
     updated_at: datetime
@@ -1857,6 +1873,7 @@ class InitiativeRead(BaseModel):
             update_interval_inherited=initiative.update_interval_days is None,
             next_update_due_at=next_update_due_at(initiative, default_interval_days),
             update_due_state=update_due_state(initiative, default_interval_days, now),
+            sort_order=initiative.sort_order,
             created_by=initiative.created_by,
             created_at=initiative.created_at,
             updated_at=initiative.updated_at,

@@ -5,19 +5,30 @@
  * a guest is told initiatives are for members and offered no way to start one,
  * that sub-initiatives sit indented under their parent and fold away, and
  * that the toolbar filters, orders and arranges the list from the URL and
- * saves the arrangement to the account, and that rows filter and group by
- * their lead team.
+ * saves the arrangement to the account, that rows filter and group by
+ * their lead team, owner, health and target month, that j, k and Enter walk
+ * and open the rows and x selects one, and that dragging a row in the manual
+ * order stores its new place.
  */
 
-import { render, screen, waitFor, within } from '@testing-library/react';
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import ShortcutProvider from '../../components/shortcuts/ShortcutProvider';
 import type { WorkspaceContextType } from '../../contexts/WorkspaceContextDefinition';
 import type {
   InitiativeCreate,
   InitiativeListRead,
   InitiativeRead,
+  InitiativeUpdate,
   MemberRead,
   TeamRead,
   UserPreferencesUpdate,
@@ -25,11 +36,15 @@ import type {
   WorkspaceRead,
   WorkspaceRole,
 } from '../../types/Api';
+import BoundKeys from '../../test/BoundKeys';
+import { keysBound } from '../../test/shortcuts';
 import Initiatives from './Initiatives';
 
 const listInitiatives = vi.fn<() => Promise<InitiativeListRead>>();
 const createInitiative =
   vi.fn<(body: InitiativeCreate) => Promise<InitiativeRead>>();
+const updateInitiative =
+  vi.fn<(id: string, body: InitiativeUpdate) => Promise<InitiativeRead>>();
 const listMembers = vi.fn<() => Promise<MemberRead[]>>();
 const listTeams = vi.fn<() => Promise<TeamRead[]>>();
 
@@ -63,6 +78,8 @@ vi.mock('../../api/initiatives', () => ({
   listInitiatives: () => listInitiatives(),
   createInitiative: (_w: string, body: InitiativeCreate) =>
     createInitiative(body),
+  updateInitiative: (_w: string, id: string, body: InitiativeUpdate) =>
+    updateInitiative(id, body),
 }));
 
 vi.mock('../../api/workspaces', async () => {
@@ -456,5 +473,128 @@ describe('Initiatives', () => {
     expect(
       screen.queryByRole('region', { name: 'Platform' })
     ).not.toBeInTheDocument();
+  });
+
+  it('groups by owner, health and target month with the empty group last', async () => {
+    listInitiatives.mockResolvedValue({
+      initiatives: [
+        initiative('ini-1', 'Grow', {
+          owner_id: 'user-1',
+          health: 'at_risk',
+          target_date: '2026-11-20',
+        }),
+        initiative('ini-2', 'Hire'),
+      ],
+      next_cursor: null,
+    });
+    const { unmount } = renderPage('?grouping=owner');
+    const owned = await screen.findByRole('region', { name: 'Ada Lovelace' });
+    expect(within(owned).getByText('Grow')).toBeInTheDocument();
+    expect(
+      within(screen.getByRole('region', { name: 'No owner' })).getByText('Hire')
+    ).toBeInTheDocument();
+    unmount();
+
+    const health = renderPage('?grouping=health');
+    expect(
+      within(await screen.findByRole('region', { name: 'At risk' })).getByText(
+        'Grow'
+      )
+    ).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'No health' })).toHaveTextContent(
+      'Hire'
+    );
+    health.unmount();
+
+    renderPage('?grouping=target_date');
+    const november = await screen.findByRole('region', { name: 'Nov 2026' });
+    expect(within(november).getByText('Grow')).toBeInTheDocument();
+    const undated = screen.getByRole('region', { name: 'No target date' });
+    expect(undated).toHaveTextContent('Hire');
+    expect(
+      november.compareDocumentPosition(undated) &
+        Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy();
+  });
+
+  it('walks the rows with j and k, selects with x and opens with Enter', async () => {
+    listInitiatives.mockResolvedValue({
+      initiatives: [initiative('ini-1', 'Alpha'), initiative('ini-2', 'Beta')],
+      next_cursor: null,
+    });
+    render(
+      <MemoryRouter initialEntries={['/w/mine/initiatives?order=name']}>
+        <ShortcutProvider>
+          <BoundKeys />
+          <Routes>
+            <Route path="/w/:slug/initiatives" element={<Initiatives />} />
+            <Route
+              path="/w/:slug/initiatives/:id"
+              element={<p>initiative page</p>}
+            />
+          </Routes>
+        </ShortcutProvider>
+      </MemoryRouter>
+    );
+    const press = (key: string): void => {
+      act(() => {
+        document.body.dispatchEvent(
+          new KeyboardEvent('keydown', { key, bubbles: true })
+        );
+      });
+    };
+    const row = (name: string): HTMLElement | null =>
+      screen.getByRole('link', { name }).closest('li');
+    await screen.findByText('Beta');
+    await keysBound('j', 'k');
+    press('j');
+    press('j');
+    expect(row('Beta')).toHaveAttribute('aria-current', 'true');
+    press('k');
+    expect(row('Alpha')).toHaveAttribute('aria-current', 'true');
+    await keysBound('x');
+    press('x');
+    expect(row('Alpha')).toHaveAttribute('aria-selected', 'true');
+    await keysBound('enter');
+    press('Enter');
+    expect(await screen.findByText('initiative page')).toBeInTheDocument();
+  });
+
+  it('drags a row in the manual order and stores its place', async () => {
+    const first = initiative('ini-1', 'Alpha', { sort_order: 'F' });
+    const second = initiative('ini-2', 'Beta', { sort_order: 'V' });
+    listInitiatives.mockResolvedValue({
+      initiatives: [first, second],
+      next_cursor: null,
+    });
+    updateInitiative.mockImplementation((id, body) =>
+      Promise.resolve({
+        ...(id === 'ini-1' ? first : second),
+        ...body,
+        updated_at: '2026-10-02T00:00:00Z',
+      } as InitiativeRead)
+    );
+    renderPage('?order=manual');
+    const beta = (await screen.findByRole('link', { name: 'Beta' })).closest(
+      'li'
+    );
+    const list = beta?.closest('ul');
+    if (beta === null || list === null || list === undefined)
+      throw new Error('no row');
+    const dataTransfer = {
+      effectAllowed: '',
+      dropEffect: '',
+      setData: vi.fn(),
+    };
+    fireEvent.dragStart(beta, { dataTransfer });
+    fireEvent.dragOver(list, { dataTransfer, clientY: -100 });
+    fireEvent.drop(list, { dataTransfer, clientY: -100 });
+
+    await waitFor(() => {
+      expect(updateInitiative).toHaveBeenCalledTimes(1);
+    });
+    const [id, body] = updateInitiative.mock.calls[0] ?? [];
+    expect(id).toBe('ini-2');
+    expect((body?.sort_order ?? 'Z') < 'F').toBe(true);
   });
 });

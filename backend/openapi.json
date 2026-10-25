@@ -8167,6 +8167,18 @@
             "title": "Rollup Project Ids",
             "type": "array"
           },
+          "sort_order": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The manual position, null when the initiative was never placed",
+            "title": "Sort Order"
+          },
           "status": {
             "enum": [
               "planned",
@@ -8302,7 +8314,7 @@
         "type": "object"
       },
       "InitiativeUpdate": {
-        "description": "The body an initiative patch takes; null clears the description, owner, team, health, date, cadence or parent.",
+        "description": "The body an initiative patch takes; null clears the description, owner, team, health, date, cadence or parent.\n\n`sort_order` is the initiative's manual position, a base 62 fractional key\nshared by every viewer, so a drag rewrites only the initiative moved.",
         "properties": {
           "description": {
             "anyOf": [
@@ -8368,6 +8380,18 @@
             ],
             "description": "The initiative to nest this one under; null makes it top level",
             "title": "Parent Initiative Id"
+          },
+          "sort_order": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The manual position, a base 62 fractional key shared by every viewer",
+            "title": "Sort Order"
           },
           "status": {
             "anyOf": [
@@ -8645,7 +8669,7 @@
         "type": "object"
       },
       "InitiativesDisplay": {
-        "description": "How the person arranges the workspace initiatives list.\n\n`grouping` groups the list by status or by lead team, with a group for the\nworkspace level ones. `order` sorts the initiatives inside each group,\nsub-initiatives staying under their parent. `completed` shows or hides the\ncompleted initiatives.\n`columns` names the properties shown beside the name, comma separated in the\nlist's own order, and empty shows the name alone.",
+        "description": "How the person arranges the workspace initiatives list.\n\n`grouping` groups the list by status, by lead team with a group for the\nworkspace level ones, by owner, by health, or by the month or coarser\nperiod of the target date, the empty group last in each. `order` sorts\nthe initiatives inside each group, sub-initiatives staying under their\nparent; `manual` runs them by the shared manual position. `completed` shows or hides the\ncompleted initiatives.\n`columns` names the properties shown beside the name, comma separated in the\nlist's own order, and empty shows the name alone.",
         "properties": {
           "columns": {
             "default": "health,team,owner,projects,target,progress",
@@ -8665,7 +8689,10 @@
             "default": "status",
             "enum": [
               "status",
-              "team"
+              "team",
+              "owner",
+              "health",
+              "target_date"
             ],
             "title": "Grouping",
             "type": "string"
@@ -8673,6 +8700,7 @@
           "order": {
             "default": "target",
             "enum": [
+              "manual",
               "target",
               "name",
               "progress",

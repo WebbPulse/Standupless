@@ -6,11 +6,11 @@ from typing import Any, Literal, Mapping, Optional, get_args
 
 from pydantic import BaseModel, field_validator
 
-InitiativesOrderField = Literal["target", "name", "progress", "created", "updated"]
+InitiativesOrderField = Literal["manual", "target", "name", "progress", "created", "updated"]
 
 InitiativesCompletedField = Literal["show", "hide"]
 
-InitiativesGroupingField = Literal["status", "team"]
+InitiativesGroupingField = Literal["status", "team", "owner", "health", "target_date"]
 
 INITIATIVES_COLUMNS: tuple[str, ...] = ("health", "team", "owner", "projects", "target", "progress")
 """Every property the initiatives list can show beside the name, in the order it draws them."""
@@ -36,9 +36,11 @@ def _ordered_columns(value: Any) -> str:
 class InitiativesDisplay(BaseModel):
     """How the person arranges the workspace initiatives list.
 
-    `grouping` groups the list by status or by lead team, with a group for the
-    workspace level ones. `order` sorts the initiatives inside each group,
-    sub-initiatives staying under their parent. `completed` shows or hides the
+    `grouping` groups the list by status, by lead team with a group for the
+    workspace level ones, by owner, by health, or by the month or coarser
+    period of the target date, the empty group last in each. `order` sorts
+    the initiatives inside each group, sub-initiatives staying under their
+    parent; `manual` runs them by the shared manual position. `completed` shows or hides the
     completed initiatives.
     `columns` names the properties shown beside the name, comma separated in the
     list's own order, and empty shows the name alone.

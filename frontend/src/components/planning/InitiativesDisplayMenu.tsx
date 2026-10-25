@@ -1,7 +1,8 @@
 /**
- * The Display button of the initiatives list: whether rows group by status or
- * lead team, what order initiatives run in inside each group, whether completed initiatives show, and which
- * properties show beside the name. It reads like the projects list's Display
+ * The Display button of the initiatives list: whether rows group by status,
+ * lead team, owner, health or target month, what order initiatives run in
+ * inside each group, the manual order among them, whether completed
+ * initiatives show, and which properties show beside the name. It reads like the projects list's Display
  * menu so every planning list is arranged the same way, and it writes nothing
  * itself.
  */
