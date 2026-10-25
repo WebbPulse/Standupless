@@ -19,6 +19,13 @@ time in chosen statuses out of an SLA. Entering one stamps `sla_paused_at`, and
 the status reads frozen at that moment. Leaving it moves both the start and the
 deadline on by the time spent there, so the issue resumes with the time it had
 left and a later priority change still counts from the shifted start.
+
+A team may count its hours in business days, so a weekend in the team's
+timezone burns none of the window. Each timer stamps the timezone it runs in
+as `sla_timezone`, `None` for calendar time, and every computation here, the
+deadline, the at-risk point, a pause's shift and a priority change, goes
+through `sla_clock` with that stamp, so reads need no team lookup and a timer
+keeps its clock until the team switches modes and `recalendar` converts it.
 """
 
 from __future__ import annotations
@@ -29,6 +36,8 @@ from typing import TYPE_CHECKING, Literal
 from app.common.db.dynamo.base import utc_now
 from app.common.db.dynamo.issues import Issue
 from app.common.db.dynamo.team_config import SlaSettings, default_sla_settings
+from app.common.sla_clock import advance, elapsed, retreat
+from app.common.team_time import team_timezone
 
 if TYPE_CHECKING:
     from app.common.api.dependencies.repositories import Repositories
@@ -60,11 +69,14 @@ WATCHED_FIELDS: tuple[str, ...] = ("priority", "status_id", "in_triage", "team_i
 """The issue fields whose change can start, move or drop a timer."""
 
 
-def at_risk_from(started_at: datetime, breaches_at: datetime) -> datetime:
-    """The moment an SLA turns at risk: a quarter of its window left, at most a day."""
-    window = breaches_at - started_at
+def at_risk_from(started_at: datetime, breaches_at: datetime, zone: str | None = None) -> datetime:
+    """The moment an SLA turns at risk: a quarter of its window left, at most a day.
+
+    With a `zone` the window and the lead are business time in that timezone.
+    """
+    window = elapsed(started_at, breaches_at, zone)
     lead = min(window * AT_RISK_SHARE, AT_RISK_CAP)
-    return breaches_at - lead
+    return retreat(breaches_at, lead, zone)
 
 
 def sla_moment(issue: Issue, now: datetime | None = None) -> datetime:
@@ -87,7 +99,7 @@ def sla_status(issue: Issue, now: datetime | None = None) -> SlaStatus:
     if moment >= issue.sla_breaches_at:
         return "breached"
     started = issue.sla_started_at or issue.sla_breaches_at
-    if moment >= at_risk_from(started, issue.sla_breaches_at):
+    if moment >= at_risk_from(started, issue.sla_breaches_at, issue.sla_timezone):
         return "at_risk"
     return "on_track"
 
@@ -97,7 +109,9 @@ def effective_breach(issue: Issue, now: datetime | None = None) -> datetime | No
     if issue.sla_breaches_at is None:
         return None
     moment = now or utc_now()
-    return issue.sla_breaches_at + (moment - sla_moment(issue, moment))
+    return advance(
+        issue.sla_breaches_at, elapsed(sla_moment(issue, moment), moment, issue.sla_timezone), issue.sla_timezone
+    )
 
 
 def sla_breach_key(issue: Issue) -> tuple[bool, float, str]:
@@ -114,6 +128,37 @@ def team_sla_settings(repositories: Repositories, workspace_id: str, team_id: st
     """A team's SLA rules, the off default when none were saved."""
     stored = repositories.team_config.get_sla_settings(workspace_id, team_id)
     return stored or default_sla_settings(workspace_id, team_id)
+
+
+def team_clock_zone(repositories: Repositories, settings: SlaSettings) -> str | None:
+    """The timezone a team's new timers skip weekends in, `None` for calendar time.
+
+    Reads the team row only when the team counts business days.
+    """
+    if settings.calendar != "business_days":
+        return None
+    return settings.clock_zone(team_timezone(repositories, settings.workspace_id, settings.team_id))
+
+
+def recalendar(issue: Issue, zone: str | None) -> bool:
+    """Move a running timer onto the clock `zone` names in place, answering whether anything changed.
+
+    Keeps the start and the window the timer had, measured on its old clock, and
+    lays that window out again on the new one, so a day-long calendar timer
+    becomes a timer of one business day from the same start. A paused timer
+    keeps its pause.
+    """
+    if issue.sla_breaches_at is None:
+        changed = issue.sla_timezone is not None
+        issue.sla_timezone = None
+        return changed
+    if issue.sla_timezone == zone:
+        return False
+    start = issue.sla_started_at or issue.sla_breaches_at
+    window = elapsed(start, issue.sla_breaches_at, issue.sla_timezone)
+    issue.sla_breaches_at = advance(start, window, zone)
+    issue.sla_timezone = zone
+    return True
 
 
 def _category(repositories: Repositories, issue: Issue) -> str:
@@ -161,13 +206,19 @@ def apply_sla(repositories: Repositories, previous: Issue | None, updated: Issue
         if previous is None or priority_moved or team_moved or updated.sla_breaches_at is None:
             _clear(updated)
             return
-    elif updated.sla_started_at is None or updated.sla_breaches_at is None:
-        start = _timer_start(previous, updated, settings, moment)
-        updated.sla_started_at = start
-        updated.sla_breaches_at = start + timedelta(hours=hours)
-        updated.sla_paused_at = None
-    elif priority_moved or team_moved:
-        updated.sla_breaches_at = updated.sla_started_at + timedelta(hours=hours)
+    else:
+        zone = team_clock_zone(repositories, settings)
+        if updated.sla_started_at is None or updated.sla_breaches_at is None:
+            start = _timer_start(previous, updated, settings, moment)
+            updated.sla_started_at = start
+            updated.sla_breaches_at = advance(start, timedelta(hours=hours), zone)
+            updated.sla_timezone = zone
+            updated.sla_paused_at = None
+        elif priority_moved or team_moved:
+            updated.sla_breaches_at = advance(updated.sla_started_at, timedelta(hours=hours), zone)
+            updated.sla_timezone = zone
+        else:
+            recalendar(updated, zone)
     hold_sla(updated, settings.pauses_in(updated.status_id), moment)
 
 
@@ -190,11 +241,13 @@ def hold_sla(issue: Issue, paused: bool, now: datetime | None = None) -> bool:
 
     Pausing stamps the moment once, so a move between two paused statuses keeps
     the first one. Resuming moves the start and the deadline on by the time the
-    timer stood still and clears the stamp.
+    timer stood still, counted on the timer's own clock so a pause over a weekend
+    costs a business-days timer nothing, and clears the stamp.
     """
     if issue.sla_breaches_at is None:
-        changed = issue.sla_paused_at is not None
+        changed = issue.sla_paused_at is not None or issue.sla_timezone is not None
         issue.sla_paused_at = None
+        issue.sla_timezone = None
         return changed
     moment = now or utc_now()
     if paused:
@@ -204,10 +257,11 @@ def hold_sla(issue: Issue, paused: bool, now: datetime | None = None) -> bool:
         return True
     if issue.sla_paused_at is None:
         return False
-    held = max(moment - issue.sla_paused_at, timedelta(0))
-    issue.sla_breaches_at = issue.sla_breaches_at + held
+    zone = issue.sla_timezone
+    held = max(elapsed(issue.sla_paused_at, moment, zone), timedelta(0))
+    issue.sla_breaches_at = advance(issue.sla_breaches_at, held, zone)
     if issue.sla_started_at is not None:
-        issue.sla_started_at = issue.sla_started_at + held
+        issue.sla_started_at = advance(issue.sla_started_at, held, zone)
     issue.sla_paused_at = None
     return True
 
@@ -234,6 +288,39 @@ def retime_column(
 
         if repositories.issues.replace_with(issue, change) is not None:
             changed += 1
+    return changed
+
+
+RECALENDAR_PER_STATUS = 500
+"""The most timers one mode switch converts in one status column; any beyond catch up on their next move."""
+
+
+def recalendar_team(repositories: Repositories, workspace_id: str, team_id: str, zone: str | None) -> int:
+    """Move every running timer of one team's open issues onto the clock `zone` names, answering how many moved.
+
+    Run when a team switches between calendar time and business days, or moves
+    timezone while counting business days, so open timers follow the new clock
+    at once, each keeping its start. Reads each open status column through the
+    same index as `retime_column`; an issue the pass misses converts on its next
+    watched-field change through `apply_sla`.
+    """
+    changed = 0
+    for row in repositories.team_config.list_statuses(workspace_id, team_id):
+        if row.category in FINISHED_CATEGORIES:
+            continue
+        for issue in repositories.issues.iter_with_sla(
+            workspace_id, team_id, row.status_id, max_items=RECALENDAR_PER_STATUS
+        ):
+
+            def change(current: Issue) -> Issue | None:
+                """The issue on the new clock, or `None` when it already runs on it or left the team."""
+                if current.team_id != team_id or current.archived_at is not None:
+                    return None
+                moved = current.model_copy()
+                return moved if recalendar(moved, zone) else None
+
+            if repositories.issues.replace_with(issue, change) is not None:
+                changed += 1
     return changed
 
 
@@ -300,3 +387,4 @@ def _clear(issue: Issue) -> None:
     issue.sla_started_at = None
     issue.sla_breaches_at = None
     issue.sla_paused_at = None
+    issue.sla_timezone = None

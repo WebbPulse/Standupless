@@ -1078,6 +1078,13 @@ export interface IssueRead {
    * paused statuses, or null while the timer runs.
    */
   sla_paused_at?: string | null;
+  /** The clock the SLA timer runs on. Optional so an older row reads as calendar. */
+  sla_calendar?: SlaCalendar;
+  /**
+   * The timezone whose Saturdays and Sundays a business-days timer skips, or
+   * null for calendar time.
+   */
+  sla_timezone?: string | null;
   /**
    * Where the issue stands against its SLA, derived by the server at read
    * time. Optional so a row read before SLAs existed reads as none.
@@ -2641,6 +2648,9 @@ export interface ArchiveSettingsUpdate {
 /** When a team's SLA timers start: once an issue leaves triage, or from when it was created. */
 export type SlaStartMode = 'on_triage_exit' | 'on_creation';
 
+/** The clock a team's SLA hours run on: every hour, or Monday to Friday in the team's timezone. */
+export type SlaCalendar = 'calendar' | 'business_days';
+
 export interface SlaSettingsRead {
   team_id: string;
   enabled: boolean;
@@ -2652,6 +2662,8 @@ export interface SlaSettingsRead {
   paused_status_ids?: string[];
   /** When timers start. Optional so an older answer reads as on_triage_exit. */
   start_mode?: SlaStartMode;
+  /** The clock the hours run on. Optional so an older answer reads as calendar. */
+  calendar?: SlaCalendar;
   updated_at: string | null;
 }
 
@@ -2668,6 +2680,7 @@ export interface SlaSettingsUpdate {
   low_hours?: number | null;
   paused_status_ids?: string[] | null;
   start_mode?: SlaStartMode;
+  calendar?: SlaCalendar;
 }
 
 /** What triage duty does as an issue enters the inbox: tell everyone on duty, or assign one of them. */

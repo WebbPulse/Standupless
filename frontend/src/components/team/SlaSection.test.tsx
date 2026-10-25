@@ -4,7 +4,8 @@
  * hours choice each save at once and confirm, that a stored value off the
  * list still shows, that a reader sees the rules without changing them, and
  * that ticking an open status adds it to the paused set while finished
- * statuses are not offered, and that the start timer select saves the mode.
+ * statuses are not offered, that the start timer select saves the mode, and
+ * that the count time select saves the calendar.
  */
 
 import { act, render, screen, waitFor } from '@testing-library/react';
@@ -179,6 +180,33 @@ describe('the SLA section', () => {
     await waitFor(() => {
       expect(currentToasts().map((toast) => toast.message)).toEqual([
         'SLA timers count from creation.',
+      ]);
+    });
+  });
+
+  it('saves the calendar as soon as it is picked', async () => {
+    renderSection();
+
+    const count = await screen.findByLabelText<HTMLSelectElement>('Count time');
+    expect(count).toHaveValue('calendar');
+    expect(
+      Array.from(count.options).map((option) => option.textContent)
+    ).toEqual(['Every day', 'Business days only']);
+
+    getSlaSettings.mockResolvedValue(settings({ calendar: 'business_days' }));
+    await userEvent.selectOptions(count, 'business_days');
+
+    await waitFor(() => {
+      expect(updateSlaSettings).toHaveBeenCalledWith({
+        calendar: 'business_days',
+      });
+    });
+    await waitFor(() => {
+      expect(screen.getByLabelText('Count time')).toHaveValue('business_days');
+    });
+    await waitFor(() => {
+      expect(currentToasts().map((toast) => toast.message)).toEqual([
+        'SLA timers skip weekends.',
       ]);
     });
   });

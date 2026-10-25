@@ -157,6 +157,11 @@ SLA_START_MODES: tuple[str, ...] = ("on_triage_exit", "on_creation")
 
 SlaStartMode = Literal["on_triage_exit", "on_creation"]
 
+SLA_CALENDARS: tuple[str, ...] = ("calendar", "business_days")
+"""Which clock a team's SLA timers run on: every hour, or Monday to Friday in the team's timezone."""
+
+SlaCalendar = Literal["calendar", "business_days"]
+
 DEFAULT_SLA_HOURS: dict[str, int | None] = {"urgent": 24, "high": 72, "medium": None, "low": None}
 """The rules a team that never saved its SLA settings reads as, ready to switch on."""
 
@@ -475,7 +480,9 @@ class SlaSettings(BaseModel):
     open statuses whose time does not count toward a breach, the way Linear lets
     a team leave statuses out of its SLAs. `start_mode` picks whether a timer
     starts when an issue leaves triage or counts from when it was created,
-    triage included.
+    triage included. `calendar` picks whether the hours run around the clock or
+    only on Monday to Friday in the team's timezone, the way Linear lets an SLA
+    count business days.
     """
 
     workspace_id: str
@@ -489,7 +496,12 @@ class SlaSettings(BaseModel):
     low_hours: int | None = DEFAULT_SLA_HOURS["low"]
     paused_status_ids: list[str] = Field(default_factory=list)
     start_mode: SlaStartMode = "on_triage_exit"
+    calendar: SlaCalendar = "calendar"
     updated_at: datetime | None = None
+
+    def clock_zone(self, team_timezone: str) -> str | None:
+        """The timezone this team's timers skip weekends in, `None` when they count calendar time."""
+        return team_timezone if self.calendar == "business_days" else None
 
     def pauses_in(self, status_id: str) -> bool:
         """Whether an issue's SLA timer stands still while it sits in `status_id`."""

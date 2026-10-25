@@ -2,8 +2,10 @@
 
 These pin who may read and change a team's SLA rules, that each priority's
 hours are bounded and may be cleared on their own, that the paused statuses
-are open statuses of the team and retime the issues already in them, and that
-deleting the team removes the row with the rest of its config.
+are open statuses of the team and retime the issues already in them, that
+switching between calendar time and business days moves open timers onto the
+new clock keeping their start, and that deleting the team removes the row with
+the rest of its config.
 """
 
 from __future__ import annotations
@@ -65,6 +67,7 @@ def test_unsaved_settings_read_as_off_with_the_defaults(client: TestClient, team
         "low_hours": None,
         "paused_status_ids": [],
         "start_mode": "on_triage_exit",
+        "calendar": "calendar",
         "updated_at": None,
     }
 
@@ -253,3 +256,83 @@ def test_saving_the_set_pauses_and_resumes_issues_already_there(
     assert resumed.sla_paused_at is None
     assert resumed.sla_breaches_at >= began + timedelta(hours=24)
     assert resumed.sla_breaches_at - resumed.sla_started_at == timedelta(hours=24)
+
+
+FRIDAY = datetime(2026, 10, 23, 12, 0, tzinfo=timezone.utc)
+"""Noon UTC on a Friday, so a day long timer crosses the weekend."""
+
+
+def _timer(repositories: Any, team: str, status_id: str, started: datetime, hours: int, number: int = 1) -> Issue:
+    """An open urgent issue of `team` carrying a calendar timer of `hours` from `started`."""
+    return repositories.issues.create(
+        Issue(
+            workspace_id=WORKSPACE,
+            team_id=team,
+            key=f"APO-{number}",
+            number=number,
+            title="Timed",
+            status_id=status_id,
+            priority="urgent",
+            created_by=OWNER,
+            sla_started_at=started,
+            sla_breaches_at=started + timedelta(hours=hours),
+        )
+    )
+
+
+def test_the_calendar_saves_on_its_own(client: TestClient, team: str) -> None:
+    """A team may count business days, an unknown calendar is refused, and a patch without it keeps it."""
+    sign_in(client, ADMIN)
+    saved = client.patch(URL, json={"calendar": "business_days"})
+    refused = client.patch(URL, json={"calendar": "weekdays"})
+    kept = client.patch(URL, json={"urgent_hours": 4})
+
+    assert saved.status_code == 200 and saved.json()["calendar"] == "business_days"
+    assert refused.status_code == 422
+    assert kept.json()["calendar"] == "business_days"
+    assert client.get(URL).json()["calendar"] == "business_days"
+
+
+def test_switching_the_calendar_moves_open_timers_and_keeps_their_start(
+    client: TestClient, team: str, repositories: Any
+) -> None:
+    """A day long timer from Friday noon breaches Monday noon on business days, and Saturday noon again after."""
+    open_issue = _timer(repositories, team, _status(repositories, "started"), FRIDAY, 24)
+    done = _timer(repositories, team, _status(repositories, "completed"), FRIDAY, 24, number=2)
+    sign_in(client, ADMIN)
+
+    assert client.patch(URL, json={"calendar": "business_days"}).status_code == 200
+    business = repositories.issues.get(WORKSPACE, open_issue.issue_id)
+    untouched = repositories.issues.get(WORKSPACE, done.issue_id)
+    assert client.patch(URL, json={"calendar": "calendar"}).status_code == 200
+    calendar = repositories.issues.get(WORKSPACE, open_issue.issue_id)
+
+    assert business is not None and untouched is not None and calendar is not None
+    assert business.sla_started_at == FRIDAY
+    assert business.sla_breaches_at == datetime(2026, 10, 26, 12, 0, tzinfo=timezone.utc)
+    assert business.sla_timezone == "UTC"
+    assert untouched.sla_timezone is None
+    assert calendar.sla_started_at == FRIDAY
+    assert calendar.sla_breaches_at == FRIDAY + timedelta(hours=24)
+    assert calendar.sla_timezone is None
+
+
+def test_a_timezone_change_moves_business_day_timers_onto_the_new_weekend(
+    client: TestClient, team: str, repositories: Any
+) -> None:
+    """Friday 02:00 UTC is still Thursday in New York, so a day of business time ends on Friday evening there."""
+    started = datetime(2026, 10, 23, 2, 0, tzinfo=timezone.utc)
+    issue = _timer(repositories, team, _status(repositories, "started"), started, 24)
+    sign_in(client, ADMIN)
+
+    assert client.patch(URL, json={"calendar": "business_days"}).status_code == 200
+    in_utc = repositories.issues.get(WORKSPACE, issue.issue_id)
+    moved = client.patch(f"/api/workspaces/{WORKSPACE}/teams/{team}", json={"timezone": "America/New_York"})
+    in_new_york = repositories.issues.get(WORKSPACE, issue.issue_id)
+
+    assert moved.status_code == 200, moved.text
+    assert in_utc is not None and in_new_york is not None
+    assert in_utc.sla_breaches_at == datetime(2026, 10, 26, 2, 0, tzinfo=timezone.utc)
+    assert in_new_york.sla_started_at == started
+    assert in_new_york.sla_breaches_at == datetime(2026, 10, 24, 2, 0, tzinfo=timezone.utc)
+    assert in_new_york.sla_timezone == "America/New_York"

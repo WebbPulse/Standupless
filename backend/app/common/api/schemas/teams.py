@@ -38,6 +38,7 @@ from app.common.db.dynamo.team_config import (
     DisplayOptions,
     Label,
     ParentAutoCloseSettings,
+    SlaCalendar,
     SlaSettings,
     SlaStartMode,
     Status,
@@ -682,7 +683,10 @@ class SlaSettingsUpdate(BaseModel):
     `start_mode` picks when a timer starts: `on_triage_exit` once an issue
     leaves triage, `on_creation` from when it was filed, triage included. A
     change applies from each issue's next priority, status or triage move and
-    leaves timers already running alone.
+    leaves timers already running alone. `calendar` picks the clock the hours
+    run on: `calendar` counts every hour, `business_days` skips Saturdays and
+    Sundays in the team's timezone. A new calendar moves open timers onto it at
+    once, each keeping its start.
     """
 
     enabled: Optional[StrictBool] = None
@@ -692,6 +696,7 @@ class SlaSettingsUpdate(BaseModel):
     low_hours: SlaHoursField = Field(default=None, ge=1, le=MAX_SLA_HOURS)
     paused_status_ids: Optional[list[str]] = Field(default=None, max_length=MAX_SLA_PAUSED_STATUSES)
     start_mode: Optional[SlaStartMode] = None
+    calendar: Optional[SlaCalendar] = None
 
 
 class SlaSettingsRead(BaseModel):
@@ -705,6 +710,7 @@ class SlaSettingsRead(BaseModel):
     low_hours: Optional[int] = None
     paused_status_ids: list[str] = Field(default_factory=list)
     start_mode: SlaStartMode = "on_triage_exit"
+    calendar: SlaCalendar = "calendar"
     updated_at: Optional[datetime] = None
 
     @classmethod
@@ -719,6 +725,7 @@ class SlaSettingsRead(BaseModel):
             low_hours=settings.low_hours,
             paused_status_ids=list(settings.paused_status_ids),
             start_mode=settings.start_mode,
+            calendar=settings.calendar,
             updated_at=settings.updated_at,
         )
 

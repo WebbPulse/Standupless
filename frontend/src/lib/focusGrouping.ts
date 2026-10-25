@@ -68,6 +68,7 @@ export type FocusIssue = Pick<
   | 'sla_started_at'
   | 'sla_breaches_at'
   | 'sla_paused_at'
+  | 'sla_timezone'
 >;
 
 /**

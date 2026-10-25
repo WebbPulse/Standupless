@@ -21821,6 +21821,15 @@
       "SlaSettingsRead": {
         "description": "A team's SLA rules as the API returns them.",
         "properties": {
+          "calendar": {
+            "default": "calendar",
+            "enum": [
+              "calendar",
+              "business_days"
+            ],
+            "title": "Calendar",
+            "type": "string"
+          },
           "enabled": {
             "title": "Enabled",
             "type": "boolean"
@@ -21910,8 +21919,23 @@
         "type": "object"
       },
       "SlaSettingsUpdate": {
-        "description": "The body a team's SLA settings patch takes.\n\nEach `*_hours` is how long an issue of that priority may stay open before it\nbreaches, from one hour to ninety days; `null` removes that priority's rule.\n`paused_status_ids` replaces the set of open statuses whose time does not\ncount toward a breach; `null` or an empty list pauses in none.\n`start_mode` picks when a timer starts: `on_triage_exit` once an issue\nleaves triage, `on_creation` from when it was filed, triage included. A\nchange applies from each issue's next priority, status or triage move and\nleaves timers already running alone.",
+        "description": "The body a team's SLA settings patch takes.\n\nEach `*_hours` is how long an issue of that priority may stay open before it\nbreaches, from one hour to ninety days; `null` removes that priority's rule.\n`paused_status_ids` replaces the set of open statuses whose time does not\ncount toward a breach; `null` or an empty list pauses in none.\n`start_mode` picks when a timer starts: `on_triage_exit` once an issue\nleaves triage, `on_creation` from when it was filed, triage included. A\nchange applies from each issue's next priority, status or triage move and\nleaves timers already running alone. `calendar` picks the clock the hours\nrun on: `calendar` counts every hour, `business_days` skips Saturdays and\nSundays in the team's timezone. A new calendar moves open timers onto it at\nonce, each keeping its start.",
         "properties": {
+          "calendar": {
+            "anyOf": [
+              {
+                "enum": [
+                  "calendar",
+                  "business_days"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Calendar"
+          },
           "enabled": {
             "anyOf": [
               {
@@ -29807,6 +29831,16 @@
             ],
             "title": "Sla Breaches At"
           },
+          "sla_calendar": {
+            "default": "calendar",
+            "description": "The clock the SLA timer runs on: every hour, or business days only.",
+            "enum": [
+              "calendar",
+              "business_days"
+            ],
+            "title": "Sla Calendar",
+            "type": "string"
+          },
           "sla_paused_at": {
             "anyOf": [
               {
@@ -29841,6 +29875,18 @@
             ],
             "title": "Sla Status",
             "type": "string"
+          },
+          "sla_timezone": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The timezone whose Saturdays and Sundays a business-days timer skips.",
+            "title": "Sla Timezone"
           },
           "snoozed_until": {
             "anyOf": [

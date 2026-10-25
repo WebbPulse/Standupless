@@ -51,6 +51,7 @@ from app.common.db.dynamo.team_config import (
     MAX_SLA_HOURS,
     MAX_SLA_PAUSED_STATUSES,
     MAX_UPCOMING_CYCLES,
+    SLA_CALENDARS,
     SLA_PRIORITIES,
     SLA_START_MODES,
     TEAM_SCOPE,
@@ -271,6 +272,7 @@ def _sla_settings_json(settings: SlaSettings) -> dict[str, Any]:
         **{name: getattr(settings, name) for name in SLA_HOUR_FIELDS},
         "paused_status_ids": list(settings.paused_status_ids),
         "start_mode": settings.start_mode,
+        "calendar": settings.calendar,
     }
 
 
@@ -721,7 +723,7 @@ def _update_sla_settings(call: ToolCall) -> Any:
     team = admin_team(call)
     payload = SlaSettingsUpdate.model_validate(
         {
-            **given_arguments(call, ("enabled", "start_mode", *SLA_HOUR_FIELDS)),
+            **given_arguments(call, ("enabled", "start_mode", "calendar", *SLA_HOUR_FIELDS)),
             **_paused_status_arguments(call, team.team_id),
         }
     )
@@ -1269,7 +1271,8 @@ TEAM_TOOLS: tuple[Tool, ...] = (
             "Turn a team's SLAs on or off, set how many hours an open issue of each priority may go "
             "before it breaches (null removes a priority's rule), and pick the open statuses that pause the "
             "timer, such as On Staging. start_mode picks whether timers start when an issue leaves triage "
-            "or count from when it was created, triage included. Needs team admin."
+            "or count from when it was created, triage included. calendar picks whether the hours run around "
+            "the clock or skip Saturdays and Sundays in the team's timezone. Needs team admin."
         ),
         scopes=("teams:write",),
         schema=object_schema(
@@ -1300,6 +1303,14 @@ TEAM_TOOLS: tuple[Tool, ...] = (
                     "description": (
                         "on_triage_exit starts a timer when the issue leaves triage; on_creation counts from when "
                         "it was created, triage included. Running timers keep their start until the issue next moves"
+                    ),
+                },
+                "calendar": {
+                    "type": "string",
+                    "enum": list(SLA_CALENDARS),
+                    "description": (
+                        "calendar counts every hour; business_days skips Saturdays and Sundays in the team's "
+                        "timezone. Open timers move to the new clock at once, keeping their start"
                     ),
                 },
             },

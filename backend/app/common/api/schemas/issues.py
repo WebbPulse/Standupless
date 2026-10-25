@@ -22,7 +22,9 @@ from app.common.core.constants import ISSUE_BODY_MAX_BYTES
 from app.common.db.dynamo.activity import Activity, DescriptionVersion
 from app.common.db.dynamo.issues import Issue, PullRequestSummary
 from app.common.db.dynamo.relations import Relation
+from app.common.db.dynamo.team_config import SlaCalendar
 from app.common.sla import sla_status
+from app.common.sla_clock import calendar_of
 
 PriorityField = Literal["none", "urgent", "high", "medium", "low"]
 
@@ -399,6 +401,12 @@ class IssueRead(BaseModel):
     sla_started_at: Optional[datetime] = None
     sla_breaches_at: Optional[datetime] = None
     sla_paused_at: Optional[datetime] = None
+    sla_calendar: SlaCalendar = Field(
+        default="calendar", description="The clock the SLA timer runs on: every hour, or business days only."
+    )
+    sla_timezone: Optional[str] = Field(
+        default=None, description="The timezone whose Saturdays and Sundays a business-days timer skips."
+    )
     sla_status: SlaStatusField = "none"
     started_at: Optional[datetime] = Field(
         default=None, description="When the issue first landed in a started status, null until then."
@@ -460,6 +468,8 @@ class IssueRead(BaseModel):
             sla_started_at=issue.sla_started_at,
             sla_breaches_at=issue.sla_breaches_at,
             sla_paused_at=issue.sla_paused_at,
+            sla_calendar=calendar_of(issue.sla_timezone),
+            sla_timezone=issue.sla_timezone,
             sla_status=sla_status(issue),
             started_at=issue.started_at,
             completed_at=issue.completed_at,

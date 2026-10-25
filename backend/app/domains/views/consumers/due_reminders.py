@@ -235,7 +235,7 @@ def sla_notice_for(issue: Issue, now: datetime) -> tuple[str, datetime] | None:
         if now - breaches_at > OVERDUE_WINDOW:
             return None
         return SLA_BREACHED, breaches_at
-    turned = at_risk_from(issue.sla_started_at or breaches_at, breaches_at)
+    turned = at_risk_from(issue.sla_started_at or breaches_at, breaches_at, issue.sla_timezone)
     if now >= turned:
         return SLA_AT_RISK, turned
     return None

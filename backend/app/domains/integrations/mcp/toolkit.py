@@ -29,6 +29,7 @@ from app.common.plan_features import PLAN_FEATURE_UNAVAILABLE
 from app.common.plan_limits import PLAN_LIMIT_REACHED
 from app.common.planning_rules import can_see_initiative, visible_project_teams, visible_team_ids
 from app.common.sla import sla_status
+from app.common.sla_clock import calendar_of
 from app.common.team_refs import TEAM_NOT_FOUND_CODE, find_team, team_not_found_message
 from app.common.team_retirement import refuse_if_retired
 from app.domains.integrations.mcp.arguments import client_schema, with_alternatives
@@ -443,6 +444,8 @@ def issue_json(teams: TeamRepository, issue: Issue, *, status_name: str = "") ->
         "sla_started_at": issue.sla_started_at.isoformat() if issue.sla_started_at else None,
         "sla_breaches_at": issue.sla_breaches_at.isoformat() if issue.sla_breaches_at else None,
         "sla_paused_at": issue.sla_paused_at.isoformat() if issue.sla_paused_at else None,
+        "sla_calendar": calendar_of(issue.sla_timezone),
+        "sla_timezone": issue.sla_timezone,
         "sla_status": sla_status(issue),
         "started_at": issue.started_at.isoformat() if issue.started_at else None,
         "completed_at": issue.completed_at.isoformat() if issue.completed_at else None,

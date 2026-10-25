@@ -94,6 +94,7 @@ REPLACE_REMOVABLE_ATTRIBUTES: tuple[str, ...] = (
     "sla_started_at",
     "sla_breaches_at",
     "sla_paused_at",
+    "sla_timezone",
     "started_at",
     "completed_at",
     "cancelled_at",
@@ -304,6 +305,7 @@ class Issue(BaseModel):
     sla_started_at: datetime | None = None
     sla_breaches_at: datetime | None = None
     sla_paused_at: datetime | None = None
+    sla_timezone: str | None = None
     started_at: datetime | None = None
     completed_at: datetime | None = None
     cancelled_at: datetime | None = None
@@ -384,7 +386,7 @@ planning read would then have to filter out every issue in the team.
 """
 
 
-SLA_FIELDS: tuple[str, ...] = ("sla_started_at", "sla_breaches_at", "sla_paused_at")
+SLA_FIELDS: tuple[str, ...] = ("sla_started_at", "sla_breaches_at", "sla_paused_at", "sla_timezone")
 """The SLA timer fields, left off a row without an SLA so the sweep's filter skips it."""
 
 
@@ -1314,11 +1316,13 @@ class IssueRepository:
         try:
             self._repository.update(
                 {"workspace_id": issue.workspace_id, "issue_id": issue.issue_id},
-                update_expression="REMOVE #started, #breaches, #paused SET #changed = :changed, " + REVISION_BUMP,
+                update_expression="REMOVE #started, #breaches, #paused, #zone SET #changed = :changed, "
+                + REVISION_BUMP,
                 expression_names={
                     "#started": "sla_started_at",
                     "#breaches": "sla_breaches_at",
                     "#paused": "sla_paused_at",
+                    "#zone": "sla_timezone",
                     "#changed": CHANGED_AT,
                     "#rev": REVISION,
                 },
