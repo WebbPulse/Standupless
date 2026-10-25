@@ -217,6 +217,7 @@ def render_notification(
     headline_key: str | None = None,
     accent: str | None = None,
     replyable: bool = False,
+    unsubscribe_links: Sequence[EmailLink] = (),
 ) -> EmailMessage:
     """Render the email for one inbox notification.
 
@@ -249,7 +250,7 @@ def render_notification(
         preheader=headline,
         blocks=blocks,
         footer_note=_issue_reason(kind).format(product=settings.PROJECT_NAME),
-        footer_links=_settings_link(workspace_slug),
+        footer_links=(*unsubscribe_links, *_settings_link(workspace_slug)),
         tags={"purpose": "notification", "kind": kind},
         accent=accent,
     )
@@ -276,6 +277,7 @@ def render_project_update_notification(
     body: str = "",
     accent: str | None = None,
     report: Sequence[str] = (),
+    unsubscribe_links: Sequence[EmailLink] = (),
 ) -> EmailMessage:
     """Render the email for one project update notification.
 
@@ -304,7 +306,7 @@ def render_project_update_notification(
         preheader=f"{actor} posted a project update. {title} is {health_label}.",
         blocks=blocks,
         footer_note=_PROJECT_REASON.format(product=settings.PROJECT_NAME),
-        footer_links=_settings_link(workspace_slug),
+        footer_links=(*unsubscribe_links, *_settings_link(workspace_slug)),
         tags={"purpose": "notification", "kind": "project_update"},
         accent=accent,
     )
@@ -321,7 +323,13 @@ def project_page_url(workspace_slug: str, project_id: str, project_name: str = "
 
 
 def render_view_project_added_notification(
-    *, to: str, project_id: str, project_name: str, workspace_slug: str, accent: str | None = None
+    *,
+    to: str,
+    project_id: str,
+    project_name: str,
+    workspace_slug: str,
+    accent: str | None = None,
+    unsubscribe_links: Sequence[EmailLink] = (),
 ) -> EmailMessage:
     """Render the email a project view's subscriber gets when a project enters the view.
 
@@ -339,7 +347,7 @@ def render_view_project_added_notification(
             Button("Open project", project_page_url(workspace_slug, project_id, project_name), show_url=True),
         ],
         footer_note=_VIEW_PROJECT_REASON.format(product=settings.PROJECT_NAME),
-        footer_links=_settings_link(workspace_slug),
+        footer_links=(*unsubscribe_links, *_settings_link(workspace_slug)),
         tags={"purpose": "notification", "kind": VIEW_PROJECT_ADDED},
         accent=accent,
     )
@@ -371,6 +379,7 @@ def render_project_role_notification(
     project_name: str,
     workspace_slug: str,
     accent: str | None = None,
+    unsubscribe_links: Sequence[EmailLink] = (),
 ) -> EmailMessage:
     """Render the email a person gets when someone else makes them a project's lead or adds them to its members.
 
@@ -389,7 +398,7 @@ def render_project_role_notification(
             Button("Open project", project_page_url(workspace_slug, project_id, project_name), show_url=True),
         ],
         footer_note=_PROJECT_ROLE_REASON.format(product=settings.PROJECT_NAME),
-        footer_links=_settings_link(workspace_slug),
+        footer_links=(*unsubscribe_links, *_settings_link(workspace_slug)),
         tags={"purpose": "notification", "kind": kind},
         accent=accent,
     )
@@ -418,6 +427,7 @@ def render_project_update_due_notification(
     workspace_slug: str,
     due_state: str = "due",
     accent: str | None = None,
+    unsubscribe_links: Sequence[EmailLink] = (),
 ) -> EmailMessage:
     """Render the reminder a project lead gets when the project's update comes due or goes overdue.
 
@@ -438,7 +448,7 @@ def render_project_update_due_notification(
             ),
         ],
         footer_note=_DUE_REASON.format(product=settings.PROJECT_NAME),
-        footer_links=_settings_link(workspace_slug),
+        footer_links=(*unsubscribe_links, *_settings_link(workspace_slug)),
         tags={"purpose": "notification", "kind": PROJECT_UPDATE_DUE},
         accent=accent,
     )
@@ -474,6 +484,7 @@ def render_initiative_owner_notification(
     initiative_name: str,
     workspace_slug: str,
     accent: str | None = None,
+    unsubscribe_links: Sequence[EmailLink] = (),
 ) -> EmailMessage:
     """Render the email a person gets when someone else makes them an initiative's owner.
 
@@ -496,7 +507,7 @@ def render_initiative_owner_notification(
             ),
         ],
         footer_note=_INITIATIVE_ROLE_REASON.format(product=settings.PROJECT_NAME),
-        footer_links=_settings_link(workspace_slug),
+        footer_links=(*unsubscribe_links, *_settings_link(workspace_slug)),
         tags={"purpose": "notification", "kind": INITIATIVE_OWNER_ASSIGNED},
         accent=accent,
     )
@@ -517,6 +528,7 @@ def render_initiative_update_due_notification(
     due_state: str,
     workspace_slug: str,
     accent: str | None = None,
+    unsubscribe_links: Sequence[EmailLink] = (),
 ) -> EmailMessage:
     """Render the reminder an initiative owner gets when the initiative's update comes due or goes overdue.
 
@@ -539,7 +551,7 @@ def render_initiative_update_due_notification(
             ),
         ],
         footer_note=_INITIATIVE_DUE_REASON.format(product=settings.PROJECT_NAME),
-        footer_links=_settings_link(workspace_slug),
+        footer_links=(*unsubscribe_links, *_settings_link(workspace_slug)),
         tags={"purpose": "notification", "kind": INITIATIVE_UPDATE_DUE},
         accent=accent,
     )
@@ -600,13 +612,20 @@ def _entry_group(entry: DigestEntry, workspace_slug: str) -> tuple[str, str, str
 
 
 def render_single(
-    entry: DigestEntry, *, to: str, workspace_slug: str, accent: str | None = None, replyable: bool = False
+    entry: DigestEntry,
+    *,
+    to: str,
+    workspace_slug: str,
+    accent: str | None = None,
+    replyable: bool = False,
+    unsubscribe_links: Sequence[EmailLink] = (),
 ) -> EmailMessage:
     """Render a window holding one notification as that notification's own email.
 
     A quiet window reads exactly as it did before digests, which keeps the
     per-issue subject a mail client threads by. `replyable` is passed on to an
-    issue notification sent with a reply address.
+    issue notification sent with a reply address. `unsubscribe_links` lead the
+    footer, ahead of the settings link, on whichever email it renders as.
     """
     if entry.kind == PROJECT_UPDATE_DUE:
         return render_project_update_due_notification(
@@ -616,6 +635,7 @@ def render_single(
             workspace_slug=workspace_slug,
             due_state=entry.due_state,
             accent=accent,
+            unsubscribe_links=unsubscribe_links,
         )
     if entry.kind == INITIATIVE_UPDATE_DUE:
         return render_initiative_update_due_notification(
@@ -625,6 +645,7 @@ def render_single(
             due_state=entry.due_state,
             workspace_slug=workspace_slug,
             accent=accent,
+            unsubscribe_links=unsubscribe_links,
         )
     if entry.kind in PROJECT_ROLE_KINDS:
         return render_project_role_notification(
@@ -635,6 +656,7 @@ def render_single(
             project_name=entry.project_name,
             workspace_slug=workspace_slug,
             accent=accent,
+            unsubscribe_links=unsubscribe_links,
         )
     if entry.kind == INITIATIVE_OWNER_ASSIGNED:
         return render_initiative_owner_notification(
@@ -644,6 +666,7 @@ def render_single(
             initiative_name=entry.initiative_name,
             workspace_slug=workspace_slug,
             accent=accent,
+            unsubscribe_links=unsubscribe_links,
         )
     if entry.kind == VIEW_PROJECT_ADDED:
         return render_view_project_added_notification(
@@ -652,6 +675,7 @@ def render_single(
             project_name=entry.project_name,
             workspace_slug=workspace_slug,
             accent=accent,
+            unsubscribe_links=unsubscribe_links,
         )
     if entry.kind == "project_update":
         return render_project_update_notification(
@@ -663,6 +687,7 @@ def render_single(
             workspace_slug=workspace_slug,
             body=entry.excerpt,
             accent=accent,
+            unsubscribe_links=unsubscribe_links,
             report=entry.report,
         )
     return render_notification(
@@ -676,6 +701,7 @@ def render_single(
         headline_key=entry.headline_key,
         accent=accent,
         replyable=replyable,
+        unsubscribe_links=unsubscribe_links,
     )
 
 
@@ -686,6 +712,7 @@ def render_digest(
     workspace_slug: str,
     accent: str | None = None,
     replyable: bool = False,
+    unsubscribe_links: Sequence[EmailLink] = (),
 ) -> EmailMessage:
     """Render one window's notifications as one email, grouped by issue, project or initiative.
 
@@ -696,7 +723,14 @@ def render_digest(
     notification, since only that email carries a reply address.
     """
     if len(entries) == 1:
-        return render_single(entries[0], to=to, workspace_slug=workspace_slug, accent=accent, replyable=replyable)
+        return render_single(
+            entries[0],
+            to=to,
+            workspace_slug=workspace_slug,
+            accent=accent,
+            replyable=replyable,
+            unsubscribe_links=unsubscribe_links,
+        )
 
     ordered = sorted(entries, key=lambda entry: (entry.created_at, entry.notification_id))
     listed = ordered[:DIGEST_LINE_LIMIT]
@@ -728,7 +762,7 @@ def render_digest(
         preheader=headline,
         blocks=blocks,
         footer_note=_DIGEST_REASON.format(product=settings.PROJECT_NAME),
-        footer_links=_settings_link(workspace_slug),
+        footer_links=(*unsubscribe_links, *_settings_link(workspace_slug)),
         tags={"purpose": "notification", "kind": "digest"},
         accent=accent,
     )
@@ -795,7 +829,12 @@ def _standup_day_label(day: str) -> str:
 
 
 def render_standup_digest(
-    digest: StandupDigest, *, to: str, workspace_slug: str, accent: str | None = None
+    digest: StandupDigest,
+    *,
+    to: str,
+    workspace_slug: str,
+    accent: str | None = None,
+    unsubscribe_links: Sequence[EmailLink] = (),
 ) -> EmailMessage:
     """Render one team's standup digest as one email, a section per person with something in it.
 
@@ -823,7 +862,7 @@ def render_standup_digest(
         preheader=headline,
         blocks=blocks,
         footer_note=_STANDUP_REASON.format(product=settings.PROJECT_NAME),
-        footer_links=_settings_link(workspace_slug),
+        footer_links=(*unsubscribe_links, *_settings_link(workspace_slug)),
         tags={"purpose": "notification", "kind": STANDUP_DIGEST},
         accent=accent,
     )
@@ -884,6 +923,7 @@ def render_pulse_digest(
     workspace_name: str,
     workspace_slug: str,
     accent: str | None = None,
+    unsubscribe_links: Sequence[EmailLink] = (),
 ) -> EmailMessage:
     """Render one person's Pulse digest: what changed in what they follow since the last one.
 
@@ -910,7 +950,7 @@ def render_pulse_digest(
         preheader=f"{count} from the projects and initiatives you follow.",
         blocks=blocks,
         footer_note=_PULSE_REASON.format(product=settings.PROJECT_NAME),
-        footer_links=_settings_link(workspace_slug),
+        footer_links=(*unsubscribe_links, *_settings_link(workspace_slug)),
         tags={"purpose": "notification", "kind": PULSE_DIGEST},
         accent=accent,
     )

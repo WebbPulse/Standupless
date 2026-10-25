@@ -130,6 +130,8 @@ PUBLIC_ROUTES = {
     ("GET", "/api/discord/oauth/callback"),
     ("POST", "/api/discord/interactions"),
     ("POST", "/api/billing/stripe/webhook"),
+    ("GET", "/api/email/unsubscribe"),
+    ("POST", "/api/email/unsubscribe"),
     ("GET", "/api/shared/{token}"),
     ("GET", "/api/shared/{token}/issue"),
     ("GET", "/api/shared/{token}/view"),
@@ -204,6 +206,13 @@ a workspace SCIM token, which the SCIM service verifies inside each handler and
 which names the one workspace it provisions, so a token for one workspace cannot
 reach another's directory. The discovery documents need no token, as RFC 7644
 allows, because they describe the server rather than any directory.
+
+The two `/api/email/unsubscribe` methods are opened from a notification email's
+footer or by a mail client's RFC 8058 one-click request, neither of which carries
+a session. A signed, expiring token in the query is the credential: it names one
+person, one workspace and one thing to stop, and it is refused once that person's
+account is disabled or their membership is gone. `GET` only renders a confirm
+page, so a mail scanner fetching the link changes nothing.
 
 Anything else appearing as public is the regression this test exists to surface.
 """

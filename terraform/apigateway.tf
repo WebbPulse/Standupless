@@ -255,6 +255,11 @@ locals {
     "GET /api/auth/sso/saml/{connection_id}/metadata" = { integration = "identity", authorization_type = "NONE" }
   } : {}
 
+  email_unsubscribe_route_keys = contains(local.routed_lambda_domains, "identity") ? {
+    "GET /api/email/unsubscribe"  = { integration = "identity", authorization_type = "NONE" }
+    "POST /api/email/unsubscribe" = { integration = "identity", authorization_type = "NONE" }
+  } : {}
+
   lambda_domain_route_keys = merge(
     local.lambda_domain_generated_route_keys,
     local.identity_jwt_route_keys,
@@ -273,6 +278,7 @@ locals {
     local.oauth_server_route_keys,
     local.sso_route_keys,
     local.mcp_route_keys,
+    local.email_unsubscribe_route_keys,
   )
 }
 

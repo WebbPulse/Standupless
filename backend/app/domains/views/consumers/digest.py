@@ -29,12 +29,14 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any, Mapping
 
+from webbpulse.email_layout import EmailLink
 from webbpulse.identity.email import EmailMessage
 
 from app.common.api.dependencies.repositories import Repositories
 from app.common.db.dynamo.notify_digests import DigestEntry, DueDigest
 from app.common.email import deliver, with_reply_to
 from app.common.email_replies import mint_reply_address
+from app.common.email_unsubscribe import unsubscribe_links
 from app.common.notification_pause import held_until
 from app.domains.views.email import render_digest
 
@@ -120,6 +122,7 @@ def _compose(
         kept.append(entry)
     if not kept:
         return None
+    footer = footer_unsubscribe_links(workspace_id, recipient_id, kept)
     if len(kept) == 1 and replyable(kept[0]):
         entry = kept[0]
         reply_to = mint_reply_address(
@@ -135,9 +138,37 @@ def _compose(
             workspace_slug=workspace.slug,
             accent=workspace.accent_color,
             replyable=bool(reply_to),
+            unsubscribe_links=footer,
         )
         return with_reply_to(message, reply_to)
-    return render_digest(kept, to=str(recipient.email), workspace_slug=workspace.slug, accent=workspace.accent_color)
+    return render_digest(
+        kept,
+        to=str(recipient.email),
+        workspace_slug=workspace.slug,
+        accent=workspace.accent_color,
+        unsubscribe_links=footer,
+    )
+
+
+def footer_unsubscribe_links(workspace_id: str, recipient_id: str, kept: list[DigestEntry]) -> tuple[EmailLink, ...]:
+    """The unsubscribe links one window's email carries in its footer.
+
+    The issue or project link appears only when every entry is about that one
+    issue or project, and the kind link only when every entry is one kind, so a
+    link in a mixed digest never stops mail the reader did not see an example of.
+    """
+    issues = {entry.issue_id for entry in kept}
+    projects = {entry.project_id for entry in kept}
+    issue_id = next(iter(issues)) if len(issues) == 1 else ""
+    project_id = next(iter(projects)) if len(projects) == 1 else ""
+    return unsubscribe_links(
+        user_id=recipient_id,
+        workspace_id=workspace_id,
+        kinds=[entry.kind for entry in kept],
+        issue_id=issue_id,
+        issue_key=kept[0].issue_key if issue_id else "",
+        project_id=project_id,
+    )
 
 
 UNREPLYABLE_KINDS = frozenset(
