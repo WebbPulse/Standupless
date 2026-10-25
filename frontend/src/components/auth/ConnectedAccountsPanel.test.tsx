@@ -1,8 +1,9 @@
 /**
- * The connected accounts panel: rows for the offered providers only, the
- * linked account or "Not connected", connect handing the browser to the
- * provider, disconnect behind a confirm, the step-up retry, the last sign-in
- * method refusal, and the callback flags turned into toasts.
+ * The connected accounts panel on the shared `useConnectedAccountsPanel`: rows
+ * for the offered providers only, the linked account or "Not connected",
+ * connect handing the browser to the provider, disconnect behind a confirm, the
+ * step-up retry and cancel on both legs, the last sign-in method refusal, a
+ * failed load, and the callback flags turned into toasts.
  */
 
 import { render, screen, waitFor, within } from '@testing-library/react';
@@ -238,7 +239,7 @@ describe('ConnectedAccountsPanel', () => {
     expect(reload).not.toHaveBeenCalled();
   });
 
-  it('shows a refused connect as an error toast', async () => {
+  it('shows a refused connect with the server sentence', async () => {
     linkOAuthProvider.mockResolvedValue({
       ok: false,
       reason: 'already-linked',
@@ -249,11 +250,46 @@ describe('ConnectedAccountsPanel', () => {
     await userEvent.click(
       await screen.findByRole('button', { name: 'Connect Google' })
     );
-    await waitFor(() =>
-      expect(currentToasts().map((toast) => toast.message)).toContain(
-        'That account is already linked to another user.'
-      )
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'That account is already linked to another user.'
     );
+    expect(assign).not.toHaveBeenCalled();
+    expect(
+      screen.getByRole('button', { name: 'Connect Google' })
+    ).not.toBeDisabled();
+  });
+
+  it('shows a failed load instead of the list', async () => {
+    listOAuthLinks.mockResolvedValue({
+      ok: false,
+      reason: 'unavailable',
+      message: 'Connected accounts are unavailable.',
+    });
+    renderAt();
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Connected accounts are unavailable.'
+    );
+    expect(screen.queryByTestId('connected-account-github')).toBeNull();
+  });
+
+  it('settles a cancelled connect step-up without a banner', async () => {
+    linkOAuthProvider.mockRejectedValueOnce(stepUpError());
+    renderAt();
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Connect Google' })
+    );
+    const dialog = await screen.findByRole('dialog', {
+      name: 'Confirm it is you',
+    });
+    await userEvent.click(
+      within(dialog).getByRole('button', { name: 'Cancel' })
+    );
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(
+      screen.getByRole('button', { name: 'Connect Google' })
+    ).not.toBeDisabled();
+    expect(linkOAuthProvider).toHaveBeenCalledTimes(1);
     expect(assign).not.toHaveBeenCalled();
   });
 
