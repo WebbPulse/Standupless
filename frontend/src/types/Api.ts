@@ -2272,6 +2272,21 @@ export interface CycleUpdate {
   cancelled?: boolean;
 }
 
+/** Starting a team's next upcoming cycle today. The team names the row. */
+export interface CycleStartToday {
+  team_id: string;
+}
+
+/**
+ * What starting a cycle today changed: the started cycle, the current one it
+ * ended, which is null in a cooldown, and how many open issues moved across.
+ */
+export interface CycleStartTodayRead {
+  cycle: CycleRead;
+  ended: CycleRead | null;
+  moved_issues: number;
+}
+
 /**
  * A team's automatic cycle schedule. `start_weekday` counts from 0 for Monday
  * to 6 for Sunday, and `updated_at` is null until the schedule is first saved.

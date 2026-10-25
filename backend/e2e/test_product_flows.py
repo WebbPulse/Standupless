@@ -848,6 +848,19 @@ class TestPlanningDomain:
             assert "active" in statuses, statuses
             assert all(row.get("number") for row in cycles), cycles
 
+            upcoming = [row for row in cycles if row["status"] == "upcoming"]
+            cycles_path = f"/api/workspaces/{workspace['id']}/cycles"
+            skipped = api.post(f"{cycles_path}/{upcoming[-1]['cycle_id']}/start-today", json={"team_id": created["id"]})
+            assert skipped.status_code == 409, skipped.text[:400]
+            started = api.post(f"{cycles_path}/{upcoming[0]['cycle_id']}/start-today", json={"team_id": created["id"]})
+            if started.status_code == 200:
+                assert started.json()["cycle"]["status"] == "active", started.text[:400]
+                assert started.json()["ended"]["status"] == "completed", started.text[:400]
+                assert started.json()["cycle"]["end_date"] == upcoming[0]["end_date"]
+            else:
+                assert started.status_code == 409, started.text[:400]
+                assert "started today" in started.text, started.text[:400]
+
             disabled = api.patch(settings_path, json={"enabled": False})
             assert disabled.status_code == 200, disabled.text[:400]
             assert disabled.json()["enabled"] is False

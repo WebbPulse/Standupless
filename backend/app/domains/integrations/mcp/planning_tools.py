@@ -42,6 +42,7 @@ from app.common.api.schemas.planning import (
     ProjectUpdatePatch,
     ProjectUpdateRead,
 )
+from app.common.cycle_rollover import start_cycle_today_read
 from app.common.cycle_schedule import RELATIVE_CYCLES, relative_cycle
 from app.common.cycle_writes import create_cycle, delete_cycle, list_cycles, update_cycle
 from app.common.db.dynamo.issues import Issue
@@ -381,6 +382,18 @@ def _update_cycle(call: ToolCall) -> Any:
     if "cancelled" in payload and not isinstance(payload["cancelled"], bool):
         raise ToolError("cancelled must be true or false")
     return _cycle_json(update_cycle(call.repositories, call.context, cycle_id, CycleUpdate.model_validate(payload)))
+
+
+def _start_cycle_today(call: ToolCall) -> Any:
+    """Start the next upcoming cycle today, ending the current one and rolling its open issues in."""
+    team_id = _team_id(call)
+    cycle_id = _cycle_id(call, team_id, call.require("cycle_id"))
+    result = start_cycle_today_read(call.repositories, call.context, team_id, cycle_id)
+    return {
+        "cycle": _cycle_json(result.cycle),
+        "ended": None if result.ended is None else _cycle_json(result.ended),
+        "moved_issues": result.moved_issues,
+    }
 
 
 def _delete_cycle(call: ToolCall) -> Any:
@@ -916,6 +929,20 @@ PLANNING_TOOLS: tuple[Tool, ...] = (
             required=("team_id", "cycle_id"),
         ),
         handler=_update_cycle,
+    ),
+    Tool(
+        name="start_cycle_today",
+        description=(
+            "Start a team's next upcoming cycle today. The current cycle ends yesterday and its "
+            "unfinished issues move into the started cycle, which keeps its end date. "
+            "Refused for any cycle but the next upcoming one."
+        ),
+        scopes=("cycles:write",),
+        schema=object_schema(
+            {"team_id": string(TEAM_HELP), "cycle_id": string(CYCLE_HELP)},
+            required=("team_id", "cycle_id"),
+        ),
+        handler=_start_cycle_today,
     ),
     Tool(
         name="delete_cycle",

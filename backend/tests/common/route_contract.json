@@ -1130,6 +1130,12 @@
   {
     "auth": "workspace:read",
     "domain": "planning",
+    "method": "POST",
+    "path": "/api/workspaces/{workspace_id}/cycles/{cycle_id}/start-today"
+  },
+  {
+    "auth": "workspace:read",
+    "domain": "planning",
     "method": "GET",
     "path": "/api/workspaces/{workspace_id}/documents"
   },

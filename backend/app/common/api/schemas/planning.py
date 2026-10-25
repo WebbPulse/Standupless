@@ -415,6 +415,25 @@ CycleListRead = cursor_page(CycleRead, "cycles", model_name="CycleListRead")
 """The body the cycle list route answers with, items under `cycles`."""
 
 
+class CycleStartToday(BaseModel):
+    """The body `POST /api/workspaces/{workspace_id}/cycles/{cycle_id}/start-today` takes."""
+
+    team_id: str = Field(min_length=1)
+
+
+class CycleStartTodayRead(BaseModel):
+    """What starting a cycle today changed.
+
+    `ended` is the cycle that was current, now ending yesterday, or null when no
+    cycle was running. `moved_issues` counts its unfinished issues rolled into
+    the started cycle.
+    """
+
+    cycle: CycleRead
+    ended: Optional[CycleRead] = None
+    moved_issues: int = 0
+
+
 class CycleHistoryPoint(BaseModel):
     """One day of a cycle's burn-up, in issues and in estimate points.
 

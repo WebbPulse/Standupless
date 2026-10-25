@@ -4162,6 +4162,49 @@
         "title": "CycleSettingsUpdate",
         "type": "object"
       },
+      "CycleStartToday": {
+        "description": "The body `POST /api/workspaces/{workspace_id}/cycles/{cycle_id}/start-today` takes.",
+        "properties": {
+          "team_id": {
+            "minLength": 1,
+            "title": "Team Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "team_id"
+        ],
+        "title": "CycleStartToday",
+        "type": "object"
+      },
+      "CycleStartTodayRead": {
+        "description": "What starting a cycle today changed.\n\n`ended` is the cycle that was current, now ending yesterday, or null when no\ncycle was running. `moved_issues` counts its unfinished issues rolled into\nthe started cycle.",
+        "properties": {
+          "cycle": {
+            "$ref": "#/components/schemas/CycleRead"
+          },
+          "ended": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CycleRead"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "moved_issues": {
+            "default": 0,
+            "title": "Moved Issues",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "cycle"
+        ],
+        "title": "CycleStartTodayRead",
+        "type": "object"
+      },
       "CycleUpdate": {
         "description": "The body a cycle patch takes.\n\n`team_id` is required rather than patchable: it names the partition prefix\nthe row is filed under, and moving a cycle between teams would orphan every\nissue pointing at it.",
         "properties": {
@@ -31558,6 +31601,74 @@
           }
         ],
         "summary": "Read Cycle History",
+        "tags": [
+          "planning"
+        ]
+      }
+    },
+    "/api/workspaces/{workspace_id}/cycles/{cycle_id}/start-today": {
+      "post": {
+        "description": "Start the team's next upcoming cycle today, as Linear's \"Start cycle today\" does.\n\nThe current cycle ends yesterday and its unfinished issues roll into the\nstarted one under the cycle close's own rule, while the started cycle keeps\nits end date. A 409 answers a cycle that is not the next upcoming one, and a\ncurrent cycle that itself started today.",
+        "operationId": "start_cycle_today_api_workspaces__workspace_id__cycles__cycle_id__start_today_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Workspace Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "cycle_id",
+            "required": true,
+            "schema": {
+              "title": "Cycle Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CycleStartToday"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CycleStartTodayRead"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request validation failed."
+          }
+        },
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "summary": "Start Cycle Today",
         "tags": [
           "planning"
         ]

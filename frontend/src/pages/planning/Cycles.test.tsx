@@ -20,6 +20,7 @@ import type {
   CycleCreate,
   CycleListRead,
   CycleRead,
+  CycleStartTodayRead,
   TeamRead,
   VelocityRead,
   WorkspaceRead,
@@ -31,6 +32,8 @@ const listCycles = vi.fn<(query: unknown) => Promise<CycleListRead>>();
 const createCycle = vi.fn<(body: CycleCreate) => Promise<CycleRead>>();
 const updateCycle = vi.fn<(id: string, body: unknown) => Promise<CycleRead>>();
 const deleteCycle = vi.fn<(id: string) => Promise<void>>();
+const startCycleToday =
+  vi.fn<(id: string, teamId: string) => Promise<CycleStartTodayRead>>();
 const listTeams = vi.fn<() => Promise<TeamRead[]>>();
 const getVelocity = vi.fn<(teamId: string) => Promise<VelocityRead>>();
 
@@ -51,6 +54,8 @@ vi.mock('../../api/planning', () => ({
   createCycle: (_w: string, body: CycleCreate) => createCycle(body),
   updateCycle: (_w: string, id: string, body: unknown) => updateCycle(id, body),
   deleteCycle: (_w: string, id: string) => deleteCycle(id),
+  startCycleToday: (_w: string, id: string, teamId: string) =>
+    startCycleToday(id, teamId),
   getVelocity: (_w: string, teamId: string) => getVelocity(teamId),
 }));
 
@@ -184,6 +189,14 @@ const renderPage = (entry = '/w/mine/team/ENG/cycles') =>
     </MemoryRouter>
   );
 
+/** Opens one cycle's `...` menu and picks an action from it. */
+const pickAction = async (title: string, action: string) => {
+  await userEvent.click(
+    await screen.findByRole('button', { name: `${title} actions` })
+  );
+  await userEvent.click(screen.getByRole('menuitem', { name: action }));
+};
+
 /** Opens the create dialog, which the page no longer keeps open on the page. */
 const openCreate = async () => {
   await userEvent.click(screen.getByRole('button', { name: 'New cycle' }));
@@ -203,6 +216,12 @@ beforeEach(() => {
   createCycle.mockResolvedValue(cycle);
   updateCycle.mockResolvedValue(cycle);
   deleteCycle.mockResolvedValue(undefined);
+  startCycleToday.mockReset();
+  startCycleToday.mockResolvedValue({
+    cycle: { ...upcoming, status: 'active' },
+    ended: { ...cycle, status: 'completed' },
+    moved_issues: 2,
+  });
   getVelocity.mockReset();
   getVelocity.mockResolvedValue(velocity);
 });
@@ -401,9 +420,7 @@ describe('writing', () => {
 
     renderPage();
 
-    await userEvent.click(
-      await screen.findByRole('button', { name: 'Cancel Sprint 2' })
-    );
+    await pickAction('Sprint 2', 'Cancel cycle');
 
     await waitFor(() => {
       expect(updateCycle).toHaveBeenCalledWith('cyc-2', {
@@ -420,7 +437,10 @@ describe('writing', () => {
       await screen.findByRole('region', { name: 'Current cycle' })
     );
     await userEvent.click(
-      card.getByRole('button', { name: 'Cancel Sprint 1' })
+      card.getByRole('button', { name: 'Sprint 1 actions' })
+    );
+    await userEvent.click(
+      screen.getByRole('menuitem', { name: 'Cancel cycle' })
     );
 
     await waitFor(() => {
@@ -440,9 +460,7 @@ describe('writing', () => {
     renderPage();
 
     await userEvent.click(await screen.findByRole('button', { name: /Past/ }));
-    await userEvent.click(
-      screen.getByRole('button', { name: 'Restore Sprint 2' })
-    );
+    await pickAction('Sprint 2', 'Restore cycle');
 
     await waitFor(() => {
       expect(updateCycle).toHaveBeenCalledWith('cyc-2', {
@@ -458,13 +476,101 @@ describe('writing', () => {
 
     renderPage();
 
-    await userEvent.click(
-      await screen.findByRole('button', { name: 'Delete Sprint 2' })
-    );
+    await pickAction('Sprint 2', 'Delete cycle');
 
     await waitFor(() => {
       expect(deleteCycle).toHaveBeenCalledWith('cyc-2');
     });
+  });
+
+  it('starts the next upcoming cycle today after a confirm naming it and the count', async () => {
+    const later: CycleRead = {
+      ...upcoming,
+      cycle_id: 'cyc-3',
+      name: 'Sprint 3',
+      start_date: '2026-09-29',
+      end_date: '2026-10-12',
+    };
+    listCycles.mockResolvedValue({
+      cycles: [cycle, upcoming, later],
+      next_cursor: null,
+    });
+
+    renderPage();
+
+    await pickAction('Sprint 2', 'Start cycle today');
+
+    const dialog = within(await screen.findByRole('dialog'));
+    expect(
+      dialog.getByText(
+        'Sprint 2 will start today and Sprint 1 will end yesterday. 2 open issues will move from Sprint 1 into Sprint 2.'
+      )
+    ).toBeInTheDocument();
+    expect(startCycleToday).not.toHaveBeenCalled();
+
+    await userEvent.click(
+      dialog.getByRole('button', { name: 'Start Sprint 2' })
+    );
+
+    await waitFor(() => {
+      expect(startCycleToday).toHaveBeenCalledWith('cyc-2', 'proj-1');
+    });
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    });
+  });
+
+  it('offers start today only on the next upcoming cycle', async () => {
+    const later: CycleRead = {
+      ...upcoming,
+      cycle_id: 'cyc-3',
+      name: 'Sprint 3',
+      start_date: '2026-09-29',
+      end_date: '2026-10-12',
+    };
+    listCycles.mockResolvedValue({
+      cycles: [cycle, upcoming, later],
+      next_cursor: null,
+    });
+
+    renderPage();
+
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Sprint 3 actions' })
+    );
+    expect(
+      screen.queryByRole('menuitem', { name: 'Start cycle today' })
+    ).not.toBeInTheDocument();
+    await userEvent.keyboard('{Escape}');
+
+    const card = within(screen.getByRole('region', { name: 'Current cycle' }));
+    await userEvent.click(
+      card.getByRole('button', { name: 'Sprint 1 actions' })
+    );
+    expect(
+      screen.queryByRole('menuitem', { name: 'Start cycle today' })
+    ).not.toBeInTheDocument();
+  });
+
+  it('keeps the confirm open with the reason when the server refuses', async () => {
+    listCycles.mockResolvedValue({
+      cycles: [cycle, upcoming],
+      next_cursor: null,
+    });
+    startCycleToday.mockRejectedValue(
+      new Error('Only the next upcoming cycle can start today')
+    );
+
+    renderPage();
+
+    await pickAction('Sprint 2', 'Start cycle today');
+    const dialog = within(await screen.findByRole('dialog'));
+    await userEvent.click(
+      dialog.getByRole('button', { name: 'Start Sprint 2' })
+    );
+
+    expect(await dialog.findByRole('alert')).toBeInTheDocument();
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
   });
 });
 
@@ -482,7 +588,7 @@ describe('what a role is offered', () => {
       screen.queryByRole('button', { name: 'New cycle' })
     ).not.toBeInTheDocument();
     expect(
-      screen.queryByRole('button', { name: 'Cancel Sprint 2' })
+      screen.queryByRole('button', { name: 'Sprint 2 actions' })
     ).not.toBeInTheDocument();
   });
 
@@ -490,10 +596,15 @@ describe('what a role is offered', () => {
     listCycles.mockResolvedValue({ cycles: [upcoming], next_cursor: null });
 
     renderPage();
-    await screen.findByText('Sprint 2');
 
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Sprint 2 actions' })
+    );
     expect(
-      screen.queryByRole('button', { name: 'Delete Sprint 2' })
+      screen.getByRole('menuitem', { name: 'Cancel cycle' })
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole('menuitem', { name: 'Delete cycle' })
     ).not.toBeInTheDocument();
   });
 });
