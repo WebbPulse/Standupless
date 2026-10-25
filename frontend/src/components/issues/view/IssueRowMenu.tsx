@@ -19,6 +19,7 @@ import {
   LuCopyPlus,
   LuCornerUpLeft,
   LuEye,
+  LuFileText,
   LuGitBranch,
   LuHexagon,
   LuLink2,
@@ -39,6 +40,7 @@ import { allArchived } from '../../../lib/issueDisplay';
 import {
   COPY_BRANCH_KEYS,
   COPY_ISSUE_ID_KEYS,
+  COPY_ISSUE_MARKDOWN_LABEL,
   COPY_ISSUE_URL_KEYS,
 } from '../../../lib/copyIssue';
 import type { LinkType } from '../../../types/Api';
@@ -112,6 +114,8 @@ export interface IssueRowMenuProps {
   onCopyUrl: () => void;
   /** Copies the issue's git branch name, offered for one issue at a time. */
   onCopyBranch?: (() => void) | undefined;
+  /** Copies the issue as Markdown, offered for one issue at a time. */
+  onCopyMarkdown?: (() => void) | undefined;
   /** Opens the one issue, absent for a selection. */
   onOpen?: (() => void) | undefined;
   /**
@@ -147,6 +151,7 @@ export const IssueRowMenu: React.FC<IssueRowMenuProps> = ({
   onCopyId,
   onCopyUrl,
   onCopyBranch,
+  onCopyMarkdown,
   onOpen,
   onOpenInNewTab,
   onPeek,
@@ -299,6 +304,12 @@ export const IssueRowMenu: React.FC<IssueRowMenuProps> = ({
           <LuGitBranch aria-hidden="true" className="h-3.5 w-3.5" />
           Copy git branch name
           <MenuShortcut keys={COPY_BRANCH_KEYS} />
+        </MenuItem>
+      )}
+      {onCopyMarkdown !== undefined && (
+        <MenuItem onSelect={onCopyMarkdown}>
+          <LuFileText aria-hidden="true" className="h-3.5 w-3.5" />
+          {COPY_ISSUE_MARKDOWN_LABEL}
         </MenuItem>
       )}
       {canEdit && (onArchive !== undefined || onDelete !== undefined) && (

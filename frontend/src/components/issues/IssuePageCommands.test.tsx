@@ -4,7 +4,7 @@
  * Shift+M picks a milestone of the issue's project, labels arrive as the whole label_ids set, and Cmd or
  * Ctrl+Backspace deletes only after the confirmation, and Cmd or Ctrl+Shift+C,
  * D and L add the issue to the active cycle, clear its due date and clear its
- * labels.
+ * labels, and the palette offers Copy issue as Markdown.
  */
 
 import {
@@ -233,6 +233,31 @@ describe('IssuePageCommands', () => {
     press('Backspace', { ctrlKey: true });
 
     expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('offers Copy issue as Markdown in the palette, even to a reader, and copies it', async () => {
+    const writeText = vi.fn(() => Promise.resolve());
+    Object.defineProperty(globalThis.navigator, 'clipboard', {
+      value: { writeText },
+      configurable: true,
+    });
+    renderCommands(false, { ...issue, body: 'Tokens expire.' });
+
+    const command = registry
+      .list()
+      .find((shortcut) => shortcut.label === 'Copy issue as Markdown');
+    expect(command).toMatchObject({ keys: '', scope: 'issue', group: 'Issue' });
+    act(() => {
+      command?.run();
+    });
+
+    await waitFor(() => {
+      expect(writeText).toHaveBeenCalledWith(
+        `# [ENG-1 Cache the token](${globalThis.location.origin}${issuePath('mine', 'ENG-1')})\n\n` +
+          '**Status:** Todo · **Priority:** High · **Labels:** Bug\n\n' +
+          'Tokens expire.\n'
+      );
+    });
   });
 });
 
