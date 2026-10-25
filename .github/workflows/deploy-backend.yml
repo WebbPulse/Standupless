@@ -22,6 +22,8 @@ on:
       - "!backend/README.md"
       - "!backend/docs/**"
       - ".github/workflows/deploy-backend.yml"
+      - "slack/manifest.staging.json"
+      - "slack/manifest.production.json"
 
 permissions:
   id-token: write
@@ -86,6 +88,7 @@ jobs:
       all: ${{ steps.affected.outputs.all }}
       reason: ${{ steps.affected.outputs.reason }}
       base: ${{ steps.base.outputs.base }}
+      slack-manifest: ${{ steps.slack.outputs.changed }}
     steps:
       - name: Check out the repository
         uses: actions/checkout@v7
@@ -145,6 +148,29 @@ jobs:
             echo "Base: ${BASE}"
           fi
           echo "base=${BASE}" >> "$GITHUB_OUTPUT"
+
+      - name: Check whether the Slack manifest changed
+        id: slack
+        env:
+          ENVIRONMENT: ${{ needs.resolve-env.outputs.name }}
+          BASE: ${{ steps.base.outputs.base }}
+          BEFORE: ${{ github.event.before }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+          MANIFEST="slack/manifest.${ENVIRONMENT}.json"
+          CHANGED=false
+          if [ "$EVENT_NAME" = "push" ]; then
+            FROM="$BASE"
+            if [ -z "$FROM" ] && [ -n "$BEFORE" ] && git cat-file -e "${BEFORE}^{commit}" 2>/dev/null; then
+              FROM="$BEFORE"
+            fi
+            if [ -n "$FROM" ] && ! git diff --quiet "$FROM" "$GITHUB_SHA" -- "$MANIFEST"; then
+              CHANGED=true
+            fi
+          fi
+          echo "${MANIFEST} changed: ${CHANGED}"
+          echo "changed=${CHANGED}" >> "$GITHUB_OUTPUT"
 
       - name: Work out the affected domains
         id: affected
@@ -568,3 +594,57 @@ jobs:
             exit 1
           fi
           echo "Every deployed domain function answered GET /health with 200."
+
+  slack-manifest:
+    name: Apply the Slack manifest
+    needs:
+      - resolve-env
+      - affected
+      - warm-base-image
+      - build-images
+      - image-map
+      - existing-functions
+      - deploy-images
+      - smoke-domains
+    if: >-
+      always()
+      && needs.resolve-env.result == 'success'
+      && needs.affected.result == 'success'
+      && needs.affected.outputs.slack-manifest == 'true'
+      && !contains(needs.*.result, 'failure')
+      && !contains(needs.*.result, 'cancelled')
+    runs-on: ubuntu-latest
+    environment: ${{ needs.resolve-env.outputs.name }}
+    concurrency:
+      group: slack-config-token
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Configure AWS credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ needs.resolve-env.outputs.role-arn }}
+          aws-region: us-west-2
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.13"
+
+      - name: Install boto3
+        run: python -m pip install boto3
+
+      - name: Apply the manifest
+        env:
+          ENVIRONMENT: ${{ needs.resolve-env.outputs.name }}
+          SLACK_CONFIG_ROLE_ARN: ${{ vars.SLACK_CONFIG_ROLE_ARN || 'arn:aws:iam::147741822161:role/standupless-production-slack-config' }}
+        run: |
+          set -euo pipefail
+          python scripts/apply_slack_manifest.py "$ENVIRONMENT" --role-arn "$SLACK_CONFIG_ROLE_ARN"
