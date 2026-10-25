@@ -197,7 +197,10 @@ def test_insights_honour_team_filters_of_a_saved_view(
 
     def total(view: "dict[str, Any]") -> int:
         """The issue count the view selects."""
-        response = client.get(f"/api/workspaces/{workspace}/views/insights", params={"view_id": view["view_id"]})
+        response = client.get(
+            f"/api/workspaces/{workspace}/views/insights",
+            params={"view_id": view["view_id"], "group_by": "status_category"},
+        )
         assert response.status_code == 200, response.text
         return response.json()["issue_count"]
 

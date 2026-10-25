@@ -18,8 +18,10 @@ from tests.domains.views.conftest import OTHER_TEAM, TEAM, WORKSPACE, seed_issue
 
 
 def _total(client: TestClient, **params: Any) -> int:
-    """The issue count one breakdown answers."""
-    response = client.get(f"/api/workspaces/{WORKSPACE}/views/insights", params=params)
+    """The issue count the plain status tally answers, which every plan reads."""
+    response = client.get(
+        f"/api/workspaces/{WORKSPACE}/views/insights", params={"group_by": "status_category", **params}
+    )
     assert response.status_code == 200, response.text
     return response.json()["issue_count"]
 

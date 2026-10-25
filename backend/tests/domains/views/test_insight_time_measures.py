@@ -20,6 +20,8 @@ from app.common.sla import stamp_triage
 from tests.domains.helpers import MEMBER, OWNER, sign_in
 from tests.domains.views.conftest import TEAM, seed_issue
 
+pytestmark = pytest.mark.usefixtures("business_plan")
+
 BASE = datetime(2026, 10, 1, tzinfo=timezone.utc)
 
 

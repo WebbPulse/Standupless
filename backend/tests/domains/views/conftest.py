@@ -89,6 +89,13 @@ def workspace(repositories: Any) -> str:
 
 
 @pytest.fixture
+def business_plan(repositories: Any, workspace: str) -> str:
+    """The workspace on the Business plan, which includes Insights and dashboards."""
+    repositories.workspaces.set_billing(workspace, plan="business")
+    return workspace
+
+
+@pytest.fixture
 def statuses(repositories: Any, workspace: str) -> "dict[str, Any]":
     """The seeded statuses of `TEAM`, keyed by category."""
     rows = repositories.team_config.list_statuses(workspace, TEAM)

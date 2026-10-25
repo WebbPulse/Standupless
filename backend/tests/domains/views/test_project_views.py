@@ -297,7 +297,10 @@ def test_insights_and_share_links_refuse_a_project_view(client: TestClient, work
     sign_in(client, MEMBER)
     view = _create(client, workspace, entity="projects", team_id=TEAM).json()
 
-    counted = client.get(f"/api/workspaces/{workspace}/views/insights", params={"view_id": view["view_id"]})
+    counted = client.get(
+        f"/api/workspaces/{workspace}/views/insights",
+        params={"view_id": view["view_id"], "group_by": "status_category"},
+    )
     shared = client.post(
         f"/api/workspaces/{workspace}/share-links", json={"target_type": "view", "target_id": view["view_id"]}
     )
