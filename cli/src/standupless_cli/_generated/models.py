@@ -1153,6 +1153,7 @@ class InitiativeUpdate(TypedDict):
 class InitiativeUpdateCreate(TypedDict):
     body: NotRequired[str | None]
     health: Literal["on_track", "at_risk", "off_track"]
+    hide_details: NotRequired[bool]
     template_id: NotRequired[str | None]
 
 
@@ -1632,6 +1633,13 @@ class MilestoneRead(TypedDict):
     workspace_id: str
 
 
+class MilestoneSnapshotRead(TypedDict):
+    completed: NotRequired[int]
+    milestone_id: str
+    name: str
+    total: NotRequired[int]
+
+
 class MilestoneTemplate(TypedDict):
     description: NotRequired[str | None]
     key: NotRequired[str | None]
@@ -2012,17 +2020,34 @@ class ProjectUpdateCommentPatch(TypedDict):
 class ProjectUpdateCreate(TypedDict):
     body: NotRequired[str | None]
     health: Literal["on_track", "at_risk", "off_track"]
+    hide_details: NotRequired[bool]
     template_id: NotRequired[str | None]
 
 
 class ProjectUpdatePatch(TypedDict):
     body: NotRequired[str | None]
     health: NotRequired[Literal["on_track", "at_risk", "off_track"] | None]
+    hide_details: NotRequired[bool | None]
 
 
 class ProjectUpdateReactionWrite(TypedDict):
     comment_id: NotRequired[str | None]
     emoji: str
+
+
+class ProjectUpdateSnapshotRead(TypedDict):
+    completed: NotRequired[int]
+    lead_id: NotRequired[str | None]
+    lead_name: NotRequired[str | None]
+    measure: NotRequired[Literal["points", "issues"]]
+    milestones: NotRequired[list[MilestoneSnapshotRead]]
+    percent: NotRequired[int]
+    status: NotRequired[Literal["backlog", "planned", "in_progress", "paused", "completed", "canceled"] | None]
+    status_id: NotRequired[str | None]
+    status_name: NotRequired[str | None]
+    target_date: NotRequired[str | None]
+    target_date_resolution: NotRequired[Literal["day", "month", "quarter", "half", "year"] | None]
+    total: NotRequired[int]
 
 
 class ProjectsDisplay(TypedDict):
@@ -4674,8 +4699,11 @@ class ProjectUpdateRead(TypedDict):
     created_at: str
     edited_at: NotRequired[str | None]
     health: Literal["on_track", "at_risk", "off_track"]
+    hide_details: NotRequired[bool]
+    previous_snapshot: NotRequired[ProjectUpdateSnapshotRead | None]
     project_id: str
     reactions: NotRequired[list[ReactionGroupRead]]
+    snapshot: NotRequired[ProjectUpdateSnapshotRead | None]
     source: NotRequired[Literal["web", "mcp", "cli", "api", "github", "system", "email"] | None]
     update_id: str
     updated_at: str
