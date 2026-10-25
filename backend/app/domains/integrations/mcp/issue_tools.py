@@ -718,6 +718,7 @@ def _comment_json(comment: Comment) -> dict[str, Any]:
         "created_at": comment.created_at.isoformat(),
         "edited_at": comment.edited_at.isoformat() if comment.edited_at else None,
         "github_thread": comment.github_thread.model_dump(mode="json") if comment.github_thread else None,
+        "slack_thread": comment.slack_thread.model_dump(mode="json") if comment.slack_thread else None,
         "resolution": comment.resolution.model_dump(mode="json") if comment.resolution else None,
         "anchor": comment.anchor.model_dump(mode="json") if comment.anchor else None,
     }

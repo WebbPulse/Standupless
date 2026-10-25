@@ -31,6 +31,7 @@ from app.common.db.dynamo.discord import DiscordStore
 from app.common.db.dynamo.email_intake import EmailIntakeStore
 from app.common.db.dynamo.gitlab import GitlabStore
 from app.common.db.dynamo.slack import SlackStore
+from app.common.db.dynamo.slack_threads import SlackThreadStore
 from app.common.db.dynamo.tables import GITHUB
 
 INSTALLATION_INDEX = "installation_id-index"
@@ -836,6 +837,7 @@ class GithubRepository:
         self._repository = build_repository(GITHUB, repository)
         self.channels = ChannelStore(self._repository)
         self.slack = SlackStore(self._repository)
+        self.slack_threads = SlackThreadStore(self._repository)
         self.discord = DiscordStore(self._repository)
         self.email_intake = EmailIntakeStore(self._repository)
         self.gitlab = GitlabStore(self._repository)

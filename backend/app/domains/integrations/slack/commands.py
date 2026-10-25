@@ -7,6 +7,8 @@ asked sees them. An issue is answered with the Standupless card rather than a ba
 link, and Slack's own link preview is turned off on those replies, because the issue
 page is behind sign in and its preview would only ever be the site's landing card.
 The form preselects the team whose notifications the channel already carries.
+An issue created from a message is paired with that message's thread, so the two
+keep their discussion in step through `threads`.
 """
 
 from __future__ import annotations
@@ -25,7 +27,7 @@ from app.common.db.dynamo.slack import SlackInstallation
 from app.common.issue_writes import create_issue
 from app.domains.integrations.channels.messages import clip, slack_escape
 from app.domains.integrations.chat import issues as chat_issues
-from app.domains.integrations.slack import install, people
+from app.domains.integrations.slack import install, people, threads
 from app.domains.integrations.slack.api import SlackError, respond
 from app.domains.integrations.slack.unfurls import issue_blocks, issue_by_key, split_key
 
@@ -100,12 +102,18 @@ def create_view(
     description: str = "",
     permalink: str = "",
     team_id: str = "",
+    channel_id: str = "",
+    thread_ts: str = "",
 ) -> dict:
     """The modal that creates an issue, prefilled from a command or a message.
 
     The team picker starts on `team_id` when it is one of the offered teams, and on
-    the only team when there is just one.
+    the only team when there is just one. A message's channel and thread ride in
+    the private metadata, so the submission can pair the issue with that thread.
     """
+    metadata: dict[str, str] = {"permalink": permalink}
+    if channel_id and thread_ts:
+        metadata.update({"channel_id": channel_id, "thread_ts": thread_ts})
     options = [_option(option_id, label) for option_id, label in teams]
     team_select: dict[str, Any] = {"type": "static_select", "action_id": TEAM_BLOCK, "options": options}
     preselected = [option for option in options if option["value"] == team_id] if team_id else []
@@ -130,7 +138,7 @@ def create_view(
         "title": {"type": "plain_text", "text": "Create issue"},
         "submit": {"type": "plain_text", "text": "Create"},
         "close": {"type": "plain_text", "text": "Cancel"},
-        "private_metadata": json.dumps({"permalink": permalink})[:3000],
+        "private_metadata": json.dumps(metadata)[:3000],
         "blocks": [
             {
                 "type": "input",
@@ -258,13 +266,17 @@ def message_shortcut(repositories: Repositories, installation: SlackInstallation
     channel = payload.get("channel") or {}
     text = str(message.get("text", "")) if isinstance(message, Mapping) else ""
     channel_id = str(channel.get("id", "")) if isinstance(channel, Mapping) else ""
-    permalink = _permalink(installation, channel_id, str(message.get("ts", "")) if isinstance(message, Mapping) else "")
+    message_ts = str(message.get("ts", "")) if isinstance(message, Mapping) else ""
+    thread_ts = str(message.get("thread_ts", "") or "") if isinstance(message, Mapping) else ""
+    permalink = _permalink(installation, channel_id, message_ts)
     view = create_view(
         teams,
         title=_title_from(text),
         description=text,
         permalink=permalink,
         team_id=_channel_team(repositories, context, channel_id),
+        channel_id=channel_id,
+        thread_ts=thread_ts or message_ts,
     )
     _open(installation, str(payload.get("trigger_id", "")), view)
     return {}
@@ -293,7 +305,12 @@ def _created_view(blocks: list[dict[str, Any]]) -> dict[str, Any]:
 
 
 def submit_create(repositories: Repositories, installation: SlackInstallation, payload: Mapping[str, Any]) -> dict:
-    """Create the issue the form describes, as the person who submitted it."""
+    """Create the issue the form describes, as the person who submitted it.
+
+    A form opened from a message pairs the new issue with the message's thread.
+    The pairing is best effort: an issue whose thread Slack would not reply in is
+    still created, and simply is not synced.
+    """
     user = payload.get("user") or {}
     context = _context(repositories, installation, str(user.get("id", "")) if isinstance(user, Mapping) else "")
     if context is None:
@@ -321,6 +338,16 @@ def submit_create(repositories: Repositories, installation: SlackInstallation, p
     except HTTPException:
         return _errors({TEAM_BLOCK: "You cannot create issues in this team."})
     _log.info("Created an issue from Slack.", extra={"event": "integrations.slack.issue_created"})
+    if isinstance(metadata, Mapping):
+        threads.pair(
+            repositories,
+            installation,
+            context,
+            issue,
+            channel_id=str(metadata.get("channel_id", "") or ""),
+            thread_ts=str(metadata.get("thread_ts", "") or ""),
+            permalink=permalink,
+        )
     return {"response_action": "update", "view": _created_view(issue_blocks(repositories, issue))}
 
 

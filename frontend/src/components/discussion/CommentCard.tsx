@@ -20,6 +20,10 @@
  * mirrored comment, and its menu offers to open it there or to unsync, which
  * stops mirroring and leaves what was already copied on both sides.
  *
+ * A thread can instead be synced with the Slack thread its issue was created
+ * from. That root wears a Slack badge linking to the Slack thread, its replies
+ * cross both ways on their own, and it offers no GitHub sync.
+ *
  * Any member may resolve a thread from its root's menu. A resolved thread
  * collapses to one line naming who resolved it, which expands on click to the
  * whole thread with a way to unresolve it. Replying reopens a thread, which the
@@ -59,6 +63,7 @@ import {
   LuExternalLink,
   LuGithub,
   LuListTree,
+  LuMessageSquare,
   LuPencil,
   LuReply,
   LuTextQuote,
@@ -187,6 +192,37 @@ interface PassageQuoteProps {
 }
 
 /** The passage of the description a thread is pinned to, at the top of its card. */
+/** The mark on a root synced with a Slack thread, linking there when Slack gave a link. */
+const SlackThreadBadge: React.FC<{ permalink: string }> = ({ permalink }) => {
+  const className =
+    'inline-flex items-center gap-1 rounded-sm px-1 text-xs text-text-faint';
+  const content = (
+    <>
+      <LuMessageSquare aria-hidden="true" className="h-3.5 w-3.5" />
+      <span className="hidden sm:inline">Synced with Slack</span>
+    </>
+  );
+  if (permalink === '') {
+    return (
+      <span title="Synced with the Slack thread" className={className}>
+        {content}
+      </span>
+    );
+  }
+  return (
+    <a
+      href={permalink}
+      target="_blank"
+      rel="noreferrer"
+      title="Synced with the Slack thread"
+      aria-label="Synced with the Slack thread, open in Slack"
+      className={`${className} transition-colors duration-100 hover:text-text`}
+    >
+      {content}
+    </a>
+  );
+};
+
 const PassageQuote: React.FC<PassageQuoteProps> = ({
   anchor,
   held,
@@ -396,8 +432,13 @@ const CommentItem: React.FC<CommentItemProps> = ({
   const canDelete = isAuthor || isAdmin;
   const isRoot = comment.parent_comment_id === null;
   const thread = isRoot ? (comment.github_thread ?? null) : null;
+  const slackThread = isRoot ? (comment.slack_thread ?? null) : null;
   const canSync =
-    isRoot && canComment && thread === null && documentId === undefined;
+    isRoot &&
+    canComment &&
+    thread === null &&
+    slackThread === null &&
+    documentId === undefined;
   const isResolved = isRoot && (comment.resolution ?? null) !== null;
   const quote = canComment ? onQuote : undefined;
   const quoted = quoteMarkdown(comment.body);
@@ -436,6 +477,9 @@ const CommentItem: React.FC<CommentItemProps> = ({
             <LuGithub aria-hidden="true" className="h-3.5 w-3.5" />
             <span className="hidden sm:inline">{threadRef(thread)}</span>
           </a>
+        )}
+        {slackThread !== null && (
+          <SlackThreadBadge permalink={slackThread.permalink} />
         )}
         <div className="ml-auto flex items-center gap-0.5 opacity-0 transition-opacity duration-100 group-focus-within/comment:opacity-100 group-hover/comment:opacity-100 pointer-coarse:opacity-100">
           {canComment && !hasReactions && (

@@ -124,6 +124,13 @@ def _turn_off_destinations(repositories: Repositories, workspace_id: str, reason
     return turn_off(repositories, workspace_id, "slack_app", reason, notify=notify)
 
 
+def _forget_threads(repositories: Repositories, workspace_id: str) -> int:
+    """Stop syncing the workspace's Slack threads, now that the bot can no longer post to them."""
+    from app.domains.integrations.slack import threads
+
+    return threads.forget_workspace(repositories, workspace_id)
+
+
 def disconnect(repositories: Repositories, workspace_id: str) -> bool:
     """Revoke the bot token and forget the installation, at an admin's request."""
     installation = repositories.github.slack.get(workspace_id)
@@ -138,6 +145,7 @@ def disconnect(repositories: Repositories, workspace_id: str) -> bool:
         )
     repositories.github.slack.delete(workspace_id)
     _turn_off_destinations(repositories, workspace_id, DISCONNECTED_REASON, notify=False)
+    _forget_threads(repositories, workspace_id)
     return True
 
 
@@ -148,5 +156,6 @@ def forget_team(repositories: Repositories, slack_team_id: str) -> bool:
         return False
     repositories.github.slack.delete(workspace_id)
     _turn_off_destinations(repositories, workspace_id, UNINSTALLED_REASON, notify=True)
+    _forget_threads(repositories, workspace_id)
     _log.info("Forgot a Slack installation Slack removed.", extra={"event": "integrations.slack.uninstalled"})
     return True
